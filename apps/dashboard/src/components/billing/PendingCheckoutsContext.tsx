@@ -49,9 +49,10 @@ export function PendingCheckoutsProvider({
     (!organizationId || organizationId === session?.session.activeOrganizationId);
   return (
     <PendingCheckoutsState
-      key={`${scope}:${organizationId ?? ""}:${workspaceId ?? "all"}`}
+      key={`${scope}:${organizationId ?? ""}:${workspaceId ?? "all"}:${allowed}`}
       workspaceId={workspaceId}
       enabled={allowed}
+      waiting={enabled && isPending}
     >
       {children}
     </PendingCheckoutsState>
@@ -62,10 +63,12 @@ function PendingCheckoutsState({
   children,
   workspaceId,
   enabled,
+  waiting,
 }: {
   children: ReactNode;
   workspaceId?: string;
   enabled: boolean;
+  waiting?: boolean;
 }) {
   const { t } = useI18n();
   const parent = usePendingCheckouts();
@@ -87,6 +90,8 @@ function PendingCheckoutsState({
       const result = await billingApi.listCheckouts(workspaceId);
       if (!mounted.current || revision.current !== request) return;
       if (!Array.isArray(result?.items)) throw new Error(t.billing.pendingPayments.loadError);
+      if (workspaceId && result.items.some((item) => item.server.id !== workspaceId))
+        throw new Error(t.billing.pendingPayments.loadError);
       setItems(result.items);
     } catch (err) {
       if (mounted.current && revision.current === request)
@@ -125,7 +130,7 @@ function PendingCheckoutsState({
       value={{
         workspaceId,
         items: enabled ? items : [],
-        loading: enabled && loading,
+        loading: Boolean(waiting) || (enabled && loading),
         error: enabled ? error : null,
         refresh,
         markCleared,

@@ -66,8 +66,10 @@ and the Docker client continue to use the login user's executor and context. Mis
 fails before repository build commands run. These paths never fall back to an
 unprotected embedded or legacy builder. Desktop uses the same policy when it
 controls a remote server. Disabling automatic package cache mounts does not
-change this boundary. Local socket/TCP Engine-API builds retain their existing
-builder selection and are outside this remote-build protection scope.
+change this boundary. Explicitly trusted SSH hosts can use native BuildKit for
+uncapped builds; secret delivery and cleanup apply to both worker modes.
+Local socket/TCP Engine-API builds require BuildKit for generated recipes and
+are outside this remote-build protection scope.
 
 The trusted worker entrypoint installs and verifies IPv4 and IPv6 rules before
 starting BuildKit, including after a worker restart. Rules live only inside that

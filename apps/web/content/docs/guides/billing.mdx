@@ -84,7 +84,7 @@ Every server plan includes unlimited team members without a per-seat charge.
 **Overview** shows the billing mode, coverage status and paid-through date.
 **Usage** shows recorded resource usage; monthly servers show CPU time instead
 of compute-credit spend. A recorded usage comparison uses the contract's saved
-PAYG rates. It is not a promised cash saving or a new charge for monthly compute.
+resource rates. It is not a promised cash saving or a new charge for monthly compute.
 
 Monthly servers include managed internet transfer. Billing shows the provider's
 available allowance (or **Unlimited**) and usage for the current period. This
@@ -92,37 +92,8 @@ covers Git clones, package downloads and other managed internet traffic; public
 app-route traffic and backups are separate. Exhausting transfer cannot end a
 confirmed paid month of CPU and RAM.
 
-The **Prepaid PAYG** pricing preview shows Openship resource tiers separately
-from credit packages. **Tier 1**, **Tier 2** and **Tier 3** describe the combined
-CPU, RAM, storage and server limits for a PAYG pool. The tier tabs show the credit
-purchase threshold and the pool's capacity. These numbers stay fixed while you
-configure a server. Credit
-purchases unlock tiers; spending credits does not lower an unlocked tier.
-Selecting a tier or package in the preview does not grant it.
-
-Customize CPU, RAM and storage to estimate one server's hourly cost at full CPU
-usage. Servers share the tier's pool allowance. If a configuration exceeds the selected pool,
-the preview keeps your inputs and offers a larger tier that fits when available.
-The credit card shows which tier the selected package would unlock. Resource
-rates and the credit conversion come from the provider's published catalog:
-active CPU time, reserved RAM time, and retained provisioned storage.
-
-CPU time is measured in **vCPU-hours**, separately from elapsed time online.
-Four allocated vCPUs averaging 25% activity consume one vCPU-hour in one elapsed
-hour. Two such hosts consume two vCPU-hours during that same hour. The estimator
-shows the configured server's hourly resource usage at full CPU activity. Lower CPU
-activity reduces CPU usage; reserved RAM and storage continue to accrue usage.
-The estimate leads with dollars per hour and the equivalent credit deduction,
-with a visible CPU, RAM and storage breakdown. Open **Balance estimate** for the duration range from
-100% CPU activity to idle CPU, including RAM and storage at both ends. These are
-usage scenarios, not a guaranteed number of days or a required monthly deposit.
-
-PAYG estimates use the published resource rates throughout the displayed period.
-Balance duration is prepaid funds divided by usage cost; monthly host prices
-do not set a ceiling on the estimate. Optional proxy transfer, taxes and storage
-retained after compute ends are separate.
-Purchases are not available yet. Selecting PAYG does not switch an existing
-monthly server, buy credits or debit a wallet.
+New Cloud space purchases use monthly or yearly subscriptions. Choose a preset plan
+or configure Custom resources; both use the same checkout and paid coverage checks.
 
 ## Managing your plan
 

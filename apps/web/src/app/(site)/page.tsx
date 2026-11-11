@@ -2,13 +2,13 @@ import {
   Navbar,
   Hero,
   Dashboard,
-  SystemMap,
   HowItWorks,
   DeploymentModels,
   CompletePlatform,
   AppsShowcase,
   MailServer,
   Comparison,
+  DataPrivacy,
   OpenSource,
   FinalCta,
   Footer,
@@ -55,13 +55,13 @@ export default function HomePage() {
       <main>
         <Hero />
         <Dashboard />
-        <SystemMap />
+        <CompletePlatform />
         <HowItWorks />
         <DeploymentModels />
         <AppsShowcase />
-        <CompletePlatform />
         <MailServer />
         <Comparison />
+        <DataPrivacy />
         <OpenSource />
         <FinalCta />
       </main>

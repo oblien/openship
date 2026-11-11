@@ -65,6 +65,50 @@ describe("build log confidentiality", () => {
     expect(entries).toEqual([]);
   });
 
+  it("masks before shortening errors and step failures", async () => {
+    const secret = "private-value-".repeat(200);
+    const { logger, entries } = fixture(secret);
+    const error = new Error(`command failed: ${secret}`);
+    expect(logger.errorMessage(error)).toBe("command failed: ***");
+    await expect(logger.runStep("build", "Build", async () => { throw error; })).rejects.toBe(error);
+    expect(entries.at(-1)?.message).toBe("Build - command failed: ***");
+  });
+
+  it.each(["error", "vertex"])("masks long secrets before clipping a Docker %s summary", (kind) => {
+    const secret = "private-value-".repeat(200);
+    const { logger, entries } = fixture(secret);
+    const runtime = Object.create(DockerRuntime.prototype);
+    const error = `process \"/bin/sh -c echo ${secret}\" did not complete successfully: exit code: 23`;
+    const event = kind === "error" ? { error } : {
+      id: "moby.buildkit.trace",
+      aux: statusResponse({ vertexes: [{ digest: "sha256:build", error, completed: true }] }),
+    };
+    const result = runtime.handleBuildEvent(event, logger, new BuildKitTraceDecoder());
+    expect(result.failureHint).toContain("23");
+    expect(JSON.stringify([result, entries])).not.toContain("private-value-");
+  });
+
+  it("conceals split credential bytes in diagnostic output as well as terminal output", () => {
+    const secret = "🔐-private-value";
+    const { logger } = fixture(secret);
+    const bytes = Buffer.from(`failed to solve: ${secret}\n`);
+    const safe: string[] = [];
+    for (const byte of bytes) safe.push(logger.observeBuildOutput(Uint8Array.of(byte), "stderr"));
+    logger.flush();
+    expect(safe.join("")).toBe("failed to solve: ***\n");
+  });
+
+  it("does not leak an unfinished secret into a classic builder failure hint", () => {
+    const secret = "example-private-value";
+    const { logger } = fixture(secret);
+    const runtime = Object.create(DockerRuntime.prototype);
+    const results = ["error: build failed example-pri", "vate-value\n"].map(stream =>
+      runtime.handleBuildEvent({ stream }, logger),
+    );
+    logger.flush();
+    expect(JSON.stringify(results)).not.toContain("example-pri");
+  });
+
   it("filters BuildKit output before prefixes split a value into rendered lines", () => {
     const { logger, entries } = fixture("example-private-value");
     const runtime = Object.create(DockerRuntime.prototype);

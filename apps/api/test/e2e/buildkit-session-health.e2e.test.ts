@@ -37,7 +37,7 @@ describeDockerE2E("BuildKit session health (#1488)", () => {
   });
 
   it.each(["source", "bundled"])(
-    "keeps optional secret mounts usable after multiple daemon health probes (%s)",
+    "serves required secrets and rejects unknown secrets after multiple daemon health probes (%s)",
     async (mode) => {
       let build = buildDockerImage;
       if (mode === "bundled") {
@@ -56,7 +56,7 @@ describeDockerE2E("BuildKit session health (#1488)", () => {
         [
           "FROM alpine:3",
           "RUN sleep 16",
-          "RUN --mount=type=secret,id=npmrc,target=/root/.npmrc test ! -e /root/.npmrc && echo session-alive > /proof",
+          'RUN --mount=type=secret,id=fixture,required=true --mount=type=secret,id=npmrc,target=/root/.npmrc test "$(cat /run/secrets/fixture)" = session-secret-fixture && test ! -e /root/.npmrc && echo session-alive > /proof',
         ].join("\n"),
       );
       const controller = new AbortController();
@@ -68,7 +68,7 @@ describeDockerE2E("BuildKit session health (#1488)", () => {
           nocache: true,
           t: tag,
           abortSignal: context.abortSignal,
-        });
+        }, new Map([["fixture", "session-secret-fixture"]]));
         // followProgress does not reliably reject a BuildKit error event. Check
         // the events AND the produced image so an ended error stream cannot pass.
         const events = await new Promise<Array<{ error?: string }>>((resolve, reject) =>

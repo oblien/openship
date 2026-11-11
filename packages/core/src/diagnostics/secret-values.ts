@@ -64,9 +64,8 @@ export class SecretValues {
     }
   }
 
-  private scan(value: string): { spans: Span[]; pending: number } {
+  private scan(value: string, state = 0): { spans: Span[]; pending: number; state: number } {
     const spans: Span[] = [];
-    let state = 0;
     for (let i = 0; i < value.length; i++) {
       const char = value[i]!;
       while (state && !this.nodes[state]!.next.has(char)) state = this.nodes[state]!.fail;
@@ -81,7 +80,7 @@ export class SecretValues {
     }
     // A leaf cannot become a longer secret; a suffix on its failure chain can.
     while (state && !this.nodes[state]!.next.size) state = this.nodes[state]!.fail;
-    return { spans, pending: value.length - this.nodes[state]!.depth };
+    return { spans, pending: value.length - this.nodes[state]!.depth, state };
   }
 
   ranges(value: string): readonly Span[] {
@@ -108,11 +107,17 @@ export class SecretValues {
     let pending = "";
     let covered: Span[] = [];
     let masked = false;
+    let state = 0;
     return {
       write: (chunk) => {
         if (this.empty) return chunk;
         const value = pending + chunk;
-        const result = this.scan(value);
+        // Carry the automaton across chunks. Rescanning a long pending secret
+        // on every byte would make fragmented output quadratic in its length.
+        const result = this.scan(chunk, state);
+        state = result.state;
+        result.spans = result.spans.map(span => ({ start: span.start + pending.length, end: span.end + pending.length }));
+        result.pending += pending.length;
         // A complete match can overlap an unfinished longer value. Remember
         // coverage of the retained suffix so a later mismatch cannot reveal it.
         // Retain only the suffix, never an arbitrarily long overlapping match.
@@ -157,6 +162,7 @@ export class SecretValues {
         pending = "";
         covered = [];
         masked = false;
+        state = 0;
         return result;
       },
     };

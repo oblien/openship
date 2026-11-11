@@ -51,6 +51,9 @@ describe("email-templates — HTML injection is neutralized", () => {
 
     expect(email.html).not.toContain("<script>alert(1)</script>");
     expect(email.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    // Pair the layout's default text color with its light canvas, including
+    // headings that inherit rather than specifying their own foreground.
+    expect(email.html).toMatch(/<body style="[^"]*color:#111;background:#f9fafb/);
 
     // No plaintext-greeting assertion here, unlike the invite above: the OTP
     // templates put the name in the HTML greeting only, and their `text` part is

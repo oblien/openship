@@ -7,6 +7,27 @@ import { registryAuthResolver } from "../credentials/registry-auth";
 import { requireMigrationServer, assertMigrationEndpoints } from "./migration-access";
 import type { ServerConn } from "./direct-transfer";
 import { withCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
+import { ensureCloudWorkspaceHost } from "../../lib/cloud-docker-workspace";
+
+/** Prepare subscribed capacity before any source downtime. Release host
+ * admission before handing work to the normal deployment worker. */
+export async function prepareMigrationTarget(
+  organizationId: string,
+  serverId: string,
+  runId: string,
+  options: { signal?: AbortSignal; onProgress: (message: string) => void },
+) {
+  const target = await requireMigrationServer(organizationId, serverId, "target");
+  const workspaceId = target.workspaceId;
+  if (!workspaceId) return;
+  options.onProgress("Preparing the managed server before importing…");
+  await withCloudWorkspaceActivity(workspaceId, () => ensureCloudWorkspaceHost({
+    organizationId,
+    ownerWorkspaceId: workspaceId,
+    signal: options.signal,
+    onProgress: options.onProgress,
+  }), options.signal, { scope: `migration:${runId}` });
+}
 
 /** Migration has server-level authority, unlike a single project's runtime.
  * It still uses the same Docker runtime and owned SSH/provider transports. */

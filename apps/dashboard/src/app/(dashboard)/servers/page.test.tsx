@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   replace: vi.fn(),
   push: vi.fn(),
   servers: vi.fn(),
+  probe: vi.fn(),
   capabilities: vi.fn(),
   clusters: vi.fn(),
   discardPreparation: vi.fn(),
@@ -38,7 +39,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(h.search),
 }));
 vi.mock("@/lib/api", () => ({
-  systemApi: { listServers: h.servers },
+  systemApi: { listServers: h.servers, probeReachability: h.probe },
   getApiErrorMessage: (error: Error) => error.message,
 }));
 vi.mock("@/lib/api/private-networks", () => ({
@@ -65,7 +66,7 @@ vi.mock("@/hooks/useRunEvents", () => ({
 // Keep the actual page, platform context, tabs, and cluster overview. Managed
 // containers and their mutation modal are unrelated to navigation.
 vi.mock("@/hooks/useInfraFleet", () => ({
-  useInfraFleet: () => ({ summaries: new Map() }),
+  useInfraFleet: () => ({ summaries: new Map(), empty: true }),
 }));
 vi.mock("@/hooks/useSystemPrepareModal", () => ({
   useContainerApplyModal: () => vi.fn(),
@@ -89,6 +90,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.search = "";
   h.servers.mockResolvedValue([]);
+  h.probe.mockResolvedValue({ reachable: true });
   h.capabilities.mockResolvedValue(capabilities);
   h.clusters.mockResolvedValue([]);
   h.overview = { networks: [], preparations: [], computeClusters: [] };
@@ -371,4 +373,15 @@ describe("server cluster navigation", () => {
       expect(h.discardPreparation).not.toHaveBeenCalled();
     },
   );
+});
+
+it.each([true, false])("keeps Cloud spaces out of the connected-server inventory (selfHosted=%s)", async (selfHosted) => {
+  h.servers.mockResolvedValue([
+    { id: "space-destination", name: "Cloud plan capacity", managed: { id: "space-one" } },
+    { id: "customer-server", name: "Customer server", sshHost: "192.0.2.42", sshPort: 22, sshUser: "root" },
+  ]);
+  await render("docker", selfHosted);
+  expect(host.textContent).toContain("Customer server");
+  expect(host.textContent).not.toContain("Cloud plan capacity");
+  expect(h.probe).toHaveBeenCalledExactlyOnceWith("customer-server");
 });

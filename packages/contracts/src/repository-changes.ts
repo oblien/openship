@@ -1,5 +1,13 @@
 import { Type, type Static } from "@sinclair/typebox";
 
+export const RepositoryChangeAccessSchema = Type.Union([
+  Type.Literal("available"),
+  Type.Literal("workspace_access_required"),
+  Type.Literal("github_access_required"),
+  Type.Literal("repository_read_only"),
+]);
+export type RepositoryChangeAccess = Static<typeof RepositoryChangeAccessSchema>;
+
 /** One reviewed patch, based on an exact commit. Publishing never updates an existing branch. */
 export const RepositoryPatch = Type.Object(
   {
@@ -38,3 +46,4 @@ export const PublishedRepositoryChange = Type.Object({
   url: Type.String(),
   pullRequestUrl: Type.Union([Type.String(), Type.Null()]),
 });
+export type PublishedRepositoryChange = Static<typeof PublishedRepositoryChange>;

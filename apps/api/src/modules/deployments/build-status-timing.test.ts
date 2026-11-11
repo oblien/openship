@@ -51,6 +51,22 @@ beforeEach(() => {
 });
 
 describe("build status uses the durable outcome (#919)", () => {
+  const verification = { startedAt: "2026-11-09T10:00:00Z", urls: ["https://example.test"] };
+
+  it("restores verification and published links without the original controller session", async () => {
+    mocks.load.mockResolvedValue({ dep: { id: "dep-1", organizationId: "org-1", status: "deploying", meta: { verification } },
+      project: { id: "project-1" } });
+    mocks.session.mockReturnValue(undefined);
+    mocks.row.mockResolvedValue({ status: "deploying", logs: [] });
+    expect(await getBuildSessionStatus("dep-1")).toMatchObject({ status: "deploying", currentStep: 5, progress: 90, verification });
+  });
+
+  it.each(["cancelled", "failed", "ready"])("terminal %s overrides a previous publication receipt", async status => {
+    mocks.load.mockResolvedValue({ dep: { id: "dep-1", organizationId: "org-1", status, meta: { verification } },
+      project: { id: "project-1" } });
+    expect((await getBuildSessionStatus("dep-1"))).not.toHaveProperty("verification");
+  });
+
   it.each([
     ["cancelled", "cancelled"],
     ["ready", "ready"],

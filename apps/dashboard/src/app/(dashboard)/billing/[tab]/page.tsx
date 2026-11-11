@@ -1,24 +1,16 @@
 import { notFound, redirect } from "next/navigation";
-import type { PlanTierId } from "@repo/core";
-import { BillingOverview } from "@/components/billing/BillingOverview";
-import { BillingUsage } from "@/components/billing/BillingUsage";
-import { BillingTopups } from "@/components/billing/BillingTopups";
-import { BillingPlansRoute } from "../_components/BillingPlansRoute";
-import { BillingCheckoutStatus } from "../_components/BillingCheckoutStatus";
-import { BillingSidebar, BillingPaymentsPanel } from "../_components/billing-shared";
-import { BILLING_TABS } from "../_components/billing-tabs";
-import { BillingUnavailable } from "../_components/BillingUnavailable";
-import { getBillingPageState, getDefaultBillingWorkspace } from "../_components/billing-state";
-import { isNewCloudCustomer } from "@/lib/billing-presentation";
-import { BillingContent } from "../_components/BillingContent";
+import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { getSession } from "@/lib/server/session";
-import { billingTabHref, newServerBillingHref } from "@/lib/billing-links";
-import { BillingPageView, type BillingView } from "../_components/BillingViewContext";
-import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
+import { isNewCloudPurchase } from "@/lib/billing-links";
+import { cloudSpaceHref, type CloudPlanTab } from "@/lib/cloud-spaces";
 import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
+import { BillingUnavailable } from "../_components/BillingUnavailable";
+import { getBillingPageState } from "../_components/billing-state";
+import { BILLING_TABS } from "../_components/billing-tabs";
 
+/** Existing billing bookmarks and provider returns resolve into the selected plan. */
 export default async function BillingTabPage({
   params,
   searchParams,
@@ -28,139 +20,96 @@ export default async function BillingTabPage({
 }) {
   const { tab } = await params;
   const query = await searchParams;
-
-  const activeTab = tab === "invoices" ? "payment" : BILLING_TABS.find((item) => item.key === tab)?.key;
-  if (!activeTab) {
-    notFound();
-  }
-
-  const workspaceId = (Array.isArray(query.workspaceId) ? query.workspaceId[0] : query.workspaceId) || undefined;
-  const organizationId = (Array.isArray(query.organizationId) ? query.organizationId[0] : query.organizationId) || undefined;
-  const checkoutReturn = ["checkout", "topup", "session_id"].some(key => query[key] !== undefined);
-  const newServer = activeTab === "plans" && query.newServer === "1" && !checkoutReturn;
-  const requestedPlanId = typeof query.plan === "string" ? query.plan : undefined;
-  const requestedInterval = query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined;
-  const autoCheckout = query.startCheckout === "1" && (query.checkoutIntent === undefined || isCloudPurchaseIntent(query.checkoutIntent));
-  const checkoutIntent = isCloudPurchaseIntent(query.checkoutIntent) ? query.checkoutIntent : undefined;
-  const checkoutAttempt = isCloudPurchaseIntent(query.checkoutAttempt) ? query.checkoutAttempt : undefined;
+  const activeTab =
+    tab === "invoices" ? "payment" : BILLING_TABS.find((item) => item.key === tab)?.key;
+  if (!activeTab) notFound();
+  const value = (key: string) =>
+    (Array.isArray(query[key]) ? query[key][0] : query[key]) || undefined;
+  const workspaceId = value("workspaceId");
+  const organizationId = value("organizationId");
+  const checkoutReturn = ["checkout", "topup", "session_id"].some(
+    (key) => query[key] !== undefined,
+  );
+  const newServer = isNewCloudPurchase({
+    tab: activeTab,
+    workspaceId,
+    newServer: query.newServer === "1",
+    checkoutReturn,
+  });
+  const requestedPlanId = value("plan");
+  const requestedInterval =
+    query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined;
+  const autoCheckout =
+    query.startCheckout === "1" &&
+    (query.checkoutIntent === undefined || isCloudPurchaseIntent(query.checkoutIntent));
+  const checkoutIntent = isCloudPurchaseIntent(query.checkoutIntent)
+    ? query.checkoutIntent
+    : undefined;
+  const checkoutAttempt = isCloudPurchaseIntent(query.checkoutAttempt)
+    ? query.checkoutAttempt
+    : undefined;
   const session = await getSession();
-  const view: BillingView = {
-    contextKey: `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`,
-    requestedWorkspaceId: workspaceId,
-    organizationId,
-    plansOnly: false,
-    newServer,
-  };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
-    return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer}
-      returnQuery={checkoutReturn ? query : undefined}
-      purchase={newServer ? { planId: requestedPlanId, interval: requestedInterval, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt, referralCode: typeof query.ref === "string" ? query.ref : undefined } : undefined} embedded /></BillingPageView>;
+    return (
+      <CloudBillingLink
+        organizationId={organizationId}
+        tab={activeTab}
+        workspaceId={workspaceId}
+        newServer={newServer}
+        returnQuery={checkoutReturn ? query : undefined}
+        purchase={
+          newServer
+            ? {
+                planId: requestedPlanId,
+                interval: requestedInterval,
+                startCheckout: autoCheckout,
+                checkoutIntent,
+                checkoutAttempt,
+                referralCode: value("ref"),
+              }
+            : undefined
+        }
+        embedded
+      />
+    );
   }
-  // Buying another server is separate from inspecting an existing subscription.
-  // The shared purchase component creates an explicitly scoped identity on selection.
-  if (newServer) return <BillingPageView view={{ ...view, plansOnly: true }}>
-    <BillingWorkspaceProvider>
-      <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase
-        initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
-        requestedPlanId={requestedPlanId}
-        requestedInterval={requestedInterval}
-        autoCheckout={autoCheckout}
-        checkoutIntent={checkoutIntent}
-        checkoutAttempt={checkoutAttempt}
-      /></BillingContent>
-    </BillingWorkspaceProvider>
-  </BillingPageView>;
-  let result = await getBillingPageState(workspaceId);
-  if (result.kind === "unavailable" && result.reason === "workspace-required" && !workspaceId && !checkoutReturn) {
-    const defaultWorkspaceId = await getDefaultBillingWorkspace();
-    if (defaultWorkspaceId) {
-      view.workspaceId = defaultWorkspaceId;
-      result = await getBillingPageState(defaultWorkspaceId);
-    }
-  }
-
-  if (result.kind === "unavailable") {
-    // A removed draft may still be selected in a bookmark or checkout return.
-    // Drop its purchase parameters instead of retrying the deleted identity.
-    // A new-server view also avoids selecting the draft while removal finishes.
-    if (result.reason === "workspace-removed")
-      redirect(newServerBillingHref(organizationId));
-    return <BillingPageView view={view}><BillingContent layout={activeTab === "plans" ? "plans" : "details"} sidebar={null}>
-      <BillingUnavailable reason={result.reason} />
-    </BillingContent></BillingPageView>;
-  }
-
-  const state = result.state;
-  const plansOnly = isNewCloudCustomer(state);
-  if (plansOnly && activeTab !== "plans" && activeTab !== "payment") {
-    redirect(billingTabHref("plans", { ...query, workspaceId: state.workspace?.id ?? workspaceId }));
-  }
-  if (tab === "invoices") {
-    redirect(billingTabHref("payment", { ...query, workspaceId: state.workspace?.id ?? workspaceId }));
-  }
-
-  function renderTab() {
-    switch (tab) {
-      case "overview":
-        return <BillingOverview state={state} />;
-      case "usage":
-        return <BillingUsage state={state} />;
-      case "plans":
-        return (
-          <BillingPlansRoute
-            initialReferralCode={typeof query.ref === "string" ? query.ref : undefined}
-            billingState={plansOnly ? undefined : state}
-            currentPlan={state.tier as PlanTierId}
-            currentOffer={state.plan}
-            allocatedDiskGb={state.capacity?.diskGb?.used}
-            subscription={state.subscription}
-            complimentary={state.complimentary}
-            billingEnabled={state.billing?.enabled === true}
-            canChangeSubscription={state.capabilities?.subscriptionChange === true}
-          />
-        );
-      case "topups":
-        return <BillingTopups state={state} />;
-      case "payment":
-        return (
-          <BillingPaymentsPanel
-            portalAvailable={state.capabilities?.portal === true}
-            hasHistory={!isNewCloudCustomer(state)}
-          />
-        );
-      default:
-        notFound();
-    }
-  }
-
-  return (
-    <BillingPageView view={{ ...view, workspaceId: state.workspace?.id, plansOnly, topupsAvailable: state.topups?.available === true }}>
-      <BillingWorkspaceProvider workspaceId={state.workspace?.id}>
-        {(query.checkout === "success" || query.topup === "success") && (
-          <BillingCheckoutStatus
-            kind={query.topup === "success" ? "topup" : "subscription"}
-            checkoutId={typeof query.session_id === "string" ? query.session_id : undefined}
-            expectedTier={typeof query.tier === "string" ? query.tier : undefined}
-            expectedOffer={typeof query.offer === "string" ? query.offer : undefined}
-            expectedInterval={
-              query.interval === "monthly" || query.interval === "annual"
-                ? query.interval
-                : undefined
-            }
-          />
-        )}
-        <BillingContent
-          key={`${view.contextKey}:${state.workspace?.id ?? "unsubscribed"}`}
-          layout={activeTab === "plans" ? "plans" : "details"}
-          sidebar={
-            plansOnly || activeTab === "plans" ? null : (
-              <BillingSidebar state={state} showSubscriptionControls={activeTab === "overview"} />
-            )
-          }
-        >
-          {renderTab()}
-        </BillingContent>
+  if (newServer)
+    return (
+      <BillingWorkspaceProvider organizationId={organizationId}>
+        <ManagedServerPurchase
+          initialReferralCode={value("ref")}
+          requestedPlanId={requestedPlanId}
+          requestedInterval={requestedInterval}
+          autoCheckout={autoCheckout}
+          checkoutIntent={checkoutIntent}
+          checkoutAttempt={checkoutAttempt}
+        />
       </BillingWorkspaceProvider>
-    </BillingPageView>
+    );
+  // An unscoped history URL cannot pick an arbitrary plan or become a second billing home.
+  if (!workspaceId && !checkoutReturn)
+    redirect(
+      organizationId ? `/billing?organizationId=${encodeURIComponent(organizationId)}` : "/billing",
+    );
+  const result = await getBillingPageState(workspaceId);
+  if (result.kind === "unavailable") {
+    if (result.reason === "workspace-removed") redirect("/billing");
+    return <BillingUnavailable reason={result.reason} />;
+  }
+  const serverId = result.state.workspace?.serverId;
+  if (workspaceId && result.state.workspace?.id !== workspaceId)
+    return <BillingUnavailable reason="billing-unreachable" />;
+  if (!serverId) redirect("/billing");
+  const target = new URLSearchParams();
+  for (const [key, input] of Object.entries(query))
+    for (const part of Array.isArray(input) ? input : input === undefined ? [] : [input])
+      target.append(key, part);
+  if (activeTab === "plans" && !checkoutReturn) target.set("changePlan", "1");
+  redirect(
+    cloudSpaceHref(
+      serverId,
+      activeTab === "plans" ? "overview" : (activeTab as CloudPlanTab),
+      target,
+    ),
   );
 }

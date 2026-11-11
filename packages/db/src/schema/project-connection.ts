@@ -43,6 +43,9 @@ export const projectConnection = pgTable(
       .references(() => project.id, { onDelete: "cascade" }),
     /** Which `getAppConnectionView` output supplies the value (e.g. "dbUrl"). */
     outputId: text("output_id").notNull(),
+    /** Optional encrypted value with a ${host} placeholder. Retains an imported
+     * protocol, credentials, database name and options when its endpoint moves. */
+    valueTemplateEnc: text("value_template_enc"),
     /** Env var name injected into the target (e.g. DATABASE_URL / MONGODB_URI). */
     envKey: text("env_key").notNull(),
     /** "internal" = private Docker network or native database namespace access;

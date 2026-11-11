@@ -39,7 +39,7 @@ describe("billing sidebar", () => {
   it("shows the paid plan's live price with access to the full comparison", () => {
     const html = render(<BillingSidebar state={state("starter")} />);
     const out = text(html);
-    expect(out).toContain("Current plan");
+    expect(html).toContain('aria-label="Current plan"');
     expect(out).toContain("Live Cloud plan");
     expect(out).toContain("$17");
     expect(html).toContain('href="/billing/plans"');

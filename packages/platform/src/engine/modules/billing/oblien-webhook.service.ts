@@ -24,7 +24,7 @@ import {
 import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
 import { creditAlertNotification } from "./billing-credit-alert";
 import { findBillingOwnerByNamespace } from "./billing-namespace-owner";
-import { prepareCustomerPaymentEmails } from "../customer-email/payment";
+import { prepareCustomerBillingEmails } from "../customer-email/billing";
 
 const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
@@ -173,8 +173,8 @@ export async function handleOblienWebhook(
     const organizationId = orgId = owner.organizationId;
     if (owner.kind === "management") {
       const { syncManagementBilling } = await import("./management.service");
-      await syncManagementBilling(organizationId);
-      const enqueue = await prepareCustomerPaymentEmails({ organizationId, namespace, scope: "management", eventType, data: payload.data });
+      const { subscription } = await syncManagementBilling(organizationId);
+      const enqueue = await prepareCustomerBillingEmails({ organizationId, namespace, scope: "management", eventType, data: payload.data, subscription });
       await db.transaction(async transaction => {
         const tx = transaction as unknown as Database;
         if (enqueue) await enqueue(tx);
@@ -210,7 +210,7 @@ export async function handleOblienWebhook(
       }
       // Every relevant notification refreshes provider truth. In particular,
       // old payment/suspension events cannot revert a newer paid entitlement.
-      const { entitlement, tier } = await sync({ syncResourceLimits: false });
+      const { entitlement, tier, subscription } = await sync({ syncResourceLimits: false });
       if (entitlement.namespace !== namespace) throw new Error("Billing namespace changed during delivery");
       // This historical display cache belongs to the old organization namespace.
       // Workspace billing reads its own provider usage; never overwrite siblings.
@@ -218,8 +218,8 @@ export async function handleOblienWebhook(
       const alert = creditAlertNotification({ eventType, eventId, data: payload.data ?? {},
         timestamp: payload.timestamp, organizationId, workspaceId: owner.workspaceId ?? undefined, entitlement, dashboardUrl: localDashboardUrl });
       const enqueue = alert ? await notification.prepare(alert) : null;
-      const enqueueEmail = await prepareCustomerPaymentEmails({ organizationId, namespace, scope: "hosting",
-        workspaceId: owner.workspaceId, eventType, data: payload.data });
+      const enqueueEmail = await prepareCustomerBillingEmails({ organizationId, namespace, scope: "hosting",
+        workspaceId: owner.workspaceId, eventType, data: payload.data, subscription });
       // No email is sent while holding this transaction. The receiver only ACKs
       // once notifications, the exhaustion activity, and its checkpoint commit together.
       await db.transaction(async transaction => {

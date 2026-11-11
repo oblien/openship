@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { BuildLogger, DockerRuntime, createHostExecutor, runDeployPipeline } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, createHostExecutor, runDeployPipeline, watchContainerStability } from "@repo/adapters";
 import type { DeployConfig } from "@repo/adapters";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 
@@ -159,4 +159,61 @@ describeDockerE2E("capacity-admitted Compose cutover", () => {
     await runtime.destroy(candidateId);
     expect((await read(before)).trim()).toBe("new");
   });
+
+  it.each([false, true])("serves the published candidate during final verification and handles startup failure=%s", async fail => {
+    const active = (await runtime.listProjectContainerIds(projectId))[0]!;
+    const before = (await runtime.getContainerIp(active))!;
+    const previousBody = (await read(before)).trim();
+    const plan = await runtime.prepareServiceCutover(group,
+      configuration(`verify-${fail}-${id}`, "verifying", active), { executor: host });
+    expect(plan).not.toBeNull();
+    let candidateId = "";
+    let destination = `http://${before}:8080`;
+    const entered = Promise.withResolvers<void>();
+    const proceed = Promise.withResolvers<void>();
+    let settled = false;
+    const pending = runDeployPipeline({
+      canOverlap: true,
+      activate: async () => {
+        const candidate = await runtime.deployServiceWorkload(group, plan!.config);
+        candidateId = candidate.containerId;
+        containers.add(candidateId);
+        return candidate;
+      },
+      healthCheck: async containerId => { await ready(containerId); await plan!.publish(containerId); },
+      resolveTargetUrl: async containerId => `http://${await runtime.getContainerIp(containerId)}:8080`,
+      verifyPublished: async containerId => {
+        entered.resolve();
+        await proceed.promise;
+        const verdict = await watchContainerStability({ sample: () => runtime.sampleStability(containerId) },
+          { windowMs: 1_000, pollMs: 100, crashRestarts: 3 });
+        if (!verdict.ok) throw new Error(verdict.reason);
+      },
+      restorePublishedRoutes: async () => { destination = `http://${before}:8080`; },
+      deactivate: async () => { await plan!.retire(candidateId); },
+    }, {
+      config: { port: 8080 } as DeployConfig,
+      previousContainerId: active,
+      domains: [{ hostname: "verify.invalid", tls: false, targetPort: 8080 }],
+      routing: { registerRoute: async route => { destination = route.targetUrl!; } },
+    }, new BuildLogger()).then(result => { settled = true; return result; });
+    try {
+      await Promise.race([entered.promise, pending.then(result => { throw new Error(`Verification did not start: ${result.error}`); })]);
+      expect(settled).toBe(false);
+      expect((await host.exec(`curl --fail --silent --max-time 2 ${destination}`)).trim()).toBe("verifying");
+      expect((await read(before)).trim()).toBe(previousBody);
+      if (fail) await runtime.docker.getContainer(candidateId).kill();
+      proceed.resolve();
+      const result = await pending;
+      expect(result.status, result.error).toBe(fail ? "failed" : "ready");
+      expect((await host.exec(`curl --fail --silent --max-time 2 ${destination}`)).trim())
+        .toBe(fail ? previousBody : "verifying");
+      if (fail) {
+        expect((await runtime.docker.getContainer(active).inspect()).State.Running).toBe(true);
+        await runtime.destroy(candidateId);
+      } else {
+        await expect(runtime.docker.getContainer(active).inspect()).rejects.toMatchObject({ statusCode: 404 });
+      }
+    } finally { proceed.resolve(); await pending; }
+  }, 60_000);
 });

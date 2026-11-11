@@ -125,6 +125,8 @@ export const DomainDnsChallengeAttemptSchema = Type.Object({
 export const DomainDnsPlanSchema = Type.Object({
   status: Type.Union([Type.Literal("matched"), Type.Literal("none"), Type.Literal("unavailable"), Type.Literal("unauthorized")]),
   provider: Type.Optional(Type.String()), zoneName: Type.Optional(Type.String()),
+  /** For `unauthorized`: the rejected credential, so a reconnect targets it. */
+  credentialId: Type.Optional(Type.String()),
   reason: Type.Optional(Type.String()),
   records: Type.Array(Type.Object({
     name: Type.String(), type: Type.String(), action: recordAction,

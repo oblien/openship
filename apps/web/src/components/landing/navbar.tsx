@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CLOUD_DASHBOARD_URL } from "@repo/core";
 import { reportCaughtError } from "@repo/core/diagnostics";
-import { cloudPlanHref } from "@/lib/cloud-links";
 
 type NavLink = { label: string; href: string; hint?: string };
 type NavGroup = { label: string; items: NavLink[] };
@@ -34,7 +34,7 @@ const NAV: NavEntry[] = [
 ];
 
 const isGroup = (entry: NavEntry): entry is NavGroup => "items" in entry;
-const CLOUD_HREF = cloudPlanHref();
+const CLOUD_HREF = CLOUD_DASHBOARD_URL;
 const GITHUB_URL = "https://github.com/oblien/openship";
 const GITHUB_PATH =
   "M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z";
@@ -182,7 +182,7 @@ export function Navbar() {
 
   return (
     <header className="fixed top-0 z-50 w-full">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 pt-5">
+      <div className="site-container site-nav-bar">
         {/* ── Logo ────────────────────────────────────────────── */}
         <Link href="/" className="relative z-10 flex items-center gap-2.5">
           <div
@@ -209,7 +209,7 @@ export function Navbar() {
         {/* ── Center pill nav (same shape; links grouped into two dropdowns) ── */}
         <nav
           aria-label="Main navigation"
-          className="absolute left-1/2 top-5 hidden -translate-x-1/2 items-center gap-0.5 rounded-full px-1.5 py-1.5 backdrop-blur-xl xl:flex"
+          className="hidden items-center gap-0.5 rounded-full px-1.5 py-1.5 backdrop-blur-xl xl:flex"
           style={{
             background: dark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
             border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid var(--th-on-05)",
@@ -259,24 +259,14 @@ export function Navbar() {
           </a>
         </nav>
 
-        {/* ── Right side: Download (outlined) + Start on Cloud (primary) ── */}
-        <div className="relative z-10 flex items-center gap-3">
-          <Link
-            href="/login"
-            className="hidden rounded-full px-5 py-2 text-[14px] font-medium transition-colors sm:inline-block"
-            style={{ color: linkColor }}
-          >
-            Log in
-          </Link>
+        {/* ── Download link + Cloud destination ── */}
+        <div
+          className={`relative flex items-center justify-end gap-3 ${mobileOpen ? "z-50" : "z-10"}`}
+        >
           <Link
             href="/download"
-            className="hidden rounded-full px-5 py-2 text-[14px] font-medium transition-all sm:inline-block"
-            style={{
-              boxShadow: dark
-                ? "inset 0 0 0 1px rgba(255,255,255,.2)"
-                : "inset 0 0 0 1px var(--th-btn-ghost-bd)",
-              color: dark ? "rgba(255,255,255,.8)" : "var(--th-btn-ghost-text)",
-            }}
+            className="hidden rounded-full px-5 py-2 text-[14px] font-medium transition-colors sm:inline-block"
+            style={{ color: linkColor }}
           >
             Download
           </Link>
@@ -288,14 +278,16 @@ export function Navbar() {
               color: dark ? "#000" : "var(--th-btn-text)",
             }}
           >
-            Start on Cloud
+            Open Cloud
           </a>
 
           {/* ── Hamburger (mobile only) ──────────────────────── */}
           <button
             onClick={() => setMobileOpen((v) => !v)}
             className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full xl:hidden"
-            style={{ background: dark ? "rgba(255,255,255,.10)" : "var(--th-sf-04)" }}
+            style={{
+              background: dark && !mobileOpen ? "rgba(255,255,255,.10)" : "var(--th-sf-04)",
+            }}
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
           >
@@ -303,7 +295,7 @@ export function Navbar() {
               className="h-5 w-5"
               fill="none"
               viewBox="0 0 24 24"
-              stroke={dark ? "#fff" : "var(--th-text-heading)"}
+              stroke={dark && !mobileOpen ? "#fff" : "var(--th-text-heading)"}
               strokeWidth={2}
             >
               {mobileOpen ? (
@@ -370,16 +362,9 @@ export function Navbar() {
             <div className="my-3 h-px bg-[var(--th-divider)]" />
 
             <Link
-              href="/login"
-              onClick={() => setMobileOpen(false)}
-              className="rounded-xl px-4 py-3 text-[15px] font-medium th-text-secondary transition-colors hover:bg-[var(--th-sf-04)]"
-            >
-              Log in
-            </Link>
-            <Link
               href="/download"
               onClick={() => setMobileOpen(false)}
-              className="mt-1 rounded-xl border border-[var(--th-btn-ghost-bd)] px-4 py-3 text-center text-[15px] font-medium th-text-body"
+              className="rounded-xl px-4 py-3 text-[15px] font-medium th-text-secondary transition-colors hover:bg-[var(--th-sf-04)]"
             >
               Download
             </Link>
@@ -388,7 +373,7 @@ export function Navbar() {
               onClick={() => setMobileOpen(false)}
               className="mt-1 rounded-xl bg-[var(--th-btn-bg)] px-4 py-3 text-center text-[15px] font-medium text-[var(--th-btn-text)]"
             >
-              Start on Cloud
+              Open Cloud
             </a>
           </nav>
         </div>

@@ -209,6 +209,8 @@
     "modeStandalone": "Bağımsız",
     "modeServer": "Sunucu",
     "modeWorker": "Worker",
+    "modeComposeOne": "Compose yığını · {count} hizmet",
+    "modeComposeOther": "Compose yığını · {count} hizmet",
     "infrastructure": "Altyapı",
     "platform": "Platform",
     "mode": "Mod",

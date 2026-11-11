@@ -3,6 +3,7 @@ import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
 
 export interface DeploymentSite {
   hostname: string;
+  url?: string;
   serviceNames: string[];
 }
 
@@ -36,4 +37,15 @@ export function getDeploymentSites(
   }
 
   return [...sites.values()];
+}
+
+/** Only controller-published URLs are available before the deployment settles. */
+export function getVerifyingSites(urls: readonly string[]): DeploymentSite[] {
+  return [...new Set(urls)].flatMap(value => {
+    try {
+      const url = new URL(value);
+      return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password && !url.hostname.includes("*")
+        ? [{ hostname: url.host, url: url.href, serviceNames: [] }] : [];
+    } catch { return []; }
+  });
 }

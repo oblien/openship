@@ -5,7 +5,7 @@
 export function OpenSource() {
   return (
     <section className="os-section">
-      <div className="os-container">
+      <div className="site-container os-container">
         <div className="os-grid">
           {/* Left - editorial */}
           <div className="os-lead">

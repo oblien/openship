@@ -5,12 +5,13 @@ import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   ManagedServerSetup,
-  ServerAcquisitionPicker,
+  ServerAcquisitionAction,
   type ServerAcquisitionMode,
 } from "./ServerAcquisition";
 import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { useSession } from "@/lib/auth-client";
 import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
+import { CloudPurchaseProvider } from "@/components/billing/CloudPurchaseContext";
 import { useI18n } from "@/components/i18n-provider";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useModal } from "@/context/ModalContext";
@@ -49,7 +50,7 @@ function AddServerDialog({
       ref={dialog}
       role="dialog"
       aria-modal="true"
-      aria-label={t.servers.setup.addServer}
+      aria-label={managed ? t.billing.workspaces.create : t.servers.acquire.connected.label}
       tabIndex={-1}
       onKeyDown={onKeyDown}
       className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col outline-none"
@@ -57,7 +58,7 @@ function AddServerDialog({
     >
       {managed && (
         <header className="flex shrink-0 items-center justify-between gap-3 px-5 py-3">
-          <h2 className="text-lg font-semibold tracking-tight">{t.servers.setup.addServer}</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t.billing.workspaces.create}</h2>
           <Button
             type="button"
             variant="ghost"
@@ -71,7 +72,9 @@ function AddServerDialog({
       )}
       <div className={`min-h-0 space-y-4 overflow-y-auto ${managed ? "px-5 pb-5" : ""}`}>
         {!connectedOnly && (
-          <ServerAcquisitionPicker value={mode} onChange={setMode} />
+          <div className="flex justify-end">
+            <ServerAcquisitionAction value={mode} onChange={setMode} />
+          </div>
         )}
         {managed ? (
           <ManagedServerSetup onReady={onManaged} preserveProject />
@@ -144,46 +147,48 @@ export function useAddServerModal({
         // tied with its own host. Sit deliberately above it.
         zIndex: 10500,
         customContent: (
-          <AddServerDialog
-            initialMode={initialMode}
-            connectedOnly={connectedOnly}
-            migrationSource={migrationSource}
-            onCancel={() => hideModal(id)}
-            onManaged={async (managed, needsPlan, checkoutUrl) => {
-              if (!active) return;
-              const server = await systemApi.getServerById(managed.serverId);
-              if (!active) return;
-              onCreated?.(server);
-              hideModal(id);
-              if (!needsPlan) return;
-              let plansId = "";
-              plansId = showModal({
-                width: "100%",
-                maxWidth: checkoutUrl ? "560px" : "1440px",
-                maxHeight: "calc(100dvh - 2rem)",
-                overflow: "hidden",
-                showCloseButton: false,
-                zIndex: 10500,
-                onClose: () => {
-                  openDialogs.current.delete(plansId);
-                },
-                customContent: (
-                  <CloudDeployPlanModal
-                    workspaceId={managed.id}
-                    serverName={managed.name}
-                    initialCheckoutUrl={checkoutUrl}
-                    onClose={() => hideModal(plansId)}
-                  />
-                ),
-              });
-              openDialogs.current.add(plansId);
-            }}
-            onConnected={(server) => {
-              if (!active) return;
-              hideModal(id);
-              onCreated?.(server);
-            }}
-          />
+          <CloudPurchaseProvider>
+            <AddServerDialog
+              initialMode={initialMode}
+              connectedOnly={connectedOnly}
+              migrationSource={migrationSource}
+              onCancel={() => hideModal(id)}
+              onManaged={async (managed, needsPlan, checkoutUrl) => {
+                if (!active) return;
+                const server = await systemApi.getServerById(managed.serverId);
+                if (!active) return;
+                onCreated?.(server);
+                hideModal(id);
+                if (!needsPlan) return;
+                let plansId = "";
+                plansId = showModal({
+                  width: "100%",
+                  maxWidth: checkoutUrl ? "560px" : "1440px",
+                  maxHeight: "calc(100dvh - 2rem)",
+                  overflow: "hidden",
+                  showCloseButton: false,
+                  zIndex: 10500,
+                  onClose: () => {
+                    openDialogs.current.delete(plansId);
+                  },
+                  customContent: (
+                    <CloudDeployPlanModal
+                      workspaceId={managed.id}
+                      serverName={managed.name}
+                      initialCheckoutUrl={checkoutUrl}
+                      onClose={() => hideModal(plansId)}
+                    />
+                  ),
+                });
+                openDialogs.current.add(plansId);
+              }}
+              onConnected={(server) => {
+                if (!active) return;
+                hideModal(id);
+                onCreated?.(server);
+              }}
+            />
+          </CloudPurchaseProvider>
         ),
       });
       openDialogs.current.add(id);

@@ -9,6 +9,7 @@ export const cloudSupportTicket = pgTable(
     id: text("id").primaryKey(),
     inputHash: text("input_hash").notNull(),
     ownerUserId: text("owner_user_id"),
+    clientIp: text("client_ip"),
     category: text("category")
       .$type<"deployment" | "billing" | "account" | "general">()
       .notNull()
@@ -32,6 +33,19 @@ export const cloudSupportTicket = pgTable(
     check("cloud_support_ticket_source_check", sql`${t.source} IN ('support', 'contact')`),
     check("cloud_support_ticket_status_check", sql`${t.status} IN ('open', 'resolved')`),
   ],
+);
+
+/** Operator-owned intake rules. Never grants an organization control over other customers. */
+export const cloudSupportBlock = pgTable(
+  "cloud_support_block",
+  {
+    key: text("key").primaryKey(),
+    kind: text("kind").$type<"email" | "ip">().notNull(),
+    value: text("value").notNull(),
+    reason: text("reason").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check("cloud_support_block_kind_check", sql`${t.kind} IN ('email', 'ip')`)],
 );
 
 /** Ticket messages also form the durable mail outbox; no second mail queue. */

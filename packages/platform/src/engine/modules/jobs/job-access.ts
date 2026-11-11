@@ -5,6 +5,7 @@ import { env } from "../../config";
 import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
 import { instanceAuthorization } from "../../lib/instance-authorization";
+import { assertServerExecutionTarget } from "../system/server-access";
 import { systemJobAvailability } from "./job.service";
 import { resolveServerIds, type CommandConfig } from "./job.types";
 
@@ -15,7 +16,8 @@ export async function assertJobServersWritable(ctx: ExecutionContext, serverIds:
   for (const serverId of new Set(serverIds)) {
     await authorization.authorize({ ...ctx, scopeMode: "fixed" }, { resourceType: "server", resourceId: serverId, action: "admin" });
     const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
-    if (!server || (env.CLOUD_MODE && !server.workspaceId)) throw new NotFoundError("Server", serverId);
+    if (!server) throw new NotFoundError("Server", serverId);
+    await assertServerExecutionTarget(server);
   }
 }
 

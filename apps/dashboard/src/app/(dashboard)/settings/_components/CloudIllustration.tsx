@@ -5,7 +5,7 @@ import React from "react";
  * the right, a dashed link carrying traffic between them, and a domain chip with
  * a lock for the free managed domain + automatic SSL.
  *
- * Same construction as {@link ProjectIllustration} and {@link MigrationIllustration}:
+ * Same construction as {@link MigrationIllustration}:
  * one flat SVG, every colour from a `--th-*` token so it tracks light / dark /
  * dim with no branching. Surfaces use `--th-sf-*` rather than `--th-card-bg` —
  * this sits ON a card, and the card fill would render it invisible.

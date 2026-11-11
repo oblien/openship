@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
 import { UsageTrend } from "@/components/resources/UsageTrend";
-import Link from "next/link";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import type { CloudWorkspaceUsage } from "@repo/contracts";
 import type { CloudAllocation } from "@repo/core";
@@ -12,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { formatBillingNumber } from "@/lib/billing-usage";
+import { ServerProjects } from "./ServerProjects";
 import { ResourceRing } from "@/components/billing/ResourceMeter";
 
 /** Host measurements are separate from the provider's reserved allocation. */
@@ -79,8 +79,6 @@ export function ServerUsage({
     };
   }, [serverId, attempt, refreshKey]);
   const number = (value: number) => formatBillingNumber(value, locale);
-  const showDisk =
-    usage?.projects.some((project) => project.diskMb !== null) || usage?.sharedDiskMb != null;
   const gb = (value: number | null | undefined) => (value == null ? null : value / 1024);
   const measuredMemoryMb =
     memorySample?.memoryUsedMb != null && memorySample?.memoryAvailableMb != null
@@ -120,7 +118,7 @@ export function ServerUsage({
       aria-label={t.billing.resourceOverview.refresh}
       onClick={() => {
         setAttempt((value) => value + 1);
-        if (resourcePool && liveEnabled) live.reconnect();
+        if (resourcePool && metrics && liveEnabled) live.reconnect();
       }}
     >
       <UiIcon
@@ -230,84 +228,15 @@ export function ServerUsage({
         </section>
       )}
       {showProjects && (
-        <section className="rounded-2xl bg-card p-5" aria-busy={loading}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-base font-medium">
-                {projectTitle ?? t.billing.resourcesGuide.projects}
-              </h2>
-              {showDisk && (
-                <p className="mt-1 text-xs text-muted-foreground">{copy.projectDiskHint}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {resourcePool && (
-                <span className="rounded-full bg-muted/50 px-2.5 py-1 text-xs tabular-nums text-muted-foreground">
-                  {usage ? usage.projects.length : "—"}
-                </span>
-              )}
-              {(!metrics || resourcePool) && refreshButton}
-            </div>
-          </div>
-          {!metrics && error && (
-            <p role="alert" className="mt-3 text-sm text-danger">
-              {error}
-            </p>
-          )}
-          <div className="mt-4 space-y-2">
-            {loading ? (
-              [0, 1].map((key) => (
-                <div key={key} className="h-12 animate-pulse rounded-xl bg-muted/40" />
-              ))
-            ) : usage ? (
-              <>
-                {usage.projects.map((project) => (
-                  <Link
-                    key={project.id}
-                    href={`/projects/${encodeURIComponent(project.id)}`}
-                    className="flex min-w-0 items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3 text-sm hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
-                  >
-                    <span className="truncate font-medium">{project.name}</span>
-                    <span className="flex shrink-0 items-center gap-3 tabular-nums text-muted-foreground">
-                      {showDisk &&
-                        (project.diskMb == null ? "—" : `${number(project.diskMb / 1024)} GB`)}
-                      <UiIcon name="arrow-up-right" className="size-3.5" aria-hidden />
-                    </span>
-                  </Link>
-                ))}
-                {usage.projects.length === 0 && usage.available && (
-                  <div className="rounded-xl bg-muted/30 p-4">
-                    <p className="text-sm text-muted-foreground">
-                      {resourcePool ? t.servers.resources.noProjects : copy.noProjects}
-                    </p>
-                    <Button asChild variant="secondary" size="sm" className="mt-3">
-                      <Link href="/library">
-                        {t.dashboard.pages.projects.emptyState.createProject}
-                      </Link>
-                    </Button>
-                  </div>
-                )}
-                {usage.projects.length === 0 && !usage.available && (
-                  <p role="status" className="py-2 text-sm text-muted-foreground">
-                    {t.billing.resourceOverview.unavailable}
-                  </p>
-                )}
-                {usage.sharedDiskMb != null && (
-                  <div className="flex justify-between gap-4 px-4 py-2 text-xs text-muted-foreground">
-                    <span>{copy.sharedDisk}</span>
-                    <span className="shrink-0 whitespace-nowrap tabular-nums">
-                      {number(usage.sharedDiskMb / 1024)} GB
-                    </span>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="py-2 text-sm text-muted-foreground">
-                {t.billing.resourceOverview.unavailable}
-              </p>
-            )}
-          </div>
-        </section>
+        <ServerProjects
+          usage={usage}
+          loading={loading}
+          error={metrics ? null : error}
+          refresh={!metrics || resourcePool ? refreshButton : undefined}
+          resourcePool={resourcePool}
+          title={projectTitle}
+          unavailableHint={unavailableHint}
+        />
       )}
     </div>
   );

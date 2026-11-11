@@ -3,7 +3,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { useEffect, useRef, useState } from "react";
-import { needsCloudPlan } from "@/lib/billing-presentation";
+import { isMonthlyCloudPlan, needsCloudPlan } from "@/lib/billing-presentation";
 import { randomUUID } from "@/lib/random-uuid";
 import { BillingEmptyState } from "./BillingEmptyState";
 import { OpenStripePortalButton } from "@/app/(dashboard)/billing/_components/OpenStripePortalButton";
@@ -25,6 +25,7 @@ interface TopupPack {
 
 export function BillingTopups({ state }: { state: BillingState }) {
   const { t } = useI18n();
+  if (isMonthlyCloudPlan(state)) return <p className="rounded-2xl bg-card p-5 text-sm text-muted-foreground">{t.billing.compute.included}</p>;
   if (needsCloudPlan(state)) return <BillingEmptyState kind="topups" />;
   if (state.topups?.status === "unavailable")
     return (

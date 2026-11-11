@@ -88,7 +88,8 @@ export * from "./github";
 export * from "./notices";
 
 export * from "./billing";
-export * from "./affiliates";
+export * from "./referrals";
+export * from "./affiliates"; // Compatibility for existing SDK consumers.
 export * from "./cloud-workspaces";
 export * from "./server-managed";
 
@@ -124,3 +125,4 @@ export * from "./repository-changes";
 export * from "./assistant-agents";
 
 export * from "./server-security";
+export * from "./platform-migration";

@@ -74,6 +74,15 @@ describe("Docker build secret transport", () => {
     expect(buildEnvMount(config)).not.toBe(buildEnvMount({ ...config, sessionId: "attempt-b" }));
   });
 
+  it.each(["nul", "oversized"])("rejects %s environments before transport, without quoting their contents", (kind) => {
+    const value = kind === "nul" ? "private-value\0" : "private-value".repeat(50_000);
+    expect(() => dockerBuildSecrets({ ...config, envVars: { EXAMPLE_VALUE: value } })).toThrow(
+      kind === "nul" ? "NUL bytes" : "500 KiB",
+    );
+    try { dockerBuildSecrets({ ...config, envVars: { EXAMPLE_VALUE: value } }); }
+    catch (error) { expect(String(error)).not.toContain("private-value"); }
+  });
+
   it.each(["success", "failure", "abort", "write failure"])(
     "cleans private remote files after %s",
     async (mode) => {

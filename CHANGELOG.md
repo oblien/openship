@@ -6,6 +6,26 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Build security
+
+- Pass generated Docker build environments through temporary BuildKit secrets instead of
+  embedding values in Dockerfiles or image history. Mask configured values in streamed
+  logs, error summaries and failure notifications, including split and multiline output.
+  Preserve Cloud worker limits, parallel server builds and cleanup after cancellation.
+
+### Image updates
+
+- Keep image services with missing deployment digests visible as unverified. Inspect the
+  running image through the existing deployment runtime to detect moved tags, with bounded
+  reads and no deployment-row writes. Show unavailable update status without an update badge.
+
+### Domains
+
+- **DigitalOcean DNS** — connect a DigitalOcean token in Settings → Connections to preview
+  and apply a custom domain's records and issue DNS-verified HTTPS automatically, as with
+  Cloudflare. Each record Openship creates is paired with an `_openship-owner` TXT marker,
+  so removing a domain deletes only Openship's own records.
+
 ## 0.9.11
 
 Recommended update for Desktop sign-in recovery, assistant connections, repository

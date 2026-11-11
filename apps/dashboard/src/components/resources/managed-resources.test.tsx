@@ -2,6 +2,8 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resolvePlan } from "@repo/core";
+import type { BillingState } from "@/lib/api/billing";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { PlatformProvider } from "@/context/PlatformContext";
@@ -14,14 +16,38 @@ const h = vi.hoisted(() => ({
   get: vi.fn(),
   usage: vi.fn(),
   replace: vi.fn(),
+  refresh: vi.fn(),
   params: new URLSearchParams(),
   monitor: vi.fn(),
+  billing: vi.fn(),
+  checkouts: vi.fn(),
+  resources: vi.fn(),
+  apiGet: vi.fn(),
+  apiPost: vi.fn(),
+  cancelPayment: vi.fn(),
+}));
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({
+    data: { user: { id: "owner" }, session: { activeOrganizationId: "org-a" } },
+  }),
+}));
+vi.mock("@/lib/api/billing", () => ({
+  billingApi: {
+    getBillingState: h.billing,
+    listCheckouts: h.checkouts,
+    getResources: h.resources,
+    cancelCheckout: h.cancelPayment,
+  },
+}));
+vi.mock("@/lib/api/client", async (original) => ({
+  ...(await original<typeof import("@/lib/api/client")>()),
+  api: { get: h.apiGet, post: h.apiPost },
 }));
 vi.mock("@/hooks/useMonitorStream", () => ({
   useMonitorStream: h.monitor,
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: h.replace }),
+  useRouter: () => ({ replace: h.replace, refresh: h.refresh }),
   useSearchParams: () => h.params,
 }));
 vi.mock("@/lib/api/system", () => ({
@@ -89,6 +115,42 @@ const deferred = <T,>() => {
   });
   return { promise, resolve };
 };
+function billingFixture(workspaceId: string): BillingState {
+  const offer = resolvePlan("starter");
+  return {
+    workspace: {
+      id: workspaceId,
+      serverId: workspaceId.replace("workspace-", ""),
+      name: "Test plan",
+    },
+    tier: "starter",
+    status: "active",
+    currentPeriod: { start: "2026-10-01T00:00:00Z", end: "2026-11-01T00:00:00Z" },
+    balance: { total: null, quotaLimit: null, quotaUsed: 0, quotaRemaining: null },
+    monthlyCreditLimit: null,
+    overQuota: false,
+    buildTimeMinutes: 0,
+    plan: {
+      ...offer,
+      features: [...offer.features],
+      resourceLimits: offer.oblienLimits,
+      listPrice: { monthly: offer.price.monthly },
+      effectivePrice: { monthly: offer.price.monthly },
+      campaign: null,
+    },
+    subscription: {
+      tier: "starter",
+      configuration: "preset",
+      status: "active",
+      interval: "monthly",
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+      currentPeriod: { start: "2026-10-01T00:00:00Z", end: "2026-11-01T00:00:00Z" },
+    },
+    capabilities: { portal: true, cancellation: true, subscriptionChange: true },
+    billing: { enabled: true },
+  };
+}
 let root: Root, host: HTMLDivElement;
 const render = (children: ReactNode = <ManagedResourcesPage />, scope = "account-a:org-a") =>
   act(async () => {
@@ -107,6 +169,7 @@ const button = (label: string) => {
   expect(node, label).toBeDefined();
   return node!;
 };
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -122,6 +185,13 @@ beforeEach(() => {
   h.list.mockResolvedValue([pool("a", "Production")]);
   h.get.mockResolvedValue(pool("a", "Production"));
   h.usage.mockResolvedValue(usage());
+  h.billing.mockImplementation(async (id: string) => billingFixture(id));
+  h.checkouts.mockResolvedValue({ items: [] });
+  h.resources.mockResolvedValue({
+    compute: { status: "unavailable" },
+    edge: { status: "unavailable", limits: {} },
+  });
+  h.apiGet.mockResolvedValue({ data: { usage: null } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -132,10 +202,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows measured pool usage and assigned projects with no host controls", async () => {
+it("shows plan capacity and assigned projects without live metrics or host controls", async () => {
   await render();
-  expect(host.textContent).toContain("Cloud spaces");
-  expect(host.textContent).toContain("23");
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
+  expect(host.textContent).not.toContain(baseDictionary.servers.resources.usageTitle);
+  expect(h.monitor).toHaveBeenLastCalledWith(null, false, "usage");
+  expect(h.resources).not.toHaveBeenCalled();
   expect(host.textContent).toContain("Application A");
   expect(host.querySelector('a[href="/projects/project-a"]')).not.toBeNull();
   expect(host.textContent).not.toMatch(/SSH|Terminal|Runtime API|Networking|Workloads/);
@@ -216,31 +288,17 @@ it("does not call an unobserved pool empty when usage is unavailable", async () 
   expect(host.textContent).not.toContain(baseDictionary.servers.resources.noProjects);
 });
 
-it("switches spaces through the compact menu with plan and project counts", async () => {
-  h.list.mockResolvedValue([
-    pool("a", "Production"),
-    {
-      ...pool("b", "Staging"),
-      projectCount: 4,
-      managed: { ...pool("b", "Staging").managed!, projectCount: 4 },
-    },
-  ]);
+it("opens the named plan without repeating its name in a Cloud space selector", async () => {
+  h.list.mockResolvedValue([pool("a", "Production"), pool("b", "Staging")]);
   await render();
-  const picker = button(baseDictionary.servers.resources.selectPool);
-  expect(picker.textContent).toContain("Production");
-  expect(picker.textContent).toContain("1 project");
-  expect(picker.textContent).toContain("Starter");
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
+  expect(host.querySelector('button[aria-haspopup="listbox"]')).toBeNull();
+  expect(host.querySelector('a[href="/billing"]')).toBeNull();
   expect(host.textContent).not.toContain("Staging");
-  await act(async () => picker.click());
-  const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
-  expect(choices).toHaveLength(2);
-  expect(choices[0]?.getAttribute("aria-selected")).toBe("true");
-  expect(choices[1]?.textContent).toContain("4 projects");
-  await act(async () => choices[1]!.click());
-  expect(h.replace).toHaveBeenCalledWith("/resources?pool=b", { scroll: false });
 });
 
 it("shows unfinished Cloud setup without attempting a live connection or exposing old server copy", async () => {
+  h.params = new URLSearchParams("pool=a&tab=usage");
   const space = pool("a", "Production");
   space.managed!.state = "not_provisioned";
   h.list.mockResolvedValue([space]);
@@ -258,14 +316,30 @@ it("shows unfinished Cloud setup without attempting a live connection or exposin
   expect(h.monitor).toHaveBeenLastCalledWith(null, false, "usage");
 });
 
-it("keeps billing links on the selected subscription and new purchases separate", async () => {
+it("keeps subscription management on the selected plan page", async () => {
   h.params = new URLSearchParams("pool=b");
   h.list.mockResolvedValue([pool("a", "Production"), pool("b", "Staging")]);
   await render();
-  expect(host.querySelector('a[href="/billing/plans?workspaceId=workspace-b"]')).not.toBeNull();
-  expect(host.querySelector('a[href="/billing/overview?workspaceId=workspace-b"]')).not.toBeNull();
-  expect(host.querySelector('a[href="/billing/plans?newServer=1"]')).not.toBeNull();
-  expect(host.querySelector('a[href*="workspace-a"]')).toBeNull();
+  expect(h.billing).toHaveBeenCalledExactlyOnceWith("workspace-b");
+  expect(host.querySelector('a[href^="/billing/plans"]')).toBeNull();
+  expect(host.querySelector('a[href^="/billing/overview"]')).toBeNull();
+  expect(button(baseDictionary.billing.workspaces.changePlan)).toBeDefined();
+  expect(host.textContent).not.toContain(baseDictionary.billing.portal.openButton);
+  h.params = new URLSearchParams("pool=b&tab=payment");
+  await render();
+  expect(button(baseDictionary.billing.portal.openButton)).toBeDefined();
+  expect(host.textContent).not.toContain(baseDictionary.servers.resources.managePlan);
+  expect(host.textContent).not.toContain(baseDictionary.billing.subscription.cancel);
+});
+
+it("rejects another plan's billing response without exposing its actions", async () => {
+  h.billing.mockResolvedValue(billingFixture("wrong-workspace"));
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Billing data did not match this plan",
+  );
+  expect(host.textContent).not.toContain(baseDictionary.billing.portal.openButton);
+  expect(host.textContent).toContain("Application A");
 });
 
 const partialLiveSample = {
@@ -325,6 +399,7 @@ it.each([
     older: false,
   },
 ])("$name", async ({ live, history, snapshot, expected, older }) => {
+  h.params = new URLSearchParams("pool=a&tab=usage");
   h.usage.mockResolvedValue(snapshot);
   h.monitor.mockReturnValue({
     usage: live,
@@ -342,4 +417,188 @@ it.each([
   if (older) expect(storage.textContent).toContain(baseDictionary.billing.workspaces.measuredAt);
   else expect(storage.textContent).not.toContain(baseDictionary.billing.workspaces.measuredAt);
   expect(host.textContent).toContain("2 GB / 8 GB");
+});
+
+const pendingPayment = (workspace = "a") => ({
+  id: "payment-" + workspace,
+  checkoutId: "cs-" + workspace,
+  server: pool(workspace, workspace === "a" ? "Production" : "Private staging").managed!,
+  kind: "subscription",
+  name: "Pro monthly",
+  amountCents: 4700,
+  currency: "usd",
+  interval: "monthly",
+  state: "open",
+  canResume: true,
+  canCancel: true,
+});
+it("keeps usage history on the plan and reads only its workspace", async () => {
+  h.params = new URLSearchParams("pool=b&tab=usage");
+  h.list.mockResolvedValue([pool("b", "Staging")]);
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
+  expect(h.usage).toHaveBeenCalledExactlyOnceWith("b");
+  expect(h.resources).toHaveBeenCalledExactlyOnceWith("workspace-b");
+  expect(h.monitor).toHaveBeenLastCalledWith("b", true, "usage");
+  expect(h.apiGet).toHaveBeenCalledWith(
+    "billing/usage",
+    expect.objectContaining({ params: expect.objectContaining({ workspaceId: "workspace-b" }) }),
+  );
+  expect(h.billing).toHaveBeenCalledExactlyOnceWith("workspace-b");
+});
+it("shows the pending warning and recovery list inside the plan's payments tab using one read", async () => {
+  h.params = new URLSearchParams("pool=a&tab=payment");
+  h.checkouts.mockResolvedValue({ items: [pendingPayment()] });
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("Starter");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    baseDictionary.billing.hub.paymentRequired,
+  );
+  expect(host.textContent).toContain("Pro monthly");
+  expect(h.checkouts).toHaveBeenCalledExactlyOnceWith("workspace-a");
+  expect(h.usage).not.toHaveBeenCalled();
+  expect(host.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
+    "/resources?pool=a&tab=payment",
+  );
+});
+it("keeps the warning on overview and links into this plan's payments", async () => {
+  h.params = new URLSearchParams("pool=a");
+  h.checkouts.mockResolvedValue({ items: [pendingPayment()] });
+  await render();
+  expect(host.querySelector('[role="alert"] a')?.getAttribute("href")).toBe(
+    "/resources?pool=a&tab=payment",
+  );
+  expect(host.textContent).not.toContain(baseDictionary.billing.pendingPayments.title);
+});
+it("does not expose another plan's pending payment in a scoped recovery response", async () => {
+  h.params = new URLSearchParams("pool=a&tab=payment");
+  h.checkouts.mockResolvedValue({ items: [pendingPayment("b")] });
+  await render();
+  expect(host.textContent).not.toContain("Private staging");
+  expect(host.textContent).toContain(baseDictionary.billing.pendingPayments.loadError);
+});
+it("keeps recovery available when the plan's billing snapshot is temporarily unavailable", async () => {
+  h.params = new URLSearchParams("pool=a&tab=payment");
+  h.billing.mockRejectedValue(new Error("Billing unavailable"));
+  h.checkouts.mockResolvedValue({ items: [pendingPayment()] });
+  await render();
+  expect(host.textContent).toContain("Pro monthly");
+  expect(host.textContent).toContain(baseDictionary.billing.pendingPayments.resume);
+});
+it("only clears the plan warning after confirmed cancellation", async () => {
+  h.params = new URLSearchParams("pool=a&tab=payment");
+  h.checkouts.mockResolvedValue({ items: [pendingPayment()] });
+  h.cancelPayment.mockResolvedValue({ status: "canceling", checkoutId: "cs-a", checkoutUrl: null });
+  await render();
+  await act(async () => button(baseDictionary.billing.pendingPayments.cancel).click());
+  expect(h.cancelPayment).not.toHaveBeenCalled();
+  await act(async () => button(baseDictionary.billing.pendingPayments.confirmCancel).click());
+  expect(h.cancelPayment).toHaveBeenCalledExactlyOnceWith({
+    workspaceId: "workspace-a",
+    id: "payment-a",
+  });
+  expect(host.textContent).toContain(baseDictionary.billing.hub.paymentRequired);
+  h.cancelPayment.mockResolvedValue({ status: "expired", checkoutId: "cs-a", checkoutUrl: null });
+  await act(async () => button(baseDictionary.billing.pendingPayments.retryCancel).click());
+  expect(host.textContent).not.toContain(baseDictionary.billing.hub.paymentRequired);
+});
+
+it("uses the plan name instead of the infrastructure label", async () => {
+  const server = pool("a", "Pro server");
+  server.managed!.planTierId = "pro";
+  h.list.mockResolvedValue([server]);
+  const state = billingFixture("workspace-a");
+  h.billing.mockResolvedValue({ ...state, plan: { ...state.plan, name: "Pro" } });
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("Pro");
+  expect(host.textContent).not.toContain("Pro server");
+});
+
+it("moves live metrics and compute totals to Usage and stops streaming when leaving it", async () => {
+  await render();
+  expect(host.textContent).not.toContain(baseDictionary.billing.resourceOverview.computeTitle);
+  expect(h.resources).not.toHaveBeenCalled();
+  h.params = new URLSearchParams("pool=a&tab=usage");
+  await render();
+  expect(host.textContent).toContain(baseDictionary.servers.resources.usageTitle);
+  expect(host.textContent).toContain(baseDictionary.billing.resourceOverview.computeTitle);
+  expect(host.textContent).not.toContain(baseDictionary.servers.resources.projectsAssigned);
+  expect(h.monitor).toHaveBeenLastCalledWith("a", true, "usage");
+  // Switching between overview and usage reuses the existing project/resource snapshot.
+  expect(h.usage).toHaveBeenCalledExactlyOnceWith("a");
+  h.params = new URLSearchParams("pool=a");
+  await render();
+  expect(h.monitor).toHaveBeenLastCalledWith(null, false, "usage");
+  expect(host.textContent).not.toContain(baseDictionary.billing.resourceOverview.computeTitle);
+});
+
+it("limits the overview to four projects and opens the full scoped list without another read", async () => {
+  h.usage.mockResolvedValue({
+    ...usage(),
+    projects: Array.from({ length: 6 }, (_, i) => ({
+      id: `project-${i}`,
+      name: `Application ${i}`,
+      diskMb: null,
+    })),
+  });
+  await render();
+  expect(host.querySelectorAll('a[href^="/projects/"]')).toHaveLength(4);
+  const showAll = button("Show all 6 projects");
+  showAll.focus();
+  await act(async () => showAll.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.querySelectorAll('a[href^="/projects/"]')).toHaveLength(6);
+  expect(h.usage).toHaveBeenCalledOnce();
+  const search = dialog.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "Application 5",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(dialog.querySelectorAll('a[href^="/projects/"]')).toHaveLength(1);
+  expect(dialog.querySelector("a")?.getAttribute("href")).toBe("/projects/project-5");
+  await act(async () =>
+    dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(showAll);
+});
+
+it("does not offer a full list for four projects or retain a dialog after changing workspace", async () => {
+  h.usage.mockResolvedValue({
+    ...usage(),
+    projects: Array.from({ length: 4 }, (_, i) => ({
+      id: `project-${i}`,
+      name: `Application ${i}`,
+      diskMb: null,
+    })),
+  });
+  await render();
+  expect(host.textContent).not.toContain("Show all");
+  h.list.mockResolvedValue([pool("b", "Another plan")]);
+  h.usage.mockResolvedValue({
+    ...usage(),
+    projects: Array.from({ length: 5 }, (_, i) => ({
+      id: `project-${i}`,
+      name: `Private ${i}`,
+      diskMb: null,
+    })),
+  });
+  await render(<ManagedResourcesPage />, "account-b:org-b");
+  await act(async () => button("Show all 5 projects").click());
+  h.list.mockResolvedValue([pool("c", "Third plan")]);
+  h.usage.mockResolvedValue(usage("Third app"));
+  await render(<ManagedResourcesPage />, "account-c:org-c");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Private");
+});
+
+it("uses the saved offer name for custom or older subscriptions", async () => {
+  const state = billingFixture("workspace-a");
+  h.billing.mockResolvedValue({ ...state, plan: { ...state.plan, name: "Custom Cloud plan" } });
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("Custom Cloud plan");
+  expect(h.billing).toHaveBeenCalledOnce();
 });

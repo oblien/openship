@@ -71,4 +71,42 @@ describe("known secret output filtering", () => {
     const text = "a".repeat(250_000) + "b\0";
     expect(stream.write(text) + stream.end()).toBe("a".repeat(234_000) + "***\0");
   });
+
+  it("handles long credentials one byte at a time without rescanning retained prefixes", () => {
+    const value = "a".repeat(64_000) + "b";
+    const stream = new SecretValues([value]).stream();
+    for (const char of value.slice(0, -1)) expect(stream.write(char)).toBe("");
+    expect(stream.write("b\n") + stream.end()).toBe("***\n");
+  });
+
+  it("matches an independent literal-coverage oracle across overlapping values and arbitrary chunks", () => {
+    let seed = 1663;
+    const random = (max: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % max;
+    };
+    const word = (length: number) => Array.from({ length }, () => "abc"[random(3)]).join("");
+    for (let sample = 0; sample < 500; sample++) {
+      const values = Array.from({ length: 5 }, () => word(2 + random(10)));
+      const text = word(40) + values.join(" ") + word(40) + "\0";
+      const covered = Array<boolean>(text.length).fill(false);
+      for (const value of values) {
+        for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + 1))
+          covered.fill(true, at, at + value.length);
+      }
+      const expected = [...text].map((char, i) => covered[i] ? (covered[i - 1] ? "" : "***") : char).join("");
+      const filter = new SecretValues(values);
+      const stream = filter.stream();
+      let actual = "";
+      for (let i = 0; i < text.length;) {
+        const end = i + 1 + random(7);
+        actual += stream.write(text.slice(i, end));
+        i = end;
+      }
+      actual += stream.end();
+      const coalesce = (value: string) => value.replace(/(?:\*\*\*)+/g, "***");
+      expect(coalesce(filter.redact(text))).toBe(expected);
+      expect(coalesce(actual)).toBe(expected);
+    }
+  });
 });

@@ -1,5 +1,5 @@
 import { SUPPORT_EMAIL } from "@repo/core";
-import type { CustomerPaymentEmail } from "@repo/db/repos";
+import type { CustomerPaymentEmail, CustomerCancellationEmail } from "@repo/db/repos";
 
 const escape = (s: string) =>
   s.replace(
@@ -48,6 +48,36 @@ export function invoiceEmail(name: string, payment: CustomerPaymentEmail, billin
     html: layout(
       `Your payment is confirmed`,
       `<p>${escape(hello(name))}</p><p>We've received your payment for ${escape(payment.productName)}.</p><p style="font-size:28px;font-weight:650;margin:24px 0">${amount}</p><p style="color:#777;font-size:13px;overflow-wrap:anywhere">Payment reference: ${escape(payment.paymentId)}</p>${button(billingUrl, `View ${document}`)}<p>You can open and download the ${document} through Payments &amp; invoices.</p><p style="font-size:13px;color:#777">For billing help, contact <a href="mailto:${SUPPORT_EMAIL}" style="color:inherit">${SUPPORT_EMAIL}</a>.</p>`,
+    ),
+  };
+}
+
+export function cancellationEmail(
+  name: string,
+  cancellation: CustomerCancellationEmail,
+  billingUrl: string,
+  now: Date,
+) {
+  const scheduled = cancellation.endsAt && Date.parse(cancellation.endsAt) > now.getTime();
+  const end = scheduled
+    ? new Intl.DateTimeFormat("en-US", {
+        dateStyle: "long",
+        timeStyle: "short",
+        timeZone: "UTC",
+      }).format(new Date(cancellation.endsAt!)) + " UTC"
+    : null;
+  const status = end
+    ? `Renewal has been canceled for ${cancellation.productName}. Your subscription is scheduled to end on ${end}.`
+    : `Your subscription to ${cancellation.productName} has ended.`;
+  const feedback =
+    "We'd love to hear about your experience with OpenShip. What worked well, and what could we do better?";
+  const thanks = "Thank you for using OpenShip.";
+  return {
+    subject: "Your OpenShip subscription update",
+    text: `${hello(name)}\n\n${status}\n\n${feedback}\n\n${help}\n\n${thanks}\n\nView your subscription: ${billingUrl}\n\nThe OpenShip team`,
+    html: layout(
+      "We're here to help",
+      `<p>${escape(hello(name))}</p><p>${escape(status)}</p><p>${escape(feedback)}</p><p>${help}</p><p>${thanks}</p>${button(billingUrl, "View your subscription")}<p>The OpenShip team</p>`,
     ),
   };
 }

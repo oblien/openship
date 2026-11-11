@@ -18,6 +18,11 @@ const h = vi.hoisted(() => ({
   cloudConnected: true,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({
+    data: { user: { id: "user" }, session: { activeOrganizationId: "org" } },
+  }),
+}));
 vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: h.selfHosted, deployMode: h.selfHosted ? "desktop" : "cloud" }),
 }));
@@ -220,6 +225,12 @@ describe("New Project source actions", () => {
     h.selfHosted = true;
     await render();
     await click("Import existing project");
+    expect(container.textContent).toContain("Where are you moving from?");
+    const serverSource = Array.from(container.querySelectorAll("button")).find((node) =>
+      node.textContent?.includes("Server or Docker"),
+    );
+    expect(serverSource).toBeDefined();
+    await act(async () => serverSource!.click());
     const wizard = container.querySelector('[aria-label="Migration"]');
     expect(wizard?.getAttribute("data-variant")).toBe("tab");
     expect(container.querySelector('[role="dialog"]')).toBeNull();

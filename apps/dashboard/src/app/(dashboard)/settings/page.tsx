@@ -207,7 +207,7 @@ function SettingsPageInner() {
             </>
           )}
 
-          {activeTab === "credentials" && <Credentials />}
+          {activeTab === "connections" && <Credentials />}
 
           {activeTab === "cloud" && selfHosted && <CloudConnection />}
 

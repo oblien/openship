@@ -3,10 +3,11 @@
 import { ComposeChangeSummary } from "@/hooks/useComposeReview";
 import WarningCallout from "@/components/shared/WarningCallout";
 import { hasComposeGpuRequest } from "@repo/core";
+import { Icon as UiIcon } from "@repo/ui/icons";
 import { DeployActions } from "@/components/actions/DeployActions";
 import { DeployGitHubChecks } from "@/components/import-project/DeployGitHubChecks";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
@@ -14,6 +15,7 @@ import DockerSettings from "@/components/import-project/DockerSettings";
 import ComposeServices from "@/components/import-project/ComposeServices";
 import { ComposePathField } from "@/components/import-project/ComposePathField";
 import { ConfigDiagnostics } from "@/components/import-project/ConfigDiagnostics";
+import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import MonorepoApps from "@/components/import-project/MonorepoApps";
 import RoutingSection from "@/components/import-project/RoutingSection";
@@ -72,7 +74,17 @@ const ProjectName: React.FC = () => {
 const DeployRepository: React.FC = () => {
     const params = useParams();
     const slug = params.slug as string;
-    const { config, state, isRescanning, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, updateConfig } = useDeployment();
+    const {
+        config,
+        state,
+        isRescanning,
+        initializeFromRepo,
+        initializeFromLocal,
+        initializeFromUpload,
+        initializeFromProject,
+        updateConfig,
+        rescanWithBranch,
+    } = useDeployment();
     const { selfHosted } = usePlatform();
     const { t } = useI18n();
     const searchParams = useSearchParams();
@@ -117,8 +129,32 @@ const DeployRepository: React.FC = () => {
     const [error, setError] = useState<DeployError | null>(null);
     const [selectReadServer, setSelectReadServer] = useState(false);
     const [scanAttempt, setScanAttempt] = useState(0);
+    const [branchError, setBranchError] = useState<string | null>(null);
     const hasInitialized = useRef<boolean>(false);
     const { toast } = useToast();
+
+    // Retry the initial scan with the same inputs (used by both error views).
+    const retryScan = useCallback(() => {
+        hasInitialized.current = false;
+        setError(null);
+        setLoading(true);
+        setScanAttempt((attempt) => attempt + 1);
+    }, []);
+
+    // A branch picked from the recovery shell rescans that branch; a failure
+    // keeps the shell up (with the new error) so the user can steer again.
+    // A success populates the config, and the effect below clears the error.
+    const handleBranchChange = useCallback(
+        async (branch: string) => {
+            setBranchError(null);
+            const result = await rescanWithBranch(branch);
+            if (!result.success && result.error) {
+                setBranchError(result.error);
+                setError((prev) => (prev ? { ...prev, details: result.error } : prev));
+            }
+        },
+        [rescanWithBranch],
+    );
 
     // A saved project pins the deploy target only if it actually HAS one, so the gate is
     // the hydration RESULT, not the fact that a project is being loaded:
@@ -246,7 +282,11 @@ const DeployRepository: React.FC = () => {
                 // don't double-toast network failures.
                 if (result.error) {
                     const code = "errorCode" in result ? result.errorCode : undefined;
-                    if (code === "GITHUB_SERVER_SELECTION_REQUIRED") setSelectReadServer(true);
+                    // The server picker only applies while the failure IS the
+                    // server-selection refusal; any other failure (e.g. a bad
+                    // compose path after picking a server) falls through to
+                    // the recovery shell below instead of re-showing it.
+                    setSelectReadServer(code === "GITHUB_SERVER_SELECTION_REQUIRED");
                     setError({
                         type: result.errorType === 'api_error' ? 'repo_not_found' : 'initialization_failed',
                         message: decoded.kind === 'local' ? t.deploy.page.errorLoadProjectTitle : t.deploy.page.errorLoadRepoTitle,
@@ -274,6 +314,14 @@ const DeployRepository: React.FC = () => {
         initialize();
     }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, loadsSavedTarget, force, projectId, branch, config.serverId, scanAttempt, reviewCompose, uploadStack, uploadName, toast, t]);
 
+    // A branch or compose-path rescan that succeeds populates the config
+    // (branches included); the stale first-scan error must go away so the
+    // wizard takes over. Branches stay empty while every scan has failed, so
+    // a non-empty list is the signal a scan landed.
+    useEffect(() => {
+        if (error && config.branches.length > 0) setError(null);
+    }, [error, config.branches]);
+
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
     }
@@ -288,17 +336,73 @@ const DeployRepository: React.FC = () => {
                                 <ServerSelectorView selection={serverSelection} compact />
                                 <Button
                                     disabled={!serverSelection.ready || !config.serverId}
-                                    onClick={() => {
-                                        hasInitialized.current = false;
-                                        setError(null);
-                                        setLoading(true);
-                                        setScanAttempt(attempt => attempt + 1);
-                                    }}
+                                    onClick={retryScan}
                                 >
                                     {t.billing.plansRoute.tryAgain}
                                 </Button>
                             </div>
                         </WarningCallout>
+                    </div>
+                </PageContainer>
+            );
+        }
+        // A failed first scan of a repository must not hide the controls that
+        // could fix it (#1666): show the error inline with the branch selector
+        // and compose-path field, so the user can steer the scan instead of
+        // leaving and retrying the same inputs. Other sources (local folder,
+        // upload, invalid URL) have nothing to steer, so they keep the
+        // full-page error.
+        if (decodedSource?.kind === "repo") {
+            return (
+                <PageContainer>
+                    <div className="mx-auto max-w-xl pt-12">
+                        <WarningCallout
+                            tone="danger"
+                            title={error.message}
+                            description={error.details}
+                        >
+                            <div className="mt-4">
+                                <Button onClick={retryScan}>
+                                    {t.billing.plansRoute.tryAgain}
+                                </Button>
+                            </div>
+                        </WarningCallout>
+                        <div className="mt-5 space-y-5">
+                            <div>
+                                <RepositoryBranchSelect
+                                    owner={config.owner}
+                                    repo={config.repo}
+                                    serverId={config.serverId}
+                                    projectId={config.projectId}
+                                    value={config.branch}
+                                    onChange={(val) => void handleBranchChange(val)}
+                                    disabled={isRescanning}
+                                    initialBranches={config.branches}
+                                    initialPage={config.branchPage}
+                                    initialHasMore
+                                />
+                                {branchError && (
+                                    <p role="alert" className="text-xs text-destructive mt-1.5">
+                                        {branchError}
+                                    </p>
+                                )}
+                                {isRescanning && (
+                                    <p
+                                        role="status"
+                                        className="flex items-center gap-2 mt-2 text-sm text-muted-foreground"
+                                    >
+                                        <UiIcon
+                                            name="spinner"
+                                            className="size-3.5 animate-spin"
+                                            aria-hidden="true"
+                                        />
+                                        {t.importProject.buildSettings.composePath.scanning}
+                                    </p>
+                                )}
+                            </div>
+                            <ComposePathField />
+                            <ConfigDiagnostics />
+                        </div>
                     </div>
                 </PageContainer>
             );
