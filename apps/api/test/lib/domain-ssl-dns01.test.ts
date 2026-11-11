@@ -242,14 +242,12 @@ else:
 }`;
 
   it.each([
-    ["app.example.com", "_acme-challenge.app", "compact", true, compactRecord],
-    ["*.example.com", "_acme-challenge", "compact", true, compactRecord],
-    ["app.example.com", "_acme-challenge.app", "multiline", true, multilineRecord],
-    ["app.example.com", "_acme-challenge.app", "multiline", false, multilineRecord],
-    ["app.example.com", "_acme-challenge.app", "compact", false, compactRecord],
+    ["app.example.com", "_acme-challenge.app", "compact", compactRecord],
+    ["*.example.com", "_acme-challenge", "compact", compactRecord],
+    ["app.example.com", "_acme-challenge.app", "multiline", multilineRecord],
   ])(
-    "the DigitalOcean hook writes %s's challenge as %s and cleans up its %s record (python3: %s)",
-    (certbotDomain, name, _format, pythonWorks, response) => {
+    "the DigitalOcean hook writes %s's challenge as %s and cleans up its %s record",
+    (certbotDomain, name, _format, response) => {
       const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
       try {
         const hooks = createDnsHookScripts({
@@ -269,7 +267,6 @@ else:
         writeFileSync(auth, hooks.authHookScript);
         writeFileSync(cleanup, hooks.cleanupHookScript);
         writeFileSync(responseFile, response);
-        // A POSIX curl stand-in, so the python3 stub below can shadow the real one.
         writeFileSync(
           join(dir, "curl"),
           `#!/bin/sh
@@ -288,8 +285,6 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
 `,
           { mode: 0o700 },
         );
-        if (!pythonWorks)
-          writeFileSync(join(dir, "python3"), "#!/bin/sh\nexit 127\n", { mode: 0o700 });
         const env = {
           ...process.env,
           PATH: `${dir}:/usr/bin:/bin`,
@@ -324,7 +319,14 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
     },
   );
 
-  it("fails without saving an id when DigitalOcean answers with an error body", () => {
+  it.each([
+    '{"id":"unauthorized","message":"dop_v1_abc123 upstream-private-details"}',
+    '{"domain_record":{"id":123.5}}',
+    '{"domain_record":{"id":true}}',
+    '{"domain_record":{"id":0}}',
+    '{"domain_record":{"id":"123"}}',
+    '{"domain_record":{"nested":{"id":123}}}',
+  ])("refuses an invalid DigitalOcean response without leaking it: %s", (response) => {
     const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
     try {
       const hooks = createDnsHookScripts({
@@ -340,9 +342,10 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
       writeFileSync(auth, hooks.authHookScript);
       writeFileSync(
         join(dir, "curl"),
-        `#!/bin/sh\nprintf '%s' '{"id": "unauthorized", "message": "dop_v1_abc123 upstream-private-details"}'\n`,
+        `#!/bin/sh\ncat "$RESPONSE_FILE"\n`,
         { mode: 0o700 },
       );
+      writeFileSync(join(dir, "response.json"), response);
       let failure: unknown;
       try {
         execFileSync("/bin/sh", [auth], {
@@ -351,6 +354,7 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
           env: {
             ...process.env,
             PATH: `${dir}:/usr/bin:/bin`,
+            RESPONSE_FILE: join(dir, "response.json"),
             CERTBOT_DOMAIN: "app.example.com",
             CERTBOT_VALIDATION: "test_validation",
             OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
@@ -368,6 +372,28 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("refuses a missing JSON parser before creating a DigitalOcean challenge", () => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
+    try {
+      const hooks = createDnsHookScripts({
+        credentialId: "cred_do", provider: resolveDnsProvider("digitalocean"),
+        zone: { id: "example.com", name: "example.com", status: "active" },
+        credentials: { apiToken: "test-token" },
+      });
+      const auth = join(dir, "auth.sh");
+      const called = join(dir, "called");
+      writeFileSync(auth, hooks.authHookScript);
+      writeFileSync(join(dir, "python3"), "#!/bin/sh\nexit 127\n", { mode: 0o700 });
+      writeFileSync(join(dir, "curl"), '#!/bin/sh\ntouch "$CURL_CALLED"\n', { mode: 0o700 });
+      expect(() => execFileSync("/bin/sh", [auth], { timeout: 5000, stdio: "pipe", env: {
+        ...process.env, PATH: `${dir}:/usr/bin:/bin`, CURL_CALLED: called,
+        CERTBOT_DOMAIN: "app.example.com", CERTBOT_VALIDATION: "test_validation",
+        OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+      } })).toThrow();
+      expect(existsSync(called)).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it.each(["cloudflare", "digitalocean"] as const)("%s cleanup rejects a record ID containing URL syntax", (provider) => {

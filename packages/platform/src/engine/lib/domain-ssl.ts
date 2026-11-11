@@ -663,6 +663,10 @@ function digitaloceanHookScripts(manager: MatchedDnsManager): DnsHookScripts {
 set -e
 DOMAIN="\${CERTBOT_DOMAIN#\\*.}"
 ZONE="${zone}"
+if ! python3 -c 'import json' >/dev/null 2>&1; then
+  echo "Python 3 is required for DigitalOcean DNS challenges" >&2
+  exit 1
+fi
 RECORD_NAME="_acme-challenge.\${DOMAIN}"
 case "$DOMAIN" in ''|*[!A-Za-z0-9.-]*) echo "Invalid ACME domain" >&2; exit 1;; esac
 case "$CERTBOT_VALIDATION" in ''|*[!A-Za-z0-9_-]*) echo "Invalid ACME validation value" >&2; exit 1;; esac
@@ -681,21 +685,14 @@ RES=$(curl -s -S --connect-timeout 5 --max-time 15 -X POST "https://api.digitalo
   -H "Authorization: Bearer ${manager.credentials.apiToken}" \\
   -H "Content-Type: application/json" \\
   --data "$DNS_PAYLOAD")
-# Read domain_record.id structurally: the API may format its JSON with spaces or
-# newlines. certbot is a Python program, so python3 is on every host that runs this
-# hook; the whitespace-tolerant sed is a fallback for an interpreter we cannot start.
-# An error body's id is a string, so only a numeric id counts as created.
 RECORD_ID=$(printf '%s' "$RES" | python3 -c 'import json, sys
 try:
     record_id = json.load(sys.stdin)["domain_record"]["id"]
 except Exception:
     sys.exit(1)
-if isinstance(record_id, bool) or not isinstance(record_id, int):
+if type(record_id) is not int or record_id <= 0:
     sys.exit(1)
 print(record_id)' 2>/dev/null || true)
-if [ -z "$RECORD_ID" ]; then
-  RECORD_ID=$(printf '%s' "$RES" | tr -d '\\r\\n' | sed -n 's/.*"domain_record"[[:space:]]*:[[:space:]]*{[^{}]*"id"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p')
-fi
 case "$RECORD_ID" in ''|*[!0-9]*) RECORD_ID="" ;; esac
 if [ -z "$RECORD_ID" ]; then
   echo "DigitalOcean rejected the ACME TXT record request" >&2
