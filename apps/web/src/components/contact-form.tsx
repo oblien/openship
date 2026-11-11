@@ -53,27 +53,36 @@ declare global {
 export function ContactForm({ siteKey }: { siteKey: string }) {
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
+  const showForm = status !== "success";
   const challenge = useRef<HTMLDivElement>(null);
   const widget = useRef<string | null>(null);
   useEffect(() => {
-    if (!ready || !siteKey || !challenge.current || !window.turnstile) return;
-    widget.current = window.turnstile.render(challenge.current, {
+    if (!showForm || !ready || !siteKey || !challenge.current || !window.turnstile) return;
+    const turnstile = window.turnstile;
+    let active = true;
+    const updateToken = (value: string) => {
+      if (active) setToken(value);
+    };
+    const widgetId = turnstile.render(challenge.current, {
       sitekey: siteKey,
       action: "contact",
-      callback: setToken,
-      "expired-callback": () => setToken(""),
-      "error-callback": () => setToken(""),
+      callback: updateToken,
+      "expired-callback": () => updateToken(""),
+      "error-callback": () => updateToken(""),
     });
+    widget.current = widgetId;
     return () => {
-      if (widget.current) window.turnstile?.remove(widget.current);
+      active = false;
+      turnstile.remove(widgetId);
       widget.current = null;
+      setToken("");
     };
-  }, [ready, siteKey]);
+  }, [ready, siteKey, showForm]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
   const [errorText, setErrorText] = useState("");
   const [receipt, setReceipt] = useState<CloudSupportReceipt | null>(null);
   const attempt = useRef<{ content: string; requestId: string } | null>(null);

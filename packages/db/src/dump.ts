@@ -928,6 +928,8 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_support_ticket:
     "Private Cloud support requests; never export one customer's correspondence to another installation",
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
+  cloud_support_block:
+    "Private Cloud operator abuse rules and sender/IP data; never transfer to another installation",
   cloud_customer_email: "Private Cloud onboarding and invoice delivery state; never transfer or replay on another installation",
   platform_instance:
     "the receiving installation retains its own identity and encryption-key binding",

@@ -166,8 +166,7 @@ r.public(
     const ticket = await cloudSupport.submit(
       input,
       async (recipientHash) => {
-        // The website proxies requests without inventing/forwarding a trusted IP.
-        // In addition to the router's per-IP ceiling, limit by the contact address
+        // In addition to the router's trusted per-IP ceiling, limit by contact address
         // across every API replica. Only the hash reaches the shared limiter.
         const result = await rateLimit({ policy: "support-contact", subjectId: recipientHash });
         if (!result.allowed) {
