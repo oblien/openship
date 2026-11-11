@@ -56,6 +56,7 @@ const h = vi.hoisted(() => ({
   start: vi.fn(async (_id: string) => {}),
   removeRoute: vi.fn(async (_hostname: string) => {}),
   reapplyLiveRoutes: vi.fn(async () => {}),
+  findProject: vi.fn(),
   disposed: 0,
 }));
 
@@ -63,7 +64,7 @@ vi.mock("@repo/db", () => ({
   withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
   repos: {
     project: {
-      findById: async () => ({ ...h.project }),
+      findById: h.findProject,
       update: async (_id: string, patch: Record<string, unknown>) => {
         h.updates.push(patch);
         if ("disabledAt" in patch) h.project.disabledAt = patch.disabledAt as Date | null;
@@ -217,6 +218,7 @@ const notModified = () =>
 
 describe("project pause / resume", () => {
   beforeEach(() => {
+    h.findProject.mockReset().mockImplementation(async () => ({ ...h.project }));
     h.project.disabledAt = null;
     h.project.appTemplateId = null;
     h.project.hasServer = true;
@@ -283,6 +285,40 @@ describe("project pause / resume", () => {
 
     expect(h.stopped).toEqual(["svc-web", "svc-db"]);
     expect(h.project.disabledAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects recovery if the active deployment changes before the runtime lock is acquired", async () => {
+    h.findProject
+      .mockResolvedValueOnce({ ...h.project })
+      .mockResolvedValueOnce({ ...h.project })
+      .mockResolvedValue({ ...h.project, activeDeploymentId: "operator-deployment" });
+    const { disableProject } = await load();
+
+    await expect(disableProject("proj_1", "org_1", "dep_1")).rejects.toMatchObject({
+      code: "DEPLOYMENT_NOT_ACTIVE",
+      statusCode: 409,
+    });
+    expect(h.stopped).toEqual([]);
+    expect(h.updates).toEqual([]);
+  });
+
+  it("stops the expected deployment during recovery", async () => {
+    const { disableProject } = await load();
+    await expect(disableProject("proj_1", "org_1", "dep_1")).resolves.toMatchObject({
+      success: true,
+    });
+    expect(h.stopped).toEqual(["app-container"]);
+    expect(h.project.disabledAt).toBeInstanceOf(Date);
+  });
+
+  it("allows recovery when a failed deployment never became active", async () => {
+    h.findProject.mockResolvedValue({ ...h.project, activeDeploymentId: null });
+    const { disableProject } = await load();
+    await expect(disableProject("proj_1", "org_1", "failed-deployment")).resolves.toMatchObject({
+      success: true,
+    });
+    expect(h.stopped).toEqual([]);
+    expect(h.updates).toEqual([]);
   });
 
   it("rolls the disabled mark back when the host refuses the stop", async () => {

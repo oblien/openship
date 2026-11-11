@@ -256,6 +256,7 @@ const UPSTREAM_RETRY_MS = 10 * 60 * 1000;
 const UPSTREAM_POLL_MS = 8_000;
 const CACHE_WRITE_MS = 2_500;
 const FEED_BUDGET_MS = 12_000;
+const RESPONSE_MARGIN_MS = 50;
 
 /** Concurrent upstream polls. One wave can be every project in an org. */
 const POLL_LIMIT = 6;
@@ -457,6 +458,20 @@ export async function scanInstanceUpdates(): Promise<ScanSummary> {
 
 export type UpdateItem = NonNullable<Awaited<ReturnType<typeof driftItem>>>;
 
+/** One composition for feed reads, project reads and update admission. */
+async function currentDrift(
+  actor: RequestContext | null,
+  project: Project,
+  upstream: UpstreamDrift,
+  deadline: number,
+): Promise<DriftStatus> {
+  const status = await evaluateDrift(project, upstream, actor);
+  if (status.supported && status.mode === "image") {
+    await verifyUnknownImageDrift(project, status, deadline - RESPONSE_MARGIN_MS);
+  }
+  return status;
+}
+
 /**
  * One project's drift, as the dashboard renders it. Null when the project has no
  * drift question to answer (nothing deployed, no remote source, no image
@@ -466,20 +481,13 @@ async function driftItem(
   actor: RequestContext | null,
   project: Project,
   row: UpdateStatus | undefined,
+  deadline: number,
 ) {
   const resolved = await upstreamFor(actor, project, row);
   if (!resolved) return null;
-  const status: DriftStatus = await evaluateDrift(project, resolved.upstream, actor).catch(
-    (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return ({ supported: false }) as DriftStatus; },
+  const status = await currentDrift(actor, project, resolved.upstream, deadline).catch(
+    (error) => { observeCaughtError(error, "platform/engine/modules/updates/updates.service"); return { supported: false as const }; },
   );
-  if (status.supported && status.mode === "image") {
-    // A service whose row lost its digest is unknown until the live daemon
-    // speaks for it. Never fail the item over a container check — the
-    // unknown flag is the answer, not an error.
-    await verifyUnknownImageDrift(project, status).catch((diagnosticFailure) =>
-      observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"),
-    );
-  }
   const view = presentation(status);
   if (!view || !status.supported) return null;
   return {
@@ -492,8 +500,6 @@ async function driftItem(
     behind: status.behind,
     latestInProgress: status.latestInProgress,
     inProgressDeploymentId: status.inProgressDeploymentId,
-    // At least one service whose deployed state could not be determined.
-    // The feed keeps such projects visible rather than reporting them fine.
     unverified: status.mode === "image" ? status.unverified : false,
     currentLabel: view.currentLabel,
     latestLabel: view.latestLabel,
@@ -536,7 +542,7 @@ export async function listOrganizationUpdates(
     const remaining = deadline - Date.now();
     if (remaining <= 0) return;
     const item = await withTimeout(
-      driftItem(ctx, project, rowByProject.get(project.id)),
+      driftItem(ctx, project, rowByProject.get(project.id), deadline),
       remaining,
       "Update feed timed out",
     ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return null; });
@@ -570,17 +576,9 @@ export async function getProjectDrift(
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!hasDeployedSide(project)) return { supported: false };
+  const deadline = Date.now() + FEED_BUDGET_MS;
   return withTimeout(
-    pollUpstream(ctx, project)
-      .then((upstream) => evaluateDrift(project, upstream, ctx))
-      .then(async (status) => {
-        if (status.supported && status.mode === "image") {
-          await verifyUnknownImageDrift(project, status).catch((diagnosticFailure) =>
-            observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"),
-          );
-        }
-        return status;
-      }),
+    pollUpstream(ctx, project).then((upstream) => currentDrift(ctx, project, upstream, deadline)),
     FEED_BUDGET_MS,
     "Project update check timed out",
   ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return ({ supported: false }); });

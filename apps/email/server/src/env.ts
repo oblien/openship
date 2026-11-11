@@ -85,6 +85,8 @@ export interface Env {
   SESSION_COOKIE_NAME: string;
   SESSION_TTL_SECONDS: number;
 
+  DEFAULT_SIEVE_HOST: string | undefined;
+  DEFAULT_SIEVE_PORT: number;
   DEFAULT_IMAP_HOST: string | undefined;
   DEFAULT_IMAP_PORT: number;
   DEFAULT_SMTP_HOST: string | undefined;
@@ -129,6 +131,8 @@ export const env: Env = {
   SESSION_COOKIE_NAME: optional('SESSION_COOKIE_NAME', 'zero_session'),
   SESSION_TTL_SECONDS: int('SESSION_TTL_SECONDS', 60 * 60 * 24 * 30),
 
+  DEFAULT_SIEVE_HOST: process.env.DEFAULT_SIEVE_HOST?.trim() || undefined,
+  DEFAULT_SIEVE_PORT: int('DEFAULT_SIEVE_PORT', 4190),
   DEFAULT_IMAP_HOST: process.env.DEFAULT_IMAP_HOST?.trim() || undefined,
   DEFAULT_IMAP_PORT: int('DEFAULT_IMAP_PORT', 993),
   DEFAULT_SMTP_HOST: process.env.DEFAULT_SMTP_HOST?.trim() || undefined,

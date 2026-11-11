@@ -74,7 +74,24 @@ style](illustrations.md): flat rounded shapes, neutral foreground layers,
 clear negative space and small warm accents. Reuse `FeatureIllustration` from
 `@repo/ui/illustrations` for approved compact artwork. The linked guide owns
 its geometry, theme variables, sizing and HTML review catalog; the surrounding
-page continues to use this guide's surfaces and typography. Keep status colors
+page continues to use this guide's surfaces and typography. In the dashboard,
+`theme.css` binds the artwork's foreground and accent to the active appearance
+tokens, including personal themes and appearance previews. Billing, onboarding and empty-state artwork use
+`illustration-color`: light-mode shapes use softened neutral title ink, with the
+appearance accent only in small details. Never tint the main silhouette with the
+accent color. The home welcome uses
+`illustration-soft` to keep its light-mode gray layers. Other artwork retains its
+original palette; dim and dark keep their existing treatment. Adjust these shared
+palettes rather than adding opacity to whole illustrations or page-specific colors.
+Use 56–64 px artwork
+beside plan names and 80 px for onboarding and empty states, without an extra icon
+tile. Use the shared calendar for Jobs, snapshots for Backups, server racks for Clusters,
+and the connected shield for Private networks. Projects, deployments, Actions, monitoring,
+and repository/folder import use the same compact artwork and palette. Keep metrics,
+progress rings, navigation, controls and provider logos as utility icons or their original
+artwork. Monitoring uses the chart for an empty incident
+feed, the calendar for empty history, and a utility search icon for filtered results.
+Empty lists do not imply a health verdict; avoid success badges or checkmarks. Keep status colors
 in semantic status components and avoid large colored illustration surfaces,
 perspective, material shading or decorative glows.
 
@@ -114,6 +131,13 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
+Repository-owned image changes use the shared **Propose image update** editor in saved
+project/service settings and security review. Reuse the repository file browser. Show the branch,
+exact source commit and a diff before **Create draft PR**; edits invalidate that review. The editor
+changes one literal Dockerfile `FROM` or Compose `image` reference, preserving the source formatting.
+Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.
+Creating a PR never changes the running deployment or clears an advisory. Reset private source and
+pending reviews when the account, workspace or project changes.
 Security advisories use the existing deployment pipeline and root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app
@@ -966,6 +990,15 @@ Migration retries reuse the shared destination picker after a fresh scan, even w
 from an existing run. Keep loading, fetch errors and empty inventory distinct, and preserve
 the selected destination's validation and transfer review before enabling Migrate.
 
+Platform imports share three steps: Connect, Select services, and Review & import. Show
+provider marks through `AppLogo` and service marks through `ServiceIcon`. Reuse the Connections
+form for authorization and tokens, with an explicit access test and retry. Keep service cards
+compact; expand configuration for missing secrets and review blockers. The final review lists
+what will be copied, kept external or started empty, and collects any required source-pause
+acknowledgments. Changing the source, destination or selections invalidates that review.
+Use the shared destination picker and durable migration progress; never add a preview-only
+import path or claim that metadata access verifies a data transfer.
+
 Catalog brand artwork is bundled in both dashboard and website public assets and mapped in
 the shared `AppLogo` renderer. Preserve upstream attribution and keep setup behavior in
 catalog definitions, rather than adding app-specific dashboard branches.
@@ -1143,6 +1176,15 @@ secret values out of the review. Save shared and local edits together, reject st
 reviews, and link to each affected service's existing environment apply/redeploy flow.
 Explain that these settings live in Openship and do not edit repository files.
 
+Environment toolbars keep **Add variable** beside Paste/Upload .env, and insert its row at the
+top so long lists do not require scrolling to add a value. **Edit as text** uses the shared
+.env editor for project, service, deployment and migration environments. Apply validates the
+complete draft before updating the host's existing rows; Cancel discards it. Normal Save and
+deployment actions remain responsible for persistence and runtime changes. Preserve saved-value
+masks, secret classification, source identities and managed-row restrictions. Never fetch saved
+secret plaintext merely to open text editing. Quotes and multiline values use the shared .env
+parser and serializer; reject invalid syntax and duplicate keys instead of dropping lines.
+
 ### Adding project services
 
 - The topology resource chooser has a compact header with Close and a padded, scrollable body. Fit the chooser to its options within the canvas height; keep resource forms in the full-height inspector.
@@ -1298,6 +1340,10 @@ Use one heading and one connection surface. Show each provider's name and mark o
 in the compact selector; do not repeat them as a second header inside its form.
 Keep connection status in the selector and host information in the footer.
 Use the shared connection forms in settings and agent-editor dialogs as well.
+Custom API setup reuses the native agent's setup control and installation polling.
+An absent agent is a setup state, not an outdated runtime. Preserve connection inputs
+while setup runs, and offer an update hint only after an available agent reports
+that custom API support is missing.
 Preserve unfinished sign-in forms when switching providers or returning to chat;
 hidden content must not capture keyboard focus. Identify the connection host.
 Using a different connection from an existing conversation opens a fresh chat;

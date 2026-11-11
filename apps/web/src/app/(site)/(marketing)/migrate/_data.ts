@@ -100,6 +100,10 @@ export const REASONS: IllustratedLinkProps[] = [
 export function faq(from: string | null) {
   return [
     {
+      q: "Can I import from Railway or Vercel?",
+      a: "Yes. Choose your platform in New project → Import existing project and connect your account. Railway imports a selected project environment with its services and persistent volumes. Vercel imports supported GitHub source and settings, with options for external PostgreSQL. Review the platform guide for data requirements and features that need separate handling.",
+    },
+    {
       q: "Do I need to rewrite my application?",
       a: "Most container-ready applications can use their existing build and start commands. Review platform-specific APIs, storage, and environment settings before moving. Services tied to your current provider may need a replacement or configuration changes.",
     },

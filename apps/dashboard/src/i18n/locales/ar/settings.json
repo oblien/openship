@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "الفريق",
       "notifications": "الإشعارات",
-      "credentials": "بيانات الاعتماد",
+      "credentials": "الاتصالات",
       "cloud": "السحابة",
       "infrastructure": "البنية التحتية",
       "instance": "النسخة",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "بيانات الاعتماد",
+    "title": "الاتصالات",
     "description": "الرموز وبيانات الدخول التي يستخدمها Openship بالنيابة عنك — سحب الصور الخاصة، وكتابة سجلات DNS. تُخزَّن مشفّرة ولا تُعرض مرة أخرى بعد الحفظ.",
     "noProviders": "لا يوجد مزوّدو بيانات اعتماد متاحون في هذا المثيل.",
     "noneForProvider": "لم تُضف أي بيانات بعد.",
@@ -1624,6 +1624,16 @@
           "apiToken": {
             "label": "رمز API",
             "help": "رمز وصول مع صلاحيات Zone:Read و DNS:Edit على النطاقات التي تريد إدارتها بواسطة Openship. أنشئه من My Profile → API Tokens."
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "دع Openship يكتب سجلات DNS التي يحتاجها النطاق المخصص على DigitalOcean DNS.",
+        "fields": {
+          "apiToken": {
+            "label": "رمز API",
+            "help": "رمز بصلاحيات مخصصة تشمل قراءة النطاقات وإنشاءها وتحديثها وحذفها (domain). أنشئه من API → Tokens."
           }
         }
       }

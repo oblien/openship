@@ -1,8 +1,9 @@
 import net from "node:net";
-import { Duplex, PassThrough } from "node:stream";
+import { Duplex, PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createDockerSshBridge } from "./docker-ssh-agent";
+import { startAttachStream } from "./docker-exec-stream";
 import type { DockerConnectionOptions } from "./docker-transport";
 
 /**
@@ -109,6 +110,53 @@ describe("createDockerSshBridge — a failed request is answered, not reset", ()
       });
     });
   }
+
+  it.each([168, 2 * 1024 * 1024])(
+    "delivers a %i byte attach upload and preserves the daemon's reply after stdin EOF",
+    async (size) => {
+      let calls = 0;
+      let header = true;
+      let received = 0;
+      const upstream = new Duplex({
+        read() {},
+        write(chunk, _encoding, done) {
+          // A queued SSH write must drain before EOF tears down the channel.
+          setTimeout(() => {
+            if (header) {
+              header = false;
+              upstream.push("HTTP/1.1 101 UPGRADED\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n");
+            } else received += chunk.length;
+            done();
+          }, 2);
+        },
+        final(done) {
+          setTimeout(() => {
+            upstream.push(`received=${received}`);
+            upstream.push(null);
+            done();
+          }, 20);
+        },
+      });
+      const bridge = createDockerSshBridge({
+        host: "test-host", dockerSocketPath: "/var/run/docker.sock",
+        executor: { forwardUnixSocket: async () => ++calls === 1 ? httpChannel("OK") : upstream },
+      } as unknown as DockerConnectionOptions);
+      bridges.push(bridge);
+      const stream = await startAttachStream(await bridge.start(), "restore", {
+        stdin: true, stdout: true, stderr: true,
+      });
+      const response = new Promise<string>((resolve, reject) => {
+        let text = "";
+        stream.on("data", (chunk) => { text += chunk.toString(); });
+        stream.on("error", reject);
+        stream.on("close", () => resolve(text));
+      });
+      Readable.from([Buffer.alloc(size, 7)]).pipe(stream);
+      expect(await response).toBe(`received=${size}`);
+      expect(received).toBe(size);
+    },
+    15_000,
+  );
 
   /** A user listener is what stands between the old behavior and a killed worker: with one
    *  present Node routes an unhandled 'error' here instead of aborting, so we can ASSERT

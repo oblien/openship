@@ -10,7 +10,7 @@ import {
   type DeploymentContextType,
 } from "@/context/deployment/types";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
-import type { GitHubRepo } from "@/context/GitHubContext";
+import type { GitHubAccount, GitHubRepo } from "@/context/GitHubContext";
 import { DeploymentHeader } from "@/components/import-project/DeploymentHeader";
 import { DeploymentStepper } from "@/components/import-project/DeploymentStepper";
 import DeploymentDetails from "@/components/import-project/DeploymentDetails";
@@ -104,6 +104,34 @@ function deployment(ready: boolean): DeploymentContextType {
   };
 }
 
+// Small, original avatars keep the sample accounts recognizable and captures
+// deterministic, without fetching real people's photos or organization data.
+const avatar = (art: string) =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${art}</svg>`)}`;
+const accounts: GitHubAccount[] = [
+  {
+    login: "maya-chen",
+    type: "User",
+    avatar_url: avatar(
+      '<rect width="64" height="64" fill="#d5e5df"/><path d="M9 64c0-17 9-26 23-26s23 9 23 26" fill="#405e56"/><ellipse cx="32" cy="28" rx="14" ry="18" fill="#e7b695"/><path d="M17 29C12 7 29 3 40 9c10 4 10 15 7 23l-5-12c-9 3-16 0-18-3l-5 14z" fill="#302b2b"/>',
+    ),
+  },
+  {
+    login: "acme",
+    type: "Organization",
+    avatar_url: avatar(
+      '<rect width="64" height="64" fill="#eab46c"/><path d="M15 46 30 15h6l14 31H39l-6-15-7 15z" fill="#302b24"/><path d="M29 42h8" stroke="#fff3de" stroke-width="4" stroke-linecap="round"/>',
+    ),
+  },
+  {
+    login: "orbit-labs",
+    type: "Organization",
+    avatar_url: avatar(
+      '<rect width="64" height="64" fill="#71689b"/><circle cx="32" cy="32" r="7" fill="#f6f1ff"/><ellipse cx="32" cy="32" rx="22" ry="11" transform="rotate(-38 32 32)" fill="none" stroke="#e0d7f2" stroke-width="3"/><circle cx="48" cy="18" r="4" fill="#eab46c"/>',
+    ),
+  },
+];
+
 const repos: GitHubRepo[] = [
   ["storefront", "The web app for our online store", "TypeScript"],
   ["commerce-api", "API and background workers", "TypeScript"],
@@ -186,7 +214,7 @@ export default function Preview() {
               </p>
               <RepositoryList
                 repos={repos}
-                accounts={[]}
+                accounts={accounts}
                 selectedOwner="acme"
                 setSelectedOwner={noop}
                 loading={false}

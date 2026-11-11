@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
+import { publicContactOrigin } from "./modules/cloud-support/contact-origin";
 import { handleApiError } from "./middleware/error-handler";
 import { observeRequestErrors } from "./middleware/error-observation";
 import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
@@ -135,7 +136,7 @@ app.use("*", observeRequestErrors);
 app.use(
   "*",
   cors({
-    origin: trustedOrigins,
+    origin: (origin, c) => trustedOrigins.includes(origin) || publicContactOrigin(c.req.path, origin) ? origin : undefined,
     credentials: true,
     exposeHeaders: ["X-Request-ID"],
   }),

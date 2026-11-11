@@ -56,7 +56,7 @@ beforeEach(() => {
   h.authorize.mockImplementation(async context => context);
   h.candidates = [];
   h.projects = new Map(["source", "target"].map(id => [id, { id, slug: id, name: id, organizationId: "org", activeDeploymentId: id === "source" ? "dep-source" : "dep-target" }]));
-  h.services = new Map([["svc_db", { id: "svc_db", projectId: "source", name: "db", enabled: true }]]);
+  h.services = new Map([["svc_db", { id: "svc_db", projectId: "source", name: "db", enabled: true, ports: ["5432"] }]]);
   h.links = [];
   h.envRows = [];
   h.outputs = [{ id: "svc_db:url", sourceServiceId: "svc_db", service: "db", value: "postgresql://user:secret@db:5432/app", internal: true, secret: true }];
@@ -141,6 +141,26 @@ describe("connections to a service inside a project", () => {
     h.merge.mockClear();
     await refreshConnectionEnv(ctx, "target", "production");
     expect(h.merge).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["DATABASE_ENDPOINT", "postgresql://imported:p%40ss@${host}:5432/secondary?application_name=worker", "postgresql://imported:p%40ss@shared-svc-db:5432/secondary?application_name=worker"],
+    ["PRIVATE_HOST", "${host}", "shared-svc-db"],
+  ])("retains an imported %s template and its private network when the consumer redeploys", async (envKey, valueTemplate, expected) => {
+    // The source may use an authentication mechanism the catalog cannot infer.
+    h.outputs[0]!.value = "";
+    const result = await createConnection(ctx, "target", { ...input, envKey, valueTemplate }, { defer: true });
+    const saved = h.save.mock.calls[0]![2][0];
+    expect(saved.encryptedValue).toBe(`enc:${expected}`);
+    expect(saved.connection).toMatchObject({ valueTemplateEnc: `enc:${valueTemplate}`, usesPrivateNetwork: true });
+    expect(result.connection).not.toHaveProperty("valueTemplateEnc");
+    h.links = [{ id: "link", ...saved.connection }];
+    h.outputs[0]!.value = "postgresql://default:changed@renamed:5432/default";
+    expect(await refreshConnectionEnv(ctx, "target", "production")).toEqual({ [envKey]: expected });
+    expect(h.merge).toHaveBeenCalledWith("target", "org", { environment: "production", deletes: [], upserts: [{ key: envKey, value: expected, isSecret: true }] });
+    const attach = vi.fn();
+    await attachLinkedNetworks("target", { joinServiceGroupContainers: h.join, attachToExternalNetworks: attach });
+    expect(attach).toHaveBeenCalledWith("target", ["openship-shared-svc-db"], ["adopted-web"], expect.anything());
   });
 
   it("reconnects the replacement source container when its owning project redeploys", async () => {

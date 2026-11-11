@@ -44,6 +44,19 @@ themselves separately.
 
 ---
 
+## Mail engine security updates
+
+The mail image requires Debian 12's Dovecot/Pigeonhole security backports from
+[DLA-4873-1](https://security-tracker.debian.org/tracker/DLA-4873-1).
+`dovecot-core`, `dovecot-sieve` and `dovecot-managesieved` must be installed at
+`1:2.3.19.1+dfsg1-2.1+deb12u7` or newer; the image build fails otherwise. Check
+the full Debian package version with `dpkg-query`, since `dovecot --version`
+does not identify Debian's backported fixes.
+
+Updating the API or dashboard does not update existing mail engine or webmail
+containers. Those images must also be updated, preserving their existing data
+mounts. Host-installed engines need the corresponding distribution security updates.
+
 ## Database topology - one host, four DBs
 
 Container installs publish the mail database only on host loopback. New setups try

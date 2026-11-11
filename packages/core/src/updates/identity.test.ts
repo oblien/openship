@@ -119,6 +119,27 @@ describe("isBehind", () => {
   });
 });
 
+describe("unknown deployed image evidence", () => {
+  const running = `sha256:${"1".repeat(64)}`;
+  const tag = `sha256:${"2".repeat(64)}`;
+  const deployedDigest = `registry.example/app@sha256:${"a".repeat(64)}`;
+  const latest = `sha256:${"b".repeat(64)}`;
+
+  it("uses the running image's repository digest even when the local tag is missing", () => {
+    expect(resolveUnknownDigestDrift({
+      containerImageId: running, containerRegistryDigest: deployedDigest, latestDigest: latest,
+    })).toEqual({ behind: true, unknown: false, recoveredDigest: deployedDigest });
+  });
+
+  it("does not treat an unrelated local retag as newer than verified registry content", () => {
+    expect(resolveUnknownDigestDrift({
+      containerImageId: running, containerRegistryDigest: deployedDigest,
+      tagImageId: tag, tagRegistryDigest: `registry.example/app@${latest}`,
+      latestDigest: deployedDigest,
+    })).toEqual({ behind: false, unknown: false, recoveredDigest: deployedDigest });
+  });
+});
+
 describe("digestSha", () => {
   it("extracts the sha256 from repo@ and bare forms", () => {
     expect(digestSha("n8nio/n8n@sha256:abc")).toBe("sha256:abc");

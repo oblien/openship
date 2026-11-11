@@ -222,7 +222,9 @@ jobs:
   # See E2E_SCOPE in apps/api/vitest.e2e.config.ts.
   e2e-docker:
     name: E2E (real Docker, ${{ matrix.label }})
-    runs-on: ubuntu-latest
+    # The fast shards include the same MongoDB 8 import fixture as PR CI.
+    # https://github.com/actions/runner-images/issues/15005
+    runs-on: ${{ matrix.scope == 'fast' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     # Files remain serial within each disposable daemon. Split the growing
     # ordinary suite across two hosts so it fits the gate without relaxing tests.
     timeout-minutes: ${{ matrix.scope == 'fast' && 45 || 30 }}

@@ -1890,9 +1890,10 @@ describe("domain and DNS HTTP/native parity", () => {
     await expect(remote().domains.uploadCert("domain-a", input)).rejects.toMatchObject({ status: 404 });
     expect(h.domainUpload).toHaveBeenCalledTimes(2);
   });
-  it("enforces administrator membership on both credential writes and never audits tokens", async () => {
-    h.dnsAdd.mockResolvedValue(dnsCredentialFixture());
-    const input = { provider: "cloudflare" as const, name: "Production", apiToken: "never-audit-dns-token" };
+  it.each(["cloudflare", "digitalocean"] as const)("enforces administrator membership on %s credential writes and never audits tokens", async (provider) => {
+    h.env.CLOUD_MODE = true;
+    h.dnsAdd.mockResolvedValue({ ...dnsCredentialFixture(), provider });
+    const input = { provider, name: "Production", apiToken: "never-audit-dns-token" };
     const local = await native();
     h.members.set("org-a:alice", { id: "member-a", role: "member" });
     for (const dns of [remote().dns, local.dns]) {
@@ -1964,6 +1965,22 @@ describe("project routing HTTP/native parity", () => {
 
 describe("provider credential HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
+  it("exposes DigitalOcean through Connections with tenant scoping and secret-free audit", async () => {
+    h.env.CLOUD_MODE = true;
+    const credential = { ...credentialFixture(), provider: "digitalocean", providerLabel: "DigitalOcean", selector: null, publicFields: {}, secretsMasked: { apiToken: credentialFixture().secretsMasked.secret! } };
+    h.credentialCreate.mockResolvedValue(credential);
+    const local = await native();
+    const input = { provider: "digitalocean", name: "Production DNS", values: { apiToken: "do-not-audit-dns-token" } };
+    for (const credentials of [local.credentials, remote().credentials]) {
+      expect(await credentials.listProviders()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "digitalocean", capability: "dns" }),
+      ]));
+      expect(await credentials.create(input)).toEqual(credential);
+    }
+    expect(h.credentialCreate).toHaveBeenCalledWith("org-a", input);
+    expect(h.audit).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(h.audit.mock.calls)).not.toContain(input.values.apiToken);
+  });
   it("shares verification, tenant arguments, masking and secret-free audit", async () => {
     const credential = credentialFixture();
     h.credentialCreate.mockResolvedValue(credential);

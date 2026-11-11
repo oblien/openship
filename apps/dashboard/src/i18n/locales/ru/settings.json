@@ -140,7 +140,7 @@
       "notifications": "Уведомления",
       "email": "Email",
       "systemSender": "Системный отправитель",
-      "credentials": "Учетные данные",
+      "credentials": "Подключения",
       "cloud": "Cloud",
       "infrastructure": "Инфраструктура",
       "instance": "Инстанс"
@@ -1657,7 +1657,7 @@
     "noReverseProxy": "На этой машине не обнаружен обратный прокси (reverse proxy)."
   },
   "credentials": {
-    "title": "Учетные данные",
+    "title": "Подключения",
     "description": "Токены и данные входа, используемые Openship от вашего имени — загрузка из приватных реестров, запись DNS-записей. Хранятся в зашифрованном виде и никогда не отображаются после сохранения.",
     "noProviders": "На этом инстансе нет доступных провайдеров учетных данных.",
     "noneForProvider": "Пока ничего не добавлено.",
@@ -1710,6 +1710,16 @@
           "apiToken": {
             "label": "API токен",
             "help": "Токен с правами Zone:Read и DNS:Edit для зон, которыми должен управлять Openship. Создайте его в разделе My Profile → API Tokens."
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Позволить Openship создавать DNS-записи для пользовательских доменов в DigitalOcean DNS.",
+        "fields": {
+          "apiToken": {
+            "label": "API токен",
+            "help": "Токен с пользовательскими правами на чтение, создание, обновление и удаление доменов (domain). Создайте его в разделе API → Tokens."
           }
         }
       }

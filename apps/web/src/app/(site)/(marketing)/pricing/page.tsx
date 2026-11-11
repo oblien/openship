@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { ArrowRight, Check, ChevronDown } from "lucide-react";
 import { formatMemoryMb } from "@repo/core";
 import { Navbar, Footer } from "@/components/landing";
+import { IllustratedLink } from "@/components/marketing/illustrated-link";
+import { CLOUD_SLA } from "@/lib/cloud-service";
 import {
   STANDARD,
   UI,
@@ -353,6 +355,26 @@ export default async function PricingPage() {
         </section>
         <section id="plans" className="pp-plans-section" aria-label="Plans and hosting options">
           <div className="site-container">
+            <div
+              className="pp-cloud-benefits"
+              role="group"
+              aria-label="Included with every Cloud plan"
+            >
+              <IllustratedLink
+                href={CLOUD_SLA.termsHref}
+                illustration="deployment-health-checks"
+                heading="h2"
+                title={`${CLOUD_SLA.monthlyUptimePercent}% uptime guarantee`}
+                description="Monthly SLA with service credits on every Cloud plan."
+              />
+              <IllustratedLink
+                href="/support"
+                illustration="notifications"
+                heading="h2"
+                title="Support included"
+                description="Email us or open Support in your app’s sidebar."
+              />
+            </div>
             <CloudBilling
               monthly={<CloudPlans pricing={pricing} interval="monthly" />}
               annual={

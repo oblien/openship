@@ -50,6 +50,7 @@ import type {
   ServiceHandle,
 } from "../types";
 import { canExecInService } from "../common/exec-target";
+import { waitForDatabaseCommand } from "../common/database-ready";
 
 function envOr(service: ServiceHandle, key: string, fallback: string): string {
   return service.env[key] ?? fallback;
@@ -57,6 +58,32 @@ function envOr(service: ServiceHandle, key: string, fallback: string): string {
 
 class PgDumpProducerImpl implements BackupProducer {
   readonly kind = "pg_dump" as const;
+
+  async waitUntilReady(service: ServiceHandle, executor: BackupExecutor, signal?: AbortSignal) {
+    const user = service.env.POSTGRES_USER ?? "postgres";
+    await waitForDatabaseCommand(
+      service,
+      executor,
+      [
+        "psql",
+        "-h",
+        "127.0.0.1",
+        "-XAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        user,
+        "-d",
+        service.env.POSTGRES_DB ?? service.env.PGDATABASE ?? user,
+        "-c",
+        "SELECT 1",
+      ],
+      {
+        signal,
+        env: { PGPASSWORD: service.env.POSTGRES_PASSWORD ?? service.env.PGPASSWORD ?? "" },
+      },
+    );
+  }
 
   detects(service: ServiceHandle): boolean {
     if (!isDbImage(service.image, "pg_dump")) return false;
@@ -73,7 +100,7 @@ class PgDumpProducerImpl implements BackupProducer {
     executor: BackupExecutor,
     _opts: ProducerOpts,
   ): AsyncIterable<Artifact> {
-    const user = envOr(service, "POSTGRES_USER", "postgres");
+    const user = service.postgresConnection?.user ?? envOr(service, "POSTGRES_USER", "postgres");
     // The official postgres image's OWN defaulting rule: POSTGRES_DB defaults to the
     // value of POSTGRES_USER, and POSTGRES_USER defaults to `postgres`. Applying it
     // here is what lets detection stop requiring POSTGRES_DB in the env — the gap that
@@ -89,11 +116,16 @@ class PgDumpProducerImpl implements BackupProducer {
     // nothing" is the exact failure this whole pass exists to remove, so shipping a
     // payload we cannot restore would have replaced one lie with another.
     const db =
+      service.postgresConnection?.database ??
       service.env.POSTGRES_DB ??
       service.env.PGDATABASE ??
       service.env.POSTGRES_USER ??
       "postgres";
-    const password = service.env.POSTGRES_PASSWORD ?? service.env.PGPASSWORD ?? "";
+    const password =
+      service.postgresConnection?.password ??
+      service.env.POSTGRES_PASSWORD ??
+      service.env.PGPASSWORD ??
+      "";
 
     // NO external compressor: `-Fc` is the custom format, which pg_dump already
     // compresses (zlib level 6 unless --compress=0), so the old `| zstd -c -3`
@@ -118,30 +150,49 @@ class PgDumpProducerImpl implements BackupProducer {
       "none",
       `export PGPASSWORD=${shellQuote(password)}`,
     );
-    const { stdout, awaitExit } = await executor.execStream(service, cmd);
+    const connection = service.postgresConnection;
+    const { stdout, awaitExit } = await executor.execStream(
+      service,
+      cmd,
+      connection
+        ? {
+            env: {
+              PGHOST: connection.host,
+              PGHOSTADDR: connection.hostAddress,
+              PGPORT: String(connection.port),
+              PGSSLMODE: connection.sslMode,
+              ...(connection.channelBinding ? { PGCHANNELBINDING: connection.channelBinding } : {}),
+            },
+          }
+        : undefined,
+    );
 
-    yield* yieldArtifact({
-      // These bytes are pg_dump's own container format, which pg_restore reads
-      // directly. `.dump` is what the Postgres docs call it.
-      name: "pg-dump.dump",
-      stream: stdout,
-      payloadKind: "pg_dump",
-      metadata: {
-        postgresUser: user,
-        postgresDb: db,
-        format: "custom",
-        // The EXTERNAL codec only. The custom format's internal zlib is pg_restore's
-        // own business, so a `-Fc` artifact records "none".
-        compression: "none",
+    yield* yieldArtifact(
+      {
+        // These bytes are pg_dump's own container format, which pg_restore reads
+        // directly. `.dump` is what the Postgres docs call it.
+        name: "pg-dump.dump",
+        stream: stdout,
+        payloadKind: "pg_dump",
+        metadata: {
+          postgresUser: user,
+          postgresDb: db,
+          format: "custom",
+          // The EXTERNAL codec only. The custom format's internal zlib is pg_restore's
+          // own business, so a `-Fc` artifact records "none".
+          compression: "none",
+        },
       },
-    }, awaitExit, exit => `pg_dump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
+      awaitExit,
+      (exit) => `pg_dump exited ${exit.code}: ${exit.stderr.slice(0, 500)}`,
+    );
   }
 
   async restore(
     service: ServiceHandle,
     executor: BackupExecutor,
     artifact: ArtifactRef,
-    _opts: RestoreOpts,
+    opts: RestoreOpts,
   ): Promise<void> {
     const user = envOr(service, "POSTGRES_USER", "postgres");
     const password = service.env.POSTGRES_PASSWORD ?? service.env.PGPASSWORD ?? "";
@@ -208,11 +259,10 @@ class PgDumpProducerImpl implements BackupProducer {
     const exit = await executor.pipeIntoCommand(service, cmd, body, {
       // Ceiling from the catalog, so the number is not a per-producer literal.
       timeoutMs: payloadSpec("pg_dump").restoreTimeoutMs,
+      signal: opts.signal,
     });
     if (exit.code !== 0) {
-      throw new Error(
-        `pg_restore exited ${exit.code}: ${exit.stderr.slice(0, 500)}`,
-      );
+      throw new Error(`pg_restore exited ${exit.code}: ${exit.stderr.slice(0, 500)}`);
     }
   }
 }

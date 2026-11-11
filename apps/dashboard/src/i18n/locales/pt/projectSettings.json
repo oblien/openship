@@ -1108,7 +1108,7 @@
       "notice": "HTTPS com curinga exige verificação DNS. Depois de salvar, conecte um provedor DNS ou adicione o registro TXT da configuração de HTTPS.",
       "automatic": "Provedor automático",
       "manual": "TXT manual",
-      "automaticHint": "Conecte o Cloudflare em Configurações → DNS para criar as verificações do certificado e renovar HTTPS automaticamente.",
+      "automaticHint": "Conecte um provedor de DNS em Configurações → Credenciais para criar as verificações do certificado e renovar HTTPS automaticamente.",
       "manualHint": "Adicione um registro TXT temporário no seu provedor DNS. Cada renovação precisa de um novo registro TXT; o Openship mostrará quando renovar.",
       "routing": "1. Aponte o domínio para este servidor",
       "certificate": "2. Ative HTTPS",
@@ -1208,6 +1208,7 @@
     "latest": "Última versão",
     "repository": "Repositório",
     "notChecked": "Ainda não verificado",
+    "unverified": "Não foi possível verificar o estado de atualização da imagem",
     "upToDate": "Atualizado",
     "updateAvailable": "Atualização disponível",
     "checkForUpdates": "Verificar atualizações",
@@ -1348,5 +1349,26 @@
     "applyReboot": "Agendar reinício",
     "rebooting": "Reinício agendado; aguardando verificação do kernel",
     "rebootInterruption": "O servidor reiniciará em um minuto, interrompendo todas as cargas. O Openship verificará o kernel em execução quando o host se reconectar."
+  },
+  "sourceImageUpdate": {
+    "open": "Propor atualização de imagem",
+    "title": "Atualizar imagem no código",
+    "hint": "As imagens Dockerfile e Compose são definidas no repositório. Revise a alteração e crie um rascunho de pull request.",
+    "noRepository": "Este projeto precisa de um repositório GitHub e uma branch de deploy conectados. Altere a imagem na origem e faça o deploy da versão atualizada.",
+    "file": "Arquivo de origem",
+    "format": "Formato do arquivo",
+    "browse": "Explorar repositório",
+    "load": "Ler imagens",
+    "reference": "Referência da imagem",
+    "image": "Imagem substituta",
+    "preview": "Revisar alteração",
+    "diff": "Diferenças do código",
+    "review": "Revise a compatibilidade e a CI antes do merge. Apenas uma referência será alterada; outras etapas e dependências podem exigir mudanças separadas. Esta ação não inicia um deploy.",
+    "createPr": "Criar rascunho de PR",
+    "viewPr": "Abrir pull request",
+    "created": "Faça o merge do PR revisado e o deploy do commit pelo fluxo habitual. Verifique novamente o runtime implantado para confirmar a resolução do alerta.",
+    "manual": "Nenhuma referência direta editável encontrada. Abra o arquivo de origem para atualizar variáveis, imagens herdadas ou lógica de build personalizada.",
+    "working": "Processando…",
+    "failed": "Não foi possível preparar a atualização do código."
   }
 }

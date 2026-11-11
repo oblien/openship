@@ -2,6 +2,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React from "react";
 import Link from "next/link";
@@ -12,56 +13,6 @@ import { useI18n } from "@/components/i18n-provider";
 import { getApiErrorMessage } from "@/lib/api";
 import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
 import { Button } from "@/components/ui/button";
-
-/* ── Shared SVG illustration ──────────────────────────────────────── */
-
-/** GitHub mark wired to a few repo cards — "connect your repos". Distinct from
- *  the projects empty-state card stack; neutral --th-* vars throughout. */
-function GitHubConnectSvg() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" viewBox="0 0 240 156" fill="none">
-      {/* dashed connection ring */}
-      <circle cx="120" cy="74" r="56" stroke="var(--th-bd-subtle)" strokeWidth="1.5" strokeDasharray="3 7" />
-
-      {/* links from the mark out to the repo cards (hidden behind the mark near center) */}
-      <path d="M120 74 L184 40" stroke="var(--th-on-10)" strokeWidth="1.5" strokeDasharray="3 4" />
-      <path d="M120 74 L198 94" stroke="var(--th-on-10)" strokeWidth="1.5" strokeDasharray="3 4" />
-      <path d="M120 74 L44 100" stroke="var(--th-on-10)" strokeWidth="1.5" strokeDasharray="3 4" />
-
-      {/* repo cards */}
-      <g>
-        <rect x="170" y="30" width="28" height="20" rx="5" fill="var(--th-sf-04)" stroke="var(--th-on-12)" strokeWidth="1" />
-        <rect x="175" y="36" width="10" height="2.5" rx="1.25" fill="var(--th-on-20)" />
-        <rect x="175" y="41" width="17" height="2.5" rx="1.25" fill="var(--th-on-08)" />
-      </g>
-      <g>
-        <rect x="184" y="84" width="28" height="20" rx="5" fill="var(--th-sf-04)" stroke="var(--th-on-12)" strokeWidth="1" />
-        <rect x="189" y="90" width="10" height="2.5" rx="1.25" fill="var(--th-on-20)" />
-        <rect x="189" y="95" width="17" height="2.5" rx="1.25" fill="var(--th-on-08)" />
-      </g>
-      <g>
-        <rect x="28" y="90" width="28" height="20" rx="5" fill="var(--th-sf-04)" stroke="var(--th-on-12)" strokeWidth="1" />
-        <rect x="33" y="96" width="10" height="2.5" rx="1.25" fill="var(--th-on-20)" />
-        <rect x="33" y="101" width="17" height="2.5" rx="1.25" fill="var(--th-on-08)" />
-      </g>
-
-      {/* center GitHub mark */}
-      <circle cx="120" cy="74" r="30" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1.5" />
-      <g transform="translate(120,74) scale(3) translate(-85,-108)">
-        <path
-          d="M85 102a6 6 0 0 0-1.9 11.7c.3.05.4-.13.4-.3v-1.05c-1.63.35-1.97-.79-1.97-.79a1.55 1.55 0 0 0-.65-.86c-.53-.36.04-.35.04-.35a1.23 1.23 0 0 1 .9.6 1.25 1.25 0 0 0 1.71.49 1.25 1.25 0 0 1 .37-.78c-1.3-.15-2.67-.65-2.67-2.9a2.27 2.27 0 0 1 .6-1.57 2.1 2.1 0 0 1 .06-1.55s.49-.16 1.6.6a5.5 5.5 0 0 1 2.92 0c1.11-.76 1.6-.6 1.6-.6a2.1 2.1 0 0 1 .06 1.55 2.27 2.27 0 0 1 .6 1.57c0 2.26-1.37 2.75-2.68 2.9a1.4 1.4 0 0 1 .4 1.08v1.6c0 .17.1.35.4.3A6 6 0 0 0 85 102z"
-          fill="var(--th-on-30)"
-        />
-      </g>
-
-      {/* sparkles + decorative dots */}
-      <path d="M212 60l1.6-3.2 1.6 3.2-3.2-1.6 3.2 0-3.2 1.6z" fill="var(--th-on-12)" />
-      <circle cx="26" cy="58" r="3" fill="var(--th-on-10)" />
-      <circle cx="208" cy="124" r="4" fill="var(--th-on-06)" />
-      <circle cx="58" cy="34" r="3" fill="var(--th-on-12)" />
-    </svg>
-  );
-}
 
 /* ── Connect GitHub prompt ────────────────────────────────────────── */
 
@@ -110,9 +61,10 @@ export function ConnectPrompt({
       <div className="bg-card rounded-2xl border border-border/50">
         {header}
         <div className="px-6 pb-10 text-center">
-          <div className="relative mx-auto w-64 h-44">
-            <GitHubConnectSvg />
-          </div>
+          <FeatureIllustration
+            name="git-authentication"
+            className="illustration-color mx-auto mb-6 mt-8 h-auto w-20"
+          />
           <h3 className="text-lg font-medium text-foreground/80 mb-2">
             {t.library.connect.token.title}
           </h3>
@@ -133,9 +85,10 @@ export function ConnectPrompt({
       <div className="bg-card rounded-2xl border border-border/50">
         {header}
         <div className="px-6 pb-10 text-center">
-          <div className="relative mx-auto w-64 h-44">
-            <GitHubConnectSvg />
-          </div>
+          <FeatureIllustration
+            name="git-authentication"
+            className="illustration-color mx-auto mb-6 mt-8 h-auto w-20"
+          />
           <h3 className="text-lg font-medium text-foreground/80 mb-2">
             {t.library.connect.terminal.title}
           </h3>
@@ -167,9 +120,10 @@ export function ConnectPrompt({
       <div className="bg-card rounded-2xl border border-border/50">
         {header}
         <div className="px-6 pb-10 text-center">
-          <div className="relative mx-auto w-64 h-44">
-            <GitHubConnectSvg />
-          </div>
+          <FeatureIllustration
+            name="git-authentication"
+            className="illustration-color mx-auto mb-6 mt-8 h-auto w-20"
+          />
           <h3 className="text-lg font-medium text-foreground/80 mb-2">
             {t.library.connect.deviceFlow.title}
           </h3>
@@ -212,9 +166,10 @@ export function ConnectPrompt({
     <div className="bg-card rounded-2xl border border-border/50">
       {header}
       <div className="px-6 pb-10 text-center">
-        <div className="relative mx-auto w-64 h-44">
-          <GitHubConnectSvg />
-        </div>
+        <FeatureIllustration
+          name="git-authentication"
+          className="illustration-color mx-auto mb-6 mt-8 h-auto w-20"
+        />
 
         <h3 className="text-lg font-medium text-foreground/85 mb-1.5">
           {t.library.connect.default.title}

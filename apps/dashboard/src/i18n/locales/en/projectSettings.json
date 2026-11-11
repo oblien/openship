@@ -14,6 +14,7 @@
     "latest": "Latest version",
     "repository": "Repository",
     "notChecked": "Not checked yet",
+    "unverified": "Could not verify image update status",
     "upToDate": "Up to date",
     "updateAvailable": "Update available",
     "checkForUpdates": "Check for updates",
@@ -1177,7 +1178,7 @@
       "notice": "Wildcard HTTPS requires DNS verification. After saving, connect a DNS provider or add the TXT record from HTTPS setup.",
       "automatic": "Automatic provider",
       "manual": "Manual TXT",
-      "automaticHint": "Connect Cloudflare in Settings → DNS to create certificate challenges and renew HTTPS automatically.",
+      "automaticHint": "Connect a DNS provider in Settings → Credentials to create certificate challenges and renew HTTPS automatically.",
       "manualHint": "Add a temporary TXT record at your DNS provider. Each renewal needs a new TXT record; Openship will show when renewal is due.",
       "routing": "1. Point the domain at this server",
       "certificate": "2. Enable HTTPS",
@@ -1348,5 +1349,26 @@
     "applyReboot": "Schedule reboot",
     "rebooting": "Reboot scheduled; awaiting kernel verification",
     "rebootInterruption": "This reboots the server in one minute and interrupts all its workloads. Openship will verify the running kernel when the host reconnects."
+  },
+  "sourceImageUpdate": {
+    "open": "Propose image update",
+    "title": "Update image in source",
+    "hint": "Dockerfile and Compose images belong in your repository. Review a source change and create a draft pull request.",
+    "noRepository": "This project needs a connected GitHub repository and deployment branch. Edit the image in its source, then deploy the updated version.",
+    "file": "Source file",
+    "format": "File format",
+    "browse": "Browse repository",
+    "load": "Read images",
+    "reference": "Image reference",
+    "image": "Replacement image",
+    "preview": "Review change",
+    "diff": "Source diff",
+    "review": "Review compatibility and CI before merging. This updates one reference; other stages and dependencies may need separate changes. Nothing deploys from this action.",
+    "createPr": "Create draft PR",
+    "viewPr": "Open pull request",
+    "created": "Merge the reviewed PR, then deploy its commit using your normal deployment flow. Recheck the deployed runtime to verify any advisory is resolved.",
+    "manual": "No editable literal image was found. Open the source file to update variables, inherited images or custom build logic.",
+    "working": "Working…",
+    "failed": "Could not prepare the source update."
   }
 }

@@ -3,7 +3,8 @@
 import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Icon, type IconName } from "@repo/ui/icons";
+import { Icon } from "@repo/ui/icons";
+import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
 import type { BillingPendingCheckout, ManagementState, ServerDetail } from "@repo/contracts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -143,7 +144,7 @@ export function BillingPlanCards({
           <PlanCard
             key={server.id}
             href={cloudSpaceHref(server.id, paymentRequired ? "payment" : undefined)}
-            icon="cloud"
+            illustration="deploy-anywhere"
             kind={t.servers.resources.space}
             title={
               space.planTierId === "free"
@@ -199,7 +200,7 @@ export function BillingPlanCards({
               organizationId,
             },
           )}
-          icon="server"
+          illustration="server-management"
           kind={t.billing.hub.management}
           title={
             subscription
@@ -243,9 +244,7 @@ export function BillingPlanCards({
           href={plansHref}
           className="group flex min-h-72 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border bg-card/40 p-6 text-center transition-colors hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
         >
-          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted">
-            <Icon name="plus" className="size-5" />
-          </span>
+          <FeatureIllustration name="app-catalog" className="illustration-color h-auto w-20" />
           <div className="space-y-2">
             <h2 className="text-base font-medium">{t.billing.hub.addPlan}</h2>
             <p className="max-w-60 text-sm leading-6 text-muted-foreground">
@@ -260,7 +259,7 @@ export function BillingPlanCards({
 
 function PlanCard({
   href,
-  icon,
+  illustration,
   kind,
   title,
   status,
@@ -268,7 +267,7 @@ function PlanCard({
   children,
 }: {
   href: string;
-  icon: IconName;
+  illustration: FeatureIllustrationName;
   kind: string;
   title: string;
   status: ReactNode;
@@ -280,9 +279,7 @@ function PlanCard({
   const content = (
     <>
       <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
-          <Icon name={icon} className="size-5" />
-        </div>
+        <FeatureIllustration name={illustration} className="illustration-color h-auto w-14" />
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-xs text-muted-foreground">{kind}</p>
           <h2 className="break-words text-lg font-medium">{title}</h2>

@@ -1,192 +1,206 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DockerRuntime, type ContainerInfo } from "@repo/adapters";
-import { verifyUnknownImageServices } from "./local-image-drift";
+import type { Project } from "@repo/db";
 
-/**
- * The reported failure, at the orchestration level: a service whose active
- * row lost its `image_digest` read as "up to date" in the updates feed
- * because the registry comparison had nothing on the deployed side. The fix
- * asks the live daemon instead — the running container's image ID against
- * the image ID the configured tag resolves to right now — and only trusts
- * the answer the daemon can actually give.
- *
- * These tests drive the verifier with a stubbed Docker runtime (a real
- * instance shape, methods replaced) and a recording persist — no daemon,
- * no database.
- */
-const OLD_IMAGE = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
-const NEW_IMAGE = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
-const REGISTRY_DIGEST = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const MOVED_DIGEST = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const TAG_REPO_DIGEST = `docker.io/library/nginx@${REGISTRY_DIGEST}`;
+const h = vi.hoisted(() => ({
+  findDeployment: vi.fn(),
+  listServices: vi.fn(),
+  write: vi.fn(),
+  withRuntime: vi.fn(),
+}));
+vi.mock("@repo/db", () => ({
+  repos: {
+    deployment: { findById: h.findDeployment },
+    service: { listByDeployment: h.listServices, updateServiceDeployment: h.write },
+  },
+}));
+vi.mock("../../lib/deployment-runtime", () => ({ withDeploymentRuntime: h.withRuntime }));
 
-function service(overrides: Record<string, unknown> = {}) {
-  return {
-    serviceId: "svc-web",
-    name: "web",
-    ref: "nginx:alpine",
-    deployedDigest: null as string | null,
-    latestDigest: REGISTRY_DIGEST as string | null,
-    behind: false,
-    unknown: true,
-    ...overrides,
-  };
-}
+import { verifyUnknownImageDrift, verifyUnknownImageServices } from "./local-image-drift";
 
-function stubRuntime(overrides: {
-  containerImageId?: string | null;
-  containerThrows?: boolean;
-  tagImageId?: string | null;
-  tagRegistryDigest?: string | null;
-  tagThrows?: boolean;
-  supportsContainerInfo?: boolean;
-} = {}): DockerRuntime {
-  const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
-  runtime.supports = () => overrides.supportsContainerInfo !== false;
-  runtime.getContainerInfo = vi.fn(async (containerId: string): Promise<ContainerInfo> => {
-    if (overrides.containerThrows) throw new Error("daemon unreachable");
-    return {
+const oldImage = `sha256:${"1".repeat(64)}`;
+const newImage = `sha256:${"2".repeat(64)}`;
+const oldDigest = `docker.io/library/nginx@sha256:${"a".repeat(64)}`;
+const newDigest = `sha256:${"b".repeat(64)}`;
+const project = {
+  id: "project-a",
+  organizationId: "org-a",
+  activeDeploymentId: "dep-a",
+} as Project;
+const service = (id = "svc-a") => ({
+  serviceId: id,
+  name: id,
+  ref: "nginx:alpine",
+  deployedDigest: null as string | null,
+  latestDigest: newDigest as string | null,
+  behind: false,
+  unknown: true,
+});
+const rows = [{ serviceId: "svc-a", containerId: "container-a" }];
+function runtime() {
+  const instance = Object.create(DockerRuntime.prototype) as DockerRuntime;
+  instance.supports = vi.fn(() => true);
+  instance.getContainerInfo = vi.fn(
+    async (containerId: string): Promise<ContainerInfo> => ({
       containerId,
       status: "running",
-      ...(overrides.containerImageId ? { imageId: overrides.containerImageId } : {}),
-    };
-  });
-  runtime.prepareDeploymentImage = vi.fn(async () => {
-    if (overrides.tagThrows) throw new Error("tag not present on this daemon");
-    return {
-      imageId: overrides.tagImageId ?? NEW_IMAGE,
-      deploymentRef: overrides.tagRegistryDigest ?? NEW_IMAGE,
-      ...(overrides.tagRegistryDigest ? { registryDigest: overrides.tagRegistryDigest } : {}),
-    };
-  });
-  return runtime;
+      imageId: oldImage,
+    }),
+  );
+  instance.prepareDeploymentImage = vi.fn(async () => ({
+    imageId: newImage,
+    deploymentRef: newImage,
+  }));
+  instance.resolveImageDigest = vi.fn(async () => undefined);
+  instance.pullImage = vi.fn();
+  return instance;
 }
+const status = () => ({
+  supported: true as const,
+  mode: "image" as const,
+  behind: false,
+  latestInProgress: false,
+  inProgressDeploymentId: null,
+  unverified: true,
+  services: [service()],
+});
 
-const rows = [{ id: "sd-1", serviceId: "svc-web", containerId: "container-1" }];
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.findDeployment.mockResolvedValue({
+    id: "dep-a",
+    projectId: "project-a",
+    organizationId: "org-a",
+  });
+  h.listServices.mockResolvedValue(rows);
+});
+afterEach(() => vi.useRealTimers());
 
-describe("verifyUnknownImageServices", () => {
-  it("marks a service behind when the container runs a different image from its tag", async () => {
-    const svc = service();
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      stubRuntime({ containerImageId: OLD_IMAGE, tagImageId: NEW_IMAGE }),
-      rows,
-      [svc],
-      persist,
-    );
-    expect(svc.behind).toBe(true);
-    expect(svc.unknown).toBe(false);
-    // Nothing to heal: the running image is not what the tag points to.
-    expect(persist).not.toHaveBeenCalled();
+describe("local image drift observations", () => {
+  it("detects the reported untagged-container/local-retag case without pulls or writes", async () => {
+    const observed = service();
+    const docker = runtime();
+    await verifyUnknownImageServices(docker, rows, [observed]);
+    expect(observed).toMatchObject({ behind: true, unknown: false, deployedDigest: null });
+    expect(docker.prepareDeploymentImage).toHaveBeenCalledExactlyOnceWith("nginx:alpine", {
+      requirePresent: true,
+    });
+    expect(docker.resolveImageDigest).toHaveBeenCalledWith(oldImage, "nginx:alpine");
+    expect(docker.pullImage).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
   });
 
-  it("proves a service current and heals the row when the images and digests match", async () => {
-    const svc = service();
-    const persist = vi.fn(async () => {});
+  it("recovers running-image evidence in memory when the tag is absent locally", async () => {
+    const observed = service();
+    const docker = runtime();
+    vi.mocked(docker.prepareDeploymentImage).mockRejectedValue(new Error("tag not found"));
+    vi.mocked(docker.resolveImageDigest).mockResolvedValue(oldDigest);
+    await verifyUnknownImageServices(docker, rows, [observed]);
+    expect(observed).toMatchObject({ behind: true, unknown: false, deployedDigest: oldDigest });
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it("does not call a matching local image current when the registry is unknown", async () => {
+    const observed = { ...service(), latestDigest: null };
+    const docker = runtime();
+    vi.mocked(docker.prepareDeploymentImage).mockResolvedValue({
+      imageId: oldImage,
+      deploymentRef: oldDigest,
+      registryDigest: oldDigest,
+    });
+    await verifyUnknownImageServices(docker, rows, [observed]);
+    expect(observed).toMatchObject({ behind: false, unknown: true, deployedDigest: oldDigest });
+  });
+
+  it("deduplicates shared-tag inspection across services", async () => {
+    const docker = runtime();
     await verifyUnknownImageServices(
-      stubRuntime({
-        containerImageId: NEW_IMAGE,
-        tagImageId: NEW_IMAGE,
-        tagRegistryDigest: TAG_REPO_DIGEST,
+      docker,
+      [...rows, { serviceId: "svc-b", containerId: "container-b" }],
+      [service(), service("svc-b")],
+    );
+    expect(docker.prepareDeploymentImage).toHaveBeenCalledTimes(1);
+    expect(docker.getContainerInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips a tag lookup when container ownership or inspection fails", async () => {
+    const observed = service();
+    const docker = runtime();
+    vi.mocked(docker.getContainerInfo).mockRejectedValue(new Error("not owned"));
+    await verifyUnknownImageServices(docker, rows, [observed]);
+    expect(observed).toMatchObject({ behind: false, unknown: true });
+    expect(docker.prepareDeploymentImage).not.toHaveBeenCalled();
+    expect(docker.resolveImageDigest).not.toHaveBeenCalled();
+  });
+
+  it("bounds a stalled inspection and ignores its late result", async () => {
+    vi.useFakeTimers();
+    const observed = service();
+    const docker = runtime();
+    let complete!: (value: Awaited<ReturnType<DockerRuntime["getContainerInfo"]>>) => void;
+    vi.mocked(docker.getContainerInfo).mockReturnValue(
+      new Promise((resolve) => {
+        complete = resolve;
       }),
-      rows,
-      [svc],
-      persist,
     );
-    expect(svc.behind).toBe(false);
-    expect(svc.unknown).toBe(false);
-    expect(svc.deployedDigest).toBe(TAG_REPO_DIGEST);
-    expect(persist).toHaveBeenCalledTimes(1);
-    expect(persist).toHaveBeenCalledWith("sd-1", TAG_REPO_DIGEST);
+    const pending = verifyUnknownImageServices(docker, rows, [observed]);
+    await vi.advanceTimersByTimeAsync(3_001);
+    await pending;
+    complete({ containerId: "container-a", status: "running", imageId: oldImage });
+    await Promise.resolve();
+    expect(observed).toMatchObject({ behind: false, unknown: true });
+    expect(docker.prepareDeploymentImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("runtime resolution and authority", () => {
+  it("rejects a foreign active pointer before resolving a runtime", async () => {
+    h.findDeployment.mockResolvedValue({
+      id: "dep-a",
+      projectId: "project-a",
+      organizationId: "org-b",
+    });
+    await verifyUnknownImageDrift(project, status());
+    expect(h.listServices).not.toHaveBeenCalled();
+    expect(h.withRuntime).not.toHaveBeenCalled();
   });
 
-  it("marks behind when the registry moved the tag under a matching container", async () => {
-    const svc = service({ latestDigest: MOVED_DIGEST });
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      stubRuntime({
-        containerImageId: NEW_IMAGE,
-        tagImageId: NEW_IMAGE,
-        tagRegistryDigest: TAG_REPO_DIGEST,
-      }),
-      rows,
-      [svc],
-      persist,
-    );
-    expect(svc.behind).toBe(true);
-    expect(svc.unknown).toBe(false);
-    expect(persist).toHaveBeenCalledWith("sd-1", TAG_REPO_DIGEST);
+  it("does not acquire a transport without a recorded container", async () => {
+    h.listServices.mockResolvedValue([{ serviceId: "svc-a", containerId: null }]);
+    await verifyUnknownImageDrift(project, status());
+    expect(h.withRuntime).not.toHaveBeenCalled();
   });
 
-  it("leaves the service unknown when the container cannot be inspected", async () => {
-    const svc = service();
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      stubRuntime({ containerThrows: true, tagImageId: NEW_IMAGE }),
-      rows,
-      [svc],
-      persist,
+  it("uses the shared runtime wrapper and recomputes aggregate state", async () => {
+    const result = status();
+    h.withRuntime.mockImplementation(async (_deployment, work) => work(runtime()));
+    await verifyUnknownImageDrift(project, result);
+    expect(h.withRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: "org-a", projectId: "project-a" }),
+      expect.any(Function),
     );
-    expect(svc.behind).toBe(false);
-    expect(svc.unknown).toBe(true);
-    expect(persist).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ behind: true, unverified: false });
+    expect(h.write).not.toHaveBeenCalled();
   });
 
-  it("leaves the service unknown when the tag is not on the daemon", async () => {
-    const svc = service();
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      stubRuntime({ containerImageId: OLD_IMAGE, tagThrows: true }),
-      rows,
-      [svc],
-      persist,
-    );
-    expect(svc.behind).toBe(false);
-    expect(svc.unknown).toBe(true);
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it("leaves the service unknown when the images match but no digest exists anywhere", async () => {
-    const svc = service({ latestDigest: null });
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      stubRuntime({ containerImageId: NEW_IMAGE, tagImageId: NEW_IMAGE }),
-      rows,
-      [svc],
-      persist,
-    );
-    expect(svc.behind).toBe(false);
-    expect(svc.unknown).toBe(true);
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it("skips services with no container and never calls the runtime", async () => {
-    const svc = service();
-    const runtime = stubRuntime({ containerImageId: OLD_IMAGE, tagImageId: NEW_IMAGE });
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      runtime,
-      [{ id: "sd-1", serviceId: "svc-web", containerId: null }],
-      [svc],
-      persist,
-    );
-    expect(svc.behind).toBe(false);
-    expect(svc.unknown).toBe(true);
-    expect(runtime.getContainerInfo).not.toHaveBeenCalled();
-    expect(runtime.prepareDeploymentImage).not.toHaveBeenCalled();
-    expect(persist).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when the runtime has no container info", async () => {
-    const svc = service();
-    const persist = vi.fn(async () => {});
-    await verifyUnknownImageServices(
-      stubRuntime({ supportsContainerInfo: false }),
-      rows,
-      [svc],
-      persist,
-    );
-    expect(svc.unknown).toBe(true);
-    expect(persist).not.toHaveBeenCalled();
+  it("performs no inspection when a runtime resolves after the response deadline", async () => {
+    vi.useFakeTimers();
+    const docker = runtime();
+    let release!: () => void;
+    h.withRuntime.mockImplementation(async (_deployment, work) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return work(docker);
+    });
+    const result = status();
+    const pending = verifyUnknownImageDrift(project, result);
+    await vi.advanceTimersByTimeAsync(3_001);
+    await pending;
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(docker.getContainerInfo).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ behind: false, unverified: true });
   });
 });

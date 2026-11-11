@@ -32,6 +32,10 @@ export interface Credential {
 }
 
 export const credentialsApi = {
+  authorize: (input: { provider: "railway" | "vercel"; name: string }) =>
+    api.post<{ state: string; url: string }>("credentials/authorization", input),
+  completeAuthorization: (input: { state: string; code: string }) =>
+    api.post<{ data: Credential }>("credentials/authorization/complete", input),
   /** The providers this instance can store and verify, with their field schema. */
   providers: () =>
     api.get<{ data: CredentialProvider[] }>(endpoints.credentials.providers),

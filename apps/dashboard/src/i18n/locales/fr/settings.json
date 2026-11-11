@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "Équipe",
       "notifications": "Notifications",
-      "credentials": "Identifiants",
+      "credentials": "Connexions",
       "cloud": "Cloud",
       "infrastructure": "Infrastructure",
       "instance": "Instance",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "Identifiants",
+    "title": "Connexions",
     "description": "Jetons et connexions qu'Openship utilise pour vous — récupération d'images privées, écriture d'enregistrements DNS. Stockés chiffrés et jamais réaffichés.",
     "noProviders": "Aucun fournisseur d'identifiants n'est disponible sur cette instance.",
     "noneForProvider": "Aucun ajouté pour le moment.",
@@ -1624,6 +1624,16 @@
           "apiToken": {
             "label": "Jeton d'API",
             "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec Openship. Créez-le dans My Profile → API Tokens."
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Permettre à Openship d'écrire dans DigitalOcean DNS les enregistrements DNS nécessaires à un domaine personnalisé.",
+        "fields": {
+          "apiToken": {
+            "label": "Jeton d'API",
+            "help": "Un jeton à portées personnalisées avec lecture, création, mise à jour et suppression des domaines. Créez-le dans API → Tokens."
           }
         }
       }

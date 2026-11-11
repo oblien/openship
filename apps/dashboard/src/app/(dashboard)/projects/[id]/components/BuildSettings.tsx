@@ -1,7 +1,7 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getRuntimeVersionPolicy, isServicesFramework } from "@repo/core";
+import { getRuntimeVersionPolicy, isServicesFramework, normalizeRepoPath } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
@@ -11,6 +11,7 @@ import { StorageSettings } from "./StorageSettings";
 import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
 import { ResourceSettings } from "./ResourceSettings";
 import { CommandEnvironmentNotice } from "@/components/import-project/CommandEnvironmentNotice";
+import { RuntimeSourceUpdate } from "@/components/updates/RuntimeSourceUpdate";
 
 /**
  * Configuration cards within project Settings. Build settings link to the deploy wizard; project
@@ -148,6 +149,7 @@ export const BuildSettings = () => {
   if (isServiceFirst) {
     return (
       <div className="space-y-5">
+        {hasRepo && <RuntimeSourceUpdate projectId={id} initialPath={buildData.composePath || "docker-compose.yml"} />}
         <ProjectEnvironmentSettings />
       <BuildCacheMigration key={id} projectId={id} />
         <ResourceSettings />
@@ -184,7 +186,10 @@ export const BuildSettings = () => {
         iconTone="orange"
         title={t.projectSettings.build.runtime.title}
         description={t.projectSettings.build.runtime.description}
-        actions={<EditButton />}
+        actions={<div className="flex flex-wrap items-center gap-2">
+          {hasRepo && (projectData?.buildKind === "dockerfile" || projectData?.framework === "docker") && <RuntimeSourceUpdate projectId={id} initialPath={normalizeRepoPath([buildData.rootDirectory, "Dockerfile"].filter(Boolean).join("/")) || "Dockerfile"} />}
+          <EditButton />
+        </div>}
       >
         <div className="overflow-hidden rounded-xl border border-border/40 divide-y divide-border/30">
           <Row label={t.projectSettings.build.runtime.framework} value={projectData?.framework} />
