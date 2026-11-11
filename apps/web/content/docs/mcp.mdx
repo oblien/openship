@@ -37,6 +37,38 @@ You rarely type this URL by hand. **Settings → MCP** shows it pre-filled and g
 
 ## Connect a client
 
+### Codex and Claude Code plugins
+
+The [Openship plugin](https://github.com/oblien/openship/tree/main/plugins/openship)
+packages the MCP connection with workflow guidance and a setup check. Install from any directory;
+the client downloads the plugin without a manual clone or Openship build.
+
+For Codex:
+
+```bash
+codex plugin marketplace add oblien/openship
+codex plugin add openship@openship
+```
+
+Codex clients with a plugin installation UI can also install **Openship** from the registered
+marketplace through that UI.
+
+For Claude Code:
+
+```bash
+claude plugin marketplace add oblien/openship
+claude plugin install openship@openship
+```
+
+Restart the client, complete browser authorization (use `/mcp` in Claude Code), and run the
+plugin's setup skill to verify access. Each user connects their own account. The package defaults
+to Openship Cloud. For desktop or self-hosted Openship, customize the endpoint copied from
+**Settings → MCP** in the package's `mcp.json` (Codex) or `.mcp.json` (Claude Code), then install
+from a local marketplace. The plugin README covers branch previews and refreshing customized
+packages. Repository distribution is separate from a public plugin directory listing.
+
+### Direct MCP connection
+
 There are two ways to authenticate, and most clients pick one for you. Use the tab that matches your client.
 
 <Tabs items={['OAuth (recommended)', 'Static token']}>
