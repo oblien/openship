@@ -5,12 +5,13 @@ import { eq, type ActionRun, type ActionDeploymentRequest } from "@repo/db";
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 import { ActionDeploymentController } from "@repo/platform/engine/modules/actions/deployment-gate";
 import { parseActionWorkflow } from "@repo/platform/engine/modules/actions/workflow";
+import { automaticDeploymentIntent } from "@repo/platform/engine/modules/deployments/automatic-deployment-intent";
 
 const revision = "a".repeat(40);
 const source =
   "name: CI\non: push\njobs:\n  check:\n    runs-on: [self-hosted, linux]\n    steps:\n      - run: echo checked\n";
 
-async function fixture() {
+async function fixture(acceptComposeChanges?: boolean) {
   const owner = await seedOwner();
   const groupId = generateId("app"),
     projectId = generateId("proj"),
@@ -65,7 +66,7 @@ async function fixture() {
       revision: sha,
       ref: "refs/heads/main",
       requirements: {},
-      intent: {},
+      intent: automaticDeploymentIntent({ projectId, acceptComposeChanges }),
       authority,
     });
   const receipt = (await queue())!;
@@ -191,14 +192,15 @@ describe("required Actions deployment admission with real database transactions"
     expect(await repos.deployment.cancelObsoleteAutomaticBuild(activeId, proof)).toBe(true);
   });
 
-  it("waits for the exact trusted push, then admits one deployment across controller retries", async () => {
-    const f = await fixture();
+  it("retains Compose acceptance while waiting for trusted checks, then admits one deployment across retries", async () => {
+    const f = await fixture(true);
     await Promise.all([
       f.tick(),
       new ActionDeploymentController(f.ports).tick(new Date(Date.now() + 20_000)),
     ]);
     expect(f.dispatchChecks).toHaveBeenCalledOnce();
     expect(f.deploy).not.toHaveBeenCalled();
+    expect((await f.current())?.intent.acceptComposeChanges).toBe(true);
     const [pending] = await repos.actions.runsForActionDeployment(
       f.owner.orgId,
       [f.workflow.id],
@@ -212,6 +214,10 @@ describe("required Actions deployment admission with real database transactions"
     await f.tick();
     await f.tick();
     expect(f.deploy).toHaveBeenCalledOnce();
+    expect(f.deploy).toHaveBeenCalledWith(
+      expect.objectContaining({ intent: expect.objectContaining({ acceptComposeChanges: true }) }),
+      expect.any(String),
+    );
     expect(await f.current()).toMatchObject({ status: "deployed" });
     const rows = await repos.deployment.listByProject(f.projectId);
     expect(rows.rows).toHaveLength(1);

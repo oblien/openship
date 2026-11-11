@@ -39,6 +39,7 @@ curl -X POST "$OPENSHIP_URL/api/projects/proj_123/incoming-webhooks" \
 | `name` | Display name; defaults to `Webhook`. |
 | `authMode` | `token` (default), `hmac`, or `none`; `none` is not allowed for jobs. |
 | `actionConfig.serviceId` / `serviceIds` | Restrict a deploy action to services within this project. |
+| `actionConfig.acceptComposeChanges` | Accept the current Compose source as reviewed for this deploy. Without it, a changed Compose file blocks the deploy with `COMPOSE_REVIEW_REQUIRED` (HTTP 409), and the delivery record lists the added, changed, and removed services. |
 | `actionConfig.jobKey` | Required for a job action. |
 
 The returned hook includes its URL and, where authorized, a secret. Store that secret securely.

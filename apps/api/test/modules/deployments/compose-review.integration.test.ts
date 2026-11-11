@@ -10,6 +10,7 @@ import {
   assertComposeReviewed,
   composeSourceRevision,
   composeSourceChanges,
+  resolveComposeReviewedRevision,
 } from "@repo/platform/engine/modules/deployments/compose-review";
 import { seedOrg, seedProject, seedDeployment, seedServiceDeployment } from "../../helpers/seed";
 import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
@@ -33,6 +34,31 @@ describe("Compose source review and synchronization", () => {
     expect(composeSourceChanges([legacy], resolved).changed).toEqual([]);
     const edited = parseComposeFile(source.replace("[echo,", "[printf,")).services;
     expect(composeSourceChanges(saved, edited).changed).toEqual(["api"]);
+  });
+  it("accepting compose changes reviews the exact scanned source", async () => {
+    const org = await seedOrg();
+    const project = await seedProject(org.organizationId, { framework: "docker-compose" });
+    const source = "services:\n  api:\n    image: busybox\n";
+    const initial = parseComposeFile(source).services;
+    const saved = await repos.service.syncFromCompose(project.id, initial, {
+      composeAuthoritative: true,
+    });
+    const edited = parseComposeFile(source.replace("busybox", "busybox:1.36")).services;
+    // Without acceptance the same edit is still gated.
+    expect(() => assertComposeReviewed(project.id, saved, edited)).toThrowError(
+      expect.objectContaining({ code: "COMPOSE_REVIEW_REQUIRED" }),
+    );
+    // Accepting derives the revision from the scanned source, so the gate passes
+    // for exactly what is being deployed — and for nothing else.
+    const accepted = resolveComposeReviewedRevision(project.id, edited, {
+      acceptComposeChanges: true,
+    });
+    expect(accepted).toBe(composeSourceRevision(project.id, edited));
+    expect(() => assertComposeReviewed(project.id, saved, edited, accepted)).not.toThrow();
+    // A stale passed revision still does not clear the gate when acceptance is off.
+    expect(() =>
+      assertComposeReviewed(project.id, saved, edited, composeSourceRevision(project.id, initial)),
+    ).toThrowError(expect.objectContaining({ code: "COMPOSE_REVIEW_REQUIRED" }));
   });
   it("changing a command variable does not invent a Compose source edit", () => {
     const source = 'services:\n  redis:\n    image: redis:7\n    command: [redis-server, --requirepass, "${REDIS_PASSWORD}"]\n';

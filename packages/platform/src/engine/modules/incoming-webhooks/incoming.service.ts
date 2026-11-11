@@ -19,6 +19,7 @@ import type {
 } from "@repo/db";
 import { encrypt, decrypt } from "@repo/platform/engine/lib/encryption";
 import { verifyHmacSha256 } from "@repo/platform/engine/modules/webhooks/webhook.service";
+import { OperationError } from "@repo/contracts";
 import { ConflictError, NotFoundError, type ExecutionAuthority } from "@repo/core";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
 import { authorization } from "../../lib/authorization";
@@ -361,6 +362,9 @@ export async function dispatchIncomingWebhook(
         // the deployment snapshot so the worker force-pulls selected external
         // images while the deployment still retains webhook provenance.
         forcePullImages: true,
+        // A hook whose saved config opts in accepts the current Compose source
+        // as reviewed for this deploy; without it the gate still refuses.
+        ...(cfg.acceptComposeChanges ? { acceptComposeChanges: true } : {}),
       });
       ref = result?.deployment?.id;
     } else if (hook.actionType === "job") {
@@ -379,7 +383,17 @@ export async function dispatchIncomingWebhook(
     errorDiagnostics.warn("platform/engine/modules/incoming-webhooks/incoming.service",
       `[incoming-webhook] action ${hook.actionType} failed for hook ${hook.id}: ${(err as Error)?.message ?? err}`, err,
     );
-    recordIncomingDelivery(hook, opts, "failed", { error: (err as Error)?.message ?? String(err) });
+    // A refused deploy hides nothing: when the Compose review gate fired, the
+    // delivery record keeps which services changed so the hook owner can see
+    // what to review without re-running the deploy.
+    const composeChanges =
+      err instanceof OperationError && err.code === "COMPOSE_REVIEW_REQUIRED"
+        ? err.details?.composeChanges
+        : undefined;
+    recordIncomingDelivery(hook, opts, "failed", {
+      error: (err as Error)?.message ?? String(err),
+      ...(composeChanges !== undefined ? { composeChanges } : {}),
+    });
     return { error: "action_failed" };
   }
 }
@@ -390,7 +404,7 @@ function recordIncomingDelivery(
   hook: IncomingWebhook,
   opts: { clientIp?: string; userAgent?: string },
   outcome: string,
-  extra?: { actionRef?: string; error?: string },
+  extra?: { actionRef?: string; error?: string; composeChanges?: unknown },
 ): void {
   void trackBackgroundWork(repos.webhookDelivery.record({
       organizationId: hook.organizationId,
@@ -404,7 +418,12 @@ function recordIncomingDelivery(
       error: extra?.error,
       clientIp: opts.clientIp,
       userAgent: opts.userAgent,
-      summary: { name: hook.name },
+      summary: {
+        name: hook.name,
+        ...(extra?.composeChanges !== undefined
+          ? { composeChanges: extra.composeChanges }
+          : {}),
+      },
     }))
     .catch((diagnosticFailure) => {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/incoming-webhooks/incoming.service");

@@ -60,6 +60,29 @@ async function fixture() {
 }
 
 describe("busy push admission through the real deployment entry", () => {
+  it.each([false, true])("retains explicit Compose acceptance in the busy queue in Cloud mode=%s", async (cloud) => {
+    const previous = env.CLOUD_MODE;
+    env.CLOUD_MODE = cloud;
+    try {
+      const f = await fixture();
+      const result = await triggerDeployment(f.ctx, {
+        projectId: f.projectId,
+        trigger: "webhook",
+        branch: "main",
+        commitSha: remote.head,
+        acceptComposeChanges: true,
+      });
+      const request = await repos.actions.actionDeployment(f.owner.orgId, result.awaitingActions!.id);
+      expect(request).toMatchObject({
+        revision: remote.head,
+        intent: { kind: "push", acceptComposeChanges: true },
+        authority: { userId: f.owner.userId, organizationId: f.owner.orgId },
+      });
+    } finally {
+      env.CLOUD_MODE = previous;
+    }
+  });
+
   it.each([false, true])("durably accepts a blocked push in Cloud mode=%s", async (cloud) => {
     const previous = env.CLOUD_MODE;
     env.CLOUD_MODE = cloud;
