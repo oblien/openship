@@ -1848,7 +1848,10 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   }
 
   /** Called under the edge config lock. Publish all files before one validation
-   * and reload; restore every snapshot on any write, removal, or reload failure. */
+   * and reload; restore every snapshot on any write, removal, or reload failure.
+   * Vhosts and route sidecars contain password verifiers and session-signing keys.
+   * The nginx master reads the config before workers drop privileges, so keep
+   * these files private on publication AND rollback. */
   private async updateConfig(changes: { path: string; content: string | null }[]): Promise<void> {
     const snapshots = await Promise.all(
       changes.map(async ({ path }) => ({ path, snapshot: await this._captureFile(path) })),
@@ -1856,14 +1859,14 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     try {
       for (const { path, content } of changes) {
         if (content === null) await this._rm(path);
-        else await this._writeFile(path, content, 0o644);
+        else await this._writeFile(path, content, 0o600);
       }
       await this.reload();
     } catch (error) {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
       for (const { path, snapshot } of snapshots) {
-          await this._restoreFile(path, snapshot, 0o644).catch((err) => {
+        await this._restoreFile(path, snapshot, 0o600).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(`${path}: ${safeErrorMessage(err)}`);
         });
@@ -2468,8 +2471,8 @@ ${serveLocation}
       // reliably abortable, so re-check between each rollback step and remove
       // anything restored if the signal arrives while one is in progress.
       try {
-        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, 0o644);
-        if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot, 0o644);
+        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, 0o600);
+        if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot, 0o600);
         if (!opts?.signal?.aborted && !(err instanceof ConfigRollbackError)) {
           await this.reloadConfig({ allowStopped: true }).catch((diagnosticFailure) => {
             observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
