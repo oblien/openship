@@ -9,10 +9,17 @@ const h = vi.hoisted(() => ({
   file: vi.fn(),
   trigger: vi.fn(),
   rerun: vi.fn(),
+  enqueue: vi.fn(),
+  sync: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
-    actions: { matchingWorkflows: h.workflows, workflowError: h.error },
+    actions: {
+      matchingWorkflows: h.workflows,
+      workflowError: h.error,
+      enqueueDelivery: h.enqueue,
+      requestGitHubSync: h.sync,
+    },
     gitInstallation: { findByOrgAndOwner: h.installation },
   },
 }));
@@ -25,7 +32,7 @@ vi.mock("./action.service", () => ({
   triggerActionWorkflow: h.trigger,
   rerunActionWorkflow: h.rerun,
 }));
-import { dispatchActionWebhook } from "./triggers";
+import { dispatchActionWebhook, enqueueActionWebhook } from "./triggers";
 
 const base = "a".repeat(40),
   head = "b".repeat(40),
@@ -88,6 +95,21 @@ beforeEach(() => {
 });
 const dispatch = (value = event()) =>
   dispatchActionWebhook("pull_request", value, "delivery", target);
+
+it("routes GitHub-owned events to the exact workflow without storing webhook payloads", async () => {
+  h.workflows.mockResolvedValueOnce([
+    { ...target, id: "first", controller: "github", githubWorkflowId: "123" },
+    { ...target, id: "second", controller: "github", githubWorkflowId: "456" },
+    { ...target, id: "native", controller: "openship" },
+  ]);
+  await enqueueActionWebhook(
+    "workflow_run",
+    { installation: { id: 99 }, repository: { full_name: "acme/app" }, workflow_run: { workflow_id: 123 } },
+    "delivery",
+  );
+  expect(h.sync).toHaveBeenCalledExactlyOnceWith("org", "first");
+  expect(h.enqueue).not.toHaveBeenCalled();
+});
 
 describe("independent pull request webhook revisions", () => {
   it.each(["opened", "reopened", "synchronize"])(
