@@ -1253,8 +1253,6 @@ interface ConfigTransaction {
 interface ConfigChange {
   path: string;
   content: string | null;
-  /** Defaults to {@link ROUTE_FILE_MODE}. */
-  mode?: number;
 }
 
 /** Mode of every vhost, route-state sidecar and challenge vhost the edge writes. */
@@ -1883,9 +1881,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   }
 
   private async _captureFile(path: string, preserveLink = false): Promise<FileSnapshot> {
-    // A container command cannot read a link at an unrelated host bind-mount
-    // path. In that case retain the readable content, as the file channel does.
-    if (preserveLink && this._sharesHostNamespace(path)) {
+    if (preserveLink) {
       const linkTarget = await this._readlink(path);
       if (linkTarget) return { exists: true, linkTarget };
     }
@@ -1928,6 +1924,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * nothing is left, still validate and reload: matching files cannot prove the
    * running edge loaded them. Other providers, API processes and certificate writers
    * can change disk between transactions, including a write whose reload failed.
+   * Vhosts and sidecars contain password verifiers and session-signing keys. Keep
+   * them private on publication and rollback; the nginx master reads them before
+   * workers drop privileges.
    */
   private async updateConfig(changes: ConfigChange[]): Promise<void> {
     const inspected = await Promise.all(
@@ -1936,14 +1935,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         // still costs two file operations. Absent or unknown keeps the old probe:
         // the host not seeing a path does not prove the edge cannot.
         const stat = await this._lstat(change.path);
-        // A symlink is always replaced (it is never "unchanged"), and its target may be
-        // missing: snapshot the link itself so a rollback can put it back.
+        // Snapshot readable contents, not links: route files must remain private
+        // regular files after rollback too. A dangling link has no content to keep.
         const snapshot: FileSnapshot =
-          stat?.kind === "symlink"
-            ? await this._captureFile(change.path, true)
-            : stat
-              ? { exists: true, content: await this._readFile(change.path) }
-              : await this._captureFile(change.path);
+          stat?.kind === "file"
+            ? { exists: true, content: await this._readFile(change.path) }
+            : await this._captureFile(change.path);
         return { ...change, snapshot, stat };
       }),
     );
@@ -1954,17 +1951,16 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     try {
       for (const change of pending) {
         attempted.push(change);
-        const { path, content, mode } = change;
+        const { path, content } = change;
         if (content === null) await this._rm(path);
-        else await this._writeFile(path, content, mode ?? ROUTE_FILE_MODE);
+        else await this._writeFile(path, content, ROUTE_FILE_MODE);
       }
       await this.reload();
     } catch (error) {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
-      for (const { path, snapshot, stat } of attempted) {
-        const mode = stat?.kind === "file" ? stat.mode : ROUTE_FILE_MODE;
-        await this._restoreFile(path, snapshot, mode).catch((err) => {
+      for (const { path, snapshot } of attempted) {
+        await this._restoreFile(path, snapshot, ROUTE_FILE_MODE).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(`${path}: ${safeErrorMessage(err)}`);
         });
@@ -1988,7 +1984,6 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
   private isPendingChange({
     content,
-    mode,
     snapshot,
     stat,
   }: ConfigChange & { snapshot: FileSnapshot; stat: FileStat | null | undefined }): boolean {
@@ -1997,7 +1992,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // Matching text cannot establish the permissions or rule out a symlink. Keep
     // the existing atomic write when the file channel cannot inspect metadata.
     if (!stat) return true;
-    return stat.kind !== "file" || stat.mode !== (mode ?? ROUTE_FILE_MODE);
+    return stat.kind !== "file" || stat.mode !== ROUTE_FILE_MODE;
   }
 
   /** Best-effort {@link CommandExecutor.lstat}; `undefined` when it cannot say. */

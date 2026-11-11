@@ -139,6 +139,19 @@ describe("unchanged edge writes", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps route files private when a failed reload rolls back a permission repair", async () => {
+    const nginx = provider();
+    await nginx.registerRoute(route());
+    const original = await readFile(confPath(), "utf8");
+    await chmod(confPath(), 0o666);
+    reloads.mockRejectedValueOnce(new Error("reload refused"));
+
+    await expect(nginx.registerRoute(route())).rejects.toThrow("reload refused");
+
+    expect(await readFile(confPath(), "utf8")).toBe(original);
+    expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+  });
+
   it.each(["unavailable", "refused"])(
     "repairs permissions when metadata is %s instead of trusting matching content",
     async (metadata) => {
@@ -176,6 +189,24 @@ describe("unchanged edge writes", () => {
     expect(reloads.mock.calls.some(([command]) => command.startsWith("readlink"))).toBe(false);
     expect(await readFile(elsewhere, "utf8")).toContain("127.0.0.1:3001");
     expect(reloads).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back a replaced symlink as a private regular route file", async () => {
+    const nginx = provider();
+    await nginx.registerRoute(route());
+    const original = await readFile(confPath(), "utf8");
+    const target = join(root, "linked-route.conf");
+    await writeFile(target, original, { mode: 0o644 });
+    await rm(confPath());
+    await symlink(target, confPath());
+    reloads.mockRejectedValueOnce(new Error("reload refused"));
+
+    await expect(nginx.registerRoute(route(3002))).rejects.toThrow("reload refused");
+
+    expect((await lstat(confPath())).isFile()).toBe(true);
+    expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+    expect(await readFile(confPath(), "utf8")).toBe(original);
+    expect(await readFile(target, "utf8")).toBe(original);
   });
 
   it.each(["vhost", "sidecar"])(
