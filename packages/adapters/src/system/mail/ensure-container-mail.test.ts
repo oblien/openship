@@ -11,7 +11,7 @@ import {
   setDefaultMailImage,
 } from "./ensure-container-mail";
 import { setManagedImagesFromSource } from "../managed-image";
-import { MAIL_HOST_STATE_DIR } from "../../infra/mail-container";
+import { MAIL_HOST_STATE_DIR, MAIL_CONTAINER_MOUNTS } from "../../infra/mail-container";
 import type { CommandExecutor } from "../../types";
 
 afterEach(() => {
@@ -40,6 +40,12 @@ describe("buildMailRunCommand", () => {
     expect(cmd).toContain("--env-file");
     // The Postfix queue must be a bind mount or a recreate drops in-flight mail.
     expect(cmd).toContain("/var/spool/postfix");
+    // The mail logs must survive a recreate (issue #1701): rsyslog writes them
+    // to files under /var/log, which `docker logs` never holds.
+    expect(cmd).toContain("/var/lib/openship/mail/logs:/var/log:z");
+    // fail2ban's own SQLite database must survive a recreate (issue #1701), or
+    // every update starts from an empty database ("New database created").
+    expect(cmd).toContain("/var/lib/openship/mail/fail2ban:/var/lib/fail2ban:z");
     // The cert store is shared with the edge and mounted read-only.
     expect(cmd).toContain("/etc/letsencrypt:ro,z");
     // Image is the final, shell-quoted token.
@@ -278,6 +284,57 @@ describe("ensureContainerMail image acquisition gate", () => {
     ]);
   });
 
+  it("passes OPENSHIP_MAIL_F2B_IGNOREIP through to engine.env when set (issue #1701)", async () => {
+    // Operator fail2ban ignoreip additions (space-separated IPs/CIDRs/hostnames).
+    // The entrypoint renders them into a jail.d override on every boot so they
+    // survive a recreate; the env-file's own CR/LF guard still applies, so a
+    // multi-line value fails closed here instead of injecting env records.
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const previous = process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+    process.env.OPENSHIP_MAIL_F2B_IGNOREIP = "203.0.113.5 198.51.100.0/24";
+    try {
+      const box = firstBootExecutor({ imagePresent: true });
+      const writeFile = vi.fn(async (_path: string, _content: string) => {});
+      await ensureContainerMail(
+        { exec: box.exec, writeFile, streamExec: box.streamExec } as never,
+        {
+          domain: "example.com",
+          secrets: {},
+          onLog: () => {},
+        },
+      );
+      expect(writeFile.mock.calls.find(([path]) => path.endsWith("engine.env"))?.[1]).toContain(
+        "OPENSHIP_MAIL_F2B_IGNOREIP=203.0.113.5 198.51.100.0/24\n",
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+      else process.env.OPENSHIP_MAIL_F2B_IGNOREIP = previous;
+    }
+  });
+
+  it("writes no OPENSHIP_MAIL_F2B_IGNOREIP record when it is unset (issue #1701)", async () => {
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    const previous = process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+    delete process.env.OPENSHIP_MAIL_F2B_IGNOREIP;
+    try {
+      const box = firstBootExecutor({ imagePresent: true });
+      const writeFile = vi.fn(async (_path: string, _content: string) => {});
+      await ensureContainerMail(
+        { exec: box.exec, writeFile, streamExec: box.streamExec } as never,
+        {
+          domain: "example.com",
+          secrets: {},
+          onLog: () => {},
+        },
+      );
+      expect(writeFile.mock.calls.find(([path]) => path.endsWith("engine.env"))?.[1]).not.toContain(
+        "OPENSHIP_MAIL_F2B_IGNOREIP",
+      );
+    } finally {
+      if (previous !== undefined) process.env.OPENSHIP_MAIL_F2B_IGNOREIP = previous;
+    }
+  });
+
   it("skips the registry pull when the image is already present locally (delivered dev tag)", async () => {
     setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
     const { executor, streamExec } = firstBootExecutor({ imagePresent: true });
@@ -329,6 +386,14 @@ describe("ensureContainerMail swap", () => {
     setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
     const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
     const exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("{{json .Mounts}}"))
+        return `${"a".repeat(64)}\ttrue\t${JSON.stringify(
+          MAIL_CONTAINER_MOUNTS.map((m) => ({
+            Type: "bind",
+            Source: m.host,
+            Destination: m.container,
+          })),
+        )}`;
       // Engine is running on an OLDER tag → stale vs the pinned ref.
       if (cmd.includes(STATE_PROBE)) return stateLine("ghcr.io/x/openship-mail:old");
       // The pinned tag is already present locally (deliver shipped it) → no pull.
@@ -682,6 +747,14 @@ function nonRootSudoBox(
   const exec = vi.fn(async (cmd: string) => {
     const command = unwrap(cmd);
     if (command.includes("opsh_begin")) return probe;
+    if (command.includes("{{json .Mounts}}"))
+      return `${"a".repeat(64)}\ttrue\t${JSON.stringify(
+        MAIL_CONTAINER_MOUNTS.map((m) => ({
+          Type: "bind",
+          Source: m.host,
+          Destination: m.container,
+        })),
+      )}`;
     if (command.includes(STATE_PROBE)) {
       return opts.runningImage ? stateLine(opts.runningImage) : "";
     }

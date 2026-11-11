@@ -221,6 +221,9 @@ export async function swapManagedImage(
     to: string;
     label: string;
     onLog: SystemLogCallback;
+    /** Component preflight after image acquisition, before replacement starts.
+     * A refusal leaves the predecessor intact and must not trigger replacement rollback. */
+    prepare?: () => Promise<void>;
   } & (
     | { start: (image: string) => Promise<boolean>; replace?: never }
     | { start?: never; replace: () => Promise<{ swapped: boolean; down: boolean }> }
@@ -247,6 +250,8 @@ export async function swapManagedImage(
       return { swapped: false, down: false };
     }
   }
+
+  await opts.prepare?.();
 
   // A server-owned replacement includes its own rollback. A transport loss must
   // never launch a competing rollback from the control plane.
