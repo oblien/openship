@@ -148,6 +148,26 @@ it("does not let an older poll hide publication received over the stream", async
 });
 
 describe("build status on browser return", () => {
+  it("does not consume buffered stream logs during a healthy resume status check", async () => {
+    await mount();
+    await load({ lastEventId: 5 });
+    const write = vi.fn();
+    build.terminalRef.current = { write } as any;
+    build.onTerminalReady();
+    api.status.mockResolvedValue(snapshot({
+      lastEventId: 6,
+      logEntries: [{ eventId: 6, text: "Published image", serviceName: "api" }],
+    }));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    const bytes = new TextEncoder().encode("Published image\r\n");
+    await act(async () => {
+      api.callbacks.onLog({ eventId: 6, serviceName: "api" }, "Published image", bytes);
+      api.callbacks.onLog({ eventId: 6, serviceName: "api" }, "Published image", bytes);
+    });
+    expect(write).toHaveBeenCalledExactlyOnceWith(bytes);
+    expect(build.state.buildLogs.map(log => log.text)).toEqual(["Published image"]);
+  });
+
   it("reconciles a missed finish once, without polling a healthy stream or settled result", async () => {
     await mount(); await load();
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });

@@ -1164,12 +1164,12 @@ export function useDeploymentBuild(
         // A queued deployment can be waiting for its in-memory stream to exist.
         const isLive = data.is_active || !["ready", "failed", "cancelled"].includes(status);
         const mapped = mapServiceStatusesFromBuildStatus(data);
-        // The stream is detached, so live logs stopped flowing — refresh the
-        // terminal buffer from the snapshot too (structured entries keep their
-        // serviceName so per-service tabs repopulate). Keep lastEventIdRef in
-        // sync so a later reconnect-replay dedups against what we just applied.
-        const polledLogs = mapBuildLogsFromStatus(data);
-        if (typeof data.lastEventId === "number") {
+        // A healthy stream still owns live logs. Advancing its cursor from a
+        // resume snapshot would discard buffered SSE bytes before they reach
+        // the terminal. Recover snapshot logs only when detached or settled.
+        const recoverLogs = !buildStream.isConnected || !isLive;
+        const polledLogs = recoverLogs ? mapBuildLogsFromStatus(data) : [];
+        if (recoverLogs && typeof data.lastEventId === "number") {
           lastEventIdRef.current = data.lastEventId;
         }
         // The poll — not just the live stream — can be what observes the finish.
