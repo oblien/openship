@@ -207,6 +207,8 @@ export async function buildImage(
  * `start(image)` is the component's own "start this image AND prove it's serving"
  * callback (the edge verifies :80; mail verifies :25/:993), so an update that leaves
  * a crash-looping container reads as a failed swap, not a successful one.
+ * Alternatively, `replace` owns activation, verification and rollback together
+ * on the target. Transport errors propagate without racing that transaction.
  *
  * `down: true` means the swap failed AND the rollback failed — the box has NOTHING
  * serving. It must be reported, not just logged, or the worst outcome is invisible.
@@ -219,10 +221,12 @@ export async function swapManagedImage(
     to: string;
     label: string;
     onLog: SystemLogCallback;
-    start: (image: string) => Promise<boolean>;
-  },
+  } & (
+    | { start: (image: string) => Promise<boolean>; replace?: never }
+    | { start?: never; replace: () => Promise<{ swapped: boolean; down: boolean }> }
+  ),
 ): Promise<{ swapped: boolean; down: boolean }> {
-  const { kind, from, to, label, onLog, start } = opts;
+  const { kind, from, to, label, onLog } = opts;
   const Label = titleCase(label);
   onLog(log(`Updating the ${label}: ${from} → ${to}`));
 
@@ -243,6 +247,11 @@ export async function swapManagedImage(
       return { swapped: false, down: false };
     }
   }
+
+  // A server-owned replacement includes its own rollback. A transport loss must
+  // never launch a competing rollback from the control plane.
+  if (opts.replace) return opts.replace();
+  const { start } = opts;
 
   // Startup may have removed the old container before an SSH or Docker command
   // throws. A rejected promise needs the same recovery as a failed health check.
