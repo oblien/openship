@@ -54,6 +54,7 @@ interface FakeOpts {
   abortOnReloadFailure?: AbortController;
   /** Simulate nginx rejecting the configuration in both validation attempts. */
   failValidation?: boolean;
+  routeProtectionRuntime?: boolean;
   /** Listener shape exposed while recovering a failed bare-host reload. */
   reloadListener?:
     | "verified-nginx"
@@ -99,6 +100,7 @@ function makeExecutor(
   let masterGenerationCaptured = false;
   const exec = async (command: string): Promise<string> => {
     calls.push(command);
+    if (opts.routeProtectionRuntime && command.includes("--with-threads")) return "";
     // openresty path detection (reload re-detects) → fail so cached paths stick.
     if (/\s-V\b|command -v|which\s/.test(command)) throw new Error("no openresty in test");
     if (
@@ -334,6 +336,42 @@ describe("NginxProvider path-only routes", () => {
     expect(JSON.parse(files.get(`${SITES}/app-example-com.route.json`)!)).toMatchObject({ notFound: true });
   });
 });
+describe("NginxProvider file permissions", () => {
+  test.each(["http://operator:private@127.0.0.1:3000", "http://127.0.0.1:3000/?token=private"])(
+    "keeps upstream credentials private: %s", async (targetUrl) => {
+      const { nginx, writes } = setup();
+      await nginx.registerRoute({ ...OURS, targetUrl });
+      expect(writes.find((w) => w.path.includes("app-example-com.conf"))?.mode).toBe(0o600);
+    },
+  );
+  test("writes 0o644 for public vhost configs and 0o600 for route state files", async () => {
+    const { nginx, writes } = setup();
+    await nginx.registerRoute(OURS);
+
+    const confWrite = writes.find((w) => w.path.includes("app-example-com.conf"));
+    const stateWrite = writes.find((w) => w.path.includes("app-example-com.route.json"));
+
+    expect(confWrite).toBeDefined();
+    expect(confWrite?.mode).toBe(0o644);
+    expect(stateWrite).toBeDefined();
+    expect(stateWrite?.mode).toBe(0o600);
+  });
+
+  test("keeps embedded credentials private and only relaxes the config after unlocking", async () => {
+    const { nginx, writes, files } = setup({ certDomains: ["app.example.com"], routeProtectionRuntime: true });
+    files.set(PATHS.confPath, "events {}\nhttp {}\n");
+    await nginx.registerRoute({ ...OURS, protection: {
+      version: "1".repeat(32), salt: "2".repeat(64), verifier: "3".repeat(64),
+      signingKey: "4".repeat(64), iterations: 600_000, sessionSeconds: 86_400,
+    } });
+    expect(writes.find((w) => w.content.includes("$openship_route_auth"))?.mode).toBe(0o600);
+    writes.length = 0;
+    await nginx.setRouteProtection(OURS.domain, null);
+    expect(writes.find((w) => w.path.includes("app-example-com.conf"))?.mode).toBe(0o644);
+    expect(writes.find((w) => w.path.includes("app-example-com.route.json"))?.mode).toBe(0o600);
+  });
+});
+
 
 /**
  * Openship Cloud's shared edge proves this box controls a routing target by fetching

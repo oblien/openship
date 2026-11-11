@@ -273,6 +273,9 @@ describeDockerE2E("password-protected routes through the real edge", () => {
   });
 
   it("keeps public routes unchanged and blocks protected HTML, assets, APIs and forged HTTPS", async () => {
+    const routeFiles = ["public-test.conf", "private-test.conf", "private-test.route.json"]
+      .map((name) => sq(join(paths.sitesDir, name))).join(" ");
+    expect((await exec(`stat -c '%a' ${routeFiles}`)).trim().split("\n")).toEqual(["644", "600", "600"]);
     expect((await ask("/", { host: "public.test" })).body).toBe("private document");
     const page = await ask("/");
     expect(page.status).toBe(401);
@@ -475,6 +478,7 @@ describeDockerE2E("password-protected routes through the real edge", () => {
     await exec(`mv ${path}.saved ${path}; openresty -s reload`);
     await nginx.setRouteProtection("private.test", null);
     await settleReload();
+    expect((await exec(`stat -c '%a' ${sq(join(paths.sitesDir, "private-test.conf"))}`)).trim()).toBe("644");
     expect((await ask("/asset.js")).status).toBe(200);
   });
 
