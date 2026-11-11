@@ -9,18 +9,19 @@ vi.mock("../../src/lib/permission", async () => ({
   isCheckedResourceType: (await import("@repo/platform")).isCheckedResourceType,
 }));
 vi.mock("@repo/db", () => ({ repos: {} }));
-vi.mock("../../src/lib/audit", async (importOriginal) => {
-  // Keep the REAL auditContextFrom so the test proves the wiring from the
-  // authenticated credential to the row; only the sink is faked.
-  const original = await importOriginal<typeof import("../../src/lib/audit")>();
-  return { ...original, audit: { record: vi.fn(), recordAsync: recordAsyncMock } };
-});
+// Both the route and MCP emitters use this sink. Keep their real attribution
+// and audit predicates so the combined path catches duplicate or missing rows.
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
+  audit: { record: vi.fn(), recordAsync: recordAsyncMock },
+}));
 vi.mock("@repo/platform/engine/modules/github/github-access", () => ({
   canUseGitHubRepo: vi.fn(async () => false),
   checkSourceTier: vi.fn(async () => ({ ok: false, readPaths: [] })),
 }));
 
 const { requirePermission } = await import("../../src/lib/route-permission");
+const { internalSourceHeader, internalClientHeader } = await import("../../src/lib/call-source");
+const { recordToolCall } = await import("../../src/modules/mcp/mcp-audit");
 
 /**
  * A PAT-authenticated REST call must leave an audit row that says WHICH
@@ -33,6 +34,7 @@ function context(opts: {
   params?: Record<string, string | undefined>;
   ctx?: Record<string, unknown>;
   status?: number;
+  headers?: Record<string, string>;
 }) {
   const values = new Map<string, unknown>([
     ["ctx", { userId: "user-1", organizationId: "org-1", ...(opts.ctx ?? {}) }],
@@ -42,7 +44,7 @@ function context(opts: {
     req: {
       param: vi.fn((name: string) => (opts.params ?? {})[name]),
       query: vi.fn(() => undefined),
-      header: vi.fn(() => undefined),
+      header: vi.fn((name: string) => opts.headers?.[name]),
     },
     var: { clientIp: "127.0.0.1" },
     get: vi.fn((name: string) => values.get(name)),
@@ -53,6 +55,7 @@ function context(opts: {
 }
 
 const patCtx = { sessionKind: "bearer", principalKind: "pat", sessionId: "pat:pat_123" };
+const oauthCtx = { sessionKind: "bearer", principalKind: "oauth", sessionId: "oauth:cli_abc" };
 const cookieCtx = { sessionKind: "cookie", principalKind: null, sessionId: "sess_abc" };
 
 describe("route audit emitter", () => {
@@ -131,4 +134,70 @@ describe("route audit emitter", () => {
 
     expect(recordAsyncMock).not.toHaveBeenCalled();
   });
+
+  it("audits a direct OAuth REST read even though its derived source is mcp", async () => {
+    const c = context({ params: { id: "project-1" }, ctx: oauthCtx });
+    await requirePermission({ tag: "project:read" })(c as never, async () => {});
+    expect(recordAsyncMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sourceClientId: "oauth:cli_abc" }),
+      expect.objectContaining({ eventType: "project:read" }),
+    );
+  });
+
+  it("does not let a forged MCP claim suppress a REST read", async () => {
+    const c = context({
+      params: { id: "project-1" },
+      ctx: patCtx,
+      headers: { "x-openship-call-source": "mcp.forged" },
+    });
+    await requirePermission({ tag: "project:read" })(c as never, async () => {});
+    expect(recordAsyncMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ source: "api", sourceClientId: "pat:pat_123" }),
+      expect.objectContaining({ eventType: "project:read" }),
+    );
+  });
+
+  it.each([
+    { principal: patCtx, action: "read", root: "project", status: 200, event: "mcp.tool_called" },
+    { principal: patCtx, action: "list", root: "project", status: 200, event: "mcp.tool_called" },
+    { principal: oauthCtx, action: "read", root: "project", status: 200, event: "mcp.tool_called" },
+    { principal: oauthCtx, action: "list", root: "project", status: 200, event: "mcp.tool_called" },
+    { principal: patCtx, action: "read", root: "audit", status: 200, event: "mcp.tool_called" },
+    { principal: patCtx, action: "read", root: "project", status: 403, event: "mcp.tool_called" },
+    { principal: patCtx, action: "write", root: "project", status: 200, event: "project:write" },
+    { principal: patCtx, action: "write", root: "project", status: 403, event: "mcp.tool_called" },
+  ])(
+    "records one MCP $principal.principalKind $action on $root (HTTP $status)",
+    async ({ principal, action, root, status, event }) => {
+      const c = context({
+        params: { id: "project-1" },
+        ctx: principal,
+        status,
+        headers: { ...internalSourceHeader("mcp"), ...internalClientHeader(principal.sessionId) },
+      });
+      await requirePermission({ tag: `${root}:${action}` })(c as never, async () => {});
+      recordToolCall(
+        {
+          organizationId: "org-1",
+          userId: "user-1",
+          clientId: principal.sessionId,
+          tokenId: "token-1",
+          ipAddress: null,
+          userAgent: null,
+        },
+        {
+          tool: "test_tool",
+          method: action === "write" ? "POST" : "GET",
+          path: `/api/${root}`,
+          action,
+          status,
+          ok: status < 400,
+        },
+      );
+      expect(recordAsyncMock).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ source: "mcp", sourceClientId: principal.sessionId }),
+        expect.objectContaining({ eventType: event }),
+      );
+    },
+  );
 });

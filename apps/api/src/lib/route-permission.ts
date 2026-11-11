@@ -31,6 +31,7 @@ import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
 import { repos } from "@repo/db";
 import { audit, auditContextFrom } from "./audit";
+import { resolveTrustedCallSource } from "./call-source";
 import {
   canUseGitHubRepo,
   checkSourceTier,
@@ -763,6 +764,9 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
     // automation, not a person browsing, and the same "what did it look
     // at" question MCP answers for its reads applies here: a script
     // holding a token gets its reads audited, a dashboard read does not.
+    // Internally dispatched MCP reads already have a tool-call audit row.
+    // Only the nonce-verified source can delegate to that emitter: deriving
+    // "mcp" from an OAuth credential must not suppress direct REST reads.
     // One exception: reads of the audit log itself. Every read of the
     // log would append a row to the log, so its total could never be
     // stable and its facets would be dominated by whoever reads it most.
@@ -777,7 +781,8 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
       action === "admin" ||
       (isTokenPrincipal &&
         (action === "read" || action === "list") &&
-        parsed.root !== "audit");
+        parsed.root !== "audit" &&
+        resolveTrustedCallSource(c) !== "mcp");
     // A cloud proxy may finish before reaching a migrated operation. Only skip
     // this emitter when that operation actually recorded this invocation.
     if ((!spec.auditHandledByOperation || !c.get("operationAuditRecorded")) && auditable) {
