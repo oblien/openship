@@ -1343,6 +1343,32 @@ describe("Assistant: normal OAuth → MCP → HTTP authorization", () => {
 });
 
 describe("Private custom API connections", () => {
+  it("distinguishes a missing agent from unsupported custom APIs without saving credentials", async () => {
+    const owner = await actor();
+    await connect(owner);
+    const input = {
+      name: "My API",
+      baseUrl: "https://model.example/v1",
+      apiKey: "fixture-only",
+      model: "m",
+    };
+    fixture.unavailableProviders.add("codex");
+    try {
+      const missing = await request(owner, "POST", "/custom-api", input);
+      expect(missing.status).toBe(409);
+      expect(await missing.json()).toMatchObject({ code: "ASSISTANT_SETUP_REQUIRED" });
+      fixture.unavailableProviders.delete("codex");
+      fixture.customCapability = false;
+      const unsupported = await request(owner, "POST", "/custom-api", input);
+      expect(unsupported.status).toBe(409);
+      expect(await unsupported.text()).toContain("Update OpenShip and reconnect");
+      const providers = await data(owner, "GET", "/providers");
+      expect(providers.find((p: any) => p.id === "codex").customProviders).toEqual([]);
+    } finally {
+      fixture.unavailableProviders.delete("codex");
+      fixture.customCapability = true;
+    }
+  });
   it("keeps native login separate, routes a custom model, and excludes another tenant", async () => {
     const owner = await actor(),
       stranger = await actor();

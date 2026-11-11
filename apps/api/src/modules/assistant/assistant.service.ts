@@ -679,8 +679,17 @@ export function createAssistantRuntime(
       requireAssistantSession(ctx);
       await enabled(ctx);
       const info = await provider(ctx, "codex");
+      if (!info.available)
+        throw assistantError(
+          "Set up Codex on your assistant host before adding a custom API connection.",
+          409,
+          "ASSISTANT_SETUP_REQUIRED",
+        );
       if (!info.customApiAvailable)
-        throw assistantError("Update the assistant runtime to add custom API connections.", 409);
+        throw assistantError(
+          "Update OpenShip and reconnect the assistant to use custom API connections.",
+          409,
+        );
       let url: URL;
       try {
         url = new URL(input.baseUrl);

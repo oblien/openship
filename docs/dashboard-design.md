@@ -1340,6 +1340,10 @@ Use one heading and one connection surface. Show each provider's name and mark o
 in the compact selector; do not repeat them as a second header inside its form.
 Keep connection status in the selector and host information in the footer.
 Use the shared connection forms in settings and agent-editor dialogs as well.
+Custom API setup reuses the native agent's setup control and installation polling.
+An absent agent is a setup state, not an outdated runtime. Preserve connection inputs
+while setup runs, and offer an update hint only after an available agent reports
+that custom API support is missing.
 Preserve unfinished sign-in forms when switching providers or returning to chat;
 hidden content must not capture keyboard focus. Identify the connection host.
 Using a different connection from an existing conversation opens a fresh chat;
