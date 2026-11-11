@@ -83,6 +83,19 @@ describe("Docker build secret transport", () => {
     catch (error) { expect(String(error)).not.toContain("private-value"); }
   });
 
+  it("rejects invalid generated environments before allocating a builder and releases their source context", async () => {
+    const selectDockerodeBuilder = vi.fn();
+    const cleanup = vi.fn(async () => {});
+    const runtime = Object.assign(Object.create(DockerRuntime.prototype), { selectDockerodeBuilder });
+    await expect(runtime.buildViaDockerode(
+      { ...config, envVars: { PRIVATE_VALUE: "private-value\0" } },
+      { usesRepositoryDockerfile: false, cleanup },
+      "openship/test:invalid", new BuildLogger(),
+    )).rejects.toThrow("NUL bytes");
+    expect(selectDockerodeBuilder).not.toHaveBeenCalled();
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
   it.each(["success", "failure", "abort", "write failure"])(
     "cleans private remote files after %s",
     async (mode) => {

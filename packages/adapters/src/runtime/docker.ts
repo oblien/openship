@@ -2068,6 +2068,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     const signal = opts?.signal;
     const executor = this.connectionOptions?.executor;
     if (!executor) throw new Error("SSH build path requires an executor on connectionOptions");
+    const secrets = opts?.usesRepositoryDockerfile === false ? dockerBuildSecrets(config) : new Map<string, string>();
 
     // Compose the docker build command. Quoting matters - buildargs and labels
     // can contain `=` and spaces.
@@ -2162,7 +2163,6 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     try {
       if (!native && !opts?.sharedWorker) await this.startProtectedBuildWorker(config, log, signal);
       signal?.throwIfAborted();
-      const secrets = opts?.usesRepositoryDockerfile === false ? dockerBuildSecrets(config) : new Map<string, string>();
       const result = await withDockerBuildSecrets(executor, secrets, (secretFlags, cleanup) => executor.streamExec(
         buildCmd(secretFlags, cleanup),
         (entry) => {
@@ -2648,7 +2648,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
     let pin: Awaited<ReturnType<DockerRuntime["pinBuildBaseImages"]>>;
     let builder: ReturnType<DockerRuntime["selectDockerodeBuilder"]>;
+    let secrets: ReadonlyMap<string, string> | undefined;
     try {
+      // Validate before opening an archive stream or allocating a builder.
+      secrets = buildContext.usesRepositoryDockerfile ? undefined : dockerBuildSecrets(config);
       builder = this.selectDockerodeBuilder(config, buildContext.requiresBuildKit, log, !buildContext.usesRepositoryDockerfile);
       pin = await this.pinBuildBaseImages(config, buildContext.buildContextDir, buildContext.dockerfileName, log, cancelSignal);
     } catch (error) {
@@ -2688,7 +2691,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         forcerm: true,
         ...builder.options,
         abortSignal,
-      }, buildContext.usesRepositoryDockerfile ? undefined : dockerBuildSecrets(config));
+      }, secrets);
       detachCancellation();
 
       log.log("Connected to Docker daemon. Build output follows:");
