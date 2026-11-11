@@ -101,6 +101,13 @@ trap 'exit 1' HUP INT TERM
 candidate=$(bounded ${create})
 # -t validates without binding ports. Keep host networking for upstream DNS.
 check=$(bounded docker create --name ${sq(preflight)} --network host --volumes-from "$candidate:ro" --entrypoint openresty ${sq(image)} -t)
+# Hold the reservation while checking for a predecessor retained after cleanup
+# failed. Refuse before stopping traffic, including when Docker cannot answer.
+retained=$(bounded docker ps -a --filter "name=^/$backup$" --format '{{.ID}}')
+if [ -n "$retained" ]; then
+  echo "A retained predecessor still occupies $backup. Inspect it before retrying; this replacement has not stopped the current edge." >&2
+  exit 1
+fi
 bounded docker start -a "$check"
 [ "$(bounded docker inspect -f '{{.Id}}' "$name")" = "$old" ] || exit 1
 echo 'Replacement config validated. Switching edge containers...'

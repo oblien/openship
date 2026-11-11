@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { LocalExecutor } from "../local-executor";
 import { sq } from "../local-shell";
@@ -31,7 +32,15 @@ async function fixture(mode = "success") {
     labels: { "openship.service": "edge" },
     data: "original volumes and configuration",
   };
-  await writeFile(file, JSON.stringify({ [old]: original }));
+  const initial = { [old]: original };
+  if (["backup-reserved", "backup-running"].includes(mode)) {
+    initial["d".repeat(64)] = {
+      ...original,
+      name: `openship-edge-update-${createHash("sha256").update("test-edge").digest("hex").slice(0, 16)}-previous`,
+      running: mode === "backup-running",
+    };
+  }
+  await writeFile(file, JSON.stringify(initial));
   await writeFile(
     join(root, "docker"),
     `#!${process.execPath}
@@ -45,6 +54,15 @@ const id = value => state[value] ? value : Object.keys(state).find(k => state[k]
 const save = () => fs.writeFileSync(file, JSON.stringify(state));
 const die = () => process.exit(1);
 switch (a[0]) {
+case 'ps': {
+  if (mode === 'backup-query-failure') die();
+  const filter = a[a.indexOf('--filter')+1];
+  const pattern = new RegExp(filter.slice('name='.length));
+  for (const [key, value] of Object.entries(state)) {
+    if (pattern.test('/' + value.name)) console.log(key);
+  }
+  break;
+}
 case 'inspect': {
   const key = id(a.at(-1)); if (!key) die();
   if (a[2] === '{{.Id}}') console.log(mode === 'identity-changed' ? 'c'.repeat(64) : key);
@@ -114,6 +132,7 @@ default: throw new Error('Unexpected Docker command: ' + a.join(' '));
     run,
     executor,
     original,
+    initial,
     state: async () => JSON.parse(await readFile(file, "utf8")),
     events: async (): Promise<string[][]> =>
       (await readFile(events, "utf8"))
@@ -124,6 +143,25 @@ default: throw new Error('Unexpected Docker command: ' + a.join(' '));
 }
 
 describe("server-owned edge replacement", () => {
+  it.each(["backup-reserved", "backup-running"])(
+    "keeps the healthy edge and retained container untouched when %s occupies the backup name",
+    async (mode) => {
+      const f = await fixture(mode);
+      const result = await f.run();
+      expect(result.code).toBe(10);
+      expect(result.stderr).toContain("retained predecessor");
+      expect(await f.state()).toEqual(f.initial);
+      expect((await f.events()).some((a) => a[0] === "stop" || a[0] === "rename")).toBe(false);
+    },
+  );
+
+  it("fails before cutover if Docker cannot check the backup name", async () => {
+    const f = await fixture("backup-query-failure");
+    expect((await f.run()).code).toBe(10);
+    expect(await f.state()).toEqual(f.initial);
+    expect((await f.events()).some((a) => a[0] === "stop")).toBe(false);
+  });
+
   it("refuses an overlapping cutover without deleting the other update's reservation", async () => {
     const f = await fixture("check-reserved");
     expect((await f.run()).code).toBe(10);
