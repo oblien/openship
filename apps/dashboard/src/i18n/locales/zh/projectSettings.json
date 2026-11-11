@@ -1350,6 +1350,12 @@
     "rebootInterruption": "服务器将在一分钟后重启，中断其所有工作负载。主机重新连接后，Openship 将验证正在运行的内核。"
   },
   "sourceImageUpdate": {
+    "github_access_required": "请在 GitHub 连接中为此仓库授予 Contents 和 Pull requests 的读写权限。更新后的应用权限可能需要所有者批准。",
+    "workspace_access_required": "请向工作区所有者申请此项目和源文件的写入权限。",
+    "repository_read_only": "此仓库已归档或停用。请先在 GitHub 中更新，再创建 PR。",
+    "manageConnection": "管理 GitHub 连接",
+    "checkAccess": "重新检查访问权限",
+    "finishPr": "在 GitHub 中完成 PR",
     "open": "提议更新镜像",
     "title": "更新源码中的镜像",
     "hint": "Dockerfile 和 Compose 镜像在仓库中定义。检查源码变更并创建草稿拉取请求。",

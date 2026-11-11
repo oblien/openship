@@ -46,6 +46,7 @@ describe("GitHub operations shared by SDK and HTTP", () => {
     provider.fetch.mockImplementation(async ({ url, authorizeAs }: { url: string; authorizeAs: string }) => {
       expect(authorizeAs).toBe("write");
       const path = new URL(url).pathname;
+      if (path === "/repos/acme/app") return { permissions: { push: true } };
       if (path.endsWith("/git/ref/heads/main")) return { object: { sha: base } };
       if (path.endsWith(`/git/commits/${base}`)) return { tree: { sha: tree } };
       if (path.endsWith(`/git/trees/${tree}`)) return { tree: [], truncated: false };

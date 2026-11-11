@@ -138,6 +138,11 @@ changes one literal Dockerfile `FROM` or Compose `image` reference, preserving t
 Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.
 Creating a PR never changes the running deployment or clears an advisory. Reset private source and
 pending reviews when the account, workspace or project changes.
+Check source publication access when the editor opens. Show workspace grant failures separately
+from GitHub connection failures. Link the latter to the existing Git settings in a new tab to
+preserve the draft, with **Check access again** on return. Keep publication disabled while access
+is missing. If GitHub refuses the PR after creating the branch, link to the existing branch instead
+of submitting the same publication again.
 Security advisories use the existing deployment pipeline and root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app

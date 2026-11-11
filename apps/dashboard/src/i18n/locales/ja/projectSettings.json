@@ -1350,6 +1350,12 @@
     "rebootInterruption": "1分後にサーバーを再起動し、すべてのワークロードを中断します。ホストの再接続後、Openship が実行中のカーネルを確認します。"
   },
   "sourceImageUpdate": {
+    "github_access_required": "GitHub 接続で、このリポジトリの Contents と Pull requests に読み取り・書き込み権限を付与してください。更新された App 権限には所有者の承認が必要な場合があります。",
+    "workspace_access_required": "ワークスペースの所有者に、このプロジェクトとソースファイルへの書き込み権限を依頼してください。",
+    "repository_read_only": "このリポジトリはアーカイブまたは無効化されています。PR を作成する前に GitHub で更新してください。",
+    "manageConnection": "GitHub 接続を管理",
+    "checkAccess": "アクセスを再確認",
+    "finishPr": "GitHub で PR を完了",
     "open": "イメージ更新を提案",
     "title": "ソース内のイメージを更新",
     "hint": "Dockerfile と Compose のイメージはリポジトリで定義します。変更内容を確認し、ドラフトのプルリクエストを作成します。",

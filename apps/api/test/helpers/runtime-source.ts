@@ -9,7 +9,7 @@ import { handleApiError } from "../../src/middleware/error-handler";
 import { repos, seedOwner, installFakeRunner, type SeededOwner } from "../modules/jobs/_harness";
 
 installFakeRunner();
-const app = new Hono()
+export const runtimeSourceTestApp = new Hono()
   .onError(handleApiError)
   .route("/api/updates", updatesRoutes)
   .route("/api/health", healthRoutes);
@@ -29,7 +29,7 @@ export async function sourceClients(
       baseUrl: "http://openship.test",
       token: owner.token,
       organizationId,
-      fetch: ((url, init) => app.request(url as string, init)) as typeof fetch,
+      fetch: ((url, init) => runtimeSourceTestApp.request(url as string, init)) as typeof fetch,
     }),
   };
 }
@@ -77,6 +77,8 @@ export async function sourceFixture(
   }) => {
     const path = decodeURIComponent(new URL(url).pathname.replace("/repos/acme/app", ""));
     if (method !== "GET") git.writes.push({ path, params });
+    if (path === "" && method === "GET") return { permissions: { push: true } };
+    if (path === "/pulls" && method === "GET") return [];
     if (path === "/branches/main")
       return { name: "main", commit: { sha: git.head }, protected: false };
     if (path.startsWith("/contents/")) {

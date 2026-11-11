@@ -154,3 +154,112 @@ it("requires project membership and file content/write grants even for a project
   ).rejects.toBeDefined();
   expect(f.git.writes).toEqual([]);
 });
+
+it("reports GitHub access before publication, rechecks after reconnection, and never writes while denied", async () => {
+  const { GitHubApiError } = await import("@repo/platform/engine/modules/github/github.error");
+  const f = await sourceFixture();
+  let denied = true;
+  provider.fetch.mockImplementation((input) => {
+    if (denied && input.url.endsWith("/repos/acme/app"))
+      throw new GitHubApiError(403, "Resource not accessible by integration", new Headers());
+    return f.fetch(input);
+  });
+  const source = await f.clients.remote.updates.runtimeSource(f.project.id, selection);
+  expect(source.publishAccess).toBe("github_access_required");
+  const edit = {
+    ...selection,
+    baseSha: source.baseSha,
+    referenceId: source.references[0]!.id,
+    image: "node:24",
+  };
+  const preview = await f.clients.remote.updates.previewRuntimeSource(f.project.id, edit);
+  await expect(
+    f.clients.remote.updates.publishRuntimeSource(f.project.id, {
+      ...edit,
+      reviewId: preview.reviewId,
+      requestId: randomUUID(),
+    }),
+  ).rejects.toMatchObject({ code: "REPOSITORY_GITHUB_ACCESS_REQUIRED" });
+  expect(f.git.writes).toEqual([]);
+  denied = false;
+  expect(
+    (await f.clients.remote.updates.runtimeSource(f.project.id, selection)).publishAccess,
+  ).toBe("available");
+  await f.clients.remote.updates.publishRuntimeSource(f.project.id, {
+    ...edit,
+    reviewId: preview.reviewId,
+    requestId: randomUUID(),
+  });
+  expect(f.git.writes.at(-1)?.path).toBe("/pulls");
+});
+
+it("does not report rate limits or outages as missing permissions", async () => {
+  const { GitHubApiError } = await import("@repo/platform/engine/modules/github/github.error");
+  const f = await sourceFixture();
+  for (const error of [
+    new GitHubApiError(
+      403,
+      "API rate limit exceeded",
+      new Headers({ "x-ratelimit-remaining": "0" }),
+    ),
+    new GitHubApiError(503, "Service unavailable", new Headers()),
+  ]) {
+    provider.fetch.mockImplementation((input) => {
+      if (input.url.endsWith("/repos/acme/app")) throw error;
+      return f.fetch(input);
+    });
+    await expect(f.clients.native.updates.runtimeSource(f.project.id, selection)).rejects.toThrow();
+    expect(f.git.writes).toEqual([]);
+  }
+});
+
+it("preserves the branch and returns explicit recovery when GitHub revokes PR writes after preflight", async () => {
+  const { GitHubApiError } = await import("@repo/platform/engine/modules/github/github.error");
+  const f = await sourceFixture();
+  provider.fetch.mockImplementation((input) => {
+    if (input.method === "POST" && input.url.endsWith("/pulls"))
+      throw new GitHubApiError(
+        403,
+        "Resource not accessible by personal access token",
+        new Headers(),
+      );
+    return f.fetch(input);
+  });
+  const source = await f.clients.remote.updates.runtimeSource(f.project.id, selection);
+  const edit = {
+    ...selection,
+    baseSha: source.baseSha,
+    referenceId: source.references[0]!.id,
+    image: "node:24",
+  };
+  const preview = await f.clients.remote.updates.previewRuntimeSource(f.project.id, edit);
+  const requestId = randomUUID();
+  await expect(
+    f.clients.remote.updates.publishRuntimeSource(f.project.id, {
+      ...edit,
+      reviewId: preview.reviewId,
+      requestId,
+    }),
+  ).rejects.toMatchObject({ code: "REPOSITORY_PR_ACCESS_REQUIRED" });
+  expect(f.git.refs).toEqual(new Set([`refs/heads/openship/changes/${requestId}`]));
+  expect(f.git.head).toBe(source.baseSha);
+});
+
+it("reports archived repositories and read-only workspace credentials without claiming they are publishable", async () => {
+  const f = await sourceFixture();
+  provider.fetch.mockImplementation((input) =>
+    input.url.endsWith("/repos/acme/app")
+      ? { archived: true, permissions: { push: true } }
+      : f.fetch(input),
+  );
+  expect(
+    (await f.clients.remote.updates.runtimeSource(f.project.id, selection)).publishAccess,
+  ).toBe("repository_read_only");
+  const client = await sourceClients(f.owner, f.owner.orgId, {
+    credential: { organizationId: f.owner.orgId, readOnly: true },
+  });
+  expect((await client.native.updates.runtimeSource(f.project.id, selection)).publishAccess).toBe(
+    "workspace_access_required",
+  );
+  expect(f.git.writes).toEqual([]);
+});

@@ -12,9 +12,17 @@ import { assertGitHubRepoAccess } from "../github/github-access";
 import { getRawFile } from "../github/github-application.service";
 import { getBranch } from "../github/github.service";
 import { publishChange } from "../github/repository-changes";
+import {
+  getRepositoryChangeAccess,
+  isRepositoryCredentialFailure,
+  repositoryCredentialError,
+  REPOSITORY_PR_PERMISSIONS,
+} from "../github/repository-change-access";
+import { GitHubApiError } from "../github/github.error";
+import { authorization } from "../../lib/authorization";
 import { inspectRuntimeSource, replaceRuntimeSourceImage } from "./runtime-source-images";
 
-async function readSource(
+async function readSourceUnchecked(
   ctx: ExecutionContext,
   projectId: string,
   input: RuntimeSourceInput,
@@ -59,6 +67,14 @@ async function readSource(
   const file = await getRawFile(ctx, { owner, repo, branch: head.commit.sha, file: path });
   if (file.size > 64000) throw new ValidationError("Choose a source file smaller than 64 KB.");
   const inspected = inspectRuntimeSource(file.content, input.format, serviceName);
+  const canWriteProject = await authorization.checkPermissionOnResource(ctx, {
+    resourceType: "project",
+    resourceId: projectId,
+    action: "write",
+  });
+  const publishAccess = canWriteProject
+    ? await getRepositoryChangeAccess(ctx, owner, repo, [path])
+    : ("workspace_access_required" as const);
   return {
     content: file.content,
     serviceName,
@@ -76,8 +92,23 @@ async function readSource(
         line,
       })),
       guidance: inspected.guidance,
+      publishAccess,
     },
   };
+}
+
+async function readSource(...args: Parameters<typeof readSourceUnchecked>) {
+  try {
+    return await readSourceUnchecked(...args);
+  } catch (error) {
+    // A missing source file is not evidence that the connection needs changing.
+    if (
+      !(error instanceof GitHubApiError && error.status === 404) &&
+      isRepositoryCredentialFailure(error)
+    )
+      throw repositoryCredentialError();
+    throw error;
+  }
 }
 
 export async function getRuntimeSource(
@@ -141,17 +172,21 @@ export async function publishRuntimeSource(
       409,
       "RUNTIME_SOURCE_CHANGED",
     );
-  return publishChange(ctx, {
-    owner: preview.owner,
-    repo: preview.repo,
-    requestId: input.requestId,
-    pullRequest: true,
-    patch: {
-      baseBranch: preview.branch,
-      baseSha: preview.baseSha,
-      title: "Update container image reference",
-      description: `Changes one image reference in ${preview.path}.\n\nReview image compatibility and CI before merging into ${preview.branch}. After merging, deploy the new commit through the normal deployment flow and recheck the deployed runtime. Creating or merging this PR does not resolve a security advisory.`,
-      files: [{ path: preview.path, content: preview.after }],
+  return publishChange(
+    ctx,
+    {
+      owner: preview.owner,
+      repo: preview.repo,
+      requestId: input.requestId,
+      pullRequest: true,
+      patch: {
+        baseBranch: preview.branch,
+        baseSha: preview.baseSha,
+        title: "Update container image reference",
+        description: `Changes one image reference in ${preview.path}.\n\nReview image compatibility and CI before merging into ${preview.branch}. After merging, deploy the new commit through the normal deployment flow and recheck the deployed runtime. Creating or merging this PR does not resolve a security advisory.`,
+        files: [{ path: preview.path, content: preview.after }],
+      },
     },
-  });
+    { installationPermissions: REPOSITORY_PR_PERMISSIONS },
+  );
 }

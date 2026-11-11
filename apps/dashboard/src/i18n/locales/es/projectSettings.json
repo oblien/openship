@@ -1350,6 +1350,12 @@
     "rebootInterruption": "El servidor se reiniciará en un minuto e interrumpirá todas sus cargas. Openship verificará el kernel en ejecución cuando el host vuelva a conectarse."
   },
   "sourceImageUpdate": {
+    "github_access_required": "Concede acceso de lectura y escritura a Contenidos y Pull requests para este repositorio en tu conexión de GitHub. Un propietario puede tener que aprobar los permisos actualizados de la aplicación.",
+    "workspace_access_required": "Pide al propietario del espacio de trabajo acceso de escritura a este proyecto y archivo fuente.",
+    "repository_read_only": "Este repositorio está archivado o desactivado. Actualízalo en GitHub antes de crear un PR.",
+    "manageConnection": "Gestionar conexión de GitHub",
+    "checkAccess": "Comprobar acceso de nuevo",
+    "finishPr": "Completar PR en GitHub",
     "open": "Proponer actualización de imagen",
     "title": "Actualizar imagen en el código",
     "hint": "Las imágenes de Dockerfile y Compose se definen en tu repositorio. Revisa el cambio y crea un borrador de pull request.",

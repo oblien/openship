@@ -183,7 +183,15 @@ from security review when source changes may be needed:
    normal auto-deploy or deployment flow. Review any Compose configuration conflicts as usual.
 5. Use **Check again** in security review to verify the deployed runtime.
 
-This requires GitHub repository content/write access as well as project write access. The PR uses
+The editor checks access on opening. If GitHub access is missing, use **Manage GitHub connection**
+to open the existing connection settings, grant this repository **Contents** and **Pull requests**
+read/write access, then return and choose **Check access again**. An organization owner may need
+to approve updated App permissions. Missing Openship project or source-file access must be granted
+by your workspace owner. GitHub still checks permissions when each change is published; if a branch
+was created before PR access was denied, the editor links to that branch to finish the PR in GitHub.
+
+The PR author is the identity used by your GitHub connection: the installed App for installation
+tokens, or the connected account for a personal/OAuth/CLI token. The PR uses
 a separate branch and never merges or deploys automatically. If the deployment branch advances,
 reload the file and review a fresh diff. The editor changes one literal image reference at a time;
 other build stages and application dependencies may need their own updates. Variables, shared YAML

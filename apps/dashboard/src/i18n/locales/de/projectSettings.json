@@ -1350,6 +1350,12 @@
     "rebootInterruption": "Der Server startet in einer Minute neu und unterbricht alle Workloads. Openship prüft den laufenden Kernel, sobald der Host wieder erreichbar ist."
   },
   "sourceImageUpdate": {
+    "github_access_required": "Erlaube in deiner GitHub-Verbindung Lese- und Schreibzugriff auf Inhalte und Pull Requests dieses Repositorys. Ein Inhaber muss eventuell die neuen App-Berechtigungen bestätigen.",
+    "workspace_access_required": "Bitte den Workspace-Inhaber um Schreibzugriff auf dieses Projekt und die Quelldatei.",
+    "repository_read_only": "Dieses Repository ist archiviert oder deaktiviert. Aktualisiere es in GitHub, bevor du einen PR erstellst.",
+    "manageConnection": "GitHub-Verbindung verwalten",
+    "checkAccess": "Zugriff erneut prüfen",
+    "finishPr": "PR in GitHub abschließen",
     "open": "Image-Update vorschlagen",
     "title": "Image im Quellcode aktualisieren",
     "hint": "Dockerfile- und Compose-Images werden im Repository festgelegt. Prüfe die Änderung und erstelle einen Pull-Request-Entwurf.",

@@ -17,6 +17,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
+    "test:live-source": "vitest run -c vitest.live-github.config.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
