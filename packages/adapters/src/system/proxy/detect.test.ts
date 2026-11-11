@@ -575,6 +575,18 @@ describe("detectEdgeContainer", () => {
     ).toMatchObject({ name: "my-proxy", running: true, exists: true });
   });
 
+  test("ignores replacement candidates and rollback containers when selecting routing", async () => {
+    const image = "ghcr.io/oblien/openship-edge:0.9.11";
+    const lines = [
+      `openship-edge-update-fixture-next\t${image}\trunning`,
+      `openship-edge-update-fixture-previous\t${image}\texited`,
+      `openship-edge\t${image}\texited`,
+    ].join("\n");
+    expect(await detectEdgeContainer(psa(lines))).toMatchObject({ name: "openship-edge", running: false });
+    const running = makeExecutor([["docker ps --format", `openship-edge-update-fixture-check\t${image}`]]);
+    expect(await resolveOurEdgeContainer(running)).toBeNull();
+  });
+
   test("reports absent when only foreign containers exist", async () => {
     expect(await detectEdgeContainer(psa("some-app\tnginx:latest\trunning"))).toEqual({
       name: null,
