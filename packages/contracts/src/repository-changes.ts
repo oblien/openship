@@ -38,3 +38,4 @@ export const PublishedRepositoryChange = Type.Object({
   url: Type.String(),
   pullRequestUrl: Type.Union([Type.String(), Type.Null()]),
 });
+export type PublishedRepositoryChange = Static<typeof PublishedRepositoryChange>;

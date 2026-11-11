@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/Switch";
 import Link from "next/link";
 import { encodeProjectSlug } from "@/utils/repoSlug";
 import { InvestigationLink } from "@/components/assistant/InvestigationLink";
+import { RuntimeSourceUpdate } from "./RuntimeSourceUpdate";
 
 type Finding = ProjectSecurityResult["findings"][number];
 type ReviewGroup = {
@@ -376,6 +377,9 @@ export function SecurityProjectReview({
                 >
                   {copy.openRuntimeConfiguration}
                 </Button>
+              )}
+              {services.some((item) => !item.runtimePatch && (item.manualReviewRequired || item.runtimeUpgradeRequired || item.imageChangeRequired || item.refreshBlockedReason)) && (
+                <RuntimeSourceUpdate projectId={projectId} serviceId={serviceId ?? (services.length === 1 ? services[0]?.serviceId ?? undefined : undefined)} />
               )}
             </div>
           </div>

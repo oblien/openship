@@ -166,6 +166,34 @@ custom images and digest pins remain explicit. Blank image overrides restore the
 Static Docker builds show their build image; Dockerfiles, prebuilt images, service recipes, and
 bare servers retain control of their own runtime.
 
+### Change an image declared in your repository
+
+For a custom Dockerfile, change the relevant `FROM` instruction. For a Compose image service,
+change its `image:` value; for a Compose service with `build:`, change its Dockerfile instead.
+The Compose `image:` field can name a build output, so changing that field alone does not change
+the runtime inside a built service.
+
+In saved project or service settings, choose **Propose image update**. The same editor is available
+from security review when source changes may be needed:
+
+1. Select the Dockerfile or Compose file with the existing repository browser.
+2. Select an image reference and enter the replacement tag or digest.
+3. Review the diff against the displayed branch and commit, then choose **Create draft PR**.
+4. Review compatibility and CI in GitHub, merge the PR, and deploy the new commit through your
+   normal auto-deploy or deployment flow. Review any Compose configuration conflicts as usual.
+5. Use **Check again** in security review to verify the deployed runtime.
+
+This requires GitHub repository content/write access as well as project write access. The PR uses
+a separate branch and never merges or deploys automatically. If the deployment branch advances,
+reload the file and review a fresh diff. The editor changes one literal image reference at a time;
+other build stages and application dependencies may need their own updates. Variables, shared YAML
+anchors, inherited service images, custom Dockerfile frontends and multiline Dockerfile instructions
+must be edited in source. For other Git providers or local sources, make the change in your editor.
+
+A PR is not proof that a security advisory is resolved. An old tag or pinned digest can keep
+producing the old runtime on every rebuild. Deploy the patched source and verify its runtime;
+Openship does not hide the finding merely because a PR was created or merged.
+
 ## Update a runtime after an image rebuild
 
 Image publishers can replace the content behind an existing tag, such as `php:8.4-fpm` or a WordPress

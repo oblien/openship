@@ -170,6 +170,7 @@ jobs:
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/security-advisories.e2e.test.ts
+              test/e2e/runtime-source.e2e.test.ts
           # Run routing, certificate selection and the rule guard with real HTTP on
           # every PR. A missing daemon must fail, not silently skip this gate.
           - suite: Edge routing
