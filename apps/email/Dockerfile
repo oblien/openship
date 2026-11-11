@@ -90,6 +90,16 @@ RUN cp /opt/openship-mail/build-config /opt/iRedMail-engine/config \
     && rm -f /opt/iRedMail-engine/config \
     && rm -rf /var/lib/apt/lists/*
 
+# Refresh Debian's backported Dovecot/Pigeonhole fixes even when the installer
+# layer was cached. This check deliberately sits outside its `|| true`: missing
+# security updates must fail the image build, not ship a vulnerable mail daemon.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+      -o Dpkg::Options::=--force-confold \
+      dovecot-core dovecot-sieve dovecot-managesieved \
+    && sh /opt/openship-mail/verify-dovecot-security.sh \
+    && rm -rf /var/lib/apt/lists/*
+
 # Smoke test — the build FAILS here if the mail stack didn't actually install.
 # Every path below is a program supervisord launches at runtime (supervisord.conf);
 # an image that passes this test is guaranteed to have something to put on :25.
