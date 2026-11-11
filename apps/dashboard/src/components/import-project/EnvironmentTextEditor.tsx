@@ -89,7 +89,7 @@ function TextDialog({
       width="94vw"
       zIndex={10020}
       footer={
-        <div className="flex justify-end gap-2 border-t border-border/50 px-6 py-4">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border/50 px-6 py-4">
           <Button variant="ghost" onClick={onClose}>
             {ev.cancel}
           </Button>
