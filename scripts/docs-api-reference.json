@@ -4016,7 +4016,7 @@
     },
     "POST /api/cloud/support": {
       "page": "support",
-      "description": "Save a Cloud support ticket and queue acknowledgement and team email. Public intake returns only a receipt and deduplicates retries."
+      "description": "Submit a public contact message with a server-verified bot challenge; customer support requires a signed-in session."
     },
     "GET /api/cloud/support/tickets": {
       "page": "support",
@@ -5165,6 +5165,18 @@
     "POST /api/affiliates/payouts/cancel": {
       "page": "referrals",
       "description": "Compatibility alias for POST /api/referral-program/payouts/cancel. New clients use the referral-program route."
+    },
+    "GET /api/cloud/support/blocks": {
+      "page": "support",
+      "description": "List operator-managed sender and IP intake blocks."
+    },
+    "POST /api/cloud/support/blocks": {
+      "page": "support",
+      "description": "Block an exact sender email or IP address from intake."
+    },
+    "DELETE /api/cloud/support/blocks": {
+      "page": "support",
+      "description": "Remove an operator-managed sender or IP intake block."
     }
   }
 }

@@ -325,6 +325,10 @@ const envSchema = z.object({
   /** Optional Cloud customer aliases authorized by the same SMTP credentials.
    * Unset/blank aliases use the transport's configured sender. */
   SMTP_SUPPORT_FROM: z.string().trim().optional(),
+  /** Public contact intake fails closed until a production Turnstile widget is configured. */
+  CONTACT_TURNSTILE_SECRET: z.string().trim().optional(),
+  CONTACT_TURNSTILE_HOSTNAMES: z.string().default("openship.io,www.openship.io"),
+  CONTACT_EMAIL: z.string().email().default("contact@openship.io"),
   SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */

@@ -5,6 +5,7 @@ import {
   CLOUD_SUPPORT_ACCOUNT_HEADER,
   CloudSupportStatusSchema,
   CloudSupportIdSchema,
+  CloudSupportInputSchema,
   parseInput,
 } from "@repo/contracts";
 import { ValidationError, AppError } from "@repo/core";
@@ -18,6 +19,7 @@ import { rateLimit } from "../../lib/rate-limit";
 import { internalAuth } from "../../middleware/internal-auth";
 import { authMiddleware } from "../../middleware/auth";
 import { getRequestContext } from "../../lib/request-context";
+import { verifyContactChallenge } from "./contact-challenge";
 
 const r = secureRouter(new Hono(), { module: "cloud-support", basePath: "/api/cloud/support" });
 r.use("*", async (c, next) => {
@@ -70,6 +72,18 @@ async function customerLimit(c: Context, subjectId: string, reply = false) {
     c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
     throw new AppError("Too many support messages. Please try again later.", 429);
   }
+  await ipLimit(c);
+}
+
+async function ipLimit(c: Context) {
+  const result = await rateLimit({
+    policy: "support-contact-ip",
+    subjectId: c.var.clientIp ?? "unknown",
+  });
+  if (!result.allowed) {
+    c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
+    throw new AppError("Too many messages from this connection. Please try again later.", 429);
+  }
 }
 
 r.public("get", "/session", customer, authMiddleware, customerAccount, (c) =>
@@ -89,6 +103,7 @@ r.public("post", "/mine", customer, authMiddleware, customerAccount, limitBody, 
     getRequestContext(c),
     await json(c),
     (subject) => customerLimit(c, subject),
+    c.var.clientIp,
   );
   deliverCloudSupport();
   return c.json(result, 201);
@@ -109,6 +124,7 @@ r.public(
       ticketId(c),
       await json(c),
       (subject) => customerLimit(c, subject, true),
+      c.var.clientIp,
     );
     deliverCloudSupport();
     return c.json(result, 201);
@@ -123,26 +139,68 @@ r.public(
   "/",
   {
     reason:
-      "Public Cloud support intake, including customers who cannot sign in. Only returns a receipt; no ticket data can be read anonymously.",
+      "Public contact intake requires a server-verified bot challenge. Customer support requires a signed-in account through /mine. Only receipts are returned anonymously.",
   },
   limitBody,
   async (c) => {
-    const ticket = await cloudSupport.submit(await json(c), async (recipientHash) => {
-      // The website proxies requests without inventing/forwarding a trusted IP.
-      // In addition to the router's per-IP ceiling, limit by the contact address
-      // across every API replica. Only the hash reaches the shared limiter.
-      const result = await rateLimit({ policy: "support-contact", subjectId: recipientHash });
-      if (!result.allowed) {
-        c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
-        throw new AppError(
-          "Too many support requests for this email. Please reply to your existing request or try again later.",
-          429,
-        );
-      }
-    });
+    const raw = await json(c);
+    if (raw?.source === "support")
+      throw new AppError(
+        "Sign in to Openship Cloud to open a support request.",
+        401,
+        "SUPPORT_SESSION_REQUIRED",
+      );
+    const { turnstileToken, ...input } = parseInput(
+      Type.Composite(
+        [
+          CloudSupportInputSchema,
+          Type.Object({ turnstileToken: Type.String({ minLength: 1, maxLength: 2048 }) }),
+        ],
+        { additionalProperties: false },
+      ),
+      raw,
+    );
+    await ipLimit(c);
+    await cloudSupport.assertAllowed(input.email, c.var.clientIp);
+    await verifyContactChallenge(turnstileToken, c.var.clientIp);
+    const ticket = await cloudSupport.submit(
+      input,
+      async (recipientHash) => {
+        // The website proxies requests without inventing/forwarding a trusted IP.
+        // In addition to the router's per-IP ceiling, limit by the contact address
+        // across every API replica. Only the hash reaches the shared limiter.
+        const result = await rateLimit({ policy: "support-contact", subjectId: recipientHash });
+        if (!result.allowed) {
+          c.header("Retry-After", String(Math.ceil(result.resetMs / 1000)));
+          throw new AppError(
+            "Too many support requests for this email. Please reply to your existing request or try again later.",
+            429,
+          );
+        }
+      },
+      c.var.clientIp,
+    );
     deliverCloudSupport();
     return c.json(ticket, 201);
   },
+);
+
+const blockBody = Type.Object(
+  {
+    kind: Type.Union([Type.Literal("email"), Type.Literal("ip")]),
+    value: Type.String({ minLength: 1, maxLength: 254 }),
+    reason: Type.Optional(Type.String({ maxLength: 500 })),
+  },
+  { additionalProperties: false },
+);
+r.public("get", "/blocks", operator, internalAuth, async (c) =>
+  c.json({ blocks: await cloudSupport.listBlocks() }),
+);
+r.public("post", "/blocks", operator, internalAuth, limitBody, async (c) =>
+  c.json(await cloudSupport.setBlock(parseInput(blockBody, await json(c)))),
+);
+r.public("delete", "/blocks", operator, internalAuth, limitBody, async (c) =>
+  c.json(await cloudSupport.setBlock(parseInput(blockBody, await json(c)), true)),
 );
 
 r.public("get", "/tickets", operator, internalAuth, async (c) => {

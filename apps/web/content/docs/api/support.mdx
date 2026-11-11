@@ -3,11 +3,12 @@ title: Cloud support
 description: Submit Cloud support requests, follow private account tickets, and manage the operator queue.
 ---
 
-`https://openship.io/support` and `/contact` use the same ticket intake. The
-website forwards to `POST /api/cloud/support` on the Cloud API; its default is
-`https://api.openship.io`. A development website can select a different Cloud API
-with `OPENSHIP_CLOUD_API_URL`. The website needs no SMTP credentials or operator
-token, and never forwards browser cookies or claimed client IPs.
+`https://openship.io/support` directs customers to the signed-in dashboard.
+New support requests require an account session. Existing customers can still
+reply to the team's email. The public `/contact` form handles general inquiries
+and account-access problems, protected by Cloudflare Turnstile verified by the
+Cloud API at `POST /api/cloud/support`. Its browser requests go directly to Cloud
+so IP-based abuse controls use the actual trusted client address.
 
 The Cloud API stores support tickets and starts the delivery worker only when
 `CLOUD_MODE=true`. Local installations expose a customer-only relay through the
@@ -44,7 +45,7 @@ Categories are `deployment`, `billing`, `account` and `general`. Subjects allow
 200 characters and messages 12,000. New tickets are limited to five per account
 per 15 minutes; new replies to 30. Retry the same UUID and content after an
 uncertain response. Confirmed retries do not create another message or consume
-another quota slot. A new customer reply reopens a resolved ticket; retrying an
+another account quota slot. Every request also passes a shared IP flood limit. A new customer reply reopens a resolved ticket; retrying an
 older reply does not undo a later resolution.
 
 Replies use the existing durable mail outbox: customer replies notify the support
@@ -94,8 +95,9 @@ for the website. Creating a ticket does not depend on SMTP being available.
 
 Each submission atomically saves a `cloud_support_ticket` and two
 `cloud_support_message` deliveries: a receipt for the customer, and a notification
-to `support@openship.io`. The customer receipt contains a stable reference, no
-reflected message text, and `Reply-To: support@openship.io`. The team notification
+to the appropriate inbox: `support@openship.io` for dashboard tickets, or
+`CONTACT_EMAIL` for public contact. The customer receipt contains a stable
+reference and uses that inbox as its reply address, with no reflected message text. The team notification
 includes the report and sets Reply-To to the requester. Ordinary inbound email
 and email replies arrive in the support mailbox; this API does not ingest IMAP.
 
@@ -140,9 +142,9 @@ response. A 202 response means the reply is saved and queued, not that SMTP has
 delivered it. Read the ticket to check `deliveredAt`, `lastError`, and
 `nextAttemptAt` for each message.
 
-Deploy the API (including migrations `0152_cloud_support.sql` and
-`0167_cloud_support_customers.sql`) before the dashboard.
-Then submit a test report from `/support`, check its reference through the operator
+Configure the Turnstile keys and contact inbox, then deploy the API with its
+automatic migrations (including `0228_support_intake_blocks.sql`) before the website.
+Then submit a test report from the signed-in dashboard, check its reference through the operator
 API, and verify receipt and team notification in the configured mailboxes.
 
 ## Verification
@@ -164,7 +166,7 @@ a loopback server; they do not send mail to real customers.
 
 | Operation | REST API |
 | --- | --- |
-| Save a Cloud support ticket and queue acknowledgement and team email. Public intake returns only a receipt and deduplicates retries. | `POST /api/cloud/support`<br />`Handler authentication` |
+| Submit a public contact message with a server-verified bot challenge; customer support requires a signed-in session. | `POST /api/cloud/support`<br />`Handler authentication` |
 | List Cloud support tickets with status filtering and cursor pagination. Requires internal operator authority. | `GET /api/cloud/support/tickets`<br />`Internal operator` |
 | Read a Cloud ticket, its replies, and email delivery attempts. Requires internal operator authority. | `GET /api/cloud/support/tickets/:id`<br />`Internal operator` |
 | Open or resolve a Cloud support ticket. Requires internal operator authority. | `PATCH /api/cloud/support/tickets/:id`<br />`Internal operator` |
@@ -176,5 +178,22 @@ a loopback server; they do not send mail to real customers.
 | Read the customer’s own conversation without internal delivery metadata. | `GET /api/cloud/support/mine/:id`<br />`Handler authentication` |
 | Save an idempotent customer reply, notify support and reopen the conversation. | `POST /api/cloud/support/mine/:id/replies`<br />`Handler authentication` |
 | Open or resolve the signed-in customer’s own ticket. | `PATCH /api/cloud/support/mine/:id`<br />`Handler authentication` |
+| List operator-managed sender and IP intake blocks. | `GET /api/cloud/support/blocks`<br />`Internal operator` |
+| Block an exact sender email or IP address from intake. | `POST /api/cloud/support/blocks`<br />`Internal operator` |
+| Remove an operator-managed sender or IP intake block. | `DELETE /api/cloud/support/blocks`<br />`Internal operator` |
 
 {/* api-operations:end */}
+
+## Public contact and abuse controls
+
+Public contact submissions include the existing contact fields with `source: "contact"`
+and a `turnstileToken`. The API validates the token's action and hostname through
+Cloudflare before saving a new request. Anonymous `source: "support"` requests
+receive `401 SUPPORT_SESSION_REQUIRED`. Public contact delivers to `CONTACT_EMAIL`;
+authenticated support delivers to the support mailbox.
+
+The instance operator can list, add and remove exact sender/IP blocks through
+`GET`, `POST` and `DELETE /api/cloud/support/blocks`, authenticated by the internal
+operator token. Rule bodies contain `kind` (`email` or `ip`), `value`, and an optional
+`reason`. These controls are unavailable to customer accounts. They prevent intake
+and suppress queued delivery for blocked submissions.

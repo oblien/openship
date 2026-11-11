@@ -73,13 +73,15 @@ export function supportEmail(input: {
   subject: string;
   message: string;
   reply?: string | null;
+  replyAddress?: string;
+  contact?: boolean;
 }) {
   const acknowledgement = input.kind === "receipt" && !input.reply;
   const subject = acknowledgement
-    ? `[${input.id}] We received your support request`
+    ? `[${input.id}] ${input.contact ? "We received your message" : "We received your support request"}`
     : `[${input.id}] ${input.subject}`;
   const text = acknowledgement
-    ? `Your support request has been saved.\n\nReference: ${input.id}\n\nThe Openship team will reply by email. If you have more details, reply to this email and keep the reference in the subject.\n\nOpenship Support\n${SUPPORT_EMAIL}`
+    ? `Your ${input.contact ? "message" : "support request"} has been saved.\n\nReference: ${input.id}\n\nThe Openship team will reply by email. If you have more details, reply to this email and keep the reference in the subject.\n\nOpenship ${input.contact ? "Team" : "Support"}\n${input.replyAddress ?? SUPPORT_EMAIL}`
     : input.kind === "notification"
       ? `New Openship support request\n\nReference: ${input.id}\nFrom: ${input.name} <${input.email}>\nSubject: ${input.subject}\n\n${input.message}`
       : input.kind === "customer_reply"

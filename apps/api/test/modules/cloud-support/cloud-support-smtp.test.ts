@@ -71,6 +71,7 @@ vi.mock("../../../src/middleware/auth", () => ({ authMiddleware: vi.fn() }));
 vi.mock("../../../src/middleware/rate-limiter", () => ({
   rateLimiterFor: () => async (_c: unknown, next: () => Promise<void>) => next(),
 }));
+vi.mock("../../../src/modules/cloud-support/contact-challenge", () => ({ verifyContactChallenge: vi.fn(async () => {}) }));
 vi.mock("../../../src/lib/rate-limit", () => ({
   rateLimit: vi.fn(async () => ({ allowed: true })),
 }));
@@ -79,7 +80,6 @@ let smtp: SmtpServer;
 let api: HttpServer;
 let client: PGlite;
 let repo: ReturnType<typeof createCloudSupportRepo>;
-let post: typeof import("../../../../web/src/app/api/contact/route").POST;
 let apiMode = "ok";
 let rejectRecipient = "";
 const sockets = new Set<Socket>();
@@ -91,22 +91,12 @@ const payload = () => ({
   email: "customer@example.com",
   subject: "Cloud deployment",
   message: "My deployment is failing. Please help.",
-  source: "support",
+  source: "contact",
 });
-const submit = (body: unknown) =>
-  post(
-    new Request("https://openship.io/api/contact", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Origin: "https://openship.io",
-        Cookie: "private-cookie",
-        "X-Internal-Token": "never-forward-this",
-        "X-Real-IP": "untrusted",
-      },
-      body: JSON.stringify(body),
-    }) as never,
-  );
+const submit = (body: unknown) => fetch(`${state.url}/api/cloud/support`, {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ ...body as object, turnstileToken: "fixture-token" }),
+});
 
 beforeAll(async () => {
   const directory = mkdtempSync(join(tmpdir(), "openship-support-smtp-"));
@@ -182,12 +172,15 @@ beforeAll(async () => {
     ),
   );
   await client.exec(readFileSync(new URL("../../../../../packages/db/drizzle/0167_cloud_support_customers.sql", import.meta.url), "utf8"));
+  await client.exec(readFileSync(new URL("../../../../../packages/db/drizzle/0228_support_intake_blocks.sql", import.meta.url), "utf8"));
   repo = createCloudSupportRepo(drizzle(client) as unknown as Database);
   const { sendMail } = await import("@repo/platform/engine/lib/mail");
   state.service = new CloudSupportService({ enabled: () => true, repo, send: sendMail });
   const { cloudSupportRoutes } =
     await import("../../../src/modules/cloud-support/cloud-support.routes");
   const app = new Hono();
+  const { handleApiError } = await import("../../../src/middleware/error-handler");
+  app.onError(handleApiError);
   app.route("/api/cloud/support", cloudSupportRoutes);
   api = httpServer(async (req, res) => {
     const parts: Buffer[] = [];
@@ -213,11 +206,10 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
   state.url = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
-  ({ POST: post } = await import("../../../../web/src/app/api/contact/route"));
   // Cold PostgreSQL WASM startup and route transforms contend with the full API suite.
 }, 30_000);
 beforeEach(async () => {
-  await client.exec("TRUNCATE cloud_support_ticket CASCADE");
+  await client.exec("TRUNCATE cloud_support_ticket, cloud_support_block CASCADE");
   delivered.length = 0;
   forwarded.length = 0;
   apiMode = "ok";
@@ -269,19 +261,14 @@ it("keeps the ticket after an actual SMTP recipient rejection and delivers on re
   expect(delivered).toHaveLength(2);
 });
 
-it.each(["unavailable", "invalid-receipt"])(
-  "does not claim success when the Cloud API returns %s",
-  async (mode) => {
-    apiMode = mode;
-    const response = await submit(payload());
-    expect(response.status).toBe(503);
-    expect((await response.json()).error).toContain("support@openship.io");
-    expect(await repo.list({ limit: 10 })).toHaveLength(0);
-  },
-);
+it("closes the legacy website proxy", async () => {
+  const { POST } = await import("../../../../web/src/app/api/contact/route");
+  expect((await POST()).status).toBe(410);
+  expect(await repo.list({ limit: 10 })).toHaveLength(0);
+});
 
 it("rejects invalid and oversized website input before contacting Cloud", async () => {
   expect((await submit({ ...payload(), email: "not an email" })).status).toBe(400);
   expect((await submit({ ...payload(), message: "x".repeat(66_000) })).status).toBe(413);
-  expect(forwarded).toHaveLength(0);
+  expect(await repo.list({ limit: 10 })).toHaveLength(0);
 });
