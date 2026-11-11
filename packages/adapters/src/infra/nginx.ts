@@ -1848,7 +1848,10 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   }
 
   /** Called under the edge config lock. Publish all files before one validation
-   * and reload; restore every snapshot on any write, removal, or reload failure. */
+   * and reload; restore every snapshot on any write, removal, or reload failure.
+   * Vhosts and route sidecars contain password verifiers and session-signing keys.
+   * The nginx master reads the config before workers drop privileges, so keep
+   * these files private on publication AND rollback. */
   private async updateConfig(changes: { path: string; content: string | null }[]): Promise<void> {
     const snapshots = await Promise.all(
       changes.map(async ({ path }) => ({ path, snapshot: await this._captureFile(path) })),
