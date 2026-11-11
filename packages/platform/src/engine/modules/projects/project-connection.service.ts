@@ -27,12 +27,13 @@ import { isLocalHostRow } from "../../lib/box-org";
 import { authorization } from "../../lib/authorization";
 import { getAppConnectionView, type AppConnectionOutput } from "../apps/app-settings.service";
 import { mergeEnvVars } from "./project-env.service";
-import { toInternalUrl, isNetworkUrl, usesPrivateNetwork } from "./project-connection.util";
+import { toInternalUrl, isNetworkUrl, usesPrivateNetwork, renderConnectionValue } from "./project-connection.util";
 import { sharedServiceAlias, ensureSharedServiceNetwork, disconnectSharedServiceNetwork } from "./shared-service-network";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { withCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
+import { resolveServicePort } from "../../lib/deployable-service";
 import {
   requireNativeDatabaseConnection,
   reconcileNativeDatabaseConnections,
@@ -226,6 +227,7 @@ export interface CreateConnectionInput {
   envKey: string;
   /** Normalized here (the single authority) — callers pass it through raw. */
   mode?: ConnectionMode;
+  valueTemplate?: string;
 }
 
 /**
@@ -276,7 +278,7 @@ async function loadConnectionEnds(
   sourceProjectId: string,
   outputId: string,
   /** Existing bindings are refreshed under deployment authority, without exposing secrets. */
-  opts?: { refresh?: boolean; sourceServiceId?: string | null },
+  opts?: { refresh?: boolean; sourceServiceId?: string | null; addressOnly?: boolean },
 ): Promise<ConnectionEnds> {
   // Both projects must exist, be in the SAME org (no cross-tenant flow), and the
   // caller must be able to write the source and target.
@@ -304,12 +306,12 @@ async function loadConnectionEnds(
 
   // Resolve the connection value from the source app's already-computed outputs.
   const view = await getAppConnectionView(ctx, sourceProjectId);
-  const output = view.outputs.find((o) => o.id === outputId)
+  let output = view.outputs.find((o) => o.id === outputId)
     // Compatibility with the former alias-based synthesized output IDs.
     ?? view.outputs.find((o) => o.internal && (
       opts?.sourceServiceId ? o.sourceServiceId === opts.sourceServiceId : o.service === outputId
     ));
-  if (!output || !output.value) {
+  if (!output) {
     throw new ValidationError("That connection value isn't available yet on the source app.");
   }
   if (opts?.sourceServiceId && output.sourceServiceId !== opts.sourceServiceId) {
@@ -322,7 +324,16 @@ async function loadConnectionEnds(
       throw new ValidationError("The source service is no longer available.");
     }
     sourceServiceName = service.name;
+    if (opts?.addressOnly && output.internal) {
+      // Imported values already contain their own authentication and protocol.
+      // Resolve only the ordinary private service address; no engine-specific
+      // credential inference is needed to retain that connection.
+      const port = resolveServicePort(service);
+      if (!port) throw new ValidationError("The source service has no private listener port.");
+      output = { ...output, value: `http://${sharedServiceAlias(service.id)}:${port}` };
+    }
   }
+  if (!output.value) throw new ValidationError("That connection value isn't available yet on the source app.");
 
   // The source app template — used to default the reach mode from the endpoint's
   // declared scope and to rewrite the internal host.
@@ -500,6 +511,7 @@ async function prepareConnection(
     targetProjectId,
     input.sourceProjectId,
     input.outputId,
+    { addressOnly: input.valueTemplate !== undefined },
   );
   const { source, target, output, template } = ends;
 
@@ -554,6 +566,7 @@ async function prepareConnection(
   }
 
   const privateNetwork = mode === "internal" && isNetworkUrl(value);
+  if (input.valueTemplate !== undefined) value = renderConnectionValue(input.valueTemplate, value);
   if (privateNetwork && output.sourceServiceId) {
     await ensureSharedServiceNetwork(source, output.sourceServiceId);
   }
@@ -571,6 +584,7 @@ async function prepareConnection(
         sourceDatabaseId: output.sourceDatabaseId ?? null,
         targetProjectId: target.id,
         outputId: output.id,
+        valueTemplateEnc: input.valueTemplate === undefined ? null : encrypt(input.valueTemplate),
         envKey,
         mode,
         usesPrivateNetwork: privateNetwork,
@@ -735,7 +749,7 @@ export async function refreshConnectionEnv(
   const upserts: Array<{ key: string; value: string; isSecret: boolean }> = [];
   for (const link of links) {
     const ends = await loadConnectionEnds(ctx, targetProjectId, link.sourceProjectId, link.outputId, {
-      refresh: true, sourceServiceId: link.sourceServiceId,
+      refresh: true, sourceServiceId: link.sourceServiceId, addressOnly: !!link.valueTemplateEnc,
     });
     let value = ends.output.value;
     if (link.mode === "internal") {
@@ -743,6 +757,7 @@ export async function refreshConnectionEnv(
       if ("error" in result) throw new ValidationError(result.error);
       value = result.value;
     }
+    if (link.valueTemplateEnc) value = renderConnectionValue(decrypt(link.valueTemplateEnc), value);
     resolved[link.envKey] = value;
     if (values.get(link.envKey) !== value) upserts.push({ key: link.envKey, value, isSecret: true });
   }

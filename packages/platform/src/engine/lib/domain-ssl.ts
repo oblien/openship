@@ -595,8 +595,9 @@ function dnsCleanupHookScript(recordsUrl: string, apiToken: string): string {
   return `#!/bin/sh
 if [ -f "$OPENSHIP_DNS_RECORD_FILE" ]; then
   RECORD_ID=$(cat "$OPENSHIP_DNS_RECORD_FILE")
+  case "$RECORD_ID" in ''|*[!A-Za-z0-9_-]*) rm -f "$OPENSHIP_DNS_RECORD_FILE"; exit 0 ;; esac
   if [ -n "$RECORD_ID" ]; then
-    curl -s -S --connect-timeout 5 --max-time 15 -X DELETE "${recordsUrl}/\${RECORD_ID}" \\
+    curl -s -S -o /dev/null --connect-timeout 5 --max-time 15 -X DELETE "${recordsUrl}/\${RECORD_ID}" \\
       -H "Authorization: Bearer ${apiToken}" \\
       -H "Content-Type: application/json" || true
   fi
@@ -629,7 +630,6 @@ RES=$(curl -s -S --connect-timeout 5 --max-time 15 -X POST "https://api.cloudfla
   --data "$DNS_PAYLOAD")
 if ! echo "$RES" | grep -q '"success":true'; then
   echo "Cloudflare rejected the ACME TXT record request" >&2
-  echo "$RES" >&2
   exit 1
 fi
 RECORD_ID=$(echo "$RES" | grep -o '"id":"[^"]*' | head -n 1 | cut -d'"' -f4)
@@ -699,7 +699,6 @@ fi
 case "$RECORD_ID" in ''|*[!0-9]*) RECORD_ID="" ;; esac
 if [ -z "$RECORD_ID" ]; then
   echo "DigitalOcean rejected the ACME TXT record request" >&2
-  echo "$RES" >&2
   exit 1
 fi
 echo "$RECORD_ID" > "$OPENSHIP_DNS_RECORD_FILE"
@@ -755,7 +754,7 @@ async function resolveDns01Hooks(
     throw new Error(`DNS provider unavailable: ${dnsLookup.reason}`);
   }
   throw new Error(
-    `DNS-01 for ${domainRecord.hostname} needs a connected DNS provider in Settings → Credentials, or choose Manual TXT in the domain's HTTPS setup.`,
+    `DNS-01 for ${domainRecord.hostname} needs a connected DNS provider in Settings → Connections, or choose Manual TXT in the domain's HTTPS setup.`,
   );
 }
 

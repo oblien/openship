@@ -146,7 +146,7 @@ export default function BackupsPage() {
             <BackupDestinationHistory refreshKey={data} />
             <section
               aria-label={t.projectSettings.backup.destinations.title}
-              className="overflow-hidden rounded-2xl bg-card"
+              className="rounded-2xl bg-card"
             >
               <div className="px-5 py-4">
                 <h2 className="text-sm font-medium text-foreground">
@@ -194,7 +194,7 @@ export default function BackupsPage() {
                     return (
                       <li
                         key={row.id}
-                        className="group relative flex items-start gap-3 px-5 py-4 transition-colors hover:bg-muted/20"
+                        className="group relative flex items-start gap-3 px-5 py-4 transition-colors last:rounded-b-2xl hover:bg-muted/20"
                       >
                         <Link
                           href={`/backups/${row.id}`}

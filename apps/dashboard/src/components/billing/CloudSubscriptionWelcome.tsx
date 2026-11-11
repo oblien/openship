@@ -15,7 +15,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import type { BillingState } from "@/lib/api/billing";
 import { PlanCapacity, PlanResources } from "./PlanResources";
-import { CloudPlanIllustration } from "./CloudPlanIllustration";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { scopedBillingHref } from "@/lib/billing-links";
 
 function readAcknowledged(key: string): string[] {
@@ -128,7 +128,10 @@ function WelcomeContent({ state, onClose }: { state: BillingState; onClose: () =
       >
         <Icon name="close" className="size-4" aria-hidden="true" />
       </Button>
-      <CloudPlanIllustration subscribed className="mx-auto mb-4" />
+      <FeatureIllustration
+        name="deploy-anywhere"
+        className="illustration-color mx-auto mb-4 h-auto w-20"
+      />
       <div className="text-center">
         <p className="inline-flex rounded-full bg-success/10 px-3 py-1 text-sm font-medium text-success">{copy.eyebrow}</p>
         <h2 id={titleId} className="mt-3 text-2xl font-semibold tracking-tight text-foreground">

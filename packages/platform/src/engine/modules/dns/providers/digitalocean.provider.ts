@@ -59,7 +59,7 @@ const DEFAULT_TTL = 1800;
 const OWNER_LABEL = "_openship-owner";
 
 /** Stands in for `*` in a marker name: a wildcard label is only valid leftmost. */
-const WILDCARD_LABEL = "_wildcard";
+const WILDCARD_OWNER_LABEL = "_openship-owner-wildcard";
 
 const MARKER_PATTERN = /^openship-owner;type=([A-Z]+);id=(\d+)$/;
 
@@ -95,7 +95,11 @@ interface DoRecordItem {
  * with `domain:read` only (the one scope we can check without writing), and
  * lacks create/update/delete. Still a 403, so the caller marks it invalid.
  */
-async function doRequest<T>(token: string, path: string, options?: RequestInit): Promise<T> {
+async function doRequest<T>(
+  token: string,
+  path: string,
+  options?: Parameters<typeof digitaloceanRequest>[2],
+): Promise<T> {
   try {
     return await digitaloceanRequest<T>(token, path, options);
   } catch (error) {
@@ -131,16 +135,7 @@ function stripWildcard(hostname: string): string {
   return name.startsWith("*.") ? name.slice(2) : name;
 }
 
-/**
- * "active" when the zone's public NS set is DigitalOcean's, "pending" when the
- * name is not delegated to it (other name servers, or no NS set at all).
- *
- * An inconclusive lookup (timeout, SERVFAIL, no reachable resolver) is NOT proof
- * of non-delegation: it keeps the pre-check behaviour and reports "active", so an
- * unreachable resolver (UDP 53 blocked on the API host, say) cannot turn a working
- * zone into manual records or fail a certificate renewal. Only a definite answer
- * (NXDOMAIN, no NS set, or name servers that are not DigitalOcean's) demotes it.
- */
+/** Only confirmed public delegation makes a zone eligible for provisioning. */
 async function delegationStatus(zone: string): Promise<"active" | "pending"> {
   let nameservers: string[];
   try {
@@ -153,7 +148,11 @@ async function delegationStatus(zone: string): Promise<"active" | "pending"> {
     const code = (err as { code?: string } | null)?.code;
     if (code && NOT_DELEGATED_CODES.has(code)) return "pending";
     observeCaughtError(err, SOURCE);
-    return "active";
+    throw new DnsApiError(
+      "digitalocean",
+      503,
+      "Could not verify the domain's nameservers. Try again.",
+    );
   }
   const delegated =
     nameservers.length > 0 &&
@@ -180,7 +179,7 @@ export function toFqdn(relative: string, zone: string): string {
 export function ownerMarkerName(fqdn: string): string {
   const name = normalizeName(fqdn);
   return name.startsWith("*.")
-    ? `${OWNER_LABEL}.${WILDCARD_LABEL}.${name.slice(2)}`
+    ? `${WILDCARD_OWNER_LABEL}.${name.slice(2)}`
     : `${OWNER_LABEL}.${name}`;
 }
 
@@ -194,7 +193,8 @@ export function parseOwnerMarker(value: string): { type: string; id: string } | 
 }
 
 function isMarkerName(fqdn: string): boolean {
-  return normalizeName(fqdn).startsWith(`${OWNER_LABEL}.`);
+  const name = normalizeName(fqdn);
+  return name.startsWith(`${OWNER_LABEL}.`) || name.startsWith(`${WILDCARD_OWNER_LABEL}.`);
 }
 
 /**

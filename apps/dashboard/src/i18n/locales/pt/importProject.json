@@ -181,6 +181,17 @@
       "show": "Mostrar valores",
       "hide": "Ocultar valores",
       "error": "Não foi possível revelar os valores"
+    },
+    "textEditor": {
+      "edit": "Editar como texto",
+      "title": "Editar .env",
+      "hint": "Use entradas KEY=value, comentários e valores de várias linhas entre aspas. Remover uma entrada remove a variável.",
+      "apply": "Aplicar alterações",
+      "savedValues": "Os valores salvos permanecem ocultos. Mantenha •••••••• para preservar um valor ou substitua por um novo. As variáveis gerenciadas devem permanecer inalteradas.",
+      "invalidRows": "Primeiro corrija os nomes de variáveis vazios, inválidos ou duplicados no editor de linhas.",
+      "invalid": "Mantenha os marcadores de valores salvos nas chaves originais e não altere variáveis gerenciadas.",
+      "invalidLine": "Sintaxe .env inválida na linha {line}. Use chaves KEY=value únicas e feche todas as aspas.",
+      "stale": "As variáveis mudaram enquanto o editor estava aberto. Feche e abra novamente antes de aplicar."
     }
   },
   "composeServices": {

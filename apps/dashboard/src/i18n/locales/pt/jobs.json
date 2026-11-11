@@ -1,10 +1,9 @@
 {
-  "cloudSubtitle": "Comandos agendados e sob demanda nos seus servidores gerenciados.",
+  "cloudSubtitle": "Comandos agendados e sob demanda nos seus servidores Cloud e conectados.",
   "create": {
     "commandHint": "Executa em cada servidor selecionado. Use docker run --rm para uma tarefa em um contêiner.",
-    "cloudServersHint": "Use um servidor existente ou adicione um servidor dedicado com sua própria assinatura.",
-    "cloudUsageHint": "As tarefas compartilham a capacidade e a cota de uso do servidor selecionado. O plano deve estar ativo para executá-las.",
-    "addDedicatedServer": "Adicionar servidor dedicado",
+    "cloudServersHint": "Escolha um servidor Cloud ou um servidor conectado pelo Manage.",
+    "cloudUsageHint": "As tarefas Cloud usam o plano e a cota do servidor. As tarefas SSH exigem acesso ativo ao Manage.",
     "title": "Nova tarefa",
     "name": "Nome",
     "namePlaceholder": "Vacuum noturno do BD",

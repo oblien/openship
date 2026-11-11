@@ -108,6 +108,7 @@ import {
   createDnsHookScripts,
 } from "@repo/platform/engine/lib/domain-ssl";
 import { createTrackedSslProvider } from "@repo/platform/engine/lib/routing-domains";
+import { resolveDnsProvider } from "@repo/platform/engine/modules/dns/registry";
 
 function domain(hostname: string, extra: Record<string, unknown> = {}) {
   h.domains.set(hostname, {
@@ -339,10 +340,11 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
       writeFileSync(auth, hooks.authHookScript);
       writeFileSync(
         join(dir, "curl"),
-        `#!/bin/sh\nprintf '%s' '{"id": "unauthorized", "message": "Unable to authenticate you."}'\n`,
+        `#!/bin/sh\nprintf '%s' '{"id": "unauthorized", "message": "dop_v1_abc123 upstream-private-details"}'\n`,
         { mode: 0o700 },
       );
-      expect(() =>
+      let failure: unknown;
+      try {
         execFileSync("/bin/sh", [auth], {
           timeout: 5000,
           stdio: "pipe",
@@ -353,12 +355,42 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
             CERTBOT_VALIDATION: "test_validation",
             OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
           },
-        }),
-      ).toThrow();
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeDefined();
+      const stderr = String((failure as { stderr: Buffer }).stderr);
+      expect(stderr).toContain("DigitalOcean rejected");
+      expect(stderr).not.toContain("dop_v1_abc123");
+      expect(stderr).not.toContain("upstream-private-details");
       expect(existsSync(join(dir, "record-id"))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it.each(["cloudflare", "digitalocean"] as const)("%s cleanup rejects a record ID containing URL syntax", (provider) => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-cleanup-hook-"));
+    try {
+      const hooks = createDnsHookScripts({
+        credentialId: "cred_1", provider: resolveDnsProvider(provider),
+        zone: { id: provider === "digitalocean" ? "example.com" : "zone_123", name: "example.com", status: "active" },
+        credentials: { apiToken: "test-token" },
+      });
+      const cleanup = join(dir, "cleanup.sh");
+      const recordFile = join(dir, "record-id");
+      const called = join(dir, "called");
+      writeFileSync(cleanup, hooks.cleanupHookScript);
+      writeFileSync(recordFile, "../another-zone/records/123?force=true");
+      writeFileSync(join(dir, "curl"), '#!/bin/sh\ntouch "$CURL_CALLED"\n', { mode: 0o700 });
+      execFileSync("/bin/sh", [cleanup], { timeout: 5000, env: {
+        ...process.env, PATH: `${dir}:/usr/bin:/bin`, CURL_CALLED: called,
+        OPENSHIP_DNS_RECORD_FILE: recordFile,
+      } });
+      expect(existsSync(called)).toBe(false);
+      expect(existsSync(recordFile)).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("refuses a DigitalOcean zone that is not a plain domain name", () => {
@@ -443,7 +475,7 @@ printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
     domain("*.example.com", { sslChallenge: "dns-01" });
 
     await expect(manageDomainSsl("*.example.com", { action: "provision" })).rejects.toThrow(
-      /connected DNS provider.*Settings → Credentials.*Manual TXT/,
+      /connected DNS provider.*Settings → Connections.*Manual TXT/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(h.recordSslFailure).toHaveBeenCalledWith(

@@ -105,9 +105,9 @@ describeDockerE2E("managed deployment output and build environment", () => {
           },
           dependencies: {
             "@fixture/shared": "workspace:*",
-            next: "16.1.6",
-            react: "19.2.4",
-            "react-dom": "19.2.4",
+            next: "16.4.6",
+            react: "19.2.9",
+            "react-dom": "19.2.9",
           },
         }),
         "apps/web/next.config.js":

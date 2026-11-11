@@ -587,6 +587,7 @@ function ConfigureForm({
               <input
                 value={accessKeyId}
                 onChange={(e) => setAccessKeyId(e.target.value)}
+                autoComplete="off"
                 placeholder={secretPlaceholder(destination?.hasAccessKeyId ?? false)}
                 className={`${inputClass} font-mono`}
               />
@@ -596,6 +597,7 @@ function ConfigureForm({
                 value={secretAccessKey}
                 onChange={(e) => setSecretAccessKey(e.target.value)}
                 type="password"
+                autoComplete="new-password"
                 placeholder={secretPlaceholder(destination?.hasSecretAccessKey ?? false)}
                 className={`${inputClass} font-mono`}
               />
@@ -628,6 +630,7 @@ function ConfigureForm({
             <input
               value={sshUser}
               onChange={(e) => setSshUser(e.target.value)}
+              autoComplete="off"
               placeholder="backup"
               className={inputClass}
             />
@@ -645,6 +648,7 @@ function ConfigureForm({
               value={sftpPassword}
               onChange={(e) => setSftpPassword(e.target.value)}
               type="password"
+              autoComplete="new-password"
               placeholder={secretPlaceholder(destination?.hasSftpPassword ?? false)}
               className={`${inputClass} font-mono`}
             />
@@ -653,6 +657,7 @@ function ConfigureForm({
             <textarea
               value={sftpPrivateKey}
               onChange={(e) => setSftpPrivateKey(e.target.value)}
+              autoComplete="off"
               rows={4}
               placeholder={
                 secretPlaceholder(destination?.hasSftpPrivateKey ?? false) ??

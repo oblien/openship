@@ -20,8 +20,10 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { safeErrorMessage, DOCKER_HUB_REGISTRY, type CredentialProvider } from "@repo/core";
 import { env } from "../../config/env";
+import { DigitalOceanApiError, digitaloceanRequest } from "../../lib/digitalocean-api";
 import { safeFetch, type SafeFetchResponse } from "../../lib/safe-fetch";
 import { trustedRegistryRealm } from "../../lib/registry-auth";
+import { verifyProviderAccess, type MigrationProvider } from "./provider-api";
 
 export interface VerifyResult {
   ok: boolean;
@@ -147,7 +149,10 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
       url = trustedRegistryRealm(base, realm);
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/credentials/verify");
-      return { ok: false, reason: `${registry} requested credentials at an untrusted authentication endpoint. Configure authentication on the registry origin.` };
+      return {
+        ok: false,
+        reason: `${registry} requested credentials at an untrusted authentication endpoint. Configure authentication on the registry origin.`,
+      };
     }
     if (service) url.searchParams.set("service", service);
     // No `scope`: an empty scope yields a token proving only authentication, which is
@@ -212,37 +217,21 @@ const verifyCloudflare: Verifier = async ({ secrets }) => {
   }
 };
 
-/**
- * DigitalOcean, by listing one domain — the same check the DNS provider's preflight makes.
- *
- * Not `/v2/account`: that endpoint needs `account:read`, so a token scoped to exactly the
- * domain permissions Openship asks for would be reported as rejected.
- *
- * This proves `domain:read` ONLY. DigitalOcean has no side-effect-free way to ask a token
- * which scopes it carries, and creating a throwaway record to probe `domain:create` would
- * write to a zone the operator never pointed us at. A token missing a write scope is caught
- * on its first write instead: the DNS provider reports that 403 as missing write scope and
- * the credential is marked invalid.
- */
+/** A DNS-only token must not need account:read. Write scopes are checked on use. */
 const verifyDigitalOcean: Verifier = async ({ secrets }) => {
   const apiToken = secrets.apiToken ?? "";
   if (!apiToken) return { ok: false, reason: "An API token is required." };
   try {
-    const res = await fetchWithTimeout("https://api.digitalocean.com/v2/domains?per_page=1", {
-      authorization: `Bearer ${apiToken}`,
-    });
-    if (res.status === 200) return { ok: true };
-    if (res.status === 401 || res.status === 403) {
-      return {
-        ok: false,
-        reason:
-          "DigitalOcean rejected this token. It needs at least the domain read scope (writing records also needs domain create, update and delete).",
-      };
-    }
-    return { ok: false, reason: `DigitalOcean answered ${res.status}.` };
-  } catch (diagnosticFailure) {
-    observeCaughtError(diagnosticFailure, "platform/engine/modules/credentials/verify");
-    return { ok: false, reason: "DigitalOcean could not be reached." };
+    await digitaloceanRequest(apiToken, "/domains?per_page=1");
+    return { ok: true };
+  } catch (error) {
+    // diagnostics-ignore: verification returns a sanitized verdict without logging credentials.
+    return {
+      ok: false,
+      reason: error instanceof DigitalOceanApiError && [401, 403].includes(error.providerStatus)
+        ? "DigitalOcean rejected this token. It needs domain read, create, update and delete scopes."
+        : "DigitalOcean could not verify this connection. Try again.",
+    };
   }
 };
 
@@ -250,6 +239,23 @@ const VERIFIERS: Record<string, Verifier> = {
   "docker-registry": verifyDockerRegistry,
   cloudflare: verifyCloudflare,
   digitalocean: verifyDigitalOcean,
+  ...Object.fromEntries(
+    (["railway", "vercel"] as const).map((provider) => [
+      provider,
+      async (args: Parameters<Verifier>[0]) => {
+        try {
+          await verifyProviderAccess({ provider: provider as MigrationProvider, ...args });
+          return { ok: true };
+        } catch {
+          // diagnostics-ignore: return the credential verification verdict; upstream failures may contain secrets and must not be logged raw.
+          return {
+            ok: false,
+            reason: `${provider === "railway" ? "Railway" : "Vercel"} could not verify this connection. Check its token, scope and workspace or team ID.`,
+          };
+        }
+      },
+    ]),
+  ),
 };
 
 /** True when this provider can be checked — a provider without one cannot be stored. */

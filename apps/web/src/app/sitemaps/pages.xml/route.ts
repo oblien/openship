@@ -1,6 +1,7 @@
 import { SITE_URL, buildUrlset, xmlResponse, type SitemapEntry } from "@/lib/sitemap-builder";
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { FEATURES } from "@/lib/features";
+import { MIGRATION_SOURCES } from "@/lib/migration-sources";
 
 export const dynamic = "force-static";
 export const revalidate = 3600;
@@ -25,6 +26,11 @@ export async function GET() {
     { loc: `${SITE_URL}/contact`, lastmod: now, changefreq: "monthly", priority: 0.4 },
   ];
   entries.push(
+    ...MIGRATION_SOURCES.map((source) => ({
+      loc: `${SITE_URL}/migrate/${source.slug}`,
+      changefreq: "monthly" as const,
+      priority: 0.85,
+    })),
     ...FEATURES.map((feature) => ({
       loc: `${SITE_URL}/features/${feature.slug}`,
       changefreq: "weekly" as const,

@@ -120,6 +120,10 @@ openship deploy
 
 Full server guide + complete CLI reference: **[openship.io/docs](https://openship.io/docs)**.
 
+**Codex and Claude Code plugin:** install the [Openship plugin](plugins/openship/README.md) to deploy and manage apps
+through the existing MCP server, with OAuth and bundled workflow guidance. Supports Openship Cloud
+and configurable desktop/self-hosted endpoints.
+
 <details>
 <summary>Shell completion (bash/zsh/fish)</summary>
 

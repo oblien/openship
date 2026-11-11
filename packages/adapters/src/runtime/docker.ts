@@ -5323,12 +5323,13 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * Over SSH the save runs as a native `docker save` through the raw command
    * channel (rawExec) — the same reason pullImage/build avoid dockerode over the
    * tunnel: a streamed dockerode body over the streamlocal bridge is unreliable.
-   * Local socket / TCP use dockerode's image.get() directly.
+   * Cloud uses the flow-controlled Docker binary bridge: command-output SSE can
+   * disconnect during a slow transfer. Local socket / TCP use the same API.
    */
   async saveImage(
     ref: string,
   ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
-    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
     if (executor?.rawExec) {
       const { stdout, stderr, onClose } = await executor.rawExec(`docker save ${sq(ref)}`);
       let stderrBuf = "";

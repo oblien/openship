@@ -5,6 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CredentialProvider } from "@repo/core";
 import { CredentialForm } from "@/components/credentials/CredentialForm";
+import { AppLogo } from "@/components/AppLogo";
 
 import { credentialsApi, type Credential } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
@@ -26,25 +27,6 @@ import { SettingsSection } from "./SettingsSection";
  * blank on edit means "keep the stored one" — the field is then OMITTED from the payload,
  * because sending `""` is a different request (it would store an empty secret).
  */
-
-/** Same devicon base `STACK_ICONS` uses, so a provider logo needs no new asset pipeline. */
-const DEVICON = "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons";
-
-function ProviderLogo({ slug, className }: { slug: string; className?: string }) {
-  const [failed, setFailed] = useState(false);
-  // Falls back to a key glyph rather than a broken image: devicon does not carry every
-  // brand, and a provider without a logo must still be usable.
-  if (failed || !slug) return <UiIcon name="key" className={className} />;
-  return (
-    <img
-      src={`${DEVICON}/${slug}/${slug}-original.svg`}
-      alt=""
-      aria-hidden
-      onError={() => setFailed(true)}
-      className={className}
-    />
-  );
-}
 
 export function Credentials() {
   const { t } = useI18n();
@@ -137,7 +119,7 @@ export function Credentials() {
             return (
               <div key={provider.id} className="rounded-xl border border-border/50 p-4">
                 <div className="mb-3 flex items-start gap-3">
-                  <ProviderLogo slug={provider.icon} className="mt-0.5 size-5 shrink-0" />
+                  <AppLogo slug={provider.icon} icon="key" className="mt-0.5 size-5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">{pLabel}</p>
                     <p className="text-xs text-muted-foreground">{pSummary}</p>

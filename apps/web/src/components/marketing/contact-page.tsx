@@ -3,23 +3,23 @@ import { Navbar, Footer } from "@/components/landing";
 import { ContactForm } from "@/components/contact-form";
 import { IllustratedLink, type IllustratedLinkProps } from "./illustrated-link";
 import { MarketingIntro } from "./marketing-intro";
+import { connection } from "next/server";
 
-/** Contact and support use the same form and page layout; source routing stays in ContactForm. */
-export function ContactPage({
-  source,
+/** Public contact layout. Customer support starts in the signed-in dashboard. */
+export async function ContactPage({
   eyebrow,
   title,
   description,
   links,
   children,
 }: {
-  source: "contact" | "support";
   eyebrow: string;
   title: ReactNode;
   description: string;
   links: IllustratedLinkProps[];
   children?: ReactNode;
 }) {
+  await connection();
   return (
     <>
       <Navbar />
@@ -34,7 +34,7 @@ export function ContactPage({
               {children}
             </aside>
             <section className="marketing-contact-form" aria-label="Send a request">
-              <ContactForm source={source} />
+              <ContactForm siteKey={process.env.CONTACT_TURNSTILE_SITE_KEY ?? ""} />
             </section>
           </div>
         </div>

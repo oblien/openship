@@ -115,7 +115,7 @@ Copy each value exactly as shown — don't retype it, use the Copy button.
 If Cloudflare or DigitalOcean hosts your DNS, choose **Connect a DNS provider** in this panel. An
 owner or admin can add a token without leaving the deployment setup: for Cloudflare, one with
 **Zone:Read** and **DNS:Edit** for the relevant zones; for DigitalOcean, a custom-scoped token with
-the **domain** read, create, update and delete scopes. The connection is saved in **Settings → Credentials** and can be reused across the workspace.
+the **domain** read, create, update and delete scopes. The connection is saved in **Settings → Connections** and can be reused across the workspace.
 Connecting verifies the token; it does not change DNS records.
 
 Credentials belong to the instance where you connect them. For a Cloud project opened through a
@@ -205,7 +205,7 @@ on the wildcard's card. The inline panel separates routing DNS from certificate 
 
 ### Automatic provider
 
-Connect **Cloudflare** or **DigitalOcean** from the DNS panel or **Settings → Credentials**, using a
+Connect **Cloudflare** or **DigitalOcean** from the DNS panel or **Settings → Connections**, using a
 token that can edit DNS records for the relevant zone. Choose **Automatic provider**, then **Enable HTTPS automatically**. Openship
 publishes the certificate challenge, waits for DNS, obtains the certificate and removes its temporary
 TXT record. Keep the connection enabled so Openship can renew the certificate automatically.

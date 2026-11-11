@@ -1348,5 +1348,26 @@
     "applyReboot": "Programar reinicio",
     "rebooting": "Reinicio programado; pendiente de verificar el kernel",
     "rebootInterruption": "El servidor se reiniciará en un minuto e interrumpirá todas sus cargas. Openship verificará el kernel en ejecución cuando el host vuelva a conectarse."
+  },
+  "sourceImageUpdate": {
+    "open": "Proponer actualización de imagen",
+    "title": "Actualizar imagen en el código",
+    "hint": "Las imágenes de Dockerfile y Compose se definen en tu repositorio. Revisa el cambio y crea un borrador de pull request.",
+    "noRepository": "Este proyecto necesita un repositorio de GitHub y una rama de despliegue conectados. Cambia la imagen en su fuente y despliega la versión actualizada.",
+    "file": "Archivo fuente",
+    "format": "Formato del archivo",
+    "browse": "Explorar repositorio",
+    "load": "Leer imágenes",
+    "reference": "Referencia de imagen",
+    "image": "Imagen de reemplazo",
+    "preview": "Revisar cambio",
+    "diff": "Diferencias del código",
+    "review": "Revisa la compatibilidad y CI antes de fusionar. Esto cambia una referencia; otras etapas y dependencias pueden requerir cambios aparte. Esta acción no inicia un despliegue.",
+    "createPr": "Crear borrador de PR",
+    "viewPr": "Abrir pull request",
+    "created": "Fusiona el PR revisado y despliega su commit mediante el flujo habitual. Comprueba de nuevo el entorno desplegado para verificar que se resolvió el aviso.",
+    "manual": "No se encontró una referencia directa editable. Abre el archivo fuente para actualizar variables, imágenes heredadas o lógica de compilación personalizada.",
+    "working": "Procesando…",
+    "failed": "No se pudo preparar la actualización del código."
   }
 }

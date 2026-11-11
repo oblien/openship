@@ -118,7 +118,7 @@
       "team": "Ekip",
       "notifications": "Bildirimler",
       "email": "E-posta",
-      "credentials": "Kimlik bilgileri",
+      "credentials": "Bağlantılar",
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
       "instance": "Kurulum",
@@ -1610,7 +1610,7 @@
     }
   },
   "credentials": {
-    "title": "Kimlik bilgileri",
+    "title": "Bağlantılar",
     "description": "Openship'in sizin adınıza kullandığı belirteçler ve oturum bilgileri — özel imaj çekme, DNS kaydı yazma. Şifreli saklanır ve kaydedildikten sonra bir daha gösterilmez.",
     "noProviders": "Bu örnekte kullanılabilir sağlayıcı yok.",
     "noneForProvider": "Henüz eklenmedi.",

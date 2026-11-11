@@ -1020,6 +1020,18 @@
       "description": "Check access to the requested DNS zone.",
       "route": "POST /api/dns/verify-zone"
     },
+    "credentials.authorize": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Begin a Railway or Vercel organization connection through OAuth. Open the returned authorization URL in the initiating authenticated session.",
+      "route": "POST /api/credentials/authorization"
+    },
+    "credentials.completeAuthorization": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Complete the browser OAuth callback with its single-use state and code. Returns a masked connection record; rejects other sessions or workspaces.",
+      "route": "POST /api/credentials/authorization/complete"
+    },
     "credentials.listProviders": {
       "page": "credentials",
       "section": "Operations",
@@ -2442,6 +2454,24 @@
       "description": "Compare deployed image and recorded base-image digests with the registry.",
       "route": "POST /api/updates/:projectId/runtime/check"
     },
+    "updates.runtimeSource": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Read literal Dockerfile or Compose image references at the deployment branch commit. Requires repository source access.",
+      "route": "POST /api/updates/:projectId/runtime/source"
+    },
+    "updates.previewRuntimeSource": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Preview one source image change against an exact commit without writing or deploying.",
+      "route": "POST /api/updates/:projectId/runtime/source/preview"
+    },
+    "updates.publishRuntimeSource": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Create a draft GitHub PR for a reviewed source image change. Requires project and repository/file write access; never merges or deploys.",
+      "route": "POST /api/updates/:projectId/runtime/source/publish"
+    },
     "updates.securityCheckPolicy": {
       "page": "updates",
       "section": "Operations",
@@ -3333,6 +3363,26 @@
       "description": "Test a public SSH source without saving it and return its host fingerprint.",
       "route": "POST /api/migration/sources/test"
     },
+    "migrations.platformProjects": {
+      "page": "migration",
+      "description": "List projects and environments accessible through a selected Railway or Vercel connection.",
+      "route": "GET /api/migration/platforms/projects"
+    },
+    "migrations.discoverPlatform": {
+      "page": "migration",
+      "description": "Discover provider services, source revisions, variable names, storage and domains in an encrypted import draft. Does not change source resources or return secrets.",
+      "route": "POST /api/migration/platforms/discover"
+    },
+    "migrations.reviewPlatform": {
+      "page": "migration",
+      "description": "Review selected services, target, missing secrets and data choices before deployment. Unsupported source configuration remains an explicit blocker.",
+      "route": "POST /api/migration/platforms/review"
+    },
+    "migrations.importPlatform": {
+      "page": "migration",
+      "description": "Start a reviewed platform import after required source-write and worker pause confirmations. Uses the existing migration run and normal deployment operations; retains source resources.",
+      "route": "POST /api/migration/platforms/import"
+    },
     "migrations.scan": {
       "page": "migration",
       "description": "Inspect a server's Docker and return the adoptable stack — read-only, changes nothing.",
@@ -4016,7 +4066,7 @@
     },
     "POST /api/cloud/support": {
       "page": "support",
-      "description": "Save a Cloud support ticket and queue acknowledgement and team email. Public intake returns only a receipt and deduplicates retries."
+      "description": "Submit a public contact message with a server-verified bot challenge; customer support requires a signed-in session."
     },
     "GET /api/cloud/support/tickets": {
       "page": "support",
@@ -5165,6 +5215,18 @@
     "POST /api/affiliates/payouts/cancel": {
       "page": "referrals",
       "description": "Compatibility alias for POST /api/referral-program/payouts/cancel. New clients use the referral-program route."
+    },
+    "GET /api/cloud/support/blocks": {
+      "page": "support",
+      "description": "List operator-managed sender and IP intake blocks."
+    },
+    "POST /api/cloud/support/blocks": {
+      "page": "support",
+      "description": "Block an exact sender email or IP address from intake."
+    },
+    "DELETE /api/cloud/support/blocks": {
+      "page": "support",
+      "description": "Remove an operator-managed sender or IP intake block."
     }
   }
 }

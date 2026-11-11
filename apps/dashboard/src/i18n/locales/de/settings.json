@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "Team",
       "notifications": "Benachrichtigungen",
-      "credentials": "Zugangsdaten",
+      "credentials": "Verbindungen",
       "cloud": "Cloud",
       "infrastructure": "Infrastruktur",
       "instance": "Instanz",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "Zugangsdaten",
+    "title": "Verbindungen",
     "description": "Tokens und Logins, die Openship für Sie nutzt — private Registry-Pulls, DNS-Einträge schreiben. Verschlüsselt gespeichert und nach dem Speichern nie wieder angezeigt.",
     "noProviders": "Auf dieser Instanz sind keine Anbieter verfügbar.",
     "noneForProvider": "Noch keine hinzugefügt.",

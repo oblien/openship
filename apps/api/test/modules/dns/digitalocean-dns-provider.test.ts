@@ -1,5 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Resolver } from "node:dns/promises";
+
+const h = vi.hoisted(() => ({ fetch: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/safe-fetch", () => ({
+  safeFetch: (...args: unknown[]) => h.fetch(...args),
+}));
 import {
   digitaloceanDnsProvider,
   ownerMarkerName,
@@ -13,7 +18,7 @@ import {
 
 /** Shape a v2 response the way the real API does. */
 function doOk(body: unknown, status = 200) {
-  return { ok: true, status, text: async () => JSON.stringify(body) } as Response;
+  return { ok: true, status, json: async () => body } as Response;
 }
 
 function doErr(status: number, id: string, message: string) {
@@ -101,31 +106,30 @@ function fakeZone(zone: string, initial: Array<Record<string, unknown>>) {
 }
 
 describe("digitaloceanDnsProvider", () => {
-  const originalFetch = global.fetch;
   const creds = { apiToken: "dop_v1_test" };
 
-  beforeEach(() => vi.restoreAllMocks());
-  afterEach(() => {
-    global.fetch = originalFetch;
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    h.fetch = vi.fn();
   });
 
   describe("preflight", () => {
     it("checks with a domain-scoped call, not /account, which needs account:read", async () => {
       const fetchMock = vi.fn().mockResolvedValue(list([]));
-      global.fetch = fetchMock;
+      h.fetch = fetchMock;
       const result = await digitaloceanDnsProvider.preflight(creds);
       expect(result.ok).toBe(true);
       expect(String(fetchMock.mock.calls[0]![0])).toContain("/v2/domains?per_page=1");
     });
 
     it("says it checked read access only", async () => {
-      global.fetch = vi.fn().mockResolvedValue(list([]));
+      h.fetch = vi.fn().mockResolvedValue(list([]));
       const result = await digitaloceanDnsProvider.preflight(creds);
       expect(result.ok && result.detail).toMatch(/read domains.*Write access is confirmed/);
     });
 
     it("turns a 401 into scope guidance", async () => {
-      global.fetch = vi
+      h.fetch = vi
         .fn()
         .mockResolvedValue(doErr(401, "unauthorized", "Unable to authenticate you."));
       const result = await digitaloceanDnsProvider.preflight(creds);
@@ -149,7 +153,7 @@ describe("digitaloceanDnsProvider", () => {
     it("lists domains once and picks the longest hosted suffix", async () => {
       delegated();
       const fetchMock = vi.fn().mockResolvedValue(domains("example.com", "sub.example.com"));
-      global.fetch = fetchMock;
+      h.fetch = fetchMock;
       expect(await digitaloceanDnsProvider.findZone(creds, "app.sub.example.com")).toEqual({
         id: "sub.example.com",
         name: "sub.example.com",
@@ -161,7 +165,7 @@ describe("digitaloceanDnsProvider", () => {
 
     it("finds a wildcard's zone without asking about the * label", async () => {
       delegated();
-      global.fetch = vi.fn().mockResolvedValue(domains("example.com"));
+      h.fetch = vi.fn().mockResolvedValue(domains("example.com"));
       expect(await digitaloceanDnsProvider.findZone(creds, "*.example.com")).toMatchObject({
         id: "example.com",
         status: "active",
@@ -170,14 +174,14 @@ describe("digitaloceanDnsProvider", () => {
 
     it("returns null when the account hosts no suffix", async () => {
       const resolveNs = delegated();
-      global.fetch = vi.fn().mockResolvedValue(domains("example.org"));
+      h.fetch = vi.fn().mockResolvedValue(domains("example.org"));
       expect(await digitaloceanDnsProvider.findZone(creds, "app.example.com")).toBeNull();
       expect(resolveNs).not.toHaveBeenCalled();
     });
 
     it("reports a zone delegated elsewhere as pending", async () => {
       nsAnswer("ns1.digitalocean.com", "dana.ns.cloudflare.com");
-      global.fetch = vi.fn().mockResolvedValue(domains("example.com"));
+      h.fetch = vi.fn().mockResolvedValue(domains("example.com"));
       expect(await digitaloceanDnsProvider.findZone(creds, "app.example.com")).toMatchObject({
         status: "pending",
       });
@@ -185,22 +189,25 @@ describe("digitaloceanDnsProvider", () => {
 
     it("reports a zone with no public NS set as pending", async () => {
       nsFailure("ENOTFOUND");
-      global.fetch = vi.fn().mockResolvedValue(domains("example.com"));
+      h.fetch = vi.fn().mockResolvedValue(domains("example.com"));
       expect(await digitaloceanDnsProvider.findZone(creds, "app.example.com")).toMatchObject({
         status: "pending",
       });
     });
 
-    it("does not read an inconclusive NS lookup as non-delegation", async () => {
+    it("reports an inconclusive NS lookup as unavailable instead of provisioning", async () => {
       nsFailure("ETIMEOUT");
-      global.fetch = vi.fn().mockResolvedValue(domains("example.com"));
-      expect(await digitaloceanDnsProvider.findZone(creds, "app.example.com")).toMatchObject({
-        status: "active",
+      h.fetch = vi.fn().mockResolvedValue(domains("example.com"));
+      await expect(
+        digitaloceanDnsProvider.findZone(creds, "app.example.com"),
+      ).rejects.toMatchObject({
+        providerStatus: 503,
+        isTransient: true,
       });
     });
 
     it("throws on a rate limit instead of reporting the domain as unmanaged", async () => {
-      global.fetch = vi
+      h.fetch = vi
         .fn()
         .mockResolvedValue(doErr(429, "too_many_requests", "API rate limit exceeded."));
       const err = await digitaloceanDnsProvider
@@ -211,7 +218,7 @@ describe("digitaloceanDnsProvider", () => {
     });
 
     it("never echoes the token in an error", async () => {
-      global.fetch = vi
+      h.fetch = vi
         .fn()
         .mockResolvedValue(doErr(401, "unauthorized", `bad token ${creds.apiToken}`));
       const err = (await digitaloceanDnsProvider
@@ -223,7 +230,7 @@ describe("digitaloceanDnsProvider", () => {
 
     it("refuses an empty token without calling the API", async () => {
       const fetchMock = vi.fn();
-      global.fetch = fetchMock;
+      h.fetch = fetchMock;
       const err = (await digitaloceanDnsProvider
         .findZone({ apiToken: "" }, "app.example.com")
         .catch((e: unknown) => e)) as DnsApiError;
@@ -242,7 +249,7 @@ describe("digitaloceanDnsProvider", () => {
     });
 
     it("keeps a wildcard's marker name valid", () => {
-      expect(ownerMarkerName("*.example.com")).toBe("_openship-owner._wildcard.example.com");
+      expect(ownerMarkerName("*.example.com")).toBe("_openship-owner-wildcard.example.com");
     });
   });
 
@@ -255,7 +262,7 @@ describe("digitaloceanDnsProvider", () => {
         // Names a record that was deleted and recreated by hand: not a claim on 102.
         marker("_openship-owner.app", "TXT", 7, 901),
       ]);
-      global.fetch = fetchMock as unknown as typeof fetch;
+      h.fetch = fetchMock;
 
       const records = await digitaloceanDnsProvider.listRecords(creds, "example.com", {
         name: "app.example.com",
@@ -271,7 +278,7 @@ describe("digitaloceanDnsProvider", () => {
         rec(),
         marker("_openship-owner.app", "A", 101),
       ]);
-      global.fetch = fetchMock as unknown as typeof fetch;
+      h.fetch = fetchMock;
       const records = await digitaloceanDnsProvider.listRecords(creds, "example.com");
       expect(records.map((r) => r.name)).toEqual(["app.example.com"]);
     });
@@ -280,7 +287,7 @@ describe("digitaloceanDnsProvider", () => {
       const { fetchMock } = fakeZone("example.com", [
         rec({ type: "CNAME", data: "edge.openship.io" }),
       ]);
-      global.fetch = fetchMock as unknown as typeof fetch;
+      h.fetch = fetchMock;
       const [record] = await digitaloceanDnsProvider.listRecords(creds, "example.com", {
         name: "app.example.com",
       });
@@ -293,7 +300,7 @@ describe("digitaloceanDnsProvider", () => {
   describe("upsertRecord", () => {
     it("creates a record with a relative name and writes its ownership marker", async () => {
       const zone = fakeZone("example.com", []);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       const created = await digitaloceanDnsProvider.upsertRecord(creds, "example.com", {
         type: "CNAME",
@@ -315,7 +322,7 @@ describe("digitaloceanDnsProvider", () => {
     it("takes the record back down when its marker cannot be written", async () => {
       const zone = fakeZone("example.com", []);
       zone.failMarkerCreate.value = true;
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       await expect(
         digitaloceanDnsProvider.upsertRecord(creds, "example.com", {
@@ -329,7 +336,7 @@ describe("digitaloceanDnsProvider", () => {
 
     it("repoints an operator's record without claiming it", async () => {
       const zone = fakeZone("example.com", [rec({ id: 101, ttl: 3600 })]);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       const updated = await digitaloceanDnsProvider.upsertRecord(creds, "example.com", {
         type: "A",
@@ -346,7 +353,7 @@ describe("digitaloceanDnsProvider", () => {
 
     it("writes a quoted TXT value unquoted and then reports it in sync", async () => {
       const zone = fakeZone("example.com", []);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
       const input = { type: "TXT" as const, name: "example.com", content: '"v=spf1 " "mx -all"' };
 
       await digitaloceanDnsProvider.upsertRecord(creds, "example.com", input);
@@ -364,11 +371,11 @@ describe("digitaloceanDnsProvider", () => {
     });
 
     it("names a 403 on write as missing write scope", async () => {
-      global.fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      h.fetch = vi.fn(async (_url: string, init?: RequestInit) =>
         (init?.method ?? "GET") === "GET"
           ? list([])
           : doErr(403, "forbidden", "You are not authorized to perform this operation"),
-      ) as unknown as typeof fetch;
+      );
       const err = (await digitaloceanDnsProvider
         .upsertRecord(creds, "example.com", {
           type: "A",
@@ -386,7 +393,7 @@ describe("digitaloceanDnsProvider", () => {
         rec({ id: 101 }),
         rec({ id: 102, data: "198.51.100.2" }),
       ]);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       await expect(
         digitaloceanDnsProvider.upsertRecord(creds, "example.com", {
@@ -406,7 +413,7 @@ describe("digitaloceanDnsProvider", () => {
         marker("_openship-owner.app", "A", 101, 900),
         marker("_openship-owner.app", "TXT", 102, 901),
       ]);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       await digitaloceanDnsProvider.deleteRecord(creds, "example.com", "101");
 
@@ -419,7 +426,7 @@ describe("digitaloceanDnsProvider", () => {
         marker("_openship-owner.app", "A", 101, 900),
         marker("_openship-owner.app", "TXT", 102, 901),
       ]);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       await digitaloceanDnsProvider.deleteRecord(creds, "example.com", "101");
 
@@ -432,7 +439,7 @@ describe("digitaloceanDnsProvider", () => {
         marker("_openship-owner.app", "A", 101),
       ]);
       zone.failMarkerList.value = true;
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       await expect(
         digitaloceanDnsProvider.deleteRecord(creds, "example.com", "101"),
@@ -442,7 +449,7 @@ describe("digitaloceanDnsProvider", () => {
 
     it("treats an already-deleted record as success", async () => {
       const zone = fakeZone("example.com", []);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
       await expect(
         digitaloceanDnsProvider.deleteRecord(creds, "example.com", "404"),
       ).resolves.toBeUndefined();
@@ -450,6 +457,26 @@ describe("digitaloceanDnsProvider", () => {
   });
 
   describe("pruneOrphanedMarkers", () => {
+    it("keeps wildcard and literal _wildcard ownership separate during cleanup", async () => {
+      const zone = fakeZone("example.com", []);
+      h.fetch = zone.fetchMock;
+      for (const name of ["*.example.com", "_wildcard.example.com"]) {
+        await digitaloceanDnsProvider.upsertRecord(creds, "example.com", {
+          type: "A",
+          name,
+          content: "198.51.100.7",
+        });
+      }
+      const wildcard = zone.records.find((r) => r.name === "*")!;
+      await digitaloceanDnsProvider.deleteRecord(creds, "example.com", String(wildcard.id));
+      await digitaloceanDnsProvider.pruneOrphanedMarkers!(creds, "example.com", "*.example.com");
+      const records = await digitaloceanDnsProvider.listRecords(creds, "example.com", {
+        name: "_wildcard.example.com",
+      });
+      expect(records).toHaveLength(1);
+      expect(isOpenshipManaged(records[0]!)).toBe(true);
+    });
+
     it("drops markers whose record is gone and keeps live and foreign ones", async () => {
       const zone = fakeZone("example.com", [
         rec({ id: 101 }),
@@ -459,7 +486,7 @@ describe("digitaloceanDnsProvider", () => {
         // Not a marker we wrote: left alone.
         { ...marker("_openship-owner.app", "A", 1, 902), data: "something else" },
       ]);
-      global.fetch = zone.fetchMock as unknown as typeof fetch;
+      h.fetch = zone.fetchMock;
 
       await digitaloceanDnsProvider.pruneOrphanedMarkers!(creds, "example.com", "app.example.com");
 

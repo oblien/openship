@@ -31,6 +31,7 @@ import {
 import { ConflictError, NotFoundError, ValidationError } from "@repo/core";
 import { encryptSecretField, decryptSecretField } from "../../lib/credential-encryption";
 import { hasVerifier, verifyCredentialValues, type CredentialSecrets } from "./verify";
+import { createProvisionLock } from "../../lib/provision-lock";
 
 // ─── Read shape ──────────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ export function sanitizeCredential(row: Credential): SanitizedCredential {
  * sealed with the source instance's key). Callers must treat empty as "re-enter this
  * credential", exactly as the DNS service does today — never as "no credential needed".
  */
-function readSecrets(row: Credential): CredentialSecrets {
+export function readCredentialSecrets(row: Credential): CredentialSecrets {
   try {
     // The DECRYPT is inside the try, not before it. A rotated `BETTER_AUTH_SECRET` makes
     // `decryptSecretField` THROW, and letting that escape turned "this credential needs
@@ -111,7 +112,7 @@ function readSecrets(row: Credential): CredentialSecrets {
   }
 }
 
-function writeSecrets(secrets: CredentialSecrets): string {
+export function writeCredentialSecrets(secrets: CredentialSecrets): string {
   const enc = encryptSecretField(JSON.stringify(secrets));
   if (!enc) throw new Error("Failed to encrypt the credential.");
   return enc;
@@ -186,7 +187,7 @@ export async function createCredential(
     name,
     selector,
     publicFields,
-    secretsEnc: writeSecrets(secrets),
+    secretsEnc: writeCredentialSecrets(secrets),
     status: "active",
     lastVerifiedAt: new Date(),
   });
@@ -198,9 +199,39 @@ export async function updateCredential(
   id: string,
   input: { name?: string; selector?: string | null; values?: Record<string, string | undefined> },
 ): Promise<SanitizedCredential> {
+  return createProvisionLock(`connection:token:${organizationId}:${id}`).run(() =>
+    updateCredentialUnlocked(organizationId, id, input),
+  );
+}
+
+async function updateCredentialUnlocked(
+  organizationId: string,
+  id: string,
+  input: { name?: string; selector?: string | null; values?: Record<string, string | undefined> },
+): Promise<SanitizedCredential> {
   const row = await repos.credential.findById(organizationId, id);
   if (!row) throw new NotFoundError("Credential", id);
   const provider = requireProvider(row.provider);
+
+  if (row.publicFields.authorization === "oauth") {
+    if (input.values && Object.values(input.values).some((value) => !!value))
+      throw new ValidationError(
+        "Reconnect this authorized account to change its access. Tokens cannot replace an OAuth grant.",
+      );
+    const name = input.name?.trim() || row.name;
+    if (await repos.credential.nameTaken(organizationId, row.provider, row.selector, name, id))
+      throw new ConflictError("A connection with this name already exists");
+    const updated = await repos.credential.update(organizationId, id, { name });
+    if (!updated) throw new NotFoundError("Connection", id);
+    return sanitizeCredential(updated);
+  }
+  if (
+    (row.provider === "railway" || row.provider === "vercel") &&
+    (await repos.dockerMigrationRun.usesConnection(organizationId, id))
+  )
+    throw new ConflictError(
+      "Finish the migration and temporary access cleanup before changing this connection.",
+    );
 
   const name = input.name?.trim() || row.name;
   const selector =
@@ -213,7 +244,7 @@ export async function updateCredential(
 
   // "Leave blank to keep" applies only while the credential stays bound to the same
   // destination. In that case the stored secret counts as present during validation.
-  const held = readSecrets(row);
+  const held = readCredentialSecrets(row);
   const submitted = input.values ?? {};
   // A stored secret is bound to the destination it was entered for. Reusing it after an
   // admin changes the selector would turn this write-only store into a secret-export
@@ -244,7 +275,7 @@ export async function updateCredential(
     name,
     selector,
     publicFields,
-    secretsEnc: writeSecrets(secrets),
+    secretsEnc: writeCredentialSecrets(secrets),
     status: "active",
     lastVerifiedAt: new Date(),
     lastError: null,
@@ -254,11 +285,22 @@ export async function updateCredential(
 }
 
 export async function deleteCredential(organizationId: string, id: string): Promise<void> {
-  const row = await repos.credential.findById(organizationId, id);
-  if (!row) throw new NotFoundError("Credential", id);
-  if ((await repos.ingress.list(organizationId)).some(c => c.credentialId === id))
-    throw new ConflictError("Disconnect the Cloudflare Tunnel using this credential before deleting it. Pending hostname cleanup still needs the credential.");
-  await repos.credential.remove(organizationId, id);
+  return createProvisionLock(`connection:token:${organizationId}:${id}`).run(async () => {
+    const row = await repos.credential.findById(organizationId, id);
+    if (!row) throw new NotFoundError("Credential", id);
+    if ((await repos.ingress.list(organizationId)).some((c) => c.credentialId === id))
+      throw new ConflictError(
+        "Disconnect the Cloudflare Tunnel using this credential before deleting it. Pending hostname cleanup still needs the credential.",
+      );
+    if (
+      (row.provider === "railway" || row.provider === "vercel") &&
+      (await repos.dockerMigrationRun.usesConnection(organizationId, id))
+    )
+      throw new ConflictError(
+        "Finish the migration and temporary access cleanup before removing this connection.",
+      );
+    await repos.credential.remove(organizationId, id);
+  });
 }
 
 /**
@@ -277,7 +319,11 @@ export async function verifyCredential(
   const provider = getCredentialProvider(row.provider);
   if (!provider) throw new ValidationError(`Unknown credential provider "${row.provider}".`);
 
-  const secrets = readSecrets(row);
+  let secrets = readCredentialSecrets(row);
+  if (row.publicFields.authorization === "oauth") {
+    const { getProviderAccess } = await import("./connection-authorization");
+    secrets = (await getProviderAccess(organizationId, id, { allowInvalid: true })).secrets;
+  }
   if (Object.keys(secrets).length === 0) {
     // The restore case: the row survived a cross-instance move but its secret could not.
     const reason = "The stored secret is empty — re-enter it.";
@@ -324,7 +370,7 @@ export async function resolveCredentialSecrets(opts: {
 }): Promise<ResolvedCredential | undefined> {
   const row = await repos.credential.findActive(opts.organizationId, opts.provider, opts.selector);
   if (!row) return undefined;
-  const secrets = readSecrets(row);
+  const secrets = readCredentialSecrets(row);
   if (Object.keys(secrets).length === 0) return undefined;
   return { id: row.id, publicFields: row.publicFields ?? {}, secrets };
 }
@@ -357,7 +403,7 @@ export async function listProviderCredentials(
 ): Promise<ProviderCredential[]> {
   const rows = await repos.credential.listActiveByProvider(organizationId, provider);
   return rows.map((row) => {
-    const secrets = readSecrets(row);
+    const secrets = readCredentialSecrets(row);
     const readable = Object.keys(secrets).length > 0;
     return {
       id: row.id,

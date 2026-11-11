@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "Equipe",
       "notifications": "Notificações",
-      "credentials": "Credenciais",
+      "credentials": "Conexões",
       "cloud": "Cloud",
       "infrastructure": "Infraestrutura",
       "instance": "Instância",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "Credenciais",
+    "title": "Conexões",
     "description": "Tokens e logins que o Openship usa em seu nome — transferência de imagens privadas e escrita de registos DNS. Guardados cifrados e nunca mostrados de novo.",
     "noProviders": "Não há fornecedores de credenciais disponíveis nesta instância.",
     "noneForProvider": "Ainda não adicionou nenhuma.",

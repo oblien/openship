@@ -47,6 +47,7 @@ import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { env } from "../../config/index";
 import { cleanupWebmailInstall } from "../mail/webmail/webmail-install.service";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import { readActiveProjectWork } from "./project-active-work";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -188,12 +189,7 @@ const QUIESCE_POLL_MS = 250;
 export async function getActiveProjectState(projectId: string): Promise<PreflightActiveState> {
   // Every query is exact and fail-closed. An unreadable work table is NOT proof
   // of quiescence; letting an error propagate retains the row via `finally`.
-  const [activeDeployments, runs, restores, migration] = await Promise.all([
-    repos.deployment.listInFlightByProject(projectId),
-    repos.backupRun.listInFlightByProject(projectId),
-    repos.backupRestore.listInFlightByProject(projectId),
-    repos.dockerMigrationRun.findActiveForProject(projectId),
-  ]);
+  const { activeDeployments, runs, restores, migration } = await readActiveProjectWork(projectId);
 
   const parts: string[] = [];
   if (activeDeployments.length > 0) {

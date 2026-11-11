@@ -3,13 +3,7 @@
  * same way whichever provider answers.
  */
 
-/**
- * How many domain suffixes a zone lookup considers.
- *
- * Real hostnames are 2-5 labels, so the cap never truncates a genuine candidate;
- * it stops a long caller-supplied name from turning one lookup into hundreds of
- * outbound calls.
- */
+/** Bound remote lookups while preserving the suffixes nearest the zone apex. */
 export const MAX_ZONE_CANDIDATES = 8;
 
 /** Trailing dots and case are not part of a name's identity. */
