@@ -19,8 +19,8 @@ It does not print the credential or send it to Docker. Production GitHub connect
 The suite refuses repositories that are public, archived, or do not have the verification name prefix.
 
 It creates an isolated base branch, exercises an expired credential and workspace access denial,
-creates real Dockerfile and Compose draft PRs through Openship, verifies their author and exact diff,
-then explicitly approves and merges those PRs as test setup. Product code never performs the merge.
+creates real Dockerfile and Compose draft PRs through Openship, records their author and verifies the exact change,
+then explicitly marks those PRs ready and merges them as test setup. Product code never performs the merge.
 The merged source drives a real Docker build and running HTTP service; a second rebuild must still
 report the patched runtime. A Compose service replacement must retain its named-volume contents and
 environment. No container publishes a host port.
