@@ -39,95 +39,109 @@ try {
   );
   await mkdir(output, { recursive: true });
   browser = await chromium.launch();
-  const context = await browser.newContext({
-    viewport: { width: 900, height: 675 },
-    deviceScaleFactor: 2,
-    reducedMotion: "reduce",
-    locale: "en-US",
-    timezoneId: "UTC",
-    serviceWorkers: "block",
-  });
-  // This invalid cookie only passes the local proxy's presence check. The
-  // temporary route sits outside the authenticated dashboard and has no data access.
-  await context.addCookies([
-    { name: "capture.session_token", value: "visual-fixture-only", url: origin },
-    { name: "openship-theme", value: "dim:dim", url: origin },
-  ]);
-  await context.addInitScript(() => localStorage.setItem("theme", "dim"));
-  await context.route("**/*", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.pathname.includes("/api/") || url.pathname.startsWith("/health")) {
-      const dnsPreview = url.pathname.endsWith("/domains/preview");
-      if (!["GET", "HEAD", "OPTIONS"].includes(request.method()) && !dnsPreview)
-        writes.push(url.pathname);
-      await route.fulfill({
-        status: request.method() === "OPTIONS" ? 204 : 200,
-        headers: {
-          "content-type": "application/json",
-          "access-control-allow-origin": origin,
-          "access-control-allow-credentials": "true",
-          "access-control-allow-headers":
-            request.headers()["access-control-request-headers"] ?? "content-type",
-        },
-        body: JSON.stringify(
-          dnsPreview
-            ? {
-                data: {
-                  records: [{ type: "A", host: "shop", value: "203.0.113.10" }],
-                  mode: "selfhosted",
-                },
-              }
-            : null,
-        ),
+  for (const theme of ["light", "dim"]) {
+    const context = await browser.newContext({
+      viewport: { width: 900, height: 675 },
+      deviceScaleFactor: 2,
+      colorScheme: theme === "light" ? "light" : "dark",
+      reducedMotion: "reduce",
+      locale: "en-US",
+      timezoneId: "UTC",
+      serviceWorkers: "block",
+    });
+    // This invalid cookie only passes the local proxy's presence check. The
+    // temporary route sits outside the authenticated dashboard and has no data access.
+    await context.addCookies([
+      { name: "capture.session_token", value: "visual-fixture-only", url: origin },
+      { name: "openship-theme", value: `${theme}:${theme}`, url: origin },
+    ]);
+    await context.addInitScript((mode) => localStorage.setItem("theme", mode), theme);
+    await context.route("**/*", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (url.pathname.includes("/api/") || url.pathname.startsWith("/health")) {
+        const dnsPreview = url.pathname.endsWith("/domains/preview");
+        if (!["GET", "HEAD", "OPTIONS"].includes(request.method()) && !dnsPreview)
+          writes.push(url.pathname);
+        await route.fulfill({
+          status: request.method() === "OPTIONS" ? 204 : 200,
+          headers: {
+            "content-type": "application/json",
+            "access-control-allow-origin": origin,
+            "access-control-allow-credentials": "true",
+            "access-control-allow-headers":
+              request.headers()["access-control-request-headers"] ?? "content-type",
+          },
+          body: JSON.stringify(
+            dnsPreview
+              ? {
+                  data: {
+                    records: [{ type: "A", host: "shop", value: "203.0.113.10" }],
+                    mode: "selfhosted",
+                  },
+                }
+              : null,
+          ),
+        });
+        return;
+      }
+      await route.continue();
+    });
+    page = await context.newPage();
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.clock.setFixedTime(new Date("2026-11-09T10:05:00Z"));
+    // A running Next dev server can briefly return 404 while it discovers the route.
+    const deadline = Date.now() + 30_000;
+    let response;
+    do {
+      response = await page.goto(`${origin}/walkthrough-capture`, {
+        waitUntil: "networkidle",
+        timeout: 120_000,
       });
-      return;
+      if (response?.status() !== 404) break;
+      await page.waitForTimeout(500);
+    } while (Date.now() < deadline);
+    assert.equal(response?.ok(), true, "The local dashboard capture route is unavailable");
+    await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
+    for (const view of ["connect", "build", "ship", "route", "operate"]) {
+      await page.evaluate((id) => {
+        location.hash = id;
+      }, view);
+      const frame = page.locator(`[data-walkthrough-capture="${view}"]`);
+      await frame.waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      await frame
+        .locator("img")
+        .evaluateAll((images) => Promise.all(images.map((image) => image.decode())));
+      if (view === "build") await page.locator(".xterm-screen").first().waitFor();
+      // Let xterm's fit and the existing chart finish painting before capture.
+      await page.waitForTimeout(650);
+      assert.equal(
+        await page.locator("html").getAttribute("data-theme"),
+        theme,
+        "The screenshot must use the requested dashboard theme",
+      );
+      assert.equal(
+        await frame.evaluate((el) => el.scrollHeight > el.clientHeight),
+        false,
+        `${view} is clipped`,
+      );
+      const filename = `${view}${theme === "light" ? "-light" : ""}.jpg`;
+      await frame.screenshot({
+        path: resolve(output, filename),
+        type: "jpeg",
+        quality: 88,
+        animations: "disabled",
+      });
+      const file = await stat(resolve(output, filename));
+      console.log(`${filename}: ${Math.round(file.size / 1024)} KB`);
     }
-    await route.continue();
-  });
-  page = await context.newPage();
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.clock.setFixedTime(new Date("2026-11-09T10:05:00Z"));
-  // A running Next dev server can briefly return 404 while it discovers the route.
-  const deadline = Date.now() + 30_000;
-  let response;
-  do {
-    response = await page.goto(`${origin}/walkthrough-capture`, {
-      waitUntil: "networkidle",
-      timeout: 120_000,
-    });
-    if (response?.status() !== 404) break;
-    await page.waitForTimeout(500);
-  } while (Date.now() < deadline);
-  assert.equal(response?.ok(), true, "The local dashboard capture route is unavailable");
-  await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
-  for (const view of ["connect", "build", "ship", "route", "operate"]) {
-    await page.evaluate((id) => {
-      location.hash = id;
-    }, view);
-    const frame = page.locator(`[data-walkthrough-capture="${view}"]`);
-    await frame.waitFor();
-    await page.evaluate(() => document.fonts.ready);
-    if (view === "build") await page.locator(".xterm-screen").first().waitFor();
-    // Let xterm's fit and the existing chart finish painting before capture.
-    await page.waitForTimeout(650);
-    assert.equal(
-      await frame.evaluate((el) => el.scrollHeight > el.clientHeight),
-      false,
-      `${view} is clipped`,
-    );
-    await frame.screenshot({
-      path: resolve(output, `${view}.jpg`),
-      type: "jpeg",
-      quality: 88,
-      animations: "disabled",
-    });
-    const file = await stat(resolve(output, `${view}.jpg`));
-    console.log(`${view}.jpg: ${Math.round(file.size / 1024)} KB`);
+    await context.close();
+    page = undefined;
   }
   assert.deepEqual(errors, [], "Browser errors");
   assert.deepEqual(writes, [], "Unexpected API mutation attempts");
-  console.log("Captured five real component views with sample data; no API writes.");
+  console.log("Captured five real component views in light and dim themes; no API writes.");
 } catch (error) {
   if (page)
     console.error(page.url(), (await page.locator("body").innerText()).slice(0, 3000), errors);

@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "团队",
       "notifications": "通知",
-      "credentials": "凭据",
+      "credentials": "连接",
       "cloud": "云",
       "infrastructure": "基础设施",
       "instance": "实例",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "凭据",
+    "title": "连接",
     "description": "Openship 代表你使用的令牌与登录信息——拉取私有镜像、写入 DNS 记录。加密存储，保存后不再显示。",
     "noProviders": "此实例没有可用的凭据提供方。",
     "noneForProvider": "尚未添加。",

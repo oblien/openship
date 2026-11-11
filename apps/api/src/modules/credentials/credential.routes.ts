@@ -17,12 +17,39 @@ import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import { requireRole } from "../../middleware";
 import * as ctrl from "./credential.controller";
-import { CreateCredentialBody, UpdateCredentialBody } from "@repo/contracts";
+import { CreateCredentialBody, UpdateCredentialBody ,
+  CredentialCollectionSchemas,
+} from "@repo/contracts";
 
 const r = secureRouter(new Hono(), {
   module: "credentials",
   basePath: "/api/credentials",
 });
+
+r.post(
+  "/authorization",
+  {
+    tag: "settings:admin",
+    body: CredentialCollectionSchemas.authorize.input,
+    mcp: {
+      description:
+        "Start an organization platform connection. Open the returned authorization URL; no provider credentials are returned.",
+    },
+  },
+  requireRole("admin"),
+  ctrl.authorize,
+);
+r.post(
+  "/authorization/complete",
+  {
+    tag: "settings:admin",
+    body: CredentialCollectionSchemas.completeAuthorization.input,
+    auditHandledByOperation: true,
+    mcpExcluded: "Browser OAuth callback, bound to the initiating authenticated session.",
+  },
+  requireRole("admin"),
+  ctrl.completeAuthorization,
+);
 
 r.get(
   "/providers",

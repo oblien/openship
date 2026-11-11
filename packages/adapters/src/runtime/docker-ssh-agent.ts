@@ -807,7 +807,9 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     }
   };
 
-  const server = net.createServer((client) => {
+  // Attach uploads half-close stdin before Docker replies. Keep the response
+  // side open until the SSH channel has drained and the daemon closes it.
+  const server = net.createServer({ allowHalfOpen: true }, (client) => {
     clients.add(client);
     client.setNoDelay(true);
     // Permanent error floor. captureClient attaches its own 'error' listener and

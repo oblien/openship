@@ -22,6 +22,7 @@ import { safeErrorMessage, DOCKER_HUB_REGISTRY, type CredentialProvider } from "
 import { env } from "../../config/env";
 import { safeFetch, type SafeFetchResponse } from "../../lib/safe-fetch";
 import { trustedRegistryRealm } from "../../lib/registry-auth";
+import { verifyProviderAccess, type MigrationProvider } from "./provider-api";
 
 export interface VerifyResult {
   ok: boolean;
@@ -147,7 +148,10 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
       url = trustedRegistryRealm(base, realm);
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/credentials/verify");
-      return { ok: false, reason: `${registry} requested credentials at an untrusted authentication endpoint. Configure authentication on the registry origin.` };
+      return {
+        ok: false,
+        reason: `${registry} requested credentials at an untrusted authentication endpoint. Configure authentication on the registry origin.`,
+      };
     }
     if (service) url.searchParams.set("service", service);
     // No `scope`: an empty scope yields a token proving only authentication, which is
@@ -215,6 +219,23 @@ const verifyCloudflare: Verifier = async ({ secrets }) => {
 const VERIFIERS: Record<string, Verifier> = {
   "docker-registry": verifyDockerRegistry,
   cloudflare: verifyCloudflare,
+  ...Object.fromEntries(
+    (["railway", "vercel"] as const).map((provider) => [
+      provider,
+      async (args: Parameters<Verifier>[0]) => {
+        try {
+          await verifyProviderAccess({ provider: provider as MigrationProvider, ...args });
+          return { ok: true };
+        } catch {
+          // diagnostics-ignore: return the credential verification verdict; upstream failures may contain secrets and must not be logged raw.
+          return {
+            ok: false,
+            reason: `${provider === "railway" ? "Railway" : "Vercel"} could not verify this connection. Check its token, scope and workspace or team ID.`,
+          };
+        }
+      },
+    ]),
+  ),
 };
 
 /** True when this provider can be checked — a provider without one cannot be stored. */

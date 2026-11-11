@@ -17,6 +17,9 @@ runtime; their connection and public routing are supplied by Openship Cloud.
 
 ## Before you start
 
+For API-connected sources, use [Migrate from Railway or Vercel](/docs/guides/migrate-from-railway-vercel).
+The server flow below uses Docker and SSH access.
+
 - The source must run **Docker**. This flow does not move bare applications or Kubernetes workloads.
 - You need write access to both servers and, for an existing project, the project itself.
 - An external Cloud source needs a public SSH address and a password or uploaded private key. Openship
@@ -39,7 +42,7 @@ the data-transfer downtime or guarantee when every resolver updates. Managed dom
 <Step>
 ### Connect the source
 
-Open **New project → Import existing project** and connect the external server. This is a
+Open **New project → Import existing project → Server or Docker** and connect the external server. This is a
 **migration-only connection**: it appears in the import picker, not in deployment destinations,
 terminals or general server management. You can reuse it for another import and disconnect it afterward.
 Disconnecting removes Openship's saved connection; it does not delete your external server or its data.

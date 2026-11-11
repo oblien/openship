@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { MigrationRequestSchemas } from "./migration";
+import { PlatformMigrationScopedSchemas } from "./platform-migration";
 import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import { ServerDetailSchema } from "./servers";
 import type {
@@ -192,6 +193,7 @@ export const MigrationRevealEnvSchema = Type.Object(
   { additionalProperties: false },
 );
 export const MigrationScopedSchemas = {
+  ...PlatformMigrationScopedSchemas,
   listSources: { action: "read", output: Type.Array(ServerDetailSchema) },
   createSource: {
     action: "write",

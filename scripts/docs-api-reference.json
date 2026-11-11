@@ -1020,6 +1020,18 @@
       "description": "Check access to the requested DNS zone.",
       "route": "POST /api/dns/verify-zone"
     },
+    "credentials.authorize": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Begin a Railway or Vercel organization connection through OAuth. Open the returned authorization URL in the initiating authenticated session.",
+      "route": "POST /api/credentials/authorization"
+    },
+    "credentials.completeAuthorization": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Complete the browser OAuth callback with its single-use state and code. Returns a masked connection record; rejects other sessions or workspaces.",
+      "route": "POST /api/credentials/authorization/complete"
+    },
     "credentials.listProviders": {
       "page": "credentials",
       "section": "Operations",
@@ -3332,6 +3344,26 @@
       "page": "migration",
       "description": "Test a public SSH source without saving it and return its host fingerprint.",
       "route": "POST /api/migration/sources/test"
+    },
+    "migrations.platformProjects": {
+      "page": "migration",
+      "description": "List projects and environments accessible through a selected Railway or Vercel connection.",
+      "route": "GET /api/migration/platforms/projects"
+    },
+    "migrations.discoverPlatform": {
+      "page": "migration",
+      "description": "Discover provider services, source revisions, variable names, storage and domains in an encrypted import draft. Does not change source resources or return secrets.",
+      "route": "POST /api/migration/platforms/discover"
+    },
+    "migrations.reviewPlatform": {
+      "page": "migration",
+      "description": "Review selected services, target, missing secrets and data choices before deployment. Unsupported source configuration remains an explicit blocker.",
+      "route": "POST /api/migration/platforms/review"
+    },
+    "migrations.importPlatform": {
+      "page": "migration",
+      "description": "Start a reviewed platform import after required source-write and worker pause confirmations. Uses the existing migration run and normal deployment operations; retains source resources.",
+      "route": "POST /api/migration/platforms/import"
     },
     "migrations.scan": {
       "page": "migration",
