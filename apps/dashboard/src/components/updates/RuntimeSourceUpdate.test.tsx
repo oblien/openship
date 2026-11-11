@@ -6,6 +6,8 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { CloudResourceContext } from "@/context/CloudResourceContext";
 import { setApiResourceScope } from "@/lib/api/client";
 import { RuntimeSourceUpdate } from "./RuntimeSourceUpdate";
+import { SecurityProjectReview } from "./SecurityProjectReview";
+import type { ProjectSecurityResult } from "@repo/contracts";
 
 const api = vi.hoisted(() => ({ git: vi.fn(), read: vi.fn(), preview: vi.fn(), publish: vi.fn() }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getGit: api.git } }));
@@ -17,6 +19,9 @@ vi.mock("@/lib/api/updates", () => ({
   },
 }));
 vi.mock("@/components/github/RepositoryPathBrowser", () => ({ RepositoryPathBrowser: () => null }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock("@/hooks/useRuntimeUpdate", () => ({ useRuntimeUpdate: () => ({ updating: false }) }));
 let root: Root, host: HTMLDivElement;
 const source = {
   owner: "acme",
@@ -128,3 +133,45 @@ it("discards source and pending responses after an account/workspace switch", as
   expect(document.body.textContent).not.toContain("private-account-a");
   expect(document.body.textContent).not.toContain("Create draft PR");
 });
+
+it.each([false, true])(
+  "offers source editing for a pinned advisory unless source redeploy is already required (%s)",
+  async (sourceRedeployRequired) => {
+    const result: ProjectSecurityResult = {
+      projectId: "project",
+      deploymentId: "deployment",
+      checkedAt: new Date().toISOString(),
+      autoRefresh: false,
+      feedStale: false,
+      feedError: null,
+      unknownServices: [],
+      findings: [
+        {
+          id: "pinned-node",
+          revision: 1,
+          title: "Update Node",
+          message: "Review the image pin.",
+          severity: "high",
+          url: "https://example.com/advisory",
+          serviceId: null,
+          serviceName: null,
+          evidence: ["node 22.23.3"],
+          confidence: "confirmed",
+          canRefresh: false,
+          sourceRedeployRequired,
+        },
+      ],
+    };
+    await act(async () =>
+      root.render(
+        <I18nProvider>
+          <SecurityProjectReview projectId="project" initialResult={result} />
+        </I18nProvider>,
+      ),
+    );
+    expect(document.body.textContent?.includes("Propose image update")).toBe(
+      !sourceRedeployRequired,
+    );
+    expect(api.publish).not.toHaveBeenCalled();
+  },
+);
