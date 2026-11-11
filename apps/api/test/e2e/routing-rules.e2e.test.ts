@@ -605,12 +605,16 @@ http {
   // ── The rule this whole change exists for ────────────────────────────────────
 
   it("publishes independent domains and changes both live upstreams on redeployment", async () => {
+    const executor = new DockerEdgeExecutor({
+      containerName: started[0]!.id, docker: runtime.docker, fileMode: "container",
+    });
     const routing = new NginxProvider({
       paths: OPENRESTY_DEFAULT_PATHS, containerEdge: true, pinPaths: true,
-      executor: rootChecked(new DockerEdgeExecutor({ containerName: started[0]!.id, docker: runtime.docker, fileMode: "container" }), "isolated E2E route updates"),
+      executor: rootChecked(executor, "isolated E2E route updates"),
     });
     const routes = ["parallel-a.test", "parallel-b.test"].map(hostname => ({ hostname, tls: false, targetPort: 9901 }));
     const logger = new BuildLogger(() => {});
+    const initialFiles = new Map<string, string>();
     for (const [upstream, body] of [[9901, "APP"], [9904, "BACKEND"]] as const) {
       const warnings = await registerResolvedRoutes(logger, routing, undefined, routes, { targetUrl: `http://127.0.0.1:${upstream}` });
       expect(warnings).toEqual([]);
@@ -621,7 +625,26 @@ http {
           expect(response.body).toContain(`${body} uri=/deployment`);
         }, { timeout: 10_000 });
       }
+      if (upstream === 9901) {
+        for (const suffix of ["conf", "route.json"]) {
+          const path = `${SITES_DIR}/parallel-a-test.${suffix}`;
+          initialFiles.set(path, await executor.readFile(path));
+        }
+      }
     }
+    // Another deploy can publish the desired files and fail before reloading.
+    // Matching disk on retry must still activate them in the running edge.
+    for (const [path, content] of initialFiles) {
+      await executor.writeFile(path, content, { mode: 0o600 });
+    }
+    expect((await ask(port, "/deployment", "parallel-a.test")).body).toContain("BACKEND uri=/deployment");
+    expect(await registerResolvedRoutes(logger, routing, undefined, [routes[0]!], {
+      targetUrl: "http://127.0.0.1:9901",
+    })).toEqual([]);
+    await vi.waitFor(async () => {
+      expect((await ask(port, "/deployment", "parallel-a.test")).body).toContain("APP uri=/deployment");
+    }, { timeout: 10_000 });
+
     const warnings = await registerResolvedRoutes(logger, routing, undefined,
       [{ hostname: "invalid.test", tls: false }, ...routes], { targetUrl: "http://127.0.0.1:9901" });
     expect(warnings).toHaveLength(1);

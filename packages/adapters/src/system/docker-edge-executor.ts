@@ -7,6 +7,7 @@ import { LocalExecutor } from "./local-executor";
 import { logEntry, sq } from "./local-shell";
 import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
 import { edgeFailureReason } from "./proxy/detect";
+import { framedCatCommand, unframeFileRead } from "./exact-file-read";
 
 const DEFAULT_SOCKET = "/var/run/docker.sock";
 
@@ -52,6 +53,8 @@ export class DockerEdgeExecutor implements CommandExecutor {
   /** node:fs backend — used only in "mounted" mode, where the routing volumes
    *  really are in this process's filesystem. */
   private readonly files = new LocalExecutor();
+  /** Metadata is available only when the file namespace is mounted locally. */
+  readonly lstat?: CommandExecutor["lstat"];
 
   constructor(opts: {
     containerName: string;
@@ -65,6 +68,7 @@ export class DockerEdgeExecutor implements CommandExecutor {
     this.containerName = opts.containerName;
     this.docker = opts.docker ?? new Dockerode({ socketPath: opts.socketPath ?? DEFAULT_SOCKET });
     this.fileMode = opts.fileMode ?? "mounted";
+    if (this.fileMode === "mounted") this.lstat = this.files.lstat.bind(this.files);
   }
 
   /**
@@ -246,7 +250,8 @@ export class DockerEdgeExecutor implements CommandExecutor {
 
   async readFile(path: string): Promise<string> {
     if (this.fileMode === "mounted") return this.files.readFile(path);
-    return this.exec(`cat ${sq(path)}`);
+    // Framed: `exec` trims its output, and a file read must come back byte-exact.
+    return unframeFileRead(await this.exec(framedCatCommand(path)), path);
   }
 
   async exists(path: string): Promise<boolean> {

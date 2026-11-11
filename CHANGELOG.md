@@ -21,6 +21,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ### Domains
 
+- Avoid rewriting unchanged edge route files and repeating remote reads during a
+  registration. Preserve exact file contents and permissions while retaining route
+  validation, reloads, certificate activation and transactional rollback.
+
 - **DigitalOcean DNS** — connect a DigitalOcean token in Settings → Connections to preview
   and apply a custom domain's records and issue DNS-verified HTTPS automatically, as with
   Cloudflare. Each record Openship creates is paired with an `_openship-owner` TXT marker,
