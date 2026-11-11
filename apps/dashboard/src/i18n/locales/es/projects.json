@@ -209,6 +209,8 @@
     "modeStandalone": "Independiente",
     "modeServer": "Servidor",
     "modeWorker": "Worker",
+    "modeComposeOne": "Conjunto de servicios Compose · {count} servicio",
+    "modeComposeOther": "Conjunto de servicios Compose · {count} servicios",
     "infrastructure": "Infraestructura",
     "platform": "Plataforma",
     "mode": "Modo",

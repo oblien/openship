@@ -69,3 +69,21 @@ test("the existing IMAP client can use the patched Nodemailer HTTP proxy helper"
     await new Promise<void>((resolve) => proxy.close(() => resolve()));
   }
 });
+
+test("recipient parsing preserves the full domain across whitespace and comments", async () => {
+  // GHSA-3q53-mvfw-q9v8: only serialize locally; this test sends no SMTP mail.
+  const transport = nodemailer.createTransport({ jsonTransport: true });
+  try {
+    for (const to of [
+      'ceo@victim.example .allowed.example',
+      'CEO <ceo@victim.example(x).allowed.example>',
+    ]) {
+      const result = await transport.sendMail({
+        from: 'sender@example.test', to, subject: 'Parser regression', text: 'Local fixture',
+      });
+      expect(result.envelope.to).toEqual(['ceo@victim.example.allowed.example']);
+    }
+  } finally {
+    transport.close();
+  }
+});

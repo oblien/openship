@@ -57,6 +57,7 @@ export function startActionController(): void {
           }
         }
         if (abort.signal.aborted) return;
+        await repos.actions.settleGitHubObserverDeliveries();
         await (await import("./triggers")).actionWebhookInbox.tick();
         await actionController.tick(abort.signal);
         if (!abort.signal.aborted)

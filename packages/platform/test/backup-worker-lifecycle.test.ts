@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const { listQueued } = vi.hoisted(() => ({ listQueued: vi.fn() }));
-vi.mock("@repo/db", () => ({ repos: { backupRun: { listQueued } } }));
+vi.mock("@repo/db", () => ({
+  repos: { backupRun: { listQueued } },
+  withAdvisoryLock: (_key: string, fn: () => Promise<unknown>) => fn(),
+}));
 import { InProcessJobRunner } from "../src/engine/lib/job-runner/in-process";
 import { deferBackgroundWork, drainBackgroundWork } from "../src/engine/lib/background-work";
 import { setDiagnosticTelemetry, type DiagnosticTelemetry } from "@repo/core/diagnostics";
 import { currentErrorContext, withErrorContext } from "@repo/core/diagnostics/node";
+import { withBackupDestinationLock } from "../src/engine/modules/backups/backup-lock";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -117,4 +121,27 @@ it("does not fire a distant cron date when its timeout exceeds Node's timer rang
   await vi.advanceTimersByTimeAsync(2000);
   expect(onTick).not.toHaveBeenCalled();
   await runner.shutdown(Infinity);
+});
+
+it("serializes execution per destination across concurrent runs", async () => {
+  const events: string[] = [];
+  const d1 = deferred();
+
+  const run1 = withBackupDestinationLock("dest-a", async () => {
+    events.push("d1-start");
+    await d1.promise;
+    events.push("d1-end");
+  });
+
+  const run2 = withBackupDestinationLock("dest-a", async () => {
+    events.push("d2-start");
+    events.push("d2-end");
+  });
+
+  await vi.advanceTimersByTimeAsync(1);
+  expect(events).toEqual(["d1-start"]);
+
+  d1.resolve();
+  await Promise.all([run1, run2]);
+  expect(events).toEqual(["d1-start", "d1-end", "d2-start", "d2-end"]);
 });

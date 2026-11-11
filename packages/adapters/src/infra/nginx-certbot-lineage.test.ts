@@ -121,6 +121,30 @@ async function setup(local = false) {
 }
 
 describe("Certbot renewal after adopting a certificate", () => {
+  test("reuses a valid certificate but still verifies route activation", async () => {
+    const s = await setup();
+    await s.put(DOMAIN, s.renewed);
+    await s.nginx.registerRoute({ domain: DOMAIN, targetUrl: "http://127.0.0.1:3009", tls: true });
+    s.reload.mockClear();
+    const result = await s.nginx.provisionCert(DOMAIN);
+    expect(result.verified).toBe(true);
+    expect(s.reload).toHaveBeenCalled();
+    expect(s.commands.some(command => command.startsWith("certbot "))).toBe(false);
+  });
+  test("activates a certificate that arrived after the route was registered", async () => {
+    const s = await setup();
+    await rm(join(s.certDir, DOMAIN), { recursive: true });
+    await s.nginx.registerRoute({ domain: DOMAIN, targetUrl: "http://127.0.0.1:3010", tls: true });
+    const config = join(s.root, "sites", "app-example-com.conf");
+    expect(await readFile(config, "utf8")).not.toContain("listen 443 ssl");
+    await s.put(DOMAIN, s.renewed);
+    await s.nginx.provisionCert(DOMAIN);
+    const active = await readFile(config, "utf8");
+    expect(active).toContain("listen 443 ssl");
+    expect(active).toContain("http://127.0.0.1:3010");
+    expect(s.commands.some(command => command.startsWith("certbot "))).toBe(false);
+  });
+
   test.each([false, true])(
     "renews an import on the first attempt using an unused name (leftover names: %s)",
     async (leftovers) => {

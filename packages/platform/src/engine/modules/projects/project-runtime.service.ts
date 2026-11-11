@@ -258,7 +258,11 @@ async function enableLiveProject(p: ProjectRow, organizationId: string) {
  * nothing at all, which left the health watch structurally unable to stay quiet
  * about a deliberately-stopped project.
  */
-export async function disableProject(projectId: string, organizationId: string) {
+export async function disableProject(
+  projectId: string,
+  organizationId: string,
+  expectedDeploymentId?: string,
+) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
   // Pausing the control plane means stopping the container that is handling this
@@ -268,6 +272,16 @@ export async function disableProject(projectId: string, organizationId: string) 
   const result = await withLiveProjectRuntimeMutation(projectId, async (liveProject) => {
     assertResourceInOrg(liveProject, "Project", organizationId, projectId);
     assertNotControlPlane(liveProject);
+    if (
+      expectedDeploymentId &&
+      liveProject.activeDeploymentId &&
+      liveProject.activeDeploymentId !== expectedDeploymentId
+    )
+      throw new AppError(
+        "The active deployment changed. Its workload was left running; review it before retrying recovery.",
+        409,
+        "DEPLOYMENT_NOT_ACTIVE",
+      );
     return disableLiveProject(liveProject);
   });
   if (!result) throw new NotFoundError("Project", projectId);

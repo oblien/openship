@@ -14,14 +14,18 @@
       "types": "./src/icons/index.ts",
       "import": "./src/icons/index.ts"
     },
+    "./illustrations": {
+      "types": "./src/illustrations/index.ts",
+      "import": "./src/illustrations/index.ts"
+    },
     "./app-logo": {
       "types": "./src/AppLogo.tsx",
       "import": "./src/AppLogo.tsx"
     }
   },
   "scripts": {
-    "build": "tsup src/index.tsx src/icons/index.ts src/AppLogo.tsx --format esm --dts --clean --external react --external react-dom",
-    "dev": "tsup src/index.tsx src/icons/index.ts src/AppLogo.tsx --format esm --dts --watch --external react --external react-dom",
+    "build": "tsup src/index.tsx src/icons/index.ts src/illustrations/index.ts src/AppLogo.tsx --format esm --dts --clean --external react --external react-dom",
+    "dev": "tsup src/index.tsx src/icons/index.ts src/illustrations/index.ts src/AppLogo.tsx --format esm --dts --watch --external react --external react-dom",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist .turbo node_modules"
   },
@@ -38,8 +42,8 @@
     "@types/node": "^25.3.5",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "~19.2.9",
+    "react-dom": "~19.2.9",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   }

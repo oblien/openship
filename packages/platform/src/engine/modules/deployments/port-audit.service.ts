@@ -9,7 +9,7 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { waitForPortListening, type BuildLogger, type RuntimeAdapter } from "@repo/adapters";
+import { waitForPortListening, withDeploymentProgress, type BuildLogger, type RuntimeAdapter } from "@repo/adapters";
 import type { PortCheckResult } from "../../lib/deployment-runtime";
 
 // The instance is already reported "started", so a correct port returns on the
@@ -45,9 +45,8 @@ export async function auditPorts(
     const executor = await runtime.inContainerExecutor(containerId);
     const results: PortCheckResult[] = [];
     for (const port of unique) {
-      const probe = await waitForPortListening(executor, port, {
-        timeoutMs: PORT_AUDIT_TIMEOUT_MS,
-      });
+      const probe = await withDeploymentProgress(logger, `application port ${port} inside ${containerId.slice(0, 12)}`, () =>
+        waitForPortListening(executor, port, { timeoutMs: PORT_AUDIT_TIMEOUT_MS }));
       // The edge reaches a Docker deployment through the published host port, which
       // Docker forwards to the container's own address, never its loopback. Bare
       // apps run on the host itself, where the edge's 127.0.0.1 reaches them fine.

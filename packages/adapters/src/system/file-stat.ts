@@ -1,3 +1,4 @@
+import { lstat } from "node:fs/promises";
 import type { FileStat } from "../types";
 
 const S_IFMT = 0o170000;
@@ -17,4 +18,15 @@ export function fileStatOf(stats: { mode: number }): FileStat {
           ? "directory"
           : "other";
   return { kind, mode: stats.mode & 0o7777 };
+}
+
+/** Local counterpart of SFTP lstat: only absence becomes null. */
+export async function lstatFile(path: string): Promise<FileStat | null> {
+  try {
+    return fileStatOf(await lstat(path));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw error;
+  }
 }

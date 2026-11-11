@@ -263,6 +263,9 @@ export type ComposeAdvancedPatch = {
 };
 
 export type ComposeAdvanced = {
+  /** Long-form Compose startup conditions; short-form dependencies only require
+   * container startup. Kept with the imported service snapshot. */
+  dependsOnConditions?: Record<string, "service_started" | "service_healthy" | "service_completed_successfully">;
   /**
    * Provenance for a Compose `image:` expression. `resolved` remains in the
    * service's ordinary `image` column for display and rollback snapshots; this

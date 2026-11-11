@@ -37,7 +37,7 @@ export function DeploymentStepper() {
               : cancelled
                 ? copy.status.cancelled
                 : active
-                  ? copy.title.deploying
+                  ? deploymentStatus === "verifying" ? copy.status.verifying : copy.title.deploying
                   : t.importProject.serviceStatus.pending;
 
           return (

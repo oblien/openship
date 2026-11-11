@@ -1,24 +1,29 @@
 # syntax=docker/dockerfile:1
-# ─── Build stage ────────────────────────────────────────
+# ─── Dependencies ───────────────────────────────────────
 # Pinned to .bun-version — reproducible official images.
-FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS builder
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS dependencies
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
-COPY tsconfig.base.json ./
+# Preserve workspace paths without making installation depend on source edits.
+# Email's postinstall also installs its two nested packages.
+COPY --parents apps/*/package.json packages/*/package.json apps/email/*/package.json apps/email/*/bun.lock ./
 COPY patches/ ./patches/
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
+
+# ─── Build stage ────────────────────────────────────────
+FROM dependencies AS builder
+COPY tsconfig.base.json ./
 COPY packages/ ./packages/
-COPY apps/ ./apps/
+COPY apps/dashboard/ ./apps/dashboard/
 
 ENV NEXT_TELEMETRY_DISABLED=1
 # Same-origin API proxy (browser → /api/proxy/* → INTERNAL_API_URL). Baked at
 # build time (NEXT_PUBLIC_* is inlined) so the dashboard never calls a hardcoded
 # API host — works behind any reverse proxy / on a remote host.
 ENV NEXT_PUBLIC_API_PROXY=true
-# Match the API image and the tested dependency graph on remote rebuilds.
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile \
- && cd apps/dashboard && bun run build
+RUN cd apps/dashboard && bun run build
 
 # Keep the glibc runtime compatible with native packages selected by Bun.
 # ─── Production stage ──────────────────────────────────

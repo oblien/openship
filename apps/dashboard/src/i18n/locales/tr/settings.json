@@ -118,7 +118,7 @@
       "team": "Ekip",
       "notifications": "Bildirimler",
       "email": "E-posta",
-      "credentials": "Kimlik bilgileri",
+      "credentials": "Bağlantılar",
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
       "instance": "Kurulum",
@@ -1610,7 +1610,7 @@
     }
   },
   "credentials": {
-    "title": "Kimlik bilgileri",
+    "title": "Bağlantılar",
     "description": "Openship'in sizin adınıza kullandığı belirteçler ve oturum bilgileri — özel imaj çekme, DNS kaydı yazma. Şifreli saklanır ve kaydedildikten sonra bir daha gösterilmez.",
     "noProviders": "Bu örnekte kullanılabilir sağlayıcı yok.",
     "noneForProvider": "Henüz eklenmedi.",
@@ -1662,7 +1662,17 @@
         "fields": {
           "apiToken": {
             "label": "API belirteci",
-            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç."
+            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç. My Profile → API Tokens altında oluşturun."
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Openship'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını DigitalOcean DNS'e yazmasına izin verin.",
+        "fields": {
+          "apiToken": {
+            "label": "API belirteci",
+            "help": "Alan adı okuma, oluşturma, güncelleme ve silme özel kapsamlarına sahip bir belirteç. API → Tokens altında oluşturun."
           }
         }
       }

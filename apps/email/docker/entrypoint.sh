@@ -25,14 +25,20 @@
 #      (no network), hand the mount to the `clamav` user, and create clamd's socket
 #      directory. Without a database clamd exits 1, and amavis — whose only scanner
 #      it is — then defers every inbound message (issue #565).
-#   8. Amavis: drop leftover pid/lock/socket. `docker recreate` empties /run;
-#      `docker restart` keeps the writable layer, so Net::Server can abort-loop
-#      against a recycled PID (often now dovecot) and Postfix defers originating
-#      mail on 127.0.0.1:10026.
+#   8. Amavis and Dovecot: drop leftover pid/lock/socket files.
+#      `docker recreate` empties /run; `docker restart` keeps the writable
+#      layer, so a pid from the previous life can now name a live process
+#      from another daemon (PIDs recycle from 1). Net::Server then
+#      abort-loops on "Pid_file already exists" and Postfix defers
+#      originating mail on 127.0.0.1:10026 — and Dovecot itself refuses to
+#      start with "Dovecot is already running", leaving 993/995 down
+#      (issue #1700).
 #   9. hand off to supervisord (the CMD).
 #
 # Env (from ensure-container-mail.ts --env-file): FIRST_DOMAIN,
-# OPENSHIP_MAIL_DB_{HOST,PORT,NAME,USER}, plus iRedMail secrets
+# OPENSHIP_MAIL_DB_{HOST,PORT,NAME,USER}, OPENSHIP_MAIL_F2B_IGNOREIP (operator
+# fail2ban ignoreip additions, rendered into a jail.d override on every boot),
+# plus iRedMail secrets
 # (VMAIL_DB_ADMIN_PASSWD, VMAIL_DB_BIND_PASSWD, AMAVISD_DB_PASSWD,
 # IREDAPD_DB_PASSWD, FAIL2BAN_DB_PASSWD, PGSQL_ROOT_PASSWD, DOMAIN_ADMIN_PASSWD_PLAIN).
 set -euo pipefail
@@ -188,13 +194,11 @@ fi
 
 # 5. fail2ban setup:
 #    a) pre-create the log files the fail2ban jails tail, so a jail never starts
-#       against a missing path (rsyslog populates them as the daemons log).
-mkdir -p /var/log/dovecot /var/log/iredapd /var/log/supervisor
-touch /var/log/mail.log \
-      /var/log/dovecot/dovecot.log /var/log/dovecot/imap.log \
-      /var/log/dovecot/pop3.log /var/log/dovecot/lda.log /var/log/dovecot/sieve.log \
-      /var/log/iredapd/iredapd.log
-chown -R iredapd:iredapd /var/log/iredapd 2>/dev/null || true
+#       against a missing path (rsyslog populates them as the daemons log);
+#    b) fix the leading commas in jail port lists; c) configure the banned_db
+#       helper; d) render operator ignoreip additions (OPENSHIP_MAIL_F2B_IGNOREIP)
+#       into a jail.d override (issue #1701).
+bash /opt/openship-mail/prepare-mail-logs.sh
 
 #    b) fix leading commas in jail port lists (e.g. `,,25,587,...` -> `25,587,...`)
 #       because HTTP/HTTPS ports are absent in the container image and cause
@@ -205,6 +209,31 @@ sed -i -E 's/port=",,/port="/g' /etc/fail2ban/jail.d/*.local 2>/dev/null || true
 #       alone cannot select a host/port. The dedicated files are also used by
 #       cron/manual invocations that do not inherit the container environment.
 python3 /opt/openship-mail/configure-fail2ban-db.py
+
+#    d) operator fail2ban ignoreip additions (issue #1701). The engine's
+#       --env-file may carry OPENSHIP_MAIL_F2B_IGNOREIP (space-separated IPs,
+#       CIDRs or hostnames). Render them into a jail.d override on EVERY boot
+#       so they survive `docker pull` + recreate, which wipes /etc/fail2ban.
+#       The value rendered is the baked ignoreip from jail.local PLUS the
+#       operator additions — a bare override would drop the image defaults
+#       (127.0.0.0/8 …) and let fail2ban ban localhost. Rendered, never
+#       appended to jail.local itself: re-rendering is idempotent across
+#       restarts and follows image-default changes on update.
+if [ -n "${OPENSHIP_MAIL_F2B_IGNOREIP:-}" ]; then
+  case "$OPENSHIP_MAIL_F2B_IGNOREIP" in
+    *$'\n'*|*$'\r'*|*[!A-Za-z0-9.:,/_[:space:]-]*)
+      log "WARN: OPENSHIP_MAIL_F2B_IGNOREIP has characters outside [A-Za-z0-9.:,/_ -] — skipping" ;;
+    *)
+      baked="$(sed -n -E 's/^[[:space:]]*ignoreip[[:space:]]*=[[:space:]]*//p' /etc/fail2ban/jail.local | head -n 1)"
+      if [ -z "$baked" ]; then
+        log "WARN: no ignoreip in /etc/fail2ban/jail.local — skipping OPENSHIP_MAIL_F2B_IGNOREIP"
+      else
+        printf '[DEFAULT]\nignoreip = %s %s\n' "$baked" "$OPENSHIP_MAIL_F2B_IGNOREIP" > /etc/fail2ban/jail.d/openship-ignoreip.local
+        log "rendered operator fail2ban ignoreip additions"
+      fi
+      ;;
+  esac
+fi
 
 # 6. DKIM: reuse the key on the mount, else generate one (per domain).
 if [ -n "$FIRST_DOMAIN" ] && [ ! -s "/var/lib/dkim/${FIRST_DOMAIN}.pem" ]; then
@@ -258,6 +287,15 @@ fi
 #    recreate the directory the way Debian's tmpfiles.d rule would under
 #    systemd (supervisord has no equivalent).
 bash /opt/openship-mail/prepare-amavis-runtime.sh
+
+#    Dovecot is the mirror image (issue #1700): it refuses to start with
+#    "Dovecot is already running" if master.pid exists and that PID is still
+#    alive — even when the process is something else. After a restart that
+#    PID can belong to amavisd, supervisord burns its retries and marks
+#    dovecot FATAL, and nothing listens on 993/995 until someone removes
+#    the pid file by hand. Same reasoning as above — no Dovecot from this
+#    run can exist yet — so drop it unconditionally too.
+bash /opt/openship-mail/prepare-dovecot-runtime.sh
 
 log "starting supervisord"
 exec "$@"

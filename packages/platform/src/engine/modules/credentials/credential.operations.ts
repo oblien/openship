@@ -5,12 +5,34 @@ import { requireOrganizationAdmin } from "../../lib/organization-authorization";
 import { hasVerifier } from "./verify";
 import * as service from "./credential.service";
 
+import {
+  beginConnectionAuthorization,
+  completeConnectionAuthorization,
+  connectionAuthorizationAvailable,
+} from "./connection-authorization";
+
 /** Retained verification/encryption plus transport-independent audit and membership policy. */
 export const credentialDependencies: CredentialDependencies = {
   requireAdmin: requireOrganizationAdmin,
   collection: {
-    listProviders: async () => CREDENTIAL_PROVIDERS.filter(provider => hasVerifier(provider.id)),
-    list: ctx => service.listCredentials(ctx.organizationId),
+    listProviders: async () => CREDENTIAL_PROVIDERS.filter((provider ) => hasVerifier(provider.id)).map((provider) => ({
+        ...provider,
+        ...(provider.capability === "migration"
+          ? { authorization: { available: connectionAuthorizationAvailable(provider.id) } }
+          : {}),
+      })),
+    list: (ctx ) => service.listCredentials(ctx.organizationId),
+    authorize: beginConnectionAuthorization,
+    async completeAuthorization(ctx, input) {
+      const credential = await completeConnectionAuthorization(ctx, input);
+      audit.recordAsync(operationAuditContext(ctx), {
+        eventType: "credential.created",
+        resourceType: "credential",
+        resourceId: credential.id,
+        after: { provider: credential.provider, name: credential.name, authorization: "oauth" },
+      });
+      return credential;
+    },
     async create(ctx, input) {
       const credential = await service.createCredential(ctx.organizationId, input);
       audit.recordAsync(operationAuditContext(ctx), { eventType: "credential.created", resourceType: "credential", resourceId: credential.id,

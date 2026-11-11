@@ -465,20 +465,20 @@ describe("DockerEdgeExecutor.lstat", () => {
         docker,
         fileMode: "mounted",
       });
-      expect(await ex.lstat(join(dir, "a.conf"))).toEqual({ kind: "file", mode: 0o600 });
-      expect(await ex.lstat(join(dir, "missing.conf"))).toBeNull();
+      expect(await ex.lstat!(join(dir, "a.conf"))).toEqual({ kind: "file", mode: 0o600 });
+      expect(await ex.lstat!(join(dir, "missing.conf"))).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("reports unknown (rejects) in container file mode rather than guessing", async () => {
+  it("does not advertise file metadata in container file mode", () => {
     const { docker } = recordingDocker();
     const ex = new DockerEdgeExecutor({
       containerName: "openship-edge",
       docker,
       fileMode: "container",
     });
-    await expect(ex.lstat("/etc/openresty/sites-enabled/a.conf")).rejects.toThrow(/not available/);
+    expect(ex.lstat).toBeUndefined();
   });
 });

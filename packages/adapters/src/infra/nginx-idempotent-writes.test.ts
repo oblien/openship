@@ -78,7 +78,7 @@ afterEach(async () => {
 });
 
 describe("unchanged edge writes", () => {
-  it("re-registering an unchanged route writes nothing and does not reload", async () => {
+  it("re-registering an unchanged route writes nothing and confirms the running config", async () => {
     const nginx = provider();
     await nginx.registerRoute(route());
     expect(reloads).toHaveBeenCalledTimes(1);
@@ -87,10 +87,10 @@ describe("unchanged edge writes", () => {
     await nginx.registerRoute(route());
 
     expect(writes).not.toHaveBeenCalled();
-    expect(reloads).not.toHaveBeenCalled();
+    expect(reloads).toHaveBeenCalledTimes(1);
   });
 
-  it("a new provider confirms once with a reload before it trusts the disk", async () => {
+  it("confirms the running config for both new and reused providers", async () => {
     await provider().registerRoute(route());
     resetCounts();
 
@@ -101,7 +101,7 @@ describe("unchanged edge writes", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
 
     await next.registerRoute(route());
-    expect(reloads).toHaveBeenCalledTimes(1);
+    expect(reloads).toHaveBeenCalledTimes(2);
   });
 
   it("still writes and reloads when the route changes", async () => {
@@ -139,6 +139,26 @@ describe("unchanged edge writes", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["unavailable", "refused"])(
+    "repairs permissions when metadata is %s instead of trusting matching content",
+    async (metadata) => {
+      const nginx = provider();
+      await nginx.registerRoute(route());
+      await chmod(confPath(), 0o666);
+      if (metadata === "unavailable") {
+        Object.defineProperty(executor, "lstat", { value: undefined });
+      } else {
+        vi.spyOn(executor, "lstat").mockRejectedValue(new Error("Permission denied"));
+      }
+      resetCounts();
+
+      await nginx.registerRoute(route());
+
+      expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+      expect(reloads).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("replaces a symlink even when it resolves to the same content", async () => {
     const nginx = provider();
     await nginx.registerRoute(route());
@@ -151,10 +171,11 @@ describe("unchanged edge writes", () => {
     await nginx.registerRoute(route());
 
     expect((await lstat(confPath())).isFile()).toBe(true);
-    // The link is snapshotted with `readlink` (an exec) so a rollback can restore it.
-    expect(reloads.mock.calls.filter(([command]) => !command.startsWith("readlink"))).toHaveLength(
-      1,
-    );
+    // The host path is outside the container command namespace. Never inspect a
+    // different link inside the container, and never overwrite the link's target.
+    expect(reloads.mock.calls.some(([command]) => command.startsWith("readlink"))).toBe(false);
+    expect(await readFile(elsewhere, "utf8")).toContain("127.0.0.1:3001");
+    expect(reloads).toHaveBeenCalledTimes(1);
   });
 
   it.each(["vhost", "sidecar"])(
@@ -203,7 +224,7 @@ describe("unchanged edge writes", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 
-  it("trusts the disk again once the rollback after a failed reload has been reloaded", async () => {
+  it("keeps a restored route unchanged and confirms it on the next registration", async () => {
     const nginx = provider();
     await nginx.registerRoute(route(3001));
     reloads.mockRejectedValueOnce(new Error("nginx: [emerg] simulated"));
@@ -212,9 +233,10 @@ describe("unchanged edge writes", () => {
     expect(await readFile(confPath(), "utf8")).toContain("127.0.0.1:3001");
     resetCounts();
 
-    // The rollback reload succeeded, so the edge is known to run what is on disk.
+    // Another owner may have written since the rollback: confirm without writing.
     await nginx.registerRoute(route(3001));
-    expect(reloads).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+    expect(reloads).toHaveBeenCalledTimes(1);
   });
 
   it("leaves files it never attempted alone when an earlier write fails", async () => {
@@ -245,6 +267,31 @@ describe("unchanged edge writes", () => {
     expect(writes).not.toHaveBeenCalled();
     expect(reloads).toHaveBeenCalledTimes(1);
   });
+
+  it("confirms matching files left by another provider whose reload and rollback failed", async () => {
+    const { rename } = await import("node:fs/promises");
+    const first = provider();
+    await first.registerRoute(route(3001));
+    let refuseRestores = false;
+    const publish = vi.spyOn(executor, "rename").mockImplementation(async (from, to) => {
+      if (refuseRestores) throw new Error("restore denied");
+      await rename(from, to);
+    });
+    reloads.mockImplementationOnce(async () => {
+      refuseRestores = true;
+      throw new Error("reload refused");
+    });
+    await expect(provider().registerRoute(route(3002))).rejects.toThrow(/rollback failed/);
+    publish.mockRestore();
+    resetCounts();
+
+    // Disk already matches 3002, but this provider only saw 3001 loaded. A cached
+    // "loaded" flag cannot speak for transactions owned by another deployment.
+    await first.registerRoute(route(3002));
+
+    expect(writes).not.toHaveBeenCalled();
+    expect(reloads).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("state outside the route files", () => {
@@ -263,7 +310,7 @@ describe("state outside the route files", () => {
     vi.unstubAllEnvs();
   });
 
-  it("serveEdgeChallenge confirms with a reload on a new provider, then skips", async () => {
+  it("serveEdgeChallenge refreshes tokens without rewriting an unchanged vhost", async () => {
     await provider().serveEdgeChallenge({ host: "203.0.113.10" });
     resetCounts();
 
@@ -273,8 +320,10 @@ describe("state outside the route files", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
 
     await next.serveEdgeChallenge({ host: "203.0.113.10", tokens: ["tok-abcdef123456"] });
-    // The token is written, but it is served, not loaded: no reload.
-    expect(reloads).toHaveBeenCalledTimes(1);
+    expect(writes.mock.calls.map(([path]) => path.split(".tmp-")[0])).toEqual([
+      join(root, "tokens", "tok-abcdef123456"),
+    ]);
+    expect(reloads).toHaveBeenCalledTimes(2);
   });
 
   it("serveEdgeChallenge rewrites its vhost when only the mode is wrong", async () => {
@@ -306,6 +355,11 @@ describe("writers outside the config lock", () => {
       nginx as unknown as { _execCertbot(args: string[]): Promise<string> }
     )._execCertbot(["renew"]);
     await nginx.registerRoute(route(3002));
+    resetCounts();
+    // The writer is still running. A reload must not establish a reusable proof
+    // merely because neither its start nor its finish fell inside that reload.
+    await nginx.registerRoute(route(3002));
+    expect(reloads.mock.calls.filter(([command]) => !command.includes("certbot"))).toHaveLength(1);
     finishCertbot();
     await certbot;
     resetCounts();
@@ -329,7 +383,7 @@ describe("certificate activation", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 
-  it("reusing an existing verified certificate on deploy adds no write or reload", async () => {
+  it("reusing a verified certificate adds no write but still activates its on-disk material", async () => {
     await installCert();
     const nginx = provider();
     await nginx.registerRoute({ ...route(), tls: true });
@@ -340,10 +394,10 @@ describe("certificate activation", () => {
 
     expect(result.verified).toBe(true);
     expect(writes).not.toHaveBeenCalled();
-    expect(reloads).not.toHaveBeenCalled();
+    expect(reloads).toHaveBeenCalledTimes(1);
   });
 
-  it("an unchanged deploy of TLS routes costs one reload in total", async () => {
+  it("an unchanged TLS deployment skips writes while retaining registration and activation reloads", async () => {
     await installCert();
     await provider().registerRoute({ ...route(), tls: true });
     resetCounts();
@@ -354,7 +408,7 @@ describe("certificate activation", () => {
     await next.provisionCert(DOMAIN);
 
     expect(writes).not.toHaveBeenCalled();
-    expect(reloads).toHaveBeenCalledTimes(1);
+    expect(reloads).toHaveBeenCalledTimes(2);
   });
 });
 

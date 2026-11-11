@@ -55,7 +55,7 @@
     "appsEmptyDesc": "Um clique, totalmente auto-hospedado — bancos de dados, automação, analytics, cofres de senhas e mais, rodando nos seus servidores."
   },
   "nav": {
-    "affiliates": "Indicações",
+    "referrals": "Indicações",
     "resources": "Espaços Cloud",
     "support": "Suporte",
     "scale": "Escalabilidade",
@@ -70,7 +70,7 @@
     "servers": "Servidores",
     "emails": "E-mails",
     "settings": "Configurações",
-    "billing": "Faturamento e uso",
+    "billing": "Planos e faturação",
     "audit": "Registo de auditoria",
     "mailSetup": "Configurar email",
     "mailSetupProgress": "Progresso da configuração",

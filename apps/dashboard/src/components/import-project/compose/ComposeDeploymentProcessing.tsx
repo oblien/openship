@@ -563,6 +563,7 @@ function ComposeDeploymentBody({
   const prepareIndicator = {
     building: { status: "building", label: deploymentLabels.building },
     deploying: { status: "deploying", label: t.importProject.serviceStatus.deploying },
+    verifying: { status: "deploying", label: deploymentLabels.verifying },
     ready: { status: "running", label: deploymentLabels.ready },
     failed: { status: "failed", label: deploymentLabels.failed },
     cancelled: { status: "stopped", label: deploymentLabels.cancelled },

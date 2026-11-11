@@ -80,7 +80,7 @@ afterEach(async () => {
 });
 
 describe("edge files read through sudo", () => {
-  it("lets serveEdgeChallenge recognise its own unchanged vhost and skip the write and reload", async () => {
+  it("skips an unchanged elevated vhost write while confirming it is loaded", async () => {
     const nginx = provider();
     await nginx.serveEdgeChallenge({ host: "app.example.com" });
     const vhost = await readFile(join(sites, "_oblien-challenge-app-example-com.conf"), "utf8");
@@ -91,9 +91,9 @@ describe("edge files read through sudo", () => {
     writes = [];
     await nginx.serveEdgeChallenge({ host: "app.example.com" });
 
-    // Before byte-exact reads the trimmed snapshot never matched, so this rewrote and
-    // reloaded on every call.
+    // Before exact reads the trimmed snapshot never matched, so this rewrote on
+    // every call. Reloading still confirms what the running edge has loaded.
     expect(writes).toEqual([]);
-    expect(reloads).toEqual([]);
+    expect(reloads).toHaveLength(1);
   });
 });

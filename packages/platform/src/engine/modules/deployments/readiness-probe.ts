@@ -22,7 +22,7 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import type { CommandExecutor, RuntimeAdapter } from "@repo/adapters";
+import { withDeploymentProgress, type CommandExecutor, type RuntimeAdapter } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
 
 import { sshManager } from "../../lib/ssh-manager";
@@ -86,11 +86,11 @@ export async function probeDeployedReadiness(args: {
 
   let result: Awaited<ReturnType<typeof waitForReadyFromExecutor>>;
   try {
-    result = targetExecutor
+    result = await withDeploymentProgress({ log }, `${subject} to answer at ${target}`, async () => targetExecutor
       ? await waitForReadyFromExecutor(targetExecutor, host, port, opts)
       : await sshManager.withHostExecutor((executor) =>
           waitForReadyFromExecutor(executor, host, port, opts),
-        );
+        ));
   } catch (error) {
     observeCaughtError(error, "platform/engine/modules/deployments/readiness-probe");
     // Reaching the machine that should dial is itself a "couldn't ask", not a verdict on

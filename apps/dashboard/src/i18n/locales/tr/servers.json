@@ -24,7 +24,11 @@
     "connecting": "Bağlanıyor…",
     "streamUnavailable": "Canlı güncellemeler kullanılamıyor. Son ölçülen kullanım gösteriliyor.",
     "usageTitle": "Kaynak kullanımı",
-    "setupPending": "Bulut alanınız kurulduğunda kullanım görüntülenecek."
+    "setupPending": "Bulut alanınız kurulduğunda kullanım görüntülenecek.",
+    "projectsAssigned": "Bu plandaki projeler",
+    "projectsAssignedHint": "Bu planın işlem ve depolama kaynaklarını paylaşan projeler.",
+    "showAllProjects": "{count} projenin tümünü göster",
+    "storageDetails": "Depolama kullanımı hakkında"
   },
   "github": {
     "title": "GitHub erişimi",
@@ -67,16 +71,8 @@
     "addThisMachine": "Bu makineyi ekle",
     "addThisMachineError": "Bu makine sunucu olarak eklenemedi.",
     "emptyTitle": "Henüz sunucu yok",
-    "emptyDescription": "SSH üzerinden bir sunucu bağlayın; gerisini Openship halleder — Docker, OpenResty, SSL ve dağıtımların hepsi otomatik kurulur.",
+    "emptyDescription": "SSH ile bir sunucu bağlayın. Docker, yönlendirme, SSL ve dağıtımları OpenShip halleder.",
     "addFirstServer": "İlk Sunucunuzu Ekleyin",
-    "whatGetsConfigured": "Neler yapılandırılır",
-    "featContainer": "Konteyner çalışma zamanı",
-    "featContainerDesc": "Her uygulamayı izolasyon içinde çalıştırır",
-    "featProxy": "Ters proxy",
-    "featProxyDesc": "Yönlendirme ve SSL",
-    "monitoring": "İzleme",
-    "monitoringDesc": "Sağlık kontrolleri",
-    "gitDesc": "Kaynak kod dağıtımları",
     "connected": "Bağlandı",
     "error": "Hata",
     "checking": "Kontrol ediliyor",
@@ -1035,12 +1031,12 @@
       "description": "Sahip olduğun bir sunucuyu SSH üzerinden kullan."
     },
     "managed": {
-      "label": "Yönetilen sunucu al",
-      "description": "Kurulumu, yönlendirmeyi ve HTTPS’i Openship Cloud yönetir."
+      "label": "Bulut alanı ekle",
+      "description": "Uygulamalar, derlemeler ve veriler bulut alanlarının kapasitesini paylaşır."
     },
-    "signInHint": "Mevcut bir yönetilen sunucuyu kullanmak veya yeni bir sunucu almak için Cloud hesabını bağla.",
-    "chooseExisting": "Mevcut bir Cloud sunucusu seç",
-    "useServer": "Bu sunucuyu kullan"
+    "signInHint": "Mevcut bir Cloud alanını kullanmak veya yeni bir alan eklemek için Cloud hesabınızı bağlayın.",
+    "chooseExisting": "Bir bulut alanı seçin",
+    "useServer": "Bu Cloud alanını kullan"
   },
   "managedControls": {
     "retry": "Durumu yenile",

@@ -1,6 +1,6 @@
 /** Customer billing delegates to Oblien Mode B; no Stripe SDK or credit writes. */
 import { repos } from "@repo/db";
-import { affiliateCheckoutBinding } from "../affiliates/affiliate-checkout";
+import { referralCheckoutBinding } from "../referrals/referral-checkout";
 import { createHash } from "node:crypto";
 import type { CustomSubscriptionSelection } from "@repo/contracts";
 import { AppError, PRICING, type PlanTierId } from "@repo/core";
@@ -56,7 +56,7 @@ export async function createCheckoutSession(
   requestKey?: string,
   workspaceId?: CloudWorkspaceScope,
   custom?: CustomSubscriptionSelection,
-  affiliateCode?: string,
+  referralCode?: string,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
   const { offer, customLimits } = await resolveSubscriptionSelection(planTierId, interval, custom);
@@ -85,9 +85,9 @@ export async function createCheckoutSession(
       }
     }
     await getOblienBillingApi().assertResellerSupport();
-    const referral = affiliateCheckoutBinding({ enabled: env.AFFILIATES_ENABLED, namespace: env.OBLIEN_AFFILIATE_NAMESPACE,
-      userId: ctx.userId, memberIds: env.AFFILIATES_ENABLED ? (await repos.member.listByOrganization(ctx.organizationId)).map(member => member.userId) : [],
-      offer, interval, affiliateCode });
+    const referral = referralCheckoutBinding({ enabled: env.REFERRALS_ENABLED, namespace: env.REFERRAL_NAMESPACE,
+      userId: ctx.userId, memberIds: env.REFERRALS_ENABLED ? (await repos.member.listByOrganization(ctx.organizationId)).map(member => member.userId) : [],
+      offer, interval, referralCode });
     const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
       ...referral,
       namespace,

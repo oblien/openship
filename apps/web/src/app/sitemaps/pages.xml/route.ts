@@ -1,6 +1,7 @@
 import { SITE_URL, buildUrlset, xmlResponse, type SitemapEntry } from "@/lib/sitemap-builder";
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { FEATURES } from "@/lib/features";
+import { MIGRATION_SOURCES } from "@/lib/migration-sources";
 
 export const dynamic = "force-static";
 export const revalidate = 3600;
@@ -11,7 +12,7 @@ export async function GET() {
     { loc: `${SITE_URL}/`, lastmod: now, changefreq: "daily", priority: 1.0 },
     { loc: `${SITE_URL}/pricing`, lastmod: now, changefreq: "weekly", priority: 0.95 },
     { loc: `${SITE_URL}/migrate`, lastmod: now, changefreq: "monthly", priority: 0.85 },
-    { loc: `${SITE_URL}/affiliates`, lastmod: now, changefreq: "monthly", priority: 0.8 },
+    { loc: `${SITE_URL}/referrals`, lastmod: now, changefreq: "monthly", priority: 0.8 },
     { loc: `${SITE_URL}/mail`, lastmod: now, changefreq: "weekly", priority: 0.9 },
     { loc: `${SITE_URL}/apps`, lastmod: now, changefreq: "weekly", priority: 0.9 },
     { loc: `${SITE_URL}/download`, lastmod: now, changefreq: "weekly", priority: 0.9 },
@@ -25,6 +26,11 @@ export async function GET() {
     { loc: `${SITE_URL}/contact`, lastmod: now, changefreq: "monthly", priority: 0.4 },
   ];
   entries.push(
+    ...MIGRATION_SOURCES.map((source) => ({
+      loc: `${SITE_URL}/migrate/${source.slug}`,
+      changefreq: "monthly" as const,
+      priority: 0.85,
+    })),
     ...FEATURES.map((feature) => ({
       loc: `${SITE_URL}/features/${feature.slug}`,
       changefreq: "weekly" as const,

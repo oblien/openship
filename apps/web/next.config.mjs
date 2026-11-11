@@ -16,10 +16,15 @@ const nextConfig = {
   transpilePackages: ["@repo/ui", "@repo/core"],
   async redirects() {
     const movedDocs = [
+      ["/docs/api/affiliates", "/docs/api/referrals"],
+      ["/docs/guides/affiliates", "/docs/guides/referrals"],
       ["/docs/api/sdk/reference", "/docs/api"],
       ["/docs/api/sdk/deployments", "/docs/api/deployments"],
     ];
     return [
+      { source: "/affiliates/:path*", destination: "/referrals/:path*", permanent: true },
+      { source: "/og/affiliates.png", destination: "/og/referrals.png", permanent: true },
+      { source: "/docs/affiliates/:path*", destination: "/docs/referrals/:path*", permanent: true },
       { source: "/roadmap", destination: "/blog", permanent: true },
       { source: "/resources", destination: "/blog", permanent: true },
       { source: "/resources/:slug*", destination: "/blog/:slug*", permanent: true },

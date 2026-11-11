@@ -1583,6 +1583,34 @@
       "when": 1794012724829,
       "tag": "0225_retire_cloud_product_analytics",
       "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1794189670404,
+      "tag": "0226_build_execution_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1794197400000,
+      "tag": "0227_customer_cancellation_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1794348000000,
+      "tag": "0228_connection_value_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1794373200000,
+      "tag": "0229_support_intake_blocks",
+      "breakpoints": true
     }
   ]
 }

@@ -1,35 +1,26 @@
+import type { ReactNode } from "react";
+import { ArrowRight, Check, ChevronDown } from "lucide-react";
 import { formatMemoryMb } from "@repo/core";
 import { Navbar, Footer } from "@/components/landing";
+import { IllustratedLink } from "@/components/marketing/illustrated-link";
+import { CLOUD_SLA } from "@/lib/cloud-service";
 import {
   STANDARD,
   UI,
   chooseLabel,
+  cloudFrom,
   priceParts,
   getCloudPricing,
+  cloudPlanSummary,
   money,
   type PricedPlan,
   type CloudPricing,
 } from "@/lib/pricing";
 import { CLOUD_CTA_HREF, SELF_HOST_CTA_HREF, faq } from "./_data";
-import { PricingProducts } from "./PricingProducts";
+import { CloudBilling } from "./CloudBilling";
 import { cloudPlanHref, managePlanHref } from "@/lib/cloud-links";
 
-// Match the public catalog and JSON-LD cache window.
 export const revalidate = 60;
-
-function Check() {
-  return (
-    <svg className="pp-plan-check" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path
-        d="M4 10.5l4 4 8-10"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 const supportLabels: Record<string, string> = {
   community: "Community support",
@@ -37,52 +28,111 @@ const supportLabels: Record<string, string> = {
   priority: "Priority support",
   dedicated: "Dedicated support",
 };
-const count = (value: number | null) =>
-  value === null ? "No set limit" : value.toLocaleString("en");
+const count = (value: number | null | undefined) =>
+  value === undefined ? "Not listed" : value === null ? "No set limit" : value.toLocaleString("en");
+
+type Fact = { label: string; value: string };
+
+function PlanFacts({ facts }: { facts: Fact[] }) {
+  return (
+    <dl className="pp-plan-limits">
+      {facts.map(({ label, value }) => (
+        <div className="pp-plan-limit" key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function PlanCard({
+  name,
+  description,
+  amount,
+  per,
+  billingNote,
+  href,
+  cta,
+  popular,
+  support,
+  children,
+}: {
+  name: string;
+  description: string;
+  amount: string;
+  per?: string | null;
+  billingNote: ReactNode;
+  href: string;
+  cta: string;
+  popular?: boolean;
+  support: string;
+  children: ReactNode;
+}) {
+  return (
+    <article
+      className={`pp-plan${popular ? " pp-plan--highlight" : ""}`}
+      aria-label={`${name} plan`}
+    >
+      <div className="pp-plan-heading">
+        <h3 className="pp-plan-name">{name}</h3>
+        {popular && <span className="pp-plan-ribbon">{UI.mostPopular}</span>}
+      </div>
+      <p className="pp-plan-lead">{description}</p>
+      <div className="pp-plan-price-block">
+        <div className="pp-plan-price">
+          <span className="pp-plan-amt">{amount}</span>
+          {per && <span className="pp-plan-per">{per}</span>}
+        </div>
+        <p className="pp-plan-billing">{billingNote}</p>
+      </div>
+      <a href={href} className={`pp-plan-cta${popular ? " pp-plan-cta--filled" : ""}`}>
+        {cta} <ArrowRight className="size-4" aria-hidden="true" />
+      </a>
+      <div className="pp-plan-details">{children}</div>
+      <p className="pp-plan-support">
+        <Check className="size-4" aria-hidden="true" />
+        {support}
+      </p>
+    </article>
+  );
+}
 
 function PlanResources({ plan }: { plan: PricedPlan }) {
   const pool = plan.resourceLimits;
-  const hasPool =
-    pool?.max_total_vcpus != null &&
-    pool.max_total_ram_mb != null &&
-    pool.max_total_disk_gb != null;
-
-  // Show finite allowances that distinguish the plans alongside shared capacity.
+  const capacity = [
+    { label: "vCPU", value: pool?.max_total_vcpus != null ? count(pool.max_total_vcpus) : "—" },
+    {
+      label: "RAM",
+      value: pool?.max_total_ram_mb != null ? formatMemoryMb(pool.max_total_ram_mb) : "—",
+    },
+    {
+      label: "Storage",
+      value: pool?.max_total_disk_gb != null ? `${count(pool.max_total_disk_gb)} GB` : "—",
+    },
+  ];
   const facts = [
-    ...(plan.limits.maxProjects != null ? [{ label: "Projects & apps", value: count(plan.limits.maxProjects) }] : []),
-    ...(plan.limits.runningServices != null ? [{ label: "Running services", value: count(plan.limits.runningServices) }] : []),
-    ...(plan.limits.concurrentBuilds != null ? [{ label: "Concurrent builds", value: count(plan.limits.concurrentBuilds) }] : []),
+    { label: "Projects", value: count(plan.limits.maxProjects) },
+    { label: "Running services", value: count(plan.limits.runningServices) },
+    { label: "Concurrent builds", value: count(plan.limits.concurrentBuilds) },
     ...(plan.limits.buildMinutesPerMonth !== null
       ? [{ label: "Build time", value: `${count(plan.limits.buildMinutesPerMonth)} min/mo` }]
-      : plan.billingMode !== "monthly" ? [{ label: "Build time", value: "Metered" }] : []),
+      : plan.billingMode !== "monthly"
+        ? [{ label: "Build time", value: "Metered" }]
+        : []),
   ];
-
   return (
-    <div className="pp-plan-resources">
-      {hasPool ? (
-        <dl className="pp-plan-capacity" aria-label="Managed server capacity">
-          {[
-            { label: "vCPU", value: pool.max_total_vcpus!.toLocaleString("en") },
-            { label: "RAM", value: formatMemoryMb(pool.max_total_ram_mb!) },
-            { label: "Storage", value: `${pool.max_total_disk_gb!.toLocaleString("en")} GB` },
-          ].map(({ label, value }) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : <p className="pp-plan-capacity-fallback">See dashboard for server capacity</p>}
-      {facts.length > 0 && (
-        <dl className="pp-plan-limits">
-          {facts.map(({ label, value }) => (
-            <div className="pp-plan-limit" key={label}>
-              <dt>{label}</dt><dd>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </div>
+    <>
+      <dl className="pp-plan-capacity" aria-label="Shared resource pool">
+        {capacity.map(({ label, value }) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <PlanFacts facts={facts} />
+    </>
   );
 }
 
@@ -93,103 +143,81 @@ function CloudPlans({
   pricing: CloudPricing;
   interval: "monthly" | "annual";
 }) {
+  if (!pricing.available)
+    return (
+      <div className="pp-unavailable" role="status">
+        <h3>Current plans are temporarily unavailable.</h3>
+        <p>View the latest prices in Openship Cloud.</p>
+        <a href={CLOUD_CTA_HREF} className="pp-solid-cta">
+          Open Cloud <ArrowRight className="size-4" aria-hidden="true" />
+        </a>
+      </div>
+    );
   return (
     <>
-      {!pricing.available ? (
-        <div className="pp-unavailable" role="status">
-          <h3>We couldn’t load the current plans.</h3>
-          <p>Check the dashboard for the latest prices and availability.</p>
-          <a href={CLOUD_CTA_HREF} className="pp-solid-cta">
-            Open the dashboard
-          </a>
-        </div>
-      ) : (
-        <div className="pp-plans">
-          {pricing.tiers.map((plan) => {
-            const billingInterval =
-              interval === "annual" && plan.price.annual != null ? "annual" : "monthly";
-            const price = priceParts(plan, billingInterval);
-            return (
-              <article
-                key={plan.id}
-                className={`pp-plan ${plan.popular ? "pp-plan--highlight" : ""}`}
-              >
-                <div className="pp-plan-heading">
-                  <h3 className="pp-plan-name">{plan.name}</h3>
-                  {plan.popular && <span className="pp-plan-ribbon">{UI.mostPopular}</span>}
-                </div>
-                <p className="pp-plan-lead">{plan.description}</p>
-                <div className="pp-plan-price">
-                  <span className="pp-plan-amt">{price.amount}</span>
-                  <span className="pp-plan-per">{price.per}</span>
-                </div>
-                <p className="pp-plan-credits">
-                  {plan.billingMode === "monthly" ? (
-                    billingInterval === "annual" ? (
-                      `${money(plan.price.annual!)} billed yearly`
-                    ) : (
-                      "Billed monthly"
-                    )
-                  ) : plan.monthlyCredits === null ? (
-                    "See dashboard for included credits"
-                  ) : (
+      <div className="pp-plans">
+        {pricing.tiers.map((plan) => {
+          const billingInterval =
+            interval === "annual" && plan.price.annual != null ? "annual" : "monthly";
+          const price = priceParts(plan, billingInterval);
+          const billing =
+            billingInterval === "annual"
+              ? `${money(plan.price.annual!)} billed yearly`
+              : "Billed monthly";
+          return (
+            <PlanCard
+              key={plan.id}
+              name={plan.name}
+              description={cloudPlanSummary(plan)}
+              amount={price.amount}
+              per={price.per}
+              billingNote={
+                <>
+                  {billing}
+                  {plan.billingMode !== "monthly" && (
                     <>
-                      <strong>{count(plan.monthlyCredits / 1000)}</strong> usage credits / month
+                      <br />
+                      {plan.monthlyCredits === null
+                        ? "See included usage in Cloud"
+                        : `${count(plan.monthlyCredits / 1000)} usage credits / month`}
                     </>
                   )}
-                </p>
-                <PlanResources plan={plan} />
-                <p className="pp-plan-support">
-                  {supportLabels[plan.support] ?? "See support options"}
-                </p>
-                <a
-                  href={cloudPlanHref(plan.id, billingInterval)}
-                  className={`pp-plan-cta ${plan.popular ? "pp-plan-cta--filled" : ""}`}
-                >
-                  {chooseLabel(plan.name)}
-                </a>
-              </article>
-            );
-          })}
-        </div>
-      )}
-
-      {pricing.available && (
-        <>
-          <div className="pp-usage-note" id="usage">
-            <p>
-              {pricing.tiers.every((plan) => plan.billingMode === "monthly")
-                ? "Each plan includes one Cloud Space, with CPU, RAM and storage covered for the paid period. Apps and builds share its capacity. Managed proxy transfer and backups are separate."
-                : "Apps and builds share your Cloud Space’s capacity. Review the billing mode and included allowance before checkout."}
-            </p>
-            <a href="/docs/guides/billing">
-              How billing works <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-          {pricing.management?.includedWithCloud && (
-            <p className="pp-email-note">
-              Paid Cloud Spaces also include basic management for{" "}
-              {pricing.management.includedServers} customer-owned servers per workspace. Additional
-              servers cost {money(pricing.management.extraServerMonthlyCents)} each per month.
-            </p>
-          )}
-          <p className="pp-email-note">
-            <strong>Managed email · Coming soon.</strong> Cloud server plans host applications; they
-            do not provision a mail server. Self-hosted email remains available on your own server.
-          </p>
-          <div className="pp-standard">
-            <h3>{STANDARD.title}</h3>
-            <ul>
-              {STANDARD.features.map((feature) => (
-                <li key={feature}>
-                  <Check />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      )}
+                </>
+              }
+              href={cloudPlanHref(plan.id, billingInterval)}
+              cta={chooseLabel(plan.name)}
+              popular={plan.popular}
+              support={supportLabels[plan.support] ?? "See support options"}
+            >
+              <PlanResources plan={plan} />
+            </PlanCard>
+          );
+        })}
+      </div>
+      <div className="pp-billing-note">
+        <p>
+          {pricing.tiers.every((plan) => plan.billingMode === "monthly")
+            ? "CPU, RAM and storage included. Apps and builds share capacity. Managed proxy transfer and backups are billed separately."
+            : "Apps and builds share capacity. Review each plan’s billing mode and usage allowance before checkout."}
+        </p>
+        <a href="/docs/guides/billing">
+          Billing details <ArrowRight className="size-3.5" aria-hidden="true" />
+        </a>
+      </div>
+      <details className="pp-included">
+        <summary>
+          {STANDARD.title}
+          <ChevronDown className="size-4" aria-hidden="true" />
+        </summary>
+        <ul>
+          {STANDARD.features.map((feature) => (
+            <li key={feature}>
+              <Check className="size-4" aria-hidden="true" />
+              {feature}
+            </li>
+          ))}
+        </ul>
+      </details>
     </>
   );
 }
@@ -199,192 +227,204 @@ function ManagementPlans({ pricing }: { pricing: CloudPricing }) {
   if (!management)
     return (
       <div className="pp-unavailable" role="status">
-        <h3>We couldn’t load management pricing.</h3>
+        <h3>Management pricing is temporarily unavailable.</h3>
         <a className="pp-solid-cta" href={managePlanHref()}>
           View management plans
         </a>
       </div>
     );
+  const plans = [
+    {
+      id: "basic" as const,
+      name: "Manage",
+      price: management.monthlyCents,
+      support: "Email support",
+      description: "Manage your own servers from Openship Cloud.",
+    },
+    ...(management.priorityMonthlyCents != null
+      ? [
+          {
+            id: "priority" as const,
+            name: "Manage Priority",
+            price: management.priorityMonthlyCents,
+            support: "Priority support",
+            description: "The same server management, with priority support.",
+          },
+        ]
+      : []),
+  ];
   return (
     <>
-      <div className="pp-plans pp-plans--management">
-        {[
-          {
-            id: "basic" as const,
-            name: "Manage",
-            price: management.monthlyCents,
-            support: "Email support",
-            description: "Your servers. Our hosted control plane.",
-          },
-          ...(management.priorityMonthlyCents != null
-            ? [
+      <div className="pp-plans pp-plans--alternative">
+        {plans.map((plan) => (
+          <PlanCard
+            key={plan.id}
+            name={plan.name}
+            description={plan.description}
+            amount={money(plan.price)}
+            per="/ month"
+            billingNote="Per workspace · Billed monthly"
+            href={managePlanHref(plan.id)}
+            cta={`Choose ${plan.name}`}
+            support={plan.support}
+          >
+            <PlanFacts
+              facts={[
+                { label: "Servers included", value: count(management.includedServers) },
                 {
-                  id: "priority" as const,
-                  name: "Manage Priority",
-                  price: management.priorityMonthlyCents,
-                  support: "Priority support",
-                  description: "Server management with priority support from the Openship team.",
+                  label: "Additional server",
+                  value: `${money(management.extraServerMonthlyCents)}/mo`,
                 },
-              ]
-            : []),
-        ].map((plan) => (
-          <article className="pp-plan" key={plan.id}>
-            <h3 className="pp-plan-name">{plan.name}</h3>
-            <p className="pp-plan-lead">{plan.description}</p>
-            <div className="pp-plan-price">
-              <span className="pp-plan-amt">{money(plan.price)}</span>
-              <span className="pp-plan-per">/ month per workspace</span>
-            </div>
-            <p className="pp-plan-credits">
-              Billed monthly. Includes {management.includedServers} customer-owned servers.
-            </p>
-            <p className="pp-plan-lead">
-              Deployments, domains, logs, monitoring, backups, API, SDK and CLI access. Compute and
-              storage are provided by you.
-            </p>
-            <p className="pp-plan-support">{plan.support}</p>
-            <a className="pp-plan-cta" href={managePlanHref(plan.id)}>
-              View {plan.name}
-            </a>
-          </article>
+                { label: "Control plane", value: "Managed by Openship" },
+                { label: "Compute & storage", value: "Your infrastructure" },
+              ]}
+            />
+          </PlanCard>
         ))}
       </div>
-      <p className="pp-email-note">
-        Additional servers cost {money(management.extraServerMonthlyCents)} each per month.
-        {management.includedWithCloud &&
-          ` Basic management for ${management.includedServers} servers is included with paid Cloud Spaces.`}
-      </p>
+      {management.includedWithCloud && (
+        <p className="pp-billing-note">
+          Basic management for {management.includedServers} of your own servers is also included
+          with paid Cloud Spaces.
+        </p>
+      )}
     </>
+  );
+}
+
+function InfrastructurePlans({ pricing }: { pricing: CloudPricing }) {
+  return (
+    <div className="pp-plans pp-plans--alternative">
+      <PlanCard
+        name="Self-hosted"
+        description="Run the full platform on your infrastructure."
+        amount="Free"
+        billingNote="Open source · Apache 2.0"
+        href={SELF_HOST_CTA_HREF}
+        cta="Start self-hosting"
+        support="Community support"
+      >
+        <PlanFacts
+          facts={[
+            { label: "Platform subscription", value: "None" },
+            { label: "Control plane", value: "Self-managed" },
+            { label: "Compute & storage", value: "Your infrastructure" },
+          ]}
+        />
+      </PlanCard>
+      <PlanCard
+        name="Dedicated"
+        description="Dedicated hardware for your capacity and support needs."
+        amount="Custom"
+        billingNote="Quoted for your requirements"
+        href={
+          pricing.management
+            ? `mailto:${pricing.management.dedicatedContact}?subject=Dedicated%20Openship%20hosting`
+            : "/support"
+        }
+        cta="Request a quote"
+        support="Support agreed in your quote"
+      >
+        <PlanFacts
+          facts={[
+            { label: "Hardware", value: "Dedicated" },
+            { label: "Region & capacity", value: "By agreement" },
+            { label: "Setup & support", value: "Tailored to your team" },
+          ]}
+        />
+      </PlanCard>
+    </div>
   );
 }
 
 export default async function PricingPage() {
   const pricing = await getCloudPricing();
-
+  const from = cloudFrom(pricing);
   return (
     <>
       <Navbar />
       <main className="pp-root">
         <section className="pp-hero">
-          <div className="pp-hero-glow" aria-hidden="true" />
-          <div className="pp-container pp-hero-inner">
-            <p className="pp-eyebrow">Openship pricing</p>
+          <div className="site-container pp-hero-inner">
             <h1 className="pp-headline">
-              Start small. <span>Grow from here.</span>
+              Cloud resources for your projects.
+              <br />
+              <span>{from ? `From ${from}/month.` : "Choose your capacity."}</span>
             </h1>
-            <p className="pp-sub">
-              Managed builds, hosting, and HTTPS. Choose monthly or yearly billing.
-            </p>
-            <ul className="pp-hero-trust">
-              <li>
-                <Check />
-                No per-seat fees
-              </li>
-              <li>
-                <Check />
-                Bring your stack
-              </li>
-              <li>
-                <Check />
-                Track your usage
-              </li>
-            </ul>
           </div>
         </section>
-
-        <section className="pp-plans-section" aria-labelledby="cloud-plans-title">
-          <div className="pp-container">
-            <header className="pp-plans-head">
-              <h2 id="cloud-plans-title">Pick a plan. Start deploying.</h2>
-              <p>Choose your billing period. Cancel renewal anytime.</p>
-            </header>
-
-            <PricingProducts
-              cloud={<CloudPlans pricing={pricing} interval="monthly" />}
-              annualCloud={
+        <section id="plans" className="pp-plans-section" aria-label="Plans and hosting options">
+          <div className="site-container">
+            <div
+              className="pp-cloud-benefits"
+              role="group"
+              aria-label="Included with every Cloud plan"
+            >
+              <IllustratedLink
+                href={CLOUD_SLA.termsHref}
+                illustration="deployment-health-checks"
+                heading="h2"
+                title={`${CLOUD_SLA.monthlyUptimePercent}% uptime guarantee`}
+                description="Monthly SLA with service credits on every Cloud plan."
+              />
+              <IllustratedLink
+                href="/support"
+                illustration="notifications"
+                heading="h2"
+                title="Support included"
+                description="Email us or open Support in your app’s sidebar."
+              />
+            </div>
+            <CloudBilling
+              monthly={<CloudPlans pricing={pricing} interval="monthly" />}
+              annual={
                 pricing.available && pricing.annual.enabled ? (
                   <CloudPlans pricing={pricing} interval="annual" />
                 ) : undefined
               }
               monthsFree={pricing.annual.monthsFree}
-              management={<ManagementPlans pricing={pricing} />}
-              infrastructure={
-                <div className="pp-plans">
-                  <article className="pp-plan">
-                    <h3 className="pp-plan-name">Self-hosted</h3>
-                    <p className="pp-plan-lead">Run the control plane on your infrastructure.</p>
-                    <div className="pp-plan-price">
-                      <span className="pp-plan-amt">Free</span>
-                    </div>
-                    <p className="pp-plan-lead">
-                      The full open-source platform. You operate the control plane, servers, updates
-                      and backups.
-                    </p>
-                    <p className="pp-plan-support">Community support</p>
-                    <a className="pp-plan-cta" href={SELF_HOST_CTA_HREF}>
-                      Start self-hosting
-                    </a>
-                  </article>
-                  <article className="pp-plan">
-                    <h3 className="pp-plan-name">Dedicated</h3>
-                    <p className="pp-plan-lead">
-                      Physical hardware with managed deployment and support.
-                    </p>
-                    <div className="pp-plan-price">
-                      <span className="pp-plan-amt">Custom</span>
-                    </div>
-                    <p className="pp-plan-lead">
-                      Hardware, region, capacity and support terms are confirmed in your quote
-                      before purchase.
-                    </p>
-                    <a
-                      className="pp-plan-cta"
-                      href={
-                        pricing.management
-                          ? `mailto:${pricing.management.dedicatedContact}?subject=Dedicated%20Openship%20hosting`
-                          : "/support"
-                      }
-                    >
-                      Request a quote
-                    </a>
-                  </article>
-                </div>
-              }
             />
-            <div className="pp-options">
-              {pricing.customTiers.map((plan) => (
-                <div className="pp-option" key={plan.id}>
-                  <h3>{plan.name}, built around your team.</h3>
-                  <p>{plan.description}</p>
-                  <a href={plan.contactSales ?? CLOUD_CTA_HREF}>
-                    {UI.ctaContact} <span aria-hidden="true">↗</span>
-                  </a>
-                </div>
-              ))}
-              <div className="pp-option">
-                <h3>Prefer your own servers?</h3>
+            {pricing.customTiers.map((plan) => (
+              <div className="pp-enterprise" key={plan.id}>
                 <p>
-                  The full Openship platform is free to self-host. Open source, under Apache 2.0.
+                  <strong>{plan.name}</strong>
+                  <span>{plan.description}</span>
                 </p>
-                <a href={SELF_HOST_CTA_HREF}>
-                  Start self-hosting <span aria-hidden="true">↗</span>
+                <a href={plan.contactSales ?? CLOUD_CTA_HREF} className="pp-text-link">
+                  {UI.ctaContact} <ArrowRight className="size-4" aria-hidden="true" />
                 </a>
               </div>
-            </div>
+            ))}
           </div>
         </section>
-
+        <section className="pp-offering-section" aria-labelledby="management-title">
+          <div className="site-container">
+            <header className="pp-section-heading">
+              <div>
+                <h2 id="management-title">Manage your own servers</h2>
+                <p>Use Openship Cloud to manage infrastructure you already own.</p>
+              </div>
+            </header>
+            <ManagementPlans pricing={pricing} />
+          </div>
+        </section>
+        <section className="pp-offering-section" aria-labelledby="infrastructure-title">
+          <div className="site-container">
+            <header className="pp-section-heading">
+              <div>
+                <h2 id="infrastructure-title">Self-hosted or dedicated</h2>
+                <p>Run the platform yourself, or arrange dedicated infrastructure.</p>
+              </div>
+            </header>
+            <InfrastructurePlans pricing={pricing} />
+          </div>
+        </section>
         <section className="pp-faq-section">
-          <div className="pp-container pp-faq-layout">
+          <div className="site-container pp-faq-layout">
             <header className="pp-faq-head">
-              <p className="pp-eyebrow">Good to know</p>
-              <h2>
-                Questions?
-                <br />
-                Let’s clear them up.
-              </h2>
-              <a href="/support">
-                Talk to our team <span aria-hidden="true">↗</span>
+              <h2>Pricing questions</h2>
+              <a href="/support" className="pp-text-link">
+                Talk to our team <ArrowRight className="size-4" aria-hidden="true" />
               </a>
             </header>
             <div className="pp-faq-list">
@@ -392,33 +432,11 @@ export default async function PricingPage() {
                 <details key={item.q} className="pp-faq-item">
                   <summary>
                     <span>{item.q}</span>
-                    <svg className="pp-faq-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                      <path
-                        d="M5 8l5 5 5-5"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <ChevronDown className="pp-faq-icon" aria-hidden="true" />
                   </summary>
                   <p>{item.a}</p>
                 </details>
               ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="pp-end">
-          <div className="pp-container">
-            <div className="pp-end-card">
-              <div>
-                <h2>Less setup. More shipping.</h2>
-                <p>Connect your repo and bring your next idea to life.</p>
-              </div>
-              <a href={CLOUD_CTA_HREF} className="pp-solid-cta">
-                Get started with Cloud <span aria-hidden="true">↗</span>
-              </a>
             </div>
           </div>
         </section>

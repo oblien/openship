@@ -2,7 +2,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import Dockerode from "dockerode";
 import { PassThrough } from "node:stream";
 
-import type { CommandExecutor, FileStat, LogEntry } from "../types";
+import type { CommandExecutor, LogEntry } from "../types";
 import { LocalExecutor } from "./local-executor";
 import { logEntry, sq } from "./local-shell";
 import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
@@ -53,6 +53,8 @@ export class DockerEdgeExecutor implements CommandExecutor {
   /** node:fs backend — used only in "mounted" mode, where the routing volumes
    *  really are in this process's filesystem. */
   private readonly files = new LocalExecutor();
+  /** Metadata is available only when the file namespace is mounted locally. */
+  readonly lstat?: CommandExecutor["lstat"];
 
   constructor(opts: {
     containerName: string;
@@ -66,6 +68,7 @@ export class DockerEdgeExecutor implements CommandExecutor {
     this.containerName = opts.containerName;
     this.docker = opts.docker ?? new Dockerode({ socketPath: opts.socketPath ?? DEFAULT_SOCKET });
     this.fileMode = opts.fileMode ?? "mounted";
+    if (this.fileMode === "mounted") this.lstat = this.files.lstat.bind(this.files);
   }
 
   /**
@@ -249,12 +252,6 @@ export class DockerEdgeExecutor implements CommandExecutor {
     if (this.fileMode === "mounted") return this.files.readFile(path);
     // Framed: `exec` trims its output, and a file read must come back byte-exact.
     return unframeFileRead(await this.exec(framedCatCommand(path)), path);
-  }
-
-  /** Mounted mode only; in container mode the type and mode are unknown. */
-  async lstat(path: string): Promise<FileStat | null> {
-    if (this.fileMode === "mounted") return this.files.lstat(path);
-    throw new Error("lstat is not available in container file mode");
   }
 
   async exists(path: string): Promise<boolean> {

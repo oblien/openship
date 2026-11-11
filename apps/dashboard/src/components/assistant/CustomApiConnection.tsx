@@ -1,26 +1,32 @@
 "use client";
 import { useState } from "react";
+import type { AssistantProviderInfo } from "@repo/contracts";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@repo/ui/icons";
 import { useScopedMutation } from "@/hooks/use-scoped-resource";
 import { assistantApi } from "@/lib/api/assistant";
+import { AgentSetup } from "./AgentSetup";
 
 /** Shared by connection settings and automation setup. Keys are submitted once, never read back. */
 export function CustomApiConnection({
   onSaved,
-  available = true,
+  agent,
+  onRefresh,
 }: {
   onSaved(model: string): void;
-  available?: boolean;
+  agent?: AssistantProviderInfo;
+  onRefresh(): void;
 }) {
   const [form, setForm] = useState({ name: "", baseUrl: "", apiKey: "", model: "" });
   const action = useScopedMutation();
+  const available = agent?.available && agent.customApiAvailable;
   return (
     <form
       className="@container space-y-5"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (!available || action.busy) return;
         const result = await action.execute(() => assistantApi.customApi(form));
         if (result) {
           setForm({ name: "", baseUrl: "", apiKey: "", model: "" });
@@ -60,11 +66,17 @@ export function CustomApiConnection({
           </label>
         ))}
       </div>
-      {!available && (
-        <p className="text-sm text-warning">
-          Update the assistant runtime on your host to connect a custom API.
+      {!agent ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Checking your connection…
         </p>
-      )}
+      ) : !agent.available ? (
+        <AgentSetup info={agent} onRefresh={onRefresh} />
+      ) : !agent.customApiAvailable ? (
+        <p className="text-sm text-warning">
+          Update OpenShip and reconnect the assistant to use custom API connections.
+        </p>
+      ) : null}
       {action.error && (
         <p role="alert" className="text-sm text-danger">
           {action.error}

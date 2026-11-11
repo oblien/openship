@@ -49,6 +49,7 @@ export const DnsZoneLookupSchema = Type.Union([
     matched: Type.Literal(false),
     status: Type.Literal("unauthorized"),
     credentialId: Type.String(),
+    provider: Type.String(),
     message: Type.String(),
   }),
   Type.Object({

@@ -693,6 +693,7 @@ async function createPlatformForResolvedServer(
             ...toDockerSshTransport(ssh!, executor),
             resolveRegistryAuth,
             buildCacheBudgetBytes: serverBuildCacheBudget(id),
+            nativeBuilds: !env.CLOUD_MODE && process.env.OPENSHIP_DOCKER_BUILD_DRIVER === "docker",
           }
         : undefined,
     nginx: edgeProviderOptions(id),
@@ -830,6 +831,7 @@ async function createDockerRuntimeForResolvedServer(
       ...toDockerSshTransport(ssh!, executor),
       resolveRegistryAuth,
       buildCacheBudgetBytes: serverBuildCacheBudget(id),
+      nativeBuilds: !env.CLOUD_MODE && process.env.OPENSHIP_DOCKER_BUILD_DRIVER === "docker",
     }),
   );
 }

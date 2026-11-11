@@ -32,6 +32,7 @@ import {
   validateReleaseRepository,
   validateReleaseVersionUrl,
   isBehind,
+  digestSha,
   GITHUB_REPO,
   normalizeRollbackWindow,
   normalizeAliasStrict,
@@ -2586,7 +2587,7 @@ export async function evaluateDrift(
   ]);
   // Use the deployment admission query, including a worker still finishing after
   // cancellation/cutover. A terminal-looking row alone cannot re-enable Update.
-  const active = inFlight[0];
+  const active = inFlight.at(0);
   const inProgressDeploymentId = active?.id ?? null;
 
   if (upstream.mode === "commit" && deployed.mode === "commit") {
@@ -2651,10 +2652,12 @@ export async function evaluateDrift(
       const latestDigest = Object.hasOwn(upstream.digestByRef, ref)
         ? upstream.digestByRef[ref]
         : null;
+      const deployedDigest = running?.digest ||
+        (running?.ref?.includes("@sha256:") ? digestSha(running.ref) : undefined);
       const current: UpdatableIdentity = {
         kind: "image",
         ref: running?.ref ?? ref,
-        digest: running?.digest,
+        digest: deployedDigest,
       };
       const latest: UpdatableIdentity = {
         kind: "image",
@@ -2665,10 +2668,11 @@ export async function evaluateDrift(
         serviceId: svc.id,
         name: svc.name,
         ref,
-        deployedDigest: running?.digest ?? null,
+        deployedDigest: deployedDigest ?? null,
         latestDigest,
         // Fail-soft: a digest we couldn't resolve is not evidence of drift.
         behind: latestDigest ? isBehind(current, latest) : false,
+        unknown: !deployedDigest || !latestDigest,
       };
     });
     return {
@@ -2677,6 +2681,7 @@ export async function evaluateDrift(
       behind: services.some((s) => s.behind),
       latestInProgress: active?.trigger === "update",
       inProgressDeploymentId,
+      unverified: services.some((s) => s.unknown),
       services,
     };
   }

@@ -204,6 +204,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
     const { deployComposeServices } =
       await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
     const next = await seedDeployment(project, {
+      status: "deploying",
       imageRef: "compose",
       containerId: "compose",
       meta: { runtimeMode: "docker", deployTarget: "local" },
@@ -234,6 +235,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
     });
 
     expect(conflictResult.status).toBe("ready");
+    await repos.deployment.updateStatus(next.id, "ready");
     expect(conflictResult.summary).toMatchObject({ successful: 3, failed: 0, indeterminate: 0 });
     const conflictRows = await repos.service.listByDeployment(next.id);
     expect(conflictRows).toHaveLength(3);
@@ -301,6 +303,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
     });
 
     const retry = await seedDeployment(project, {
+      status: "deploying",
       imageRef: "compose",
       containerId: "compose",
       meta: { runtimeMode: "docker", deployTarget: "local" },
@@ -327,6 +330,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
     );
 
     expect(retryResult.status).toBe("ready");
+    await repos.deployment.updateStatus(retry.id, "ready");
     expect(retryResult.summary).toMatchObject({ successful: 3, failed: 0, indeterminate: 0 });
     const retryRows = await repos.service.listByDeployment(retry.id);
     expect(retryRows).toHaveLength(3);
@@ -384,6 +388,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
       );
     const inspect = vi.spyOn(runtime, "getContainerInfo");
     const stoppedRetry = await seedDeployment(project, {
+      status: "deploying",
       imageRef: "compose",
       containerId: "compose",
       meta: { runtimeMode: "docker", deployTarget: "local" },
@@ -411,6 +416,7 @@ describeDockerE2E("compose full-deploy host-port preflight", () => {
     inventory.mockRestore();
 
     expect(stoppedRetryResult.status).toBe("ready");
+    await repos.deployment.updateStatus(stoppedRetry.id, "ready");
     expect(inspect).toHaveBeenCalledWith(retryApi!.containerId!);
     const stoppedRetryApi = (await repos.service.listByDeployment(stoppedRetry.id)).find(
       (row) => row.serviceId === api.id,

@@ -677,7 +677,7 @@ describe("NginxProvider.serveEdgeChallenge", () => {
     expect(c).not.toContain("default_server");
   });
 
-  test("is idempotent — a second identical call neither rewrites nor reloads", async () => {
+  test("refreshes challenge tokens and reconfirms the vhost on a second call", async () => {
     const { nginx, calls, files } = setup();
     await nginx.serveEdgeChallenge({ host: "203.0.113.10", tokens: ["tok-abcdef123456"] });
     const reloadsAfterFirst = calls.filter(
@@ -693,7 +693,7 @@ describe("NginxProvider.serveEdgeChallenge", () => {
     const reloadsAfterSecond = calls.filter(
       (c) => c.includes("reload") || c.includes("openresty"),
     ).length;
-    expect(reloadsAfterSecond).toBe(reloadsAfterFirst);
+    expect(reloadsAfterSecond).toBe(reloadsAfterFirst * 2);
   });
 
   test("defers to an existing vhost that already claims the host", async () => {

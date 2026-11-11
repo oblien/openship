@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React, { useId, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -43,9 +44,10 @@ export function UrlImport({ header }: { header?: React.ReactNode }) {
       {header}
       <div className="p-8">
         <div className="max-w-lg mx-auto">
-          <div className="w-14 h-14 rounded-2xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-4">
-            <UiIcon name="link" className="size-7 text-muted-foreground" />
-          </div>
+          <FeatureIllustration
+            name="push-to-deploy"
+            className="illustration-color mx-auto mb-4 h-auto w-20"
+          />
           <h3 className="text-base font-semibold text-foreground text-center mb-1.5">
             {t.library.urlImport.title}
           </h3>

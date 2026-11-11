@@ -257,7 +257,7 @@ export interface MigrationRun {
    * cross-server by construction, so anything keying off `same_server` treats them
    * correctly by falling through.
    */
-  mode: "cross_server" | "same_server" | "project_move" | "project_copy";
+  mode: "cross_server" | "same_server" | "project_move" | "project_copy" | "provider_import";
   projectName?: string | null;
   projectId?: string | null;
   deploymentId?: string | null;
@@ -278,6 +278,8 @@ export interface MigrationRun {
   /** Snapshot of the start input — drives a failed run's edit-&-retry re-seed
    *  (detail fetch only; stripped from the list). */
   inputSnapshot?: Record<string, unknown> | null;
+  /** Provider service ID → the normal Openship project created for it. */
+  importedProjects?: Record<string, string>;
 }
 
 /** Live data-move progress during `moving_data` (in-memory, coarse per-poll).

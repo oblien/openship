@@ -1,8 +1,13 @@
 import { AppError, normalizeRepoPath } from "@repo/core";
-import type { PublishRepositoryChangeInput } from "@repo/contracts";
+import { OperationError, type PublishRepositoryChangeInput } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { githubFetch } from "./github.auth";
-import { assertGitHubRepoAccess, checkSourceTier } from "./github-access";
+import {
+  assertRepositoryChangeAccess,
+  getRepositoryChangeAccess,
+  isRepositoryCredentialFailure,
+  repositoryCredentialError,
+} from "./repository-change-access";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import {
   captureExecutionAuthority,
@@ -16,7 +21,11 @@ const sha = (value: string) => {
 };
 
 /** Ordinary GitHub operation, shared by HTTP, SDK and MCP; no agent-specific credentials. */
-export async function publishChange(ctx: ExecutionContext, input: PublishRepositoryChangeInput) {
+export async function publishChange(
+  ctx: ExecutionContext,
+  input: PublishRepositoryChangeInput,
+  options: { installationPermissions?: Record<string, "read" | "write"> } = {},
+) {
   const { owner, repo, patch } = input;
   const paths = patch.files.map((f) => f.path);
   if (
@@ -31,7 +40,7 @@ export async function publishChange(ctx: ExecutionContext, input: PublishReposit
     ) ||
     new Set(paths).size !== paths.length ||
     paths.some((path) => paths.some((other) => other !== path && path.startsWith(`${other}/`))) ||
-    patch.files.reduce((n, f) => n + Buffer.byteLength(f.content), 0) > 256000
+    patch.files.reduce((n, f) => n + ("content" in f ? Buffer.byteLength(f.content) : 0), 0) > 256000
   )
     throw fail("Choose distinct repository files and a patch smaller than 256 KB.", 400);
   if (
@@ -46,32 +55,40 @@ export async function publishChange(ctx: ExecutionContext, input: PublishReposit
   const authority = await captureExecutionAuthority(ctx);
   async function authorize() {
     const current = await resolveExecutionAuthority(authority, "repository-change");
-    if (current.credential?.readOnly) throw fail("Repository writes were not approved.", 403);
-    await assertGitHubRepoAccess(current, { owner, repo }, "write");
-    for (const path of paths)
-      if (
-        !(await checkSourceTier(current, { owner, repo }, "write", path)).ok ||
-        !(await checkSourceTier(current, { owner, repo }, "content", path)).ok
-      )
-        throw fail("This patch includes a file outside your approved source access.", 403);
+    await assertRepositoryChangeAccess(current, owner, repo, paths);
     return current;
   }
-  await authorize();
+  const current = await authorize();
+  if (input.pullRequest) {
+    const access = await getRepositoryChangeAccess(current, owner, repo, paths);
+    if (access === "github_access_required") throw repositoryCredentialError();
+    if (access === "repository_read_only")
+      throw fail("This GitHub repository is archived or disabled.", 403);
+    if (access !== "available") throw fail("Repository writes were not approved.", 403);
+  }
   const root = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   async function request<T>(
     path: string,
     method: "GET" | "POST" = "GET",
     params?: Record<string, unknown>,
   ) {
-    return githubFetch<T>({
-      ctx: await authorize(),
-      owner,
-      repo,
-      url: `${root}${path}`,
-      method,
-      params,
-      authorizeAs: "write",
-    });
+    try {
+      return await githubFetch<T>({
+        ctx: await authorize(),
+        owner,
+        repo,
+        url: `${root}${path}`,
+        method,
+        params,
+        authorizeAs: "write",
+        ...(options.installationPermissions && {
+          installationPermissions: options.installationPermissions,
+        }),
+      });
+    } catch (error) {
+      if (isRepositoryCredentialFailure(error)) throw repositoryCredentialError();
+      throw error;
+    }
   }
   const head = async () => {
     const ref = await request<{ object: { sha: string } }>(
@@ -102,6 +119,10 @@ export async function publishChange(ctx: ExecutionContext, input: PublishReposit
         "Patches can change regular files only; directories, symlinks and submodules are excluded.",
         400,
       );
+    if ("delete" in file) {
+      if (!previous) throw fail("Delete requires an existing regular file.", 400);
+      return { path: file.path, mode: previous.mode, type: "blob", sha: null };
+    }
     return {
       path: file.path,
       mode: previous?.mode ?? "100644",
@@ -142,7 +163,16 @@ export async function publishChange(ctx: ExecutionContext, input: PublishReposit
         maintainer_can_modify: false,
       });
       pullRequestUrl = pr.html_url;
-    } catch {
+    } catch (error) {
+      if (error instanceof AppError && error.code === "REPOSITORY_GITHUB_ACCESS_REQUIRED")
+        throw new OperationError(
+          `The branch ${branch} was created, but GitHub denied the pull request. Update the connection's Pull requests permission, then finish the PR from that branch in GitHub.`,
+          403,
+          "REPOSITORY_PR_ACCESS_REQUIRED",
+          {
+            recoveryUrl: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(patch.baseBranch)}...${branch}?expand=1`,
+          },
+        );
       throw fail(
         `The commit was published to ${branch}, but the pull request was not confirmed. Review that branch in GitHub before trying again.`,
       );

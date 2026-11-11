@@ -147,7 +147,7 @@ function ServerInventoryPage() {
       if (resourceRef.current !== resourceKey || request !== fetchRequest.current) return;
       setServersOwner(resourceKey);
       setServers(
-        list.filter(s => selfHosted || !s.managed && !s.isLocal).map((s) => ({
+        list.filter(s => !s.managed && (selfHosted || !s.isLocal)).map((s) => ({
           id: s.id,
           name: s.name || s.sshHost || s.id,
           host: s.sshHost ?? "",
@@ -814,7 +814,7 @@ function EmptyState({
         {managed ? t.billing.workspaces.defaultHint : t.servers.list.emptyDescription}
       </p>
 
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
         <button
           onClick={onAdd}
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
@@ -842,28 +842,6 @@ function EmptyState({
           <UiIcon name="external-link" className="size-3.5 opacity-60" />
         </a>
       </div>
-
-      {!managed && <div className="max-w-2xl mx-auto">
-        <p className="text-xs text-muted-foreground/60 uppercase tracking-wider mb-4">
-          {t.servers.list.whatGetsConfigured}
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: t.servers.list.featContainer, desc: t.servers.list.featContainerDesc, Icon: "docker" as const },
-            { label: t.servers.list.featProxy, desc: t.servers.list.featProxyDesc, Icon: "globe" as const },
-            { label: t.servers.list.monitoring, desc: t.servers.list.monitoringDesc, Icon: "activity" as const },
-            { label: "Git", desc: t.servers.list.gitDesc, Icon: "git-branch" as const },
-          ].map((f) => (
-            <div key={f.label} className="bg-card border border-border/50 rounded-xl p-4 text-start">
-              <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
-                <UiIcon name={f.Icon} className="size-4 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium text-foreground">{f.label}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>}
     </div>
   );
 }

@@ -3,6 +3,42 @@ import type { Context } from "hono";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, operationData } from "../../lib/operation-context";
 import { param } from "../../lib/controller-helpers";
+export async function runtimeSource(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      getPlatformKernel().updates.runtimeSource(
+        operationContext(c),
+        param(c, "projectId"),
+        await c.req.json(),
+      ),
+    ),
+  });
+}
+export async function previewRuntimeSource(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      getPlatformKernel().updates.previewRuntimeSource(
+        operationContext(c),
+        param(c, "projectId"),
+        await c.req.json(),
+      ),
+    ),
+  });
+}
+export async function publishRuntimeSource(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      getPlatformKernel().updates.publishRuntimeSource(
+        operationContext(c),
+        param(c, "projectId"),
+        await c.req.json(),
+      ),
+    ),
+  });
+}
 export async function securityCheckPolicy(c: Context) {
   return c.json({
     data: await operationData(

@@ -24,7 +24,11 @@
     "connecting": "جارٍ الاتصال…",
     "streamUnavailable": "التحديثات المباشرة غير متاحة. يتم عرض آخر استخدام تم قياسه.",
     "usageTitle": "استخدام الموارد",
-    "setupPending": "سيظهر الاستخدام بعد إعداد مساحتك السحابية."
+    "setupPending": "سيظهر الاستخدام بعد إعداد مساحتك السحابية.",
+    "projectsAssigned": "المشاريع في هذه الخطة",
+    "projectsAssignedHint": "مشاريع تشترك في موارد الحوسبة والتخزين لهذه الخطة.",
+    "showAllProjects": "عرض جميع المشاريع ({count})",
+    "storageDetails": "حول استخدام التخزين"
   },
   "acquire": {
     "connected": {
@@ -32,12 +36,12 @@
       "description": "استخدم خادماً تملكه عبر SSH."
     },
     "managed": {
-      "label": "الحصول على خادم مُدار",
-      "description": "تتولى Openship Cloud الإعداد والتوجيه وHTTPS."
+      "label": "إضافة مساحة سحابية",
+      "description": "تتشارك التطبيقات وعمليات البناء والبيانات سعة مساحتها السحابية."
     },
-    "signInHint": "اربط حساب Cloud لاستخدام خادم مُدار حالي أو الحصول على خادم جديد.",
-    "chooseExisting": "اختر خادم Cloud حالياً",
-    "useServer": "استخدام هذا الخادم"
+    "signInHint": "اربط حساب Cloud لاستخدام مساحة سحابية موجودة أو إضافة مساحة جديدة.",
+    "chooseExisting": "اختر مساحة سحابية",
+    "useServer": "استخدم هذه المساحة السحابية"
   },
   "github": {
     "title": "وصول GitHub",
@@ -80,12 +84,8 @@
     "addThisMachine": "إضافة هذا الجهاز",
     "addThisMachineError": "تعذّر إضافة هذا الجهاز كخادم.",
     "emptyTitle": "لا توجد خوادم بعد",
-    "emptyDescription": "اربط خادمًا عبر SSH وسيتولى Openship الباقي - يتم إعداد Docker وOpenResty وSSL وعمليات النشر تلقائيًا.",
+    "emptyDescription": "اربط خادمًا عبر SSH. يتولى OpenShip إعداد Docker والتوجيه وSSL وعمليات النشر.",
     "addFirstServer": "أضف خادمك الأول",
-    "whatGetsConfigured": "ما الذي يتم إعداده",
-    "monitoring": "المراقبة",
-    "monitoringDesc": "فحوصات الصحة",
-    "gitDesc": "النشر من المصدر",
     "connected": "متصل",
     "error": "خطأ",
     "forwarding": "{n} إعادة توجيه",
@@ -148,10 +148,6 @@
       "nothingToDo": "لا يوجد ما يُطبَّق",
       "applyFailed": "تعذّر بدء التحديثات"
     },
-    "featContainer": "بيئة تشغيل الحاويات",
-    "featContainerDesc": "تشغيل كل تطبيق في بيئة معزولة",
-    "featProxy": "بروكسي عكسي",
-    "featProxyDesc": "التوجيه وSSL",
     "seeDocs": "راجع المستندات"
   },
   "containers": {

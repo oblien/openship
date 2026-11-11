@@ -24,7 +24,11 @@
     "connecting": "Connecting…",
     "streamUnavailable": "Live updates are unavailable. Showing the last measured usage.",
     "usageTitle": "Resource usage",
-    "setupPending": "Usage will appear once your Cloud space is set up."
+    "setupPending": "Usage will appear once your Cloud space is set up.",
+    "projectsAssigned": "Projects on this plan",
+    "projectsAssignedHint": "Projects sharing this plan’s compute and storage.",
+    "showAllProjects": "Show all {count} projects",
+    "storageDetails": "About storage usage"
   },
   "acquire": {
     "connected": {
@@ -32,12 +36,12 @@
       "description": "Use a server you already own over SSH."
     },
     "managed": {
-      "label": "Get a managed server",
-      "description": "Openship Cloud handles setup, routing and HTTPS."
+      "label": "Add Cloud space",
+      "description": "Apps, builds and data share the capacity of their Cloud space."
     },
-    "signInHint": "Connect your Cloud account to use an existing managed server or get a new one.",
-    "chooseExisting": "Choose an existing Cloud server",
-    "useServer": "Use this server"
+    "signInHint": "Connect your Cloud account to use an existing Cloud space or add a new one.",
+    "chooseExisting": "Select a Cloud space",
+    "useServer": "Use this Cloud space"
   },
   "clusters": {
     "listTitle": "Server clusters",
@@ -118,16 +122,8 @@
     "addThisMachine": "Add this machine",
     "addThisMachineError": "Couldn't add this machine as a server.",
     "emptyTitle": "No servers yet",
-    "emptyDescription": "Connect a server via SSH and Openship will handle the rest - Docker, the edge, SSL, and deployments all set up automatically.",
+    "emptyDescription": "Connect a server via SSH. OpenShip handles Docker, routing, SSL, and deployments.",
     "addFirstServer": "Add Your First Server",
-    "whatGetsConfigured": "What gets configured",
-    "featContainer": "Container runtime",
-    "featContainerDesc": "Runs each app in isolation",
-    "featProxy": "Reverse proxy",
-    "featProxyDesc": "Routing & SSL",
-    "monitoring": "Monitoring",
-    "monitoringDesc": "Health checks",
-    "gitDesc": "Source deployments",
     "connected": "Connected",
     "error": "Error",
     "checking": "Checking",

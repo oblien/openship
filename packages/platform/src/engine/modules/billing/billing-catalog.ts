@@ -232,17 +232,6 @@ export function presentCloudPlans(requestedLocale?: string, capacityCatalog?: Ob
     locale,
     annual: { enabled: annualEnabled, monthsFree: PRICING.annual.monthsFree },
     custom: { resources: PRICING.custom.resources, extraMonthlyCents: PRICING.custom.extraMonthlyCents, extraAnnualCents: PRICING.custom.extraAnnualCents },
-    payg: structuredClone(PRICING.payg),
-    ...(capacityCatalog ? { computePricing: {
-      tariffId: capacityCatalog.tariffId, currency: capacityCatalog.currency,
-      creditsPerDollar: capacityCatalog.tariff.creditsPerDollar,
-      paygCapPercent: capacityCatalog.tariff.paygCapPercent,
-      usage: capacityCatalog.tariff.usage, network: capacityCatalog.tariff.network,
-      retentionDays: capacityCatalog.tariff.terms.retainedAfterExpiryDays,
-      // The deployed PAYG purchase debits the reseller's wallet. It is not a
-      // tenant-funded checkout and must not spend another customer's funds.
-      paygCheckoutAvailable: false,
-    } } : {}),
     ui: pricingUi(locale),
     plans,
   };

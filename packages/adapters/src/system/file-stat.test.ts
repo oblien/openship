@@ -30,6 +30,7 @@ describe("LocalExecutor.lstat", () => {
       expect(await local.lstat(file)).toEqual({ kind: "file", mode: 0o600 });
       expect((await local.lstat(join(dir, "link.conf")))?.kind).toBe("symlink");
       expect(await local.lstat(join(dir, "missing.conf"))).toBeNull();
+      expect(await local.lstat(join(file, "not-a-directory.conf"))).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

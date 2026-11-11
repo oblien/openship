@@ -15,6 +15,7 @@ vi.mock("@repo/platform/engine/modules/deployments/build.service", async (load) 
 }));
 vi.mock("@repo/platform/engine/modules/migration/migration-access", () => ({
   assertMigrationEndpoints: async () => ({ source: {}, target: {} }),
+  requireMigrationServer: async () => ({}),
 }));
 vi.mock("@repo/platform/engine/modules/migration/migration-storage", async (load) => ({
   ...(await load<typeof import("@repo/platform/engine/modules/migration/migration-storage")>()),

@@ -231,6 +231,19 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
   const monthly = subscription?.offer?.billingMode === "monthly";
   const expectedTier = monthly ? "capacity" : subscription?.tierId ?? "free";
   const capacity = entitlement.capacity;
+  // An unpaid renewal advances Stripe's invoice period without buying another
+  // month of compute. The retained, expired capacity still describes the last
+  // funded period. Keep billing readable so the customer can pay, while the
+  // provider's uncovered entitlement continues to block new billable work.
+  const unpaidRenewal = monthly && subscription &&
+    ["past_due", "unpaid", "paused", "canceled"].includes(subscription.status) &&
+    entitlement.status !== "active" && entitlement.computeCovered === false &&
+    capacity?.computeCovered === false && capacity.status === "expired" &&
+    entitlement.periodStart !== null && entitlement.periodEnd !== null &&
+    subscription.periodStart !== null && subscription.periodEnd !== null &&
+    Date.parse(entitlement.periodStart) < Date.parse(entitlement.periodEnd) &&
+    Date.parse(entitlement.periodEnd) <= Date.parse(subscription.periodStart) &&
+    Date.parse(subscription.periodStart) < Date.parse(subscription.periodEnd);
   if ((entitlement.tierId ?? "free") !== expectedTier ||
       (monthly && (!capacity || capacity.namespace !== entitlement.namespace || capacity.provider !== "stripe" ||
         capacity.billingMode !== "monthly" || entitlement.billingMode !== "monthly" ||
@@ -238,8 +251,8 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
         !isDeepStrictEqual(capacity.capacity, subscription!.offer!.capacity) ||
         timestamp(capacity.periodStart) !== timestamp(entitlement.periodStart) || timestamp(capacity.periodEnd) !== timestamp(entitlement.periodEnd))) ||
       (!subscription && (entitlement.periodStart !== null || entitlement.periodEnd !== null)) ||
-      (subscription && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
-      (subscription && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
       (!monthly && entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
     throw new AppError("Cloud billing returned an entitlement that does not match this organization's subscription", 502, "OBLIEN_ENTITLEMENT_MISMATCH");
   }
@@ -289,8 +302,8 @@ const PROVIDER_FAILURES = new Set([
 
 export class OblienBillingApi {
   /** Uses the same authenticated, bounded provider transport as checkout. */
-  affiliateRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
-    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid affiliate endpoint");
+  referralRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
+    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid referral endpoint");
     return this.request<unknown>({ method, path, ...(method === "GET" ? { query: Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])) } : { body: input }) });
   }
   private readonly baseUrl: string;
@@ -376,8 +389,8 @@ export class OblienBillingApi {
       });
       const known: Record<string, string> = {
         affiliate_unavailable: "This referral code is no longer available or does not apply to your purchase. Remove it or choose an eligible Cloud plan.",
-        affiliate_paused: "Affiliate access is paused. Contact support.",
-        affiliate_not_found: "This affiliate record was not found for your account.",
+        affiliate_paused: "Referral access is paused. Contact support.",
+        affiliate_not_found: "This referral record was not found for your account.",
         affiliate_payout_minimum: "The payout amount is below your minimum. Refresh your balance to see the current minimum.",
         affiliate_payout_balance: "Your available earnings changed. Refresh your balance before requesting a payout.",
         affiliate_payout_funding: "Payout funding is temporarily unavailable. Contact support.",

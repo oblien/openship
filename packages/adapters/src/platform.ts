@@ -391,7 +391,7 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
  * the provider with the actual paths - no hardcoded fallbacks.
  */
 async function createInfraProvider(
-  _mode: "docker" | "bare",
+  mode: "docker" | "bare",
   config: PlatformConfig,
   executor: CommandExecutor,
   edgeContainer?: string,
@@ -435,6 +435,17 @@ async function createInfraProvider(
     const { NoopInfraProvider } = await import("./infra/noop");
     const noop = new NoopInfraProvider();
     return { routing: noop, ssl: noop };
+  }
+
+  // Docker deployments install a container edge. Keep that provider even while
+  // the edge is stopped or being replaced; an old host nginx binary/config is
+  // not evidence that it serves these domains. Retaining the bare provider here
+  // made later route writes target unused host config after edge recovery.
+  if (mode === "docker") {
+    const { detectEdgeContainer, EDGE_CONTAINER_NAME } = await import("./system/proxy/detect");
+    const installed = await detectEdgeContainer(executor);
+    const nginx = await containerEdgeProvider(executor, installed?.name ?? EDGE_CONTAINER_NAME, config.nginx);
+    return { routing: nginx, ssl: nginx };
   }
 
   // Bare host OpenResty: legacy boxes not yet converted, and Docker-less servers.

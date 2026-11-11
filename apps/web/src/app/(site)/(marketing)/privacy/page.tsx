@@ -62,6 +62,15 @@ const SECTIONS = [
     ],
   },
   {
+    id: "support-access",
+    title: "Customer-approved support reviews",
+    body: [
+      "Openship staff do not browse your private source code, database contents, application files, or secret values as part of support. Your content remains yours.",
+      "Our support team reviews relevant technical metadata and sanitized failure diagnostics only when you request troubleshooting help or approve a review. This can include deployment status, resource usage, infrastructure settings, and the cause of a failed deployment. A review is limited to the technical issue you ask us to investigate.",
+      "Routine automated processing needed to build, host, and operate your applications is separate from a human support review. We may also process data where required by applicable law. Our privacy commitments apply alongside your statutory data protection rights.",
+    ],
+  },
+  {
     id: "where-it-lives",
     title: "Where data lives",
     body: [
@@ -105,18 +114,23 @@ export default function PrivacyPage() {
     <>
       <Navbar />
       <main className="legal-root">
-
         <section className="legal-hero">
           <div className="legal-container">
             <p className="legal-eyebrow">Privacy</p>
             <h1 className="legal-title">
-              How we<br />
+              How we
+              <br />
               <span className="legal-title-soft">handle your data.</span>
             </h1>
             <p className="legal-meta">
-              Last updated <time dateTime="2026-05-18">May&nbsp;18, 2026</time>
+              Last updated <time dateTime="2026-11-10">November&nbsp;10, 2026</time>
               <span className="legal-meta-sep">·</span>
-              <a href="https://github.com/oblien/openship/commits/main/PRIVACY.md" className="legal-meta-link" target="_blank" rel="noreferrer">
+              <a
+                href="https://github.com/oblien/openship/commits/main/apps/web/src/app/(site)/(marketing)/privacy/page.tsx"
+                className="legal-meta-link"
+                target="_blank"
+                rel="noreferrer"
+              >
                 Version history on GitHub
               </a>
             </p>
@@ -150,7 +164,9 @@ export default function PrivacyPage() {
                       <h2 className="legal-section-title">{s.title}</h2>
                     </header>
                     {s.body.map((p, j) => (
-                      <p key={j} className="legal-p">{p}</p>
+                      <p key={j} className="legal-p">
+                        {p}
+                      </p>
                     ))}
                   </section>
                 ))}

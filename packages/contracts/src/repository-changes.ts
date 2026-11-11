@@ -1,5 +1,13 @@
 import { Type, type Static } from "@sinclair/typebox";
 
+export const RepositoryChangeAccessSchema = Type.Union([
+  Type.Literal("available"),
+  Type.Literal("workspace_access_required"),
+  Type.Literal("github_access_required"),
+  Type.Literal("repository_read_only"),
+]);
+export type RepositoryChangeAccess = Static<typeof RepositoryChangeAccessSchema>;
+
 /** One reviewed patch, based on an exact commit. Publishing never updates an existing branch. */
 export const RepositoryPatch = Type.Object(
   {
@@ -8,13 +16,22 @@ export const RepositoryPatch = Type.Object(
     title: Type.String({ minLength: 1, maxLength: 200 }),
     description: Type.String({ maxLength: 4000 }),
     files: Type.Array(
-      Type.Object(
-        {
-          path: Type.String({ minLength: 1, maxLength: 1024 }),
-          content: Type.String({ maxLength: 64000 }),
-        },
-        { additionalProperties: false },
-      ),
+      Type.Union([
+        Type.Object(
+          {
+            path: Type.String({ minLength: 1, maxLength: 1024 }),
+            content: Type.String({ maxLength: 64000 }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            path: Type.String({ minLength: 1, maxLength: 1024 }),
+            delete: Type.Literal(true),
+          },
+          { additionalProperties: false },
+        ),
+      ]),
       { minItems: 1, maxItems: 10 },
     ),
   },
@@ -38,3 +55,4 @@ export const PublishedRepositoryChange = Type.Object({
   url: Type.String(),
   pullRequestUrl: Type.Union([Type.String(), Type.Null()]),
 });
+export type PublishedRepositoryChange = Static<typeof PublishedRepositoryChange>;

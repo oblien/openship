@@ -181,6 +181,17 @@
       "show": "Değerleri göster",
       "hide": "Değerleri gizle",
       "error": "Değerler gösterilemedi"
+    },
+    "textEditor": {
+      "edit": "Metin olarak düzenle",
+      "title": ".env düzenle",
+      "hint": "KEY=value girdileri, yorumlar ve tırnak içinde çok satırlı değerler kullanın. Bir girdiyi kaldırmak değişkeni siler.",
+      "apply": "Değişiklikleri uygula",
+      "savedValues": "Kaydedilen değerler maskeli kalır. Değeri korumak için •••••••• ifadesini değiştirmeyin veya yeni bir değer girin. Yönetilen değişkenler değiştirilmemelidir.",
+      "invalidRows": "Önce satır düzenleyicisinde boş, geçersiz veya yinelenen değişken adlarını düzeltin.",
+      "invalid": "Kayıtlı değer yer tutucularını özgün anahtarlarında tutun ve yönetilen değişkenleri değiştirmeyin.",
+      "invalidLine": "{line}. satırda geçersiz .env sözdizimi. Benzersiz KEY=value girdileri kullanın ve tüm tırnakları kapatın.",
+      "stale": "Düzenleyici açıkken değişkenler değişti. Uygulamadan önce kapatıp yeniden açın."
     }
   },
   "composeServices": {
@@ -419,6 +430,8 @@
       "cancelled": "İptal Edildi",
       "failed": "Başarısız",
       "readyWarnings": "Uyarılarla hazır",
+      "verifying": "Doğrulanıyor",
+      "liveVerifying": "Yayında · Doğrulanıyor",
       "ready": "Hazır",
       "building": "Derleniyor"
     },

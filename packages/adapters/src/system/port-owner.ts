@@ -259,6 +259,8 @@ export async function describeContainerById(
  * existing callers.
  */
 export const EDGE_CONTAINER_NAME = "openship-edge";
+/** Reserved names for candidates, config probes and retained predecessors. */
+export const EDGE_TRANSITION_PREFIX = "openship-edge-update-";
 
 export function isOurEdgeContainer(name?: string, image?: string): boolean {
   return (

@@ -2,7 +2,6 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { exec, spawn } from "node:child_process";
 import {
   access,
-  lstat as fsLstat,
   mkdir as fsMkdir,
   open as fsOpen,
   readFile as fsReadFile,
@@ -14,7 +13,7 @@ import { dirname } from "node:path";
 import { assertLocalHostExecutionAllowed } from "@repo/core";
 
 import type { CommandExecutor, FileStat, LogEntry } from "../types";
-import { fileStatOf } from "./file-stat";
+import { lstatFile } from "./file-stat";
 import {
   getLocalExecEnv,
   getLocalShellArgs,
@@ -167,12 +166,7 @@ export class LocalExecutor implements CommandExecutor {
   }
 
   async lstat(path: string): Promise<FileStat | null> {
-    try {
-      return fileStatOf(await fsLstat(path));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    }
+    return lstatFile(path);
   }
 
   async exists(path: string): Promise<boolean> {
