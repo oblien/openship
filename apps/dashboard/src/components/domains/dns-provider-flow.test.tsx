@@ -242,7 +242,7 @@ describe("in-context DNS connection", () => {
     ).not.toBeNull();
     expect(document.body.textContent).toContain("Zone:Read and DNS:Edit");
     expect(document.body.textContent).not.toContain("Registry host");
-    await click("Add credential");
+    await click("Add connection");
     expect(h.create).toHaveBeenCalledExactlyOnceWith({
       provider: "cloudflare",
       name: "Cloudflare · api.example.com",
@@ -267,7 +267,7 @@ describe("in-context DNS connection", () => {
   it("can connect for an unsaved domain while leaving DNS writes until the domain exists", async () => {
     await render(false);
     await connect();
-    await click("Add credential");
+    await click("Add connection");
     expect(h.previewRecords).toHaveBeenCalledWith("api.example.com", false, "server-selected");
     expect(h.verifyZone).toHaveBeenCalledWith("api.example.com");
     expect(document.body.textContent).toContain("Deploy first");
@@ -335,13 +335,13 @@ describe("in-context DNS connection", () => {
     );
     await render();
     await connect();
-    await click("Add credential");
+    await click("Add connection");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("DNS:Edit is required");
     expect(document.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
       "token-for-tests-only",
     );
     expect(h.deploy).not.toHaveBeenCalled();
-    await click("Add credential");
+    await click("Add connection");
     expect(buttons("Auto-configure DNS")).toHaveLength(2);
   });
 
@@ -378,7 +378,7 @@ describe("in-context DNS connection", () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     expect(h.create).toHaveBeenCalledOnce();
-    expect(button("Add credential").disabled).toBe(true);
+    expect(button("Add connection").disabled).toBe(true);
     const dialog = document.querySelectorAll('[role="dialog"]')[1];
     await act(async () =>
       dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),

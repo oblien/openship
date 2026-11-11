@@ -1597,6 +1597,13 @@
       "when": 1794197400000,
       "tag": "0227_customer_cancellation_email",
       "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1794348000000,
+      "tag": "0228_connection_value_template",
+      "breakpoints": true
     }
   ]
 }

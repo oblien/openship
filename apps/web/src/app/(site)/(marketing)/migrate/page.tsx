@@ -1,5 +1,7 @@
+import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { AppLogo } from "@repo/ui/app-logo";
 import { FeatureIllustration } from "@repo/ui/illustrations";
 import { Navbar, Footer } from "@/components/landing";
 import { MarketingIntro } from "@/components/marketing/marketing-intro";
@@ -7,10 +9,43 @@ import { MarketingSection } from "@/components/marketing/marketing-section";
 import { IllustratedLink } from "@/components/marketing/illustrated-link";
 import { cloudFrom, getCloudPricing } from "@/lib/pricing";
 import { cloudPlanHref } from "@/lib/cloud-links";
+import { MIGRATION_SOURCES } from "@/lib/migration-sources";
+import { inheritSocialImages } from "@/lib/social-metadata";
+import { MigrationFaq } from "./_components/migration-faq";
+import { MigrationSteps } from "./_components/migration-steps";
 import { STARTING_POINTS, REASONS, STEPS, faq } from "./_data";
 import "./migrate.css";
 
 export const revalidate = 60;
+
+const TITLE = "Move your app to Openship";
+const DESCRIPTION =
+  "Migrate from Railway, Vercel or a Docker server to Openship. Review services and data, deploy to Cloud or your own infrastructure, then switch your domains.";
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return inheritSocialImages(
+    {
+      title: TITLE,
+      description: DESCRIPTION,
+      alternates: { canonical: "/migrate" },
+      openGraph: {
+        title: `${TITLE} - Openship`,
+        description: DESCRIPTION,
+        url: "/migrate",
+        type: "website",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: `${TITLE} - Openship`,
+        description: DESCRIPTION,
+      },
+    },
+    parent,
+  );
+}
 
 export default async function MigratePage() {
   const from = cloudFrom(await getCloudPricing());
@@ -27,13 +62,35 @@ export default async function MigratePage() {
               <span>Keep your stack.</span>
             </>
           }
-          description="Bring your repository, Compose stack, or running Docker services. Move to Openship Cloud or manage your own infrastructure."
+          description="Import from Railway, Vercel or an existing Docker server. Bring your repository or Compose stack. Move to Openship Cloud or manage your own infrastructure."
         >
           <Link href="/support" className="marketing-text-link mg-intro-link">
             Talk through your migration <ArrowRight size={16} aria-hidden="true" />
           </Link>
         </MarketingIntro>
         <div className="site-container marketing-content">
+          <MarketingSection
+            id="platforms"
+            title="Move from your platform"
+            description="See what transfers, how data moves and what to prepare."
+          >
+            <div className="marketing-grid">
+              {MIGRATION_SOURCES.map((source) => (
+                <Link
+                  key={source.slug}
+                  href={`/migrate/${source.slug}`}
+                  className="mg-provider-link"
+                >
+                  <AppLogo slug={source.logo} className="size-9" invertOnDark={false} />
+                  <div>
+                    <h3>From {source.name}</h3>
+                    <p>{source.summary}</p>
+                  </div>
+                  <ArrowRight size={16} aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          </MarketingSection>
           <MarketingSection
             id="start"
             title="Start with what you have"
@@ -50,19 +107,7 @@ export default async function MigratePage() {
             title="Plan the move"
             description="Prepare the destination, verify the app, then switch traffic."
           >
-            <ol className="mg-steps">
-              {STEPS.map((step, index) => (
-                <li key={step.title}>
-                  <span className="mg-step-number" aria-hidden="true">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <h3>{step.title}</h3>
-                    <p>{step.description}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <MigrationSteps steps={STEPS} />
           </MarketingSection>
           <MarketingSection
             id="destination"
@@ -114,20 +159,28 @@ export default async function MigratePage() {
             title="Before you move"
             description="The practical details, from compatibility to cutover."
           >
-            <div className="mg-faq">
-              {faq(from).map((item) => (
-                <details key={item.q}>
-                  <summary>
-                    {item.q}
-                    <Plus size={16} aria-hidden="true" />
-                  </summary>
-                  <p>{item.a}</p>
-                </details>
-              ))}
-            </div>
+            <MigrationFaq items={faq(from)} />
           </MarketingSection>
         </div>
       </main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: "https://openship.io" },
+              {
+                "@type": "ListItem",
+                position: 2,
+                name: "Migrate",
+                item: "https://openship.io/migrate",
+              },
+            ],
+          }),
+        }}
+      />
       <Footer />
     </>
   );

@@ -125,3 +125,4 @@ export * from "./repository-changes";
 export * from "./assistant-agents";
 
 export * from "./server-security";
+export * from "./platform-migration";

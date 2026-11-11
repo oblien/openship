@@ -9,11 +9,11 @@ import {
   type CloudPricing,
 } from "@/lib/pricing";
 import { faq } from "./_data";
+import { CLOUD_SLA } from "@/lib/cloud-service";
 
 const PAGE_URL = "https://openship.io/pricing";
 export const revalidate = 60;
-const DESCRIPTION =
-  "Compare Openship Cloud resource pools. Shared CPU, RAM and storage for your projects, with monthly or yearly billing and no per-seat fees.";
+const DESCRIPTION = `Compare Openship Cloud resource pools for your projects. Shared CPU, RAM and storage, support included, and a ${CLOUD_SLA.monthlyUptimePercent}% monthly uptime guarantee on every plan.`;
 const metadata: Metadata = {
   title: "Pricing",
   description: DESCRIPTION,

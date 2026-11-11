@@ -5,6 +5,19 @@ import { param } from "../../lib/controller-helpers";
 import { operationContext, operationData } from "../../lib/operation-context";
 
 const operations = () => getPlatformKernel().credentials;
+export async function authorize(c: Context) {
+  return c.json(
+    await operationData(c, operations().authorize(operationContext(c), await c.req.json())),
+  );
+}
+export async function completeAuthorization(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      operations().completeAuthorization(operationContext(c), await c.req.json()),
+    ),
+  });
+}
 export async function listProviders(c: Context) {
   return c.json({ data: await operationData(c, operations().listProviders(operationContext(c))) });
 }

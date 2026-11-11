@@ -8,6 +8,7 @@ import {
   AppsShowcase,
   MailServer,
   Comparison,
+  DataPrivacy,
   OpenSource,
   FinalCta,
   Footer,
@@ -60,6 +61,7 @@ export default function HomePage() {
         <AppsShowcase />
         <MailServer />
         <Comparison />
+        <DataPrivacy />
         <OpenSource />
         <FinalCta />
       </main>

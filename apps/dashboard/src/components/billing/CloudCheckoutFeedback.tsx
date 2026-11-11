@@ -15,7 +15,7 @@ import { createCloudSupportApi } from "@/lib/api/cloud-support";
 import { supportTicketHref } from "@/components/support/support-shared";
 import { useSession } from "@/lib/auth-client";
 import type { CheckoutFailure } from "@/lib/checkout-failure";
-import { CloudPlanIllustration } from "./CloudPlanIllustration";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { planCapacity } from "./plan-presentation";
 import type { ApiPlan } from "./PricingCards";
 
@@ -110,7 +110,10 @@ function FeedbackContent({ failure, plan, onClose, onRetry }: {
         className="absolute end-3 top-3 z-10">
         <Icon name="close" className="size-4" aria-hidden="true" />
       </Button>
-      <CloudPlanIllustration subscribed={Boolean(receivedEmail)} className="mx-auto mb-4 w-40" />
+      <FeatureIllustration
+        name="notifications"
+        className="illustration-color mx-auto mb-4 h-auto w-20"
+      />
       <div className="text-center">
         <h2 id={titleId} className="text-xl font-semibold tracking-tight text-foreground">
           {receivedEmail ? copy.receivedTitle : failure.kind === "capacity" ? copy.capacityTitle : copy.checkoutTitle}

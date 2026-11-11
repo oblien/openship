@@ -181,6 +181,17 @@
       "show": "Afficher les valeurs",
       "hide": "Masquer les valeurs",
       "error": "Impossible d’afficher les valeurs"
+    },
+    "textEditor": {
+      "edit": "Modifier en texte",
+      "title": "Modifier .env",
+      "hint": "Utilisez KEY=value, des commentaires et des valeurs multilignes entre guillemets. Supprimer une entrée supprime la variable.",
+      "apply": "Appliquer les modifications",
+      "savedValues": "Les valeurs enregistrées restent masquées. Conservez •••••••• pour garder une valeur ou remplacez-le par une nouvelle valeur. Ne modifiez pas les variables gérées.",
+      "invalidRows": "Corrigez d’abord les noms de variables vides, invalides ou en double dans l’éditeur de lignes.",
+      "invalid": "Conservez les marqueurs des valeurs enregistrées sur leurs clés d’origine et ne modifiez pas les variables gérées.",
+      "invalidLine": "Syntaxe .env invalide à la ligne {line}. Utilisez des clés KEY=value uniques et fermez tous les guillemets.",
+      "stale": "Les variables ont changé pendant l’édition. Fermez puis rouvrez l’éditeur avant d’appliquer."
     }
   },
   "composeServices": {
