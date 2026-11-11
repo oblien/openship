@@ -1143,13 +1143,18 @@ export function useDeploymentBuild(
       waitingCompletion ||
       needsTerminalStatus ||
       (active && (!buildStream.isConnected || !!state.queue || !state.buildStartedAt || !!state.pendingPrompt));
-    if (!deploymentId || !needsStatus) return;
+    if (!deploymentId || (!needsStatus && !active)) return;
 
     let cancelled = false;
     const generation = buildViewGenerationRef.current;
-    let interval: ReturnType<typeof setInterval>;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let resumeTimer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
-      if (cancelled || buildStatusPollInFlightRef.current) return;
+      if (
+        cancelled || buildStatusPollInFlightRef.current ||
+        document.visibilityState === "hidden" || navigator.onLine === false ||
+        Date.now() - lastBuildStatusPollRef.current < BUILD_STATUS_POLL_MS
+      ) return;
       buildStatusPollInFlightRef.current = true;
       lastBuildStatusPollRef.current = Date.now();
       try {
@@ -1159,12 +1164,12 @@ export function useDeploymentBuild(
         // A queued deployment can be waiting for its in-memory stream to exist.
         const isLive = data.is_active || !["ready", "failed", "cancelled"].includes(status);
         const mapped = mapServiceStatusesFromBuildStatus(data);
-        // The stream is detached, so live logs stopped flowing — refresh the
-        // terminal buffer from the snapshot too (structured entries keep their
-        // serviceName so per-service tabs repopulate). Keep lastEventIdRef in
-        // sync so a later reconnect-replay dedups against what we just applied.
-        const polledLogs = mapBuildLogsFromStatus(data);
-        if (typeof data.lastEventId === "number") {
+        // A healthy stream still owns live logs. Advancing its cursor from a
+        // resume snapshot would discard buffered SSE bytes before they reach
+        // the terminal. Recover snapshot logs only when detached or settled.
+        const recoverLogs = !buildStream.isConnected || !isLive;
+        const polledLogs = recoverLogs ? mapBuildLogsFromStatus(data) : [];
+        if (recoverLogs && typeof data.lastEventId === "number") {
           lastEventIdRef.current = data.lastEventId;
         }
         // The poll — not just the live stream — can be what observes the finish.
@@ -1231,17 +1236,33 @@ export function useDeploymentBuild(
       }
     };
 
-    // Leading poll only if we haven't polled within the interval. If this effect
-    // is re-created rapidly (a dep changed identity across renders), the guard
-    // skips the immediate poll so it can't storm the endpoint — the interval
-    // still paces it at BUILD_STATUS_POLL_MS.
-    if (Date.now() - lastBuildStatusPollRef.current >= BUILD_STATUS_POLL_MS) {
+    // A healthy stream needs no polling. Browser resume still reconciles once:
+    // a suspended tab can miss completion without observing a disconnect.
+    if (needsStatus) {
       void tick();
+      interval = setInterval(tick, BUILD_STATUS_POLL_MS);
     }
-    interval = setInterval(tick, BUILD_STATUS_POLL_MS);
+    const resume = () => {
+      if (cancelled || document.visibilityState === "hidden" || navigator.onLine === false) return;
+      clearTimeout(resumeTimer);
+      // An older in-flight response may predate this return. Keep one trailing
+      // check instead of losing the resume event or overlapping the request.
+      const delay = buildStatusPollInFlightRef.current
+        ? BUILD_STATUS_POLL_MS
+        : BUILD_STATUS_POLL_MS - (Date.now() - lastBuildStatusPollRef.current);
+      if (delay > 0) resumeTimer = setTimeout(resume, delay);
+      else void tick();
+    };
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", resume);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      clearTimeout(resumeTimer);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [
     state.deploymentId,
@@ -1500,11 +1521,15 @@ export function useDeploymentBuild(
           // last seq we have so the stream sends ONLY new events (no re-replay).
           // When the session isn't up yet (just-created deploy), lastEventId is
           // absent and buildStream reconnects until it appears — no refresh needed.
-          await buildStream.connect(
+          void buildStream.connect(
             deploymentId,
             false,
             typeof data.lastEventId === "number" ? data.lastEventId : undefined,
-          );
+          ).catch((error) => {
+            // Streaming retries and the status reconciler own connection loss.
+            // A valid snapshot must not become a page-load failure when SSE drops.
+            observeCaughtError(error, "dashboard/context/deployment/useDeploymentBuild");
+          });
         } else if (status === "ready") {
           if (data.warningMessage) {
             showToast(data.warningMessage, "success", "Deployment Ready With Warnings");
