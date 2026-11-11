@@ -80,6 +80,15 @@ describe("reviewable image source edits", () => {
       "x-base: &base {image: node:22}\nservices:\n  api:\n    <<: *base\n  worker:\n    image: &image node:22\n  other:\n    image: *image\n  built:\n    build: .\n    image: my/output:1\n  dynamic:\n    image: ${IMAGE:-node:22}\n";
     expect(inspectRuntimeSource(source, "compose").references).toEqual([]);
   });
+  it.each([
+    "services:\n  api: &base {image: node:22}\n  worker: *base\n",
+    "services: &services {api: {image: node:22}}\nx-shared: *services\n",
+    "x-build: &build {build: .}\nservices:\n  api: {<<: *build, image: my/output:1}\n",
+    "services:\n  api: {extends: {file: base.yml, service: api}, image: my/output:1}\n",
+  ])("does not edit shared service mappings or inherited build outputs", (source) => {
+    expect(inspectRuntimeSource(source, "compose").references).toEqual([]);
+    expect(() => replaceRuntimeSourceImage(source, "compose", "service:api", "node:24")).toThrow();
+  });
   it("rejects duplicate YAML keys instead of updating an ambiguous field", () => {
     expect(() =>
       inspectRuntimeSource("services:\n  api:\n    image: node:22\n    image: node:24", "compose"),

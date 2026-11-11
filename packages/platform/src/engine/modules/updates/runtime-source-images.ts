@@ -85,7 +85,14 @@ export function inspectRuntimeSource(
       if (!isScalar(item.key) || typeof item.key.value !== "string") continue;
       const name = item.key.value;
       if (serviceName && name !== serviceName) continue;
-      if (!isMap(item.value)) {
+      if (
+        !isMap(item.value) ||
+        services.anchor ||
+        item.value.anchor ||
+        item.value.tag ||
+        item.value.has("<<") ||
+        item.value.has("extends")
+      ) {
         guidance.push(`${name}: edit the inherited service in the repository.`);
         continue;
       }
