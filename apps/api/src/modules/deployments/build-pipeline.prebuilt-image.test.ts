@@ -117,25 +117,8 @@ vi.mock("@repo/platform/engine/modules/deployments/cloud-build-queue", () => ({
   drainCloudBuildQueue: mocks.drainQueue,
 }));
 
-vi.mock("@repo/adapters", () => {
-  class BuildLogger {
-    constructor(private readonly callback?: (entry: unknown) => void) {}
-
-    log(message: string, level = "info") {
-      this.callback?.({ timestamp: new Date().toISOString(), message, level });
-    }
-
-    step(phase: string, status: string, message: string) {
-      this.callback?.({
-        timestamp: new Date().toISOString(),
-        phase,
-        status,
-        message,
-        level: "info",
-      });
-    }
-  }
-
+vi.mock("@repo/adapters", async (importOriginal) => {
+  const { BuildLogger } = await importOriginal<typeof import("@repo/adapters")>();
   return {
     withDeploymentProgress: (_logger: unknown, _reason: string, run: () => Promise<unknown>) => run(),
     BuildLogger,

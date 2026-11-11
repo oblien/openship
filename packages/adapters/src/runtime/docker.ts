@@ -34,6 +34,8 @@ import { currentManagedCommandTracking } from "./cloud/command-tracking";
 import { gracefulStopBeforeRemoval, removeDockerContainer } from "./docker-container-removal";
 export { gracefulStopBeforeRemoval } from "./docker-container-removal";
 import Dockerode from "dockerode";
+import { buildSecretValues } from "./build-log-redactor";
+import { dockerBuildSecrets, withDockerBuildSecrets } from "./docker-build-secrets";
 import { buildDockerImage } from "./docker-buildkit-session";
 import { matchingRegistryDigest, prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
@@ -1491,7 +1493,7 @@ export class DockerRuntime implements RuntimeAdapter {
     trace?: BuildKitTraceDecoder,
     diagnosticContext: DockerBuildDiagnosticContext = {},
   ): { errorMessage?: string; failureHint: string | null } | null {
-    const errorMessage = event.errorDetail?.message || event.error;
+    const errorMessage = logger.redact(event.errorDetail?.message || event.error || "");
     if (errorMessage) {
       logger.log(errorMessage, "error");
       return {
@@ -1506,26 +1508,28 @@ export class DockerRuntime implements RuntimeAdapter {
     // string check matters — it is not decoration.
     if (event.id === "moby.buildkit.trace" && typeof event.aux === "string") {
       let hint: string | null = null;
-      const lines = trace?.push(event.aux, (data, streamId) =>
-        logger.observeBuildOutput(data, streamId),
+      const lines = trace?.push(event.aux,
+        (data, streamId) => logger.observeBuildOutput(data, streamId),
+        (data, streamId) => logger.redactBuildOutput(data, streamId),
       );
       for (const line of lines ?? []) {
+        const message = logger.redact(line.message);
         // Same treatment the classic builder's `stream` lines get, deliberately: the
         // failure hints (OOM-killed install, wrong rootDirectory, BuildKit refused)
         // are the only thing that turns a bare exit code into an explanation, and
         // BuildKit builds are precisely the ones with no other diagnostic.
-        logger.log(line.message, line.level === "error" ? "error" : parseLogLevel(line.message));
+        logger.log(message, line.level === "error" ? "error" : parseLogLevel(message));
         hint = chooseDockerBuildFailureHint(
           hint,
-          this.extractBuildFailureHint(line.message, diagnosticContext) ??
-            (line.level === "error" ? line.message : null),
+          this.extractBuildFailureHint(message, diagnosticContext) ??
+            (line.level === "error" ? message : null),
         );
       }
       return { failureHint: hint };
     }
 
     if (event.stream) {
-      logger.observeBuildOutput(event.stream);
+      const output = logger.observeBuildOutput(event.stream);
       const line = event.stream.trim();
       if (!line) return null;
 
@@ -1556,8 +1560,8 @@ export class DockerRuntime implements RuntimeAdapter {
         return null;
       }
 
-      logger.log(line, parseLogLevel(line));
-      return { failureHint: this.extractBuildFailureHint(line, diagnosticContext) };
+      logger.callback({ timestamp: new Date().toISOString(), message: event.stream, rawData: Buffer.from(event.stream).toString("base64"), level: "info" });
+      return { failureHint: this.extractBuildFailureHint(output.trim(), diagnosticContext) };
     }
 
     if (event.status) {
@@ -2042,7 +2046,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     dockerfileName: string,
     tag: string,
     log: BuildLogger,
-    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; sharedWorker?: boolean },
+    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; usesRepositoryDockerfile?: boolean; sharedWorker?: boolean },
   ): Promise<BaseImageReceipt[] | undefined> {
     const pin = await this.pinBuildBaseImages(config, remoteBuildDir, dockerfileName, log, opts?.signal, this.connectionOptions?.executor);
     try {
@@ -2059,15 +2063,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     dockerfileName: string,
     tag: string,
     log: BuildLogger,
-    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; sharedWorker?: boolean },
+    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean; usesRepositoryDockerfile?: boolean; sharedWorker?: boolean },
   ): Promise<void> {
     const signal = opts?.signal;
     const executor = this.connectionOptions?.executor;
     if (!executor) throw new Error("SSH build path requires an executor on connectionOptions");
+    const secrets = opts?.usesRepositoryDockerfile === false ? dockerBuildSecrets(config) : new Map<string, string>();
 
     // Compose the docker build command. Quoting matters - buildargs and labels
     // can contain `=` and spaces.
-    const resolvedBuildArgs = resolveDockerBuildArgs(config);
+    const resolvedBuildArgs = resolveDockerBuildArgs(config, opts?.usesRepositoryDockerfile !== false);
     const buildArgs = Object.entries(resolvedBuildArgs)
       .map(([k, v]) => `--build-arg ${sq(`${k}=${v}`)}`)
       .join(" ");
@@ -2101,16 +2106,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         this.connectionOptions?.softwareCacheRoot);
     if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
     else if (software.unavailable) log.log("Shared base images are unavailable on this server; uncached image layers will download from the registry. Project build cache remains enabled.\n", "warn");
-    const buildCmd = [
+    const buildCmd = (secretFlags: string, secretCleanup: string) => [
       ...(native ? [`export DOCKER_HOST=${sq(this.nativeDockerHost())}`] : []),
       "set -e",
-      `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
+      `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true; ${secretCleanup || ":"}`)} EXIT HUP INT TERM`,
       `cd ${sq(remoteBuildDir)}`,
       // Update runs refresh FROMs; ordinary builds retain local-only base support.
       // Cache substitutions above are independently validated against the registry.
       // The exporter loads into Docker on this same host. Favor gzip speed over
       // archive size without changing image compatibility or recompressing bases.
-      `docker buildx build --builder ${sq(native ? "default" : worker.builderName)}${pullFlag}${native ? "" : " --output type=docker,compression=gzip,compression-level=1"} --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+      `docker buildx build --builder ${sq(native ? "default" : worker.builderName)}${pullFlag}${native ? "" : " --output type=docker,compression=gzip,compression-level=1"} --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} ${secretFlags} .`,
     ].join("\n");
     log.log(native
       ? "Builder: native Docker BuildKit (trusted host; image stays in the deployment engine)."
@@ -2158,24 +2163,27 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     try {
       if (!native && !opts?.sharedWorker) await this.startProtectedBuildWorker(config, log, signal);
       signal?.throwIfAborted();
-      const result = await executor.streamExec(
-        buildCmd,
+      const result = await withDockerBuildSecrets(executor, secrets, (secretFlags, cleanup) => executor.streamExec(
+        buildCmd(secretFlags, cleanup),
         (entry) => {
           idleMonitor.progress();
-          log.observeBuildOutput(entry.message, entry.level);
+          const output = log.observeBuildOutput(
+            entry.rawData ? Buffer.from(entry.rawData, "base64") : entry.message,
+            entry.level,
+          );
           streamedFailureHint = chooseDockerBuildFailureHint(
             streamedFailureHint,
-            this.extractBuildFailureHint(entry.message, diagnosticContext),
+            this.extractBuildFailureHint(output, diagnosticContext),
           );
           // Keep raw terminal bytes: an executor chunk is not a complete line.
           // Dropping rawData makes live/replayed logs insert a newline per chunk.
-          log.callback({ ...entry, level: parseLogLevel(entry.message) });
+          log.callback(entry);
         },
         { signal: commandAbort.signal },
-      );
+      ));
       code = result.code;
     } catch (error) {
-      observeCaughtError(error, "adapters/runtime/docker");
+      observeCaughtError(new Error(log.errorMessage(error)), "adapters/runtime/docker");
       execError = error;
     } finally {
       idleMonitor.stop();
@@ -2420,7 +2428,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     generatedName: string,
     requireRepositoryDockerfile: boolean,
     log?: BuildLogger,
-  ): Promise<{ remoteBuildDir: string; dockerfileName: string }> {
+  ): Promise<{ remoteBuildDir: string; dockerfileName: string; usesRepositoryDockerfile: boolean }> {
     const executor = this.connectionOptions?.executor;
     if (!executor) throw new Error("Clone-on-server requires an SSH executor on connectionOptions");
 
@@ -2481,7 +2489,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             "warn",
           );
         }
-        return { remoteBuildDir, dockerfileName: candidate };
+        return { remoteBuildDir, dockerfileName: candidate, usesRepositoryDockerfile: true };
       }
     }
 
@@ -2516,7 +2524,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         } finally { await executor.exec(`rm -f -- ${sq(temporary)}`); }
       }
     }
-    return { remoteBuildDir, dockerfileName: generatedName };
+    return { remoteBuildDir, dockerfileName: generatedName, usesRepositoryDockerfile: false };
   }
 
   private async buildViaSshTarPipe(
@@ -2539,7 +2547,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         buildContext.dockerfileName,
         tag,
         log,
-        { signal, requiresBuildKit: buildContext.requiresBuildKit },
+        { signal, requiresBuildKit: buildContext.requiresBuildKit, usesRepositoryDockerfile: buildContext.usesRepositoryDockerfile },
       );
     } finally {
       // Always clean up the remote context - even on failure. Don't await - if
@@ -2557,11 +2565,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * sites (single image and compose batch) — they are the same decision and a
    * builder learned by only one of them is the "two executors" trap all over again.
    *
-   * The classic builder is kept as the DEFAULT deliberately. It is what every
-   * self-hosted local build has always used; switching wholesale would change layer
-   * caching for everyone and silently drop the build CPU/memory caps, which BuildKit
-   * ignores. So BuildKit is opted into only where the classic builder cannot work at
-   * all — a Dockerfile whose syntax it rejects (#634).
+   * Generated recipes require BuildKit secret mounts. Repository Dockerfiles
+   * retain classic-builder compatibility unless their syntax needs BuildKit (#634).
+   * The Engine API cannot enforce build CPU/memory caps under BuildKit, so a
+   * generated build with explicit limits must use the protected worker instead.
    *
    * Through the ENGINE API (`version=2`), not by shelling out to `docker build`,
    * which is the first alternative that comes to mind and is not available: the API
@@ -2569,15 +2576,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * and the transport may be a TCP socket with no shell at the other end at all.
    * Nothing needs the buildx plugin either — BuildKit lives in the daemon.
    *
-   * Asymmetric with the remote CLI path on purpose: there, BuildKit is taken whenever
-   * buildx exists, because that command passes no --memory/--cpus (so there is no cap
-   * to lose) and on docker ≥23 the CLI already defaults to it — the prefix mostly
-   * buys the log line and the buildx-missing warning.
+   * Remote builds use the existing protected BuildKit worker, which enforces
+   * resource limits on the worker container rather than on the build API call.
    */
   private selectDockerodeBuilder(
     config: BuildConfig,
     requiresBuildKit: boolean,
     log: BuildLogger,
+    requiresSecrets = false,
   ): { options: { version?: "2" }; trace?: BuildKitTraceDecoder } {
     if (!requiresBuildKit) return { options: {} };
 
@@ -2585,6 +2591,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       "Dockerfile uses BuildKit-only syntax (RUN --mount, a syntax directive or a heredoc) — building with BuildKit.",
     );
     if (Object.keys(dockerBuildResourceLimits(config.resources)).length > 0) {
+      if (requiresSecrets) throw new AppError(
+        "Secure generated Docker builds require BuildKit, but the Docker Engine API cannot enforce this build's CPU/memory limits. Build on an SSH server with the protected Openship BuildKit worker to retain those limits.",
+        422, "BUILD_SECRET_RESOURCE_LIMITS_UNSUPPORTED",
+      );
       log.log(
         "Build CPU/memory limits are not enforced under BuildKit — this build runs uncapped.",
         "warn",
@@ -2630,14 +2640,19 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   private async buildViaDockerode(
     config: BuildConfig,
     buildContext: Pick<Awaited<ReturnType<typeof createDockerBuildContext>>,
-      "buildContextDir" | "contextEntries" | "dockerfileName" | "ignoreContextPath" | "requiresBuildKit" | "cleanup">,
+      "buildContextDir" | "contextEntries" | "dockerfileName" | "ignoreContextPath" | "requiresBuildKit" | "usesRepositoryDockerfile" | "cleanup">,
     tag: string,
     log: BuildLogger,
     cancelSignal?: AbortSignal,
   ): Promise<BaseImageReceipt[] | undefined> {
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
     let pin: Awaited<ReturnType<DockerRuntime["pinBuildBaseImages"]>>;
+    let builder: ReturnType<DockerRuntime["selectDockerodeBuilder"]>;
+    let secrets: ReadonlyMap<string, string> | undefined;
     try {
+      // Validate before opening an archive stream or allocating a builder.
+      secrets = buildContext.usesRepositoryDockerfile ? undefined : dockerBuildSecrets(config);
+      builder = this.selectDockerodeBuilder(config, buildContext.requiresBuildKit, log, !buildContext.usesRepositoryDockerfile);
       pin = await this.pinBuildBaseImages(config, buildContext.buildContextDir, buildContext.dockerfileName, log, cancelSignal);
     } catch (error) {
       await buildContext.cleanup();
@@ -2651,7 +2666,6 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       buildContext.ignoreContextPath,
     );
 
-    const builder = this.selectDockerodeBuilder(config, buildContext.requiresBuildKit, log);
     const buildLimits = dockerBuildResourceLimits(config.resources);
     const ownershipHost = builder.options.version !== "2" ? newBuildOwnershipHost() : null;
     const diagnosticContext: DockerBuildDiagnosticContext = {
@@ -2668,7 +2682,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         pull: config.refreshBaseImages === true,
         dockerfile: buildContext.dockerfileName,
         labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
-        buildargs: resolveDockerBuildArgs(config),
+        buildargs: resolveDockerBuildArgs(config, buildContext.usesRepositoryDockerfile),
         // Omitted entirely unless the project set a build cap — a self-hosted
         // build should be free to use the machine (a production build often
         // needs several GB). Opt-in only; see dockerBuildResourceLimits.
@@ -2677,7 +2691,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         forcerm: true,
         ...builder.options,
         abortSignal,
-      });
+      }, secrets);
       detachCancellation();
 
       log.log("Connected to Docker daemon. Build output follows:");
@@ -2692,7 +2706,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       });
       log.log("Docker daemon finished streaming build output. Finalizing image...\n");
     } catch (err) {
-      observeCaughtError(err, "adapters/runtime/docker");
+      observeCaughtError(new Error(log.errorMessage(err)), "adapters/runtime/docker");
       // A context-pack failure aborts the request, so the rejection here is the
       // abort, not the real cause — prefer the captured pack error.
       const contextErr = takeError();
@@ -2923,6 +2937,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     const log = logger ?? new BuildLogger();
+    log.protectBuild(config);
     const startTime = Date.now();
     const tag = this.imageTag(config.slug, config.sessionId);
     const abort = registerDockerBuild(config.sessionId);
@@ -2964,7 +2979,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           await this.cloneSourceOnRemote(config, remoteContextDir, log, abort.signal);
           if (abort.signal.aborted) throw new BuildCancelledError();
           this.emitDockerStep(log, "clone", "completed", "Source cloned on the server");
-          const { remoteBuildDir, dockerfileName } = await this.resolveRemoteDockerfile(
+          const { remoteBuildDir, dockerfileName, usesRepositoryDockerfile } = await this.resolveRemoteDockerfile(
             config,
             remoteContextDir,
             "Dockerfile.openship",
@@ -2972,7 +2987,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             log,
           );
           baseImages = await this.buildImageOnRemote(config, remoteBuildDir, dockerfileName, tag, log, {
-            signal: abort.signal,
+            signal: abort.signal, usesRepositoryDockerfile,
           });
         } finally {
           await sshExecutor.exec(`rm -rf ${sq(remoteContextDir)}`, { timeout: 10_000 }).catch((diagnosticFailure) => {
@@ -3079,9 +3094,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       const durationMs = Date.now() - startTime;
       return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs, managedCacheTargets: await this.managedCacheReceipt(tag, log), ...(baseImages && { baseImages }) };
     } catch (err) {
-      observeCaughtError(err, "adapters/runtime/docker");
+      observeCaughtError(new Error(log.errorMessage(err)), "adapters/runtime/docker");
       if (abort.signal.aborted || err instanceof BuildCancelledError) return cancelled();
-      const msg = safeErrorMessage(err);
+      const msg = log.errorMessage(err);
       log.step("build", "failed", `Docker build failed: ${msg}`);
       return {
         sessionId: config.sessionId,
@@ -3091,6 +3106,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         errorCause: err,
       };
     } finally {
+      log.flush();
       releaseDockerBuild(config.sessionId, abort);
     }
   }
@@ -3170,6 +3186,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         artifactOwned: false,
       };
     } finally {
+      log.flush();
       releaseDockerBuild(config.sessionId, abort);
     }
   }
@@ -3283,12 +3300,12 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         durationMs: elapsed(),
       };
     } catch (err) {
-      observeCaughtError(err, "adapters/runtime/docker");
+      observeCaughtError(new Error(log.errorMessage(err)), "adapters/runtime/docker");
       // cancelBuild force-removes containers carrying this build's label, which is
       // how the extract container dies mid-`cp`. That throw is the cancel, not a
       // static-build failure.
       if (abort.signal.aborted || err instanceof BuildCancelledError) return cancelled();
-      const msg = safeErrorMessage(err);
+      const msg = log.errorMessage(err);
       log.step("build", "failed", `Static extract failed: ${msg}`);
       return {
         sessionId: config.sessionId,
@@ -3298,6 +3315,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         errorCause: err,
       };
     } finally {
+      log.flush();
       releaseDockerBuild(config.sessionId, abort);
     }
   }
@@ -3641,6 +3659,8 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     prepareLogger: BuildLogger,
   ): Promise<Array<{ serviceName: string; result: BuildResult }>> {
     if (specs.length === 0) return [];
+    for (const spec of specs) spec.logger.protectBuild(spec.config);
+    prepareLogger.protectSecrets(specs.flatMap(spec => buildSecretValues(spec.config)));
 
     try {
       await this.ensureDockerFeature(prepareLogger);
@@ -3747,7 +3767,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           const requireRepo = spec.requireRepositoryDockerfile ?? spec.config.stack === "docker";
           try {
             if (cloneOnServer) {
-              const { remoteBuildDir, dockerfileName } = await this.resolveRemoteDockerfile(
+              const { remoteBuildDir, dockerfileName, usesRepositoryDockerfile } = await this.resolveRemoteDockerfile(
                 spec.config,
                 remoteContextDir,
                 generatedName,
@@ -3765,6 +3785,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
                 // Only the dockerode branch consults it, and clone-on-server never
                 // reaches that branch (it is SSH by construction).
                 requiresBuildKit: false,
+                usesRepositoryDockerfile,
                 error: null as string | null,
               };
             }
@@ -3785,10 +3806,11 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
               contextEntries: resolved.contextEntries,
               ignoreContextPath: resolved.ignoreContextPath,
               requiresBuildKit: resolved.requiresBuildKit,
+              usesRepositoryDockerfile: resolved.usesRepositoryDockerfile,
               error: null as string | null,
             };
           } catch (err) {
-            observeCaughtError(err, "adapters/runtime/docker");
+            observeCaughtError(new Error(spec.logger.errorMessage(err)), "adapters/runtime/docker");
             return {
               spec,
               dockerfileName: null as string | null,
@@ -3798,7 +3820,8 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
               contextEntries: null as string[] | null,
               ignoreContextPath: undefined as ((path: string) => boolean) | undefined,
               requiresBuildKit: false,
-              error: safeErrorMessage(err),
+              usesRepositoryDockerfile: true,
+              error: spec.logger.errorMessage(err),
             };
           }
         }),
@@ -3848,6 +3871,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         contextEntries,
         ignoreContextPath,
         requiresBuildKit,
+        usesRepositoryDockerfile,
         error,
       }) => {
         const startedAt = Date.now();
@@ -3886,7 +3910,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           if (isSsh) {
             const build = () => this.buildImageOnRemote(
               spec.config, remoteBuildDir, dockerfileName, tag, spec.logger,
-              { signal, requiresBuildKit, sharedWorker },
+              { signal, requiresBuildKit, usesRepositoryDockerfile, sharedWorker },
             );
             const dockerfile = `${remoteBuildDir}/${dockerfileName}`;
             // Security refresh temporarily pins FROM lines. Include ordinary
@@ -3902,6 +3926,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
               contextEntries: contextEntries ?? [],
               dockerfileName,
               requiresBuildKit,
+              usesRepositoryDockerfile,
               ignoreContextPath,
               cleanup: async () => {},
             }, tag, spec.logger, signal);
@@ -3958,7 +3983,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           spec.onResult?.(result);
           return { serviceName: spec.serviceName, result };
         } catch (err) {
-          observeCaughtError(err, "adapters/runtime/docker");
+          observeCaughtError(new Error(spec.logger.errorMessage(err)), "adapters/runtime/docker");
           // A cancelled build surfaces as an aborted stream or BuildCancelledError;
           // either way it is not a build failure.
           if (isCancelled(spec.config.sessionId) || err instanceof BuildCancelledError) {
@@ -3967,7 +3992,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
             spec.onResult?.(result);
             return { serviceName: spec.serviceName, result };
           }
-          const msg = safeErrorMessage(err);
+          const msg = spec.logger.errorMessage(err);
           spec.logger.log(`Docker build failed: ${msg}\n`, "error");
           const result: BuildResult = {
             sessionId: spec.config.sessionId,
@@ -3995,6 +4020,8 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           abort.signal.removeEventListener("abort", cancelSource);
           releaseDockerBuild(sessionId, abort);
         }
+        for (const spec of specs) spec.logger.flush();
+        prepareLogger.flush();
       }
       if (isSsh) {
         await this.connectionOptions?.executor?.exec(`rm -rf ${sq(remoteContextDir)}`, { timeout: 10_000 }).catch((diagnosticFailure) => {

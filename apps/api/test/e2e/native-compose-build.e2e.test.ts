@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -225,6 +226,70 @@ describeDockerE2E("native Compose build batches", () => {
     expect((await pending).map(item => item.result.status)).toEqual(["cancelled", "cancelled", "cancelled"]);
   });
 
+  async function verifyGeneratedEnvironmentBatch(attempt: string, resources: BuildConfig["resources"]) {
+    const source = await mkdtemp(join(directory, "generated-source-"));
+    await writeFile(join(source, "source.txt"), "generated build fixture\n");
+    logs.length = 0;
+    const jobs = specs(attempt).slice(0, 2).map(job => ({
+      ...job,
+      config: {
+        ...job.config,
+        localPath: source,
+        stack: "custom",
+        dockerfilePath: undefined,
+        buildArgs: undefined,
+        buildImage: "alpine:3.21",
+        runtimeImage: "alpine:3.21",
+        startCommand: "cat /workspace/proof",
+        installCommand: 'test -n "$PRIVATE_VALUE"',
+        buildCommand: 'printf "%s" "$PRIVATE_VALUE" | sha256sum > /workspace/proof; printf "%s\\n" "$PRIVATE_VALUE"',
+        envVars: { PRIVATE_VALUE: `example-private-${attempt}-${job.serviceName}-${suffix}\nwith trailing newline\n` },
+        resources,
+      },
+    }));
+    const writes = vi.spyOn(executor, "writeFile");
+    const commands = vi.spyOn(executor, "streamExec");
+    try {
+      const results = await runtime.buildImages(jobs, logger());
+      expect(results.map(item => item.result.status), JSON.stringify(results)).toEqual(["deploying", "deploying"]);
+      const output = logs.map(entry => entry.message).join("\n");
+      const terminal = logs.map(entry => entry.rawData ? Buffer.from(entry.rawData, "base64").toString() : "").join("");
+      expect(output).toContain("***");
+      expect(output + terminal + commands.mock.calls.map(([command]) => command).join("\n")).not.toContain("example-private-");
+      const secretFiles = writes.mock.calls.filter(([path]) => path.startsWith("/tmp/openship-build-secrets."));
+      expect(secretFiles).toHaveLength(jobs.length);
+      for (const [path, , options] of secretFiles) {
+        expect(options?.mode).toBe(0o600);
+        expect(await executor.exists(dirname(path))).toBe(false);
+      }
+      for (let i = 0; i < results.length; i++) {
+        const image = runtime.docker.getImage(results[i]!.result.imageRef!);
+        expect(JSON.stringify([await image.inspect(), await image.history()])).not.toContain("example-private-");
+        const container = await runtime.docker.createContainer({
+          Image: results[i]!.result.imageRef!, NetworkDisabled: true,
+          Cmd: ["sh", "-c", 'test ! -e /run/secrets/openship-build-env && test -z "$PRIVATE_VALUE" && cat /workspace/proof'],
+        });
+        try {
+          await container.start();
+          expect((await container.wait()).StatusCode).toBe(0);
+          expect(String(await container.logs({ stdout: true }))).toContain(
+            createHash("sha256").update(jobs[i]!.config.envVars.PRIVATE_VALUE).digest("hex"),
+          );
+        } finally {
+          await container.remove({ force: true });
+        }
+      }
+    } finally {
+      writes.mockRestore();
+      commands.mockRestore();
+      await rm(source, { recursive: true, force: true });
+    }
+  }
+
+  it("isolates generated build secrets for native SSH batch images and removes temporary files", async () => {
+    await verifyGeneratedEnvironmentBatch("native-secrets", { cpuCores: 0, memoryMb: 0, diskMb: 0 });
+  }, 180_000);
+
   it("reuses one protected worker for the batch and retains its private cache after cleanup", async () => {
     await runtime.dispose();
     runtime = await DockerRuntime.create({ ...connection, transport: "ssh", executor });
@@ -276,6 +341,7 @@ describeDockerE2E("native Compose build batches", () => {
           )
         ).trim(),
       ).not.toBe("");
+      await verifyGeneratedEnvironmentBatch("protected-secrets", { cpuCores: 2, memoryMb: 2048, diskMb: 0 });
     } finally {
       commands.mockRestore();
       await workerImage.dispose();

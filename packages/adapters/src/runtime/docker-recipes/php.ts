@@ -4,7 +4,6 @@ import { normalizeDockerRootDirectory } from "../docker-paths";
 import {
   builderSourceDir,
   normalizeRelativePath,
-  buildEnvPrefix,
   installRunLine,
   buildOnlyRunLine,
   nodeBinPathEnvLine,
@@ -86,9 +85,8 @@ export function generatePhpDockerfile(config: BuildConfig): string {
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
-  const envPrefix = buildEnvPrefix(config.envVars);
-  const installLine = installRunLine(config, envPrefix);
-  const assetBuildLine = buildOnlyRunLine(config, envPrefix);
+  const installLine = installRunLine(config);
+  const assetBuildLine = buildOnlyRunLine(config);
 
   const lines: string[] = [
     `FROM ${config.buildImage} AS builder`,

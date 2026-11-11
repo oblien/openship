@@ -6,7 +6,6 @@ import { prepareNodeOutputCommand, AUTOMATIC_START, START_SOURCE_LABEL, START_CO
 import {
   builderSourceDir,
   needsMultiStage,
-  buildEnvPrefix,
   nodeBinPathEnvLine,
   workspacePrepareRunLine,
   installBuildRunLine,
@@ -18,7 +17,6 @@ export function generateGenericDockerfile(config: BuildConfig): string {
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
   const multiStage = needsMultiStage(config) || !!config.runtimeImageOverride;
-  const envPrefix = buildEnvPrefix(config.envVars);
   const workspacePrepare = config.workspacePrepareCommand?.trim();
 
   const lines: string[] = [
@@ -36,20 +34,17 @@ export function generateGenericDockerfile(config: BuildConfig): string {
   // Monorepo workspace prepare: runs ONCE at /workspace (repo root)
   // before we cd into the sub-app and run the per-service install.
   // Any workspace-level prep — install, codegen, schema sync — chained
-  // with `&&`. Wraps in its own RUN layer so docker can cache it across
-  // sub-app rebuilds (most pushes only touch one sub-app).
+  // with `&&`. Its own RUN layer shares the package caches while the secret
+  // mount ensures preparation sees this attempt's environment.
   if (workspacePrepare) {
-    // envPrefix already ends with ` && ` when non-empty, so no extra
-    // separator is needed — adding one would produce a stray double
-    // space inside the Dockerfile RUN line.
-    lines.push(workspacePrepareRunLine(config, envPrefix, workspacePrepare));
+    lines.push(workspacePrepareRunLine(config, workspacePrepare));
   }
 
   lines.push(`WORKDIR ${sourceDir}`);
 
   // Single RUN for install+build - avoids costly Docker layer commits between steps.
   // Each step emits markers so the UI stepper can track progress.
-  const stepsLine = installBuildRunLine(config, envPrefix);
+  const stepsLine = installBuildRunLine(config);
   if (stepsLine) {
     lines.push(stepsLine);
   }

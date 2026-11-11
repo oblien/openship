@@ -6,6 +6,13 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Build security
+
+- Pass generated Docker build environments through temporary BuildKit secrets instead of
+  embedding values in Dockerfiles or image history. Mask configured values in streamed
+  logs, error summaries and failure notifications, including split and multiline output.
+  Preserve Cloud worker limits, parallel server builds and cleanup after cancellation.
+
 ### Image updates
 
 - Keep image services with missing deployment digests visible as unverified. Inspect the

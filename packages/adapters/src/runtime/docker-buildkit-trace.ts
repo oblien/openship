@@ -126,6 +126,7 @@ interface TraceLog {
   vertex: string;
   stream: number;
   msg: string;
+  bytes: Uint8Array;
 }
 
 function decodeVertex(bytes: Uint8Array): TraceVertex | null {
@@ -204,7 +205,7 @@ function decodeLog(bytes: Uint8Array): TraceLog | null {
   // log. Dropping it degrades to "no per-command output", never to garbage.
   if (!vertex.startsWith("sha256:") || !msg?.length) return null;
 
-  return { vertex, stream, msg: text(msg) };
+  return { vertex, stream, msg: text(msg), bytes: msg };
 }
 
 /**
@@ -221,6 +222,7 @@ export class BuildKitTraceDecoder {
   push(
     auxBase64: string,
     onOutput?: (data: string, streamId: string) => void,
+    filterOutput?: (data: Uint8Array, streamId: string) => string,
   ): BuildKitTraceLine[] {
     let payload: Uint8Array;
     try {
@@ -253,8 +255,10 @@ export class BuildKitTraceDecoder {
         if (entry) {
           // Preserve fragment boundaries and stdout/stderr identity before the
           // renderer splits lines or adds step prefixes.
-          onOutput?.(entry.msg, `${entry.vertex}:${entry.stream}`);
-          lines.push(...this.renderLog(entry));
+          const streamId = `${entry.vertex}:${entry.stream}`;
+          const output = filterOutput?.(entry.bytes, streamId) ?? entry.msg;
+          onOutput?.(output, streamId);
+          lines.push(...this.renderLog({ ...entry, msg: output }));
         }
         continue;
       }

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { UNLIMITED_RESOURCES } from "@repo/core";
 import { BuildLogger, DockerRuntime, DEFAULT_RESOURCE_CONFIG } from "@repo/adapters";
 import type { Deployment, Project } from "@repo/db";
 import { resolveSubAppImages } from "@repo/platform/engine/lib/deployable-service";
@@ -81,7 +82,7 @@ describeDockerE2E("monorepo service build and runtime toolchains", () => {
         snapshot,
         sessionId: id,
         envVars: {},
-        resources: DEFAULT_RESOURCE_CONFIG,
+        resources: UNLIMITED_RESOURCES,
         overrides: {
           ...resolveSubAppImages(service, snapshot),
           stack: framework ?? "unknown",

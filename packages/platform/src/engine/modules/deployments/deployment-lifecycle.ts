@@ -87,7 +87,7 @@ export interface LifecycleContext {
   persistLogs: () => LogEntry[];
   /** The deployment's single logger. Optional for startup/recovery callers that
    * have no live log stream; normal build pipelines always provide it. */
-  logger?: Pick<BuildLogger, "log">;
+  logger?: Pick<BuildLogger, "log"> & Partial<Pick<BuildLogger, "redact">>;
   /** Trusted runtime facts kept independently of bounded/collapsed build logs. */
   resourceEvidence?: readonly LogEntry[];
   /** Provisioned resources - set by the orchestrator as phases progress. */
@@ -317,6 +317,7 @@ export async function reportPipelineError(
   logger: Pick<BuildLogger, "log">,
   errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown> },
 ): Promise<void> {
+  message = ctx.logger?.redact?.(message) ?? message;
   if (ctx.settled) {
     errorDiagnostics.warn("platform/engine/modules/deployments/deployment-lifecycle",
       `[build] post-settlement error for ${ctx.dep.id} (outcome ${ctx.settled} kept): ${message}`,
@@ -628,7 +629,8 @@ export async function onFailure(
   }
   // Redact before ANY sink (error reporter, SSE, notification payloads, the row):
   // a clone failure can quote the credentialed clone URL.
-  if (error) error = redactUrlCredentials(error);
+  if (error) error = redactUrlCredentials(ctx.logger?.redact?.(error) ?? error);
+  if (errorMeta && ctx.logger?.redact) errorMeta = sanitizeStorableStrings(errorMeta, 0, value => ctx.logger!.redact!(value));
   durationMs = await resolveBuildDuration(ctx, durationMs);
   // Only settle clocks that were actually started; retained/untouched rows keep
   // their existing outcome and timing. Capture the endpoint before cleanup.

@@ -1,3 +1,5 @@
+import { SecretValues } from "./secret-values";
+
 /** Keep known values marked while patterns inspect the original syntax. Pattern
  * replacements carry those marks forward for surviving input only; generated
  * markers are never scanned as secrets. Each positive mark identifies one
@@ -7,22 +9,16 @@ export class KnownValueText {
   private marks: Uint32Array;
 
   constructor(value: string, secrets: readonly string[], inputLimit: number) {
-    const literals = [...new Set(secrets.filter(Boolean).flatMap((secret) => [
-      secret, JSON.stringify(secret).slice(1, -1),
-    ]))].sort((a, b) => b.length - a.length);
+    const matcher = new SecretValues(secrets);
     this.value = value.slice(0, inputLimit);
     this.marks = new Uint32Array(this.value.length);
-    if (!literals.length) return;
-    const matcher = new RegExp(
-      literals.map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
-      "g",
-    );
+    if (matcher.empty) return;
     // Look past the input boundary so clipping cannot expose part of a value.
-    const input = value.slice(0, inputLimit + literals[0]!.length);
+    const input = value.slice(0, inputLimit + matcher.maxLength);
     let id = 0;
-    for (const match of input.matchAll(matcher)) {
-      if (match.index >= inputLimit) break;
-      this.marks.fill(++id, match.index, Math.min(match.index + match[0].length, inputLimit));
+    for (const match of matcher.ranges(input)) {
+      if (match.start >= inputLimit) break;
+      this.marks.fill(++id, match.start, Math.min(match.end, inputLimit));
     }
   }
 
