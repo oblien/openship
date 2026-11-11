@@ -131,6 +131,13 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
+Repository-owned image changes use the shared **Propose image update** editor in saved
+project/service settings and security review. Reuse the repository file browser. Show the branch,
+exact source commit and a diff before **Create draft PR**; edits invalidate that review. The editor
+changes one literal Dockerfile `FROM` or Compose `image` reference, preserving the source formatting.
+Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.
+Creating a PR never changes the running deployment or clears an advisory. Reset private source and
+pending reviews when the account, workspace or project changes.
 Security advisories use the existing deployment pipeline and root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app

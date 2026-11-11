@@ -21,6 +21,21 @@ export function createRemoteUpdateOperations(http: HttpClient): UpdateOperations
       scan: { method: "POST", path: () => "/updates/scan", envelope: "data" },
     }),
     ...createRemoteResourceOperations(http, UpdateProjectSchemas, {
+      runtimeSource: {
+        method: "POST",
+        path: (id) => `/updates/${encodeURIComponent(id)}/runtime/source`,
+        envelope: "data",
+      },
+      previewRuntimeSource: {
+        method: "POST",
+        path: (id) => `/updates/${encodeURIComponent(id)}/runtime/source/preview`,
+        envelope: "data",
+      },
+      publishRuntimeSource: {
+        method: "POST",
+        path: (id) => `/updates/${encodeURIComponent(id)}/runtime/source/publish`,
+        envelope: "data",
+      },
       checkSecurity: {
         method: "POST",
         path: (id) => `/updates/${encodeURIComponent(id)}/security/check`,

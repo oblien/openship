@@ -2454,6 +2454,24 @@
       "description": "Compare deployed image and recorded base-image digests with the registry.",
       "route": "POST /api/updates/:projectId/runtime/check"
     },
+    "updates.runtimeSource": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Read literal Dockerfile or Compose image references at the deployment branch commit. Requires repository source access.",
+      "route": "POST /api/updates/:projectId/runtime/source"
+    },
+    "updates.previewRuntimeSource": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Preview one source image change against an exact commit without writing or deploying.",
+      "route": "POST /api/updates/:projectId/runtime/source/preview"
+    },
+    "updates.publishRuntimeSource": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Create a draft GitHub PR for a reviewed source image change. Requires project and repository/file write access; never merges or deploys.",
+      "route": "POST /api/updates/:projectId/runtime/source/publish"
+    },
     "updates.securityCheckPolicy": {
       "page": "updates",
       "section": "Operations",
