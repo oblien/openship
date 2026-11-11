@@ -381,7 +381,9 @@ export async function getInstallationToken(
   if (scope) {
     const access = Object.values(scope.permissions).includes("write") ? "write" : "read";
     for (const repo of scope.repositories) await assertGitHubRepoAccess(ctx, { owner, repo }, access);
-    opts = { ...opts, ...scope, noCache: true };
+    // Job tokens remain one-use by default. Interactive repository writes may
+    // reuse an exact-scope token under the existing scope/expiry cache key.
+    opts = { ...opts, ...scope, noCache: opts.noCache ?? true };
   }
 
   // Resolve a workspace-owned source before consulting the legacy mode. Custom
@@ -654,6 +656,9 @@ export interface GitHubFetchOptions {
    * PAT can administer hooks, and pinning would break self-hosts with no App.
    */
   credential?: GitHubTokenSource[];
+  /** Verify an App can issue this exact repository scope before starting a write flow.
+   * Other credential kinds keep their normal identity; GitHub still authorizes every write. */
+  installationPermissions?: Record<string, "read" | "write">;
   /** Selected server identity, eligible only for read-only github.com requests. */
   serverId?: string;
   installationId?: number;
@@ -679,6 +684,8 @@ export interface GitHubFetchOptions {
  */
 export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promise<T> {
   const method = opts.method ?? "GET";
+  if (opts.installationPermissions && (!opts.owner || !opts.repo || opts.authorizeAs !== "write"))
+    throw new AppError("A permission probe requires repository write authority", 400);
   const readOnly = method === "GET" && (opts.authorizeAs ?? "read") === "read";
   // Bind the borrowed identity to the repository actually authorized, including
   // its API origin. Read-tier POSTs and account/other-repository URLs cannot use it.
@@ -755,7 +762,13 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
       ? `${customApiBase}${opts.url.slice("https://api.github.com".length)}`
       : opts.url;
     try {
-      return await ghFetch<T>(result.token, {
+      const token = result.source === "app-installation" && opts.installationPermissions
+        ? await getInstallationToken(opts.ctx, opts.owner!, opts.installationId, {
+            repositories: [opts.repo!], permissions: opts.installationPermissions, noCache: false,
+          })
+        : result.token;
+      if (!token) throw new AppError("Reconnect GitHub for this repository", 403, "GITHUB_TOKEN_REQUIRED");
+      return await ghFetch<T>(token, {
         url, method, params: opts.params, headers: opts.headers,
         response: opts.response, signal: opts.signal,
       });

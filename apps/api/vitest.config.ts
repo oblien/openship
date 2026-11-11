@@ -34,6 +34,6 @@ export default defineConfig({
     // runs only via `bun run test:e2e`. Collecting it here is how it came to
     // report skipped-and-green on every box whose daemon socket isn't at the
     // default path — a passing `bun run test` said nothing about rollback.
-    exclude: [...configDefaults.exclude, "test/e2e/**"],
+    exclude: [...configDefaults.exclude, "test/e2e/**", "test/live/**"],
   },
 });

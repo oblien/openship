@@ -1,10 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { RuntimeSource, RuntimeSourceEdit, RuntimeSourcePreview } from "@repo/contracts";
+import type {
+  RuntimeSource,
+  RuntimeSourceEdit,
+  RuntimeSourcePreview,
+  RepositoryChangeAccess,
+} from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
-import { getApiErrorMessage, getApiRequestScopeVersion } from "@/lib/api/client";
+import {
+  ApiError,
+  getApiErrorCode,
+  getApiErrorMessage,
+  getApiRequestScopeVersion,
+} from "@/lib/api/client";
 import { projectsApi } from "@/lib/api/projects";
 import { updatesApi } from "@/lib/api/updates";
 import {
@@ -70,8 +80,10 @@ function SourceEditor({
   const [image, setImage] = useState("");
   const [preview, setPreview] = useState<RuntimeSourcePreview | null>(null);
   const [published, setPublished] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [accessFailure, setAccessFailure] = useState<RepositoryChangeAccess | null>(null);
+  const [partialPr, setPartialPr] = useState("");
   const requestId = useRef(crypto.randomUUID());
   const generation = useRef(0);
   const mounted = useRef(true);
@@ -80,13 +92,38 @@ function SourceEditor({
     mounted.current &&
     generation.current === request &&
     scope.current === getApiRequestScopeVersion();
+  const acceptSource = (data: RuntimeSource) => {
+    setSource(data);
+    setReferenceId(data.references[0]?.id ?? "");
+    setImage(data.references[0]?.image ?? "");
+    setAccessFailure(null);
+  };
+  const showError = (error: unknown) => {
+    setError(getApiErrorMessage(error, copy.failed));
+    const code = getApiErrorCode(error);
+    if (
+      [
+        "GITHUB_TOKEN_REQUIRED",
+        "REPOSITORY_GITHUB_ACCESS_REQUIRED",
+        "REPOSITORY_PR_ACCESS_REQUIRED",
+      ].includes(code ?? "")
+    )
+      setAccessFailure("github_access_required");
+    else if (
+      ["TOKEN_READ_ONLY", "REPOSITORY_CHANGE_ACCESS_REQUIRED", "GITHUB_ACCESS_DENIED"].includes(
+        code ?? "",
+      )
+    )
+      setAccessFailure("workspace_access_required");
+  };
   useEffect(() => {
     mounted.current = true;
     const request = ++generation.current;
+    setBusy(true);
     projectsApi
       .getGit(projectId)
       .then(
-        (git: {
+        async (git: {
           gitProvider?: string;
           gitOwner?: string;
           gitRepo?: string;
@@ -98,25 +135,37 @@ function SourceEditor({
             return;
           }
           setRepo({ owner: git.gitOwner, repo: git.gitRepo, branch: git.gitBranch });
+          const { data } = await updatesApi.runtimeSource(projectId, {
+            path: initialPath,
+            format: /\.ya?ml$/i.test(initialPath) ? "compose" : "dockerfile",
+            ...(serviceId && { serviceId }),
+          });
+          if (current(request)) acceptSource(data);
         },
       )
       .catch((error) => {
-        if (current(request)) setError(getApiErrorMessage(error, copy.failed));
+        // diagnostics-ignore: showError reports through getApiErrorMessage and displays recovery.
+        if (current(request)) showError(error);
+      })
+      .finally(() => {
+        if (current(request)) setBusy(false);
       });
     return () => {
       mounted.current = false;
       generation.current++;
     };
-  }, [projectId, copy.noRepository, copy.failed]);
+  }, [projectId, serviceId, initialPath, copy.noRepository, copy.failed]);
 
   const reset = () => {
     generation.current++;
     setSource(null);
     setPreview(null);
     setError("");
+    setAccessFailure(null);
   };
   async function run(action: "load" | "preview" | "publish") {
-    if (busy || scope.current !== getApiRequestScopeVersion()) return;
+    if (busy || partialPr || scope.current !== getApiRequestScopeVersion()) return;
+    if (action === "publish" && (accessFailure || preview?.publishAccess !== "available")) return;
     const request = ++generation.current;
     setBusy(true);
     setError("");
@@ -127,9 +176,7 @@ function SourceEditor({
         setPreview(null);
         const { data } = await updatesApi.runtimeSource(projectId, selection);
         if (!current(request)) return;
-        setSource(data);
-        setReferenceId(data.references[0]?.id ?? "");
-        setImage(data.references[0]?.image ?? "");
+        acceptSource(data);
       } else {
         if (!source) return;
         const edit: RuntimeSourceEdit = {
@@ -142,6 +189,7 @@ function SourceEditor({
           const { data } = await updatesApi.previewRuntimeSource(projectId, edit);
           if (current(request)) {
             setPreview(data);
+            setAccessFailure(null);
             requestId.current = crypto.randomUUID();
           }
         } else if (preview) {
@@ -154,7 +202,18 @@ function SourceEditor({
         }
       }
     } catch (error) {
-      if (current(request)) setError(getApiErrorMessage(error, copy.failed));
+      // diagnostics-ignore: showError reports through getApiErrorMessage and displays recovery.
+      if (current(request)) {
+        showError(error);
+        if (
+          getApiErrorCode(error) === "REPOSITORY_PR_ACCESS_REQUIRED" &&
+          error instanceof ApiError
+        ) {
+          const recoveryUrl = (error.body as { recoveryUrl?: unknown }).recoveryUrl;
+          if (typeof recoveryUrl === "string" && recoveryUrl.startsWith("https://github.com/"))
+            setPartialPr(recoveryUrl);
+        }
+      }
     } finally {
       if (current(request)) setBusy(false);
     }
@@ -162,6 +221,7 @@ function SourceEditor({
   const before = preview?.before.split("\n") ?? [];
   const after = preview?.after.split("\n") ?? [];
   const changed = before.findIndex((line, index) => line !== after[index]);
+  const access = accessFailure ?? preview?.publishAccess ?? source?.publishAccess;
 
   return (
     <Modal isOpen onClose={onClose} closable={!busy} width="min(760px, 95vw)" zIndex={10020}>
@@ -182,6 +242,15 @@ function SourceEditor({
             </a>
             <p className="text-sm text-muted-foreground">{copy.created}</p>
           </div>
+        ) : partialPr ? (
+          <a
+            className="text-sm underline"
+            href={partialPr}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {copy.finishPr}
+          </a>
         ) : (
           <>
             {repo && (
@@ -325,12 +394,44 @@ function SourceEditor({
                   })}
                 </pre>
                 <p className="text-xs text-muted-foreground">{copy.review}</p>
-                <Button type="button" disabled={busy} onClick={() => void run("publish")}>
+                <Button
+                  type="button"
+                  disabled={busy || access !== "available"}
+                  onClick={() => void run("publish")}
+                >
                   {copy.createPr}
                 </Button>
               </div>
             )}
           </>
+        )}
+        {!published && access && access !== "available" && (
+          <div role="status" className="space-y-3 rounded-xl bg-background p-4 text-sm">
+            <p>{copy[access]}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              {access === "github_access_required" && (
+                <a
+                  href="/settings?tab=git"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  {copy.manageConnection}
+                </a>
+              )}
+              {!partialPr && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void run(preview ? "preview" : "load")}
+                >
+                  {copy.checkAccess}
+                </Button>
+              )}
+            </div>
+          </div>
         )}
         {(busy || (!repo && !error)) && (
           <p role="status" className="text-sm text-muted-foreground">

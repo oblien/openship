@@ -1,4 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
+import { RepositoryChangeAccessSchema } from "./repository-changes";
 
 export const RuntimeSourceInputSchema = Type.Object(
   {
@@ -33,6 +34,7 @@ export const RuntimeSourceSchema = Type.Object({
     }),
   ),
   guidance: Type.Array(Type.String()),
+  publishAccess: RepositoryChangeAccessSchema,
 });
 export const RuntimeSourcePreviewSchema = Type.Object({
   ...RuntimeSourceSchema.properties,

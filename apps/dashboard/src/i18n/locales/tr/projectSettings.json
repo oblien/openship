@@ -1350,6 +1350,12 @@
     "rebootInterruption": "Sunucu bir dakika içinde yeniden başlatılır ve tüm iş yükleri kesintiye uğrar. Openship, bağlantı yeniden kurulduğunda çalışan çekirdeği doğrular."
   },
   "sourceImageUpdate": {
+    "github_access_required": "GitHub bağlantınızda bu depo için Contents ve Pull requests okuma/yazma erişimi verin. Güncellenen uygulama izinlerini bir sahibin onaylaması gerekebilir.",
+    "workspace_access_required": "Çalışma alanı sahibinden bu projeye ve kaynak dosyaya yazma erişimi isteyin.",
+    "repository_read_only": "Bu depo arşivlenmiş veya devre dışı. PR oluşturmadan önce GitHub’da güncelleyin.",
+    "manageConnection": "GitHub bağlantısını yönet",
+    "checkAccess": "Erişimi yeniden kontrol et",
+    "finishPr": "PR’ı GitHub’da tamamla",
     "open": "İmaj güncellemesi öner",
     "title": "Kaynakta imajı güncelle",
     "hint": "Dockerfile ve Compose imajları deponuzda tanımlanır. Kaynak değişikliğini inceleyin ve taslak pull request oluşturun.",

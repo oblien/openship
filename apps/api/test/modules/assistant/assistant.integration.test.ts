@@ -1515,6 +1515,8 @@ describe("Assistant automations: persisted events → scoped agent → approval 
         expect(call.repo).toBe("app");
         await options.before?.(call);
         const path = new URL(call.url).pathname.replace("/repos/fixture/app", "");
+        if (path === "") return { permissions: { push: true } };
+        if (path === "/pulls" && call.method !== "POST") return [];
         if (path === "/git/ref/heads/main")
           return { object: { sha: options.stale && ++heads > 1 ? "e".repeat(40) : baseSha } };
         if (path === `/git/commits/${baseSha}`) return { tree: { sha: treeSha } };
