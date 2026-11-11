@@ -172,6 +172,20 @@ describe("incoming webhook multi-service dispatch", () => {
     });
   });
 
+  it("does not let a request body opt into Compose acceptance", async () => {
+    findById.mockResolvedValue({
+      id: "hook-no-accept", projectId: "project-1", organizationId: "org-1",
+      name: "Deploy without automatic approval", enabled: true,
+      actionType: "deploy", actionConfig: {}, authMode: "none",
+    });
+    triggerDeployment.mockResolvedValue({ deployment: { id: "deployment-1" } });
+    await triggerIncomingWebhook({
+      id: "hook-no-accept", rawBody: Buffer.from(JSON.stringify({ acceptComposeChanges: true })),
+    });
+    expect(triggerDeployment).toHaveBeenCalledOnce();
+    expect(triggerDeployment.mock.calls[0]![1]).not.toHaveProperty("acceptComposeChanges");
+  });
+
   it("passes acceptComposeChanges through to the deployment trigger", async () => {
     findById.mockResolvedValue({
       id: "hook-accept",
