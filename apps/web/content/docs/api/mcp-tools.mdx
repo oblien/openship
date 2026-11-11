@@ -883,7 +883,10 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/servers/:id/activity/release` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/servers/:id/authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/servers/:id/connection` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
-| `POST /api/cloud/support` | Public Cloud support intake, including customers who cannot sign in. Only returns a receipt; no ticket data can be read anonymously. |
+| `POST /api/cloud/support` | Public contact intake requires a server-verified bot challenge. Customer support requires a signed-in account through /mine. Only receipts are returned anonymously. |
+| `DELETE /api/cloud/support/blocks` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `GET /api/cloud/support/blocks` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/support/blocks` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `GET /api/cloud/support/mine` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
 | `POST /api/cloud/support/mine` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
 | `GET /api/cloud/support/mine/:id` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |

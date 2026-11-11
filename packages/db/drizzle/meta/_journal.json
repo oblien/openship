@@ -1604,6 +1604,13 @@
       "when": 1794348000000,
       "tag": "0228_connection_value_template",
       "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1794373200000,
+      "tag": "0229_support_intake_blocks",
+      "breakpoints": true
     }
   ]
 }

@@ -555,6 +555,8 @@ const MoreAboutQuery = ({
 
 const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }: Props) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const blockTrpc = useTRPC();
+  const blockSender = useMutation(blockTrpc.blockedSenders.set.mutationOptions());
   const { data: threadData } = useThread(emailData.threadId ?? null);
   const { folder } = useParams<{ folder: string }>();
   const { data: loadedAttachments, refetch: fetchMessageAttachments } = useAttachments(
@@ -1099,6 +1101,12 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-white dark:bg-[#313131]">
+                              {!demo && emailData.sender?.email && <DropdownMenuItem disabled={blockSender.isPending}
+                                onClick={() => { void blockSender.mutateAsync({ email: emailData.sender.email, blocked: true })
+                                  .then(() => toast.success(m['pages.settings.privacy.blockedSenders.blocked']()))
+                                  .catch(() => toast.error(m['pages.settings.privacy.blockedSenders.failed']())); }}>
+                                {m['pages.settings.privacy.blockedSenders.block']()}
+                              </DropdownMenuItem>}
                               <DropdownMenuItem
                                 onClick={(e) => {
                                   e.preventDefault();
