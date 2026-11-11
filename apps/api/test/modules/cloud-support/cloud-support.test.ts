@@ -95,7 +95,7 @@ beforeAll(async () => {
       "utf8",
     ),
   );
-  await client.exec(readFileSync(new URL("../../../../../packages/db/drizzle/0228_support_intake_blocks.sql", import.meta.url), "utf8"));
+  await client.exec(readFileSync(new URL("../../../../../packages/db/drizzle/0229_support_intake_blocks.sql", import.meta.url), "utf8"));
   db = drizzle(client);
   repo = createCloudSupportRepo(db as unknown as Database);
   state.service = new CloudSupportService({ enabled: () => state.env.CLOUD_MODE, repo, send });

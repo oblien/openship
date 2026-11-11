@@ -181,6 +181,17 @@
       "show": "Werte anzeigen",
       "hide": "Werte ausblenden",
       "error": "Werte konnten nicht angezeigt werden"
+    },
+    "textEditor": {
+      "edit": "Als Text bearbeiten",
+      "title": ".env bearbeiten",
+      "hint": "Verwende KEY=value, Kommentare und mehrzeilige Werte in Anführungszeichen. Das Entfernen eines Eintrags löscht die Variable.",
+      "apply": "Änderungen übernehmen",
+      "savedValues": "Gespeicherte Werte bleiben maskiert. Lass •••••••• unverändert, um einen Wert zu behalten, oder ersetze es durch einen neuen Wert. Verwaltete Variablen müssen unverändert bleiben.",
+      "invalidRows": "Korrigiere zuerst leere, ungültige oder doppelte Variablennamen im Zeileneditor.",
+      "invalid": "Behalte Platzhalter unter ihren ursprünglichen Schlüsseln und ändere verwaltete Variablen nicht.",
+      "invalidLine": "Ungültige .env-Syntax in Zeile {line}. Verwende eindeutige KEY=value-Einträge und schließe alle Anführungszeichen.",
+      "stale": "Die Variablen wurden während der Bearbeitung geändert. Schließe den Editor und öffne ihn erneut."
     }
   },
   "composeServices": {

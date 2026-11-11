@@ -1248,6 +1248,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     body: Readable,
     opts?: ExecuteCommandOpts,
   ): Promise<ExecExitInfo> {
+    opts?.signal?.throwIfAborted();
     if (!service.containerId) {
       throw new Error(
         `Cannot exec in service ${service.name}: no containerId. Service must be deployed.`,
@@ -1326,6 +1327,12 @@ export class DockerBackupExecutor implements BackupExecutor {
     // flowing because it stopped reading, not because it died. Abandoning that would
     // leave the target half-written on a restore that was fine.
     const timeoutMs = opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS;
+    const abortWatch = opts?.signal
+      ? createAbortWatch(
+        opts.signal,
+        `Restore into service ${service.name} was cancelled; the target may hold partial data.`,
+      )
+      : undefined;
     let bodyEnded = false;
     let polling = true;
 
@@ -1385,7 +1392,7 @@ export class DockerBackupExecutor implements BackupExecutor {
 
     try {
       return await withTimeout(
-        Promise.race([attachEnded, polledExit()]),
+        Promise.race([attachEnded, polledExit(), ...(abortWatch ? [abortWatch.promise] : [])]),
         timeoutMs,
         `Restore into service ${service.name} exceeded its ` +
           `${Math.round(timeoutMs / 1000)}s ceiling and was abandoned. The target may hold ` +
@@ -1393,6 +1400,7 @@ export class DockerBackupExecutor implements BackupExecutor {
       );
     } finally {
       polling = false;
+      abortWatch?.dispose();
       // Drop the socket on every exit. On the ceiling this is what stops the write —
       // leaving it open kept a wedged loader fed while the row said failed.
       destroyQuietly(stream as unknown as { destroy?: (err?: Error) => void });

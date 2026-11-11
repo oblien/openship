@@ -1,5 +1,6 @@
 import { UI, money, paidLadder, type CloudPricing } from "@/lib/pricing";
 import { cloudPlanHref } from "@/lib/cloud-links";
+import { CLOUD_SLA } from "@/lib/cloud-service";
 
 export interface FaqItem {
   q: string;
@@ -30,6 +31,10 @@ export function faq(pricing: CloudPricing): FaqItem[] {
     {
       q: "What does a Cloud Space include?",
       a: "A Cloud Space is a shared resource pool. Its subscription covers the purchased CPU, RAM and storage for the entire paid period. Your apps and builds share those resources, with no second compute-credit allowance. Managed proxy transfer and backups are separate. Existing subscriptions keep their saved terms, shown in Billing.",
+    },
+    {
+      q: "Do all Cloud plans include an uptime SLA and support?",
+      a: `Yes. Every paid Openship Cloud plan includes a ${CLOUD_SLA.monthlyUptimePercent}% monthly uptime guarantee for Openship-managed infrastructure, whether billed monthly or annually. If we miss it, you can request service credits under the Cloud SLA in our Terms of Service. Maintenance announced at least ${CLOUD_SLA.maintenanceNoticeDays} days in advance is excluded only within its announced window. Contact support by email, through the app, or from our public support page. The guarantee does not cover servers you host yourself, free trials, or preview and beta features.`,
     },
     {
       q: "How is capacity shared?",

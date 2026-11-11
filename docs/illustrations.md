@@ -191,6 +191,30 @@ white accent ink, and the actual card color for both cutout and surface variable
 The preview also shows theme-adapted light and dim samples. Check any
 new app placement on its actual background, including hover and disabled states.
 
+The dashboard binds `[data-illustration]` in its shared `theme.css` to
+`--th-text-title`, `--th-btn-accent-from`, `--th-btn-accent-text` and
+`--th-card-on-page`. Its small accent follows the selected app appearance instead
+of the website's fixed champagne/amber accent. Built-in light, dim and dark modes,
+personal themes, and the appearance editor all use those same tokens. The optional
+`illustration-color` class gives dashboard billing, onboarding and empty-state artwork
+neutral light-mode layers: title ink at 55% with transparency, plus the existing
+small accent details. The main silhouette must not take its color from either
+appearance accent; color belongs to details such as the clock badge or chart dot.
+The home welcome opts into `illustration-soft`, mixing title ink
+at 45% with transparency in light mode. Unmarked artwork keeps its original ink,
+and both treatments retain the existing dim/dark palette. Their color variables
+are set at each theme boundary so personal themes and nested appearance previews
+resolve against their own tokens. SVG masks are unchanged. Do not add
+theme hooks, inline palettes or separate artwork variants to consumers. Plan
+headers use 56–64 px artwork; onboarding and empty states use 80 px. Keep actual
+payment and runtime status in their existing labeled status components.
+
+Empty-state placements reuse existing subjects: Jobs uses `jobs-triggers`, Backups
+uses `backups-restore`, Clusters uses `server-management`, and Private networks uses
+`private-networking`. Replace the old oversized panel drawings rather than keeping
+a second illustration implementation beside the shared catalog. Filters and compact
+inline messages can continue to use utility icons or text alone.
+
 The component is decorative by default (`aria-hidden`). Supply `title` or an
 accessible label only when the drawing conveys information not already present
 in adjacent text. Native SVG props, classes and styles are forwarded. The

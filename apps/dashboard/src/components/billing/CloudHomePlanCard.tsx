@@ -6,7 +6,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import type { BillingState } from "@/lib/api/billing";
 import { isNewCloudCustomer } from "@/lib/billing-presentation";
-import { CloudPlanIllustration } from "./CloudPlanIllustration";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 /** First-subscription offer; existing customers manage their plan in Billing. */
 export function CloudHomePlanCard({ state }: { state: BillingState | null }) {
@@ -24,7 +24,10 @@ export function CloudHomePlanCard({ state }: { state: BillingState | null }) {
       style={{ backgroundImage: "radial-gradient(ellipse at 100% 0%, color-mix(in oklab, var(--th-btn-accent-to) 7%, transparent), transparent 65%)" }}
     >
       <p className="text-sm font-medium text-muted-foreground">{copy.label}</p>
-      <CloudPlanIllustration className="mx-auto mb-3 mt-2 w-48" />
+      <FeatureIllustration
+        name="deploy-anywhere"
+        className="illustration-color mx-auto mb-3 mt-2 h-auto w-20"
+      />
       <h2 className="text-lg font-medium tracking-tight text-foreground/85">
         {copy.title}
       </h2>

@@ -157,6 +157,12 @@ describe("restore semantics are stated per kind, not inferred", () => {
 });
 
 describe("the image table and the matcher agree", () => {
+  it("recognises Railway PostgreSQL images without matching unrelated repositories", () => {
+    expect(detectDbImage("ghcr.io/railwayapp-templates/postgres-ssl:17")?.payloadKind).toBe("pg_dump");
+    expect(detectDbImage("ghcr.io/railwayapp-templates/postgres-ssl@sha256:abc123")?.payloadKind).toBe("pg_dump");
+    expect(detectDbImage("ghcr.io/other/postgres-ssl:17")).toBeNull();
+  });
+
   it("detects every name the catalog claims, as the kind that claims it", () => {
     // The mechanical closing of #611. Any name added to a spec is now covered here
     // without the test being edited, and a name that the regex rule cannot actually

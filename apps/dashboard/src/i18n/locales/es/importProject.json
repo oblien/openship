@@ -181,6 +181,17 @@
       "show": "Mostrar valores",
       "hide": "Ocultar valores",
       "error": "No se pudieron mostrar los valores"
+    },
+    "textEditor": {
+      "edit": "Editar como texto",
+      "title": "Editar .env",
+      "hint": "Usa entradas KEY=value, comentarios y valores multilínea entre comillas. Eliminar una entrada elimina esa variable.",
+      "apply": "Aplicar cambios",
+      "savedValues": "Los valores guardados permanecen ocultos. Conserva •••••••• para mantener un valor o sustitúyelo por uno nuevo. No cambies las variables administradas.",
+      "invalidRows": "Corrige primero los nombres de variables vacíos, no válidos o duplicados en el editor de filas.",
+      "invalid": "Mantén los marcadores de valores guardados en sus claves originales y no cambies las variables administradas.",
+      "invalidLine": "Sintaxis .env no válida en la línea {line}. Usa claves KEY=value únicas y cierra todas las comillas.",
+      "stale": "Las variables cambiaron mientras el editor estaba abierto. Ciérralo y vuelve a abrirlo antes de aplicar."
     }
   },
   "composeServices": {

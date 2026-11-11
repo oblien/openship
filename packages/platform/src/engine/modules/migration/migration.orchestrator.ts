@@ -24,6 +24,14 @@
 import { observedAllSettled, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import crypto from "node:crypto";
+import { AppError } from "@repo/core";
+import { encrypt } from "../../lib/encryption";
+import { requireOrganizationAdmin } from "../../lib/organization-authorization";
+import { requireMigrationServer } from "./migration-access";
+import { authorization } from "../../lib/authorization";
+import { loadReviewedImport, type PrivateImportPlan } from "./platform-import-plan";
+import { executePlatformImport, pauseFailedPlatformImport } from "./platform-import-worker";
+import { revokeRailwayImportKey } from "./providers/railway-data";
 import { repos } from "@repo/db";
 import { isServiceFailureStatus, safeErrorMessage, sanitizeProxySettings } from "@repo/core";
 // The SHARED bounded-concurrency limiter. This module grew a private copy (`runPool`)
@@ -49,14 +57,13 @@ import type { ExecutionContext as RequestContext } from "@repo/platform";
 import {
   withDeploymentPlatform,
 } from "../../lib/deployment-runtime";
-import { createMigrationDockerRuntime as createServerDockerRuntime, withMigrationExecution, openMigrationTransferEndpoints, withMigrationActivity, setMigrationContainerState } from "./migration-runtime";
+import { createMigrationDockerRuntime as createServerDockerRuntime, withMigrationExecution, openMigrationTransferEndpoints, withMigrationActivity, setMigrationContainerState, prepareMigrationTarget } from "./migration-runtime";
 import { migrationTargetPath, scopeImportedStorage } from "./migration-storage";
 import { planMigrationData, prepareMigrationVolumes, resolveMigrationDataItem, transferMigrationItem, migrationUsesDirectLink } from "./migration-data";
 import { assertMigrationEndpoints } from "./migration-access";
 import { createProvisionLock, tryWithProvisionLock } from "../../lib/provision-lock";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { assertManagedServerCanWork } from "../../lib/cloud-workspace-access";
-import { ensureCloudWorkspaceHost } from "../../lib/cloud-docker-workspace";
 import { withCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
 import { captureExecutionAuthority, resolveExecutionAuthority } from "../../lib/execution-authority";
 import { establishDirectLink, cleanupDirectTrust, stopDirectTransfer, PathMissingError, sq } from "./direct-transfer";
@@ -426,6 +433,17 @@ class MigrationOrchestratorImpl {
     return this.progressByRun.get(id) ?? null;
   }
 
+  private progressReporter(id: string): (update: ProgressUpdate) => void {
+    let lastEmit = 0;
+    return (update) => {
+      this.progressByRun.set(id, update);
+      const now = Date.now();
+      if (now - lastEmit < 400) return;
+      lastEmit = now;
+      migrationRunBus.publish(id, { type: "progress", ...update });
+    };
+  }
+
   /** The in-memory log tail for a still-running run (fresher than the throttled
    *  DB copy) — getMigration prefers it while the run is live. */
   getLiveLogs(id: string): string | null {
@@ -596,6 +614,14 @@ class MigrationOrchestratorImpl {
     patch?: Parameters<typeof repos.dockerMigrationRun.transition>[2],
   ): Promise<void> {
     await repos.dockerMigrationRun.transition(id, status, patch);
+    await this.publishTransition(id, status, patch);
+  }
+
+  private async publishTransition(
+    id: string,
+    status: Parameters<typeof repos.dockerMigrationRun.transition>[1],
+    patch?: Parameters<typeof repos.dockerMigrationRun.transition>[2],
+  ): Promise<void> {
     migrationRunBus.publish(id, {
       type: "transition",
       status,
@@ -611,6 +637,163 @@ class MigrationOrchestratorImpl {
         errorMessage: (patch as { errorMessage?: string })?.errorMessage ??
           (await repos.dockerMigrationRun.findById(id))?.errorMessage ?? null,
       });
+    }
+  }
+
+  async beginPlatformImport(
+    ctx: RequestContext,
+    input: { planId: string; writesPaused: boolean; workersPaused: boolean },
+  ) {
+    await requireOrganizationAdmin(ctx);
+    return withServerInventoryLock(ctx.organizationId, async () => {
+      const existing = await repos.dockerMigrationRun.findByImportPlan(
+        ctx.organizationId,
+        input.planId,
+      );
+      if (existing)
+        return { migrationId: existing.id, confirmationToken: existing.confirmationToken ?? "" };
+      const plan = await loadReviewedImport(ctx, input.planId);
+      if (
+        (plan.requiresWritePause && !input.writesPaused) ||
+        (plan.requiresWorkerPause && !input.workersPaused)
+      )
+        throw new AppError(
+          plan.sourceControl === "railway-project"
+            ? "Allow the planned Railway downtime and pause other deployments before importing"
+            : "Confirm source writes and background workers are paused before copying",
+          409,
+          "IMPORT_SOURCE_PAUSE_REQUIRED",
+        );
+      await authorization.authorize(ctx, {
+        resourceType: "server",
+        resourceId: plan.targetServerId,
+        action: "write",
+      });
+      const target = await requireMigrationServer(
+        ctx.organizationId,
+        plan.targetServerId,
+        "target",
+      );
+      if (target.workspaceId)
+        await assertManagedServerCanWork(ctx.organizationId, target.workspaceId);
+      if ((await repos.dockerMigrationRun.findActiveForServer(target.id)).length)
+        throw new AppError(
+          "Finish this destination's current migration before starting another",
+          409,
+          "IMPORT_TARGET_BUSY",
+        );
+      const confirmationToken = crypto.randomBytes(16).toString("hex");
+      const run = await repos.dockerMigrationRun.create({
+        id: `dmr_${crypto.randomUUID()}`,
+        organizationId: ctx.organizationId,
+        targetServerId: target.id,
+        projectName: plan.inventory.projectName,
+        serviceNames: plan.services.map((s) => s.create.name),
+        status: "queued",
+        mode: "provider_import",
+        killOriginals: false,
+        confirmationToken,
+        executionStartedAt: new Date(),
+        inputSnapshot: {
+          provider: plan.inventory.provider,
+          source: plan.inventory.source,
+          services: plan.services.map((s) => ({
+            id: s.source.id,
+            name: s.create.name,
+            domains: s.source.domains,
+            data: s.data,
+          })),
+        },
+        recovery: {
+          worker: "initial",
+          authority: await captureExecutionAuthority(ctx),
+          providerImport: {
+            planId: plan.id,
+            planEnc: encrypt(JSON.stringify(plan)),
+            connectionId: plan.inventory.source.connectionId,
+            projects: {},
+            completed: [],
+            cleanupPending: true,
+          },
+        },
+      });
+      if (!run)
+        throw new AppError("The import could not be admitted", 409, "IMPORT_ADMISSION_CLOSED");
+      setImmediate(() => {
+        void this.runWorker(run.id, () => this.runPlatformImport(ctx, run.id, plan), ctx).catch(
+          (err) =>
+            errorDiagnostics.error(
+              "platform/engine/modules/migration/migration.orchestrator",
+              "Provider import worker failed",
+              err,
+            ),
+        );
+      });
+      return { migrationId: run.id, confirmationToken };
+    });
+  }
+
+  private async runPlatformImport(ctx: RequestContext, id: string, plan: PrivateImportPlan) {
+    const log = (text: string) => this.appendLog(id, text);
+    const emitProgress = this.progressReporter(id);
+    try {
+      await executePlatformImport(ctx, id, plan, {
+        signal: this.cancelByRun.get(id)!.abort!.signal,
+        log,
+        phase: async (status, deploymentId) => {
+          await this.transition(id, status, { deploymentId: deploymentId ?? null });
+          await this.throwIfCancelled(id);
+        },
+        wait: async (deploymentId) =>
+          (await this.waitForDeployment(deploymentId, id))?.status === "ready",
+        progress: (bytes, name) =>
+          emitProgress({ task: name, kind: "volume", movedBytes: bytes, totalBytes: null }),
+      });
+      await this.throwIfCancelled(id);
+      await revokeRailwayImportKey(id);
+      if (!(await repos.dockerMigrationRun.markProviderImportReady(id)))
+        throw new AppError(
+          "The import was stopped before final verification completed. Copied data was retained.",
+          409,
+          "IMPORT_COMPLETION_INTERRUPTED",
+        );
+      await this.publishTransition(id, "awaiting_cutover");
+      log(
+        "Import verified. Review the projects, move custom domains through Domains & Routes, then confirm completion. Source services and data were retained.",
+      );
+    } catch (error) {
+      const run = await repos.dockerMigrationRun.findById(id);
+      // Raw export/SSH stderr may contain source credentials or database data.
+      // Only our own reviewed errors are suitable for a client-visible log.
+      const message =
+        error instanceof AppError &&
+        (/^(IMPORT_|CONNECTION_|RAILWAY_)/.test(error.code ?? "") ||
+          error.code === "BACKUP_SERVICE_NOT_READY")
+          ? error.message
+          : "The import could not complete. Review the destination deployment and the connection's data-export access. Source data was retained.";
+      errorDiagnostics.warn(
+        "platform/engine/modules/migration/migration.orchestrator",
+        `Provider import ${id} failed`,
+        new AppError(message, 502, "IMPORT_FAILED"),
+      );
+      log(message);
+      await this.stopTargetDeployment(run?.deploymentId);
+      await pauseFailedPlatformImport(id);
+      // A failed import is explicit and retains copied data. It cannot resume a
+      // partially restored database or silently overwrite operator changes.
+      await this.transition(id, "failed", { errorMessage: message.slice(0, 4096) });
+    } finally {
+      try {
+        await revokeRailwayImportKey(id);
+      } catch {
+        // diagnostics-ignore: durable recovery retries the grant; record a sanitized operator-visible warning instead of provider credentials.
+        log(
+          "The temporary Railway key could not be revoked. Automatic recovery will retry; it can also be removed from Railway's SSH keys.",
+        );
+      }
+      await this.flushLogs(id);
+      this.logsByRun.delete(id);
+      this.logFlushAt.delete(id);
     }
   }
 
@@ -849,15 +1032,11 @@ class MigrationOrchestratorImpl {
       // ── adopt ──
       await this.throwIfCancelled(id);
       await this.transition(id, "adopting");
-      const { target: destination } = await assertMigrationEndpoints(organizationId, sourceServerId, targetServerId);
-      if (destination.workspaceId) {
-        log("Preparing the managed server before importing…");
-        await withMigrationActivity(organizationId, sourceServerId, targetServerId, id, () => ensureCloudWorkspaceHost({
-          organizationId, ownerWorkspaceId: destination.workspaceId!,
-          signal: this.cancelByRun.get(id)?.abort?.signal, onProgress: log,
-        }));
-        await this.throwIfCancelled(id);
-      }
+      await assertMigrationEndpoints(organizationId, sourceServerId, targetServerId);
+      await prepareMigrationTarget(organizationId, targetServerId, id, {
+        signal: this.cancelByRun.get(id)?.abort?.signal, onProgress: log,
+      });
+      await this.throwIfCancelled(id);
       // ── Which workload, and under whose project? ──
       //
       // The two DOORS into this pipeline meet here and nowhere else. Door A adopts what a
@@ -1091,30 +1270,30 @@ class MigrationOrchestratorImpl {
         // Throttle progress to the SSE bus (a fast stream fires per chunk;
         // ~once/400ms is plenty for a bar). The snapshot is always updated (the
         // poll reads the latest); only the bus publish is throttled.
-        let lastEmit = 0;
-        const emitProgress = (u: ProgressUpdate) => {
-          this.progressByRun.set(id, u);
-          const now = Date.now();
-          if (now - lastEmit < 400) return;
-          lastEmit = now;
-          migrationRunBus.publish(id, { type: "progress", ...u });
-        };
-        const move = await withMigrationActivity(organizationId, sourceServerId, targetServerId, id, () => this.moveData(
-          projectId,
+        const emitProgress = this.progressReporter(id);
+        const move = await withMigrationActivity(
+          organizationId,
           sourceServerId,
           targetServerId,
-          organizationId,
-          scannedContainerIds,
-          sameServer,
-          rowVolumeStrategies,
-          builtImages,
-          input.customPaths ?? [],
-          { mode: input.transferMode, compression: input.transferCompression },
-          input.conflictResolution ?? {},
-          log,
-          emitProgress,
           id,
-        ));
+          () =>
+            this.moveData(
+              projectId,
+              sourceServerId,
+              targetServerId,
+              organizationId,
+              scannedContainerIds,
+              sameServer,
+              rowVolumeStrategies,
+              builtImages,
+              input.customPaths ?? [],
+              { mode: input.transferMode, compression: input.transferCompression },
+              input.conflictResolution ?? {},
+              log,
+              emitProgress,
+              id,
+            ),
+        );
         // A digest may load under a different config ID. Hand that proven target
         // ref to this deploy without rewriting the project's saved source recipe.
         for (const service of deployChosen) {
@@ -2001,7 +2180,9 @@ class MigrationOrchestratorImpl {
     }
     if (
       !restartOriginals &&
-      (kill || run.mode !== "cross_server" || run.sourceServerId === run.targetServerId)
+      (kill ||
+        !["cross_server", "provider_import"].includes(run.mode) ||
+        run.sourceServerId === run.targetServerId)
     ) {
       return {
         ok: false,
@@ -2013,6 +2194,29 @@ class MigrationOrchestratorImpl {
     const supplied = Buffer.from(confirmationToken ?? "");
     if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) {
       return { ok: false, status: 403, error: "Invalid confirmation token" };
+    }
+
+    if (run.mode === "provider_import") {
+      if (kill)
+        return {
+          ok: false,
+          status: 400,
+          error:
+            "Provider imports never remove source workloads. Retire them at the provider after confirming your cutover.",
+        };
+      const claimed = await repos.dockerMigrationRun.claimExecution({
+        id,
+        organizationId,
+        from: "awaiting_cutover",
+        to: "awaiting_cutover",
+      });
+      if (!claimed)
+        return { ok: false, status: 409, error: "This import is already being finalized" };
+      await this.runWorker(id, async () => {
+        await revokeRailwayImportKey(id);
+        await this.transition(id, "succeeded");
+      });
+      return { ok: true, leftBehind: [] };
     }
 
     // The HTTP precheck above protects the token; the DB claim below owns the
@@ -2570,23 +2774,56 @@ class MigrationOrchestratorImpl {
         const run = await repos.dockerMigrationRun.findById(candidate.id);
         if (!run) return;
         try {
-        const parked = ["awaiting_cutover", "partial", "succeeded", "failed", "rolled_back"].includes(run.status);
-        const artifacts = !!run.recovery?.transferRunTag || !!run.recovery?.targetRunningContainerIds?.length;
-        if (!parked || artifacts) {
-          if (!run.sourceServerId || !run.targetServerId) throw new Error("A migration endpoint is unavailable; reconnect it to recover");
-          if (run.status !== "cutover" && run.recovery?.worker !== "resume" && !parked)
+          const parked = [
+            "awaiting_cutover",
+            "partial",
+            "succeeded",
+            "failed",
+            "rolled_back",
+          ].includes(run.status);
+          if (run.mode === "provider_import") {
             await this.stopTargetDeployment(run.deploymentId);
-          await withMigrationActivity(run.organizationId, run.sourceServerId, run.targetServerId, run.id, async () => {
-            await this.restoreRecoveryArtifacts(run);
-            await this.recoverRun(run);
-          });
-        }
-        await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id);
-        const ended = await repos.dockerMigrationRun.findById(run.id);
-        if (ended?.status === "rolled_back" && ended.recovery.createdProjectId && ended.recovery.authority) {
-          const ctx = await resolveExecutionAuthority(ended.recovery.authority, `migration:${ended.id}`);
-          await this.cleanupDraft(ctx, ended);
-        }
+            await pauseFailedPlatformImport(run.id);
+            await revokeRailwayImportKey(run.id);
+            if (!parked)
+              await this.transition(run.id, "failed", {
+                errorMessage:
+                  "The import was interrupted. Source data and copied destination data were retained. Review the imported projects before starting another import.",
+              });
+            await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id);
+            return;
+          }
+          const artifacts =
+            !!run.recovery?.transferRunTag || !!run.recovery?.targetRunningContainerIds?.length;
+          if (!parked || artifacts) {
+            if (!run.sourceServerId || !run.targetServerId)
+              throw new Error("A migration endpoint is unavailable; reconnect it to recover");
+            if (run.status !== "cutover" && run.recovery?.worker !== "resume" && !parked)
+              await this.stopTargetDeployment(run.deploymentId);
+            await withMigrationActivity(
+              run.organizationId,
+              run.sourceServerId,
+              run.targetServerId,
+              run.id,
+              async () => {
+                await this.restoreRecoveryArtifacts(run);
+                await this.recoverRun(run);
+              },
+            );
+          }
+          await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id);
+          const ended = await repos.dockerMigrationRun.findById(run.id);
+          if (
+            ended?.status === "rolled_back" &&
+            ended.recovery.createdProjectId &&
+            ended.recovery.authority
+          ) {
+            const ctx = await resolveExecutionAuthority(
+              ended.recovery.authority,
+              `migration:${ended.id}`,
+            );
+            await this.cleanupDraft(ctx, ended);
+          }
         } catch (error) {
           const message = safeErrorMessage(error);
           errorDiagnostics.warn("platform/engine/modules/migration/migration.orchestrator", `[migration] recovery ${run.id}: ${message}`, error);

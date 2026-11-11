@@ -74,7 +74,24 @@ style](illustrations.md): flat rounded shapes, neutral foreground layers,
 clear negative space and small warm accents. Reuse `FeatureIllustration` from
 `@repo/ui/illustrations` for approved compact artwork. The linked guide owns
 its geometry, theme variables, sizing and HTML review catalog; the surrounding
-page continues to use this guide's surfaces and typography. Keep status colors
+page continues to use this guide's surfaces and typography. In the dashboard,
+`theme.css` binds the artwork's foreground and accent to the active appearance
+tokens, including personal themes and appearance previews. Billing, onboarding and empty-state artwork use
+`illustration-color`: light-mode shapes use softened neutral title ink, with the
+appearance accent only in small details. Never tint the main silhouette with the
+accent color. The home welcome uses
+`illustration-soft` to keep its light-mode gray layers. Other artwork retains its
+original palette; dim and dark keep their existing treatment. Adjust these shared
+palettes rather than adding opacity to whole illustrations or page-specific colors.
+Use 56–64 px artwork
+beside plan names and 80 px for onboarding and empty states, without an extra icon
+tile. Use the shared calendar for Jobs, snapshots for Backups, server racks for Clusters,
+and the connected shield for Private networks. Projects, deployments, Actions, monitoring,
+and repository/folder import use the same compact artwork and palette. Keep metrics,
+progress rings, navigation, controls and provider logos as utility icons or their original
+artwork. Monitoring uses the chart for an empty incident
+feed, the calendar for empty history, and a utility search icon for filtered results.
+Empty lists do not imply a health verdict; avoid success badges or checkmarks. Keep status colors
 in semantic status components and avoid large colored illustration surfaces,
 perspective, material shading or decorative glows.
 
@@ -966,6 +983,15 @@ Migration retries reuse the shared destination picker after a fresh scan, even w
 from an existing run. Keep loading, fetch errors and empty inventory distinct, and preserve
 the selected destination's validation and transfer review before enabling Migrate.
 
+Platform imports share three steps: Connect, Select services, and Review & import. Show
+provider marks through `AppLogo` and service marks through `ServiceIcon`. Reuse the Connections
+form for authorization and tokens, with an explicit access test and retry. Keep service cards
+compact; expand configuration for missing secrets and review blockers. The final review lists
+what will be copied, kept external or started empty, and collects any required source-pause
+acknowledgments. Changing the source, destination or selections invalidates that review.
+Use the shared destination picker and durable migration progress; never add a preview-only
+import path or claim that metadata access verifies a data transfer.
+
 Catalog brand artwork is bundled in both dashboard and website public assets and mapped in
 the shared `AppLogo` renderer. Preserve upstream attribution and keep setup behavior in
 catalog definitions, rather than adding app-specific dashboard branches.
@@ -1142,6 +1168,15 @@ environment resolver; equal names or literals do not establish a shared source. 
 secret values out of the review. Save shared and local edits together, reject stale
 reviews, and link to each affected service's existing environment apply/redeploy flow.
 Explain that these settings live in Openship and do not edit repository files.
+
+Environment toolbars keep **Add variable** beside Paste/Upload .env, and insert its row at the
+top so long lists do not require scrolling to add a value. **Edit as text** uses the shared
+.env editor for project, service, deployment and migration environments. Apply validates the
+complete draft before updating the host's existing rows; Cancel discards it. Normal Save and
+deployment actions remain responsible for persistence and runtime changes. Preserve saved-value
+masks, secret classification, source identities and managed-row restrictions. Never fetch saved
+secret plaintext merely to open text editing. Quotes and multiline values use the shared .env
+parser and serializer; reject invalid syntax and duplicate keys instead of dropping lines.
 
 ### Adding project services
 

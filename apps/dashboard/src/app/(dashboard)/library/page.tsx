@@ -19,7 +19,7 @@ import { UrlImport } from "./components/UrlImport";
 import { RepositoryAccounts } from "./components/RepositoryAccounts";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HelpMenu } from "@/components/HelpMenu";
-import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
+import { MigrationWizard } from "@/components/migration/MigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
 import { AppCatalog } from "@/components/apps/AppCatalog";
 
@@ -248,7 +248,7 @@ export default function LibraryPage() {
 
       {showMigrate && (
         <div className={activeTab === "server" ? undefined : "hidden"}>
-          <ServerMigrationWizard
+          <MigrationWizard
             variant="tab"
             onClose={() => {
               setShowMigrate(false);

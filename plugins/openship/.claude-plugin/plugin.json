@@ -1,0 +1,13 @@
+{
+  "name": "openship",
+  "version": "0.1.0",
+  "description": "Deploy and operate applications through Openship's permission-scoped MCP tools.",
+  "author": {
+    "name": "Openship",
+    "url": "https://openship.io"
+  },
+  "homepage": "https://openship.io/docs/mcp",
+  "repository": "https://github.com/oblien/openship",
+  "license": "Apache-2.0",
+  "keywords": ["openship", "deployment", "hosting", "devops", "mcp"]
+}
