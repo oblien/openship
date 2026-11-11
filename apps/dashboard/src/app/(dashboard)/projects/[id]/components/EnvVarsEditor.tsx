@@ -13,6 +13,7 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import type { EnvironmentVariable } from "@/components/import-project/types";
+import { EnvironmentTextEditor } from "@/components/import-project/EnvironmentTextEditor";
 import { canRefreshProjectEnvironment } from "@/lib/project-application";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import {
@@ -109,11 +110,11 @@ export function EnvVarsEditor({
   const update = (uid: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
 
-  const addRow = () =>
-    setRows((prev) => [
-      ...prev,
-      { uid: nextUid(), key: "", value: "", visible: true, isSecret: false },
-    ]);
+  const addRow = (atTop = false) =>
+    setRows((prev) => {
+      const row = { uid: nextUid(), key: "", value: "", visible: true, isSecret: false };
+      return atTop ? [row, ...prev] : [...prev, row];
+    });
 
   const removeRow = (uid: string) => setRows((prev) => prev.filter((r) => r.uid !== uid));
 
@@ -285,6 +286,32 @@ export function EnvVarsEditor({
           </div>
         ) : (
           <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2 pb-2">
+              <button
+                type="button"
+                onClick={() => addRow(true)}
+                disabled={saving || applying}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                <UiIcon name="plus" className="size-3.5" />
+                {t.projectSettings.envVars.addVariable}
+              </button>
+              <EnvironmentTextEditor
+                rows={rows}
+                readOnlyKeys={rows
+                  .filter((row) => row.originalKey && linked[row.originalKey])
+                  .map((row) => row.key)}
+                disabled={saving || applying || baseline === null}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-muted/60 px-3 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                onChange={(next) =>
+                  setRows(next.map((row) => ({
+                    ...row,
+                    uid: rows.find((previous) => previous.key === row.key)?.uid ?? nextUid(),
+                    isSecret: row.isSecret ?? false,
+                  })))
+                }
+              />
+            </div>
             {rows.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border/60 bg-muted/15 px-4 py-6 text-center text-sm text-muted-foreground">
                 {t.projectSettings.envVars.empty}
@@ -372,7 +399,7 @@ export function EnvVarsEditor({
 
             <button
               type="button"
-              onClick={addRow}
+              onClick={() => addRow()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/50"
             >
               <UiIcon name="plus" className="size-3.5" />

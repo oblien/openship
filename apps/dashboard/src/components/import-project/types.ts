@@ -16,6 +16,14 @@ export interface RepoData {
 
 export type EnvironmentVariable = EditableProjectEnvRow;
 
+export type EnvironmentVariableRow = EnvironmentVariable & {
+  sourceId?: string;
+  originLabel?: string;
+  keyReadOnly?: boolean;
+  removalDisabled?: boolean;
+  removalLabel?: string;
+};
+
 export type StartCommand = string;
 
 export type FrameworkId = StackId;

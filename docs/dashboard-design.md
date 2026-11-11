@@ -1169,6 +1169,15 @@ secret values out of the review. Save shared and local edits together, reject st
 reviews, and link to each affected service's existing environment apply/redeploy flow.
 Explain that these settings live in Openship and do not edit repository files.
 
+Environment toolbars keep **Add variable** beside Paste/Upload .env, and insert its row at the
+top so long lists do not require scrolling to add a value. **Edit as text** uses the shared
+.env editor for project, service, deployment and migration environments. Apply validates the
+complete draft before updating the host's existing rows; Cancel discards it. Normal Save and
+deployment actions remain responsible for persistence and runtime changes. Preserve saved-value
+masks, secret classification, source identities and managed-row restrictions. Never fetch saved
+secret plaintext merely to open text editing. Quotes and multiline values use the shared .env
+parser and serializer; reject invalid syntax and duplicate keys instead of dropping lines.
+
 ### Adding project services
 
 - The topology resource chooser has a compact header with Close and a padded, scrollable body. Fit the chooser to its options within the canvas height; keep resource forms in the full-height inspector.
