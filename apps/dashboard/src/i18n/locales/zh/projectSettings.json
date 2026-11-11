@@ -1108,7 +1108,7 @@
       "notice": "通配符 HTTPS 需要 DNS 验证。保存后，请连接 DNS 提供商，或添加 HTTPS 设置中显示的 TXT 记录。",
       "automatic": "提供商自动验证",
       "manual": "手动 TXT",
-      "automaticHint": "在设置 → DNS 中连接 Cloudflare，即可创建证书验证记录并自动续期 HTTPS。",
+      "automaticHint": "在设置 → 凭据中连接 DNS 提供商，即可创建证书验证记录并自动续期 HTTPS。",
       "manualHint": "请在 DNS 提供商处添加临时 TXT 记录。每次续期都需要新的 TXT 记录；Openship 会显示何时需要续期。",
       "routing": "1. 将域名指向此服务器",
       "certificate": "2. 启用 HTTPS",

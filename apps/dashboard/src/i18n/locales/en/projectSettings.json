@@ -1177,7 +1177,7 @@
       "notice": "Wildcard HTTPS requires DNS verification. After saving, connect a DNS provider or add the TXT record from HTTPS setup.",
       "automatic": "Automatic provider",
       "manual": "Manual TXT",
-      "automaticHint": "Connect Cloudflare in Settings → DNS to create certificate challenges and renew HTTPS automatically.",
+      "automaticHint": "Connect a DNS provider in Settings → Credentials to create certificate challenges and renew HTTPS automatically.",
       "manualHint": "Add a temporary TXT record at your DNS provider. Each renewal needs a new TXT record; Openship will show when renewal is due.",
       "routing": "1. Point the domain at this server",
       "certificate": "2. Enable HTTPS",

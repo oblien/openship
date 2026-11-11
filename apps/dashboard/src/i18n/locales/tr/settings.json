@@ -1665,6 +1665,16 @@
             "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç. My Profile → API Tokens altında oluşturun."
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Openship'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını DigitalOcean DNS'e yazmasına izin verin.",
+        "fields": {
+          "apiToken": {
+            "label": "API belirteci",
+            "help": "Alan adı okuma, oluşturma, güncelleme ve silme özel kapsamlarına sahip bir belirteç. API → Tokens altında oluşturun."
+          }
+        }
       }
     }
   },

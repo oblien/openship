@@ -390,6 +390,7 @@ export async function resolveCredentialSecrets(opts: {
  */
 export interface ProviderCredential {
   id: string;
+  createdAt: Date;
   publicFields: Record<string, string>;
   /** Empty when `readable` is false. */
   secrets: CredentialSecrets;
@@ -404,6 +405,12 @@ export async function listProviderCredentials(
   return rows.map((row) => {
     const secrets = readCredentialSecrets(row);
     const readable = Object.keys(secrets).length > 0;
-    return { id: row.id, publicFields: row.publicFields ?? {}, secrets, readable };
+    return {
+      id: row.id,
+      createdAt: row.createdAt,
+      publicFields: row.publicFields ?? {},
+      secrets,
+      readable,
+    };
   });
 }

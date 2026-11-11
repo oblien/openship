@@ -20,6 +20,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { safeErrorMessage, DOCKER_HUB_REGISTRY, type CredentialProvider } from "@repo/core";
 import { env } from "../../config/env";
+import { DigitalOceanApiError, digitaloceanRequest } from "../../lib/digitalocean-api";
 import { safeFetch, type SafeFetchResponse } from "../../lib/safe-fetch";
 import { trustedRegistryRealm } from "../../lib/registry-auth";
 import { verifyProviderAccess, type MigrationProvider } from "./provider-api";
@@ -216,9 +217,28 @@ const verifyCloudflare: Verifier = async ({ secrets }) => {
   }
 };
 
+/** A DNS-only token must not need account:read. Write scopes are checked on use. */
+const verifyDigitalOcean: Verifier = async ({ secrets }) => {
+  const apiToken = secrets.apiToken ?? "";
+  if (!apiToken) return { ok: false, reason: "An API token is required." };
+  try {
+    await digitaloceanRequest(apiToken, "/domains?per_page=1");
+    return { ok: true };
+  } catch (error) {
+    // diagnostics-ignore: verification returns a sanitized verdict without logging credentials.
+    return {
+      ok: false,
+      reason: error instanceof DigitalOceanApiError && [401, 403].includes(error.providerStatus)
+        ? "DigitalOcean rejected this token. It needs domain read, create, update and delete scopes."
+        : "DigitalOcean could not verify this connection. Try again.",
+    };
+  }
+};
+
 const VERIFIERS: Record<string, Verifier> = {
   "docker-registry": verifyDockerRegistry,
   cloudflare: verifyCloudflare,
+  digitalocean: verifyDigitalOcean,
   ...Object.fromEntries(
     (["railway", "vercel"] as const).map((provider) => [
       provider,

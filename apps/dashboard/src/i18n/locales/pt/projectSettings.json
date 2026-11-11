@@ -1108,7 +1108,7 @@
       "notice": "HTTPS com curinga exige verificação DNS. Depois de salvar, conecte um provedor DNS ou adicione o registro TXT da configuração de HTTPS.",
       "automatic": "Provedor automático",
       "manual": "TXT manual",
-      "automaticHint": "Conecte o Cloudflare em Configurações → DNS para criar as verificações do certificado e renovar HTTPS automaticamente.",
+      "automaticHint": "Conecte um provedor de DNS em Configurações → Credenciais para criar as verificações do certificado e renovar HTTPS automaticamente.",
       "manualHint": "Adicione um registro TXT temporário no seu provedor DNS. Cada renovação precisa de um novo registro TXT; o Openship mostrará quando renovar.",
       "routing": "1. Aponte o domínio para este servidor",
       "certificate": "2. Ative HTTPS",

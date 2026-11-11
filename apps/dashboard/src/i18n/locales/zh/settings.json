@@ -1626,6 +1626,16 @@
             "help": "对您希望 Openship 管理的区域拥有 Zone:Read 和 DNS:Edit 权限的令牌。请在 My Profile → API Tokens 中创建。"
           }
         }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "让 Openship 在 DigitalOcean DNS 中自动写入自定义域名所需的 DNS 记录。",
+        "fields": {
+          "apiToken": {
+            "label": "API 令牌",
+            "help": "具有域名读取、创建、更新和删除自定义权限范围的令牌。请在 API → Tokens 中创建。"
+          }
+        }
       }
     }
   },

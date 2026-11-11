@@ -200,6 +200,25 @@ export const CREDENTIAL_PROVIDERS = [
       },
     ],
   },
+  {
+    id: "digitalocean",
+    label: "DigitalOcean",
+    capability: "dns",
+    icon: "digitalocean",
+    summary: "Let Openship write the DNS records a custom domain needs on DigitalOcean DNS.",
+    // Org-wide, like Cloudflare: the token addresses every domain the account hosts.
+    selector: null,
+    fields: [
+      {
+        key: "apiToken",
+        label: "API token",
+        type: "secret",
+        required: true,
+        placeholder: "dop_v1_…",
+        help: "A custom-scoped token with domain read, create, update and delete. Create it under API → Tokens.",
+      },
+    ],
+  },
 ] as const satisfies readonly CredentialProvider[];
 
 export type CredentialProviderId = (typeof CREDENTIAL_PROVIDERS)[number]["id"];

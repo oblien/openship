@@ -1108,7 +1108,7 @@
       "notice": "Wildcard-HTTPS erfordert eine DNS-Verifizierung. Verbinde nach dem Speichern einen DNS-Anbieter oder füge den TXT-Eintrag aus der HTTPS-Einrichtung hinzu.",
       "automatic": "Automatischer Anbieter",
       "manual": "TXT manuell",
-      "automaticHint": "Verbinde Cloudflare unter Einstellungen → DNS, um Zertifikatsnachweise zu erstellen und HTTPS automatisch zu erneuern.",
+      "automaticHint": "Verbinde einen DNS-Anbieter unter Einstellungen → Zugangsdaten, um Zertifikatsnachweise zu erstellen und HTTPS automatisch zu erneuern.",
       "manualHint": "Füge bei deinem DNS-Anbieter einen temporären TXT-Eintrag hinzu. Jede Erneuerung benötigt einen neuen TXT-Eintrag; Openship zeigt an, wann sie fällig ist.",
       "routing": "1. Die Domain auf diesen Server verweisen",
       "certificate": "2. HTTPS aktivieren",

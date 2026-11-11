@@ -1128,7 +1128,7 @@
       "notice": "HTTPS avec un domaine générique nécessite une vérification DNS. Après l’enregistrement, connectez un fournisseur DNS ou ajoutez l’enregistrement TXT de la configuration HTTPS.",
       "automatic": "Fournisseur automatique",
       "manual": "TXT manuel",
-      "automaticHint": "Connectez Cloudflare dans Paramètres → DNS pour créer les validations du certificat et renouveler HTTPS automatiquement.",
+      "automaticHint": "Connectez un fournisseur DNS dans Paramètres → Identifiants pour créer les validations du certificat et renouveler HTTPS automatiquement.",
       "manualHint": "Ajoutez un enregistrement TXT temporaire chez votre fournisseur DNS. Chaque renouvellement nécessite un nouvel enregistrement TXT ; Openship indiquera quand renouveler.",
       "routing": "1. Pointez le domaine vers ce serveur",
       "certificate": "2. Activez HTTPS",

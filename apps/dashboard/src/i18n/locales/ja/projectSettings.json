@@ -1108,7 +1108,7 @@
       "notice": "ワイルドカード HTTPS には DNS 検証が必要です。保存後、DNS プロバイダーを接続するか、HTTPS 設定に表示される TXT レコードを追加してください。",
       "automatic": "自動（プロバイダー）",
       "manual": "手動 TXT",
-      "automaticHint": "設定 → DNS で Cloudflare を接続すると、証明書の検証レコードを作成し、HTTPS を自動更新できます。",
+      "automaticHint": "設定 → 認証情報 で DNS プロバイダーを接続すると、証明書の検証レコードを作成し、HTTPS を自動更新できます。",
       "manualHint": "DNS プロバイダーで一時的な TXT レコードを追加してください。更新のたびに新しい TXT レコードが必要です。更新時期は Openship に表示されます。",
       "routing": "1. ドメインをこのサーバーに向ける",
       "certificate": "2. HTTPS を有効にする",
