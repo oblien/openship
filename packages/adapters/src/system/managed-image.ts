@@ -220,6 +220,9 @@ export async function swapManagedImage(
     label: string;
     onLog: SystemLogCallback;
     start: (image: string) => Promise<boolean>;
+    /** Component preflight after image acquisition, before replacement starts.
+     * A refusal leaves the predecessor intact and must not trigger replacement rollback. */
+    prepare?: () => Promise<void>;
   },
 ): Promise<{ swapped: boolean; down: boolean }> {
   const { kind, from, to, label, onLog, start } = opts;
@@ -246,6 +249,7 @@ export async function swapManagedImage(
 
   // Startup may have removed the old container before an SSH or Docker command
   // throws. A rejected promise needs the same recovery as a failed health check.
+  await opts.prepare?.();
   let started = false;
   try {
     started = await start(to);

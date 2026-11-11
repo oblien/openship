@@ -11,7 +11,7 @@ import {
   setDefaultMailImage,
 } from "./ensure-container-mail";
 import { setManagedImagesFromSource } from "../managed-image";
-import { MAIL_HOST_STATE_DIR } from "../../infra/mail-container";
+import { MAIL_HOST_STATE_DIR, MAIL_CONTAINER_MOUNTS } from "../../infra/mail-container";
 import type { CommandExecutor } from "../../types";
 
 afterEach(() => {
@@ -386,6 +386,14 @@ describe("ensureContainerMail swap", () => {
     setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
     const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
     const exec = vi.fn(async (cmd: string) => {
+      if (cmd.includes("{{json .Mounts}}"))
+        return `${"a".repeat(64)}\ttrue\t${JSON.stringify(
+          MAIL_CONTAINER_MOUNTS.map((m) => ({
+            Type: "bind",
+            Source: m.host,
+            Destination: m.container,
+          })),
+        )}`;
       // Engine is running on an OLDER tag → stale vs the pinned ref.
       if (cmd.includes(STATE_PROBE)) return stateLine("ghcr.io/x/openship-mail:old");
       // The pinned tag is already present locally (deliver shipped it) → no pull.
@@ -739,6 +747,14 @@ function nonRootSudoBox(
   const exec = vi.fn(async (cmd: string) => {
     const command = unwrap(cmd);
     if (command.includes("opsh_begin")) return probe;
+    if (command.includes("{{json .Mounts}}"))
+      return `${"a".repeat(64)}\ttrue\t${JSON.stringify(
+        MAIL_CONTAINER_MOUNTS.map((m) => ({
+          Type: "bind",
+          Source: m.host,
+          Destination: m.container,
+        })),
+      )}`;
     if (command.includes(STATE_PROBE)) {
       return opts.runningImage ? stateLine(opts.runningImage) : "";
     }

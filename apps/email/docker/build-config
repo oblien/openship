@@ -11,6 +11,8 @@ export BACKEND_ORIG='PGSQL'
 export BACKEND='PGSQL'
 export FIRST_DOMAIN='build.invalid'
 export USE_FAIL2BAN='YES'
+# Keep the installer's rotation policies, using the container's rsyslog hook.
+export SYSLOG_POSTROTATE_CMD='/usr/lib/rsyslog/rsyslog-rotate'
 # The runtime vmail DB is the sidecar on loopback; the entrypoint bootstraps it.
 export SQL_SERVER_ADDRESS='127.0.0.1'
 export SQL_SERVER_PORT='5432'

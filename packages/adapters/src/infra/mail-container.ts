@@ -50,6 +50,8 @@ export interface MailMount {
    * whose signature database was hidden by its own mount (issue #565).
    */
   seed?: boolean;
+  /** Copy legacy writable-layer state before the first upgrade that mounts it. */
+  preserveFromContainer?: boolean;
 }
 
 /**
@@ -83,12 +85,16 @@ export const MAIL_CONTAINER_MOUNTS: ReadonlyArray<MailMount> = [
   // deliveries, auth failures and bans (issue #1701). Pure data, no seed: the
   // entrypoint pre-creates the files it needs. Rotation is logrotate's daily
   // job, run by the cron program in supervisord.conf.
-  { host: `${MAIL_HOST_STATE_DIR}/logs`, container: "/var/log" },
+  { host: `${MAIL_HOST_STATE_DIR}/logs`, container: "/var/log", preserveFromContainer: true },
   // fail2ban's own SQLite database (default /var/lib/fail2ban/fail2ban.sqlite3),
   // which restores bans after a restart and keeps ban history. Without this
   // mount every update starts from an empty database ("New database created").
   // Pure data, no seed: fail2ban creates it on first start.
-  { host: `${MAIL_HOST_STATE_DIR}/fail2ban`, container: "/var/lib/fail2ban" },
+  {
+    host: `${MAIL_HOST_STATE_DIR}/fail2ban`,
+    container: "/var/lib/fail2ban",
+    preserveFromContainer: true,
+  },
   { host: "/etc/letsencrypt", container: "/etc/letsencrypt", readonly: true },
 ];
 

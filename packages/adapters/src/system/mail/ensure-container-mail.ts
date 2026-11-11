@@ -35,6 +35,7 @@ import { dirOf, elevatedExecutor } from "../elevated-executor";
 import { resolveEnvironment } from "../environment";
 import { waitForPortListening, probePortListeningOnce } from "../port-listen";
 import { rootOrDegrade } from "../privilege";
+import { preserveMailState } from "./preserve-mail-state";
 import {
   MAIL_CONTAINER,
   MAIL_DB_CONTAINER,
@@ -665,6 +666,7 @@ export async function ensureContainerMail(
       label: "mail engine",
       onLog,
       start,
+      prepare: () => preserveMailState(executor, container),
     });
     return { container, dbContainer, image, updated: swap.swapped, mailDown: swap.down };
   }

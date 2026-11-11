@@ -143,6 +143,11 @@ RUN [ -x /usr/sbin/logrotate ] && [ -x /usr/sbin/cron ] || { \
       exit 1; \
     }
 
+# Reopen supervised log writers without systemd or Debian's policy-rc.d. Keep
+# the native rotation schedule and retention for rsyslog and Freshclam.
+RUN install -m 0755 /opt/openship-mail/rsyslog-rotate /usr/lib/rsyslog/rsyslog-rotate \
+    && install -m 0644 /opt/openship-mail/logrotate-clamav-freshclam /etc/logrotate.d/clamav-freshclam
+
 # Runtime prerequisites the installer does not leave in place under our stubbed-
 # init build (its late service/DB steps abort — see the `|| true` above):
 #   1. the `iredapd` service account iRedAPD drops privileges to. Without it,

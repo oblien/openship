@@ -198,12 +198,7 @@ fi
 #    b) fix the leading commas in jail port lists; c) configure the banned_db
 #       helper; d) render operator ignoreip additions (OPENSHIP_MAIL_F2B_IGNOREIP)
 #       into a jail.d override (issue #1701).
-mkdir -p /var/log/dovecot /var/log/iredapd /var/log/supervisor
-touch /var/log/mail.log \
-      /var/log/dovecot/dovecot.log /var/log/dovecot/imap.log \
-      /var/log/dovecot/pop3.log /var/log/dovecot/lda.log /var/log/dovecot/sieve.log \
-      /var/log/iredapd/iredapd.log
-chown -R iredapd:iredapd /var/log/iredapd 2>/dev/null || true
+bash /opt/openship-mail/prepare-mail-logs.sh
 
 #    b) fix leading commas in jail port lists (e.g. `,,25,587,...` -> `25,587,...`)
 #       because HTTP/HTTPS ports are absent in the container image and cause
@@ -226,7 +221,7 @@ python3 /opt/openship-mail/configure-fail2ban-db.py
 #       restarts and follows image-default changes on update.
 if [ -n "${OPENSHIP_MAIL_F2B_IGNOREIP:-}" ]; then
   case "$OPENSHIP_MAIL_F2B_IGNOREIP" in
-    *[!A-Za-z0-9.:,/_[:space:]-]*)
+    *$'\n'*|*$'\r'*|*[!A-Za-z0-9.:,/_[:space:]-]*)
       log "WARN: OPENSHIP_MAIL_F2B_IGNOREIP has characters outside [A-Za-z0-9.:,/_ -] — skipping" ;;
     *)
       baked="$(sed -n -E 's/^[[:space:]]*ignoreip[[:space:]]*=[[:space:]]*//p' /etc/fail2ban/jail.local | head -n 1)"
