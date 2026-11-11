@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "Equipo",
       "notifications": "Notificaciones",
-      "credentials": "Credenciales",
+      "credentials": "Conexiones",
       "cloud": "Cloud",
       "infrastructure": "Infraestructura",
       "instance": "Instancia",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "Credenciales",
+    "title": "Conexiones",
     "description": "Tokens e inicios de sesión que Openship usa en tu nombre: descargas de imágenes privadas y escritura de registros DNS. Se guardan cifrados y no se muestran de nuevo.",
     "noProviders": "No hay proveedores de credenciales disponibles en esta instancia.",
     "noneForProvider": "Aún no has añadido ninguna.",
@@ -1624,6 +1624,16 @@
           "apiToken": {
             "label": "Token de API",
             "help": "Un token con Zone:Read y DNS:Edit en las zonas que desea que Openship administre. Créelo en My Profile → API Tokens."
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Permite que Openship escriba en DigitalOcean DNS los registros DNS que necesita un dominio personalizado.",
+        "fields": {
+          "apiToken": {
+            "label": "Token de API",
+            "help": "Un token con permisos personalizados para leer, crear, actualizar y eliminar dominios. Créelo en API → Tokens."
           }
         }
       }

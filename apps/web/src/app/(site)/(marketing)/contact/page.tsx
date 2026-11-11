@@ -2,7 +2,6 @@ import type { Metadata, ResolvingMetadata } from "next";
 import { inheritSocialImages } from "@/lib/social-metadata";
 import Link from "next/link";
 import { ContactPage as ContactPageLayout } from "@/components/marketing/contact-page";
-import { SUPPORT_EMAIL } from "@repo/core";
 
 const PAGE_TITLE = "Contact Us";
 const PAGE_DESCRIPTION =
@@ -35,7 +34,6 @@ export async function generateMetadata(
 export default function ContactPage() {
   return (
     <ContactPageLayout
-      source="contact"
       eyebrow="Contact"
       title={
         <>
@@ -49,8 +47,8 @@ export default function ContactPage() {
         {
           illustration: "mail",
           title: "Reach the team",
-          description: SUPPORT_EMAIL,
-          href: `mailto:${SUPPORT_EMAIL}`,
+          description: "General questions, partnerships, and help accessing your account.",
+          href: "#contact-name",
         },
         {
           illustration: "logs-monitoring",

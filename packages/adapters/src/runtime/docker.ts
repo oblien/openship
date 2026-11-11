@@ -35,7 +35,7 @@ import { gracefulStopBeforeRemoval, removeDockerContainer } from "./docker-conta
 export { gracefulStopBeforeRemoval } from "./docker-container-removal";
 import Dockerode from "dockerode";
 import { buildDockerImage } from "./docker-buildkit-session";
-import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
+import { matchingRegistryDigest, prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
 import { randomUUID } from "node:crypto";
 import { projectBuildKitWorker, removeProjectBuildKitWorker } from "./docker-buildkit-worker";
@@ -5323,12 +5323,13 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * Over SSH the save runs as a native `docker save` through the raw command
    * channel (rawExec) — the same reason pullImage/build avoid dockerode over the
    * tunnel: a streamed dockerode body over the streamlocal bridge is unreliable.
-   * Local socket / TCP use dockerode's image.get() directly.
+   * Cloud uses the flow-controlled Docker binary bridge: command-output SSE can
+   * disconnect during a slow transfer. Local socket / TCP use the same API.
    */
   async saveImage(
     ref: string,
   ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
-    const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
     if (executor?.rawExec) {
       const { stdout, stderr, onClose } = await executor.rawExec(`docker save ${sq(ref)}`);
       let stderrBuf = "";
@@ -6725,16 +6726,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * so every migrated `postgres:16`/`redis:7` project was told "up to date" forever. The
    * adopt paths need to read it for a container they did not create.
    */
-  async resolveImageDigest(ref: string): Promise<string | undefined> {
-    const info = await this.docker.getImage(ref).inspect();
-    const repoDigests: string[] = (info as { RepoDigests?: string[] })?.RepoDigests ?? [];
-    if (repoDigests.length === 0) return undefined;
-    // repo = ref without tag/digest (a colon after the last slash is the tag).
-    const noDigest = ref.split("@")[0];
-    const lastColon = noDigest.lastIndexOf(":");
-    const lastSlash = noDigest.lastIndexOf("/");
-    const repo = lastColon > lastSlash ? noDigest.slice(0, lastColon) : noDigest;
-    return repoDigests.find((d) => d.startsWith(`${repo}@`)) ?? repoDigests[0];
+  async resolveImageDigest(ref: string, repositoryRef = ref): Promise<string | undefined> {
+    const info = await this.inspectDeploymentImage(ref);
+    return matchingRegistryDigest(repositoryRef, info.RepoDigests);
   }
 
   async deployService(

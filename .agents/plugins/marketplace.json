@@ -1,0 +1,20 @@
+{
+  "name": "openship",
+  "interface": {
+    "displayName": "Openship"
+  },
+  "plugins": [
+    {
+      "name": "openship",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openship"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

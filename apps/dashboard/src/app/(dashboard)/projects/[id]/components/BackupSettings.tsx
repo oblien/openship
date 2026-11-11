@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import {
@@ -16,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { CreateDestinationModal } from "@/components/backup/CreateDestinationModal";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
-import { BackupIllustration } from "@/components/backup/BackupIllustration";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { BackupStatusChip } from "@/components/backup/BackupStatusChip";
 import { RestoreWizard } from "@/components/backup/RestoreWizard";
@@ -390,7 +390,10 @@ export function BackupSettings(): React.JSX.Element {
                 <SectionHeading title={b.recent.title} description={b.recent.description} />
                 {recentRuns.length === 0 ? (
                   <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
-                    <BackupIllustration />
+                    <FeatureIllustration
+                      name="backups-restore"
+                      className="illustration-color mb-4 h-auto w-20"
+                    />
                     <p className="text-sm font-medium text-foreground">{b.recent.empty}</p>
                     <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                       {b.recent.emptyHint}

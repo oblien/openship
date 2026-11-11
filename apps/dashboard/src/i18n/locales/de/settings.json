@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "Team",
       "notifications": "Benachrichtigungen",
-      "credentials": "Zugangsdaten",
+      "credentials": "Verbindungen",
       "cloud": "Cloud",
       "infrastructure": "Infrastruktur",
       "instance": "Instanz",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "Zugangsdaten",
+    "title": "Verbindungen",
     "description": "Tokens und Logins, die Openship für Sie nutzt — private Registry-Pulls, DNS-Einträge schreiben. Verschlüsselt gespeichert und nach dem Speichern nie wieder angezeigt.",
     "noProviders": "Auf dieser Instanz sind keine Anbieter verfügbar.",
     "noneForProvider": "Noch keine hinzugefügt.",
@@ -1624,6 +1624,16 @@
           "apiToken": {
             "label": "API-Token",
             "help": "Ein Token mit Zone:Read und DNS:Edit für die Zonen, die Openship verwalten soll. Erstellen Sie ihn unter My Profile → API Tokens."
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "Openship die benötigten DNS-Einträge für benutzerdefinierte Domains in DigitalOcean DNS schreiben lassen.",
+        "fields": {
+          "apiToken": {
+            "label": "API-Token",
+            "help": "Ein Token mit benutzerdefinierten Scopes zum Lesen, Erstellen, Aktualisieren und Löschen von Domains. Erstellen Sie ihn unter API → Tokens."
           }
         }
       }

@@ -18,7 +18,7 @@ const Hostname = Type.String({
 export const AddDnsCredentialBody = Type.Object({
   /** Literal union, not a free string: the registry is the source of truth and
    *  an unknown value should be rejected at the edge, not deep in a resolver. */
-  provider: Type.Union([Type.Literal("cloudflare")]),
+  provider: Type.Union([Type.Literal("cloudflare"), Type.Literal("digitalocean")]),
   name: Type.String({ minLength: 1, maxLength: 100 }),
   /** Bounded because it is stored encrypted — an unbounded body would be a
    *  cheap way to write megabytes of ciphertext per row. */

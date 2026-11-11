@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openship",
+  "version": "0.1.0",
+  "description": "Deploy and operate applications through Openship's permission-scoped MCP tools.",
+  "author": {
+    "name": "Openship",
+    "url": "https://openship.io"
+  },
+  "homepage": "https://openship.io/docs/mcp",
+  "repository": "https://github.com/oblien/openship",
+  "license": "Apache-2.0",
+  "keywords": ["openship", "deployment", "hosting", "devops", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/openship-setup/SKILL.md",
+      "interface": {
+        "displayName": "Openship",
+        "shortDescription": "Deploy apps and manage your infrastructure",
+        "longDescription": "Deploy repositories, inspect build and runtime logs, install catalog apps, and manage projects and infrastructure using Openship's existing MCP tools. Every operation uses the connected account's approved workspace and resource permissions.",
+        "developerName": "Openship",
+        "category": "Developer Tools",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://openship.io",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/icon.png",
+        "brandColor": "#0B7285",
+        "defaultPrompt": [
+          "Deploy this repository with Openship.",
+          "Check my Openship projects and investigate failed deployments.",
+          "Install an app from the Openship catalog in my workspace."
+        ]
+      }
+    }
+  }
+}

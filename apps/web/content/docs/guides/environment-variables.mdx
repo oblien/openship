@@ -42,6 +42,16 @@ and the **value** on the right. Type both.
 
 Add as many rows as you need. To remove one, press the trash icon at the end of its row.
 
+**Add variable** is also in the top toolbar and inserts a row at the top of a long list.
+Choose **Edit as text** to edit a `.env` draft with `KEY=value` entries, comments and quoted
+multiline values. **Apply changes** returns the validated draft to the normal editor; use its
+usual **Save** or deployment action afterward. Removing an entry removes that variable.
+
+Saved values remain masked as `••••••••`. Leave that placeholder on its original key to
+keep the stored value, or enter a replacement, including an empty value. Opening text editing
+does not reveal secrets. Connection-managed variables must remain unchanged. Invalid syntax
+or duplicate names block Apply, and Cancel discards the text draft.
+
 </Step>
 
 <Step>

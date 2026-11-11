@@ -117,7 +117,7 @@
       "mcp": "MCP",
       "team": "团队",
       "notifications": "通知",
-      "credentials": "凭据",
+      "credentials": "连接",
       "cloud": "云",
       "infrastructure": "基础设施",
       "instance": "实例",
@@ -1571,7 +1571,7 @@
     }
   },
   "credentials": {
-    "title": "凭据",
+    "title": "连接",
     "description": "Openship 代表你使用的令牌与登录信息——拉取私有镜像、写入 DNS 记录。加密存储，保存后不再显示。",
     "noProviders": "此实例没有可用的凭据提供方。",
     "noneForProvider": "尚未添加。",
@@ -1624,6 +1624,16 @@
           "apiToken": {
             "label": "API 令牌",
             "help": "对您希望 Openship 管理的区域拥有 Zone:Read 和 DNS:Edit 权限的令牌。请在 My Profile → API Tokens 中创建。"
+          }
+        }
+      },
+      "digitalocean": {
+        "label": "DigitalOcean",
+        "summary": "让 Openship 在 DigitalOcean DNS 中自动写入自定义域名所需的 DNS 记录。",
+        "fields": {
+          "apiToken": {
+            "label": "API 令牌",
+            "help": "具有域名读取、创建、更新和删除自定义权限范围的令牌。请在 API → Tokens 中创建。"
           }
         }
       }

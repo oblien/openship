@@ -52,6 +52,46 @@ import {
 import { assertMigrationEndpoints, requireMigrationServer } from "@repo/platform/engine/modules/migration/migration-access";
 import * as sources from "@repo/platform/engine/modules/migration/migration-sources";
 
+import * as platformImports from "@repo/platform/engine/modules/migration/platform-import-plan";
+import type { PlatformMigrationReview, PlatformMigrationSource } from "@repo/contracts";
+
+export async function platformProjects(c: Context) {
+  return c.json({
+    projects: await platformImports.listPlatformProjects(
+      getRequestContext(c),
+      c.req.query("connectionId")!,
+    ),
+  });
+}
+export async function discoverPlatform(c: Context) {
+  return c.json(
+    await platformImports.discoverPlatform(
+      getRequestContext(c),
+      await c.req.json<PlatformMigrationSource>(),
+    ),
+  );
+}
+export async function reviewPlatform(c: Context) {
+  return c.json(
+    await platformImports.reviewPlatform(
+      getRequestContext(c),
+      await c.req.json<PlatformMigrationReview>(),
+    ),
+  );
+}
+export async function importPlatform(c: Context) {
+  return c.json(
+    {
+      success: true,
+      ...(await migrationOrchestrator.beginPlatformImport(
+        getRequestContext(c),
+        await c.req.json(),
+      )),
+    },
+    202,
+  );
+}
+
 export async function listSources(c: Context) {
   return c.json({ sources: await sources.listMigrationSources(getRequestContext(c)) });
 }
@@ -77,8 +117,8 @@ async function assertRunAccess(c: Context, run: NonNullable<Awaited<ReturnType<t
   for (const id of new Set([run.sourceServerId, run.targetServerId].filter((id): id is string => !!id)))
     await permission.assert(ctx, { resourceType: "server", resourceId: id, action });
   const source = (run.inputSnapshot?.projectMove as { projectId?: string } | undefined)?.projectId;
-  for (const id of new Set([run.projectId, source].filter((id): id is string => !!id))) {
-    if (action === "read" && !await repos.project.findByIdInOrganization(id, ctx.organizationId)) continue;
+  for (const id of new Set([run.projectId, source, ...Object.values(run.recovery.providerImport?.projects ?? {})].filter((id): id is string => !!id))) {
+    if (action === "read" && !(await repos.project.findByIdInOrganization(id, ctx.organizationId))) continue;
     await permission.assert(ctx, { resourceType: "project", resourceId: id, action });
   }
 }
@@ -259,7 +299,7 @@ export async function scanServerStream(c: Context) {
  */
 export async function revealServiceEnv(c: Context) {
   type RevealBody = { serverId?: string; containerId?: string; keys?: unknown };
-  const body = await c.req.json<RevealBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return ({}) as RevealBody; });
+  const body = await c.req.json<RevealBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return {} as RevealBody; });
   const { serverId, containerId } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
   if (!containerId) return c.json({ error: "containerId is required" }, 400);
@@ -752,7 +792,12 @@ export async function getMigration(c: Context) {
 function maskMigrationRunEnv<T extends { inputSnapshot?: unknown; recovery?: unknown }>(run: T): Omit<T, "recovery"> {
   const { recovery: _recovery, ...publicRun } = run;
   const snap = run.inputSnapshot as { serviceEnv?: Record<string, Record<string, string>> } | null;
-  if (!snap?.serviceEnv) return publicRun;
+  if (!snap?.serviceEnv) {
+    const imported = (
+      run.recovery as { providerImport?: { projects: Record<string, string> } } | undefined
+    )?.providerImport;
+    return imported ? { ...publicRun, importedProjects: imported.projects } : publicRun;
+  }
   return {
     ...publicRun,
     inputSnapshot: {
@@ -930,7 +975,7 @@ export async function resumeMigration(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req
     .json<{ overrides?: Record<string, string>; skip?: string[] }>()
-    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return ({}) as { overrides?: Record<string, string>; skip?: string[] }; });
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return {} as { overrides?: Record<string, string>; skip?: string[] }; });
   const overrides = body.overrides && typeof body.overrides === "object" ? body.overrides : {};
   const skip = Array.isArray(body.skip) ? body.skip.filter((s) => typeof s === "string") : [];
   const result = await migrationOrchestrator.resume(ctx, param(c, "id"), ctx.organizationId, {
@@ -958,7 +1003,10 @@ export async function deleteMigration(c: Context) {
   }
   await assertRunAccess(c, run, "write");
   if (run.executionStartedAt && !run.executionFinishedAt) throw new AppError("Wait for the migration worker to finish before deleting its history", 409, "MIGRATION_BUSY");
-  if (run.recovery?.transferRunTag || run.recovery?.targetRunningContainerIds?.length)
+  if (run.recovery?.transferRunTag || run.recovery?.targetRunningContainerIds?.length||
+    run.recovery?.providerImport?.sshPrivateKeyEnc ||
+    run.recovery?.providerImport?.cleanupPending
+  )
     throw new AppError("Wait for the migration's connection and container recovery before deleting its history", 409, "MIGRATION_RECOVERY_PENDING");
   if (run.status === "rolled_back" && run.projectId && run.projectId === run.recovery?.createdProjectId)
     throw new AppError("Wait for the imported draft's cleanup before deleting its migration history", 409, "MIGRATION_RECOVERY_PENDING");

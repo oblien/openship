@@ -518,6 +518,21 @@ describe("containers on one Oblien Docker workspace", () => {
     await expect(runtime.deployServiceWorkload(group, config)).rejects.toThrow("out of credits");
     expect(captures).toEqual([]);
   });
+  it("reads only the running image's matching repository digest through Cloud ownership checks", async () => {
+    const id = `sha256:${"1".repeat(64)}`;
+    const expected = `docker.io/library/nginx@sha256:${"a".repeat(64)}`;
+    const inspect = vi.fn(async () => ({
+      Config: { Labels: { "openship.project": "project-a" } },
+      RepoDigests: [`other/image@sha256:${"b".repeat(64)}`, expected],
+    }));
+    vi.spyOn(runtime, "docker", "get").mockReturnValue({ getImage: () => ({ inspect }) } as never);
+    expect(await runtime.resolveImageDigest(id, "nginx:alpine")).toBe(expected);
+    expect(await runtime.resolveImageDigest(id, "redis:7")).toBeUndefined();
+    inspect.mockResolvedValue({ Config: { Labels: { "openship.project": "project-b" } }, RepoDigests: [expected] });
+    await expect(runtime.resolveImageDigest(id, "nginx:alpine")).rejects.toMatchObject({ code: "IMAGE_NOT_FOUND" });
+    expect(ws.start).not.toHaveBeenCalled();
+    expect(ws.restart).not.toHaveBeenCalled();
+  });
   it("observes a stopped workspace without starting it; Start resumes explicitly", async () => {
     status = "stopped";
     expect(await runtime.getContainerInfo("container-a")).toEqual({ containerId: "container-a", status: "stopped" });

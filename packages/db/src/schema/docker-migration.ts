@@ -17,8 +17,26 @@ import { project } from "./project";
 import { servers } from "./servers";
 import type { ExecutionAuthority } from "@repo/core";
 
-/** Only execution identity and storage settings; never SSH credentials or env values. */
+/** Recovery configuration is private. Provider secrets are encrypted, never returned by run APIs. */
 export interface DockerMigrationRecovery {
+  providerImport?: {
+    planId: string;
+    /** Encrypted configuration; the API never returns recovery metadata. */
+    planEnc: string;
+    connectionId: string;
+    projects: Record<string, string>;
+    completed: string[];
+    deployments?: Record<string, string>;
+    cleanupPending?: boolean;
+    sshKeyId?: string;
+    sshPrivateKeyEnc?: string;
+    sshPublicKey?: string;
+    sshKeyRequestedAt?: number;
+    sshHostKey?: string;
+    /** Encrypted provider configuration and mutation receipts for cold exports. */
+    sourceStateEnc?: string;
+    sourceCleanupPending?: boolean;
+  };
   authority?: ExecutionAuthority;
   worker?: "initial" | "resume" | "cutover";
   cancelRequested?: boolean;

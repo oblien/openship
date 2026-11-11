@@ -19,8 +19,19 @@ import type { CloudSupportRepo, CloudSupportTicket } from "@repo/db/repos";
 import type { ExecutionContext } from "../../../context";
 import type { SendMailOptions } from "../../lib/mail";
 import { supportEmail } from "../../lib/email-templates";
+import { isIP } from "node:net";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+export function canonicalSupportIp(value?: string | null): string | null {
+  if (!value || !isIP(value)) return null;
+  if (isIP(value) === 4) return value;
+  const ip = new URL(`http://[${value}]/`).hostname.slice(1, -1);
+  const mapped = ip.match(/^::ffff:([a-f0-9]+):([a-f0-9]+)$/);
+  if (!mapped) return ip;
+  const high = parseInt(mapped[1]!, 16),
+    low = parseInt(mapped[2]!, 16);
+  return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+}
 const receipt = (ticket: CloudSupportTicket): CloudSupportReceipt => ({
   id: ticket.id,
   createdAt: ticket.createdAt.toISOString(),
@@ -41,11 +52,36 @@ export class CloudSupportService {
       enabled: () => boolean;
       repo: CloudSupportRepo;
       send: (mail: SendMailOptions) => Promise<boolean>;
+      contactEmail?: () => string;
     },
   ) {}
 
   private requireCloud() {
     if (!this.options.enabled()) throw new NotFoundError("Support");
+  }
+
+  async assertAllowed(email: string, clientIp?: string | null) {
+    if (await this.options.repo.isBlocked(email, canonicalSupportIp(clientIp)))
+      throw new AppError(
+        "This contact channel is unavailable for this sender.",
+        403,
+        "SUPPORT_SENDER_BLOCKED",
+      );
+  }
+
+  async listBlocks() {
+    this.requireCloud();
+    return this.options.repo.listBlocks();
+  }
+  async setBlock(raw: { kind: "email" | "ip"; value: string; reason?: string }, remove = false) {
+    this.requireCloud();
+    const value =
+      raw.kind === "ip" ? canonicalSupportIp(raw.value.trim()) : raw.value.trim().toLowerCase();
+    if (!value || (raw.kind === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))
+      throw new ValidationError("Enter an exact email address or IP address.");
+    if (remove) await this.options.repo.removeBlock(raw.kind, value);
+    else await this.options.repo.setBlock(raw.kind, value, raw.reason?.trim() ?? "");
+    return { ok: true };
   }
 
   private customer(ctx: ExecutionContext) {
@@ -90,8 +126,10 @@ export class CloudSupportService {
     ctx: ExecutionContext,
     raw: unknown,
     beforeCreate: (subject: string) => Promise<void>,
+    clientIp?: string | null,
   ) {
     const user = this.customer(ctx);
+    await this.assertAllowed(user.email, clientIp);
     const input = parseInput(CloudSupportCustomerInputSchema, raw);
     const value = {
       subject: input.subject.trim(),
@@ -115,6 +153,7 @@ export class CloudSupportService {
         inputHash,
         ...value,
         ownerUserId: user.id,
+        clientIp: canonicalSupportIp(clientIp),
         name: user.name?.trim() || user.email,
         email: user.email,
         source: "support",
@@ -162,8 +201,10 @@ export class CloudSupportService {
     id: string,
     raw: unknown,
     beforeCreate: (subject: string) => Promise<void>,
+    clientIp?: string | null,
   ) {
     const user = this.customer(ctx);
+    await this.assertAllowed(user.email, clientIp);
     const input = parseInput(CloudSupportCustomerReplySchema, raw);
     const body = input.message.trim();
     if (!body) throw new ValidationError("Reply cannot be blank.");
@@ -182,9 +223,20 @@ export class CloudSupportService {
     return this.getForCustomer(ctx, id);
   }
 
-  async submit(raw: unknown, beforeCreate: (recipientHash: string) => Promise<void>) {
+  async submit(
+    raw: unknown,
+    beforeCreate: (recipientHash: string) => Promise<void>,
+    clientIp?: string | null,
+  ) {
     this.requireCloud();
     const input = parseInput(CloudSupportInputSchema, raw);
+    if (input.source !== "contact")
+      throw new AppError(
+        "Sign in to Openship Cloud to open a support request.",
+        401,
+        "SUPPORT_SESSION_REQUIRED",
+      );
+    await this.assertAllowed(input.email, clientIp);
     const value = {
       name: input.name.trim(),
       email: input.email.trim(),
@@ -205,13 +257,23 @@ export class CloudSupportService {
     }
     // Rate-limit NEW tickets only. A retry after a lost response remains safe.
     await beforeCreate(recipientHash);
-    return receipt(await this.options.repo.create({ id, inputHash, ...value }));
+    return receipt(
+      await this.options.repo.create({
+        id,
+        inputHash,
+        ...value,
+        clientIp: canonicalSupportIp(clientIp),
+      }),
+    );
   }
 
   /** Trusted worker entry point. One operation owns one support case and one
    * customer email, including concurrent workers and retries after a crash. */
   async reportProvisioningFailure(input: {
-    workspaceId: string; operationId: string; serverName: string; attempts: number;
+    workspaceId: string;
+    operationId: string;
+    serverName: string;
+    attempts: number;
     owner: { id: string; name: string; email: string } | null;
   }) {
     this.requireCloud();
@@ -221,18 +283,25 @@ export class CloudSupportService {
       if (existing.status !== "open") await this.options.repo.setStatus(id, "open");
       return receipt(existing);
     }
-    return receipt(await this.options.repo.create({
-      id, inputHash: hash(`provisioning:${input.workspaceId}:${input.operationId}`),
-      ownerUserId: input.owner?.id ?? null,
-      name: input.owner?.name || "OpenShip Cloud",
-      email: input.owner?.email || SUPPORT_EMAIL,
-      category: "deployment", source: "support",
-      subject: "We're resolving an issue with your OpenShip server",
-      message: `Initial provisioning needs support review.\nServer: ${input.serverName}\nWorkspace: ${input.workspaceId}\nOperation: ${input.operationId}\nAttempts: ${input.attempts}\nAutomatic provisioning attempts have stopped. The customer's subscription and existing resources remain recorded.`,
-    }, {
-      sendReceipt: !!input.owner,
-      receiptBody: `We couldn't finish setting up your OpenShip server, “${input.serverName}”.\n\nOur team has been notified and is working to resolve it. You don't need to submit another payment. We'll update you by email.`,
-    }));
+    return receipt(
+      await this.options.repo.create(
+        {
+          id,
+          inputHash: hash(`provisioning:${input.workspaceId}:${input.operationId}`),
+          ownerUserId: input.owner?.id ?? null,
+          name: input.owner?.name || "OpenShip Cloud",
+          email: input.owner?.email || SUPPORT_EMAIL,
+          category: "deployment",
+          source: "support",
+          subject: "We're resolving an issue with your OpenShip server",
+          message: `Initial provisioning needs support review.\nServer: ${input.serverName}\nWorkspace: ${input.workspaceId}\nOperation: ${input.operationId}\nAttempts: ${input.attempts}\nAutomatic provisioning attempts have stopped. The customer's subscription and existing resources remain recorded.`,
+        },
+        {
+          sendReceipt: !!input.owner,
+          receiptBody: `We couldn't finish setting up your OpenShip server, “${input.serverName}”.\n\nOur team has been notified and is working to resolve it. You don't need to submit another payment. We'll update you by email.`,
+        },
+      ),
+    );
   }
 
   async list(input: { status?: CloudSupportTicket["status"]; before?: string; limit: number }) {
@@ -295,17 +364,36 @@ export class CloudSupportService {
           try {
             const ticket = await this.options.repo.find(message.ticketId);
             if (!ticket) throw new NotFoundError("Support ticket");
+            if (await this.options.repo.isBlocked(ticket.email, ticket.clientIp)) {
+              await this.options.repo.failed(
+                message.id,
+                leaseId,
+                null,
+                "Delivery suppressed by an operator support block.",
+              );
+              return;
+            }
+            const inbox =
+              ticket.source === "contact"
+                ? (this.options.contactEmail?.() ?? SUPPORT_EMAIL)
+                : SUPPORT_EMAIL;
             const accepted = await this.options.send({
               to:
                 message.kind === "notification" || message.kind === "customer_reply"
-                  ? SUPPORT_EMAIL
+                  ? inbox
                   : ticket.email,
               replyTo:
                 message.kind === "notification" || message.kind === "customer_reply"
                   ? ticket.email
-                  : SUPPORT_EMAIL,
+                  : inbox,
               messageId: `<support-${hash(message.id)}@openship.io>`,
-              ...supportEmail({ ...ticket, kind: message.kind, reply: message.body }),
+              ...supportEmail({
+                ...ticket,
+                kind: message.kind,
+                reply: message.body,
+                replyAddress: inbox,
+                contact: ticket.source === "contact",
+              }),
             });
             if (!accepted)
               throw new AppError(

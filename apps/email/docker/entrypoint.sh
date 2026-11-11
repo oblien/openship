@@ -25,10 +25,14 @@
 #      (no network), hand the mount to the `clamav` user, and create clamd's socket
 #      directory. Without a database clamd exits 1, and amavis — whose only scanner
 #      it is — then defers every inbound message (issue #565).
-#   8. Amavis: drop leftover pid/lock/socket. `docker recreate` empties /run;
-#      `docker restart` keeps the writable layer, so Net::Server can abort-loop
-#      against a recycled PID (often now dovecot) and Postfix defers originating
-#      mail on 127.0.0.1:10026.
+#   8. Amavis and Dovecot: drop leftover pid/lock/socket files.
+#      `docker recreate` empties /run; `docker restart` keeps the writable
+#      layer, so a pid from the previous life can now name a live process
+#      from another daemon (PIDs recycle from 1). Net::Server then
+#      abort-loops on "Pid_file already exists" and Postfix defers
+#      originating mail on 127.0.0.1:10026 — and Dovecot itself refuses to
+#      start with "Dovecot is already running", leaving 993/995 down
+#      (issue #1700).
 #   9. hand off to supervisord (the CMD).
 #
 # Env (from ensure-container-mail.ts --env-file): FIRST_DOMAIN,
@@ -288,6 +292,15 @@ fi
 #    recreate the directory the way Debian's tmpfiles.d rule would under
 #    systemd (supervisord has no equivalent).
 bash /opt/openship-mail/prepare-amavis-runtime.sh
+
+#    Dovecot is the mirror image (issue #1700): it refuses to start with
+#    "Dovecot is already running" if master.pid exists and that PID is still
+#    alive — even when the process is something else. After a restart that
+#    PID can belong to amavisd, supervisord burns its retries and marks
+#    dovecot FATAL, and nothing listens on 993/995 until someone removes
+#    the pid file by hand. Same reasoning as above — no Dovecot from this
+#    run can exist yet — so drop it unconditionally too.
+bash /opt/openship-mail/prepare-dovecot-runtime.sh
 
 log "starting supervisord"
 exec "$@"
