@@ -226,15 +226,28 @@ describeDockerE2E("generic stopped-volume provider import", () => {
     return Buffer.concat(chunks).toString().trim();
   };
   const ready = async (id: string, command: string[]) => {
+    const container = runtime.docker.getContainer(id);
+    let lastError: unknown;
     for (let n = 0; n < 120; n++) {
       try {
         await exec(id, command);
         return;
-      } catch {
+      } catch (error) {
+        lastError = error;
+        if (!(await container.inspect()).State.Running) break;
         await delay(500);
       }
     }
-    throw new Error("Fixture did not become ready");
+    const [info, logs] = await Promise.all([container.inspect(), runtime.getRuntimeLogs(id, 20)]);
+    throw new Error(
+      `Fixture ${info.Config.Image} did not become ready ` +
+        `(status=${info.State.Status}, exit=${info.State.ExitCode}, oom=${info.State.OOMKilled}):\n` +
+        logs
+          .map((entry) => entry.message)
+          .join("\n")
+          .slice(-6000),
+      { cause: lastError },
+    );
   };
   beforeAll(async () => {
     await requireDocker();

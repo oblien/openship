@@ -91,7 +91,7 @@ jobs:
 
   test_suites:
     name: Tests (${{ matrix.suite }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -137,6 +137,10 @@ jobs:
               test/e2e/backup-project-app.e2e.test.ts
               test/e2e/docker-exec-watchdog.e2e.test.ts
           - suite: Platform imports
+            # MongoDB 8 rejects the Azure 7.0 kernel on newer Ubuntu runners.
+            # Keep its storage coverage on a compatible kernel until SERVER-131779 ships in 8.x.
+            # https://github.com/actions/runner-images/issues/15005
+            runner: ubuntu-22.04
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/platform-import-data.e2e.test.ts
