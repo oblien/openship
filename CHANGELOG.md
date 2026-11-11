@@ -6,6 +6,12 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Image updates
+
+- Keep image services with missing deployment digests visible as unverified. Inspect the
+  running image through the existing deployment runtime to detect moved tags, with bounded
+  reads and no deployment-row writes. Show unavailable update status without an update badge.
+
 ### Domains
 
 - **DigitalOcean DNS** — connect a DigitalOcean token in Settings → Connections to preview

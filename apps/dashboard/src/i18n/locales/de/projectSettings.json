@@ -1208,6 +1208,7 @@
     "latest": "Neueste Version",
     "repository": "Repository",
     "notChecked": "Noch nicht geprüft",
+    "unverified": "Der Image-Aktualisierungsstatus konnte nicht überprüft werden",
     "upToDate": "Aktuell",
     "updateAvailable": "Update verfügbar",
     "checkForUpdates": "Nach Updates suchen",

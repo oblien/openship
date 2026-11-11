@@ -14,6 +14,7 @@
     "latest": "Latest version",
     "repository": "Repository",
     "notChecked": "Not checked yet",
+    "unverified": "Could not verify image update status",
     "upToDate": "Up to date",
     "updateAvailable": "Update available",
     "checkForUpdates": "Check for updates",

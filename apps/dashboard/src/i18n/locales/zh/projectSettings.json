@@ -1208,6 +1208,7 @@
     "latest": "最新版本",
     "repository": "仓库",
     "notChecked": "尚未检查",
+    "unverified": "无法验证镜像更新状态",
     "upToDate": "已是最新",
     "updateAvailable": "有可用更新",
     "checkForUpdates": "检查更新",

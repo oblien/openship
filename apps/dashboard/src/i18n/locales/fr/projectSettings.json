@@ -1236,6 +1236,7 @@
     "latest": "Dernière version",
     "repository": "Dépôt",
     "notChecked": "Pas encore vérifié",
+    "unverified": "Impossible de vérifier l’état de mise à jour de l’image",
     "upToDate": "À jour",
     "updateAvailable": "Mise à jour disponible",
     "checkForUpdates": "Vérifier les mises à jour",

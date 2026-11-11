@@ -54,7 +54,7 @@ export default function ProjectsPage() {
     let cancelled = false;
     updatesApi.list(true)
       .then(response => {
-        if (!cancelled) setUpdatesBehind(new Set(response.data.map(update => update.projectId)));
+        if (!cancelled) setUpdatesBehind(new Set(response.data.filter(update => update.behind || update.latestInProgress).map(update => update.projectId)));
       })
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/page");

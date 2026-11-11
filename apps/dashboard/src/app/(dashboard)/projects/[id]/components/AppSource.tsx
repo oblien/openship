@@ -105,6 +105,7 @@ export function AppSource() {
   const latest = status?.latestLabel ?? null;
   const behind = !!status?.behind;
   const inProgress = !!status?.latestInProgress;
+  const unverified = !!status?.unverified;
   const kindLabel = kind === "image" ? s.kindImage : s.kindRelease;
 
   return (
@@ -124,7 +125,7 @@ export function AppSource() {
         <Row label={s.current} value={current} mono />
         <Row
           label={s.latest}
-          value={loading ? "…" : !hasData ? s.notChecked : latest ?? s.upToDate}
+          value={loading ? "…" : !hasData ? s.notChecked : latest ?? (unverified ? "—" : s.upToDate)}
           mono={hasData && !!latest}
           badge={behind ? s.updateAvailable : undefined}
         />
@@ -167,6 +168,8 @@ export function AppSource() {
             {applying ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="arrow-up-circle" className="size-4" />}
             {latest ? interpolate(s.updateTo, { version: latest }) : s.update}
           </button>
+        ) : unverified ? (
+          <span className="text-xs text-muted-foreground">{s.unverified}</span>
         ) : (
           hasData &&
           !loading && (

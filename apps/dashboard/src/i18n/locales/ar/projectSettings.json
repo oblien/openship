@@ -1208,6 +1208,7 @@
     "latest": "أحدث إصدار",
     "repository": "المستودع",
     "notChecked": "لم يتم الفحص بعد",
+    "unverified": "تعذّر التحقق من حالة تحديث الصورة",
     "upToDate": "محدث إلى أحدث إصدار",
     "updateAvailable": "يتوفر تحديث",
     "checkForUpdates": "التحقق من وجود تحديثات",

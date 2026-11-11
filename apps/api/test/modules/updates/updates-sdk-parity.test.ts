@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+import { DockerRuntime } from "@repo/adapters";
 import {
   seedOwner,
   installFakeRunner,
@@ -21,7 +22,7 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 
 // Keep the repositories, cache, drift comparison, policy and HTTP adapters real.
 // Only the external upstream request and actual redeployment are replaced.
-const provider = vi.hoisted(() => ({ poll: vi.fn(), redeploy: vi.fn(), deploy: vi.fn() }));
+const provider = vi.hoisted(() => ({ poll: vi.fn(), redeploy: vi.fn(), deploy: vi.fn(), runtime: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/projects/project-crud.service", async (original) => ({
   ...(await original<object>()),
   resolveUpstreamDrift: provider.poll,
@@ -30,6 +31,10 @@ vi.mock("@repo/platform/engine/modules/deployments/build.service", async (origin
   ...(await original<object>()),
   redeployBuildSession: provider.redeploy,
   triggerDeployment: provider.deploy,
+}));
+
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
+  ...await original<object>(), withDeploymentRuntime: provider.runtime,
 }));
 
 installFakeRunner();
@@ -50,6 +55,7 @@ beforeEach(() => {
   }));
   provider.redeploy.mockReset();
   provider.deploy.mockReset();
+  provider.runtime.mockReset().mockRejectedValue(new Error("runtime unavailable"));
 });
 
 async function clients(owner: SeededOwner) {
@@ -242,6 +248,47 @@ describe("updates shared SDK/HTTP operations", () => {
       });
     }
     expect(provider.redeploy).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("carries observed image drift through real repositories, HTTP and native SDK (inspectable=%s)", async inspectable => {
+    const owner = await seedOwner(), p = await project(owner, `image-observation-${inspectable}`), c = await clients(owner);
+    await repos.project.update(p.id, { gitOwner: null, gitRepo: null });
+    const image = await repos.service.create({ projectId: p.id, name: "web", image: "nginx:alpine", enabled: true });
+    await repos.service.upsertServiceDeployment({
+      deploymentId: p.activeDeploymentId!, serviceId: image.id, status: "success",
+      imageRef: image.image, imageDigest: null, containerId: "observed-container",
+    });
+    provider.poll.mockResolvedValue({ supported: true, mode: "image", digestByRef: { "nginx:alpine": `sha256:${"b".repeat(64)}` } });
+    const runtime = await DockerRuntime.create({ transport: "socket" });
+    const oldImage = `sha256:${"1".repeat(64)}`, newImage = `sha256:${"2".repeat(64)}`;
+    vi.spyOn(runtime, "docker", "get").mockReturnValue({
+      getContainer: () => ({ inspect: async () => {
+        if (!inspectable) throw Object.assign(new Error("missing"), { statusCode: 404 });
+        return { Image: oldImage, State: { Status: "running", Running: true }, NetworkSettings: { Ports: {} }, HostConfig: {} };
+      } }),
+      getImage: (ref: string) => ({ inspect: async () => ({ Id: ref === oldImage ? oldImage : newImage, RepoDigests: [] }) }),
+    } as never);
+    provider.runtime.mockImplementation(async (deployment, read) => {
+      expect(deployment).toMatchObject({ organizationId: owner.orgId, projectId: p.id });
+      return read(runtime);
+    });
+    try {
+      for (const updates of [c.native.updates, c.remote.updates]) {
+        const result = await updates.list({ behindOnly: true });
+        expect(result).toHaveLength(1);
+        expect(result[0]).toMatchObject({ projectId: p.id, behind: inspectable, unverified: !inspectable,
+          detail: { services: [expect.objectContaining({ unknown: !inspectable })] },
+        });
+        if (!inspectable) await expect(updates.apply(p.id)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      }
+      expect(await c.native.projects.getCommitStatus(p.id)).toMatchObject({
+        supported: true, mode: "image", unverified: !inspectable,
+        services: [expect.objectContaining({ unknown: !inspectable })],
+      });
+      const stored = await repos.service.listByDeployment(p.activeDeploymentId!);
+      expect(stored[0].imageDigest).toBeNull();
+      expect(provider.deploy).not.toHaveBeenCalled();
+    } finally { await runtime.dispose(); }
   });
 
   it("refuses undeployed updates, invalid inputs and revoked membership before provider work", async () => {

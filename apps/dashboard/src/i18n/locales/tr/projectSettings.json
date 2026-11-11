@@ -78,6 +78,7 @@
     "latest": "En son sürüm",
     "repository": "Depo",
     "notChecked": "Henüz kontrol edilmedi",
+    "unverified": "İmaj güncelleme durumu doğrulanamadı",
     "upToDate": "Güncel",
     "updateAvailable": "Güncelleme mevcut",
     "checkForUpdates": "Güncellemeleri kontrol et",

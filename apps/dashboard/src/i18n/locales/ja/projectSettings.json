@@ -1208,6 +1208,7 @@
     "latest": "最新バージョン",
     "repository": "リポジトリ",
     "notChecked": "未確認",
+    "unverified": "イメージの更新状態を確認できませんでした",
     "upToDate": "最新です",
     "updateAvailable": "アップデートがあります",
     "checkForUpdates": "アップデートを確認",

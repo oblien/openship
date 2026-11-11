@@ -2,6 +2,7 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type {
   CreateDeploymentResult,
+  ProjectUpdate,
   UpdateRuntimeInput,
   RuntimeImageCheckResult,
   ProjectSecurityResult,
@@ -17,22 +18,7 @@ import type {
 } from "@repo/contracts";
 
 /** One entity's update status (project/app/self-app/webmail). */
-export interface UpdateStatusItem {
-  projectId: string;
-  name: string;
-  slug: string | null;
-  isApp: boolean;
-  appTemplateId: string | null;
-  kind: "commit" | "release" | "image";
-  behind: boolean;
-  latestInProgress: boolean;
-  inProgressDeploymentId?: string | null;
-  currentLabel: string | null;
-  latestLabel: string | null;
-  detail: unknown;
-  /** When the UPSTREAM side was last polled. `behind` itself is computed live. */
-  checkedAt: string;
-}
+export type UpdateStatusItem = ProjectUpdate;
 
 export interface ScanSummary {
   scanned: number;

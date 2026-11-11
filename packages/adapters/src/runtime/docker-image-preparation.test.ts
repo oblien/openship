@@ -67,7 +67,9 @@ describe("deployment image preparation", () => {
   it("does not try to pull a missing Docker image ID from a registry", async () => {
     const io = fixture();
     io.inspect.mockRejectedValueOnce(missing());
-    await expect(prepareDockerImage(imageId, { force: true }, io)).rejects.toThrow("Retained image");
+    await expect(prepareDockerImage(imageId, { force: true }, io)).rejects.toThrow(
+      "Retained image",
+    );
     expect(io.pull).not.toHaveBeenCalled();
   });
   it("retains an existing pin despite an explicit pull hint", async () => {
@@ -129,6 +131,22 @@ describe("deployment image preparation", () => {
 });
 
 describe("registry provenance", () => {
+  it("accepts a locally built image whose daemon returns null RepoDigests", async () => {
+    const imageId = `sha256:${"d".repeat(64)}`;
+    const pull = vi.fn();
+    expect(
+      await prepareDockerImage(
+        "local-app:latest",
+        { requirePresent: true },
+        {
+          inspect: async () => ({ Id: imageId, RepoDigests: null }),
+          pull,
+        },
+      ),
+    ).toEqual({ imageId, deploymentRef: imageId });
+    expect(pull).not.toHaveBeenCalled();
+    expect(matchingRegistryDigest("local-app:latest", null)).toBeUndefined();
+  });
   it.each([
     "postgres:16",
     "library/postgres:16",
