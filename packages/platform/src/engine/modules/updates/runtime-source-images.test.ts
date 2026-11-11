@@ -22,6 +22,22 @@ describe("reviewable image source edits", () => {
       ),
     ).toBe('services: {api: {image: "123"}}');
   });
+  it.each([
+    "GHCR.IO/team/app:v1",
+    "registry.example.com:5000/team/my__app:v2",
+    "[2001:db8::1]:5000/team/api:v2",
+  ])("uses deployment reference rules and preserves YAML string meaning: %s", (image) => {
+    expect(replaceRuntimeSourceImage("FROM node:22\n", "dockerfile", "from:1", image)).toBe(
+      `FROM ${image}\n`,
+    );
+    const after = replaceRuntimeSourceImage(
+      "services: {api: {image: node:22}}",
+      "compose",
+      "service:api",
+      image,
+    );
+    expect(inspectRuntimeSource(after, "compose").references[0]?.image).toBe(image);
+  });
   it("changes only the selected FROM, retaining stages, platform, comments and CRLF", () => {
     const source =
       "# syntax=docker/dockerfile:1\r\nFROM --platform=$BUILDPLATFORM node:22 AS build\r\nRUN echo ok\r\nFROM node:22-alpine AS runtime\r\nCOPY --from=build /app /app\r\nFROM runtime AS final\r\n";
@@ -76,6 +92,8 @@ describe("reviewable image source edits", () => {
     "scratch",
     "node:24;true",
     "node@sha256:bad",
+    "registry.example.com:0/team/api:v1",
+    "registry.example.com:not-a-port/team/api:v1",
   ])("rejects expression/syntax injection: %s", (image) => {
     expect(() =>
       replaceRuntimeSourceImage("FROM node:22\n", "dockerfile", "from:1", image),

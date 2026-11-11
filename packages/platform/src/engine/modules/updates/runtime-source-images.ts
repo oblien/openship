@@ -1,5 +1,5 @@
 import { parseDockerfile } from "@repo/adapters";
-import { ValidationError } from "@repo/core";
+import { ValidationError, validateImageReference } from "@repo/core";
 import { isMap, isScalar, parseDocument } from "yaml";
 import type { RuntimeSource } from "@repo/contracts";
 
@@ -8,12 +8,12 @@ type Reference = RuntimeSource["references"][number] & {
   end: number;
   quoted?: boolean;
 };
-// Literal registry references only: never interpolate variables or insert Dockerfile/YAML syntax.
-const imagePattern =
-  /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$/;
+// Reuse deployment reference validation; scratch is a build stage, not a registry image.
+const isSourceImage = (image: string) =>
+  image.length <= 512 && image !== "scratch" && validateImageReference(image) === null;
 export function assertRuntimeSourceImage(image: string) {
-  if (image.length > 512 || !imagePattern.test(image) || image === "scratch")
-    throw new ValidationError("Enter a literal container image tag or sha256 digest.");
+  if (!isSourceImage(image))
+    throw new ValidationError("Enter a literal container image reference.");
 }
 
 /** Locate a single literal without serializing/reformatting the user's source. */
@@ -27,7 +27,7 @@ export function inspectRuntimeSource(
   const references: Reference[] = [];
   const guidance: string[] = [];
   const add = (ref: Reference) => {
-    if (imagePattern.test(ref.image) && ref.image !== "scratch") references.push(ref);
+    if (isSourceImage(ref.image)) references.push(ref);
     else guidance.push(`${ref.label}: edit the variable or image expression in the repository.`);
   };
   if (format === "dockerfile") {
@@ -135,7 +135,12 @@ export function replaceRuntimeSourceImage(
   if (!ref)
     throw new ValidationError("Select a supported image reference from this source revision.");
   if (ref.image === image) throw new ValidationError("Choose a different image reference.");
-  const needsQuotes = format === "compose" && typeof parseDocument(image).toJS() !== "string";
+  const scalar = format === "compose" ? parseDocument(image) : null;
+  const needsQuotes =
+    scalar &&
+    (scalar.errors.length > 0 ||
+      !isScalar(scalar.contents) ||
+      typeof scalar.contents.value !== "string");
   const replacement = ref.quoted
     ? `${content[ref.start]}${image}${content[ref.start]}`
     : needsQuotes
