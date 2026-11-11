@@ -15,6 +15,7 @@ import { getApiErrorMessage } from "@/lib/api/client";
 import { useScopedMutation } from "@/hooks/use-scoped-resource";
 import { AssistantFields } from "./AssistantFields";
 import { CustomApiConnection } from "./CustomApiConnection";
+import { AgentSetup } from "./AgentSetup";
 
 export type AssistantConnectionSelection = AssistantProvider | "custom";
 
@@ -181,7 +182,8 @@ export function AgentConnections({
             hidden={active !== "custom"}
           >
             <CustomApiConnection
-              available={!!codex?.customApiAvailable}
+              agent={codex}
+              onRefresh={onRefresh}
               onSaved={(model) => {
                 onRefresh();
                 onUse?.("codex", model);
@@ -306,26 +308,9 @@ function AgentConnection({
   const authUrl = state?.url && /^https?:\/\//i.test(state.url) ? state.url : null;
   return (
     <section className="min-w-0" aria-label={`${ASSISTANT_PROVIDER_LABELS[info.id]} connection`}>
-      {info.issue && <p className="mt-4 text-sm leading-6 text-muted-foreground">{info.issue}</p>}
-      {!info.available && info.setup && (
-        <Button
-          className="mt-5 gap-2"
-          disabled={action.busy || info.setup.state === "installing"}
-          onClick={async () => {
-            if (await action.execute(() => assistantApi.setupProvider(info.id))) refresh();
-          }}
-        >
-          {action.busy || info.setup.state === "installing" ? (
-            <>
-              <Icon name="spinner" className="size-4 animate-spin motion-reduce:animate-none" />{" "}
-              Setting up…
-            </>
-          ) : info.setup.state === "failed" ? (
-            "Retry setup"
-          ) : (
-            `Set up ${ASSISTANT_PROVIDER_LABELS[info.id]}`
-          )}
-        </Button>
+      <AgentSetup info={info} onRefresh={refresh} />
+      {info.available && info.issue && (
+        <p className="mt-4 text-sm leading-6 text-muted-foreground">{info.issue}</p>
       )}
       {info.available && (
         <div className="space-y-5">
