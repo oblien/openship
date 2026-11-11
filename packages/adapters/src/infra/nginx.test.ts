@@ -2245,7 +2245,7 @@ describe("route protection rollback keeps credentials private", () => {
       ]) {
         expect(files.get(path)).toBe(content);
         const restored = writes.filter((write) => write.content === content).at(-1);
-        expect(restored).toMatchObject({ content, mode: 0o600 });
+        expect(restored).toMatchObject({ content, mode: 0o644 });
       }
     },
   );

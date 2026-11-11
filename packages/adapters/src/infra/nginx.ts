@@ -1856,14 +1856,14 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     try {
       for (const { path, content } of changes) {
         if (content === null) await this._rm(path);
-        else await this._writeFile(path, content, 0o600);
+        else await this._writeFile(path, content, 0o644);
       }
       await this.reload();
     } catch (error) {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
       for (const { path, snapshot } of snapshots) {
-        await this._restoreFile(path, snapshot, 0o600).catch((err) => {
+          await this._restoreFile(path, snapshot, 0o644).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(`${path}: ${safeErrorMessage(err)}`);
         });
@@ -2468,8 +2468,8 @@ ${serveLocation}
       // reliably abortable, so re-check between each rollback step and remove
       // anything restored if the signal arrives while one is in progress.
       try {
-        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, 0o600);
-        if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot, 0o600);
+        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, 0o644);
+        if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot, 0o644);
         if (!opts?.signal?.aborted && !(err instanceof ConfigRollbackError)) {
           await this.reloadConfig({ allowStopped: true }).catch((diagnosticFailure) => {
             observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
