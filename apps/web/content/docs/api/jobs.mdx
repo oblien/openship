@@ -4,8 +4,9 @@ description: Create command jobs, run them, and inspect schedules and results.
 ---
 
 A job runs a command on one or more authorized servers. Jobs can run manually, on a cron schedule, once
-at a specified time, or in response to configured events. Self-hosted jobs target connected servers;
-Cloud jobs target the organization's managed servers, using the same operations and scheduler.
+at a specified time, or in response to configured events. Self-hosted jobs target connected servers.
+Hosted jobs can target the organization's managed Cloud servers or its own servers connected through
+Openship Manage, using the same operations and scheduler.
 
 Job methods take the job's **`key`**. Run methods take a **run ID**. Writing a command job also requires
 administration access to every target server. The same target permission protects configuration,
@@ -16,6 +17,14 @@ subscription. Commands use that server's capacity and usage allowance. An active
 available balance and a running server are required; executing a job never provisions a server.
 Manual billing refusals return `CLOUD_BILLING_BLOCKED` with the target `workspaceId` and `serverId`.
 Scheduled attempts record failures in their run history.
+
+Manage jobs execute through the saved customer SSH connection with the privileges of that SSH user.
+They require active Manage access for every connected target. Ownership, target eligibility and
+billing access are checked before each attempt, including retries, and when acquiring the connection.
+SSH destinations are validated and host keys are pinned on reconnect. Hosted jobs cannot use the
+control-plane host, operator SSH credentials, or migration-only connections. If SSH fails, the run
+fails without falling back to local execution. Saved jobs remain readable and removable when Manage
+access expires.
 
 ## Create a command job
 
