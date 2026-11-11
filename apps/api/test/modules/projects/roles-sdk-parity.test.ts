@@ -18,7 +18,7 @@ const app = new Hono()
   .route("/api/health", healthRoutes)
   .route("/api/projects", projectRoutes);
 async function setup() {
-  const owner = await seedOwner();
+  const owner = await seedOwner({ instanceAdmin: true });
   const user = (await repos.user.findById(owner.userId))!;
   const ship = createShip({
     platform: getPlatformKernel(),

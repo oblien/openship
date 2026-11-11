@@ -23,7 +23,7 @@ import {
 } from "./database-backups";
 import { kubernetesPodIssue, kubernetesPodPhase } from "./kubernetes-health";
 import { kubernetesIdLabel } from "./kubernetes-label";
-import { patchKubernetesObject } from "./kubernetes-mutation";
+import { deleteKubernetesObject, patchKubernetesObject } from "./kubernetes-mutation";
 import { RedisArchive, DatabaseArchiveTasks } from "./redis-backups";
 export type { ClusterDatabaseBackupStorage } from "./database-backups";
 
@@ -152,6 +152,18 @@ export class ClusterDatabaseAdapter {
       throw conflict(
         `${object.kind ?? "Resource"} ${object.metadata.name} has different ownership or is being removed. It was left unchanged.`,
       );
+  }
+  private removeController(path: string, object: KubernetesObject) {
+    return deleteKubernetesObject(
+      this.api,
+      path,
+      object,
+      async (current) => {
+        this.assertOwned(current, true);
+        await this.fence();
+      },
+      this.signal,
+    );
   }
   private async declare(path: string, object: KubernetesObject, update = false) {
     const full = `${path}/${object.metadata.name}`;
@@ -1177,22 +1189,7 @@ export class ClusterDatabaseAdapter {
       const path = `/apis/redis.redis.opstreelabs.in/v1beta2/namespaces/${this.namespace}/redissentinels/database`;
       const sentinel = await clusterObject(this.api, path, this.signal);
       if (sentinel) {
-        this.assertOwned(sentinel, true);
-        if (!sentinel.metadata.deletionTimestamp) {
-          await this.fence();
-          await this.api.request(
-            "DELETE",
-            path,
-            {
-              propagationPolicy: "Foreground",
-              preconditions: {
-                uid: sentinel.metadata.uid,
-                resourceVersion: sentinel.metadata.resourceVersion,
-              },
-            },
-            this.signal,
-          );
-        }
+        await this.removeController(path, sentinel);
         await waitForClusterResource(
           this.signal,
           async () => ((await clusterObject(this.api, path, this.signal)) ? null : true),
@@ -1202,23 +1199,7 @@ export class ClusterDatabaseAdapter {
     }
     const root = await clusterObject(this.api, `${this.crBase()}/database`, this.signal);
     if (root) {
-      if (root.metadata.labels?.[managed] !== this.target.id)
-        throw conflict("The database resource changed ownership.");
-      if (!root.metadata.deletionTimestamp) {
-        await this.fence();
-        await this.api.request(
-          "DELETE",
-          `${this.crBase()}/database`,
-          {
-            propagationPolicy: "Foreground",
-            preconditions: {
-              uid: root.metadata.uid,
-              resourceVersion: root.metadata.resourceVersion,
-            },
-          },
-          this.signal,
-        );
-      }
+      await this.removeController(`${this.crBase()}/database`, root);
       await waitForClusterResource(
         this.signal,
         async () =>

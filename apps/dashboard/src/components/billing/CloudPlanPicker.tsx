@@ -1,6 +1,6 @@
 "use client";
 
-import { ReferralCode, useReferralCode } from "@/components/affiliates/ReferralCode";
+import { ReferralCode, useReferralCode } from "@/components/referrals/ReferralCode";
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
@@ -27,7 +27,6 @@ import {
   CloudPurchaseTabs,
   useCloudPurchase,
 } from "./CloudPurchaseContext";
-import { PayAsYouGoPlan } from "./PayAsYouGoPlan";
 import { useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
 import { CloudCheckoutFeedback } from "./CloudCheckoutFeedback";
 import { CheckoutRecoveryDialog } from "./CheckoutRecovery";
@@ -62,8 +61,13 @@ function PlanPicker({
   checkoutKey,
   onCheckoutSettled,
   initialReferralCode,
+  onBusyChange,
+  onVisiblePlanCountChange,
 }: {
   initialReferralCode?: string;
+  onBusyChange?: (busy: boolean) => void;
+  /** Dialog sizing follows the choices actually rendered, including filter changes. */
+  onVisiblePlanCountChange?: (count: number | null) => void;
   requestedPlanId?: string;
   requestedInterval?: "monthly" | "annual";
   autoCheckout?: boolean;
@@ -104,7 +108,6 @@ function PlanPicker({
   const hasPlan = !needsCloudPlan({ tier: currentPlan, subscription, complimentary });
   const canChooseMode = (!hasPlan || purchase.management) && purchase.tabs !== "none";
   const managing = canChooseMode && purchase.mode === "manage";
-  const payg = canChooseMode && purchase.mode === "payg";
   const choices = serverPlanChoices({
     plans: payload?.plans ?? [],
     currentOffer: hasPlan ? currentOffer : null,
@@ -140,13 +143,16 @@ function PlanPicker({
   const visiblePlans = showRequestedPlan
     ? [requestedPlan]
     : compareUpgrades && !showOtherPlans ? choices.upgrades : choices.available;
+  const visiblePlanCount = !loading && !error && configuration === "plans" ? visiblePlans.length : null;
+  useEffect(() => {
+    onVisiblePlanCountChange?.(visiblePlanCount);
+  }, [visiblePlanCount, onVisiblePlanCountChange]);
   const summaryAside = Boolean(
     billingState &&
     hasPlan &&
     !loading &&
     !error &&
     payload &&
-    !payg &&
     configuration === "plans" &&
     visiblePlans.length > 0 &&
     visiblePlans.length <= 2,
@@ -156,7 +162,7 @@ function PlanPicker({
       !loading &&
       !error &&
       Boolean(payload) &&
-      (payg || (configuration === "plans" && visiblePlans.length > 2)),
+      (configuration === "plans" && visiblePlans.length > 2),
   );
   const canPurchase =
     !complimentary &&
@@ -202,8 +208,8 @@ function PlanPicker({
     dismissUnavailable,
     recovery,
   } = useCloudCheckout({
-    enabled: canPurchase && !purchaseDisabled && !payg && !managing && referral.ready,
-    affiliateCode: referral.verified,
+    enabled: canPurchase && !purchaseDisabled && !managing && referral.ready,
+    referralCode: referral.verified,
     preserveProject,
     onCheckoutStarted,
     workspaceId,
@@ -218,7 +224,7 @@ function PlanPicker({
     // The website click selected this preset. Wait for authenticated scope and
     // live availability, and schedule after effect replay so Strict Mode cannot
     // cancel the only attempt during its initial mount cleanup.
-    if (autoCheckout && requestedPlan && requestedIntervalAvailable && !loading && !error && canPurchase && !purchaseDisabled && !payg && !managing && !preserveProject && referral.ready && configuration === "plans") {
+    if (autoCheckout && requestedPlan && requestedIntervalAvailable && !loading && !error && canPurchase && !purchaseDisabled && !managing && !preserveProject && referral.ready && configuration === "plans") {
       void Promise.resolve().then(() => {
         if (disposed || autoStarted.current) return;
         autoStarted.current = true;
@@ -226,10 +232,14 @@ function PlanPicker({
       });
     }
     return () => { disposed = true; };
-  }, [autoCheckout, requestedPlan?.id, requestedIntervalAvailable, loading, error, canPurchase, purchaseDisabled, payg, managing, preserveProject, referral.ready, configuration, startCheckout, interval]);
+  }, [autoCheckout, requestedPlan?.id, requestedIntervalAvailable, loading, error, canPurchase, purchaseDisabled, managing, preserveProject, referral.ready, configuration, startCheckout, interval]);
   const selectedCurrentPlan =
     hasPlan && subscription?.configuration !== "custom" ? choices.current : null;
   const busy = subscribing !== null || changes.busy;
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   const setPurchaseBusy = purchase.setBusy;
   useEffect(() => {
     if (managing) return;
@@ -377,17 +387,16 @@ function PlanPicker({
           className={`min-w-0 space-y-5 ${summaryAside ? "@min-[64rem]/plans:col-start-1 @min-[64rem]/plans:row-start-1" : ""}`}
         >
           {canChooseMode && purchase.tabs === "inline" && !purchase.management && <CloudPurchaseTabs />}
-          {canPurchase && !payg && !managing && <ReferralCode referral={referral} disabled={busy} />}
           {canChooseMode ? (
             <CloudPurchaseHeaderContent details={details} controls={controls} />
           ) : (
             details
           )}
           <div
-            hidden={payg || managing}
-            role={canChooseMode ? "tabpanel" : undefined}
-            id={canChooseMode ? `${purchase.id}-panel-monthly` : undefined}
-            aria-labelledby={canChooseMode ? `${purchase.id}-tab-monthly` : undefined}
+            hidden={managing}
+            role={canChooseMode && purchase.management ? "tabpanel" : undefined}
+            id={canChooseMode && purchase.management ? `${purchase.id}-panel-monthly` : undefined}
+            aria-labelledby={canChooseMode && purchase.management ? `${purchase.id}-tab-monthly` : undefined}
             className="space-y-5"
           >
             {subscription?.pendingChange && (
@@ -424,7 +433,7 @@ function PlanPicker({
                 currentOffer={currentOffer}
                 subscription={subscription}
                 allocatedDiskGb={allocatedDiskGb}
-                disabled={!selectable || purchaseDisabled || payg || managing || (canPurchase && !referral.ready)}
+                disabled={!selectable || purchaseDisabled || managing || (canPurchase && !referral.ready)}
                 busy={busy}
                 actionLabel={canModify ? t.billing.planChange.review : undefined}
                 quoteRevision={quoteRevision}
@@ -438,11 +447,12 @@ function PlanPicker({
             ) : visiblePlans.length > 0 ? (
               <PricingCards
                 plans={visiblePlans}
+                referralOffer={canPurchase && referral.verified ? referral.state.data ?? undefined : undefined}
                 ui={payload.ui}
                 currentPlan={selectedCurrentPlan}
                 onSelectPlan={handleSelectPlan}
                 subscribingPlan={subscribing}
-                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || payg || managing || (canPurchase && !referral.ready)}
+                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || managing || (canPurchase && !referral.ready)}
                 selectionLabel={canModify ? t.billing.planChange.review : undefined}
                 interval={interval}
                 workspaceScoped={workspaceScoped}
@@ -453,22 +463,13 @@ function PlanPicker({
               </p>
             )}
           </div>
-          {canChooseMode && (
-            <div
-              hidden={!payg}
-              role="tabpanel"
-              id={`${purchase.id}-panel-payg`}
-              aria-labelledby={`${purchase.id}-tab-payg`}
-            >
-              <PayAsYouGoPlan
-                pricing={payload.computePricing}
-                catalog={payload.custom}
-                payg={payload.payg}
-              />
-            </div>
-          )}
           {contactPlans.length > 0 && (
             <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
+          )}
+          {canPurchase && !managing && (
+            <div className="border-t border-border/50 pt-5">
+              <ReferralCode referral={referral} disabled={busy} />
+            </div>
           )}
           <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />
           <CloudCheckoutFeedback failure={unavailable} plans={payload.plans} onClose={dismissUnavailable}

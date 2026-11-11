@@ -1317,13 +1317,15 @@ export function ServerMigrationWizard({
     void startMigration(items[0]);
   };
 
-  const handleCutover = async (kill: boolean) => {
+  const handleCutover = async (kill: boolean, restartOriginals = true) => {
     if (!migrationId || !confirmToken) return;
     const isCurrent = claimOperation();
     setCutoverBusy(true);
     setError(null);
     try {
-      await dockerMigrationApi.confirmCutover(migrationId, confirmToken, kill);
+      if (restartOriginals)
+        await dockerMigrationApi.confirmCutover(migrationId, confirmToken, kill);
+      else await dockerMigrationApi.confirmCutover(migrationId, confirmToken, kill, false);
       if (!isCurrent()) return;
       const res = await dockerMigrationApi.getMigration(migrationId);
       if (isCurrent()) setRun(res.run);
@@ -1934,7 +1936,17 @@ export function ServerMigrationWizard({
         {run?.status === "awaiting_cutover" || cutoverNeedsRetry ? (
           <>
             <span className="text-xs text-muted-foreground flex-1 min-w-0">{cutoverWarning}</span>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {run?.status === "awaiting_cutover" && run.mode === "cross_server" && (
+                <button
+                  type="button"
+                  onClick={() => handleCutover(false, false)}
+                  disabled={cutoverBusy}
+                  className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                >
+                  {m.cutover.keepAsIs}
+                </button>
+              )}
               {run?.status === "awaiting_cutover" && (
                 <button
                   type="button"
@@ -1942,7 +1954,7 @@ export function ServerMigrationWizard({
                   disabled={cutoverBusy}
                   className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
                 >
-                  {m.cutover.keep}
+                  {run?.mode === "cross_server" ? m.cutover.keepRestart : m.cutover.keep}
                 </button>
               )}
               <button
@@ -2122,6 +2134,16 @@ export function ServerMigrationWizard({
                   )}
                   {m.cutover.stopRemove}
                 </button>
+                {awaiting && run?.mode === "cross_server" && (
+                  <button
+                    type="button"
+                    onClick={() => handleCutover(false, false)}
+                    disabled={cutoverBusy}
+                    className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                  >
+                    {m.cutover.keepAsIs}
+                  </button>
+                )}
                 {awaiting && (
                   <button
                     type="button"
@@ -2129,7 +2151,7 @@ export function ServerMigrationWizard({
                     disabled={cutoverBusy}
                     className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40"
                   >
-                    {m.cutover.keep}
+                    {run?.mode === "cross_server" ? m.cutover.keepRestart : m.cutover.keep}
                   </button>
                 )}
               </>

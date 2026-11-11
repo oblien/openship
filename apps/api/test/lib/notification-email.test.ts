@@ -33,7 +33,7 @@ describe("notification email delivery", () => {
   });
 
   it("preserves transport failures so the notification worker can retry", async () => {
-    mocks.sendMail.mockRejectedValue(new Error("SMTP unavailable"));
-    await expect(sendTestToChannel(channel)).rejects.toThrow("SMTP unavailable");
+    mocks.sendMail.mockRejectedValue(Object.assign(new Error("SMTP unavailable private-credential"), { code: "ECONNREFUSED" }));
+    await expect(sendTestToChannel(channel)).rejects.toThrow("Notification delivery failed (ECONNREFUSED)");
   });
 });

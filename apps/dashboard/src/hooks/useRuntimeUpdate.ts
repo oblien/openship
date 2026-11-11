@@ -1,5 +1,7 @@
 "use client";
 
+import { refreshConsumers } from "@/components/updates/useUpdates";
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isCreateDeploymentResult } from "@repo/contracts";
@@ -23,6 +25,7 @@ export function useRuntimeUpdate(
   const { showToast } = useToast();
   const router = useRouter();
   const showCloudPricing = useCloudDeployPricing(workspaceId);
+  const showComposeReview = useComposeReview(projectId);
   const resourceKey = useCloudResourceKey();
   const identity = JSON.stringify([resourceKey, projectId, serviceId, revision]);
   const currentIdentity = useRef(identity);
@@ -57,18 +60,22 @@ export function useRuntimeUpdate(
       pending.current = requestIdentity;
       setPendingIdentity(requestIdentity);
       try {
-        const { data } = advisory ? await updatesApi.applySecurity(projectId, advisory) : await updatesApi.updateRuntime(
-          projectId,
-          serviceId ? { serviceIds: [serviceId] } : {},
-        );
+        const { data } = advisory
+          ? await updatesApi.applySecurity(projectId, advisory)
+          : await updatesApi.updateRuntime(projectId, serviceId ? { serviceIds: [serviceId] } : {});
         if (!current()) return;
         if (!isCreateDeploymentResult(data) || data.project_id !== projectId)
           throw new Error(copy.failed);
+        if (advisory) refreshConsumers(resourceKey);
         router.push(
           data.awaiting_actions ? `/projects/${projectId}/actions` : `/build/${data.deployment_id}`,
         );
       } catch (error) {
         if (!current()) return;
+        // Re-read admission failures too, so a stale refresh button becomes
+        // the current configuration guidance instead of offering the same no-op.
+        if (advisory) refreshConsumers(resourceKey);
+        if (showComposeReview(error)) return;
         if (
           showCloudPricing(error, async () => {
             if (current()) await runUpdate(advisory);
@@ -88,6 +95,7 @@ export function useRuntimeUpdate(
     },
     [
       identity,
+      resourceKey,
       projectId,
       serviceId,
       copy.failed,
@@ -95,6 +103,7 @@ export function useRuntimeUpdate(
       copy.uncertain,
       router,
       showCloudPricing,
+      showComposeReview,
       showToast,
     ],
   );

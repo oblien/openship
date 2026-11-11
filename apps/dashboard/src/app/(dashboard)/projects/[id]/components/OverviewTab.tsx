@@ -35,11 +35,12 @@ export const OverviewTab = () => {
   // until a domain exists rather than show empty charts.
   const hasDomain =
     !!(selectedDomain || domain) || (domainsData?.domains?.length ?? 0) > 0;
+  const hasDeployedDomain = hasDomain && !!projectData.activeDeploymentId;
 
   // Project info and analytics load independently. Analytics share one
   // project-wide request and cache with Monitoring's default All scope.
   const projectInfoQuery = useProjectInfo(id);
-  const analytics = useAnalyticsData(projectData.id === id && hasDomain ? id : null);
+  const analytics = useAnalyticsData(projectData.id === id && hasDeployedDomain ? id : null);
   const showAnalyticsError = !!analytics.error;
   const analyticsData = analytics.data;
   const services = servicesData.services;
@@ -66,8 +67,19 @@ export const OverviewTab = () => {
     workloadType: projectData.workloadType ?? projectData.options?.workloadType,
     hasServer: projectData.hasServer ?? projectData.options?.hasServer,
   });
-  const modeLabel =
-    workload === "static"
+  // A Compose import is a stack of services, not a static site — but its
+  // workload resolves to static (no single server, no workloadType), so the
+  // Mode row mislabels it (#1670). `projectType` comes from getInfo, derived
+  // from the service rows, so it is the reliable signal here.
+  const isComposeStack = projectData.projectType === "services";
+  const modeLabel = isComposeStack
+    ? interpolate(
+        serviceCount === 1
+          ? t.projects.overview.modeComposeOne
+          : t.projects.overview.modeComposeOther,
+        { count: serviceCount },
+      )
+    : workload === "static"
       ? t.projects.overview.modeStatic
       : workload === "worker"
         ? t.projects.overview.modeWorker
@@ -275,8 +287,11 @@ export const OverviewTab = () => {
         </Card>
       </div>
 
-      {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
-      {hasDomain && showAnalyticsError && (
+      {/* A reserved domain has no traffic source until the first deployment publishes. */}
+      {hasDomain && !hasDeployedDomain && (
+        <p className="text-sm text-muted-foreground">{t.projects.monitoring.noDataDescription}</p>
+      )}
+      {hasDeployedDomain && showAnalyticsError && (
         <AnalyticsError
           error={analytics.error!}
           onRetry={() => retryProjectRequests(id)}
@@ -284,7 +299,7 @@ export const OverviewTab = () => {
           hasData={!!analyticsData}
         />
       )}
-      {hasDomain && (!showAnalyticsError || analyticsData) && (
+      {hasDeployedDomain && (!showAnalyticsError || analyticsData) && (
         <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

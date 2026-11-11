@@ -22,6 +22,7 @@ import { useServerTunnels } from "@/hooks/useServerTunnels";
 import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
 import { PromptDetails } from "@/components/import-project/PromptDetails";
 import { ServerForm } from "@/components/servers/server-form";
+import { ServerSecurityRuns } from "@/components/updates/ServerSecurityRuns";
 import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
 import { ServerModuleUpdates } from "./_components/module-updates";
@@ -37,6 +38,7 @@ import {
 
 import { RateLimitSettings } from "./_components/rate-limit-settings";
 import { GpuCard } from "./_components/gpu-card";
+import { BuildCacheCard } from "./_components/build-cache-card";
 import { ExposedPortsCard } from "./_components/exposed-ports-card";
 import { PortForwardingCard } from "./_components/port-forwarding-card";
 import { ServerGitHubConnect } from "@/components/github/ServerGitHubConnect";
@@ -118,7 +120,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
     return tab.key === "overview" || hostConfiguration;
   });
   const activeTab = visibleTabs.some(tab => tab.key === requestedTab) ? requestedTab : "overview";
-  const fullWidth = activeTab === "migrations";
+  const fullWidth = activeTab === "migrations" || activeTab === "runs";
   // Follow real tab links and browser navigation as well as the initial URL.
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -731,9 +733,12 @@ function ServerDetail({ serverId }: { serverId: string }) {
                 showComponents={canInspect}
               />}
               {server.gpu && <GpuCard key={`${serverId}:${server.gpu.override ?? "auto"}`} server={server} onChanged={updated => setServer(current => current ? { ...current, ...updated } : updated)} />}
+              {server.buildCacheBudgetBytes !== undefined && server.capabilities?.buildCacheBudget && <BuildCacheCard key={`${serverId}:${server.buildCacheBudgetBytes ?? "auto"}`} server={server} onChanged={updated => setServer(current => current ? { ...current, ...updated } : updated)} />}
               {canInspect && components.some(component => component.name === "docker" && component.installed) && <ServerSwarm serverId={serverId} />}
               <ServerUsage serverId={serverId} showProjects metrics={!canMonitor} />
             </>}
+
+            {activeTab === "runs" && <ServerSecurityRuns serverId={serverId} />}
 
             {activeTab === "components" && (
               <>

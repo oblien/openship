@@ -11,10 +11,30 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { db, eq, repos, schema, type DatabaseTransaction } from "@repo/db";
+import { and, db, eq, isNull, repos, schema, type DatabaseTransaction } from "@repo/db";
+import { AppError } from "@repo/core";
+import { env } from "@repo/platform/engine/config/env";
 import { provisionUser } from "@repo/platform/engine/lib/provision-user";
 
 export const LOCAL_EMAIL = "local@openship.local";
+
+/** Called only after consuming Desktop's authenticated one-time PKCE claim. */
+export async function rememberDesktopUser(userId: string): Promise<void> {
+  if (env.DEPLOY_MODE !== "desktop" || env.CLOUD_MODE || env.OPENSHIP_REQUIRE_AUTH || env.OPENSHIP_PUBLIC_URL)
+    throw new AppError("This instance cannot change its local device identity.", 403, "LOCAL_IDENTITY_UNAVAILABLE");
+  const { controllerState } = await import("../modules/system/instance/controller-state");
+  await controllerState();
+  await db.transaction(async (tx) => {
+    const [controller] = await tx.select().from(schema.instanceController).where(eq(schema.instanceController.id, "local")).for("update");
+    if (!controller || controller.role !== "active" || controller.handoffId)
+      throw new AppError("Finish the instance handoff before changing its local identity.", 409, "LOCAL_IDENTITY_UNAVAILABLE");
+    const [user] = await tx.select().from(schema.user).where(eq(schema.user.id, userId));
+    if (!user || user.role !== "admin")
+      throw new AppError("The local device identity must be an existing administrator.", 403, "LOCAL_IDENTITY_UNAVAILABLE");
+    await tx.update(schema.instanceController).set({ desktopUserId: userId }).where(eq(schema.instanceController.id, "local"));
+  });
+  invalidateLocalUserCache();
+}
 
 /** A wipe keeps installation authority but replaces its users. Rebind only a
  * missing identity on an ordinary active instance to the imported synthetic
@@ -91,7 +111,13 @@ export async function ensureLocalUser(): Promise<LocalUser> {
 
   const row = await repos.user.findById(id);
   if (!row) throw new Error("Failed to provision local user");
-  if (controller) await db.update(schema.instanceController).set({ desktopUserId: row.id }).where(eq(schema.instanceController.id, "local"));
+  if (controller) {
+    const [bound] = await db.update(schema.instanceController).set({ desktopUserId: row.id })
+      .where(and(eq(schema.instanceController.id, "local"), isNull(schema.instanceController.desktopUserId))).returning();
+    // An authenticated sign-in or restore may have bound the owner while this
+    // request provisioned the fallback. Never overwrite that chosen identity.
+    if (!bound) return ensureLocalUser();
+  }
 
   const resolved = {
     id: row.id,

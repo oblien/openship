@@ -74,7 +74,11 @@ describe("DockerRuntime.pruneBuildCache", () => {
 });
 
 describe("managed project cache cleanup", () => {
-  function cacheRuntime(transport: "cloud" | "ssh" = "cloud") {
+  const STORAGE = { totalBytes: 100 * 1024 ** 3, freeBytes: 50 * 1024 ** 3, freeInodes: 100 };
+  function cacheRuntime(
+    transport: "cloud" | "ssh" = "cloud",
+    buildCacheBudgetBytes?: () => Promise<number | null>,
+  ) {
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime & {
       clearManagedProjectBuildCache(projectId: string): Promise<void>;
     };
@@ -123,6 +127,7 @@ describe("managed project cache cleanup", () => {
         transport,
         executor: { exec },
         buildCacheProtection: async () => ({ projectIds: protectedIds, all: pending > 0 }),
+        buildCacheBudgetBytes,
       },
       provisionLock: {
         run: async (work: () => Promise<void>) => {
@@ -141,8 +146,11 @@ describe("managed project cache cleanup", () => {
         getVolume: () => ({ inspect: async () => volume, remove }),
       },
     });
+    type WorkerConfig = { buildWorkerCacheConfig(storage: typeof STORAGE): Promise<string> };
     return {
       runtime,
+      workerConfig: (storage: typeof STORAGE) =>
+        (runtime as unknown as WorkerConfig).buildWorkerCacheConfig(storage),
       calls,
       remove,
       exec,
@@ -177,6 +185,42 @@ describe("managed project cache cleanup", () => {
     h.idle();
     await h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 5 * 1024 ** 3 });
     expect(h.exec).toHaveBeenCalledWith("du -sk -- '/cache/state'", { timeout: 120_000 });
+    expect(h.remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps idle project state under the disk budget during automatic retention", async () => {
+    const h = cacheRuntime();
+    h.idle();
+    // keepStorageBytes is the native Docker Engine target; managed caches follow the host's disk.
+    await expect(
+      h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 0, automaticRetention: true }),
+    ).resolves.toEqual({ cachesDeleted: [], spaceReclaimed: 0 });
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(h.dial).not.toHaveBeenCalled();
+  });
+
+  it("applies the server's configured budget to collection and the worker's BuildKit GC", async () => {
+    // The idle cache is 1 MiB: a 512 KiB budget evicts it, the automatic disk share keeps it.
+    const h = cacheRuntime("ssh", async () => 512 * 1024);
+    h.idle();
+    await expect(
+      h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 0, automaticRetention: true }),
+    ).resolves.toEqual({
+      cachesDeleted: [projectBuildCacheVolume("p1")],
+      spaceReclaimed: 1024 * 1024,
+    });
+    await expect(h.workerConfig(STORAGE)).resolves.toContain(`maxUsedSpace = ${512 * 1024}`);
+  });
+
+  it("falls back to the automatic budget when the server setting cannot be read", async () => {
+    const h = cacheRuntime("ssh", async () => {
+      throw new Error("settings unavailable");
+    });
+    h.idle();
+    await expect(
+      h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 0, automaticRetention: true }),
+    ).resolves.toEqual({ cachesDeleted: [], spaceReclaimed: 0 });
+    await expect(h.workerConfig(STORAGE)).resolves.toContain(`maxUsedSpace = ${20 * 1024 ** 3}`);
     expect(h.remove).not.toHaveBeenCalled();
   });
 

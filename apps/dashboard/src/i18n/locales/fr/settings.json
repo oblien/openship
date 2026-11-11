@@ -1623,7 +1623,7 @@
         "fields": {
           "apiToken": {
             "label": "Jeton d'API",
-            "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec Openship."
+            "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec Openship. Créez-le dans My Profile → API Tokens."
           }
         }
       }

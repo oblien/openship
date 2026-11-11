@@ -1,0 +1,63 @@
+---
+title: Microsoft Teams
+description: Connect a single-tenant Teams bot to OpenShip deployment commands.
+---
+
+Teams setup requires a single-tenant Azure Bot, a Teams application and known conversation details. Replies are visible to members of the conversation. Start in a personal bot chat when project information should stay private.
+
+## Before you start
+
+You need permission to register an Entra application, configure Azure Bot, and install a custom Teams app in your tenant. Your OpenShip API must be reachable through public HTTPS. See [connector prerequisites](/docs/dashboard/chat-apps#connect-a-bot).
+
+This connector currently requires the exact `conversation.id` and `serviceUrl` from a trusted, authenticated incoming Teams bot activity. It does not discover conversations during setup. For a new bot, collect those fields using your existing bot development endpoint before moving its messaging endpoint to OpenShip. A team ID, channel link or guessed service URL is not a substitute. See Microsoft's [conversation reference guidance](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/conversations/send-proactive-messages).
+
+## 1. Register the bot
+
+1. Create a single-tenant Microsoft Entra app. Record its **Application (client) ID** and **Directory (tenant) ID**.
+2. Create a client secret and save its **Value**, not its secret ID.
+3. Create an **Azure Bot** using that application ID, tenant and single-tenant identity. Enable the **Microsoft Teams** channel.
+4. In the Teams Developer Portal, create a Teams app, add the existing bot by its application ID, and enable the scopes you need, such as personal or team.
+5. Install the app in the intended scope. Your tenant's app policies must permit it.
+
+Microsoft documents [Azure bot configuration](https://learn.microsoft.com/en-us/microsoftteams/platform/teams-sdk/teams/azure-configuration) and [testing a bot in Teams](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/bots/bots-test). Multi-tenant registrations and sovereign-cloud connector endpoints are not supported by this OpenShip connector.
+
+## 2. Identify the allowed conversations
+
+Send a message to your bot through its current development endpoint. From the authenticated activity, record only:
+
+| Activity field | OpenShip field |
+| --- | --- |
+| `channelData.tenant.id` | Microsoft Entra tenant ID. Must match the registered tenant. |
+| `conversation.id` | Allowed conversation IDs. |
+| `serviceUrl` | Teams connector service URL. |
+
+Keep message contents and authorization headers out of setup notes. The service URL must be the Microsoft connector URL from that activity, using `smba.trafficmanager.net` or `smba.infra.teams.microsoft.com` (including their subdomains). OpenShip checks that incoming activities match the configured tenant, conversation and service URL. Use separate connectors if conversations use different service URLs.
+
+## 3. Save and route the bot to OpenShip
+
+In **Settings → Chat apps → Microsoft Teams**, choose a name and bot role. Enter the application's client ID, tenant ID, client secret value, connector service URL and allowed conversation IDs. Select **Save connector**, then **Enable bot**.
+
+Copy **Bot webhook URL** into the Azure Bot's **Messaging endpoint** and save. This moves delivery from the development endpoint to OpenShip. Bot credentials are encrypted in OpenShip and are never returned by the settings API.
+
+## 4. Link and test
+
+In a personal bot conversation, send `/openship help`. In a channel, mention the bot first, then enter `/openship help`.
+
+Send `/openship link`, complete the OpenShip permission dialog and send the returned verification command from the original account and conversation. Use `/openship projects` to check access. Follow the [deployment example](/docs/dashboard/chat-apps#your-first-deployment-command) to test a confirmed action.
+
+## Talk to your assistant
+
+Select **Assistant** for conversations. Also select **Control plane** to use the same bot for deployment commands. Use a separate provider bot/application if you also want a dedicated deployment-command bot. After opt-in, `/openship chats` lists your earlier conversations here, `/openship resume <conversation-id>` continues one, and `/openship chat` opens the same conversation in OpenShip. You can continue it in either place. In Discord, enter `chats`, `resume <conversation-id>` or `chat` in the command’s **text** option.
+
+Complete the [assistant opt-in](/docs/dashboard/chat-apps#talk-to-your-assistant). In your personal bot chat, send `Check my latest deployment`, or `/openship ask Check my latest deployment`. In a channel, mention the bot with your question so Teams forwards it. Use `/openship new` to start a fresh conversation or `/openship stop` to stop your turn.
+
+Replies are visible to members of that conversation, so prefer a personal bot chat for private app information. Each person must connect their own agent. The assistant's context is scoped to the sender and the provider's conversation ID.
+
+## Troubleshooting
+
+- **The bot cannot be installed:** check your tenant's custom app policies, bot ID, enabled scopes and Azure Bot Teams channel.
+- **Requests are rejected:** check tenant and application IDs, the exact conversation ID and service URL, and the secret value/expiry. Preserve the raw request and `Authorization` header at the proxy. Do not disable signature checks.
+- **No reply in a channel:** mention the bot and verify the activity's `conversation.id` is allowed. Channel IDs copied from links may differ from this value.
+- **Replies stop after a configuration change:** compare the current authenticated activity's service URL with the saved one. Recreate the connector with corrected settings and update its messaging endpoint.
+
+See [all commands and privacy behavior](/docs/dashboard/chat-apps#commands). A missing reply does not prove a deployment failed; check its history before repeating a write action.

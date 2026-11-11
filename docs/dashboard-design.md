@@ -5,9 +5,78 @@ and a consistent type hierarchy across light, dim, and dark themes.
 
 ## Surfaces and controls
 
+Assistant settings belong in **Settings → Assistant**; event-driven flows and run
+history open from **Automations** in the AI Agents right column.
+Keep the conversation free of view tabs, with an AI Agents return action on the automations page.
+The automation overview has one heading, shared underline tabs for Flows and Run history, and compact
+clickable flow rows. Show the name, app, response mode and status; a small connected icon path previews
+the four steps on wider screens. Offer trigger templates from Create automation instead of repeating
+large template cards below saved flows. Put pause-all and assistant settings in the options menu.
+Reuse the
+agent connection dialog and MCP permission editor. Create and edit automations on
+dedicated pages at `/assistant/automations/new` and `/assistant/automations/[id]/edit`,
+with a back link to the list. A flow is a fixed sequence of Trigger, Investigate,
+Respond and Notify. Use the shared `AutomationSteps` as four compact settings rows connected
+by a subtle vertical line through the icon markers, including alongside expanded fields.
+Use the same stepper in the workspace, editor and expanded chat results. Align labels and values horizontally
+where space permits, and stack them on narrow screens. Selecting a row expands its fields
+directly underneath, within the same surface; only one row is open at a time.
+Keep the whole page scrolling naturally. Use the same `AutomationEditor` and data loader
+for inline editing and dedicated creation/editing routes, with the same validation,
+permissions, notification channels and consent. The steps do not support dragging,
+branching or arbitrary connections. Keep Save and Cancel visible in a compact sticky
+header. Preserve drafts when switching or collapsing rows and restore focus when leaving
+inline edit. Keep the app and paused/enabled status on one line, without repeating trigger,
+response or agent details above the rows. Editing replaces the overview and hides run history
+until Save or Cancel. Avoid numbered tiles, repeated section headings and paused banners.
+Each row's interactive area, hover and keyboard-focus fill spans the full card width;
+clip it at the card's outer corners. Use neutral focus fill instead of an inset blue outline.
+Use filled dropdowns for event, agent and response choices, with brief supporting text.
+Group permissions into app recovery and repository rows with trailing checkboxes;
+avoid a separate card for every permission. Avoid green in the creation flow. Offer
+Create an app in the empty state and dropdown; preserve the draft while setup opens in
+a new tab, then refresh app choices on return. The selected automation's workspace
+shows its settings and run history, with links to existing investigation chats. Keep empty
+run history as a short sentence instead of another large card.
+Loading in AI Agents uses theme-token skeletons shaped like the destination: conversation,
+agent list, editor fields or automation steps. Keep already loaded flow summaries visible
+while inline fields load, keep Cancel available, and replace only unknown values with
+placeholders. Initial loads must not replace the workspace with a centered spinner and
+large loading headline. Keep existing results during refresh, show actual failures with
+Retry, and respect reduced-motion preferences for skeleton animation.
+Use semantic surfaces
+and shared filled inputs/selects. New flows start paused, with explicit consent
+beside automatic actions. Distinguish investigation, approval, action acceptance
+and verified health in run history. Results and the shared action review belong in the
+agent conversation, with optional existing notification channels linking to it. Keep run limits
+in a disclosure, with their current values visible in the summary. Review
+repository patches with their exact base commit and full proposed file contents before
+approval. Publishing a branch or PR is Completed; reserve Healthy for verified app recovery.
+
+Checking agent connections keeps the opening conversation's heading, composer and suggestions
+in their final positions. Put progress in the agent control and disable sending until the
+connection is known; keep drafts editable. Show connection setup only after a successful check
+confirms it is needed, and show failed checks with Retry rather than treating them as disconnections.
+Replies use the shared Streamdown renderer directly on the page, without a provider heading.
+Use its incomplete Markdown handling for streamed and interrupted replies. Mark only the current
+part as streaming so copy becomes available when it settles. Use Shiki highlighting in both light
+and dark/dim themes, compact code-copy controls, and the shared icon catalog. Keep code and wide
+tables within horizontally scrolling surfaces. Code-copy controls copy only code; response
+copy includes the reply's Markdown, never tool output or internal automation metadata. Keep raw HTML
+and model-supplied image loads disabled; allow only web, mail and relative navigation links.
+Tool activity stays compact, with accurate pending/error states and private details in the existing dialog.
+
 Use semantic classes from [theme.css](../apps/dashboard/src/styles/theme.css). The nested-card
 rules in [globals.css](../apps/dashboard/src/app/globals.css) supply the theme-specific layering.
 Keep palette definitions there instead of introducing page-specific colors.
+Feature and empty-state artwork follows the approved [product illustration
+style](illustrations.md): flat rounded shapes, neutral foreground layers,
+clear negative space and small warm accents. Reuse `FeatureIllustration` from
+`@repo/ui/illustrations` for approved compact artwork. The linked guide owns
+its geometry, theme variables, sizing and HTML review catalog; the surrounding
+page continues to use this guide's surfaces and typography. Keep status colors
+in semantic status components and avoid large colored illustration surfaces,
+perspective, material shading or decorative glows.
 
 | Element           | Treatment                                                                                         |
 | ----------------- | ------------------------------------------------------------------------------------------------- |
@@ -35,6 +104,9 @@ Keep local building in the destination's advanced controls only when the runtime
 Remote Docker, static sandbox, service, managed Cloud and cluster builds name their build
 destination; a stale local-build preference must not advertise work on Desktop. Preserve the
 separate clone-location choice and existing source behavior when hiding unavailable builds.
+After routing is published, show **Live · Verifying** with Open site and Open project
+available while final startup checks continue. Without a published destination, show
+**Verifying**. Reserve Ready for the settled outcome; keep Stop available during verification.
 Image updates belong in the existing project and service Redeploy dropdown. Reuse the same
 **Refresh images & redeploy** and **Check image updates** actions for every stack, including
 prebuilt image services. Refresh preserves configured versions and digest pins. Image drift uses
@@ -42,12 +114,31 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
-Security advisories reuse those deployment actions and the existing root UpdateCenter
+Security advisories use the existing deployment pipeline and root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app
 inside the dialog. The compact banner names only the apps and services affected by its
-advisory, with observed runtime versions. Monitoring → Security retains active findings
-independently of banner dismissal and reuses the same review component and cached overview.
+advisory, with observed runtime versions. Confirmed findings display the signed
+severity; a High finding must not be labeled Critical. Low-priority manual reviews
+with only possible applicability use an informational **Review required** notice,
+with applicability explicitly unverified. Preserve the signed severity in the
+underlying finding; do not treat the runtime version as proof of application behavior
+or let a review outrank a confirmed vulnerability. Generated single-app Node and Bun
+runtime fixes show **Apply security patch**, the current and target versions and
+the proposed images. Explain that the saved choice also applies to future deploys;
+for Bun, explain that it overrides repository toolchain version pins. Submit the
+review identity with the action so changed settings require another review. Keep
+ordinary image refresh labeled separately. High and Critical advisories
+retain their warning priority even if they need manual review. Monitoring → Security retains
+active findings independently of banner dismissal and reuses the same review component
+and cached overview.
+The banner settings menu can hide runtime security banners, including critical ones,
+for the current browser/account/workspace. Settings → Notifications restores them.
+Keep this visibility choice separate from security checks, notification delivery and
+per-project automatic-refresh consent. Operator maintenance notices stay independent.
+When the signed advisory has no patched release in the observed runtime's major,
+show the required version-change guidance and open the existing saved deployment
+configuration. Do not offer another image refresh as a fix or silently upgrade a major.
 Keep detailed guidance and automatic-update settings in disclosures; show unknown/stale
 coverage and inspection time without claiming a complete vulnerability scan.
 Reading the root banner aggregates current observations without container exec;
@@ -55,8 +146,38 @@ new/changed rules are inspected by the bounded background job.
 Automatic security refresh is an explicit, off-by-default project switch with
 its limited scope explained beside it. Keep per-channel security alert controls
 in Settings → Notifications. Runtime security checks may use cached, bounded
-version probes inside isolated containers. Keep **Check again** beside the last
+version probes inside isolated containers. Workspace owners and admins can pause
+runtime advisory checks with the separate saved setting in Settings → Notifications.
+Monitoring must show checks disabled rather than a clean result; banner visibility
+remains a separate browser preference. Pausing checks also pauses automatic security refreshes.
+Security refresh actions retain a durable deployment receipt. Hide only the finding's
+banner while its update is running or awaiting deployment actions; retain its progress
+in the shared review and Monitoring. Restore the warning with an explicit failure if
+the deployment fails or the promoted runtime remains affected. An unchanged prebuilt
+image is not a remediation: explain that a patched version must be configured instead
+of redeploying the same digest. Opening review alone never resolves a finding.
+Manual advisories show their guidance immediately, grouped once per advisory with
+all affected services. Keep each service’s confidence, update progress and blockers
+when grouping; do not use the first service as the state for the entire advisory.
+Offer the existing saved configuration and a scoped **Fix
+with AI** handoff. The handoff prepares an editable request with project/advisory
+identifiers only; security handoffs remain editable and never stage automatic
+submission, including after connection setup. Navigation never grants access. Keep these
+findings visible after an image update when no version-only fix is known.
+Keep **Check again** beside the last
 inspection time; it refreshes evidence without deploying. Image drift checks remain receipt-based.
+Host notices share that banner and review, linking to **Servers → Runs**. Monitoring's
+Security view shows workspace-local scan state and the default-on checks policy.
+Opening either view reads cached observations; it must not execute host commands.
+Runs shows the exact reviewed package versions, interruption guidance, bounded output
+and verification outcome. Use the shared job run output viewer with persisted steps,
+resumable events and the shared terminal. A dropped log connection is a connection
+error, not a failed patch. Keep patch installation and kernel reboot as separate
+explicit reviews. Apply remains on the server and never opens project Deployments.
+Keep saved run history and logs available to server admins when host execution is
+disabled or the connection needs repair; only execution controls become unavailable.
+Failed checks retain known warnings and show stale or unavailable coverage. Reset
+pending review and run state when the account, workspace or server changes.
 The failed deployment page offers **Retry deployment** only when the server reports a retained
 completed image. It replays that attempt's saved configuration with no build or replacement image
 pull. Keep ordinary **Redeploy** available for a new build. Routing-only warnings use the existing
@@ -306,6 +427,21 @@ cancellations and unfinished attempts from success rate; count queued attempts a
 Each project retains its own history.
 Old `/deployments` links redirect to Monitoring while preserving filters.
 
+When redeploy detects changed Compose source, show a review modal with the added,
+changed, and removed service names. Configure opens the existing deployment
+wizard with the fresh source and saved settings/destination; cancel performs no
+synchronization. Show the change summary in the wizard and validate its source
+revision before deploying. Retire removed services through normal deployment
+cleanup while preserving their persistent data and deployment history.
+Deploy asks for DNS setup only for newly selected custom hostnames or a changed
+destination. Existing hostnames on the same deployed destination continue directly;
+adding only a www hostname asks for that hostname alone.
+
+External Docker migration cutover distinguishes finishing without touching originals,
+keeping and restarting originals, and removing originals. Never infer a retention
+decision from a project deletion request. Parked migrations explain how to finish
+or resume them before deletion; they are not presented as cancellation timeouts.
+
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
@@ -378,14 +514,40 @@ check retryable before starting the move.
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
-- Add Server keeps the connected/managed choice stacked in the right sidebar above setup
-  guidance. On narrow screens, place that same choice before the form and guidance after it.
-  Reuse the shared acquisition picker in both setup modes and dialogs.
-  Selecting Get a managed server on `/servers/new` opens Billing's explicit new-server
-  purchase. Keep inline destination dialogs in place so they preserve the deployment form.
-  Cloud Add server opens plan selection first. Reuse the same plan and Custom purchase
-  component in Billing, managed server setup and destination dialogs. Create the server
-  with its default name only after a plan is chosen, then use the shared scoped checkout.
+- **Plans & billing** is one sidebar entry for Cloud spaces and server-management
+  subscriptions. Bare `/billing` shows one card per owned Cloud space, a purchased
+  Manage subscription card, and an **Add plan** card. Show each product's actual capacity
+  or saved server allowance; do not invent current prices for an older contract. Clicking
+  a card opens that space or subscription's existing details. Existing resources URLs
+  remain under the same active navigation entry. Servers remains the separate inventory
+  of customer infrastructure; deployment APIs and quota enforcement stay shared.
+  Pair each plan card's leading icon with its title in the same header row; keep status
+  at the opposite edge instead of reserving a separate icon row.
+  A purchased Manage plan opens its own named detail page, with covered external servers
+  in a card grid and its saved price, allowance, payment and cancellation controls beside
+  them. Exclude local hosts, Cloud allocations and migration sources from that grid, using
+  the shared destination inventory. An empty server list stays on the plan page. Add server
+  opens the normal connection form while an allowance slot is available; at the limit it
+  opens a quantity-only dialog showing additional slots, the verified monthly total and
+  amount due before checkout. Change plan compares the saved plan with proposed upgrades
+  or downgrades. Both use the existing locked quote/confirmation path; never calculate
+  prorated charges in the browser. Reuse the management quote,
+  confirmation, pending-payment and cancellation flow; browsing never starts a purchase.
+  Keep a plain Support link with the shared help icon in Billing, Plans and each plan's
+  header. It opens the normal Support page without a filled button or separate card.
+- When no purchased plans are known and both inventory reads succeeded, replace bare
+  `/billing` with the organization-scoped `/billing/plans` purchase route. Keep the loading
+  skeleton during that handoff; plan selection lives only on the plans route. Failed or
+  pending reads must never be treated as an empty account or trigger that redirect.
+  Included Basic management is a Cloud benefit, not an additional purchased subscription.
+  Unscoped `/billing/plans` always starts a new purchase with no Cloud space switcher.
+  Omit a Back to billing button from new purchases; an empty overview redirects here.
+  Explicit workspace URLs retain scoped upgrades, recovery and checkout verification.
+- Add Server keeps connection setup in the main column and a compact **Add Cloud space**
+  action above guidance. On narrow screens, place the action before the form and guidance
+  after it. The existing acquisition dialog preserves the connection or deployment form
+  beneath it. Reuse Billing's preset and Custom plans, creating a workspace only after a
+  plan is chosen. Disable acquisition switching while checkout is being prepared.
 - Destination settings use the normal page layout: server selection first, then visible
   runtime, resource and rollback sections, with a 340px preview/Continue sidebar. Keep the
   same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
@@ -400,6 +562,9 @@ check retryable before starting the move.
   Keep shared environment, machine power and rollback settings there, including for
   Compose and monorepo projects. Apps & Services owns the service list and per-service
   editors; do not embed that page or add App settings / Deployment modes inside Settings.
+- Source settings expose the selected environment's deployment branch through the shared
+  repository branch picker and an explicit Save action. Saving uses the existing project
+  branch operation, refreshes source details and environment summaries, and never redeploys.
 - Ready native databases use the existing **Use in a project** connection modal.
   Preselect the opened database, keep its credentials masked, and offer writable
   consumers on the same native cluster. Explain incompatible placement inline;
@@ -441,6 +606,7 @@ check retryable before starting the move.
   imports. The page and modal share the whole preparation layout and controls.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
+  Actions follows Jobs under Infrastructure in every platform mode.
   Backups belongs under Infrastructure beside Servers/Resources, Emails and Jobs, in every platform mode.
   Missing-edge warnings use the API's routing requirement, independently of the total project count.
   Private workloads and workers keep the optional install action without an outage/attention indicator.
@@ -480,6 +646,10 @@ check retryable before starting the move.
   Keep Home's project list and the sidebar counts separate too.
 - Cloud's New Project choices are Apps, GitHub, Git URL and Import existing project.
   Folder import and the Browse Templates shortcut are available only on self-hosted instances.
+  If a self-hosted repository scan requires an explicit GitHub server identity, reuse the
+  shared server picker and retry the same source with that server. Do not auto-select or
+  apply a saved default while recovering from ambiguous credentials. Retain the picker
+  after a failed retry so users can correct their selection.
 - Credit warnings belong in Billing's overview for the selected server. Reuse its loaded
   billing state and scoped links; keep the notice inline. Monthly servers have no compute
   credit warnings. Other pages do not mount a credit tray or poll all server balances.
@@ -494,16 +664,19 @@ check retryable before starting the move.
   below the comparison, alongside shared capabilities. Keep additional transfer, backup
   and storage terms in a compact disclosure. Follow this with the catalog's Enterprise
   contact card; do not repeat these details inside every plan or in a separate text card.
-- Billing uses one navigation for overview, usage, plans and payments. Plan selection
-  offers Cloud plans, Prepaid PAYG and Manage your server, in that order. Manage opens
-  the shared management subscription view; do not repeat it as a compute-plan card or
-  a separate Cloud/Manage product switch. Its coverage and allowance belong to the
-  workspace, independently of the selected Cloud server. Load it only when selected.
-  Preserve Cloud form state when switching views. Hide Cloud capacity controls while
-  Manage is open and disable switching while checkout is in progress. Deployment and
-  server-acquisition dialogs retain their compute-only choices. The direct Manage URL
-  remains available for payment returns and reuses the same view.
-- The affiliate program is labeled **Earn** in the sidebar and page heading, with
+- Each selected subscription keeps the existing overview, usage, plan changes and payment
+  tabs. Plan selection offers Cloud plans and Manage your server. Manage reuses the existing
+  account-scoped purchase and recovery component; load it only when selected and preserve
+  Cloud form state. Disable switching while checkout is in progress. Deployment and
+  acquisition dialogs use the same preset and Custom resource controls without a
+  single-item product tab. The Manage URL remains available for payment returns.
+- The referral program uses `/referrals` on the dashboard and website, with the account
+  API under `/api/referral-program` and SDK operations in `referralProgram`. Redirect
+  retired page URLs and retain authenticated SDK/API aliases for existing clients.
+  Provider participant hashes, issued codes and financial payload fields remain stable.
+  New checkout requests use `referralCode`; normalize the legacy field before creating
+  financial records and reject conflicting aliases.
+  The program is labeled **Referral** in the sidebar and page heading, with
   the shared `gift` icon in the sidebar. It uses full-width tabs for links,
   customers and payout history. Keep the
   four earnings cards above the tabs. Place program terms and first-use guidance in
@@ -515,14 +688,17 @@ check retryable before starting the move.
   Keep the minimum beside available earnings. Show Request payout only for an enabled participant
   with enough available funds, opening the shared modal on demand. Public referral pages
   reuse the Cloud catalog, pricing cards and interval control; a chosen plan continues
-  through sign-in to the existing checkout with its referral intact.
+  through sign-in to the existing checkout with its referral intact. Verified referral
+  discounts lead each eligible card with the reduced price beside a struck-through
+  original. Show the discounted full annual charge and discount duration too.
+  Applying or removing a code in checkout updates these same cards.
   Link creation starts with a compact discount step, then expands to plan and billing
   interval selection with per-payment earnings. Use one card per plan with monthly and
   yearly choices inside; the whole choice is a keyboard-accessible checkbox. Keep link
   name, commission terms and optional expiration in a compact side card on wide screens.
   Distinguish all eligible plans (including
   future plans) from explicit checked combinations. Annual earnings use the full annual
-  payment. Separate the customer's billing cadence and charge from the affiliate's
+  payment. Separate the customer's billing cadence and charge from the referral's
   commission per confirmed payment. Explain that earnings start with the first payment,
   without waiting for the billing period to end. Renewal copy follows the program's
   reward window: a 12-month window covers the first annual payment, not next year's
@@ -546,6 +722,9 @@ check retryable before starting the move.
   on interval changes. Existing subscriptions keep their saved interval; Manage remains
   monthly. Disable interval changes during checkout and never reuse a quote from another
   interval. Do not add another product navigation or price calculator.
+  Keep referral entry in a quiet footer below the plans, using a small label,
+  the shared filled input and a secondary Apply button. Do not place a native
+  disclosure above the purchase header; keep applied terms and errors in that footer.
 - Manage uses standalone Basic and Priority pricing cards matching Cloud's card spacing,
   icons and typography. Keep the native radio selection, with a neutral filled action
   and checkmark inside each card; reserve the primary fill for checkout. Do not wrap the
@@ -571,113 +750,55 @@ check retryable before starting the move.
   subscription changes; do not send users elsewhere just to start checkout. Keep the
   server form gated on the verified allowance, and reset the purchase state on account,
   organization or instance changes. Self-hosted connection forms stay unchanged.
-- Cloud billing keeps its header and tabs mounted when switching servers. List managed
-  servers in the right sidebar on usage and history tabs, reusing the shared destination rows.
-  One server is a summary; several servers switch billing directly from the visible list.
-  Keep one Add resources action at the right of the page header; the sidebar
-  selects the server being inspected. Plans keeps the shared Cloud space picker beside
-  Add resources in that header, with the normal destination summary and searchable menu.
-  Billing tabs occupy their own full-width row underneath, with an uninterrupted divider.
-  Keep adjacent links at the shared tab height so the divider meets the active underline on a single row.
-  With one Cloud space, show its summary without a redundant menu. With one or two preset choices, show the saved subscription and capacity in
-  the standard 340px right column when the container has room; stack it first on smaller
-  screens. Keep a single priced offer at a maximum of 26rem, shrinking to the available
-  width on small screens. Complimentary-plan support guidance belongs inside the saved-plan
-  summary; dialogs without that summary retain their inline guidance. Wider comparisons and
-  Custom keep the compact summary below the tabs. Use the
-  picker's displayed choices for this layout too; an inactive subscription uses a short
-  inline notice. New purchases use the plan introduction
-  as the page title and description. Keep Plans / Custom in the purchase header and
-  Back to billing in the same header, using matching 40px controls. Purchasing does not require a server-name field.
-  An existing server without a plan keeps the server selector, including when every
-  server is unpaid. Only an explicit new-server purchase replaces it with Back to billing.
-  Do not repeat the introduction below the page heading. Default to relevant upgrades; offer
-  Other plans deliberately for lower-cost changes and Custom when no larger preset fits.
-  Do not call today's catalog terms the current plan if they differ from the saved purchase,
-  or offer a preset that would shrink an existing disk. New-server purchases have their own
-  explicit entry and never inherit the selected server's billing scope.
-  A preset chosen on the public Pricing page continues to Cloud checkout after
-  sign-in without a second plan-selection click. Validate it against the live
-  catalog and bind the retry identity to the authenticated organization. Reloads
-  reuse the same server and payment; generic Get server links remain browse-only.
-  Unscoped billing opens an existing subscription directly; never
-  auto-switch a checkout return or an explicitly selected server. New customers see
-  Cloud plans and Pay as you go with a direct Payments & invoices link in the existing
-  tab row, so unfinished purchases remain recoverable before the first subscription.
-  Reuse the same purchase controls in server setup and destination dialogs. Switching
-  these views keeps resource inputs and never starts a purchase. The page's purchase
-  tabs sit directly above the plan cards. Standalone setup and destination dialogs reuse
-  the same Plans / Custom control beside their tabs, without a separate page header. Until a usage
-  offer is supported, show its unavailable state without invented rates or a checkout action.
-  Keep normal billing navigation for existing subscriptions, allocated servers and credit history, including stopped or
-  canceled servers. Show current plan, renewal date or inactive subscription state for
-  existing servers; never replace those with a first-purchase promotion.
-  In-app credit alerts
-  link directly to the scoped billing tab; only a genuine organization change needs
-  authorization and a context reload.
-  Payments and invoices share one tab and the existing scoped Stripe portal. Show Top-ups
-  only when the billing API enables them for the selected server; the purchase-view choice
-  must never override paid terms or provider entitlement.
-  Keep Pending payments inside Payments & invoices, including for unpaid servers, with
-  a yellow pending count on that tab. Share one scoped read with the recovery list, refresh
-  on return from hosted checkout, and remove counts only after confirmed cancellation.
-  Cloud lists unfinished payments across the organization's servers. Connected installations
-  use the same Cloud inventory, filtered to a selected server when requested, without
-  creating local execution links. Preserve local aliases for explicitly linked servers
-  and clear payment state when the connected Cloud account changes. Reuse the same compact recovery list in
-  Payments and in the unfinished-checkout dialog. Show saved offer terms and the server
-  name, with Resume and provider-supported cancellation. Never present a pending or
-  unknown cancellation as complete. After confirmed cancellation, offer another plan
-  and reuse the existing delete confirmation for an unused, unpaid server.
-  Distinguish failed cancellation checks (Refresh) from payments without provider-supported
-  cancellation (complete the payment or wait for expiry). Show the support link once;
-  neither condition may clear a payable checkout or allow a competing subscription.
+- Plans & billing is the account hub: one card per purchased compute plan, one for a
+  purchased Manage subscription, plus Add plan. A saved unfinished checkout also appears
+  as a pending plan card; merge its warning into an existing plan's card instead of
+  duplicating that plan. Show the saved offer and amount, and open its Payments & invoices
+  tab. Only redirect a confirmed-empty account to new plans after inventory, management
+  and pending-payment reads succeed. Errors are retryable and never mean empty.
+- Each compute plan owns Overview, Usage, Payments & invoices and Activity. Overview
+  shows a compact assigned-project list, plan allowances and coverage. Usage owns live
+  resource measurements, billing-period compute/edge totals, the usage guide and scoped history.
+  Keep the compact saved-plan summary and
+  Change plan modal beside the selected tab. Payments & invoices owns that plan's portal,
+  pending checkouts and renewal controls; do not repeat them as a sidebar card. Manage
+  follows the same Overview / Payments & invoices structure for its external servers.
+- Existing /billing/overview, /billing/usage, /billing/payment and invoice bookmarks
+  redirect into the explicitly selected plan. Unscoped history links return to the plan
+  hub without guessing a subscription. Preserve checkout reconciliation parameters and
+  authorize organization changes before reading any plan. Legacy metered top-up receipts
+  remain verifiable within their plan; monthly plans expose no top-up purchasing.
+- New plan browsing has only Cloud and Manage purchase choices, with no payment/history
+  tab or selected-space switcher. A preset chosen on public Pricing continues through
+  sign-in without a second selection. Bind retries to the authenticated organization;
+  opening or configuring plans never starts a purchase. Existing-plan changes use the
+  saved terms and actual allocated disk, rather than treating today's catalog as the
+  current contract. Unavailable billing models stay hidden.
+- Use one scoped pending-payment read for the plan's navigation count, attention notice
+  and recovery list. Keep a red payment-attention notice on the plan, including its
+  payment tab, until payment or cancellation is confirmed. A pending or unknown
+  cancellation cannot clear the warning or permit a competing subscription. A failed
+  payment read stays retryable. Never expose another plan's payments through a scoped view.
+  Resume uses the saved original checkout and price. After confirmed cancellation or
+  expiry, reuse the existing plan selection and unused-resource delete confirmation.
+  Show Refresh for failed cancellation checks, and provider guidance for unsupported
+  cancellation; neither may mark a payable checkout as complete.
+- Connected installations use the same authorized inventory and existing local aliases
+  for explicitly linked Cloud servers. Clear payment state on account, organization or
+  connection changes, without creating another execution link during billing navigation.
 - Monthly Cloud spaces show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
-  details in a compact disclosure. Put Monthly coverage after the main billing overview and
-  usage guide, so plan capacity and usage lead the page. Existing metered subscriptions retain their credit view.
-  Prepaid PAYG shows package amounts beside their credit value, using the provider's
-  conversion and published resource rates. Keep the Openship resource tiers inside the
-  resource card, using compact shared tabs above its inputs. Present the selected tier's
-  CPU, RAM, disk and server-count limits as plain capacity values in a compact summary
-  that wraps on smaller screens. These limits stay fixed while configuring a server.
-  Keep the cumulative credit-purchase threshold by the tabs
-  and the selected package's qualifying tier in the credit card. These are pool ceilings,
-  not monthly subscriptions or a copy of the reseller owner's Oblien plan. Spending
-  credits never lowers a tier. Keep credit-package and resource-tier selections separate;
-  changing either must preserve resource inputs. An oversized configuration should show
-  which limits are exceeded and offer the smallest available tier that fits, without
-  silently resizing the user's servers. The catalog and unlock display remain a preview
-  until verified customer funding and runtime entitlement are connected.
-  Reuse the monthly resource editor for the interactive estimate, with two resource
-  controls per row when they fit. Configure one server; show its hourly price at full
-  CPU usage and state that basis beside the estimate. PAYG prices come
-  directly from usage rates and do not depend on
-  monthly-plan quotes or ceilings. Keep the pricing preview until customer-funded
-  purchases are supported. A shared balance is funding,
-  not a multiplied resource pool; estimates for several hosts must spend that balance
-  once. Use three columns when space permits: the resource editor, readable credit
-  package rows in the middle, and the 340px estimate card on the right, aligned at the top.
-  Keep the CPU-hour explanation and rate details with the estimate. Give packages
-  280–320px and let the resource editor use the remaining space. Stack the
-  packages below resources at intermediate widths, then stack all sections on mobile.
-  Monthly and PAYG share the catalog's Enterprise contact card at the end of the picker.
-  Keep one compact purchase bar visible at the bottom while configuring resources;
-  use a translucent popover surface with backdrop blur while keeping its text readable.
-  Lead with estimated dollars per hour and the matching credits per hour, with
-  the per-server scope and full-CPU basis beside them. Keep the CPU, RAM and storage
-  hourly breakdown visible. Do not turn a full-month projection into a purchase
-  requirement or suggest a larger deposit to cover it. Balance duration belongs in
-  an optional disclosure and follows prepaid funds divided by resource usage cost;
-  reserved RAM and storage stay included at full and idle CPU. A monthly spending
-  ceiling requires an enforceable provider quote, not a UI-derived promise.
-  Show CPU-hours as allocated vCPUs multiplied by average activity and elapsed time;
-  label time online as elapsed time. Show resource-hours and their costs under a clear
-  per-elapsed-hour heading for the configured server. Distinguish active CPU from
-  reserved RAM and retained storage. Keep checkout unavailable until customer-funded purchases are
-  supported. Do not expose reseller wallet balances or call hypothetical comparisons
-  recorded savings.
+  details in a compact disclosure. Put Monthly coverage after plan allowances in Overview;
+  keep the usage guide with the measurements in Usage. Existing metered subscriptions
+  retain their credit view.
+  A saved monthly plan never falls back to compute credits when live coverage is unavailable.
+  Hide top-up navigation and purchasing for monthly plans, including stale capability responses;
+  preserve receipt verification for previously completed purchases.
+  Offer only monthly and yearly plans for new Cloud spaces; do not display prepaid
+  compute tiers, credit-package estimators or unavailable purchase previews.
+- Cloud deployment plan dialogs show recovery guidance once above the picker;
+  do not repeat the restriction message in a separate callout.
 - Custom resources sit beside the preset plan choice. Keep CPU, RAM and disk controls
   with a compact monthly total, wait for a matching server quote before enabling
   checkout, and expose bundle pricing details on demand. Applying a paid resource
@@ -708,7 +829,7 @@ check retryable before starting the move.
   scrollable content so the plans receive most of the available viewport height, including
   on short screens. Keep actions side by side on phones, allowing long labels to wrap.
 - On `/billing/plans`, collapse the desktop sidebar automatically for comparisons with
-  three or more visible plans and the PAYG configurator. One or two upgrade choices,
+  three or more visible plans. One or two upgrade choices,
   Custom, and loading or error states keep the normal sidebar preference. Use the picker's
   displayed choices; navigation must not fetch or filter plans again. Keep manual toggles
   across filter and purchase-view changes. The Scale canvas still opens collapsed; restore
@@ -724,17 +845,27 @@ plan changes, provisioning, edits or deletion. Reconnect refreshes the same link
 create another server. A missing control route on an older Cloud API shows **Control unavailable**
 with upgrade guidance; structured resource and permission 404s retain their original meaning.
 
-Cloud navigation and the page heading use **Cloud spaces**. Each independently purchased allocation
-is presented as a **Cloud space**: show measured CPU, memory and storage usage
-and assigned projects in Overview, with lifecycle progress in Activity. Put the compact Cloud space
-dropdown in the 340px right column above plan capacity. The picker shows the selected name,
-plan and project count, with a compact status ring at the right of the selected row instead
-of a separate badge below. Keep a readable status label for assistive technology and hover.
-Use the shared cloud icon for managed destinations and Cloud spaces navigation. Activity
-explains setup, capacity changes and recovery, with Cloud space wording in its progress logs.
-Other choices appear only when opened. On narrow screens,
-place the picker before usage and keep plan capacity below the main content. Spaces are deployment destinations using existing purchased workspace identities,
-not organization workspaces or combined capacity. Keep resource and billing actions on the existing billing flow.
+The **Plans & billing** account entry owns each purchased compute plan's named page.
+Use the plan's offer name as the heading, rather than its underlying server name or a
+“server” suffix. Keep navigation identities unchanged. Omit the extra back-to-billing
+link from both Cloud and Manage detail pages; use the browser and existing sidebar navigation.
+Keep usage, assigned projects, Activity and subscription management in their respective tabs.
+The 340px sidebar
+uses one compact plan card: icon, offer name and status share a header row; price and billing
+cadence share a line; renewal and allocated capacity follow. Keep Change plan below the summary
+and payment controls in the plan’s Payments & invoices tab. Hide the inline Cancel
+subscription action for compute plans; cancellation belongs in that plan’s billing portal. Do not add another
+Manage plan or Manage subscription detour, or repeat the selected plan in a separate picker.
+Change plan opens the existing scoped quote/confirmation flow in a dialog on this page.
+Size the dialog from the picker's rendered choices: narrow for one, two columns for two,
+and wider for larger comparisons; Custom keeps the form's normal width. Do not refetch the
+catalog or recompute eligible offers just to size the dialog. Assigned projects use compact
+responsive rows, with at most four shown in Overview. When there are more, **Show all**
+opens a searchable, scrolling dialog of projects from the same authorized snapshot. Reuse
+one row component and existing project links; opening the dialog must not scan again or
+fetch unrelated projects. Preserve keyboard focus and close it on a workspace/tab change.
+Keep storage-estimation details in a disclosure.
+Independent allocations retain their existing execution identities and shared deployment flow.
 
 Cloud spaces uses the read-only provider metrics stream through Openship's authenticated monitor
 endpoint. Title the card Resource usage, and show Live only after a valid sample; pause hidden pages and cancel subscriptions when
@@ -745,11 +876,12 @@ by measurement time from recent live readings and the host snapshot; a partial f
 erase measured storage. Keep each memory/storage group together, show the measurement time when a row uses an
 older sample, and leave unknown values and chart gaps unknown rather than substituting capacity or zero.
 Project storage inventory uses the existing snapshot request and is not scanned on every live tick.
-Cloud spaces and Billing reuse the shared destination picker rows, project counts and catalog plan names.
-Keep instant resource readings and project storage on Cloud spaces. Billing retains subscription,
-payment, billing-period usage and entitlement counters, with selected-space links instead of another
-host-usage snapshot. Show actual allocated capacity on Cloud spaces; pending plan changes remain
-in Billing's existing confirmation and resize flow.
+Plan cards and deployment destinations reuse the shared inventory, project counts and catalog names.
+A plan’s Usage tab combines the existing live measurements with billing-period counters and
+history; each keeps its own units and source. Overview must not subscribe to live metrics or
+fetch compute totals. Switching to Usage reuses the existing snapshot, and leaving it stops
+the live stream. Show the allocated capacity beside the saved subscription, and reuse the
+existing quote, confirmation and resize flow for pending plan changes.
 Unfinished Cloud setup shows a calm Cloud space notice and does not subscribe to live metrics.
 
 Managed resources do not expose host terminals, SSH, provider networking, Runtime API credentials,
@@ -772,10 +904,15 @@ and supporting metadata. Match nearby page headings instead of introducing a new
 Use **Domains & routing** for sections covering domains, published ports, and internal access. Use
 **Domains** when the section only manages hostnames. Put shared UI copy in the locale dictionaries.
 Keep hints concise and explain choices where they help the user decide.
+When the Free/Custom toggle is hidden, keep domain actions such as route protection
+inline with the hostname input; do not reserve a separate row for an icon.
 Routing rules have visible sections for rewrites, redirects, response headers, and
 URL behavior. Group proxy settings into uploads, timeouts, response buffering,
 compression, headers/protocol, and upstream TLS. Use human labels and shared filled
 controls; keep directive names in each group's Technical details disclosure.
+SPA fallback uses one default-on switch for static sites in the shared routing editor,
+available even when no rules were detected. Turning it off returns a real 404; explain
+that container-hosted static sites need a redeploy to apply the change.
 Trailing slashes have three choices: automatic, add, and remove. Live edge inspection
 is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
@@ -858,6 +995,12 @@ spacing adjustment needs visual verification, not a test that asserts a CSS clas
 
 ## Mail webmail recovery
 
+Manage Fail2ban bans from the mail server's existing Health row in the shared drawer.
+Load jail details only while open, retain the last reading on refresh failure and
+disable mutations until current status is available. Ban actions select an explicit
+jail; review the exact IP and jail before applying either action. Use server-reported
+management capability and the existing mail API; Cloud mail does not mount this panel.
+
 Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
 webmail app installer. Keep its client card beside a compact Managed email / Coming
 soon notice. Cloud mail entry points must not mount local server setup, registry or
@@ -904,9 +1047,21 @@ a primary-direction change together across concurrent requests.
 
 ## Personal appearance
 
+Dim uses near-black surfaces with a small lift between the page, cards and menus.
+Use white at graduated opacity for its text, with clear body copy and labels;
+keep secondary text readable without adding a colored or gray tint. Preserve its
+established status colors. New Project uses a solid soft lime fill with dark text
+in Dim. Keep it flat, without gradients, highlights or a colored glow.
+These refinements are specific
+to Dim; preserve the Light and Dark palettes. Sidebar section labels keep the
+original small uppercase treatment, wide letter spacing and muted foreground.
+Define these values in the shared tokens rather than component overrides. Maintain
+the translucent card fill and its matching `--th-card-on-page` composite so nested
+cards and scroll fades remain consistent.
+
 Keep the original Appearance card and its four immediate theme switches in Settings → General. Its Customize button opens the editor inline at `/settings?tab=general&view=appearance`, keeping General selected in desktop and mobile navigation. Provide Back to General; do not add a dedicated Appearance tab. Inside Customize, use compact labeled icon buttons for Light, Dim, Dark and System instead of large preview cards; keep New theme alongside the selector and preserve the original cards in General. The editor owns personal themes, token editing, typography and portable JSON import/export. The registry and built-in values in `packages/core/src/appearance.ts` and `appearance-defaults.json` are authoritative. Regenerate `apps/dashboard/src/styles/theme-tokens.css` with `node scripts/generate-theme-tokens.mjs`; `theme.css` retains utilities and semantic aliases. Do not duplicate palettes in components. Preset thumbnails use the immutable built-in values; previews and their bridge aliases resolve within `[data-appearance-preview]`.
 
-Use one versioned format across dashboard, API, SDK, CLI and native operations. Save is user-scoped and explicit; a draft updates CSS variables live, while failures preserve the draft. Read failures must not become editable server defaults. Cache by API origin and authenticated user, discard late responses across account switches, and paint validated cached variables before hydration. The editor's recovery controls use the immutable base palette and system font so users can always reset an unreadable theme. WOFF2 assets travel in JSON; do not load arbitrary remote CSS or fonts from imported themes. Terminals subscribe to the shared appearance event, update their existing renderer and refit without reconnecting the PTY.
+Use one versioned format across dashboard, API, SDK, CLI and native operations. Save is user-scoped and explicit; a draft updates CSS variables live, while failures preserve the draft. Read failures must not become editable server defaults. Cache by API origin and authenticated user, discard late responses across account switches, and paint validated cached variables before hydration. Mirror only the saved built-in/System preference and resolved base palette to the `openship-theme` cookie so SSR renders the right theme and page background immediately; keep custom tokens and fonts in the scoped cache, and never persist a preview to this cookie. The editor's recovery controls use the immutable base palette and system font so users can always reset an unreadable theme. WOFF2 assets travel in JSON; do not load arbitrary remote CSS or fonts from imported themes. Terminals subscribe to the shared appearance event, update their existing renderer and refit without reconnecting the PTY.
 
 ## Managed public ingress
 
@@ -994,3 +1149,332 @@ Explain that these settings live in Openship and do not edit repository files.
 - Services and Topology share the same Add service modal. Its compact source selector offers Catalog, From repository, Custom image, and Connect existing; a searchable category dropdown replaces a permanent catalog sidebar.
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
+
+Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls` for the
+wizard and Add domain form. Edit route reuses `RoutingSettingsCard` for the
+canonical target/status. Saving a service route continues through the shared
+DNS, verification, SSL and route-apply flow; a redirect hides its unused port.
+
+## Assistant workspace and consent
+
+Failed deployment headers and failed app setup pages offer
+**Investigate with AI**, using the shared assistant icon and secondary button.
+Open app issues use the shorter **Fix with AI** action and prepare a repair request
+that investigates, applies an appropriate authorized fix and verifies the result.
+Comfortable issue rows give the name, status and actions separate columns on wide
+containers; actions move below details on narrower lists so buttons never squeeze
+the status. Compact issue rows keep an accessible icon action. Monitoring's page
+header offers **AI health report**, preparing a read-only report of the current
+workspace's apps, deployments, services and accessible servers. Activating these
+actions in the current tab opens the assistant and sends the prepared request once
+the existing connection and model checks are ready, using the normal send path.
+Editing the draft or selecting another conversation cancels the queued send.
+Copied links, new tabs and refreshes open an editable draft; the URL alone never
+starts work. Failed sends use the normal manual retry, without an automatic loop.
+Investigate remains read-only; Fix with AI retains its explicit repair intent.
+These actions never enable the assistant or grant access by themselves. Carry only resource IDs and
+the originating resource scope in the link, never logs or error text. Preserve the
+request through assistant setup, reject a mismatched account/workspace/Cloud connection,
+and keep existing repair actions alongside it. Resolved issues and update notices do
+not offer an investigation shortcut.
+
+**AI Agents** is the platform navigation label. Inside the enabled workspace, keep a
+collapsible 340px navigation column on the right, matching the normal dashboard summary
+column. The main conversation occupies the remaining width beside the platform navigation.
+Pin the general OpenShip assistant first; list specialists with their character avatars,
+latest task titles and working indicators. Keep Automations in an expandable group with
+actual paused/enabled/running state. Selecting an agent resumes its last visited valid
+conversation, falling back to its latest task. An agent with no chats opens an empty native
+conversation; selecting it never starts work. Store only conversation IDs, scoped to the
+account, workspace, connection, host and agent, and validate them against the current list.
+Keep the switcher focused on agents and automations. Do not add Recent chats or a history
+footer to it. The header history icon opens searchable conversations in the existing compact
+420px right drawer, with New chat and rows grouped by date.
+Selecting an automation shows its fixed steps, run history and links to its existing
+investigation chats. Edit settings or select a step to edit inline with the shared form.
+On small screens, open the same navigation in the shared animated right drawer. Closing it
+restores focus. Keep configuration in the existing agent drawer, closing mobile navigation
+before opening a configuration drawer. Preserve the chat draft while configuring an agent
+or inspecting an automation. The header contains identity, navigation toggle, New chat and
+the settings menu and conversation history icon; agent and automation switching belong in
+the navigation column.
+Opening AI Agents restores the last visited conversation for the current account, workspace,
+Cloud connection and host after checking the scoped list. Explicit chats, automation selections,
+New chat and investigation drafts take precedence; background polling never replaces a draft.
+Place the opening prompt directly above the composer, with compact suggestions below it. In
+the opening prompt, use a medium-weight 30px mobile / 36–40px desktop heading
+and semantic text colors. When a host connection is discovered but needs explicit
+reuse, identify it on the provider card instead of asking the user to sign in again. In
+an existing conversation, scroll messages independently and keep the composer at
+the bottom. Show user messages and response content directly, without a repeated
+conversation title or provider name/avatar above each response. The page header
+identifies the active speaker with its name and a General/Agent/Automation label.
+Keep character avatars in the switcher; chat titles appear in history. Omit the
+permission/keyboard helper line below the composer.
+Pending agent questions use a compact **Waiting for your answer** disclosure directly above
+the composer. **Answer** expands the controls in place; keep the regular composer available.
+Use a rounded translucent card, bound the answer area with its own scroll, and keep
+**Send answer** visible below it. While expanded, softly blur the transcript behind the panel
+with a 6px backdrop and a light theme-aware tint. Keep the question controls and composer sharp;
+the visual backdrop must not intercept clicks or scrolling. Fade it with reduced-motion support,
+and remove it when the panel closes or its questions are resolved.
+Collapse preserves unsent choices and text. Multiple requests
+share this panel, with separate drafts and retry identities; both live and message-mode
+questions use the existing response path. Show submission failures inside the panel and
+remove resolved questions when the conversation refreshes.
+Before the assistant is enabled, introduce **AI Agents** with a compact 30–36px
+heading, a short description and native provider marks. Group the host picker,
+single **Enable AI Agents** action and brief access guidance in one setup card.
+Pair it with a contained interactive preview of **Deploy**, **Investigate** and **Automate**;
+keep its example tabs, conversation and outcome on one surface. Avoid oversized
+marketing headlines and full-height vertical centering. Switch to two columns based
+on the available content width, so the same layout works beside the dashboard sidebar.
+Each explicitly labelled example shows a short request, three connected actions and an
+outcome. Reuse the character avatars and existing theme surfaces; keep accents to the
+avatars, native provider marks and a small outcome icon. No oversized illustration,
+feature-card grid, repeated onboarding steps or inactive automation toolbar.
+Switching examples is local presentation only; it must not enable anything, start a
+conversation or execute a task. Tabs support arrow keys, Home and End, with visible focus.
+On small screens show the headline, setup action and native provider marks before the
+preview. Keep the host picker beside setup; if no eligible host exists, link to server
+setup. Mention the online host requirement in the automation example. Preserve the
+shared permission review, grant submission and native connection flow. Preparing access
+uses the same permissions-shaped skeleton before and during consent hydration; show
+failures with Retry. No changes to access are implied by visiting the introduction.
+The composer grows with its draft up to a bounded height, has no manual
+resize handle or focus ring, and groups agent/model selection beside Send or Stop.
+Use the translucent card surface (`bg-card/80`) with `backdrop-blur-xl` on the
+composer so content scrolling beneath it stays softly blurred while text and controls stay sharp.
+The opening prompt has room to compose; after sending, the conversation composer
+returns to a medium-height, two-line text area with compact vertical padding and a
+short follow-up placeholder.
+Clear the text and attachment previews immediately on Send, before waiting for the
+server. Restore the exact draft and images if submission fails, preserving the retry
+identity; a delayed response must never replace a different chat's draft. Empty fields
+reset their measured height and scroll position, and stay the same size after the reply
+ends. On touch screens, keep the controls on one row, allowing the model label to truncate. Provider and
+model selectors use compact 12px chevrons, content-sized widths and 13px labels. Sent
+messages use fully rounded 24px bubbles. Replies use 17px body text on desktop and 16px
+on mobile, with roomy line spacing and a clear heading hierarchy. On touch
+devices, Enter inserts a newline; on desktop, Shift + Enter inserts a newline.
+Allow selecting another model from the same connected agent between turns, keeping
+the conversation and its approved access. Image-capable agents expose an attachment
+button plus paste and drop; show removable local previews above the draft. Send images
+with the ordinary turn, using Mindwire's conversation-bound uploads on the agent host.
+Do not accept arbitrary filesystem paths or remote image URLs. Keep the composer and
+Send/Stop usable on small screens. Do not add inactive placeholder controls.
+
+Use Streamdown's bounded word animation for live Markdown, without a second parsing
+or artificial typing queue. Completed messages do not replay their animation. Thinking
+expands inline; live tool steps retain their domain icon and a subtle activity indicator.
+Show the submitted message and an animated Sending indicator immediately, including while
+the first conversation is being created. Keep activity visible through the first snapshot
+and between response chunks until the turn finishes; existing response text is not proof
+that the agent has finished. Live thinking/tool indicators replace the generic Working
+indicator. The stop control uses a small solid square. Smooth scrolling follows
+new content until the user scrolls up; **Latest messages** resumes following. Respect
+reduced motion for text, loading indicators and scrolling.
+Give **Latest messages** the composer's frosted surface (`bg-card/80` and `backdrop-blur-xl`)
+with a subtle shadow so transcript text cannot visually overlap its label.
+
+Keep the chat header to a single identity row: assistant/agent name and its role.
+Character avatars belong in the switcher and picker, including during loading.
+Conversation titles belong in history; the header may retain the title as a
+tooltip, without a second subtitle row. During a conversation, float the composer
+above the transcript with a subtle background fade. The transcript keeps the full
+available height; measure the composer to reserve end padding and position Latest
+messages above it. Growing the draft must not resize the transcript's scrollport.
+
+Use the shared `assistant` AI icon for the platform. Identify harnesses as
+**Codex** and **Claude Code** with their native `codex` and `claude` catalog marks
+in provider selection, connections, history and settings. Use the shared provider
+labels; do not rename Codex to ChatGPT or rewrite native authentication prompts.
+A native sign-in option may still say “Sign in with ChatGPT.” Codex reuses the shared monochrome ChatGPT/OpenAI mark; keep Claude Code’s original terracotta mark without inversion or added brand tints. Default Codex to browser sign-in on the local Desktop host and device-code sign-in on Cloud and remote hosts, using the methods advertised by the API. Explain the selected flow beside its sign-in action.
+Show connections inline in the chat area when setup is needed or the user opens
+**AI connections**. Keep the workspace header and navigation in place. Offer every
+supported provider, Custom API and saved custom models in the same layout, with
+one visible detail panel and all advertised sign-in methods as selectable buttons.
+Use one heading and one connection surface. Show each provider's name and mark only
+in the compact selector; do not repeat them as a second header inside its form.
+Keep connection status in the selector and host information in the footer.
+Use the shared connection forms in settings and agent-editor dialogs as well.
+Preserve unfinished sign-in forms when switching providers or returning to chat;
+hidden content must not capture keyboard focus. Identify the connection host.
+Using a different connection from an existing conversation opens a fresh chat;
+it never changes that conversation's provider or approved access. Keep permission
+review and the audit trail in the header menu.
+
+Use the shared assistant illustration for a conversation whose access has changed,
+with a compact heading, explanation and **New chat** action. New chat retains an
+available specialist; a removed or archived specialist falls back to the general
+assistant with current approved access. Agent and automation navigation empty states
+use quiet action rows aligned with populated items: a small outlined plus, the setup
+action and one short supporting line. Keep them borderless at rest; use the same hover
+and focus treatment as navigation rows. Omit promotional headings, separate CTA pills,
+zero counts and duplicate creation controls while the section is empty.
+Keep loading and fetch failures distinct from an empty list.
+
+Agent and automation creation and configuration use the same inset right drawer with a 6px blurred backdrop and a short slide
+transition. Use the existing theme surfaces and respect reduced motion. Browse agents,
+recent chats and templates in one column; expand the same drawer to the available
+screen width to edit instructions and the shared access editor in two equal columns.
+Keep its header and save actions visible while the content scrolls. On small screens,
+stack the form and access editor. Agent details use an **Open chat** action that opens
+the normal assistant composer; do not embed another task composer in the drawer.
+Give each agent an original selectable flat character from `BotAvatarArtwork.tsx`:
+distinct colored silhouettes with small ink-colored eyes, including soft wedges,
+cushions, diamonds, ovals and stepped heads. Use broad, smooth curves with similar
+visual weight at 36px. Vary the face position and simple expressions within a consistent
+eye style. The reference establishes the simplicity of the idea, not specific characters.
+Avoid scalloped flower shapes, literal object silhouettes and extra facial features.
+Use transparent SVG artwork without gradients,
+shadows, surface texture, mechanical details or a surrounding avatar tile. Keep
+the surrounding UI on theme tokens. The compact four-column picker shows all 16
+characters with names and a selection check. Reserve the mint pebble for the general
+assistant's default. Resolve a specialist's default `bot` ID through `agent-avatar.ts`
+using its stable agent ID, never its name or list position; existing default agents
+therefore have varied appearances without rewriting their configuration. New editor
+drafts choose and save a concrete character so the preview matches the saved avatar.
+Explicit character choices always win. Save the chosen ID through the agent API and
+show the same avatar in agent lists, empty chat introductions, automation choices
+and tool results. An avatar-only change must not interrupt its work. Use bot and workflow icons for agents and
+automations in the navigation column. Keep Connections in the top-right overflow menu
+with the plug icon, not as a separate toolbar button. Settings → Assistant also opens the same
+connection dialog.
+Opening or drilling into agents preserves the underlying chat, draft and automation form.
+Agent links from tool results use the same drawer. Close, backdrop and Escape dismiss it
+and return focus to the opener; nested pickers and dialogs handle Escape first. Deep links
+open the corresponding drawer view. **Create automation** opens the shared automation
+form directly from the navigation column; overview and edit links use the same drawer.
+Keep its title and save/cancel actions visible around a scrolling form. An agent opened
+from an automation sits above that unfinished form within the same drawer; hide the
+form from keyboard navigation while preserving its values. Closing the agent returns
+to the automation; closing the automation restores the original chat or overview.
+Opening setup never creates or enables a flow. Existing automation steps remain editable
+inline through the same form, with the same permission review and paused defaults.
+After saving an agent or flow, reload any open activation review and clear its previous
+approval so the user reviews the current saved settings.
+
+**Enable assistant** opens an inline dialog that reuses the MCP authorization form,
+permission templates, resource picker and permission summary. Use Assistant wording
+in this surface; keep the same consent submission, grant checks and OAuth exchange.
+Keep the actions visible below the dialog's scrolling body, including on short or
+mobile screens. The workspace is fixed to where enabling began. Canceling must not
+enable the assistant or start an agent. Permission editing also reuses the shared editor.
+
+When a successful permission-request tool result belongs to the current assistant
+connection, show an **Access requested** card in the conversation. Explain the
+reason and requested access as plain text, with **Review permissions** as the
+only action. Opening it loads current permissions into the shared editor; never
+turn model suggestions into preselected grants. Keep Save and Cancel visible on
+short screens. Cancel leaves access unchanged; saving changed permissions requires
+a new conversation. When the server reports changed access, retire the old request
+and offer **Continue in new chat** with the last user message as an editable draft.
+Never replay a denied action on save, or claim the requested access was approved.
+Refresh this state when returning from Settings or another tab. Model text and
+unrelated tool output cannot create this card.
+
+Automation activation uses a compact **Review & enable** result in chat. Expanding
+loads the current saved flows and shows their apps, triggers, response modes, allowed
+actions and run limits. **Enable & continue** approves those exact revisions through
+the normal user-session API, then sends the observed result into the same conversation.
+Automatic fixes require an explicit checkbox. Recheck current permissions and reject
+stale revisions atomically; never grant access or resume unrelated globally paused flows.
+If continuation fails after activation, keep the enabled result and offer Continue,
+without repeating activation. Model text alone cannot create an approval control.
+
+Tool activity uses compact, domain-specific icons and explicit running, completed,
+failed or stopped states. Open a call to inspect its result, request and returned
+data; group repeated calls and select each one inside the shared details dialog.
+Routine reads show their returned item count in that activity control. Keep lists,
+individual lookup results and empty-state explanations inside the inspector; do not
+append a resource card for every lookup to the conversation.
+Preserve native tool discovery in saved conversations, including Code Mode activity.
+When native MCP actions are present, keep their orchestration wrappers in the inspector
+instead of adding duplicate action chips. Keep every write's result visible; repeated
+reads may share their latest observation.
+Automation results share one compact collection, collapsed by default, with the name or count
+and a small workflow icon. Expand it to show the shared fixed-step summary for each distinct saved ID;
+collapse removes the previews again. Never fill the transcript with canvases from incidental
+tool calls. Keep Review flow and per-item tool details inside the expanded result.
+Show actual names, triggers, agents, response policy and notification destinations from returned
+configuration. Merge repeated write receipts for the same flow, retaining every call in the inspector.
+Resolve ID-only receipts on expansion through the workspace-scoped automation API; never invent saved state from
+tool arguments. Review flow opens the regular editor and never enables or runs it.
+Show actual deployment requests with a live-progress link; a completed restart tool
+does not mean health recovery is verified. A successful chat-app setup offer may open
+the existing connection form inline, with the provider and bot role preselected. Check
+the current user's management access and the returned workspace before showing the form;
+close it on a scope change. Credentials are entered only in that form. Tool output cannot
+supply executable actions or arbitrary navigation destinations.
+Successful writes may show inline resource receipts. Keep creation and deployment
+links visible, and preserve explicit setup and approval controls. Read-only app,
+server, deployment, service and repository results open from their tool activity.
+Use returned identities to build existing OpenShip routes, never result-supplied
+URLs or commands. **Import** opens the regular deployment wizard for review; it
+does not create or deploy on click. Unknown tool output remains inspectable as data.
+Show only observed state: a connected server is not proof that its workloads are
+healthy, and an accepted deployment is not a successful deployment. Keep long data
+inside the inspector's scroll area and restore keyboard focus to its opener.
+
+## Chat apps
+
+Chat connectors live in Settings → Chat apps and are linked from the assistant settings menu.
+Bots connect directly through OpenShip; do not ask for an assistant host or show daemon
+requirements in bot setup. Mindwire is used only by the separately enabled assistant.
+Use shared ChannelLogo provider marks and ordinary filled form controls. Separate workspace bot
+installation from each sender's own account consent. New connectors are paused. Account linking
+reuses McpAuthorizationForm with chat-specific copy and finishes with an expiring verification
+command sent by the original sender. Keep deployment confirmations in the chat conversation,
+show private log links instead of log contents, and explain shared-conversation visibility for
+Telegram and Teams at setup. These commands do not require the assistant to be enabled.
+Default Slack, Discord and Telegram setup to direct outbound connections. Show only
+the credentials required by the selected transport, with live connection/retry status
+in saved cards. Webhook URLs appear only for webhook connections. Explain Teams' public
+HTTPS requirement beside its setup rather than implying all Desktop bots need exposure.
+The connection dialog uses a wide landscape layout. Keep the connection name, credentials and
+destination IDs in the left column. Put the two compact bot options in a settings card on the
+right, with transport in a Connection settings disclosure below them. Show OpenShip and the
+connection method in its summary. Open it initially when Teams needs endpoint guidance. Stack the columns on mobile.
+Keep one scrolling body with a visible Save footer. Give bot and Socket Mode tokens full-width,
+readable text fields, disable autocorrect/spellcheck, and show where to find each value directly
+below its field. Signing/client/webhook secrets remain separate password fields. Use a single-line
+input for comma-separated destination IDs with a visible 20-destination limit. Normalize pasted
+multiline lists to commas and deduplicate before submitting. Bot setup has no assistant-host picker.
+
+Settings owns the page header; do not repeat a Chat apps title above the provider cards.
+Give each provider its own setup-guide link, including inside the connection dialog. Use a
+full-width connection area with a neutral layered-card illustration and three short setup
+steps when empty. Keep failures distinct from an empty connection list. Place the complete
+command reference below connections, with shared Tabs for assistant, projects, deployments and account
+commands, copy actions and an expandable example. Derive syntax and descriptions from the
+same `@repo/commands` catalog used by CLI project syntax, chat parsing and help; avoid a narrow command sidebar.
+
+Connection cards show a compact status header, an account-linking row and an optional personal
+assistant row. Put setup details behind **Settings** and secondary account/removal actions in
+the shared menu. Reuse the wide connection form for editing name, roles, allowed destinations,
+connection method and credentials. Saved credentials are never returned: blank retains them;
+a new value replaces them. The provider remains bound to the connection. Settings saves
+use one revision-checked update; a provider update failure pauses the bot.
+Offer two compact checkboxes, **Assistant** and **Control plane**, with either or both selectable.
+Require at least one before saving. Selecting Assistant is the workspace's permission to offer
+assistant conversations; do not repeat it as another switch on the card. Each linked person must
+still choose **Connect my assistant** and use their own connected provider and approved Assistant
+access. Chat permissions remain separate. Show setup help if no agent is connected and keep
+personal disconnect available when the bot or its Assistant option is disabled. Existing bots
+with assistant conversations off require an explicit settings save; never silently enable them.
+Separate bot registrations can keep assistant chat and commands apart. The account-link command
+replies with only its URL; consent and sender verification use the existing permission dialog.
+Chat-origin conversations keep the ordinary composer and a short continuation hint. History,
+questions and permission review use the same components as dashboard conversations.
+The command reference includes history, resume, current chat, new and stop controls.
+Keep native menu setup in the connection's **Native commands** menu action. Show the same
+role-filtered catalog, with one refresh action for Telegram and Discord. For Slack, provide
+copyable slash-command entries to merge into its app manifest, preserving its other settings.
+Keep the dialog footer visible on short screens. Menus never replace account consent or
+operation confirmations.
+
+Chat replies follow the authenticated user’s dashboard language. Persist that personal preference
+without overwriting other settings. Account-link instructions and the URL are separate messages.
+Telegram uses a compact welcome menu, project/action buttons and a distinct confirmation;
+keep the text commands available for other providers. Buttons preserve the normal consent path.

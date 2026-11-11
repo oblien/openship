@@ -226,19 +226,21 @@ const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) 
   }, [startDeployment, router]);
 
   const continueDeploy = useCallback(async (overrides?: { buildStrategy?: BuildStrategy }) => {
-    // Pre-deploy DNS gate (custom domains): surface the records to add
-    // BEFORE the deploy so DNS is pointed when the first-deploy SSL attempt runs.
+    // Pre-deploy DNS gate: new hostnames and changed destinations need setup;
+    // unchanged routes on an existing deployment do not.
     // A failed attempt just marks the domain Action Required — never blocks the
     // deploy. Informational-blocking: Deploy proceeds, Cancel aborts.
     let dnsTargets = deploymentDnsTargets(config);
+    if (dnsTargets.length > 0 && config.projectId) {
+      const projectInfo = await projectsApi.getInfo(config.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/(deployment)/deploy/[slug]/components/Sidebar"); return null; });
+      const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
+        ? projectInfo.data.project.domains
+        : [];
+      dnsTargets = attachDeploymentDomainIds(
+        deploymentDnsTargets(config, projectInfo?.data?.project), domainRows,
+      );
+    }
     if (dnsTargets.length > 0) {
-      if (config.projectId) {
-        const projectInfo = await projectsApi.getInfo(config.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/(deployment)/deploy/[slug]/components/Sidebar"); return null; });
-        const domainRows = Array.isArray(projectInfo?.data?.project?.domains)
-          ? projectInfo.data.project.domains
-          : [];
-        dnsTargets = attachDeploymentDomainIds(dnsTargets, domainRows);
-      }
       let modalId = "";
       modalId = showModal({
         customContent: (

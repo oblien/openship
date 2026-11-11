@@ -288,9 +288,8 @@ function buildCloudHourlyPeriods(
 const EMPTY_SUMMARY: AnalyticsSummary = {
   totalRequests: 0,
   pageRequests: 0,
-  // 0, not null: this is the summary for a project with a resolvable traffic
-  // source that genuinely reported nothing, so "zero visitors" is the true answer
-  // rather than "look elsewhere".
+  // No published source, or a successful read with no visitors. Provider failures
+  // must still surface as errors rather than returning this empty summary.
   uniqueVisitors: 0,
   bandwidthIn: 0,
   bandwidthOut: 0,
@@ -466,6 +465,11 @@ export async function getAnalyticsOverview(
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", projectId);
   }
+
+  // Domains are reserved before the first build finishes. They have no published
+  // edge route yet, so asking the provider for traffic can legitimately return 404.
+  // A redeploy retains its active deployment and continues to expose real failures.
+  if (!project.activeDeploymentId) return { summary: EMPTY_SUMMARY, periods: [] };
 
   // `domain` scopes to one tracked domain (validated; falls back to the primary
   // when untracked — never fetches an arbitrary cross-tenant host). Without it,

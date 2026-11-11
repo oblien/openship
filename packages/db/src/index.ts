@@ -109,6 +109,7 @@ export {
   normalizeComposeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  composeValuesEqual,
   reconcileComposeSpec,
   unresolvedComposeEnvironmentKeys,
   composeSpecDiff,
@@ -293,3 +294,10 @@ export type { IngressConnection, IngressHostname } from "./repos/ingress.repo";
 export { createPullRequestPreviewRepo, type PullRequestPreview } from "./repos/pull-request-preview.repo";
 
 export type { AutomaticBuildCancellation } from "./repos/deployment.repo";
+
+export type { AssistantRow, AssistantOwner, AssistantConnectionRow } from "./repos/assistant.repo";
+export type { AssistantAutomationRow, AssistantAutomationRunRow } from "./repos/assistant-automations.repo";
+
+export type { ChatAppConnection, ChatAppIdentity, ChatAppThread, ChatAppReceipt } from "./repos/chat-apps.repo";
+
+export type { AssistantAgentRow } from "./repos/assistant-agents.repo";

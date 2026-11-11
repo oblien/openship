@@ -634,7 +634,7 @@ export const projectsApi = {
 
   /** Set active branch */
   setBranch: (id: string | number, branch: string) =>
-    api.post<any>(endpoints.projects.branch(id), { branch }),
+    api.post<{ success: boolean; branch: string }>(endpoints.projects.branch(id), { branch }),
 
   /** Toggle auto-deploy setting */
   setAutoDeploy: (id: string | number, enabled: boolean) =>

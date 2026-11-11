@@ -110,6 +110,12 @@ async function runReconcile(): Promise<boolean> {
   return restarted;
 }
 
+// The payload may already be current after a failed phase-2 update. Retrying the
+// public command must still apply the Compose template and check readiness.
+async function reconcileCurrentCompose(): Promise<void> {
+  if (readInstallMethod() === "compose") await runReconcile();
+}
+
 /**
  * Re-exec the freshly-fetched binary to run the reconcile (`update --apply-only`)
  * so the NEW code writes the NEW compose template / service unit — the whole point
@@ -161,6 +167,7 @@ async function runSourceUpdate(source: SourceInstall, opts: UpdateOpts): Promise
 
   if (!opts.rebuild && remote != null && remote === current) {
     ok(`Already up to date on source ${source.ref} (${current}). Use --rebuild to force.`);
+    await reconcileCurrentCompose();
     return;
   }
 
@@ -180,7 +187,7 @@ async function runSourceUpdate(source: SourceInstall, opts: UpdateOpts): Promise
   info(`Rebuilt from source (${source.ref} @ ${sha}).`);
   const r = reexecApply();
   if (r.spawned) {
-    process.exitCode = r.status ?? 0;
+    process.exitCode = r.status ?? 1;
     return;
   }
 
@@ -230,6 +237,7 @@ async function runTarballUpdate(install: CliInstall, opts: UpdateOpts): Promise<
 
   if (plan.action === "up-to-date") {
     ok(`Already on the latest version (v${current}).`);
+    await reconcileCurrentCompose();
     return;
   }
 
@@ -263,7 +271,7 @@ async function runTarballUpdate(install: CliInstall, opts: UpdateOpts): Promise<
   // an in-process reconcile only if the spawn fails (box never left un-reconciled).
   const applyViaChild = reexecApply();
   if (applyViaChild.spawned) {
-    process.exitCode = applyViaChild.status ?? 0;
+    process.exitCode = applyViaChild.status ?? 1;
     return;
   }
 
@@ -353,6 +361,7 @@ export const updateCommand = new Command("update")
 
     if (plan.action === "up-to-date") {
       ok(`Already on the latest version (v${current}).`);
+      await reconcileCurrentCompose();
       return;
     }
 
@@ -373,7 +382,7 @@ export const updateCommand = new Command("update")
     // reconcile only if the spawn fails, so the box is never left un-reconciled.
     const applyViaChild = reexecApply();
     if (applyViaChild.spawned) {
-      process.exitCode = applyViaChild.status ?? 0;
+      process.exitCode = applyViaChild.status ?? 1;
       return;
     }
 

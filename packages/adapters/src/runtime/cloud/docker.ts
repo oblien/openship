@@ -94,6 +94,7 @@ export class CloudDockerRuntime extends DockerRuntime {
         cloudConnection: () => connection.connectDocker(),
         resolveRegistryAuth: options.resolveRegistryAuth,
         buildCacheProtection: options.buildCacheProtection,
+        softwareCacheRoot: connection.softwareCacheRoot,
       },
       null,
       options.provisionLock,

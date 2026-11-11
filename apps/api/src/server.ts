@@ -1,3 +1,5 @@
+import { chatApps } from "./modules/chat-apps/chat-apps.service";
+import { assistantAutomations } from "./modules/assistant/automation.service";
 import { errorReporter, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { serve } from "@hono/node-server";
 import {
@@ -140,6 +142,9 @@ if (await controllerIsActive()) await tunnelTransport.start();
   injectWebSocket(server);
 }
 
+chatApps.start();
+assistantAutomations.start();
+
 // ─── Graceful shutdown ──────────────────────────────────────────────
 //
 // First time this codebase has a signal handler. Order of operations
@@ -235,6 +240,9 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
     // Budget must leave room for closeDb() inside the takeover grace; a dev
     // reload abandons in-flight jobs rather than the database.
     await Promise.all([
+      (await import("./modules/assistant/assistant.service")).assistant.close(),
+      chatApps.close(),
+      assistantAutomations.close(),
       (await import("@repo/platform/engine/modules/actions/lifecycle")).stopActionController(fastReload ? 500 : 20_000),
       (await import("@repo/platform/engine/modules/ingress/lifecycle")).stopIngressController(),
       shutdownJobRunner(fastReload ? 500 : 20_000),
@@ -250,16 +258,6 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
     });
   });
 
-  if (env.CLOUD_MODE) {
-    try {
-      const { cloudAnalytics } =
-        await import("@repo/platform/engine/modules/cloud-analytics/index");
-      await cloudAnalytics.drain();
-      await cloudAnalytics.flush();
-    } catch {
-      errorDiagnostics.warn("api/server", "[cloud-analytics] Pending deliveries will resume after restart.");
-    }
-  }
   // Close the DB after the HTTP server and jobs (both use it) have drained.
   // For embedded PGlite this frees the single-instance lock so the next start
   // opens the data dir cleanly instead of racing a not-yet-released lock.
@@ -299,6 +297,7 @@ async function shutdown(signal: NodeJS.Signals, exitCode = 0): Promise<void> {
   console.log("Shutdown complete.");
   await drainErrorResponses();
   await errorReporter.flush(fastReload ? 100 : 1500);
+  await (await import("./lib/cloud-telemetry")).stopCloudTelemetry(fastReload ? 100 : 2000);
   process.exit(exitCode);
 }
 

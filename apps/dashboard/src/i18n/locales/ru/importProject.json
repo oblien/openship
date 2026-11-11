@@ -419,6 +419,8 @@
       "cancelled": "Отменено",
       "failed": "Ошибка",
       "readyWarnings": "Готово с предупреждениями",
+      "verifying": "Проверка",
+      "liveVerifying": "Работает · Проверка",
       "ready": "Готово",
       "building": "Сборка"
     },

@@ -10,7 +10,8 @@ export async function GET() {
   const entries: SitemapEntry[] = [
     { loc: `${SITE_URL}/`, lastmod: now, changefreq: "daily", priority: 1.0 },
     { loc: `${SITE_URL}/pricing`, lastmod: now, changefreq: "weekly", priority: 0.95 },
-    { loc: `${SITE_URL}/affiliates`, lastmod: now, changefreq: "monthly", priority: 0.8 },
+    { loc: `${SITE_URL}/migrate`, lastmod: now, changefreq: "monthly", priority: 0.85 },
+    { loc: `${SITE_URL}/referrals`, lastmod: now, changefreq: "monthly", priority: 0.8 },
     { loc: `${SITE_URL}/mail`, lastmod: now, changefreq: "weekly", priority: 0.9 },
     { loc: `${SITE_URL}/apps`, lastmod: now, changefreq: "weekly", priority: 0.9 },
     { loc: `${SITE_URL}/download`, lastmod: now, changefreq: "weekly", priority: 0.9 },

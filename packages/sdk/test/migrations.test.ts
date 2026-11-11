@@ -53,6 +53,13 @@ describe("remote migration workflows", () => {
       kill: false,
     });
   });
+  it("passes an explicit keep-without-restart decision without changing it", async () => {
+    const f = fixture(() => Response.json({ success: true }));
+    const choice = { confirmationToken: "review-token", kill: false, restartOriginals: false };
+    await f.ship.migrations.cutover("mig_one", choice);
+    expect(f.calls).toHaveLength(1);
+    expect(JSON.parse(String(f.calls[0].init.body))).toEqual(choice);
+  });
   it("does not retry an uncertain migration start or substitute name-only service selection", async () => {
     const f = fixture(() => {
       throw new TypeError("Connection lost after dispatch");

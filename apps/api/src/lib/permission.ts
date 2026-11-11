@@ -8,6 +8,7 @@ export { authorization, checkPermission, checkPermissionOnResource } from "@repo
 export {
   ORG_SINGLETON_RESOURCES,
   PROJECT_ROOTED,
+  isCheckedResourceType,
   permitsAction,
   roleAllowsResourceType,
   type CheckedResourceType,

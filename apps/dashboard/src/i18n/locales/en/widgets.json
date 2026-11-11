@@ -396,6 +396,8 @@
       "headersHint": "Add headers to responses for matching paths.",
       "permanent": "Permanent redirect",
       "cleanUrls": "Hide .html extensions",
+      "spaFallback": "SPA fallback",
+      "spaFallbackHint": "Static sites: serve index.html for missing paths. Turn off for a real 404, using 404.html when available. Redeploy container-hosted sites to apply changes.",
       "cleanUrlsHint": "Serve /about.html at /about.",
       "trailingSlash": "Trailing slash",
       "proxyLimits": "Proxy settings",

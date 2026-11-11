@@ -1,4 +1,5 @@
-import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { diagnosticTraceparent, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import { z } from "zod";
 import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
@@ -33,6 +34,7 @@ const REJECTED_CHECKOUT_CODES = new Set([
   "invalid_plan", "invalid_pack", "invalid_offer", "invalid_redirect_url",
   "billing_redirect_not_allowed", "reseller_enterprise_required", "billing_offer_underfunded",
   "capacity_price_below_cost", "insufficient_redeemable_balance",
+  "capacity_checkout_limit",
 ]);
 const EXPIRED_CHECKOUT_CODES = new Set(["checkout_expired", "capacity_checkout_expired"]);
 
@@ -229,6 +231,19 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
   const monthly = subscription?.offer?.billingMode === "monthly";
   const expectedTier = monthly ? "capacity" : subscription?.tierId ?? "free";
   const capacity = entitlement.capacity;
+  // An unpaid renewal advances Stripe's invoice period without buying another
+  // month of compute. The retained, expired capacity still describes the last
+  // funded period. Keep billing readable so the customer can pay, while the
+  // provider's uncovered entitlement continues to block new billable work.
+  const unpaidRenewal = monthly && subscription &&
+    ["past_due", "unpaid", "paused", "canceled"].includes(subscription.status) &&
+    entitlement.status !== "active" && entitlement.computeCovered === false &&
+    capacity?.computeCovered === false && capacity.status === "expired" &&
+    entitlement.periodStart !== null && entitlement.periodEnd !== null &&
+    subscription.periodStart !== null && subscription.periodEnd !== null &&
+    Date.parse(entitlement.periodStart) < Date.parse(entitlement.periodEnd) &&
+    Date.parse(entitlement.periodEnd) <= Date.parse(subscription.periodStart) &&
+    Date.parse(subscription.periodStart) < Date.parse(subscription.periodEnd);
   if ((entitlement.tierId ?? "free") !== expectedTier ||
       (monthly && (!capacity || capacity.namespace !== entitlement.namespace || capacity.provider !== "stripe" ||
         capacity.billingMode !== "monthly" || entitlement.billingMode !== "monthly" ||
@@ -236,8 +251,8 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
         !isDeepStrictEqual(capacity.capacity, subscription!.offer!.capacity) ||
         timestamp(capacity.periodStart) !== timestamp(entitlement.periodStart) || timestamp(capacity.periodEnd) !== timestamp(entitlement.periodEnd))) ||
       (!subscription && (entitlement.periodStart !== null || entitlement.periodEnd !== null)) ||
-      (subscription && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
-      (subscription && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
       (!monthly && entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
     throw new AppError("Cloud billing returned an entitlement that does not match this organization's subscription", 502, "OBLIEN_ENTITLEMENT_MISMATCH");
   }
@@ -287,8 +302,8 @@ const PROVIDER_FAILURES = new Set([
 
 export class OblienBillingApi {
   /** Uses the same authenticated, bounded provider transport as checkout. */
-  affiliateRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
-    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid affiliate endpoint");
+  referralRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
+    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid referral endpoint");
     return this.request<unknown>({ method, path, ...(method === "GET" ? { query: Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])) } : { body: input }) });
   }
   private readonly baseUrl: string;
@@ -314,7 +329,11 @@ export class OblienBillingApi {
     this.billing = client.billing;
   }
 
-  private async request<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
+  private request<T>(input: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
+    return withDiagnosticSpan({ kind: "operation", component: "oblien-billing", operation: "oblien.billing", method: input.method }, () => this.requestBilling<T>(input), { kind: "client" });
+  }
+
+  private async requestBilling<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
     const meteredPricing = method === "GET" && path === "/pricing/calculator";
     if (!path.startsWith("/billing/") && !meteredPricing) throw new Error("Billing transport only accepts billing routes");
     const url = new URL(`${this.baseUrl}${path}`);
@@ -323,6 +342,8 @@ export class OblienBillingApi {
     }
     const publicRead = meteredPricing || (method === "GET" && (path === "/billing/catalog" || path === "/billing/capacity/catalog"));
     const headers: Record<string, string> = { Accept: "application/json" };
+    const parent = diagnosticTraceparent();
+    if (parent) headers.traceparent = parent;
     if (!publicRead) {
       if (!this.options.clientId || !this.options.clientSecret) {
         throw new AppError("Cloud billing is not configured", 503, "BILLING_NOT_CONFIGURED");
@@ -368,8 +389,8 @@ export class OblienBillingApi {
       });
       const known: Record<string, string> = {
         affiliate_unavailable: "This referral code is no longer available or does not apply to your purchase. Remove it or choose an eligible Cloud plan.",
-        affiliate_paused: "Affiliate access is paused. Contact support.",
-        affiliate_not_found: "This affiliate record was not found for your account.",
+        affiliate_paused: "Referral access is paused. Contact support.",
+        affiliate_not_found: "This referral record was not found for your account.",
         affiliate_payout_minimum: "The payout amount is below your minimum. Refresh your balance to see the current minimum.",
         affiliate_payout_balance: "Your available earnings changed. Refresh your balance before requesting a payout.",
         affiliate_payout_funding: "Payout funding is temporarily unavailable. Contact support.",
@@ -439,7 +460,8 @@ export class OblienBillingApi {
           : checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
           ...(Object.hasOwn(known, code) ? { providerCode: code } : {}),
           ...(checkoutExpired ? { checkoutExpired: true } : {}),
-          ...(path === "/billing/checkout" && [400, 402, 403, 409, 422].includes(response.status) && REJECTED_CHECKOUT_CODES.has(code)
+          ...(path === "/billing/checkout" && ([400, 402, 403, 409, 422].includes(response.status) ||
+            response.status === 429 && code === "capacity_checkout_limit") && REJECTED_CHECKOUT_CODES.has(code)
             ? { checkoutRejected: true } : {}),
           ...(Object.keys(diagnostic).length ? { details: diagnostic } : {}),
         });

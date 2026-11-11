@@ -51,6 +51,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: h.push, replace: h.replace }),
   useSearchParams: () => new URLSearchParams(h.search),
 }));
+// The add-server hook reads session identity; keep this network editor suite
+// independent of BetterAuth's browser refresh/broadcast lifecycle.
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({
+    data: { user: { id: "fixture-user" }, session: { activeOrganizationId: "fixture-org" } },
+  }),
+}));
 vi.mock("@/lib/api", () => ({
   systemApi: { listServers: h.servers },
   getApiErrorMessage: (error: Error) => error.message,

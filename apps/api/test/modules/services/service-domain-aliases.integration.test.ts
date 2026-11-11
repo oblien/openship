@@ -19,7 +19,10 @@ vi.mock("@repo/platform/engine/modules/domains/domain.service", async (original)
 }));
 
 import { repos, seedOwner } from "../jobs/_harness";
-import { updateService } from "@repo/platform/engine/modules/services/service.service";
+import {
+  syncComposeServices,
+  updateService,
+} from "@repo/platform/engine/modules/services/service.service";
 import type { ServicePublicEndpoint } from "@repo/db";
 
 beforeEach(() => {
@@ -156,5 +159,244 @@ describe("same-port service domains with real persistence", () => {
     expect((await repos.service.findById(s.service.id))?.publicEndpoints).toEqual(routes);
     expect(await repos.domain.findById(s.domain.id)).toEqual(s.domain);
     expect(h.edge.mock.calls.at(-1)?.[1].removes).toEqual([]);
+  });
+});
+
+it("persists a portless www redirect and registers it through the shared route path", async () => {
+  const s = await seed();
+  const redirect = {
+    domainType: "custom" as const,
+    customDomain: s.alias,
+    redirectTo: s.primary,
+    redirectStatus: 301 as const,
+  };
+  await updateService(s.ctx, s.project.id, s.service.id, {
+    publicEndpoints: [...s.endpoints, redirect],
+  });
+  const stored = (await repos.service.findById(s.service.id))!;
+  expect(stored.publicEndpoints).toEqual([...s.endpoints, redirect]);
+  expect(await repos.domain.findByHostname(s.alias)).toMatchObject({
+    serviceId: s.service.id,
+    redirectTo: s.primary,
+    redirectStatus: 301,
+  });
+  expect(h.edge.mock.calls.at(-1)?.[1].registers).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        hostname: s.alias,
+        redirectHost: { target: s.primary, statusCode: 301 },
+      }),
+    ]),
+  );
+  const { buildServiceRouteDomains } = await import("@repo/platform/engine/lib/routing-domains");
+  for (const runtimeName of ["docker", "cloud-docker"]) {
+    const planned = buildServiceRouteDomains({
+      project: s.project,
+      service: stored,
+      runtimeName,
+      usesManagedRouting: true,
+    });
+    expect(planned.find((route) => route.hostname === s.alias)).toMatchObject({
+      redirectTo: s.primary,
+      redirectStatus: 301,
+    });
+  }
+  // Editing to "serve app" clears both saved intent and the derived Domain row.
+  h.edge.mockClear();
+  await updateService(s.ctx, s.project.id, s.service.id, {
+    publicEndpoints: [...s.endpoints, { ...redirect, port: 4000, redirectTo: "" }],
+  });
+  expect(await repos.domain.findByHostname(s.alias)).toMatchObject({
+    redirectTo: null,
+    redirectStatus: null,
+  });
+  expect(
+    h.edge.mock.calls
+      .at(-1)?.[1]
+      .registers.find((route: { hostname: string }) => route.hostname === s.alias),
+  ).not.toHaveProperty("redirectHost");
+});
+
+it.each(["foreign", "self", "cycle", "invalid status"])(
+  "rejects %s redirects before service or domain writes",
+  async (kind) => {
+    const s = await seed();
+    const endpoints = [
+      ...structuredClone(s.endpoints),
+      {
+        domainType: "custom" as const,
+        customDomain: s.alias,
+        redirectTo:
+          kind === "foreign" ? "outside.example.com" : kind === "self" ? s.alias : s.primary,
+        redirectStatus: kind === "invalid status" ? 200 : 301,
+      },
+    ];
+    if (kind === "cycle") Object.assign(endpoints[0], { redirectTo: s.alias });
+    await expect(
+      updateService(s.ctx, s.project.id, s.service.id, { publicEndpoints: endpoints } as never),
+    ).rejects.toThrow();
+    expect((await repos.service.findById(s.service.id))!.publicEndpoints).toEqual(s.endpoints);
+    expect(await repos.domain.findByHostname(s.alias)).toBeUndefined();
+    expect(h.edge).not.toHaveBeenCalled();
+  },
+);
+
+it("preserves a legacy API redirect during unrelated service route edits", async () => {
+  const s = await seed();
+  await repos.domain.create({
+    projectId: s.project.id,
+    serviceId: s.service.id,
+    hostname: s.alias,
+    domainType: "custom",
+    redirectTo: s.primary,
+    redirectStatus: 308,
+  });
+  const routes = [...s.endpoints, { ...s.endpoints[0]!, customDomain: s.alias }];
+  await repos.service.update(s.service.id, { publicEndpoints: routes });
+  await updateService(s.ctx, s.project.id, s.service.id, { exposed: true });
+  expect(await repos.domain.findByHostname(s.alias)).toMatchObject({
+    redirectTo: s.primary,
+    redirectStatus: 308,
+  });
+  expect(h.edge.mock.calls.at(-1)?.[1].registers).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        hostname: s.alias,
+        redirectHost: { target: s.primary, statusCode: 308 },
+      }),
+    ]),
+  );
+});
+
+it.each([{}, { name: "renamed-web" }])(
+  "rejects a scalar hostname edit that removes a redirect target (%j)",
+  async (extra) => {
+    const s = await seed();
+    await updateService(s.ctx, s.project.id, s.service.id, {
+      publicEndpoints: [
+        ...s.endpoints,
+        { domainType: "custom", customDomain: s.alias, redirectTo: s.primary, redirectStatus: 301 },
+      ],
+    });
+    const before = await repos.service.findById(s.service.id);
+    h.edge.mockClear();
+    await expect(
+      updateService(s.ctx, s.project.id, s.service.id, {
+        customDomain: `renamed-${s.primary}`,
+        ...extra,
+      }),
+    ).rejects.toThrow();
+    expect(await repos.service.findById(s.service.id)).toEqual(before);
+    expect(await repos.domain.findById(s.domain.id)).toEqual(s.domain);
+    expect(h.edge).not.toHaveBeenCalled();
+  },
+);
+it("preserves an API redirect on an endpoint previously set to serve during unrelated edits", async () => {
+  const s = await seed();
+  const routes = [
+    { ...s.endpoints[0]!, redirectTo: "" },
+    { ...s.endpoints[0]!, customDomain: s.alias, redirectTo: "" },
+  ];
+  await updateService(s.ctx, s.project.id, s.service.id, { publicEndpoints: routes });
+  // Exercise the actual POST /domains handler, using external ingress to avoid IP discovery.
+  const { addDomain } = await import("@repo/platform/engine/modules/domains/domain.service");
+  const result = await addDomain(s.ctx, {
+    projectId: s.project.id,
+    hostname: s.alias,
+    redirectTo: s.primary,
+    redirectStatus: 308,
+    externalIngress: true,
+  });
+  expect(result.domain).toMatchObject({ redirectTo: s.primary, redirectStatus: 308 });
+  expect((await repos.service.findById(s.service.id))?.publicEndpoints?.[1]).toMatchObject({
+    redirectTo: s.primary,
+    redirectStatus: 308,
+  });
+  h.edge.mockClear();
+  await updateService(s.ctx, s.project.id, s.service.id, { exposed: true });
+  expect(h.edge.mock.calls.at(-1)?.[1].registers).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        hostname: s.alias,
+        redirectHost: { target: s.primary, statusCode: 308 },
+      }),
+    ]),
+  );
+  const statusChange = await addDomain(s.ctx, {
+    projectId: s.project.id,
+    hostname: s.alias,
+    redirectTo: s.primary,
+    redirectStatus: 302,
+    externalIngress: true,
+  });
+  expect(statusChange.domain.redirectStatus).toBe(302);
+  await updateService(s.ctx, s.project.id, s.service.id, { exposed: true });
+  expect(h.edge.mock.calls.at(-1)?.[1].registers).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        hostname: s.alias,
+        redirectHost: { target: s.primary, statusCode: 302 },
+      }),
+    ]),
+  );
+});
+
+it("keeps cross-service redirect targets through route edits and partial Compose syncs", async () => {
+  const s = await seed();
+  const redirect = await repos.service.create({
+    projectId: s.project.id,
+    name: "redirect",
+    kind: "compose",
+    exposed: true,
+    publicEndpoints: [{ domainType: "custom", customDomain: s.alias, redirectTo: s.primary }],
+  });
+  await repos.domain.create({
+    projectId: s.project.id,
+    serviceId: redirect.id,
+    hostname: s.alias,
+    domainType: "custom",
+    redirectTo: s.primary,
+    redirectStatus: 301,
+  });
+  const before = await repos.service.findById(s.service.id);
+  await expect(
+    updateService(s.ctx, s.project.id, s.service.id, {
+      customDomain: `renamed-${s.primary}`,
+    }),
+  ).rejects.toThrow("can only redirect to another domain");
+  expect(await repos.service.findById(s.service.id)).toEqual(before);
+  expect(await repos.domain.findById(s.domain.id)).toEqual(s.domain);
+  expect(h.edge).not.toHaveBeenCalled();
+  await syncComposeServices(s.ctx, s.project.id, [
+    { name: s.service.name, environment: { MODE: "production" } },
+  ]);
+  expect((await repos.service.findById(s.service.id))?.publicEndpoints).toEqual(s.endpoints);
+  expect(await repos.domain.findByHostname(s.alias)).toMatchObject({ redirectTo: s.primary });
+});
+
+it("switches the serving hostname and clears the old redirect together", async () => {
+  const s = await seed();
+  const alias = {
+    domainType: "custom" as const,
+    customDomain: s.alias,
+    redirectTo: s.primary,
+    redirectStatus: 301 as const,
+  };
+  await updateService(s.ctx, s.project.id, s.service.id, {
+    publicEndpoints: [...s.endpoints, alias],
+  });
+  const endpoints = [
+    { port: 4000, domainType: "custom" as const, customDomain: s.alias, redirectTo: "" },
+    { ...s.endpoints[0]!, redirectTo: s.alias, redirectStatus: 308 as const },
+  ];
+  await updateService(s.ctx, s.project.id, s.service.id, { publicEndpoints: endpoints });
+  expect((await repos.service.findById(s.service.id))?.publicEndpoints).toEqual(endpoints);
+  expect(await repos.domain.findByHostname(s.alias)).toMatchObject({
+    redirectTo: null,
+    redirectStatus: null,
+  });
+  expect(await repos.domain.findByHostname(s.primary)).toMatchObject({
+    redirectTo: s.alias,
+    redirectStatus: 308,
   });
 });

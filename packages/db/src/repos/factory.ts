@@ -1,3 +1,9 @@
+import { createChatAppsRepo } from "./chat-apps.repo";
+export { type ChatAppConnection, type ChatAppIdentity } from "./chat-apps.repo";
+import { createAssistantAgentsRepo } from "./assistant-agents.repo";
+import { createAssistantRepo } from "./assistant.repo";
+import { createAssistantAutomationsRepo } from "./assistant-automations.repo";
+export { type AssistantRow, type AssistantConnectionRow, type AssistantOwner } from "./assistant.repo";
 import { createManagementBillingRepo } from "./management-billing.repo";
 import { createPullRequestPreviewRepo } from "./pull-request-preview.repo";
 import { createIngressRepo } from "./ingress.repo";
@@ -16,8 +22,9 @@ export {
   type ActionRun,
   type ActionJob,
 } from "./actions.repo";
-import { createCloudAnalyticsRepo } from "./cloud-analytics.repo";
 import { createCloudSupportRepo } from "./cloud-support.repo";
+import { createCloudCustomerEmailRepo } from "./cloud-customer-email.repo";
+export { createCloudCustomerEmailRepo, type CloudCustomerEmailRepo, type CustomerEmail, type CustomerEmailInput, type CustomerPaymentEmail, type CustomerCancellationEmail } from "./cloud-customer-email.repo";
 import { createCloudWorkspaceRepo } from "./cloud-workspace.repo";
 export { createCloudWorkspaceRepo, type CloudWorkspace } from "./cloud-workspace.repo";
 export {
@@ -26,13 +33,6 @@ export {
   type CloudSupportTicket,
   type CloudSupportMessage,
 } from "./cloud-support.repo";
-export {
-  createCloudAnalyticsRepo,
-  type CloudAnalyticsRepo,
-  type CloudAnalyticsOutboxInput,
-  type CloudAnalyticsOutboxEvent,
-  type CloudAnalyticsCheckout,
-} from "./cloud-analytics.repo";
 export { createClusterStorageRepo, type ClusterStorageRecord } from "./cluster-storage.repo";
 export { createUserRepo, type User, type NewUser } from "./user.repo";
 export {
@@ -151,6 +151,7 @@ export {
   normalizeComposeRoutingFields,
   toComposeSpec,
   composeSpecsEqual,
+  composeValuesEqual,
   reconcileComposeSpec,
   unresolvedComposeEnvironmentKeys,
   composeSpecDiff,
@@ -469,8 +470,12 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     serviceTerminalSession: createServiceTerminalSessionRepo(db),
     cloudHandoffCode: createCloudHandoffCodeRepo(db),
     personalAccessToken: createPersonalAccessTokenRepo(db),
+    assistant: createAssistantRepo(db),
+    assistantAgents: createAssistantAgentsRepo(db),
+    assistantAutomations: createAssistantAutomationsRepo(db),
+    chatApps: createChatAppsRepo(db),
     patGrant: createPersonalAccessTokenGrantRepo(db),
-    oauth: createOAuthRepo(db),
+    oauth: createOAuthRepo(db, encryption),
     backupDestination: createBackupDestinationRepo(db),
     backupPolicy: createBackupPolicyRepo(db),
     backupRun: createBackupRunRepo(db),
@@ -500,8 +505,8 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     billingAnniversaryGrant: createBillingAnniversaryGrantRepo(db),
     billingUsageSnapshot: createBillingUsageSnapshotRepo(db),
     billingPlanGrant: createBillingPlanGrantRepo(db),
-    cloudAnalytics: createCloudAnalyticsRepo(db),
     cloudSupport: createCloudSupportRepo(db),
+    cloudCustomerEmail: createCloudCustomerEmailRepo(db),
   } as const;
 }
 

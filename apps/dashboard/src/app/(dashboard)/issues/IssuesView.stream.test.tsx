@@ -8,6 +8,12 @@ import { setActiveOrganizationId } from "@/lib/api/client";
 import type { IssueFeed } from "@/lib/api/issues";
 import { IssuesView } from "./IssuesView";
 
+// Keep the streaming fixture's session settled and avoid Better Auth's delayed
+// browser cleanup running after happy-dom has been disposed.
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({ data: null, isPending: false }),
+}));
+
 vi.mock("@/components/updates/useUpdates", () => ({
   useUpdates: () => ({ securityOverview: { projects: [], pendingProjects: 0, unknownProjects: 0 }, securityAvailable: true, refresh: vi.fn() }),
 }));
@@ -708,7 +714,7 @@ it("opens the persistent security review without polling the hidden incident fee
   window.history.replaceState(null, "", "/monitoring?tab=security");
   await render();
   expect(container.textContent).toContain("Security advisories");
-  expect(container.textContent).toContain("Findings for apps you can access in the current organization.");
+  expect(container.textContent).toContain("Findings for apps and servers you can access in this workspace.");
   expect(buttons("Refresh")).toHaveLength(1);
   expect(mocks.list).not.toHaveBeenCalled();
 });

@@ -4,11 +4,7 @@ import React from "react";
 import { useI18n } from "@/components/i18n-provider";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import type { PublicEndpoint } from "@/context/deployment/types";
-import {
-  getWwwDomainRouting,
-  setWwwDomainRouting,
-  toggleWwwDomainRouting,
-} from "@/lib/www-domain-routing";
+
 
 /**
  * Free / Custom / None routing picker, rendered as a COMPACT segmented tab (the
@@ -45,6 +41,9 @@ interface RoutingModePickerProps {
    *  toggle CREATES a redirect — hiding the control would leave the user with a
    *  301 they didn't see and can't change. */
   allowRedirects?: boolean;
+  /** Hostnames behind external ingress — forwarded to the endpoints card so
+   *  password protection shows "not supported" for them. */
+  externalIngressHostnames?: ReadonlySet<string>;
 }
 
 // Segmented tab styling — identical to RoutingSettingsCard's Free/Custom tabs so
@@ -65,16 +64,11 @@ export function RoutingModePicker({
   allowPortEdit = false,
   saveMode = "change",
   allowRedirects = false,
+  externalIngressHostnames,
 }: RoutingModePickerProps) {
   const { t } = useI18n();
   const w = t.widgets.routing.settingsCard;
 
-  const www = getWwwDomainRouting(endpoints);
-  const changeWwwEndpoints = (next: PublicEndpoint[]) =>
-    onEndpointsChange(
-      next,
-      hasServer ? next.find((endpoint) => !endpoint.redirectTo)?.port || runtimePort : undefined,
-    );
   const tabs: Array<{ value: RoutingMode; label: string }> = [
     { value: "free", label: w.free },
     { value: "custom", label: w.custom },
@@ -114,21 +108,9 @@ export function RoutingModePicker({
             saveMode={saveMode}
             hideTypeToggle
             allowRedirects={allowRedirects}
+            externalIngressHostnames={externalIngressHostnames}
             onChange={onEndpointsChange}
-            wwwToggle={
-              mode === "custom"
-                ? {
-                    show: !!www,
-                    included: www?.included ?? false,
-                    apex: www?.apex ?? null,
-                    mode: www?.mode ?? null,
-                    onModeChange: (mode) =>
-                      changeWwwEndpoints(setWwwDomainRouting(endpoints, mode)),
-                    onToggle: (on) =>
-                      changeWwwEndpoints(toggleWwwDomainRouting(endpoints, on, allowRedirects)),
-                  }
-                : undefined
-            }
+            allowWww={mode === "custom"}
           />
         </div>
       )}

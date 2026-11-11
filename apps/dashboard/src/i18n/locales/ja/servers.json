@@ -24,7 +24,11 @@
     "connecting": "接続中…",
     "streamUnavailable": "ライブ更新を利用できません。最後に測定した使用量を表示しています。",
     "usageTitle": "リソース使用量",
-    "setupPending": "クラウドスペースの設定が完了すると使用量が表示されます。"
+    "setupPending": "クラウドスペースの設定が完了すると使用量が表示されます。",
+    "projectsAssigned": "このプランのプロジェクト",
+    "projectsAssignedHint": "このプランのコンピュートとストレージを共有するプロジェクト。",
+    "showAllProjects": "全{count}件のプロジェクトを表示",
+    "storageDetails": "ストレージ使用量について"
   },
   "github": {
     "title": "GitHub アクセス",
@@ -67,12 +71,8 @@
     "addThisMachine": "このマシンを追加",
     "addThisMachineError": "このマシンをサーバーとして追加できませんでした。",
     "emptyTitle": "サーバーはまだありません",
-    "emptyDescription": "SSH でサーバーを接続すれば、あとは Openship が対応します。Docker、OpenResty、SSL、デプロイのすべてを自動でセットアップします。",
+    "emptyDescription": "SSH でサーバーを接続。Docker、ルーティング、SSL、デプロイは OpenShip が管理します。",
     "addFirstServer": "最初のサーバーを追加",
-    "whatGetsConfigured": "設定される内容",
-    "monitoring": "モニタリング",
-    "monitoringDesc": "ヘルスチェック",
-    "gitDesc": "ソースデプロイ",
     "connected": "接続済み",
     "error": "エラー",
     "forwarding": "{n} 件転送中",
@@ -135,10 +135,6 @@
       "nothingToDo": "適用する項目はありません",
       "applyFailed": "更新を開始できませんでした"
     },
-    "featContainer": "コンテナランタイム",
-    "featContainerDesc": "各アプリを分離して実行",
-    "featProxy": "リバースプロキシ",
-    "featProxyDesc": "ルーティングとSSL",
     "seeDocs": "ドキュメントを見る"
   },
   "containers": {
@@ -247,7 +243,8 @@
       "ssh": "SSH アクセス",
       "runtimeApi": "ランタイム API",
       "workloads": "ワークロード",
-      "settings": "設定"
+      "settings": "設定",
+      "runs": "実行履歴"
     },
     "healthy": "正常",
     "issues": "問題あり",
@@ -1034,12 +1031,12 @@
       "description": "所有するサーバーを SSH 経由で使用します。"
     },
     "managed": {
-      "label": "マネージドサーバーを追加",
-      "description": "Openship Cloud がセットアップ、ルーティング、HTTPS を管理します。"
+      "label": "クラウドスペースを追加",
+      "description": "アプリ、ビルド、データは同じクラウドスペースの容量を共有します。"
     },
-    "signInHint": "Cloud アカウントを接続すると、既存のマネージドサーバーを使用するか、新しいサーバーを追加できます。",
-    "chooseExisting": "既存の Cloud サーバーを選択",
-    "useServer": "このサーバーを使用"
+    "signInHint": "Cloudアカウントを接続して、既存のCloudスペースを使用するか、新しく追加してください。",
+    "chooseExisting": "クラウドスペースを選択",
+    "useServer": "このCloudスペースを使用"
   },
   "managedControls": {
     "retry": "状態を更新",
@@ -1251,5 +1248,21 @@
     "saved": "GPU設定を保存しました",
     "saveFailed": "GPU設定を保存できませんでした",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "ビルドキャッシュ",
+    "subtitle": "デプロイ間で Openship がこのサーバーに保持するビルドキャッシュの量です。",
+    "modeLabel": "キャッシュ上限",
+    "modeAuto": "自動",
+    "modeCustom": "カスタム",
+    "modeHint": "自動では、このサーバーの Docker ディスクの最大 20% を保持します。各ビルドの後、上限を超えたキャッシュは最近使われていないものから削除されます。",
+    "statusAuto": "自動",
+    "statusCustom": "カスタム · {size} GiB",
+    "customLabel": "上限（GiB）",
+    "invalid": "{min}〜{max} GiB のサイズを小数点以下2桁までで入力してください。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "ビルドキャッシュの上限を保存しました",
+    "saveFailed": "ビルドキャッシュの上限を保存できませんでした"
   }
 }

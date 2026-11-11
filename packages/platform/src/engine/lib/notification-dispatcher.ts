@@ -34,9 +34,9 @@ import { repos, createNotificationDeliveryRepo, type Database, type Notification
 import type { ChannelKind } from "@repo/db";
 import { categoryForEventType, findCategory } from "./notification-categories";
 import { fireJobTriggers } from "../modules/jobs/job-events";
+import { captureAssistantAutomationEvent } from "../modules/assistant/automation-events";
 import { trackBackgroundWork } from "./background-work";
 import { canReceiveNotification } from "./notification-access";
-import { observeCloudNotification } from "../modules/cloud-analytics/lifecycle";
 
 export interface NotificationEmitInput {
   organizationId: string;
@@ -146,9 +146,9 @@ export const notification = {
    * enqueuing in the request path.
    */
   emit(input: NotificationEmitInput): void {
-    observeCloudNotification(input);
     // Custom jobs can also be TRIGGERED by an event (cheap no-op when unarmed).
     fireJobTriggers(input.eventType, input.organizationId);
+    void trackBackgroundWork(captureAssistantAutomationEvent(input).catch(error => observeCaughtError(error, "platform/assistant/automation-event")));
     void trackBackgroundWork(dispatch(input).catch((err) => {
       errorDiagnostics.error("platform/engine/lib/notification-dispatcher",
         `[notification] dispatch failed for eventType=${input.eventType}:`,
@@ -163,8 +163,10 @@ export const notification = {
    * the notification is itself an incident).
    */
   async emitSync(input: NotificationEmitInput): Promise<void> {
-    observeCloudNotification(input);
     fireJobTriggers(input.eventType, input.organizationId);
+    // Automation intake must not interrupt the original notification. The
+    // scheduled worker reconciles persisted failures if this receipt cannot be saved.
+    await captureAssistantAutomationEvent(input).catch(error => observeCaughtError(error, "platform/assistant/automation-event"));
     await dispatch(input);
   },
 };

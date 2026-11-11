@@ -14,7 +14,7 @@ import { billingApi } from "@/lib/api/billing";
 import { getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { useSession } from "@/lib/auth-client";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
-import { scopedBillingHref } from "@/lib/billing-links";
+import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
 import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
 import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
 import { useManagedServerActions } from "@/components/servers/managed/useManagedServerActions";
@@ -200,7 +200,22 @@ function CheckoutRow({
     setRemoved(true);
     setDeleting(false);
     onServerRemoved?.(item.server.id);
-    router.refresh();
+    const current = new URL(window.location.href);
+    if (
+      current.pathname === "/resources" &&
+      current.searchParams.get("pool") === item.server.serverId
+    ) {
+      router.replace(scopedBillingHref("/billing", {
+        organizationId: current.searchParams.get("organizationId"),
+      }), { scroll: false });
+    } else if (
+      (current.pathname === "/billing" || current.pathname.startsWith("/billing/")) &&
+      current.searchParams.get("workspaceId") === item.server.id
+    ) {
+      router.replace(newServerBillingHref(current.searchParams.get("organizationId") ?? undefined), { scroll: false });
+    } else {
+      router.refresh();
+    }
   });
   const expired = result?.status === "expired";
   const processing = result?.status === "processing" || item.state === "processing";

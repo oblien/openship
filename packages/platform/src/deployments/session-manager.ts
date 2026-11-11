@@ -39,6 +39,8 @@ export interface BuildSessionState {
    *  (#664). Stored — like warningMessage — so a refresh/reconnect replays the
    *  modal trigger instead of hiding it until the next REST poll. */
   decisionPending?: boolean;
+  /** Keep published progress even if its log entry rolls out of the buffer. */
+  verification?: LogEntry["verification"];
   /** Per-service deployment statuses (compose projects only, for replay on reconnect) */
   serviceStatuses: Map<string, ServiceStatusPayload>;
   /** Latest state of each install phase (catalog-app installs). Stored — not just
@@ -185,6 +187,7 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
     entry.seq = session.nextSeq++;
 
     session.logs.push(entry);
+    if (entry.verification) session.verification = entry.verification;
     if (session.logs.length > SYSTEM.SSE.MAX_LOGS_PER_SESSION) {
       session.logs.splice(0, session.logs.length - SYSTEM.SSE.MAX_LOGS_PER_SESSION);
     }
@@ -208,8 +211,9 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
     if (entry.step && entry.stepStatus && entry.step in STEP_INDEX) {
       const progressPayload = JSON.stringify({
         type: "progress",
-        currentStep: STEP_INDEX[entry.step],
-        progress: progressForStep(entry.step, entry.stepStatus),
+        currentStep: session.verification ? STEP_INDEX.verify : STEP_INDEX[entry.step],
+        progress: session.verification ? progressForStep("verify", entry.step === "verify" ? entry.stepStatus : "running") : progressForStep(entry.step, entry.stepStatus),
+        ...(session.verification ? { verification: session.verification } : {}),
       });
       for (const writer of session.subscribers) {
         writer("progress", progressPayload);
@@ -339,11 +343,13 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
     // Replay existing logs in the format the frontend expects
     // Skip step-metadata entries (same filter as appendLog) - they drive progress, not terminal
     // Track the highest step seen so we can emit a final progress event after replay
-    let highestStep = -1;
-    let highestStepProgress = 0;
+    let highestStep = session.verification ? STEP_INDEX.verify : -1;
+    let highestStepProgress = session.verification ? STEP_PROGRESS.verify : 0;
+    let verification = session.verification;
 
     for (let i = 0; i < session.logs.length; i++) {
       const entry = session.logs[i];
+      if (entry.verification) verification = entry.verification;
       const isStepMeta = !!entry.step && !!entry.stepStatus;
 
       // Only replay real output entries to the terminal, and skip anything the
@@ -376,6 +382,7 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
           type: "progress",
           currentStep: highestStep,
           progress: highestStepProgress,
+          ...(verification ? { verification } : {}),
         }),
       );
     }

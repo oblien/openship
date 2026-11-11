@@ -127,7 +127,8 @@ export function classifyStability(
   opts: StabilityOptions & { windowElapsed: boolean },
 ): StabilityVerdict | null {
   const restarts = Math.max(0, latest.restartCount - first.restartCount);
-  const detail = latest.errorLine?.trim() ? ` (${latest.errorLine.trim()})` : "";
+  const evidence = [latest.oomKilled ? "OOM-killed" : "", latest.errorLine?.trim()].filter(Boolean);
+  const detail = evidence.length ? ` (${evidence.join("; ")})` : "";
 
   if (latest.state === "missing") {
     return {
@@ -262,6 +263,7 @@ export interface WatchStabilityDeps {
   /** Injected for tests. */
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  onPending?: (sample: ContainerStabilitySample, elapsedMs: number, remainingMs: number) => void;
 }
 
 /**
@@ -280,7 +282,13 @@ export async function watchContainerStability(
   const now = deps.now ?? (() => Date.now());
 
   const first = await deps.sample();
-  const alreadyUp = Math.max(0, Math.min(opts.alreadyRunningMs ?? 0, opts.windowMs));
+  // A wall-clock start time proves continuous uptime only if the workload has
+  // never restarted. Otherwise observe a fresh window: a running snapshot in
+  // between crashes must not pass just because routing consumed the old window.
+  const alreadyUp = first.state === "running" && first.restartCount === 0 && !first.oomKilled
+    ? Math.max(0, Math.min(opts.alreadyRunningMs ?? 0, opts.windowMs))
+    : 0;
+  const started = now();
   const deadline = now() + Math.max(0, opts.windowMs - alreadyUp);
 
   let latest = first;
@@ -289,6 +297,7 @@ export async function watchContainerStability(
     const verdict = classifyStability(first, latest, { ...opts, windowElapsed });
     if (verdict) return verdict;
     const remaining = deadline - now();
+    deps.onPending?.(latest, alreadyUp + now() - started, Math.max(0, remaining));
     await sleep(Math.max(0, Math.min(opts.pollMs, remaining)));
     latest = await deps.sample();
   }

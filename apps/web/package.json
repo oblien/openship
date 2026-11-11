@@ -1,13 +1,13 @@
 {
   "name": "@repo/web",
-  "version": "0.9.5",
+  "version": "0.9.11",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3009",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit",
+    "lint": "next typegen && tsc --noEmit",
     "test:metadata": "node ../../scripts/check-web-social-metadata.mjs",
     "clean": "rm -rf .next .turbo node_modules"
   },

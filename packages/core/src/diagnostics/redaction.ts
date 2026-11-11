@@ -1,7 +1,11 @@
+import { KnownValueText } from "./known-value-text";
+
 /** Diagnostics are an allowlist, never a serialization of a request or SDK error. */
 const SECRET_PATH =
   /(\/(?:accept-invite|invitation-preview|reset-password|verify-email)\/)[^/?#\s]+/gi;
 const MAX_INPUT = 16_384;
+// Allow a larger bounded source when known values may be compressed.
+const MAX_SECRET_INPUT = 262_144;
 // V8 shares this intrinsic getter between Error instances. Comparing identity
 // is safer than looking for "native code": a bound application function has
 // the same printed representation. Other engines expose a plain stack value.
@@ -16,9 +20,11 @@ export function diagnosticPath(value: string): string {
 }
 
 /** Bound work before running expressions; also redact incomplete/truncated secrets. */
-export function redactDiagnosticText(value: string, limit = 2048): string {
-  let text = value.slice(0, MAX_INPUT);
-  text = text
+export function redactDiagnosticText(value: string, limit = 2048, secrets: readonly string[] = []): string {
+  const input = secrets.some(Boolean)
+    ? new KnownValueText(value, secrets, MAX_SECRET_INPUT)
+    : value.slice(0, MAX_INPUT);
+  const text = input
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
     .replace(
@@ -44,7 +50,7 @@ export function redactDiagnosticText(value: string, limit = 2048): string {
       "[REDACTED TOKEN]",
     )
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*)?/g, "[REDACTED TOKEN]")
-    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s<>"'`]+/gi, (raw) => {
+    .replace(/(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s<>"'`]+/gi, (raw) => {
       try {
         const url = new URL(raw);
         return `${url.protocol}//${url.host}${diagnosticPath(url.pathname)}`;
@@ -56,22 +62,19 @@ export function redactDiagnosticText(value: string, limit = 2048): string {
     // child-process errors. Even an innocently named variable may be a secret.
     .replace(/\b[A-Z][A-Z0-9_]*=(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s;,]*)/g, "[REDACTED ENV]")
     .replace(
-      /\b[\w.-]*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|signature|eab[_-]hmac[_-]key)[\w.-]*["']?\s*[:=]\s*(?!\d+:\d+(?:\)|\s|$))(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s,;}\n]+)/gi,
+      /(?<![\w.-])[\w.-]*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|credential|signature|eab[_-]hmac[_-]key)[\w.-]*["']?\s*[:=]\s*(?!\d+:\d+(?:\)|\s|$))(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s,;}\n]+)/gi,
       "[REDACTED CREDENTIAL]",
     )
     .replace(
       /\b(?:failed query|query|sql|params|parameters|request body|response body|environment)\s*:[\s\S]*/gi,
       "[REDACTED PAYLOAD]",
     )
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED EMAIL]");
-  text = diagnosticPathInText(text);
-  return text.length > limit ? text.slice(0, limit) + "…" : text;
-}
-
-function diagnosticPathInText(value: string): string {
-  return value
-    .replace(SECRET_PATH, "$1[REDACTED]")
-    .replace(/(\/[\w/.[\]:%-]+)\?[^\s]*/g, "$1?[REDACTED]");
+    .replace(/(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED EMAIL]")
+    .replace(SECRET_PATH, (_match, prefix) => `${prefix}[REDACTED]`)
+    // Consume paths without a query too, avoiding a new scan at every slash.
+    .replace(/(\/[\w/.[\]:%-]+)(\?[^\s]*)?/g, (match, prefix, query) => query ? `${prefix}?[REDACTED]` : match);
+  const output = typeof text === "string" ? text : text.finish(MAX_INPUT);
+  return output.length > limit ? output.slice(0, limit) + "…" : output;
 }
 
 /** Avoid getters, toJSON/toString and provider object graphs (including Proxies). */

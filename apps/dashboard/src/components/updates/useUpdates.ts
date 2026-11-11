@@ -151,6 +151,11 @@ function fetchRemote(scope: string): Promise<AdvisoryFeedResult | null> {
         stale: true,
         overview: cached.overview && {
           ...cached.overview,
+          servers: cached.overview.servers?.map((server) => ({
+            ...server,
+            feedStale: true,
+            findings: server.findings.map((f) => ({ ...f, canPatch: false, canReboot: false })),
+          })),
           projects: cached.overview.projects.map((project) => ({
             ...project,
             feedStale: true,
@@ -170,7 +175,7 @@ function fetchRemote(scope: string): Promise<AdvisoryFeedResult | null> {
 
 const refreshListeners = new Set<(resourceKey: string) => void>();
 const queuedRefreshes = new Set<string>();
-function refreshConsumers(resourceKey: string) {
+export function refreshConsumers(resourceKey: string) {
   if (queuedRefreshes.has(resourceKey)) return;
   queuedRefreshes.add(resourceKey);
   queueMicrotask(() => {
@@ -224,11 +229,14 @@ export function refreshSecurityAfterDeployment(
 const EMPTY_OVERVIEW: SecurityOverview = { projects: [], pendingProjects: 0, unknownProjects: 0 };
 interface RuntimeAdvisory extends Advisory {
   projects: SecurityOverview["projects"];
+  servers?: SecurityOverview["servers"];
+  manualReview?: boolean;
 }
 function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvisory[] {
   const notices = new Map<string, RuntimeAdvisory>();
   for (const project of overview.projects)
     for (const finding of project.findings) {
+      if (!project.feedStale && finding.refresh && finding.refresh.status !== "failed") continue;
       const id = `runtime:${scope}:${finding.id}:${finding.revision}`;
       const existing = notices.get(id);
       if (existing) {
@@ -251,6 +259,48 @@ function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvis
         action: { kind: "open-url", label: "Read advisory", url: finding.url },
       });
     }
+  for (const server of overview.servers ?? [])
+    for (const finding of server.findings) {
+      const id = `runtime:${scope}:host:${finding.id}:${finding.revision}`;
+      const existing = notices.get(id);
+      if (existing) {
+        existing.servers?.push({ ...server, findings: [finding] });
+        continue;
+      }
+      notices.set(id, {
+        id,
+        projects: [],
+        servers: [{ ...server, findings: [finding] }],
+        title: finding.title,
+        message: finding.message,
+        severity:
+          finding.severity === "critical" || finding.severity === "high"
+            ? "critical"
+            : "recommended",
+        announce: true,
+        affects: "*",
+        action: { kind: "open-url", label: "Read advisory", url: finding.url },
+      });
+    }
+  for (const notice of notices.values()) {
+    if (
+      !notice.servers?.length &&
+      notice.projects.length &&
+      notice.projects.every((project) =>
+        project.findings.every(
+          (finding) =>
+            finding.manualReviewRequired &&
+            finding.confidence === "possible" &&
+            finding.severity === "low",
+        ),
+      )
+    ) {
+      // Preserve the upstream risk severity in evidence, but do not rank an
+      // unverified configuration review above an observed vulnerable runtime.
+      notice.severity = "info";
+      notice.manualReview = true;
+    }
+  }
   return [...notices.values()];
 }
 
@@ -356,93 +406,88 @@ export function useUpdates(): UseUpdates {
       ? "selfhosted"
       : "cloud";
 
-  const load = useCallback(
-    async () => {
-      if (!deployInfo && !isDesktop()) return;
-      const request = ++generation.current;
-      const requestScope = getApiRequestScopeVersion();
-      const requestKey = `${resourceKey}:${requestScope}`;
-      const isCurrent = () =>
-        request === generation.current &&
-        identity.current === resourceKey &&
-        requestScope === getApiRequestScopeVersion();
-      const current =
-        isDesktop() && window.desktop?.app
-          ? await window.desktop.app.version().catch((error) => {
-              observeCaughtError(error, "dashboard/components/updates/useUpdates");
-              return null;
-            })
-          : (deployInfo?.version ?? null);
-      if (!current || !isCurrent()) return;
-      const [prefs, remote, notices] = await Promise.all([
-        getPrefs(),
-        fetchRemote(requestKey),
-        fetchNotices(),
-      ]);
-      if (!isCurrent()) return;
-      setCurrentVersion(current);
-      setMutedState(prefs.muted);
-      // Managed Cloud never offers a control-plane update. Its customer workloads
-      // still receive the same verified runtime notices as self-hosted and Desktop.
-      const platformNotices: Advisory[] =
-        mode === "cloud"
-          ? []
-          : (remote?.security?.advisories ?? []).flatMap((notice) =>
-              notice.targets
-                .filter((target) => target.kind === "platform")
-                .map((target) => ({
-                  id: `security:${notice.id}:${notice.revision}`,
-                  title: notice.title,
-                  message: notice.message,
-                  severity:
-                    notice.severity === "critical" || notice.severity === "high"
-                      ? "critical"
-                      : "recommended",
-                  announce: true,
-                  affects: target.affected,
-                  action: { kind: "open-url", label: "Read advisory", url: notice.url },
-                })),
-            );
-      const base = resolveUpdateState({
-        currentVersion: current,
-        latestRelease: mode === "cloud" ? null : (remote?.release.latest ?? null),
-        manifest: {
-          advisories:
-            mode === "cloud"
-              ? []
-              : [...(remote?.release.manifest?.advisories ?? []), ...platformNotices],
-        },
-        dismissed: prefs.dismissed,
-        muted: prefs.muted,
-        mode,
-      });
-      const overview = remote?.overview ?? EMPTY_OVERVIEW;
-      // Runtime matches are already evaluated by the shared backend matcher;
-      // comparing them against the Openship version would hide affected apps.
-      const advisories = [
-        ...base.advisories,
-        ...matchAdvisories(current, notices, mode),
-        ...runtimeNotices(overview, resourceKey),
-      ]
-        .filter(
-          (a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)),
-        )
-        .filter((a, i, all) => all.findIndex((b) => b.id === a.id) === i)
-        .sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9));
-      setResult({
-        scope: requestKey,
-        state: { ...base, advisories },
-        latest: mode === "cloud" ? null : (remote?.release.latest ?? null),
-        overview,
-        securityAvailable: remote !== null,
-      });
-      if (mode !== "cloud") {
-        if (prefs.lastSeen === null) await persistLastSeen(current);
-        else if (compareSemver(current, prefs.lastSeen) > 0) setWhatsNewVersion(current);
-      }
-    },
-    [deployInfo?.version, deployInfo?.selfHosted, mode, resourceKey],
-  );
+  const load = useCallback(async () => {
+    if (!deployInfo && !isDesktop()) return;
+    const request = ++generation.current;
+    const requestScope = getApiRequestScopeVersion();
+    const requestKey = `${resourceKey}:${requestScope}`;
+    const isCurrent = () =>
+      request === generation.current &&
+      identity.current === resourceKey &&
+      requestScope === getApiRequestScopeVersion();
+    const current =
+      isDesktop() && window.desktop?.app
+        ? await window.desktop.app.version().catch((error) => {
+            observeCaughtError(error, "dashboard/components/updates/useUpdates");
+            return null;
+          })
+        : (deployInfo?.version ?? null);
+    if (!current || !isCurrent()) return;
+    const [prefs, remote, notices] = await Promise.all([
+      getPrefs(),
+      fetchRemote(requestKey),
+      fetchNotices(),
+    ]);
+    if (!isCurrent()) return;
+    setCurrentVersion(current);
+    setMutedState(prefs.muted);
+    // Managed Cloud never offers a control-plane update. Its customer workloads
+    // still receive the same verified runtime notices as self-hosted and Desktop.
+    const platformNotices: Advisory[] =
+      mode === "cloud"
+        ? []
+        : (remote?.security?.advisories ?? []).flatMap((notice) =>
+            notice.targets
+              .filter((target) => target.kind === "platform")
+              .map((target) => ({
+                id: `security:${notice.id}:${notice.revision}`,
+                title: notice.title,
+                message: notice.message,
+                severity:
+                  notice.severity === "critical" || notice.severity === "high"
+                    ? "critical"
+                    : "recommended",
+                announce: true,
+                affects: target.affected,
+                action: { kind: "open-url", label: "Read advisory", url: notice.url },
+              })),
+          );
+    const base = resolveUpdateState({
+      currentVersion: current,
+      latestRelease: mode === "cloud" ? null : (remote?.release.latest ?? null),
+      manifest: {
+        advisories:
+          mode === "cloud"
+            ? []
+            : [...(remote?.release.manifest?.advisories ?? []), ...platformNotices],
+      },
+      dismissed: prefs.dismissed,
+      muted: prefs.muted,
+      mode,
+    });
+    const overview = remote?.overview ?? EMPTY_OVERVIEW;
+    // Runtime matches are already evaluated by the shared backend matcher;
+    // comparing them against the Openship version would hide affected apps.
+    const advisories = [
+      ...base.advisories,
+      ...matchAdvisories(current, notices, mode),
+      ...runtimeNotices(overview, resourceKey),
+    ]
+      .filter((a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)))
+      .filter((a, i, all) => all.findIndex((b) => b.id === a.id) === i)
+      .sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9));
+    setResult({
+      scope: requestKey,
+      state: { ...base, advisories },
+      latest: mode === "cloud" ? null : (remote?.release.latest ?? null),
+      overview,
+      securityAvailable: remote !== null,
+    });
+    if (mode !== "cloud") {
+      if (prefs.lastSeen === null) await persistLastSeen(current);
+      else if (compareSemver(current, prefs.lastSeen) > 0) setWhatsNewVersion(current);
+    }
+  }, [deployInfo?.version, deployInfo?.selfHosted, mode, resourceKey]);
 
   useEffect(() => {
     const onRefresh = (key: string) => {
@@ -459,6 +504,17 @@ export function useUpdates(): UseUpdates {
       clearInterval(timer);
     };
   }, [load, resourceKey]);
+
+  const securityUpdateRunning = securityOverview.projects.some((project) =>
+    project.findings.some((finding) => finding.refresh && finding.refresh.status !== "failed"),
+  );
+  useEffect(() => {
+    if (!securityUpdateRunning) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") refreshConsumers(resourceKey);
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [securityUpdateRunning, resourceKey]);
 
   const dismissAdvisory = useCallback(
     (id: string) => {

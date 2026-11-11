@@ -34,7 +34,7 @@ jobs:
       - name: Sign public, declarative advisory metadata
         env:
           OPENSHIP_DESKTOP_SIGNING_KEY: ${{ secrets.OPENSHIP_DESKTOP_SIGNING_KEY }}
-        run: bun scripts/sign-security-advisories.ts "$RUNNER_TEMP/security-advisories.signed.json"
+        run: bun scripts/sign-security-advisories.ts "$RUNNER_TEMP/security-advisories.v2.signed.json" "$RUNNER_TEMP/security-advisories.signed.json"
       - name: Publish atomically on the public feed branch
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,6 +48,7 @@ jobs:
             git rm -rf --ignore-unmatch .
           fi
           cp "$RUNNER_TEMP/security-advisories.signed.json" security-advisories.signed.json
-          git add security-advisories.signed.json
+          cp "$RUNNER_TEMP/security-advisories.v2.signed.json" security-advisories.v2.signed.json
+          git add security-advisories.signed.json security-advisories.v2.signed.json
           git commit -m 'Refresh signed security advisories'
           git push origin HEAD:security-advisories

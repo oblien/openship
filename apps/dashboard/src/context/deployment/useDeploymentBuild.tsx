@@ -1,11 +1,13 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { serializeMonorepoApp } from "./monorepo-config";
 import { persistRouteProtectionDrafts, clearRouteProtectionDrafts } from "./route-protection-drafts";
 
 import { actionsApi } from "@/lib/api/actions";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { IconName } from "@repo/ui/icons";
+import type { DeploymentVerification } from "@repo/core";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
@@ -225,6 +227,7 @@ const STEPS: { label: string; icon: IconName }[] = [
   { label: "Installing", icon: "download" },
   { label: "Building", icon: "wrench" },
   { label: "Deploying", icon: "rocket" },
+  { label: "Verifying", icon: "shield-check" },
   { label: "Ready", icon: "check-circle" },
 ];
 
@@ -261,6 +264,7 @@ export function useDeploymentBuild(
   const openGithubConnect = useServerGitHubConnectModal();
   const { installUrl, state: githubState } = useGitHub();
   const [state, setState] = useState<DeploymentState>(INITIAL_STATE);
+  const showComposeReview = useComposeReview(state.projectId || config.projectId);
   useEffect(() => {
     if (state.deploymentSuccess && state.projectId && state.deploymentId)
       void refreshSecurityAfterDeployment(cloudScope, state.projectId, state.deploymentId);
@@ -309,9 +313,11 @@ export function useDeploymentBuild(
       ? "failed"
       : state.deploymentSuccess
         ? "ready"
-        : state.currentStepIndex >= 4
-          ? "deploying"
-          : "building";
+        : state.verification
+          ? "verifying"
+          : state.currentStepIndex >= 4
+            ? "deploying"
+            : "building";
 
   // ── Terminal helpers ──────────────────────────────────────────────────────
 
@@ -370,7 +376,8 @@ export function useDeploymentBuild(
         cancellationPending: false,
         pendingPrompt: null,
         currentProgress: 100,
-        currentStepIndex: 5,
+        currentStepIndex: 6,
+        verification: null,
         isDeploying: false,
         queue: null,
         failureMessage: "",
@@ -453,7 +460,7 @@ export function useDeploymentBuild(
     [showToast],
   );
 
-  const handleProgressUpdate = useCallback((currentStep: number, progress: number) => {
+  const handleProgressUpdate = useCallback((currentStep: number, progress: number, verification?: DeploymentVerification) => {
     const now = Date.now();
     // Mark when this phase became current (first sighting wins; running +
     // completed events for the same step share an index).
@@ -461,6 +468,7 @@ export function useDeploymentBuild(
       phaseStartRef.current[currentStep] = now;
     }
     setState((prev) => {
+      if (prev.deploymentSuccess || prev.deploymentFailed || prev.deploymentCanceled) return prev;
       // Finalize live durations for any phase we've advanced past.
       let nextDurations = prev.phaseDurations;
       for (let i = prev.currentStepIndex; i < currentStep; i++) {
@@ -474,8 +482,9 @@ export function useDeploymentBuild(
       return {
         ...prev,
         queue: null,
-        currentStepIndex: currentStep,
-        currentProgress: progress,
+        currentStepIndex: Math.max(prev.currentStepIndex, currentStep),
+        currentProgress: Math.max(prev.currentProgress, progress),
+        verification: verification ?? prev.verification,
         phaseDurations: nextDurations,
       };
     });
@@ -747,6 +756,7 @@ export function useDeploymentBuild(
         buildLogs: [],
         currentProgress: 0,
         currentStepIndex: 0,
+        verification: null,
         phaseDurations: {},
         deploymentSuccess: false,
         deploymentFailed: false,
@@ -980,6 +990,7 @@ export function useDeploymentBuild(
       // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
+        composeRevision: config.composeRevision,
         branch: config.branch || undefined,
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
@@ -1057,6 +1068,10 @@ export function useDeploymentBuild(
       errorDiagnostics.error("dashboard/context/deployment/useDeploymentBuild", "Deployment error:", err);
       const message = getApiErrorMessage(err, "Failed to start deployment");
       const errorCode = extractErrorCode(err);
+      if (showComposeReview(err)) {
+        setState((prev) => ({ ...prev, isDeploying: false }));
+        return null;
+      }
 
       const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
       // Backend defense-in-depth: a cloud-requiring preflight failure carries a
@@ -1086,7 +1101,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showModal, showToast]);
+  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showComposeReview, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -1168,8 +1183,9 @@ export function useDeploymentBuild(
           }
           return {
             ...prev,
-            currentProgress: data.progress ?? prev.currentProgress,
-            currentStepIndex: data.currentStep ?? prev.currentStepIndex,
+            currentProgress: isLive ? Math.max(prev.currentProgress, data.progress ?? 0) : data.progress ?? prev.currentProgress,
+            currentStepIndex: isLive ? Math.max(prev.currentStepIndex, data.currentStep ?? 0) : data.currentStep ?? prev.currentStepIndex,
+            verification: isLive ? data.verification ?? prev.verification : null,
             isDeploying: isLive,
             queue: status === "queued" ? (data.queue ?? null) : null,
             deploymentSuccess: !isLive && status === "ready",
@@ -1410,6 +1426,7 @@ export function useDeploymentBuild(
           projectId: data.project_id || prev.projectId,
           currentProgress: data.progress || 0,
           currentStepIndex: data.currentStep || 0,
+          verification: data.verification ?? null,
           deploymentSuccess: !isActive && status === "ready",
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
@@ -1614,7 +1631,7 @@ export function useDeploymentBuild(
         // A missing GitHub credential surfaces the SAME modal as the deploy
         // wizard (never a bare toast) — one shared handler, one source of truth.
         const openedModal =
-          showCloudPricing(error, async () => {
+          showComposeReview(error) || showCloudPricing(error, async () => {
             const id = await redeploy(deploymentId, options);
             if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
           }) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
@@ -1624,7 +1641,7 @@ export function useDeploymentBuild(
         redeployRequestRef.current = false;
       }
     },
-    [buildStream, showToast, showCloudPricing, maybeOpenCredentialModal],
+    [buildStream, showToast, showCloudPricing, showComposeReview, maybeOpenCredentialModal],
   );
 
   const reset = useCallback(() => {

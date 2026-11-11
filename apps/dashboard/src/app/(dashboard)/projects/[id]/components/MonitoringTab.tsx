@@ -114,18 +114,19 @@ export const MonitoringTab = () => {
   // Hooks always run — calling them conditionally would break the hook order. The
   // mock swaps their RESULTS, and passes `null` id so no request is made.
   const liveId = mock ? null : id;
+  const trafficId = projectData.id === id && projectData.activeDeploymentId ? liveId : null;
   const {
     data: liveAnalytics,
     isLoading: isLoadingAnalytics,
     error: liveAnalyticsError,
     isRefreshing: isRefreshingAnalytics,
-  } = useAnalyticsData(liveId, domainScope);
+  } = useAnalyticsData(trafficId, domainScope);
   const {
     data: liveGeo,
     isLoading: isLoadingGeo,
     error: geoError,
     isRefreshing: isRefreshingGeo,
-  } = useAnalyticsGeo(liveId, domainScope);
+  } = useAnalyticsGeo(trafficId, domainScope);
   const {
     usage: liveUsage,
     isConnected,

@@ -25,6 +25,9 @@ const nextConfig = {
   turbopack: {
     root: path.resolve(__dirname, "../.."),
   },
+  async redirects() {
+    return [{ source: "/affiliates/:path*", destination: "/referrals/:path*", permanent: true }];
+  },
   async headers() {
     // The control plane is never embedded, including login and OAuth consent.
     // Keep this at the Next.js boundary so redirects and paths excluded from

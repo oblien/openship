@@ -15,6 +15,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams,
 }));
 
+// Server removal uses a settled session. Keep Better Auth's background polling
+// and delayed browser cleanup outside this network-isolated render fixture.
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({ data: null, isPending: false }),
+  signOut: vi.fn(),
+}));
+
 const SERVER = {
   id: "srv_1",
   name: "prod-1",

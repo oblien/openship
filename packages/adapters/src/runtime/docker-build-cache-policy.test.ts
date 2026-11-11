@@ -10,6 +10,7 @@ import {
   ensureProjectBuildCache,
   managedBuildCaches,
   parseBuildStorage,
+  pressureAdjustedKeepBytes,
   projectBuildCacheVolume,
   pruneManagedBuildCaches,
 } from "./docker-build-cache";
@@ -179,7 +180,7 @@ fi
   });
 
   it("scales the automatic cache ceiling to a small host and leaves active state alone", async () => {
-    const h = fixture([volume("a"), volume("b"), volume("c")]);
+    const h = fixture([volume("a", 2 * GIB), volume("b", 2 * GIB), volume("c", 2 * GIB)]);
     const exec = h.exec.getMockImplementation()!;
     h.exec.mockImplementation((command) =>
       command.includes("df -Pk")
@@ -196,10 +197,70 @@ fi
     expect(h.removed).toEqual([projectBuildCacheVolume("a")]);
     expect(
       buildKitCacheConfig({ totalBytes: 25 * GIB, freeBytes: 18 * GIB, freeInodes: 100 }),
-    ).toContain(`maxUsedSpace = ${2.5 * GIB}`);
+    ).toContain(`maxUsedSpace = ${5 * GIB}`);
     expect(
       buildKitCacheConfig({ totalBytes: 25 * GIB, freeBytes: 18 * GIB, freeInodes: 100 }),
     ).toContain('minFreeSpace = "20%"');
+  });
+
+  it("keeps a cache larger than the old fixed 5 GiB ceiling when the disk has room", async () => {
+    // 100 GiB Docker filesystem: the automatic budget is 20 GiB.
+    const h = fixture([volume("a", 13 * GIB)]);
+    await pruneManagedBuildCaches(h.docker as never, h.executor, { now: 2000000200000 });
+    expect(h.removed).toEqual([]);
+    expect(
+      buildKitCacheConfig({ totalBytes: 100 * GIB, freeBytes: 50 * GIB, freeInodes: 100 }),
+    ).toContain(`maxUsedSpace = ${20 * GIB}`);
+
+    const shared = fixture([volume("a", 13 * GIB), volume("b", 13 * GIB)]);
+    await pruneManagedBuildCaches(shared.docker as never, shared.executor, { now: 2000000200000 });
+    expect(shared.removed).toEqual([projectBuildCacheVolume("a")]);
+  });
+
+  it("gives idle cache back before the disk drops below the 20% free-space target", async () => {
+    // 100 GiB disk with only 15 GiB free: keep 13 + 15 - 20 = 8 GiB, so the 13 GiB cache goes.
+    const tight = fixture([volume("a", 13 * GIB)]);
+    const exec = tight.exec.getMockImplementation()!;
+    tight.exec.mockImplementation((command) =>
+      command.includes("df -Pk")
+        ? Promise.resolve(`${100 * 1024 ** 2} ${15 * 1024 ** 2}\n200000 100000\n`)
+        : exec(command),
+    );
+    await pruneManagedBuildCaches(tight.docker as never, tight.executor, { now: 2000000200000 });
+    expect(tight.removed).toEqual([projectBuildCacheVolume("a")]);
+
+    // Never below the previous min(5 GiB, 10%) ceiling, even when nearly full.
+    const storage = { totalBytes: 100 * GIB, freeBytes: 3 * GIB, freeInodes: 100 };
+    expect(pressureAdjustedKeepBytes(storage, 4 * GIB, 20 * GIB)).toBe(5 * GIB);
+    expect(pressureAdjustedKeepBytes({ ...storage, freeBytes: 50 * GIB }, 4 * GIB, 20 * GIB)).toBe(
+      20 * GIB,
+    );
+  });
+
+  it("lets a server's configured budget replace the automatic share in both directions", async () => {
+    // 100 GiB disk: automatic would keep 20 GiB, enough for both caches below.
+    const small = fixture([volume("a", 4 * GIB), volume("b", 4 * GIB)]);
+    await pruneManagedBuildCaches(small.docker as never, small.executor, {
+      now: 2000000200000,
+      configuredBudgetBytes: 6 * GIB,
+    });
+    expect(small.removed).toEqual([projectBuildCacheVolume("a")]);
+
+    // 30 GiB of caches is over the automatic 20 GiB but within a configured 32 GiB.
+    const large = fixture([volume("a", 15 * GIB), volume("b", 15 * GIB)]);
+    await pruneManagedBuildCaches(large.docker as never, large.executor, {
+      now: 2000000200000,
+      configuredBudgetBytes: 32 * GIB,
+    });
+    expect(large.removed).toEqual([]);
+  });
+
+  it("caps a configured budget at the filesystem minus the admission reserve", () => {
+    const storage = { totalBytes: 100 * GIB, freeBytes: 50 * GIB, freeInodes: 100 };
+    expect(buildKitCacheConfig(storage, 24 * GIB)).toContain(`maxUsedSpace = ${24 * GIB}`);
+    expect(buildKitCacheConfig(storage, 500 * GIB)).toContain(`maxUsedSpace = ${98 * GIB}`);
+    expect(buildKitCacheConfig(storage, null)).toContain(`maxUsedSpace = ${20 * GIB}`);
+    expect(() => buildKitCacheConfig(storage, 0)).toThrow(RangeError);
   });
 
   it("protects attached state even when the host is over budget", async () => {
@@ -341,13 +402,18 @@ fi
 
   it.each([
     new Error("permission denied"),
+    new Error("Command timed out after 15000ms: du -sk -- '/cache/a'"),
     Object.assign(new Error("Command exit unconfirmed"), {
       code: "CLOUD_COMMAND_EXIT_UNCONFIRMED",
     }),
     new DOMException("Cancelled by operator", "AbortError"),
+    new DOMException("Command timed out after 15000ms: cancelled by operator", "AbortError"),
   ])("does not suppress unsafe or cancelled cache inspection: %s", async (error) => {
     const h = fixture();
-    h.exec.mockRejectedValue(error);
+    const original = h.exec.getMockImplementation()!;
+    h.exec.mockImplementation((command, options) =>
+      command.startsWith("du ") ? Promise.reject(error) : original(command, options),
+    );
     await expect(pruneManagedBuildCaches(h.docker as never, h.executor)).rejects.toBe(error);
     expect(h.removed).toEqual([]);
   });

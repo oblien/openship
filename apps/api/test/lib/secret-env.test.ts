@@ -222,6 +222,53 @@ describe("helpers", () => {
       },
     ]);
   });
+  test("maskDriftChanges hides raw Compose command expressions in advanced changes (#1613)", () => {
+    const changes = [
+      {
+        field: "advanced",
+        from: {
+          commandTemplate: {
+            expression: "redis-server --requirepass ${REDIS_PASSWORD:-literal-secret}",
+            unresolvedVariables: [],
+            sourceValue: "redis-server --requirepass literal-secret",
+            sourceEnvironment: { REDIS_PASSWORD: "literal-secret" },
+          },
+          readiness: { enabled: true },
+        },
+        to: {
+          commandTemplate: {
+            expression: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"],
+            unresolvedVariables: ["REDIS_PASSWORD"],
+            sourceValue: "redis-server --requirepass ",
+          },
+          readiness: { enabled: false },
+        },
+      },
+    ];
+
+    expect(maskDriftChanges(changes)).toEqual([
+      {
+        field: "advanced",
+        from: {
+          commandTemplate: {
+            expression: ENV_MASK,
+            unresolvedVariables: [],
+            sourceValue: ENV_MASK,
+            sourceEnvironment: ENV_MASK,
+          },
+          readiness: { enabled: true },
+        },
+        to: {
+          commandTemplate: {
+            expression: ENV_MASK,
+            unresolvedVariables: ["REDIS_PASSWORD"],
+            sourceValue: ENV_MASK,
+          },
+          readiness: { enabled: false },
+        },
+      },
+    ]);
+  });
 });
 
 describe("maskEnvironmentMeta", () => {
@@ -322,6 +369,23 @@ describe("maskScanService", () => {
           expression: "registry.example.com/worker:${TAG:-private-default}",
           unresolvedVariables: [],
           sourceValue: "registry.example.com/worker:private-default",
+        },
+      },
+    });
+
+    expect(masked.advanced).toEqual({});
+    expect(JSON.stringify(masked)).not.toContain("private-default");
+  });
+
+  test("removes command provenance even when the service has no environment map (#1613)", () => {
+    const masked = maskScanService({
+      name: "worker",
+      command: "redis-server --requirepass ",
+      advanced: {
+        commandTemplate: {
+          expression: "redis-server --requirepass ${REDIS_PASSWORD:-private-default}",
+          unresolvedVariables: [],
+          sourceValue: "redis-server --requirepass private-default",
         },
       },
     });

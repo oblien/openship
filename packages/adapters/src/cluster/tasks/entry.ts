@@ -12,6 +12,6 @@ Promise.resolve()
     ),
   )
   .catch((error) => {
-    errorDiagnostics.error("adapters/cluster/tasks/entry", taskError(error), error);
+    errorDiagnostics.error("adapters/cluster/tasks/entry", taskError(error));
     process.exitCode = 1;
   });

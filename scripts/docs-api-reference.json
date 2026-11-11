@@ -2208,6 +2208,12 @@
       "description": "List available workspace IDs, names, roles, and credential scope.",
       "route": "GET /api/permissions/workspaces"
     },
+    "permissions.requestAccess": {
+      "page": "permissions",
+      "section": "Operations",
+      "description": "Present an informational request to review this connection’s permissions. Grants no access.",
+      "route": "GET /api/permissions/access-request"
+    },
     "permissions.orgMeta": {
       "page": "permissions",
       "section": "Operations",
@@ -2435,6 +2441,18 @@
       "section": "Operations",
       "description": "Compare deployed image and recorded base-image digests with the registry.",
       "route": "POST /api/updates/:projectId/runtime/check"
+    },
+    "updates.securityCheckPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Read the workspace runtime advisory check setting and permission to change it.",
+      "route": "GET /api/updates/security/policy"
+    },
+    "updates.setSecurityCheckPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Enable or disable runtime advisory checks for this workspace. Owners and admins only.",
+      "route": "PUT /api/updates/security/policy"
     },
     "updates.advisories": {
       "page": "updates",
@@ -3275,6 +3293,21 @@
       "description": "Remove an inbound mail rule.",
       "route": "DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId"
     },
+    "mail.fail2banStatus": {
+      "page": "mail",
+      "description": "Read Fail2ban jails, counters, banned IPs, inspection time and management capability. Optional `jail` filters the read; failed or incomplete reads are unavailable, never an empty ban list. Self-hosted mail only.",
+      "route": "GET /api/mail/admin/:serverId/fail2ban/status"
+    },
+    "mail.fail2banBan": {
+      "page": "mail",
+      "description": "Ban one IPv4 or IPv6 address in the explicitly named jail. Requires mail-server administrator access. Read available jails before applying.",
+      "route": "POST /api/mail/admin/:serverId/fail2ban/ban"
+    },
+    "mail.fail2banUnban": {
+      "page": "mail",
+      "description": "Unban one IPv4 or IPv6 address from a named jail, or from all jails when jail is omitted. Requires mail-server administrator access; command options and address ranges are rejected.",
+      "route": "POST /api/mail/admin/:serverId/fail2ban/unban"
+    },
     "mail.componentLogs": {
       "page": "mail",
       "description": "Tail a component's logs.",
@@ -3836,71 +3869,119 @@
       "description": "Open payment details and invoices for the Manage subscription.",
       "route": "POST /api/billing/manage/portal"
     },
-    "affiliates.overview": {
-      "page": "affiliates",
+    "referralProgram.overview": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Read your program, payout minimum, net earnings and reserved or paid totals.",
-      "route": "GET /api/affiliates"
+      "route": "GET /api/referral-program"
     },
-    "affiliates.enroll": {
-      "page": "affiliates",
+    "referralProgram.enroll": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Join the configured program without changing operator overrides.",
-      "route": "POST /api/affiliates/enroll"
+      "route": "POST /api/referral-program/enroll"
     },
-    "affiliates.offers": {
-      "page": "affiliates",
+    "referralProgram.offers": {
+      "page": "referrals",
       "section": "Operations",
       "description": "List your links and immutable discount/commission terms.",
-      "route": "GET /api/affiliates/offers"
+      "route": "GET /api/referral-program/offers"
     },
-    "affiliates.createOffer": {
-      "page": "affiliates",
+    "referralProgram.createOffer": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Create an idempotent link or code within the operator-authorized commission budget.",
-      "route": "POST /api/affiliates/offers"
+      "route": "POST /api/referral-program/offers"
     },
-    "affiliates.revokeOffer": {
-      "page": "affiliates",
+    "referralProgram.revokeOffer": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Revoke your link for new referrals; accepted contracts retain their terms.",
-      "route": "POST /api/affiliates/offers/revoke"
+      "route": "POST /api/referral-program/offers/revoke"
     },
-    "affiliates.referrals": {
-      "page": "affiliates",
+    "referralProgram.referrals": {
+      "page": "referrals",
       "section": "Operations",
       "description": "List anonymized customers, renewals, paid-through dates and reward expiry.",
-      "route": "GET /api/affiliates/referrals"
+      "route": "GET /api/referral-program/referrals"
     },
-    "affiliates.payments": {
-      "page": "affiliates",
+    "referralProgram.payments": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Read invoice and commission history for one of your referrals.",
-      "route": "GET /api/affiliates/referrals/payments"
+      "route": "GET /api/referral-program/referrals/payments"
     },
-    "affiliates.payouts": {
-      "page": "affiliates",
+    "referralProgram.payouts": {
+      "page": "referrals",
       "section": "Operations",
       "description": "List your cash payout requests and their review status.",
-      "route": "GET /api/affiliates/payouts"
+      "route": "GET /api/referral-program/payouts"
     },
-    "affiliates.setPayoutDestination": {
-      "page": "affiliates",
+    "referralProgram.setPayoutDestination": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Save a private manual payout account; requests retain their own immutable destination snapshot.",
-      "route": "POST /api/affiliates/payout-destination"
+      "route": "POST /api/referral-program/payout-destination"
     },
-    "affiliates.requestPayout": {
-      "page": "affiliates",
+    "referralProgram.requestPayout": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Reserve earned funds for a manually reviewed payout; amount is integer USD cents.",
-      "route": "POST /api/affiliates/payouts"
+      "route": "POST /api/referral-program/payouts"
     },
-    "affiliates.cancelPayout": {
-      "page": "affiliates",
+    "referralProgram.cancelPayout": {
+      "page": "referrals",
       "section": "Operations",
       "description": "Cancel a pending request and release its reservation exactly once.",
-      "route": "POST /api/affiliates/payouts/cancel"
+      "route": "POST /api/referral-program/payouts/cancel"
+    },
+    "github.publishChange": {
+      "page": "github",
+      "section": "Repositories",
+      "description": "Publish an exact patch as one commit on a new branch, optionally opening a draft PR. Requires live repository write access and approved source paths.",
+      "route": "POST /api/github/repos/:owner/:repo/changes"
+    },
+    "settings.setLocale": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Save the authenticated user’s dashboard language for chat replies and assistant turns without changing other preferences.",
+      "route": "PATCH /api/settings/locale"
+    },
+    "servers.security": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Read cached host advisory findings, permissions and inspection freshness.",
+      "route": "GET /api/system/servers/:id/security"
+    },
+    "servers.checkSecurity": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Inspect a customer-operated Ubuntu host with bounded commands; installs nothing. Requires server admin.",
+      "route": "POST /api/system/servers/:id/security/check"
+    },
+    "servers.planSecurityPatch": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Review exact stable Ubuntu package changes or a separate kernel reboot. Returns an expiring approval bound to this server and actor; requires server admin.",
+      "route": "POST /api/system/servers/:id/security/plan"
+    },
+    "servers.applySecurityPatch": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Execute the reviewed token after rechecking permissions, advisory and exact host plan. Returns a server run ID; requires server admin.",
+      "route": "POST /api/system/servers/:id/security/apply"
+    },
+    "servers.securityRuns": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Read this server’s patch and reboot run output and verification state. Requires server admin.",
+      "route": "GET /api/system/servers/:id/security/runs"
+    },
+    "servers.securityRunEvents": {
+      "page": "servers",
+      "section": "Security maintenance",
+      "description": "Subscribe to this server run’s saved steps, live logs and final verification. Reconnect only reads the existing run; requires server admin.",
+      "route": "GET /api/system/servers/:id/security/runs/:runId/stream"
     }
   },
   "http": {
@@ -4053,13 +4134,13 @@
       "page": "cloud",
       "description": "Proxy Oblien analytics for a hostname in the caller's namespace."
     },
-    "POST /api/cloud/telemetry": {
-      "page": "cloud",
-      "description": "Capture optional hosted dashboard product events with exact-origin and verified cookie identity checks."
-    },
     "POST /api/cloud/connect-authorize": {
       "page": "cloud",
       "description": "Consent page mints a one-time handoff code (cookie session checked inline)."
+    },
+    "POST /api/cloud/device-authorize": {
+      "page": "cloud",
+      "description": "Start a pending device authorization with a user code and PKCE challenge; browser consent is required before credentials are issued."
     },
     "POST /api/cloud/connect-finalize": {
       "page": "cloud",
@@ -4204,6 +4285,10 @@
     "GET /api/mcp": {
       "page": "mcp",
       "description": "Returns `405` — this server never pushes messages, so there is no SSE stream to open."
+    },
+    "GET /api/mcp/guide": {
+      "page": "mcp",
+      "description": "List the shared MCP workflow guides or read one with `query.name`. Validates membership and credential scope; returns documentation only, without requiring resource grants."
     },
     "POST /api/mcp": {
       "page": "mcp",
@@ -4741,8 +4826,345 @@
       "description": "Request a five-minute identity for an approved running job with id-token: write. Requires a job-bound OIDC capability and rechecks authority, destination and cancellation."
     },
     "GET /api/referrals/:code": {
-      "page": "affiliates",
+      "page": "referrals",
       "description": "Public commercial terms for one code; no account, customer or earnings information."
+    },
+    "GET /api/assistant/status": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read availability and opt-in status without starting a native agent."
+    },
+    "POST /api/assistant/enable": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Begin normal MCP OAuth consent with single-use state and PKCE."
+    },
+    "GET /api/assistant/callback": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Complete consent after validating PKCE, state, account and workspace."
+    },
+    "POST /api/assistant/disable": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Revoke the assistant MCP connection and stop its active turns."
+    },
+    "GET /api/assistant/providers": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read installed agents, connection status and model choices after opt-in."
+    },
+    "POST /api/assistant/providers/:provider/setup": {
+      "page": "assistant",
+      "availability": "Cloud",
+      "description": "Prepare a native agent in the user's existing paid Cloud instance after consent."
+    },
+    "GET /api/assistant/providers/:provider": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read one agent and its supported account settings."
+    },
+    "PATCH /api/assistant/providers/:provider": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Save allowed agent settings, excluding tool and permission overrides."
+    },
+    "POST /api/assistant/providers/:provider/auth": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Begin a sign-in method offered by the installed agent."
+    },
+    "POST /api/assistant/providers/:provider/auth/step": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Continue or cancel the active agent sign-in flow."
+    },
+    "POST /api/assistant/providers/:provider/logout": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Disconnect the agent account after its active turns have stopped."
+    },
+    "GET /api/assistant/conversations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "List conversations belonging to the current user and workspace."
+    },
+    "POST /api/assistant/conversations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Create a conversation bound to the current MCP authorization."
+    },
+    "GET /api/assistant/conversations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read the conversation snapshot and recent native history."
+    },
+    "DELETE /api/assistant/conversations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Stop a conversation and delete its local history and metadata."
+    },
+    "GET /api/assistant/conversations/:id/history": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read an earlier native history page using its before cursor."
+    },
+    "POST /api/assistant/conversations/:id/turns": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Start an idempotent turn using the approved MCP connection."
+    },
+    "POST /api/assistant/conversations/:id/activity": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read or long-poll ordered turn activity after a cursor."
+    },
+    "POST /api/assistant/conversations/:id/stop": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Stop the active turn without replaying accepted operations."
+    },
+    "POST /api/assistant/conversations/:id/respond": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Validate and acknowledge a structured question answer once."
+    },
+    "GET /api/chat-apps": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read workspace chat connectors without starting an assistant."
+    },
+    "GET /api/chat-apps/setup": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Prepare the existing connection form for `provider`, optional `purpose` and `transport`. Returns workspace-bound setup guidance without creating a connector or granting access."
+    },
+    "POST /api/chat-apps": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Save a paused connector with encrypted provider credentials; requires a workspace admin session. Outbound connections work locally; webhook connections require public HTTPS."
+    },
+    "PATCH /api/chat-apps/:id": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Enable or pause commands with the current connector revision. Pausing closes the local command gate before stopping the receiver."
+    },
+    "GET /api/chat-apps/:id/configuration": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read editable bot settings without provider credentials; requires an owner or admin session in the connector’s workspace."
+    },
+    "PUT /api/chat-apps/:id/configuration": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Save name, bot roles, allowed destinations, transport and optional replacement credentials with the current revision. A provider update failure pauses the connector."
+    },
+    "DELETE /api/chat-apps/:id": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Remove encrypted provider credentials and linked OpenShip grants."
+    },
+    "POST /api/chat-apps/:id/unlink": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Disconnect only the signed-in user’s chat identities and their OpenShip grants."
+    },
+    "PATCH /api/chat-apps/:id/assistant-policy": {
+      "page": "chat-apps",
+      "description": "Allow or pause assistant chats with the current connector revision; requires a workspace admin session.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "PATCH /api/chat-apps/:id/purpose": {
+      "page": "chat-apps",
+      "description": "Choose an Assistant, deployment-command or combined bot with the current connector revision; requires a workspace admin session.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "PUT /api/chat-apps/:id/assistant": {
+      "page": "chat-apps",
+      "description": "Connect or disconnect the signed-in sender’s own assistant using its current identity revision and approved Assistant access.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "POST /api/chat-apps/pairing": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Start normal MCP consent for a sender-bound, expiring chat challenge."
+    },
+    "POST /api/chat-apps/pairing/complete": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Exchange the consent code with session-bound PKCE and return a sender verification command."
+    },
+    "GET /api/chat-apps/callback": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Redirect only to OpenShip settings; code exchange and sender verification remain separate."
+    },
+    "POST /api/chat-apps/webhooks/:id": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Verify raw provider signatures and destination allowlists before encrypted enqueueing."
+    },
+    "GET /api/assistant/automations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Read your workspace flows, run history and pause state."
+    },
+    "POST /api/assistant/automations": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Create an app-scoped automation with explicit action consent."
+    },
+    "PUT /api/assistant/automations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Update a flow and invalidate pending work from its previous configuration."
+    },
+    "DELETE /api/assistant/automations/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Disable your flow, cancel pending work and retain run history."
+    },
+    "PATCH /api/assistant/automation-settings": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Pause or resume your workspace automations without replaying old incidents."
+    },
+    "POST /api/assistant/automation-runs/:id/decision": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Approve an unchanged, current action once or cancel pending work."
+    },
+    "POST /api/assistant/custom-api": {
+      "page": "assistant",
+      "description": "Register a private Responses-compatible API connection and return its model ID without exposing the key.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "GET /api/assistant/automation-permissions/:projectId": {
+      "page": "assistant",
+      "description": "Read available app recovery and repository permissions within current Assistant consent.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "GET /api/assistant/automation-runs/:id": {
+      "page": "assistant",
+      "description": "Read one owned automation run and its result link.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "GET /api/assistant/automation-runs/:id/proposal": {
+      "page": "assistant",
+      "description": "Read the exact persisted proposal for review under current permissions.",
+      "availability": "Desktop, self-hosted, Cloud"
+    },
+    "POST /api/chat-apps/:id/commands/sync": {
+      "page": "chat-apps",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Refresh native command definitions for an enabled connector using its current revision. Telegram and Discord publish their menus; Slack requires the generated manifest entries. Requires a workspace admin session."
+    },
+    "GET /api/assistant/agents/models": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Discover ready AI connections and exact model IDs without exposing private settings."
+    },
+    "GET /api/assistant/agents": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "List your specialists and task conversations on the selected host."
+    },
+    "POST /api/assistant/agents": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Create a specialist bounded by current caller and Assistant resource permissions."
+    },
+    "GET /api/assistant/agents/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Inspect a specialist and its saved instructions, scope and task history."
+    },
+    "PUT /api/assistant/agents/:id": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Update a specialist with a revision check; invalidate older task execution."
+    },
+    "POST /api/assistant/agents/:id/archive": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Archive a specialist, stop active tasks and pause its automations; keep history."
+    },
+    "POST /api/assistant/agents/:id/tasks": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Start one scoped task conversation with a stable request ID."
+    },
+    "GET /api/assistant/agents/:id/tasks/:chatId": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Inspect actual task progress and conversation messages."
+    },
+    "POST /api/assistant/agents/:id/tasks/:chatId/messages": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Send a live follow-up or continue the same task conversation."
+    },
+    "POST /api/assistant/agents/:id/tasks/:chatId/stop": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Stop the current task through normal conversation cancellation."
+    },
+    "POST /api/assistant/conversations/:id/messages": {
+      "page": "assistant",
+      "availability": "Desktop, self-hosted, Cloud",
+      "description": "Send a live follow-up from the signed-in user to the same conversation."
+    },
+    "POST /api/assistant/automation-activation-review": {
+      "page": "assistant",
+      "description": "Review saved automation revisions, required permissions and limits before enabling them."
+    },
+    "POST /api/assistant/automation-activation": {
+      "page": "assistant",
+      "description": "Enable explicitly approved automation revisions from the signed-in user’s activation review."
+    },
+    "GET /api/affiliates": {
+      "page": "referrals",
+      "description": "Compatibility alias for GET /api/referral-program. New clients use the referral-program route."
+    },
+    "POST /api/affiliates/enroll": {
+      "page": "referrals",
+      "description": "Compatibility alias for POST /api/referral-program/enroll. New clients use the referral-program route."
+    },
+    "GET /api/affiliates/offers": {
+      "page": "referrals",
+      "description": "Compatibility alias for GET /api/referral-program/offers. New clients use the referral-program route."
+    },
+    "POST /api/affiliates/offers": {
+      "page": "referrals",
+      "description": "Compatibility alias for POST /api/referral-program/offers. New clients use the referral-program route."
+    },
+    "POST /api/affiliates/offers/revoke": {
+      "page": "referrals",
+      "description": "Compatibility alias for POST /api/referral-program/offers/revoke. New clients use the referral-program route."
+    },
+    "GET /api/affiliates/referrals": {
+      "page": "referrals",
+      "description": "Compatibility alias for GET /api/referral-program/referrals. New clients use the referral-program route."
+    },
+    "GET /api/affiliates/referrals/payments": {
+      "page": "referrals",
+      "description": "Compatibility alias for GET /api/referral-program/referrals/payments. New clients use the referral-program route."
+    },
+    "GET /api/affiliates/payouts": {
+      "page": "referrals",
+      "description": "Compatibility alias for GET /api/referral-program/payouts. New clients use the referral-program route."
+    },
+    "POST /api/affiliates/payout-destination": {
+      "page": "referrals",
+      "description": "Compatibility alias for POST /api/referral-program/payout-destination. New clients use the referral-program route."
+    },
+    "POST /api/affiliates/payouts": {
+      "page": "referrals",
+      "description": "Compatibility alias for POST /api/referral-program/payouts. New clients use the referral-program route."
+    },
+    "POST /api/affiliates/payouts/cancel": {
+      "page": "referrals",
+      "description": "Compatibility alias for POST /api/referral-program/payouts/cancel. New clients use the referral-program route."
     }
   }
 }

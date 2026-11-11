@@ -1,0 +1,122 @@
+.mg-intro-link {
+  margin-top: 22px;
+}
+.mg-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 40px;
+  padding: 20px 12px;
+}
+.mg-steps li {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+.mg-step-number {
+  color: var(--th-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mg-steps h3,
+.mg-destination h3 {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.mg-steps p,
+.mg-destination p {
+  margin-top: 10px;
+  color: var(--th-text-body);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.mg-destinations {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.mg-destination {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 28px;
+  border-radius: 20px;
+  background: var(--th-bg-card);
+}
+.mg-destination h3 {
+  margin-top: 22px;
+  font-size: 22px;
+}
+.mg-destination p {
+  margin-bottom: 24px;
+}
+.mg-price {
+  margin-top: auto;
+  font-size: 14px;
+  font-weight: 500;
+}
+.mg-destination-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  margin-top: 20px;
+  font-size: 14px;
+  border-radius: 999px;
+}
+.th-btn.mg-destination-action {
+  padding: 12px 24px;
+}
+.mg-faq details + details {
+  border-top: 1px solid var(--th-divider);
+}
+.mg-faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-block: 22px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.mg-faq summary::-webkit-details-marker {
+  display: none;
+}
+.mg-faq summary svg {
+  flex-shrink: 0;
+}
+.mg-faq details[open] summary svg {
+  transform: rotate(45deg);
+}
+.mg-faq details p {
+  max-width: 70ch;
+  padding-bottom: 24px;
+  color: var(--th-text-body);
+  font-size: 15px;
+  line-height: 1.8;
+}
+@media (max-width: 560px) {
+  .mg-steps,
+  .mg-destinations {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mg-steps {
+    gap: 24px;
+    padding-inline: 0;
+  }
+  .mg-destinations {
+    gap: 16px;
+  }
+  .mg-destination {
+    padding: 24px;
+  }
+  .mg-intro-link {
+    white-space: normal;
+  }
+  .mg-intro-link svg {
+    flex-shrink: 0;
+  }
+}

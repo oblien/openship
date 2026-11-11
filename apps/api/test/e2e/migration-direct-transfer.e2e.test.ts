@@ -167,7 +167,7 @@ describeDockerE2E("external SSH to a managed execution endpoint", () => {
     await current.link.transferVolume("source-data", bytes => { progress = Math.max(progress, bytes); }, "target-data");
     expect(await target.readFile(`${dstMount}/value.txt`)).toBe(literal);
     expect(await target.exists(`${dstMount}/stale.txt`)).toBe(false);
-    expect(progress).toBeGreaterThan(0);
+    expect(progress).toBe(Buffer.byteLength(literal));
     await source.writeFile("/srv/app's settings/empty.conf", "");
     await target.writeFile("/srv/import/sibling.conf", "keep");
     await current.link.transferPath("/srv/app's settings/empty.conf", "/srv/import/empty.conf");
@@ -184,6 +184,10 @@ describeDockerE2E("external SSH to a managed execution endpoint", () => {
     const localTag = `fixture-only:${tag}`;
     await current.link.transferImage({ id, tag: localTag });
     expect((await target.exec(`docker run --rm --pull=never ${sq(localTag)} echo transferred`)).trim()).toBe("transferred");
+    const digest = (await source.exec("docker image inspect busybox:1.37 --format '{{index .RepoDigests 0}}'")).trim();
+    const restored = await current.link.transferImage({ id, tag: digest });
+    expect((await target.exec(`docker image inspect ${sq(restored)} --format '{{.Id}}'`)).trim()).toBe(id);
+    expect((await target.exec(`docker run --rm --pull=never ${sq(restored)} echo digest-transferred`)).trim()).toBe("digest-transferred");
     await expect(current.link.transferImage({ id: "missing-source-image", tag: `missing:${tag}` })).rejects.toThrow(/image transfer failed/);
   });
 });

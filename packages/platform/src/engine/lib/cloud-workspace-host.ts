@@ -91,6 +91,7 @@ export async function openCloudWorkspaceDockerRuntime(organizationId: string, id
     const runtime = await DockerRuntime.create({
       transport: "cloud", executor: connection.executor,
       cloudConnection: () => connection.connectDocker(),
+      softwareCacheRoot: connection.softwareCacheRoot,
       resolveRegistryAuth: registryAuthResolver(organizationId),
       buildCacheProtection: async () => {
         const { buildCacheProtection } = await import("./build-cache-protection");

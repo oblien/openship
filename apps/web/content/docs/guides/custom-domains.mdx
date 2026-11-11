@@ -35,6 +35,12 @@ redirects to it with HTTP `301`. Under **Domain behavior**, choose either hostna
 as primary, or **Serve both** to serve the app on both addresses.
 
 The domain list shows which hostname redirects and where it sends visitors.
+
+Compose services use the same controls. In the wizard, open a service’s public
+domains; in **Domains & routes**, choose the service when adding a domain.
+**Include www** saves the pair together. Use **Edit route → Redirect** to change
+an existing service hostname into a redirect or choose **Serve the app here**
+to remove it. A redirect does not need its own container port; a serving route does.
 Redirect-only hostnames do not need a separate app port or static path. Existing
 projects keep their current choice until you change it. Both hostnames still need
 DNS records, verification and HTTPS.

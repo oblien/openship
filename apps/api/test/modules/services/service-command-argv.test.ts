@@ -19,6 +19,7 @@ vi.mock("@repo/db", async (importOriginal) => {
 import { syncComposeServices, updateService } from "@repo/platform/engine/modules/services/service.service";
 import { toComposeSpec } from "@repo/db";
 import { mergeServiceDeployEnv } from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
+import { createServiceRuntimeConfig } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
 
 /**
  * #332 left the EDITORS behind: the compose parser produced `commandArgv`, but
@@ -66,6 +67,38 @@ beforeEach(() => {
 });
 
 describe("updateService — command edits keep argv in step", () => {
+  it.each([
+    { commandArgv: ["echo", "literal $HOME"] }, { command: null }, { commandArgv: [] },
+  ])("clears command provenance after a literal edit: %j", async (patch) => {
+    serviceRepo.findById.mockResolvedValue(row({ advanced: { commandTemplate: {
+      expression: ["server", "${VALUE}"], unresolvedVariables: [],
+    }, readiness: { timeoutSeconds: 60 } } }));
+    await updateService(ctx, project.id, "svc_1", patch as never);
+    expect(written().advanced).not.toHaveProperty("commandTemplate");
+    expect(written().advanced).toHaveProperty("readiness");
+  });
+  it.each([{ restart: "always" }, { command: "server start" }, { commandArgv: ["server", "start"] }])(
+    "preserves provenance for unchanged commands and unrelated saves: %j", async (patch) => {
+      const template = { expression: "server ${MODE:-start}", unresolvedVariables: [] };
+      serviceRepo.findById.mockResolvedValue(row({ advanced: { commandTemplate: template } }));
+      await updateService(ctx, project.id, "svc_1", patch as never);
+      expect(written().advanced ?? { commandTemplate: template }).toHaveProperty("commandTemplate", template);
+    },
+  );
+  it("actually deploys a manual command edit on a templated service", async () => {
+    const stored = row({ advanced: { commandTemplate: {
+      expression: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"],
+      unresolvedVariables: ["REDIS_PASSWORD"],
+    } } });
+    serviceRepo.findById.mockResolvedValue(stored);
+    await updateService(ctx, project.id, "svc_1", { command: "redis-server --port 6380" } as never);
+    const next = { ...stored, ...written() };
+    const runtime = createServiceRuntimeConfig({
+      project: project as never, dep: { id: "dep-review" } as never,
+      service: next as never, image: "redis:7", environment: { REDIS_PASSWORD: "review-only" },
+    });
+    expect(runtime.commandArgv).toEqual(["redis-server", "--port", "6380"]);
+  });
   it("re-derives argv on a command edit, so the new command actually runs", async () => {
     await updateService(ctx, project.id, "svc_1", { command: "server start --verbose" } as never);
 

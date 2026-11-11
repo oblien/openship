@@ -3,6 +3,22 @@ import { NextRequest } from "next/server";
 import { proxy } from "./proxy";
 
 describe("dashboard proxy middleware", () => {
+  it("mirrors a valid theme cookie for the initial server render", () => {
+    const response = proxy(new NextRequest("https://app.openship.io/login", {
+      headers: { cookie: "openship-theme=system:dim", "x-openship-theme": "light:light" },
+    }));
+    expect(response.headers.get("x-middleware-request-x-openship-theme")).toBe("system:dim");
+  });
+
+  it.each([undefined, "dim:dark", "custom:dim", "dim:dim:extra"])(
+    "rejects an invalid or absent theme cookie (%s) and a spoofed header", (cookie) => {
+      const headers = new Headers({ "x-openship-theme": "dark:dark" });
+      if (cookie) headers.set("cookie", `openship-theme=${cookie}`);
+      const response = proxy(new NextRequest("https://app.openship.io/login", { headers }));
+      expect(response.headers.get("x-middleware-request-x-openship-theme")).toBeNull();
+    },
+  );
+
   it("allows unauthenticated access to /accept-invite without redirecting to /login", () => {
     const req = new NextRequest("http://localhost:3001/accept-invite/inv_12345");
     const res = proxy(req);

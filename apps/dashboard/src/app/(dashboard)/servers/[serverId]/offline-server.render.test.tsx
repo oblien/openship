@@ -171,7 +171,15 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (root) act(() => root!.unmount());
+  // Auth stores defer their last-subscriber cleanup. Run those unmount timers
+  // while this fixture still owns its window and network stubs.
+  vi.useFakeTimers();
+  try {
+    if (root) act(() => root!.unmount());
+    act(() => vi.runOnlyPendingTimers());
+  } finally {
+    vi.useRealTimers();
+  }
   root = undefined;
   container.remove();
   vi.unstubAllGlobals();
@@ -207,7 +215,7 @@ async function mountOfflineServer(checkFailure: { status: number; body: unknown 
 }
 
 describe("managed resources on retained server links", () => {
-  it.each(["desktop", "docker"])("shows Cloud spaces instead of a requested host terminal in %s", async deployMode => {
+  it.each(["desktop", "docker"])("shows the named plan instead of a requested host terminal in %s", async deployMode => {
     searchParams = new URLSearchParams({ tab: "terminal" });
     const text = await mountOfflineServer(CHECK_FAILURES[0]!, {
       ...OFFLINE_SERVER, connection: "cloud",
@@ -217,7 +225,7 @@ describe("managed resources on retained server links", () => {
         projectCount: 0, operation: null, createdAt: "2026-10-01T00:00:00Z" },
     }, deployMode);
     expect(errors).toEqual([]);
-    expect(text).toContain(baseDictionary.dashboard.nav.resources);
+    expect(container.querySelector("h1")?.textContent).toBe("Starter");
     expect(text).toContain(baseDictionary.servers.resources.capacity);
     expect(text).not.toContain(baseDictionary.servers.detail.tabs.terminal);
     const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));

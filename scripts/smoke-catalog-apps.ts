@@ -25,6 +25,15 @@ export const OFFICIAL_APP_STACKS = [
   "jellyfin",
   "ollama",
   "open-webui",
+  "appwrite",
+  "prometheus",
+  "loki",
+  "alertmanager",
+  "victoriametrics",
+  "beszel",
+  "pgadmin4",
+  "listmonk",
+  "otel-collector",
 ] as const;
 const run = promisify(execFile);
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -41,9 +50,8 @@ function inputValue(html: string, name: string): string | undefined {
 let operation = "initialization";
 const docker = async (...args: string[]) => {
   try {
-    return (
-      await run("docker", args, { timeout: 600_000, maxBuffer: 4 * 1024 * 1024 })
-    ).stdout.trim();
+    const result = await run("docker", args, { timeout: 600_000, maxBuffer: 4 * 1024 * 1024 });
+    return (result.stdout + (args[0] === "logs" ? result.stderr : "")).trim();
   } catch (error) {
     // Docker errors embed argv, which can contain the disposable test credentials.
     const stderr =
@@ -136,7 +144,19 @@ async function smokeApp(app: AppTemplate) {
       const state = JSON.parse(
         await docker("inspect", "--format", "{{json .State}}", names.get(service.name)!),
       );
-      if (state.Health?.Status === "healthy" || (!service.healthcheck && state.Running)) return;
+      const health = service.healthcheck as { test: string[] } | undefined;
+      if (state.Running && health?.test[0] === "CMD") {
+        // Docker CLI --health-cmd always invokes /bin/sh. Distroless images need
+        // their exact exec-form probe, as used by the deployment adapter.
+        try {
+          await run("docker", ["exec", names.get(service.name)!, ...health.test.slice(1)], {
+            timeout: 10_000,
+          });
+          return;
+        } catch {
+          // The service is still starting; retry within the bounded deadline.
+        }
+      } else if (state.Health?.Status === "healthy" || (!health && state.Running)) return;
       if (state.OOMKilled || (!state.Running && !state.Restarting))
         throw new Error(app.id + "/" + service.name + " exited during startup");
       await pause(2_000);
@@ -168,6 +188,7 @@ async function smokeApp(app: AppTemplate) {
       "--memory",
       memory,
     ];
+    if (s.shmSize) args.push("--shm-size", String(s.shmSize));
     if (s.entrypointArgv) args.push("--entrypoint", s.entrypointArgv[0] ?? "");
     if (s.resources) args.push("--cpus", String(s.resources.cpuCores));
     if (s.exposedPort)
@@ -188,7 +209,7 @@ async function smokeApp(app: AppTemplate) {
           startPeriod?: string;
         }
       | undefined;
-    if (health) {
+    if (health?.test[0] === "CMD-SHELL") {
       args.push(
         "--health-cmd",
         health.test[0] === "CMD-SHELL"
@@ -285,7 +306,24 @@ async function smokeApp(app: AppTemplate) {
       return;
     }
     for (const s of [...app.services!].reverse()) {
-      if (["paperless-ngx", "wiki-js", "homepage", "immich", "jellyfin"].includes(app.id)) {
+      if (
+        [
+          "paperless-ngx",
+          "wiki-js",
+          "homepage",
+          "immich",
+          "jellyfin",
+          "prometheus",
+          "loki",
+          "alertmanager",
+          "victoriametrics",
+          "beszel",
+          "pgadmin4",
+          "listmonk",
+        ].includes(app.id) ||
+        (app.id === "appwrite" &&
+          ["redis", "postgresql", "appwrite-mongodb", "clickhouse"].includes(s.name))
+      ) {
         await docker("stop", "--time", "60", names.get(s.name)!);
         const state = JSON.parse(
           await docker("inspect", "--format", "{{json .State}}", names.get(s.name)!),
@@ -344,6 +382,494 @@ async function smokeApp(app: AppTemplate) {
     await start();
     operation = app.id + "/login-and-write";
     switch (app.id) {
+      case "prometheus":
+      case "loki":
+      case "alertmanager": {
+        const access = app.id + "-access";
+        assert(
+          (await request(access, "/")).status === 401,
+          "Monitoring endpoint is public without authentication",
+        );
+        const headers = {
+          Authorization: basic(
+            env(access, "OPENSHIP_ADMIN_USER"),
+            env(access, "OPENSHIP_ADMIN_PASSWORD"),
+          ),
+          "Content-Type": "application/json",
+        };
+        const wrong = { Authorization: basic("admin", "incorrect") };
+        assert(
+          (await request(access, "/", { headers: wrong })).status === 401,
+          "Monitoring endpoint accepted an incorrect password",
+        );
+        const now = Date.now();
+        let checkPath: string;
+        if (app.id === "prometheus") {
+          checkPath = "/api/v1/query?query=prometheus_build_info";
+          let found = false;
+          for (let i = 0; i < 30; i++) {
+            const data = (await (await request(access, checkPath, { headers })).json()) as any;
+            if (data.data?.result?.length) {
+              found = true;
+              break;
+            }
+            await pause(2_000);
+          }
+          assert(found, "Prometheus did not scrape its default target");
+          // Query the same historical sample after replacing the TSDB container.
+          checkPath += "&time=" + Date.now() / 1000;
+        } else if (app.id === "loki") {
+          const response = await request(access, "/loki/api/v1/push", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              streams: [
+                { stream: { job: marker }, values: [[String(BigInt(now) * 1_000_000n), marker]] },
+              ],
+            }),
+          });
+          assert(response.status === 204, "Loki rejected an authenticated log write");
+          checkPath =
+            "/loki/api/v1/query_range?query=" +
+            encodeURIComponent('{job="' + marker + '"}') +
+            "&start=" +
+            (now - 1000) * 1e6 +
+            "&end=" +
+            (now + 1000) * 1e6;
+        } else {
+          const response = await request(access, "/api/v2/silences", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              matchers: [{ name: "alertname", value: marker, isRegex: false, isEqual: true }],
+              startsAt: new Date(now).toISOString(),
+              endsAt: new Date(now + 3600_000).toISOString(),
+              createdBy: "catalog-smoke",
+              comment: marker,
+            }),
+          });
+          assert(response.ok, "Alertmanager rejected an authenticated silence");
+          const silence = (await response.json()) as any;
+          checkPath = "/api/v2/silence/" + silence.silenceID;
+        }
+        const before = await request(access, checkPath, { headers });
+        const body = await before.text();
+        assert(
+          before.ok &&
+            (app.id === "prometheus"
+              ? body.includes("prometheus_build_info")
+              : body.includes(marker)),
+          "Monitoring data could not be read",
+        );
+        await replace();
+        assert(
+          (await request(access, "/")).status === 401,
+          "Monitoring endpoint lost its authentication on redeploy",
+        );
+        const after = await request(access, checkPath, { headers });
+        const saved = await after.text();
+        assert(
+          after.ok &&
+            (app.id === "prometheus"
+              ? saved.includes("prometheus_build_info")
+              : saved.includes(marker)),
+          "Monitoring data did not persist after replacement",
+        );
+        break;
+      }
+      case "victoriametrics": {
+        const headers = {
+          Authorization: basic("admin", env("victoriametrics", "httpAuth_password")),
+        };
+        assert(
+          (await request("victoriametrics", "/api/v1/query?query=up")).status === 401,
+          "VictoriaMetrics allowed unauthenticated queries",
+        );
+        const metric = 'openship_smoke{marker="' + marker + '"} 42\n';
+        assert(
+          (
+            await request("victoriametrics", "/api/v1/import/prometheus", {
+              method: "POST",
+              headers,
+              body: metric,
+            })
+          ).ok,
+          "VictoriaMetrics rejected metric write",
+        );
+        const query =
+          "/api/v1/query?query=" + encodeURIComponent('openship_smoke{marker="' + marker + '"}');
+        // Flush pending insert buffers through the supported query flag.
+        const read = () => request("victoriametrics", query + "&nocache=1", { headers });
+        let found = false;
+        for (let i = 0; i < 15; i++) {
+          if ((await (await read()).text()).includes(marker)) {
+            found = true;
+            break;
+          }
+          await pause(1_000);
+        }
+        assert(found, "VictoriaMetrics did not return imported metric");
+        await replace();
+        assert(
+          (await (await read()).text()).includes(marker),
+          "VictoriaMetrics data did not persist",
+        );
+        break;
+      }
+      case "listmonk": {
+        const login = async () => {
+          const response = await request("listmonk", "/admin/login", {
+            method: "POST",
+            redirect: "manual",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              username: env("listmonk", "LISTMONK_ADMIN_USER"),
+              password: env("listmonk", "LISTMONK_ADMIN_PASSWORD"),
+              next: "/",
+            }),
+          });
+          assert(
+            response.status === 302 && response.headers.getSetCookie().length > 0,
+            "Listmonk generated administrator could not sign in",
+          );
+          return {
+            "Content-Type": "application/json",
+            Cookie: response.headers
+              .getSetCookie()
+              .map((c) => c.split(";")[0])
+              .join("; "),
+          };
+        };
+        let headers = await login();
+        const anonymous = await request("listmonk", "/api/subscribers", {
+          redirect: "manual",
+          headers: { Accept: "application/json" },
+        });
+        assert(
+          anonymous.status === 401 ||
+            anonymous.status === 403 ||
+            (anonymous.status === 302 &&
+              anonymous.headers.get("Location")?.includes("/admin/login")),
+          "Listmonk allowed unauthenticated subscriber access (HTTP " + anonymous.status + ")",
+        );
+        const created = await request("listmonk", "/api/subscribers", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            email: marker + "@example.com",
+            name: marker,
+            status: "enabled",
+            lists: [],
+          }),
+        });
+        assert(created.ok, "Listmonk administrator could not create a subscriber");
+        const subscriber = ((await created.json()) as any).data;
+        await replace();
+        headers = await login();
+        const response = await request("listmonk", "/api/subscribers/" + subscriber.id, {
+          headers,
+        });
+        assert(
+          response.ok && (await response.text()).includes(marker),
+          "Listmonk login or subscriber did not persist",
+        );
+        break;
+      }
+      case "beszel": {
+        const login = async () => {
+          const response = await request("beszel", "/api/collections/users/auth-with-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              identity: env("beszel", "USER_EMAIL"),
+              password: env("beszel", "USER_PASSWORD"),
+            }),
+          });
+          assert(response.ok, "Beszel initial owner could not sign in");
+          return (await response.json()) as any;
+        };
+        const user = await login();
+        const headers = { "Content-Type": "application/json", Authorization: user.token };
+        const list = (await (
+          await request("beszel", "/api/collections/user_settings/records", { headers })
+        ).json()) as any;
+        const existing = list.items?.[0];
+        const path = "/api/collections/user_settings/records" + (existing ? "/" + existing.id : "");
+        const response = await request("beszel", path, {
+          method: existing ? "PATCH" : "POST",
+          headers,
+          body: JSON.stringify({ user: user.record.id, settings: { chartTime: "24h" } }),
+        });
+        assert(response.ok, "Beszel owner could not save dashboard preferences");
+        await replace();
+        const savedUser = await login();
+        const saved = await request("beszel", "/api/collections/user_settings/records", {
+          headers: { Authorization: savedUser.token },
+        });
+        const savedSettings = (await saved.json()) as any;
+        assert(
+          saved.ok && savedSettings.items?.[0]?.settings?.chartTime === "24h",
+          "Beszel dashboard preferences did not persist",
+        );
+        break;
+      }
+      case "pgadmin4": {
+        const login = async () => {
+          const page = await request("pgadmin4", "/login");
+          const html = await page.text();
+          const csrf =
+            inputValue(html, "csrf_token") ?? /"csrfToken"\s*:\s*"([^"]+)"/.exec(html)?.[1];
+          assert(csrf, "pgAdmin did not return a CSRF token");
+          const response = await request("pgadmin4", "/login", {
+            method: "POST",
+            redirect: "manual",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": csrf,
+              Cookie: page.headers
+                .getSetCookie()
+                .map((c) => c.split(";")[0])
+                .join("; "),
+            },
+            body: JSON.stringify({
+              email: env("pgadmin4", "PGADMIN_DEFAULT_EMAIL"),
+              password: env("pgadmin4", "PGADMIN_DEFAULT_PASSWORD"),
+            }),
+          });
+          const cookies = new Map(
+            [...page.headers.getSetCookie(), ...response.headers.getSetCookie()].map((c) => {
+              const pair = c.split(";")[0]!;
+              return [pair.split("=")[0], pair] as const;
+            }),
+          );
+          const browser = await request("pgadmin4", "/browser/", {
+            redirect: "manual",
+            headers: { Cookie: [...cookies.values()].join("; ") },
+          });
+          assert(
+            browser.status === 200 && !browser.headers.get("Location"),
+            "pgAdmin administrator login failed",
+          );
+        };
+        await login();
+        const servers = JSON.stringify({
+          Servers: {
+            "1": {
+              Name: marker,
+              Group: "Servers",
+              Host: "database.example.com",
+              Port: 5432,
+              MaintenanceDB: "postgres",
+              Username: "app",
+              SSLMode: "prefer",
+            },
+          },
+        });
+        await exec(
+          "pgadmin4",
+          "printf %s " +
+            quote(servers) +
+            ' > /tmp/servers.json && /venv/bin/python3 /pgadmin4/setup.py load-servers /tmp/servers.json --user "$PGADMIN_DEFAULT_EMAIL"',
+        );
+        await replace();
+        await login();
+        const exported = await exec(
+          "pgadmin4",
+          '/venv/bin/python3 /pgadmin4/setup.py dump-servers /tmp/saved-servers.json --user "$PGADMIN_DEFAULT_EMAIL" >/dev/null && cat /tmp/saved-servers.json',
+        );
+        assert(exported.includes(marker), "pgAdmin saved server did not persist");
+        break;
+      }
+      case "otel-collector": {
+        const send = async () => {
+          const startTime = String(BigInt(Date.now()) * 1_000_000n);
+          const body = JSON.stringify({
+            resourceSpans: [
+              {
+                scopeSpans: [
+                  {
+                    spans: [
+                      {
+                        traceId: randomBytes(16).toString("hex"),
+                        spanId: randomBytes(8).toString("hex"),
+                        name: marker,
+                        kind: 1,
+                        startTimeUnixNano: startTime,
+                        endTimeUnixNano: startTime,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          });
+          // The receiver stays private: use a disposable client on the project network.
+          return docker(
+            "run",
+            "--rm",
+            "--network",
+            prefix,
+            "--entrypoint",
+            "wget",
+            "caddy:2.11.7-alpine",
+            "-q",
+            "-O",
+            "-",
+            "--header=Content-Type: application/json",
+            "--post-data=" + body,
+            "http://otel-collector:4318/v1/traces",
+          );
+        };
+        for (let i = 0; i < 20; i++) {
+          try {
+            await send();
+            break;
+          } catch (error) {
+            if (i === 19) throw error;
+            await pause(1000);
+          }
+        }
+        await pause(1_500);
+        const logs = await docker("logs", names.get("otel-collector")!);
+        assert(
+          logs.includes("Spans") || /"spans":\s*1/.test(logs),
+          "Collector did not export a received span",
+        );
+        await replace();
+        await pause(1_500);
+        assert((await send()).includes("{}"), "Collector failed OTLP reception after replacement");
+        break;
+      }
+      case "appwrite": {
+        let password = env("appwrite", "OPENSHIP_ADMIN_PASSWORD");
+        const login = async () => {
+          const headers = { "X-Appwrite-Project": "console", "Content-Type": "application/json" };
+          const response = await request("appwrite-gateway", "/v1/account/sessions/email", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              email: env("appwrite", "OPENSHIP_ADMIN_EMAIL"),
+              password,
+            }),
+          });
+          assert(
+            response.status === 201,
+            "Appwrite generated owner could not sign in (HTTP " + response.status + ")",
+          );
+          return {
+            ...headers,
+            Cookie: response.headers
+              .getSetCookie()
+              .map((c) => c.split(";")[0])
+              .join("; "),
+          };
+        };
+        let headers = await login();
+        const signup = await request("appwrite-gateway", "/v1/account", {
+          method: "POST",
+          headers: { "X-Appwrite-Project": "console", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: "unique()",
+            email: marker + "@example.com",
+            password: randomBytes(32).toString("hex"),
+            name: "Other",
+          }),
+        });
+        assert(signup.status >= 400, "Appwrite allowed another anonymous Console owner");
+        assert(
+          (await request("appwrite-gateway", "/", { headers })).ok,
+          "Appwrite Console did not load",
+        );
+        const name = await request("appwrite-gateway", "/v1/account/name", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ name: marker }),
+        });
+        assert(name.ok, "Appwrite owner could not update account");
+        const create = async (path: string, body: unknown, scoped = headers) => {
+          const response = await request("appwrite-gateway", "/v1/" + path, {
+            method: "POST",
+            headers: scoped,
+            body: JSON.stringify(body),
+          });
+          assert(
+            response.status === 201,
+            "Appwrite " + path + " create failed (HTTP " + response.status + ")",
+          );
+          return (await response.json()) as any;
+        };
+        const team = await create("teams", { teamId: "unique()", name: marker });
+        const project = await create("projects", {
+          projectId: "unique()",
+          name: marker,
+          teamId: team.$id,
+          region: "default",
+        });
+        const scoped = {
+          ...headers,
+          "X-Appwrite-Project": project.$id,
+          "X-Appwrite-Mode": "admin",
+        };
+        const database = await create(
+          "databases",
+          { databaseId: "unique()", name: marker },
+          scoped,
+        );
+        const bucket = await create(
+          "storage/buckets",
+          { bucketId: "unique()", name: marker, fileSecurity: false },
+          scoped,
+        );
+        const form = new FormData();
+        form.set("fileId", "unique()");
+        form.set("file", new Blob([marker], { type: "text/plain" }), "smoke.txt");
+        const { "Content-Type": _, ...uploadHeaders } = scoped;
+        const upload = await request(
+          "appwrite-gateway",
+          "/v1/storage/buckets/" + bucket.$id + "/files",
+          { method: "POST", headers: uploadHeaders, body: form },
+        );
+        assert(upload.status === 201, "Appwrite file upload failed");
+        const storedFile = (await upload.json()) as any;
+        const nextPassword = randomBytes(32).toString("hex");
+        const changed = await request("appwrite-gateway", "/v1/account/password", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ password: nextPassword, oldPassword: password }),
+        });
+        assert(changed.ok, "Appwrite owner could not change the initial password");
+        password = nextPassword;
+        await replace();
+        headers = await login();
+        const account = await request("appwrite-gateway", "/v1/account", { headers });
+        assert(
+          account.ok && (await account.text()).includes(marker),
+          "Appwrite overwrote owner data on redeploy",
+        );
+        const restored = {
+          ...headers,
+          "X-Appwrite-Project": project.$id,
+          "X-Appwrite-Mode": "admin",
+        };
+        const savedDatabase = await request("appwrite-gateway", "/v1/databases/" + database.$id, {
+          headers: restored,
+        });
+        assert(
+          savedDatabase.ok && (await savedDatabase.text()).includes(marker),
+          "Appwrite database did not persist",
+        );
+        const download = await request(
+          "appwrite-gateway",
+          "/v1/storage/buckets/" + bucket.$id + "/files/" + storedFile.$id + "/download",
+          { headers: restored },
+        );
+        assert(
+          download.ok && (await download.text()) === marker,
+          "Appwrite stored file did not persist",
+        );
+        break;
+      }
+
       case "ollama": {
         const model = "qwen3:0.6b";
         const pulled = await fetch(url("ollama", "/api/pull"), {

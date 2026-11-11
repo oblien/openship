@@ -17,7 +17,6 @@ vi.mock("@repo/platform/engine/lib/auth", () => ({
   auth: {
     api: {
       getSession: h.getSession,
-      getMcpSession: vi.fn(async () => null),
     },
   },
 }));
@@ -30,6 +29,7 @@ vi.mock("@repo/db", () => ({
   eq: (_column: unknown, value: unknown) => value,
   db: { select: () => ({ from: () => ({ where: () => ({ limit: h.findInstanceRole }) }) }) },
   repos: {
+    oauth: { findAccessToken: vi.fn(async () => null) },
     member: { listByUser: h.listByUser, find: h.findMembership },
     organization: { findManyById: h.findOrganizations },
     personalAccessToken: { findActiveByHash: h.findActivePat, touchLastUsed: h.touchPat },

@@ -1,3 +1,5 @@
+import { assertServiceRedirects } from "../../lib/service-redirects";
+import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import { isMaterializedAppRow } from "./materialized-app-row";
 export { isMaterializedAppRow } from "./materialized-app-row";
 /**
@@ -26,6 +28,7 @@ import {
   mergeAdvanced,
   parseContainerHosts,
   validateComposeGpuConfig,
+  validateComposeNamespaces,
   normalizeServiceLabel,
   normalizeAliasStrict,
   resolveCommandArgv,
@@ -612,6 +615,8 @@ export async function createService(
     }),
   );
 
+  await assertServiceRedirects(project, [{ ...data, ...routing, name }]);
+
   // Atomic gate, same rule and placement as updateService: a free (*.opsh.io)
   // route only resolves behind the Openship Cloud edge, so refuse BEFORE the
   // insert. Without this a create could PERSIST a route that is dead by
@@ -633,6 +638,7 @@ export async function createService(
   // caller can send one payload shape to both.
   const advanced = mergeAdvanced(null, data.advanced);
   validateComposeGpuConfig(advanced);
+  validateComposeNamespaces(advanced);
   if (advanced.extraHosts !== undefined) {
     advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
   }
@@ -708,6 +714,7 @@ export async function createService(
       serviceId: created.id,
       hostname: row.hostname,
       targetPort: row.targetPort,
+      ...(row.redirectTo !== undefined ? { redirectTo: row.redirectTo, redirectStatus: row.redirectStatus } : {}),
     });
   }
 
@@ -769,6 +776,7 @@ export async function updateService(
   if ("advanced" in patch) {
     patch.advanced = mergeAdvanced(svc.advanced as ComposeAdvanced | null, patch.advanced);
     validateComposeGpuConfig(patch.advanced as ComposeAdvanced);
+    validateComposeNamespaces(patch.advanced as ComposeAdvanced);
     const extraHosts = (patch.advanced as ComposeAdvanced).extraHosts;
     if (extraHosts !== undefined) {
       (patch.advanced as ComposeAdvanced).extraHosts = parseContainerHosts(extraHosts);
@@ -859,6 +867,15 @@ export async function updateService(
     storedArgv: svc.commandArgv as string[] | null,
   });
   if (nextCommandArgv !== undefined) patch.commandArgv = nextCommandArgv;
+  if (
+    ("command" in patch && patch.command !== svc.command) ||
+    (data.commandArgv !== undefined && JSON.stringify(data.commandArgv) !== JSON.stringify(svc.commandArgv))
+  ) {
+    patch.advanced = mergeAdvanced(
+      ("advanced" in patch ? patch.advanced : svc.advanced) as ComposeAdvanced | null,
+      { commandTemplate: null },
+    );
+  }
   // Monorepo sub-app build settings: same trim-or-null treatment so empty
   // strings become null in DB (matches the rest of the service columns).
   for (const key of [
@@ -906,7 +923,13 @@ export async function updateService(
     patch.customDomain = normalized.customDomain;
     patch.domainType = normalized.domainType;
     patch.publicEndpoints = normalized.publicEndpoints;
+  }
 
+  if (touchesRouting || nameChanged) {
+    await assertServiceRedirects(project, [{ ...svc, ...patch }]);
+  }
+
+  if (touchesRouting) {
     const nextEndpoints = resolveServicePublicEndpoints({
       exposed: patch.exposed,
       exposedPort: patch.exposedPort,
@@ -966,9 +989,9 @@ export async function updateService(
       // `enabled` / `exposed` are non-nullable DB columns - no need to
       // fall back to `svc.*` on the updated row.
       const isRoutable = updated.enabled && updated.exposed;
-      const domainByHostname = project.compositeRoutes?.length
-        ? new Map((await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain]))
-        : undefined;
+      const domainByHostname = new Map(
+        (await repos.domain.listByProject(project.id)).map((domain) => [domain.hostname, domain]),
+      );
       // Diff the SET of routes (a service can publish several ports). A hostname
       // present before but gone now is removed; every current route is
       // (re-)registered (register is additive/idempotent upstream).
@@ -1073,24 +1096,27 @@ export async function updateService(
       // REPLACES the vhost — so an edit here that omitted them silently deleted the
       // project's redirects/headers/URL shape from that domain until the next deploy.
       const routingFields = compileProjectRoutingFields(project.routingConfig);
-      const registers: RouteRegister[] = nextRoutes.map((route, i) => ({
-        ...routingFields,
-        hostname: route.hostname,
-        targetUrl: targetUrls[i],
-        port: route.targetPort,
-        isCustomDomain: route.domainType === "custom",
-        ...(() => {
-          const observed = route.targetPort
-            ? observedLoopbackPublishFromUrl({
-                targetUrl: targetUrls[i],
-                serviceId,
-                containerId,
-                containerPort: route.targetPort,
-              })
-            : null;
-          return observed ? { observedLoopbackPublishes: [observed] } : {};
-        })(),
-      }));
+      const redirectHosts = [...domainByHostname.keys(), ...nextByHost.keys()];
+      const registers: RouteRegister[] = nextRoutes.map((route, i) => {
+        const redirect = resolveRouteRedirect(route, redirectHosts);
+        const observed = route.targetPort
+          ? observedLoopbackPublishFromUrl({
+              targetUrl: targetUrls[i],
+              serviceId,
+              containerId,
+              containerPort: route.targetPort,
+            })
+          : null;
+        return {
+          ...routingFields,
+          hostname: route.hostname,
+          ...(redirect ? { redirectHost: redirect } : {}),
+          targetUrl: targetUrls[i],
+          port: route.targetPort,
+          isCustomDomain: route.domainType === "custom",
+          ...(observed ? { observedLoopbackPublishes: [observed] } : {}),
+        };
+      });
 
       // Authoritative port: the upstream above is rebuilt from the LIVE
       // deployment's published port on every publish, so reconcileProjectRoutes
@@ -1127,6 +1153,7 @@ export async function updateService(
           serviceId,
           hostname: row.hostname,
           targetPort: row.targetPort,
+          ...(row.redirectTo !== undefined ? { redirectTo: row.redirectTo, redirectStatus: row.redirectStatus } : {}),
         });
         if (ensured.created && ensured.domainId) freshlyPublishedDomainIds.push(ensured.domainId);
       }
@@ -1445,6 +1472,7 @@ export async function syncComposeServices(
   // Hostnames the stored rows already carry are exempt: a re-sync of a project
   // holding a bad one (persisted before #342) must not be refused wholesale.
   assertValidCustomDomains(parsed, { known: customHostnamesOf(stored) });
+  await assertServiceRedirects(project, parsed);
   const routes = composeEndpointChanges(parsed, stored);
   await assertFreeEndpointsAllowed(ctx.organizationId, routes.endpoints, {
     capability: "managed-compose-domains", workspaceId: project.workspaceId,
@@ -1462,6 +1490,7 @@ export async function syncComposeServices(
       : svc.environment;
     const advanced = svc.advanced as ComposeAdvanced | undefined;
     validateComposeGpuConfig(advanced);
+    validateComposeNamespaces(advanced);
     if (advanced?.extraHosts !== undefined) {
       advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
     }
@@ -1559,6 +1588,7 @@ export async function syncComposeServices(
         serviceId: svc.id,
         hostname: row.hostname,
         targetPort: row.targetPort,
+        ...(row.redirectTo !== undefined ? { redirectTo: row.redirectTo, redirectStatus: row.redirectStatus } : {}),
       }).catch((err: unknown) => {
         errorDiagnostics.warn("platform/engine/modules/services/service.service",
           `[services] ${svc.name}: could not record domain "${row.hostname}" — ${safeErrorMessage(err)}`, err,

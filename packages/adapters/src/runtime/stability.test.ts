@@ -37,6 +37,13 @@ const judge = (
 ) => classifyStability(first, latest, { ...OPTS, windowElapsed });
 
 describe("classifyStability — while the window is still open", () => {
+  it("includes the runtime's OOM evidence in the shared startup verdict", () => {
+    const latest = sample({ state: "exited", exitCode: 137, oomKilled: true });
+    const verdict = judge(sample(), latest, true);
+    expect(verdict?.ok).toBe(false);
+    expect(verdict?.reason).toContain("137");
+    expect(verdict?.reason).toContain("OOM-killed");
+  });
   it("holds off on a container that merely looks up (nothing proven yet)", () => {
     expect(judge(sample(), sample())).toBeNull();
   });
@@ -203,6 +210,23 @@ describe("watchContainerStability", () => {
     await expect(h.run()).resolves.toMatchObject({ ok: true });
     expect(h.elapsed()).toBe(0);
     expect(h.samples()).toBe(1);
+  });
+
+  it("does not credit time spent crash-looping before routing completed", async () => {
+    const h = harness([
+      sample({ restartCount: 8 }),
+      sample({ restartCount: 9 }),
+      sample({ restartCount: 10 }),
+      sample({ restartCount: 11 }),
+    ], { alreadyRunningMs: 60_000 });
+    await expect(h.run()).resolves.toMatchObject({ status: "crash_loop", ok: false });
+    expect(h.samples()).toBeGreaterThan(1);
+  });
+
+  it("still accepts an earlier restart once a fresh observation window proves stability", async () => {
+    const h = harness([sample({ restartCount: 1 })], { alreadyRunningMs: 60_000 });
+    await expect(h.run()).resolves.toMatchObject({ status: "stable", ok: true });
+    expect(h.elapsed()).toBe(OPTS.windowMs);
   });
 
   it("returns as soon as a healthcheck passes", async () => {

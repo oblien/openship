@@ -40,6 +40,13 @@ credentials, write data, replace all containers, and verify persistence. Authent
 checks the stored administrator password through its authentication backend and
 the public login page; it does not drive a browser SSO integration.
 
+RabbitMQ's readiness probe invokes the official image entrypoint so diagnostics
+run as the broker user. Running the first probe directly as root can create an
+unreadable Erlang cookie while the broker is starting. Readiness also requires
+the management listener, since an Erlang ping can pass before it opens. The smoke
+test exercises this early readiness check, authenticated management, and a
+persistent message surviving container replacement.
+
 ```sh
 # Use a disposable test daemon. No customer API or Cloud purchase is involved.
 DOCKER_CONTEXT=your-test-context bun scripts/smoke-catalog-apps.ts
@@ -171,3 +178,37 @@ Brand assets are bundled for offline use, without modifying the artwork:
 - Homepage: [app icon](https://github.com/gethomepage/homepage/blob/v2.5.0/public/apple-touch-icon.png), upstream Apache-2.0 project.
 - Immich: [brand mark](https://github.com/immich-app/immich/blob/v3.3.1/design/immich-logo.svg), upstream AGPL-3.0 project.
 - Jellyfin: [brand mark](https://github.com/jellyfin/jellyfin-ux/blob/master/logos/SVG/jellyfin-icon--color-on-light.svg), upstream [branding guidance](https://jellyfin.org/docs/general/contributing/branding/).
+
+## Community catalog batch
+
+Appwrite, Prometheus, Loki, Alertmanager, VictoriaMetrics, Beszel, standalone
+pgAdmin, Listmonk, and OpenTelemetry Collector have canonical-stack smoke tests
+in `scripts/smoke-catalog-apps.ts` and the native AMD64/ARM64 CI matrix. The tests
+exercise real authentication and data APIs and replace containers on the same
+project-scoped volumes. OpenTelemetry is stateless; its test sends an OTLP span
+from a private-network client before and after replacement.
+
+Prometheus, Loki, and Alertmanager expose only a generated-password Caddy proxy.
+Unauthenticated and incorrect-password requests are rejected. Configure clients
+with HTTP Basic authentication. Prometheus starts by scraping itself; edit its
+persistent `/etc/prometheus/prometheus.yml` to add targets. Alertmanager starts
+with a receiver that sends nothing; configure real notification receivers in
+`/etc/alertmanager/openship.yml`. Loki uses the pinned image's local filesystem
+configuration with retention enabled. Their private backend names resolve only
+inside the same project network. Separate catalog installations do not share a
+Docker network; use protected URLs for integrations across projects.
+
+VictoriaMetrics uses its native HTTP Basic authentication. Beszel initializes a
+hub owner but does not install an agent or mount the Docker socket: connect the
+servers you want to monitor from its dashboard. Listmonk initializes its database
+and administrator and persists subscribers/uploads; configure your SMTP delivery
+server before sending newsletters. The collector listens on private OTLP ports
+4317 and 4318, with memory limiting and a debug exporter. Edit the mounted
+configuration in service settings to select your real exporters.
+
+Appwrite's included features, resource requirements, bootstrap behavior, and
+optional runtime services are documented in its marketplace article. The test
+checks owner sign-in, rejection of additional anonymous Console owners, project
+and database creation, file uploads, and persistence after changing the owner
+password. It does not claim Functions/Sites execution, embeddings,
+SMTP delivery, or provider-issued TLS testing.

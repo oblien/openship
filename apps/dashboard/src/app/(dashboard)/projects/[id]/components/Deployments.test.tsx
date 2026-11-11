@@ -73,7 +73,7 @@ let root: Root;
 let container: HTMLDivElement;
 let context: {
   id: string;
-  projectData: { id: string; name: string; port: number; activeDeploymentId?: string; runtimeMode?: string;
+  projectData: { id: string; name: string; port: number; framework: string; deployTarget?: "cloud" | "server"; activeDeploymentId?: string; runtimeMode?: string;
     options?: { hasServer?: boolean; workloadType?: "static" | "web" | "worker" } };
   hasMultipleServices: boolean;
   servicesData: { services: Service[] };
@@ -92,7 +92,7 @@ beforeEach(() => {
   root = createRoot(container);
   context = {
     id: "project",
-    projectData: { id: "project", name: "demo", port: 9000 },
+    projectData: { id: "project", name: "demo", framework: "docker-compose", port: 9000 },
     hasMultipleServices: true,
     servicesData: { services: [service] },
     domainsData: { domains: [] },
@@ -125,6 +125,50 @@ async function redeploy() {
   await act(async () => root.render(<Deployments />));
   await act(async () => button(baseDictionary.projects.redeploy.redeployProject).click());
 }
+
+it.each([
+  {
+    framework: "static",
+    deployTarget: "server" as const,
+    options: { workloadType: "static" as const },
+    canRefresh: false,
+  },
+  {
+    framework: "node",
+    deployTarget: "cloud" as const,
+    options: { workloadType: "web" as const },
+    canRefresh: false,
+  },
+  {
+    framework: "node",
+    deployTarget: "server" as const,
+    options: { workloadType: "worker" as const, hasServer: false },
+    canRefresh: true,
+  },
+  { framework: "docker-compose", deployTarget: "cloud" as const, options: {}, canRefresh: true },
+])(
+  "offers environment refresh only when supported ($framework on $deployTarget)",
+  async ({ canRefresh, ...project }) => {
+    Object.assign(context.projectData, project, { activeDeploymentId: "active" });
+    context.servicesData.services = [];
+    context.hasMultipleServices = false;
+    await act(async () => root.render(<Deployments />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click(),
+    );
+    const action = [...container.querySelectorAll("button")].find(
+      (el) => el.textContent === baseDictionary.projects.redeploy.refreshEnv,
+    );
+    expect(Boolean(action)).toBe(canRefresh);
+    if (action) {
+      await act(async () => action.click());
+      expect(mocks.trigger).toHaveBeenCalledExactlyOnceWith({
+        projectId: "project",
+        refresh: true,
+      });
+    }
+  },
+);
 
 it("offers an explicit all-services runtime update without changing source", async () => {
   context.projectData.activeDeploymentId = "active";
@@ -246,4 +290,24 @@ it("keeps the warning for another service's route and sends the operator to Doma
   await act(async () => button(baseDictionary.projects.redeploy.openDomains).click());
   expect(mocks.setActiveTab).toHaveBeenCalledWith("domains");
   expect(mocks.hideModal).toHaveBeenCalledWith("warning");
+});
+
+
+it.each(["cancel", "configure"] as const)("reviews new Compose services before redeploy: %s", async (action) => {
+  context.hasMultipleServices = false;
+  mocks.trigger.mockRejectedValueOnce({ body: {
+    code: "COMPOSE_REVIEW_REQUIRED", projectId: "project",
+    composeChanges: { added: ["worker"], changed: ["db"], removed: ["old-worker"] },
+  } });
+  await redeploy();
+  expect(mocks.openBuild).not.toHaveBeenCalled();
+  const modal = mocks.showModal.mock.calls.at(-1)![0];
+  await act(async () => root.render(modal.customContent));
+  const copy = baseDictionary.projects.redeploy.composeReview;
+  expect(container.textContent).toContain(copy.addedTitle);
+  expect(container.textContent).toContain("old-worker");
+  await act(async () => button(copy[action]).click());
+  expect(mocks.trigger).toHaveBeenCalledTimes(1);
+  if (action === "cancel") expect(mocks.push).not.toHaveBeenCalled();
+  else expect(mocks.push).toHaveBeenCalledWith(expect.stringMatching(/^\/deploy\/.+\?reviewCompose=1$/));
 });

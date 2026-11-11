@@ -134,9 +134,17 @@ export async function sanitizeEdgeVhosts(
     `      rm -f "$f.osh-link"; echo "dropped-unreadable-link $f"; rm -f "$f"; continue;`,
     `    fi;`,
     `  fi;`,
+    `  if [ ! -r "$f" ]; then`,
+    `    continue;`,
+    `  fi;`,
     // A real server_name is anything that isn't the `_` wildcard.
-    `  if ! grep -qE '^[[:space:]]*server_name[[:space:]]+[^_;[:space:]]' "$f"; then`,
+    // Only treat clean pattern mismatch (exit code 1) as a catch-all.
+    `  grep -qE '^[[:space:]]*server_name[[:space:]]+[^_;[:space:]]' "$f" 2>/dev/null;`,
+    `  _status=$?;`,
+    `  if [ "$_status" -eq 1 ]; then`,
     `    echo "dropped-catchall $f"; rm -f "$f"; continue;`,
+    `  elif [ "$_status" -ne 0 ]; then`,
+    `    continue;`,
     `  fi;`,
     `  if grep -qE '[[:space:]]default_server' "$f"; then`,
     `    sed -E 's/([[:space:]]listen[^;]*)[[:space:]]+default_server/\\1/g' "$f" > "$f.osh" && mv "$f.osh" "$f" && echo "unset-default $f";`,
@@ -356,7 +364,7 @@ export async function detectEdgeContainer(
   for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const [name, image, state] = line.split("\t");
     if (!name) continue;
-    if (name === EDGE_CONTAINER_NAME || isOurEdgeContainer(name, image)) {
+    if (isOurEdgeContainer(name, image)) {
       return { name, image: image || null, running: state === "running", exists: true };
     }
   }
@@ -366,9 +374,12 @@ export async function detectEdgeContainer(
 async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string | null> {
   const byName = await tryExec(
     executor,
-    `docker ps --filter name=openship-edge --format '{{.Names}}' 2>/dev/null | head -1`,
+    `docker ps --filter name=openship-edge --format '{{.Names}}' 2>/dev/null`,
   );
-  if (byName?.trim()) return byName.trim();
+  // Docker's name filter also returns apps such as openship-edge-demo-app.
+  if (byName?.split("\n").some((name) => name.trim() === EDGE_CONTAINER_NAME)) {
+    return EDGE_CONTAINER_NAME;
+  }
 
   // Renamed container (OPENSHIP_EDGE_CONTAINER): still ours if it runs our image.
   const all = await tryExec(executor, `docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null`);

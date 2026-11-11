@@ -84,12 +84,11 @@ export interface Screenshot {
 
 /**
  * Compose-service shape as it travels through the dashboard's deployment
- * context. Aliased to PrepareComposeService (the API client's matching
- * type) so the two stay synchronized - same wire shape, one place to
- * change it. The dashboard's deployment context uses this name for
- * legacy reasons; new code should reach for PrepareComposeService.
+ * context. Source response fields stay synchronized with PrepareComposeService;
+ * endpoints are normalized to the UI shape with string ports and stable ids.
  */
-export type ComposeServiceInfo = PrepareComposeService & {
+export type ComposeServiceInfo = Omit<PrepareComposeService, "publicEndpoints"> & {
+  publicEndpoints?: PublicEndpoint[];
   /** UI-only draft of the same effective environment edited in the service panel. */
   environmentDraft?: import("@/lib/service-environment-editor").ServiceEnvironmentDraft;
 };
@@ -397,6 +396,8 @@ export interface DeploymentConfig {
    * redeploys re-read the same path.
    */
   composePath?: string;
+  composeRevision?: string;
+  composeChanges?: { added: string[]; changed: string[]; removed: string[] };
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
@@ -629,17 +630,20 @@ export function resolveBuildImageForDeploymentMode(
 // importers are unchanged and client + server share one definition.
 export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } from "@repo/core";
 
-export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): PublicEndpoint {
+/** Keep UI ports as strings, including endpoints returned by source scans. */
+export function createPublicEndpoint(
+  overrides: Omit<Partial<PublicEndpoint>, "port"> & { port?: number | string | null } = {},
+): PublicEndpoint {
   return {
     ...(overrides.protectionDraft ? { protectionDraft: overrides.protectionDraft } : {}),
     id: overrides.id ?? randomUUID(),
-    port: overrides.port ?? "",
+    port: overrides.port != null ? String(overrides.port) : "",
     targetPath: overrides.targetPath ?? "",
     ...(overrides.exact ? { exact: true } : {}),
     domain: overrides.domain ?? "",
     customDomain: overrides.customDomain ?? "",
     domainType: overrides.domainType ?? "free",
-    ...(overrides.redirectTo ? { redirectTo: overrides.redirectTo } : {}),
+    ...(overrides.redirectTo !== undefined ? { redirectTo: overrides.redirectTo } : {}),
     ...(overrides.redirectStatus ? { redirectStatus: overrides.redirectStatus } : {}),
   };
 }
@@ -847,6 +851,7 @@ export interface DeploymentState {
   buildLogs: BuildLog[];
   currentProgress: number;
   currentStepIndex: number;
+  verification: import("@repo/core").DeploymentVerification | null;
   screenshots: Screenshot[];
   projectId: string | null;
   /** Final build duration in ms (set when build finishes). */
@@ -878,6 +883,7 @@ export const BUILD_PHASES: ReadonlyArray<{ id: string; label: string; oneTime?: 
   { id: "install", label: "Install" },
   { id: "build", label: "Build" },
   { id: "deploy", label: "Deploy" },
+  { id: "verify", label: "Verify" },
 ];
 
 export const INITIAL_STATE: DeploymentState = {
@@ -902,6 +908,7 @@ export const INITIAL_STATE: DeploymentState = {
   buildLogs: [],
   currentProgress: 0,
   currentStepIndex: 0,
+  verification: null,
   screenshots: [],
   projectId: null,
   buildDurationMs: null,
@@ -943,7 +950,7 @@ export function resolveBuildElapsedMs(state: BuildTimingState, now = Date.now())
 
 // ─── Status ──────────────────────────────────────────────────────────────────
 
-export type DeploymentStatus = "building" | "deploying" | "ready" | "failed" | "cancelled";
+export type DeploymentStatus = "building" | "deploying" | "verifying" | "ready" | "failed" | "cancelled";
 
 // ─── Context type ────────────────────────────────────────────────────────────
 
@@ -967,12 +974,19 @@ export interface DeploymentContextType {
     force?: string,
     context?: {
       branch?: string;
+      serverId?: string;
       projectId?: string;
       composePath?: string;
       env?: Record<string, string>;
       preserveEnvState?: boolean;
     },
-  ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    errorType?: string;
+    errorCode?: string;
+    buildInProgress?: boolean;
+  }>;
   initializeFromLocal: (
     path: string,
     context?: {
@@ -1006,7 +1020,7 @@ export interface DeploymentContextType {
   /** Config-edit hydration from SAVED project data — no repo re-detection. */
   initializeFromProject: (
     projectId: string,
-    context?: { branch?: string },
+    context?: { branch?: string; reviewCompose?: boolean },
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
 
   // Build lifecycle

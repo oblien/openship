@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { serviceRepositorySource } from "@/app/(dashboard)/projects/[id]/components/services/repository-source";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
@@ -7,7 +8,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Connection } from "@xyflow/react";
-import { resolveWorkload, type ProjectResources } from "@repo/core";
+import type { ProjectResources } from "@repo/core";
+import { canRefreshProjectEnvironment } from "@/lib/project-application";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/context/ToastContext";
@@ -43,7 +45,6 @@ import {
   applicationNodeId,
   buildClusterReplicaTopology,
   dependencyProblem,
-  hasSeparateApplication,
   serviceNodeId,
   type ProjectTopologyGraph,
   type TopologyProject,
@@ -95,6 +96,7 @@ export default function ProjectTopology({
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
+  const showComposeReview = useComposeReview(id);
   const clusterTarget = project.deployTarget === "cluster" || !!project.clusterId;
   const resourcePicker = selfHosted && project.deployTarget !== "cloud";
   const databases = useClusterDatabases(id, resourcePicker);
@@ -274,10 +276,7 @@ export default function ProjectTopology({
     : undefined;
   const serviceChangesOnly =
     changes.length > 0 && changes.every((change) => change.kind === "update-service");
-  const environmentCanRefresh =
-    !hasSeparateApplication(project, servicesData.services) ||
-    (project.deployTarget !== "cloud" &&
-      resolveWorkload(project.options?.workloadType, project.options?.hasServer) !== "static");
+  const environmentCanRefresh = canRefreshProjectEnvironment(project, servicesData.services);
   const targetCanRefresh =
     !!project.activeDeploymentId &&
     (!!currentService || serviceChangesOnly || environmentCanRefresh);
@@ -529,7 +528,7 @@ export default function ProjectTopology({
       setChanges([]);
       setReviewing(false);
     } catch (error) {
-      if (!showCloudPricing(error))
+      if (!showComposeReview(error) && !showCloudPricing(error))
         setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
       invalidateProjectCaches(id);
       void runtime.refresh();

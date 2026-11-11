@@ -66,6 +66,8 @@ vi.mock("@repo/db", () => ({
     cloudBuildActivity: { cancelReservation: mocks.cancelReservation },
     cloudDockerWorkspace: { find: (...args: unknown[]) => mocks.findCloudDockerBinding(...args) },
     deployment: {
+      setVerification: vi.fn(async () => true),
+      setContainerId: vi.fn(async () => undefined),
       listPendingRoleHandovers: async () => [],
       setRoleHandover: async () => {},
       findBuildSessionByDeploymentId: (...args: unknown[]) =>
@@ -135,6 +137,7 @@ vi.mock("@repo/adapters", () => {
   }
 
   return {
+    withDeploymentProgress: (_logger: unknown, _reason: string, run: () => Promise<unknown>) => run(),
     BuildLogger,
     LocalExecutor: class LocalExecutor {},
     BareRuntime: class BareRuntime {},
@@ -154,6 +157,7 @@ vi.mock("@repo/adapters", () => {
     allocateHostPort: vi.fn(async () => ({ port: 30_000, scanned: true })),
     pickHostPort: vi.fn(() => 30_000),
     edgeProxyFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
+    loopbackPortInventoryFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
     isHostChannelUnavailableError: vi.fn(() => false),
     runDeployPipeline: (...args: unknown[]) => mocks.runDeployPipeline(...args),
     isMultiServiceRuntime: vi.fn(() => false),
@@ -347,6 +351,7 @@ import { ensureEdgeChallengeReady } from "@repo/platform/engine/lib/edge-challen
 import { repairEdgeVhosts } from "@repo/platform/engine/lib/edge-vhost-repair";
 import { executeComposePipeline, resolveProjectServicePreflightServices, shouldUseProjectServicePipeline } from "@repo/platform/engine/modules/deployments/compose/index";
 import { CloudBuildAdmissionDeferredError, releaseCloudBuildSlot, runOutsideCloudBuildActivity } from "@repo/platform/engine/lib/cloud-build-activity";
+import { tryWithDeploymentExecutionOwnership } from "@repo/platform/engine/lib/deployment-execution-ownership";
 import { AppError } from "@repo/core";
 import { cloudBuildActivityContext } from "@repo/platform/engine/lib/cloud-build-activity-context";
 import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
@@ -355,6 +360,7 @@ import { env } from "@repo/platform/engine/config/index";
 import { platform } from "@repo/platform/engine/lib/platform-config";
 import { resolveDeploymentPlatform, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import { runDeployPipeline as runRealDeployPipeline } from "../../../../../packages/adapters/src/runtime/deploy-pipeline";
+import { verifyDeployedContainers } from "@repo/platform/engine/modules/deployments/stability-audit.service";
 import {
   buildProjectRouteDomains,
   ensureRouteDomainRecord,
@@ -527,8 +533,8 @@ describe("single-app prebuilt release-image pipeline", () => {
         url: result.url,
       };
     });
-    mocks.onFailure.mockImplementation(async (ctx) => {
-      if (ctx.provisioned.imageRef) await ctx.runtime.destroy(ctx.provisioned.imageRef);
+    mocks.onFailure.mockImplementation(async (ctx, _error, _duration, _meta, options) => {
+      if (!options?.keepProvisioned && ctx.provisioned.imageRef) await ctx.runtime.destroy(ctx.provisioned.imageRef);
     });
     mocks.onCancelled.mockImplementation(async (ctx) => {
       if (ctx.provisioned.imageRef) await ctx.runtime.destroy(ctx.provisioned.imageRef);
@@ -1458,6 +1464,38 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.acknowledgeBuildExecutionFinished).not.toHaveBeenCalled();
   });
 
+  it("does not start SSH backups or runtime work after recovery wins the ownership handoff", async () => {
+    const dep = deployment();
+    mocks.findDeploymentById.mockResolvedValue({ ...dep, status: "failed" });
+    await kickoffBuild(project(), dep);
+    await vi.waitFor(() => expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledOnce());
+    expect(firePreDeployBackups).not.toHaveBeenCalled();
+    expect(mocks.prepareImage).not.toHaveBeenCalled();
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.runDeployPipeline).not.toHaveBeenCalled();
+  });
+
+  it("holds SSH execution ownership from pre-build backups through completion acknowledgement", async () => {
+    let finishBackups!: () => void;
+    const backups = new Promise<{ enqueued: number; completed: number }>(resolve => {
+      finishBackups = () => resolve({ enqueued: 0, completed: 0 });
+    });
+    vi.mocked(firePreDeployBackups).mockReturnValueOnce(backups);
+    await run();
+    try {
+      await vi.waitFor(() => expect(firePreDeployBackups).toHaveBeenCalledOnce());
+      const recover = vi.fn(async () => true);
+      expect(await tryWithDeploymentExecutionOwnership("deployment-1", recover)).toBeUndefined();
+      expect(recover).not.toHaveBeenCalled();
+      expect(mocks.acknowledgeBuildExecutionFinished).not.toHaveBeenCalled();
+      expect(mocks.claimBuildExecution).toHaveBeenCalledWith(expect.objectContaining({ executionFenced: true }));
+    } finally {
+      finishBackups();
+      await drainDeploymentExecutions();
+    }
+    expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledOnce();
+  });
+
   it("fails and releases the claimed build when the live session cache is full", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.createSession.mockImplementationOnce(() => {
@@ -1938,6 +1976,16 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.build).not.toHaveBeenCalled();
   });
 
+  it("retains the published candidate and artifact when previous routing recovery is inconclusive", async () => {
+    mocks.runDeployPipeline.mockResolvedValueOnce({ status: "failed", error: "Startup verification failed",
+      containerId: "retained-candidate", preserveActivated: true });
+    await run();
+    await vi.waitFor(() => expect(mocks.onFailure).toHaveBeenCalled());
+    expect(mocks.onFailure.mock.calls.at(-1)?.[4]).toEqual({ keepProvisioned: true });
+    expect(mocks.destroy).not.toHaveBeenCalledWith("retained-candidate");
+    expect(mocks.destroy).not.toHaveBeenCalledWith(RESOLVED_IMAGE);
+  });
+
   // A server (remote/SSH) deploy target skipped the TCP/HTTP readiness probe
   // for a running-process app: the strategy never declared
   // `readinessWorksRemotely`, so `onFailure: "fail"` was never consulted for
@@ -1958,7 +2006,10 @@ describe("single-app prebuilt release-image pipeline", () => {
     }
 
     type CapturedEnvironment = {
-      env: { healthCheck?: (id: string, cfg: unknown) => Promise<void> };
+      env: {
+        healthCheck?: (id: string, cfg: unknown) => Promise<void>;
+        verifyPublished: (id: string, cfg: unknown, urls: string[]) => Promise<void>;
+      };
       containerId: string;
       config: unknown;
     };
@@ -2084,6 +2135,24 @@ describe("single-app prebuilt release-image pipeline", () => {
       const { env } = await captureEnvironment({ enabled: false });
 
       expect(env.healthCheck).toBeUndefined();
+    });
+
+    it("keeps Cloud startup verification in the published phase even without an optional health probe", async () => {
+      useTarget("cloud", { exec: vi.fn(async () => "") });
+      const { env, containerId, config } = await captureEnvironment({ enabled: false });
+      expect(env.healthCheck).toBeUndefined();
+      expect(verifyDeployedContainers).not.toHaveBeenCalled();
+      vi.mocked(verifyDeployedContainers).mockResolvedValueOnce([
+        { verdict: { ok: false }, detail: "The container exited during startup" } as never,
+      ]);
+      await expect(env.verifyPublished(containerId, config, ["https://live.example.test"]))
+        .rejects.toThrow("The container exited during startup");
+      expect(verifyDeployedContainers).toHaveBeenCalledWith(resolvedRuntime,
+        expect.arrayContaining([expect.objectContaining({ containerId })]), expect.anything(),
+        expect.objectContaining({ windowMs: 15_000 }));
+      expect(mocks.appendLog).toHaveBeenCalledWith("deployment-1", expect.objectContaining({
+        step: "verify", verification: expect.objectContaining({ urls: ["https://live.example.test"] }),
+      }));
     });
 
     it.each(["cloud", "cluster"])(

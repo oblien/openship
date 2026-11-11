@@ -294,7 +294,7 @@ describe("remote docker build — declared build context (#634)", () => {
       } as unknown as CommandExecutor;
       const runtime = runtimeFor(
         { kind: "ssh", description: "test ssh" },
-        { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+        { connectionOptions: { executor, softwareCacheRoot: "/srv/public-images" }, transferBuildContext: vi.fn(async () => {}) },
       );
       const results = await runtime.buildImages(
         [spec(serviceConfig(await makeRepo("FROM php:8.4-fpm\n"), { refreshBaseImages: true }))],
@@ -740,5 +740,69 @@ describe.each(engineBuildCases)(
         expect(verifyImageBuilt).toHaveBeenCalledTimes(firstFails ? 1 : 2);
       },
     );
+  });
+});
+
+describe("shared batch worker lifecycle", () => {
+  it("protects ordinary readers of a Dockerfile while a sibling pins its base images", async () => {
+    const repo = await makeRepo();
+    let release!: () => void;
+    const pinned = new Promise<void>(resolve => { release = resolve; });
+    const runtime = runtimeFor({ kind: "ssh", description: "mixed-refresh-test" }, {
+      connectionOptions: { executor: { exec: vi.fn(async () => "") } },
+      transferBuildContext: vi.fn(async () => {}), batchBuildConcurrency: vi.fn(async () => 3),
+    });
+    const started: string[] = [];
+    let restored = false;
+    const internals = runtime as unknown as Record<string, any>;
+    internals.buildImageOnRemote = vi.fn(async (config: BuildConfig) => {
+      started.push(config.sessionId);
+      if (config.refreshBaseImages) { await pinned; restored = true; }
+      else if (config.sessionId === "reader") expect(restored).toBe(true);
+    });
+    const work = runtime.buildImages([
+      spec(serviceConfig(repo, { sessionId: "refresh", refreshBaseImages: true })),
+      spec(serviceConfig(repo, { sessionId: "reader" })),
+      spec(serviceConfig(repo, { sessionId: "independent", rootDirectory: "", buildContextDirectory: "", dockerfilePath: "Dockerfile" })),
+    ], new BuildLogger(() => {}));
+    try {
+      await vi.waitFor(() => expect(started).toHaveLength(2));
+      expect([...started].sort()).toEqual(["independent", "refresh"]);
+    } finally { release(); }
+    const result = await work;
+    expect(result.map(item => item.result.status)).toEqual(["deploying", "deploying", "deploying"]);
+    expect(started.at(-1)).toBe("reader");
+  });
+
+  it("keeps one worker until every concurrent service finishes, including failure", async () => {
+    const repo = await makeRepo();
+    let release!: () => void;
+    let signalStarted!: () => void;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { signalStarted = resolve; });
+    const executor = { exec: vi.fn(async () => "") } as unknown as CommandExecutor;
+    const runtime = runtimeFor({ kind: "ssh", description: "batch-test" }, {
+      connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}),
+      batchBuildConcurrency: vi.fn(async () => 2),
+    });
+    const internals = runtime as unknown as Record<string, any>;
+    let calls = 0;
+    internals.buildImageOnRemote = vi.fn(async () => {
+      if (++calls === 1) { await started; throw new Error("one service failed"); }
+      signalStarted(); await drain;
+    });
+    const work = runtime.buildImages(["one", "two"].map(name => ({
+      ...spec(serviceConfig(repo, { sessionId: `batch-${name}` })), serviceName: name,
+    })), new BuildLogger(() => {}));
+    await started;
+    await Promise.resolve();
+    expect(internals.startProtectedBuildWorker).toHaveBeenCalledTimes(1);
+    expect(internals.cleanupProtectedBuildWorker).not.toHaveBeenCalled();
+    release();
+    const results = await work;
+    expect(results.map(entry => entry.result.status)).toEqual(["failed", "deploying"]);
+    expect(internals.cleanupProtectedBuildWorker).toHaveBeenCalledTimes(1);
+    expect(internals.buildImageOnRemote.mock.calls.every((call: unknown[]) =>
+      (call[5] as { sharedWorker?: boolean }).sharedWorker)).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+import { ServerSecuritySchemas } from "./server-security";
 import {
   NetworkCollectionSchemas,
   ComputeClusterCollectionSchemas,
@@ -93,8 +94,20 @@ export const CreateServerInputSchema = Type.Object(
 );
 /** Manual GPU mark: "yes"/"no" override the probe, `null` goes back to following it. */
 export const GpuOverrideSchema = Type.Union([Type.Literal("yes"), Type.Literal("no"), Type.Null()]);
+/** Bounds shared with the `servers_build_cache_budget_check` database constraint. */
+export const BUILD_CACHE_BUDGET_MIN_BYTES = 1024 ** 3;
+export const BUILD_CACHE_BUDGET_MAX_BYTES = 64 * 1024 ** 4;
+/** Managed build-cache budget in bytes; `null` returns to the automatic share of the disk. */
+export const BuildCacheBudgetSchema = Type.Union([
+  Type.Integer({ minimum: BUILD_CACHE_BUDGET_MIN_BYTES, maximum: BUILD_CACHE_BUDGET_MAX_BYTES }),
+  Type.Null(),
+]);
 export const UpdateServerInputSchema = Type.Object(
-  { ...connectionFields, gpuOverride: Type.Optional(GpuOverrideSchema) },
+  {
+    ...connectionFields,
+    gpuOverride: Type.Optional(GpuOverrideSchema),
+    buildCacheBudgetBytes: Type.Optional(BuildCacheBudgetSchema),
+  },
   { additionalProperties: false },
 );
 
@@ -155,6 +168,11 @@ const serverFields = {
   terminalSessionLimit: Type.Optional(Type.Integer({ minimum: 0 })),
   /** Absent on managed (cloud) servers, which have no GPU model. */
   gpu: Type.Optional(ServerGpuSchema),
+  /**
+   * Configured managed build-cache budget; null = automatic. Absent on managed (cloud) servers,
+   * the local row and migration sources, which do not use managed build caches.
+   */
+  buildCacheBudgetBytes: Type.Optional(BuildCacheBudgetSchema),
   capabilities: Type.Optional(Type.Object({
     monitor: Type.Boolean(),
     terminal: Type.Boolean(),
@@ -162,6 +180,11 @@ const serverFields = {
     hostConfiguration: Type.Boolean(),
     ssh: Type.Boolean(),
     networkSettings: Type.Optional(Type.Boolean()),
+    /**
+     * The caller can change `buildCacheBudgetBytes`: a supported server, server admin and a
+     * writable credential.
+     */
+    buildCacheBudget: Type.Optional(Type.Boolean()),
   }, { additionalProperties: false })),
 };
 /** Explicitly excludes password, private-key material and passphrase, including ciphertext. */
@@ -514,6 +537,7 @@ export const ServerCollectionSchemas = {
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ServerResourceSchemas = {
+  ...ServerSecuritySchemas,
   ...ManagedServerResourceSchemas,
   usage: { action: "read", output: CloudWorkspaceUsageSchema },
   getNetworkSettings: {
@@ -702,5 +726,6 @@ export interface ServerOperations
     input?: ServerInstallSessionInput,
     options?: { signal?: AbortSignal },
   ): AsyncIterable<DeploymentEvent>;
+  securityRunEvents(id: string, runId: string, options?: { signal?: AbortSignal }): AsyncIterable<DeploymentEvent>;
   monitor(id: string, options?: ServerMonitorOptions): AsyncIterable<DeploymentEvent>;
 }

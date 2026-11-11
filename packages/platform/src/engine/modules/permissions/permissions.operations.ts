@@ -4,6 +4,7 @@ import * as organization from "./organization.service";
 export const permissionsDependencies: PermissionDependencies = {
   collection: {
     listWorkspaces: organization.listWorkspaces,
+    requestAccess: service.requestAccess,
     orgMeta: service.orgMeta, listResources: service.listResources, createTeamOrg: service.createTeamOrg,
     listGrants: service.listGrants, upsertGrant: service.upsertGrant, replaceGrants: service.replaceGrants,
     listInvitations: service.listInvitations, inviteWithGrants: service.inviteWithGrants, listMembers: organization.listMembers,

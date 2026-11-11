@@ -28,7 +28,7 @@
  */
 
 import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { installRsync, privilegedExecutor, envOps, opScript, type CommandExecutor, type LogEntry } from "@repo/adapters";
+import { installRsync, privilegedExecutor, envOps, opScript, resolveTransferredImageRef, type CommandExecutor, type LogEntry } from "@repo/adapters";
 import { answered, shellQuote } from "@repo/core";
 
 /**
@@ -62,8 +62,8 @@ export interface DirectProgress {
 export interface DirectLink {
   direction: "push" | "pull";
   /** Stream the image source→target (docker save <id> | ssh peer docker load),
-   *  then re-apply the tag on the target (save-by-id loads untagged). */
-  transferImage(image: { id: string; tag: string }, onProgress?: DirectProgress): Promise<void>;
+   *  then restore a tag where possible. Returns a usable target reference. */
+  transferImage(image: { id: string; tag: string }, onProgress?: DirectProgress): Promise<string>;
   /** rsync a volume's data source→target. The shared planner reserves the target
    *  volume first. `dstName` (clone) lands the source
    *  volume's data in a DIFFERENTLY-named target volume; defaults to `volumeName`. */
@@ -302,10 +302,10 @@ export class PathMissingError extends Error {
   }
 }
 
-/** Parse an `rsync --info=progress2` line → cumulative bytes transferred, or
- *  null for a non-progress line. Format: "  1,234,567  12%  1.23MB/s  0:00:05". */
+/** Parse exact rsync byte counters, including the B suffix used by newer releases.
+ * Rounded K/M/G values are deliberately not accepted as exact byte counts. */
 export function parseRsyncProgress(line: string): number | null {
-  const m = line.match(/^\s*([\d,]+)\s+\d+%/);
+  const m = line.match(/^\s*([\d,]+)B?\s+\d+%/);
   if (!m) return null;
   const n = Number(m[1]!.replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
@@ -330,7 +330,8 @@ export function rsyncCommand(
   // The reviewed destination is an empty/owned copy (or an explicitly
   // approved overwrite). Remove stale destination files after a successful
   // directory copy, matching the streamed transport's replacement semantics.
-  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
+  // Keep progress counters machine-readable across rsync versions and locales.
+  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --no-human-readable --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
   const dash_e = `-e ${sq(sshCommand)}`;
   const slash = dir ? "/" : "";
   const local = `${sq(localPath)}${slash}`;
@@ -369,11 +370,21 @@ export async function runRsync(
   let lastTail = "";
   for (let attempt = 1; attempt <= RSYNC_MAX_ATTEMPTS; attempt++) {
     signal?.throwIfAborted();
+    // Executors stream arbitrary chunks. Frame rsync's CR/LF updates separately
+    // for stdout and stderr, including a final update without a line ending.
+    const pending = new Map<LogEntry["level"], string>();
+    const report = (line: string) => {
+      const bytes = parseRsyncProgress(line);
+      if (bytes != null) onProgress?.(bytes);
+    };
     const { code, output } = await initiatorExec.streamExec(command, (entry: LogEntry) => {
       if (!onProgress) return;
-      const bytes = parseRsyncProgress(entry.message);
-      if (bytes != null) onProgress(bytes);
+      const lines = ((pending.get(entry.level) ?? "") + entry.message).split(/\r\n|[\r\n]/);
+      // Only the short numeric prefix matters; bound unfinished diagnostic lines.
+      pending.set(entry.level, lines.pop()!.slice(0, 4096));
+      for (const line of lines) report(line);
     }, { signal });
+    for (const line of pending.values()) report(line);
     if (code === 0) return;
 
     lastTail = output.split("\n").filter(Boolean).slice(-4).join(" ");
@@ -417,6 +428,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
       const plan = envOps(grant.value.profile).pkgInstallVariants({
         apt: answered(["procps", "util-linux"]), dnf: answered(["procps-ng", "util-linux"]),
         yum: answered(["procps-ng", "util-linux"]), apk: answered(["procps", "util-linux"]),
+        pacman: answered(["procps-ng", "util-linux"]),
         brew: answered(["flock"]),
       }, { installRecommends: false });
       if (!plan.supported) throw new Error(plan.reason);
@@ -432,7 +444,7 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
     if (!grant.supported) throw new Error(grant.reason);
     const plan = envOps(grant.value.profile).pkgInstallVariants({
       apt: answered(["openssh-client"]), dnf: answered(["openssh-clients"]), yum: answered(["openssh-clients"]),
-      apk: answered(["openssh-client-default"]), brew: answered(["openssh"]),
+      apk: answered(["openssh-client-default"]), pacman: answered(["openssh"]), brew: answered(["openssh"]),
     }, { installRecommends: false });
     if (!plan.supported) throw new Error(plan.reason);
     log("Installing SSH client tools for the transfer…");
@@ -488,18 +500,23 @@ export async function establishDirectLink(ctx: LinkContext): Promise<DirectLink 
         // which is often a RepoDigest) — so tagging by `image.id` fails with
         // "No such image". Instead retag from what `docker load` actually reported
         // ("Loaded image( ID)?: <ref>"), which comes back over the pipe. Only skip
-        // when the load already restored the exact target tag.
+        // when the load already restored the target ref. Digest inputs keep the
+        // loaded ref: Docker cannot manufacture a repository digest with tag.
         const loaded = output.match(/Loaded image(?: ID)?:\s*(\S+)/i)?.[1]?.trim();
-        const from = loaded && loaded !== image.tag ? loaded : loaded ? null : image.id;
-        if (from) {
-          const tagCmd = `docker tag ${sq(from)} ${sq(image.tag)}`;
+        const imageRef = resolveTransferredImageRef(image.tag, loaded);
+        const from = loaded ?? image.id;
+        if (from !== imageRef) {
+          const tagCmd = `docker tag ${sq(from)} ${sq(imageRef)}`;
           await (pushToPeer
             ? initiatorExec.exec(sshTo(sshCommand, peerConn, sq(`${tagCmd} 2>&1`)))
             : targetExec.exec(`${tagCmd} 2>&1`)
           );
           log(`image ${image.tag}: tagged on target (from ${from})`);
+        } else if (imageRef !== image.tag) {
+          log(`image ${image.tag}: loaded on target as ${imageRef}`);
         }
         if (total) onProgress?.(total, total);
+        return imageRef;
       },
       async transferVolume(volumeName, onProgress, dstName) {
         // The shared transfer plan reserves and labels the target volume.

@@ -7,6 +7,7 @@ import re
 import stat
 import sys
 import tempfile
+from sender_aliases import lookup_query, upgrade_map
 
 
 def replace_port(text, pattern, port):
@@ -80,8 +81,15 @@ def main():
     # The optional root lets tests run the same script against actual iRedMail
     # sample configs without touching the developer's system configuration.
     root = Path(sys.argv[2] if len(sys.argv) > 2 else "/").resolve()
+    # Existing Postfix bind mounts hide corrected image defaults. Update only
+    # the recognized legacy query, leaving operator SQL and credentials alone.
+    sample = root / "opt/iRedMail-engine/samples/postfix/pgsql/sender_login_maps.cf"
+    sender_query = lookup_query(sample) if sample.is_file() else None
     for path in (root / "etc/postfix/pgsql").glob("*.cf"):
-        reconcile(path, postfix, port, root)
+        def transform(text, selected_port):
+            result = postfix(text, selected_port)
+            return upgrade_map(result, sender_query) if path.name == "sender_login_maps.cf" and sender_query else result
+        reconcile(path, transform, port, root)
     for path in (root / "etc/dovecot").rglob("*.conf"):
         reconcile(path, dovecot, port, root)
     for path in (root / "etc/amavis/conf.d").glob("*"):

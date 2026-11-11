@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   execs: [] as string[],
   writes: [] as { path: string; content: string }[],
   failPull: false,
+  pullFailures: [] as Error[],
 }));
 
 /** Minimal executor: records what it was asked to do. */
@@ -28,6 +29,7 @@ const executor = {
   exec: vi.fn(async (command: string) => {
     h.execs.push(command);
     if (h.failPull && command.includes("docker pull")) throw new Error("pull exploded");
+    if (command.includes("docker pull") && h.pullFailures.length) throw h.pullFailures.shift();
     return "";
   }),
   streamExec: vi.fn(async (_command: string, _onLog: BuildLogger["callback"], _opts?: { signal?: AbortSignal }) => ({ code: 0, output: "" })),
@@ -64,7 +66,70 @@ beforeEach(() => {
   h.execs = [];
   h.writes = [];
   h.failPull = false;
+  h.pullFailures = [];
   vi.clearAllMocks();
+});
+
+describe("public image recovery after a rejected registry login", () => {
+  const auth = vi.fn(async () => ({ username: "bob", password: SECRET, serveraddress: "ghcr.io" }));
+
+  it.each(["ssh", "cloud"])("retries a %s pull with an empty private config and removes both configs", async transport => {
+    const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
+    Object.assign(runtime, { transport: { kind: transport }, connectionOptions: { executor, resolveRegistryAuth: auth } });
+    h.pullFailures.push(new Error('Head "https://ghcr.io/v2/public/worker/manifests/1": denied: denied'));
+    await runtime.pullImage("ghcr.io/public/worker:1", { force: true });
+    expect(h.execs.filter(command => command.includes("docker pull"))).toHaveLength(2);
+    expect(JSON.parse(h.writes[0]!.content).auths["ghcr.io"]).toBeDefined();
+    expect(JSON.parse(h.writes[1]!.content)).toEqual({ auths: {} });
+    expect(h.writes[1]!.path).not.toBe(h.writes[0]!.path);
+    expect(h.execs.filter(command => command.startsWith("rm -rf"))).toHaveLength(2);
+    expect(allCommands()).not.toContain(SECRET);
+  });
+
+  it("excludes a stale host Docker login even when no credential resolver is configured", async () => {
+    h.pullFailures.push(new Error("unauthorized: authentication required"));
+    await (await runtimeWith()).pullImage("ghcr.io/public/worker:1", { force: true });
+    expect(h.execs[0]).toBe("docker pull 'ghcr.io/public/worker:1'");
+    expect(h.writes).toHaveLength(1);
+    expect(JSON.parse(h.writes[0]!.content)).toEqual({ auths: {} });
+  });
+
+  it("fails a private image after one anonymous attempt and preserves the original reason", async () => {
+    const original = new Error("unauthorized: saved login cannot access private repository");
+    h.pullFailures.push(original, new Error("denied: anonymous access forbidden"));
+    await expect((await runtimeWith(auth)).pullImage("ghcr.io/private/api:1", { force: true })).rejects.toBe(original);
+    expect(h.execs.filter(command => command.includes("docker pull"))).toHaveLength(2);
+  });
+
+  it("does not retry network, missing manifest, storage, or cancelled failures", async () => {
+    for (const message of ["connection reset", "manifest unknown", "no space left on device", "permission denied while trying to connect to the Docker daemon socket"]) {
+      h.pullFailures.push(new Error(message));
+      const before = h.execs.filter(command => command.includes("docker pull")).length;
+      await expect((await runtimeWith(auth)).pullImage("ghcr.io/o/img:1", { force: true })).rejects.toThrow(message);
+      expect(h.execs.filter(command => command.includes("docker pull"))).toHaveLength(before + 1);
+    }
+    const controller = new AbortController();
+    executor.streamExec.mockImplementationOnce(async () => {
+      controller.abort();
+      return { code: 1, output: "denied" };
+    });
+    await expect((await runtimeWith(auth)).pullImage("ghcr.io/o/img:1", {
+      force: true, signal: controller.signal, logger: new BuildLogger(),
+    })).rejects.toThrow("denied");
+    expect(executor.streamExec).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a streamed authentication denial while keeping diagnostics free of credentials", async () => {
+    executor.streamExec.mockResolvedValueOnce({ code: 1, output: "denied: denied" });
+    executor.streamExec.mockResolvedValueOnce({ code: 0, output: "Image is up to date" });
+    const messages: string[] = [];
+    await (await runtimeWith(auth)).pullImage("ghcr.io/public/worker:1", {
+      force: true, logger: new BuildLogger(entry => messages.push(entry.message)),
+    });
+    expect(executor.streamExec).toHaveBeenCalledTimes(2);
+    expect(messages.join("\n")).toContain("retrying public image access");
+    expect(messages.join("\n")).not.toContain(SECRET);
+  });
 });
 
 describe("remote image preparation progress", () => {

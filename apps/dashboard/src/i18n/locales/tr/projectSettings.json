@@ -596,6 +596,8 @@
     "cancel": "İptal",
     "saveChanges": "Değişiklikleri kaydet",
     "close": "Kapat",
+    "rebuildTitle": "Yeniden derle ve dağıt",
+    "rebuildText": "Kaydedildi. Bu ortam değişkenlerini uygulamak için uygulamayı yeniden derleyin.",
     "applyTitle": "Yeniden derleme olmadan uygula",
     "applyText": "Kaydedildi. Çalışma zamanı değişikliklerini uygulamak için yeniden başlatın. İmaj derlenirken kullanılan değerler için yeniden derleyip dağıtın.",
     "applyButton": "Uygula (yeniden başlat, derleme yok)",
@@ -667,6 +669,12 @@
       "description": "Git entegrasyonu, dağıtım tetikleyicileri ve depo sağlığı",
       "repository": "Depo",
       "open": "Aç"
+    },
+    "branch": {
+      "label": "Dağıtım dalı",
+      "description": "Bu ortamın sonraki dağıtımlarında kullanılır. Kaydetmek uygulamayı yeniden dağıtmaz.",
+      "saved": "Dağıtım dalı kaydedildi",
+      "saveFailed": "Dağıtım dalı kaydedilemedi"
     },
     "webhookEndpoint": {
       "title": "Webhook Uç Noktası",
@@ -1254,6 +1262,28 @@
     "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
   },
   "securityAdvisories": {
+    "applyPatch": "Güvenlik yamasını uygula",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Çalışma zamanı ve derleme imajlarını sonraki dağıtımlar için kaydeder.",
+    "bunRuntimePatchDescription": "Seçilen Bun sürümü bağımlılık kurulumunda da kullanılır ve depoda sabitlenen sürümün yerini alır.",
+    "checksEnabled": "Güvenlik duyurularını kontrol et",
+    "checksDescription": "Kapatıldığında bu çalışma alanındaki çalışma zamanı ve ana makine kontrolleri, yeni uyarılar ve yama işlemleri duraklatılır. Veriler ve proje güncelleme onayları korunur.",
+    "checksDisabled": "Bu çalışma alanında güvenlik kontrolleri kapalı.",
+    "manageChecks": "Güvenlik denetimlerini yönet",
+    "retrySettings": "Tekrar dene",
+    "bannerSettings": "Güvenlik bannerı ayarları",
+    "hideBanners": "Güvenlik bannerlarını gizle",
+    "showBanners": "Güvenlik bannerlarını göster",
+    "bannerDescription": "Bu tarayıcı ve çalışma alanında uygulama ve sunucu güvenlik bildirimlerini panonun üstünde göster. Kontroller ve bildirim kanalları ayrı yönetilir.",
+    "manualReviewRequired": "İnceleme gerekli",
+    "manualReviewDescription": "Bu uyarının geçerli olup olmadığını belirlemek için yönergeleri okuyun. Yalnızca koşulları mevcutsa değişiklik yapın.",
+    "manualReviewUnverified": "Geçerlilik doğrulanmadı. Uygulamanın etkilenip etkilenmediğini belirlemek için yapılandırma veya uygulama incelenmelidir.",
+    "openRuntimeConfiguration": "Çalışma ortamı ayarlarını incele",
+    "severity": {
+      "critical": "Kritik",
+      "high": "Yüksek",
+      "moderate": "Orta",
+      "low": "Düşük"
+    },
     "sourceRedeployRequired": "Çalışma ortamını yenilemeden önce bu uygulamayı kayıtlı kaynak kodundan yeniden derleyin. Mevcut imajın doğrulanmış bir kaynak revizyonu yok. Kaynaktan yeniden dağıtım daha yeni kod içerebilir; Dağıtımlar bölümünde inceleyin, ardından bu güvenlik duyurusunu tekrar kontrol edin.",
     "openSourceRedeploy": "Kaynaktan yeniden dağıtımı aç",
     "reviewApps": "Etkilenen uygulamaları incele ({count})",
@@ -1262,7 +1292,7 @@
     "checking": "Kontrol ediliyor…",
     "title": "Güvenlik bildirimleri",
     "unavailable": "Güvenlik kontrolleri kullanılamıyor veya güncel değil. Önceki bildirimler görünür kalır.",
-    "affected": "Geçerli kuruluşta erişebildiğiniz uygulamalara ait bulgular.",
+    "affected": "Bu çalışma alanında erişebildiğiniz uygulama ve sunucuların bulguları.",
     "noMatches": "Kontrol edilen verilerle eşleşen bildirim yok. Bu, tam bir güvenlik açığı taraması değildir.",
     "partial": "Bazı çalışma ortamları kontrol edilemedi.",
     "guidance": "Bildirimi oku",
@@ -1276,6 +1306,47 @@
     "monitoring": "İzlemede görüntüle",
     "persistent": "Etkin bulgular, bildirim kapatıldıktan sonra da burada kalır.",
     "otherApps": "Diğer uygulamalar ({count})",
-    "details": "Ayrıntılar ve öneriler"
+    "details": "Ayrıntılar ve öneriler",
+    "refreshFailed": "Güvenlik güncellemesi başarısız oldu. Yeniden denemeden önce dağıtımı inceleyin.",
+    "refreshAwaitingActions": "Güncellemeye devam etmek için bekleyen dağıtım işlemlerini inceleyin.",
+    "refreshInProgress": "Güvenlik güncellemesi sürüyor. Uyarı çözülmüş sayılmadan önce çalışma ortamı doğrulanacak.",
+    "viewRefresh": "Güncellemeyi görüntüle"
+  },
+  "hostSecurity": {
+    "title": "Sunucu güvenliği",
+    "reviewPatch": "Yamayı incele",
+    "applyPatch": "İncelenen yamayı uygula",
+    "patchDetails": "Sunucu yamasını incele",
+    "interruption": "Listelenen paketler yüklenir ve hizmetler yeniden başlayabilir. Tüm değişiklikleri inceleyin. Çalışan hizmetlerin ayrıca elle yeniden başlatılması gerekebilir.",
+    "rebootRequired": "Yeniden başlatma gerekli. Ardından çalışan çekirdek kontrol edilmelidir.",
+    "manual": "Elle inceleme gerekiyor",
+    "runs": "Çalıştırmalar",
+    "noRuns": "Henüz güvenlik yaması çalıştırılmadı.",
+    "scanTask": "Güvenlik duyurusu inceleme görevi",
+    "scanHint": "Kayıtlı zamanlamaya göre çalışır. Sonuçların süresi dolar; başarısız kontroller artan aralıklarla yeniden denenir.",
+    "schedulerPaused": "Zamanlanmış incelemeler duraklatıldı.",
+    "checkPending": "Kontrol bekleniyor. Önbellekteki veriler güncel olmayabilir.",
+    "verified": "Sürüm kontrolü başarılı",
+    "needsReview": "İnceleme gerekiyor",
+    "nextCheck": "Sonraki inceleme",
+    "notSupported": "Ana makine yamaları müşterinin yönettiği Ubuntu sunucularında kullanılabilir. Sağlayıcının yönettiği altyapının kendi bakım süreci vardır.",
+    "package": "Paket",
+    "current": "Yüklü",
+    "target": "Planlanan sürüm",
+    "reviewResources": "Etkilenen kaynakları incele ({count})",
+    "openRuns": "Sunucu çalıştırmalarını aç",
+    "lastRun": "Son inceleme",
+    "appOpen": "Openship açıkken çalışır.",
+    "scanStates": {
+      "pending": "Bekliyor",
+      "running": "Çalışıyor",
+      "completed": "Tamamlandı",
+      "partial": "Kısmen kontrol edildi",
+      "interrupted": "Kesintiye uğradı"
+    },
+    "reviewReboot": "Yeniden başlatmayı incele",
+    "applyReboot": "Yeniden başlatmayı zamanla",
+    "rebooting": "Yeniden başlatma zamanlandı; çekirdek doğrulaması bekleniyor",
+    "rebootInterruption": "Sunucu bir dakika içinde yeniden başlatılır ve tüm iş yükleri kesintiye uğrar. Openship, bağlantı yeniden kurulduğunda çalışan çekirdeği doğrular."
   }
 }

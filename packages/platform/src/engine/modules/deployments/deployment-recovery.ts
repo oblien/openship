@@ -1,9 +1,63 @@
 import { AppError } from "@repo/core";
+import { diagnostics } from "@repo/core/diagnostics";
 import { repos, type Deployment, type Project } from "@repo/db";
 import { tryWithCloudWorkspaceActivity } from "../../lib/cloud-workspace-lock";
 import { recoverCloudBuildActivity } from "../../lib/cloud-build-activity";
 import { env } from "../../config/env";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
+import { tryWithDeploymentExecutionOwnership } from "../../lib/deployment-execution-ownership";
+
+/** Recover a worker's durable completion acknowledgement without touching its
+ * target host. A terminal status or missing local SSE session proves nothing:
+ * the exact cross-process ownership fence must be available first. */
+export async function recoverDeploymentExecution(
+  dep: Deployment,
+  project: Project,
+  options: { recoverInterrupted?: boolean } = {},
+): Promise<boolean> {
+  if (dep.projectId !== project.id || dep.organizationId !== project.organizationId) return false;
+  if (project.workspaceId) return recoverManagedDeploymentExecution(dep, project, options);
+  return (await tryWithDeploymentExecutionOwnership(dep.id, async () => {
+    // Read only after acquiring ownership: live builds need no session/log read.
+    // Old replicas did not hold a fence for SSH/local builds. Never infer that
+    // those untracked workers died during a rolling upgrade.
+    const session = await repos.deployment.findBuildSessionByDeploymentId(dep.id);
+    if (!session?.executionFenced || !session.startedAt || session.finishedAt) return false;
+    const recovered = await repos.deployment.recoverFencedBuildExecution({
+      deploymentId: dep.id, buildSessionId: session.id, projectId: project.id,
+      organizationId: dep.organizationId, recoverInterrupted: options.recoverInterrupted,
+    });
+    // A deployment can have older session records. Closing one must not claim
+    // quiescence while another execution acknowledgement is still outstanding.
+    return recovered && !(await repos.deployment.hasLiveBuildExecution(dep.id, project.id));
+  })) === true;
+}
+
+/** Reuse the scheduled Cloud recovery job for SSH-connected projects too.
+ * Busy workers are skipped immediately; each row is revalidated under its fence. */
+export async function recoverUnfinishedDeploymentExecutions(): Promise<number> {
+  let afterId: string | undefined;
+  let recovered = 0;
+  for (;;) {
+    const page = await repos.deployment.listUnfinishedFencedBuildExecutions(afterId);
+    for (const candidate of page) {
+      try {
+        // Recover this exact candidate, not the deployment's latest session:
+        // a later finished session must not hide an older orphan indefinitely.
+        // The repository rechecks the candidate's full identity under row locks.
+        if (await tryWithDeploymentExecutionOwnership(candidate.deploymentId, () =>
+          repos.deployment.recoverFencedBuildExecution({ ...candidate, recoverInterrupted: true }),
+        ))
+          recovered++;
+      } catch (error) {
+        diagnostics.error("deployment-recovery", `Recovery remains pending for ${candidate.deploymentId}`, error);
+      }
+    }
+    if (page.length < 200) break;
+    afterId = page[page.length - 1]!.buildSessionId;
+  }
+  return recovered;
+}
 
 function matchesDestination(dep: Deployment, project: Project): boolean {
   const meta = dep.meta as {

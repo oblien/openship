@@ -9,10 +9,11 @@ import { DeploymentActions, DeploymentConfigurationAction } from "./DeploymentAc
 import { DeploymentHeader } from "./DeploymentHeader";
 import { getDeploymentSites } from "./deployment-sites";
 
-const mocks = vi.hoisted(() => ({ push: vi.fn(), invalidate: vi.fn(), stop: vi.fn(), baseDomain: "apps.example.test" }));
+const mocks = vi.hoisted(() => ({ push: vi.fn(), invalidate: vi.fn(), stop: vi.fn(), baseDomain: "apps.example.test", scopeReady: true }));
 let deployment: Pick<DeploymentContextType, "config" | "state" | "deploymentStatus" | "stopDeployment">;
 vi.mock("@/context/DeploymentContext", () => ({ useDeployment: () => deployment }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: mocks.baseDomain }) }));
+vi.mock("@/hooks/use-scoped-resource", () => ({ useResourceScope: () => "user:org:cloud", useResourceScopeReady: () => mocks.scopeReady }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: mocks.invalidate }));
 vi.mock("@/components/i18n-provider", () => ({
@@ -30,6 +31,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.baseDomain = "apps.example.test";
+  mocks.scopeReady = true;
   redeploy.mockResolvedValue(null);
   deployment = {
     config: { ...structuredClone(DEFAULT_CONFIG), projectId: "project", projectName: "Example", publicEndpoints: [] },
@@ -62,6 +64,68 @@ function compose() {
 }
 
 describe("deployment destinations", () => {
+  it("shows Live · Verifying with published links and Stop, without allowing a competing redeploy", async () => {
+    deployment.deploymentStatus = "verifying";
+    deployment.state.deploymentSuccess = false;
+    deployment.state.verification = { startedAt: new Date().toISOString(), urls: ["http://example.test:8080/path"] };
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(copy.status.liveVerifying);
+    expect(host.querySelector(`a[href="http://example.test:8080/path"]`)).not.toBeNull();
+    expect(button(copy.openProject)).toBeDefined();
+    expect(button(copy.redeploy)).toBeUndefined();
+    await act(async () => button(copy.stopDeployment).click());
+    expect(mocks.stop).toHaveBeenCalledOnce();
+  });
+
+  it("does not call a private or unpublished deployment Live or invent links from its configuration", async () => {
+    deployment.deploymentStatus = "verifying";
+    deployment.state.deploymentSuccess = false;
+    deployment.state.verification = { startedAt: new Date().toISOString(), urls: [] };
+    deployment.config.publicEndpoints = [endpoint("not-published.test")];
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(copy.status.verifying);
+    expect(host.querySelector('[role="status"]')?.textContent).not.toContain(copy.status.liveVerifying);
+    expect([...host.querySelectorAll('a')].some(a => a.textContent === copy.openSite)).toBe(false);
+  });
+
+  it.each(["failed", "cancelled"] as const)("hides previously published links after %s verification", async status => {
+    deployment.deploymentStatus = status;
+    deployment.state.verification = { startedAt: new Date().toISOString(), urls: ["https://example.test"] };
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toContain(copy.status[status]);
+    expect(host.querySelector('a[href="https://example.test/"]')).toBeNull();
+  });
+
+  it("waits for the account and Cloud identity before making a navigable investigation link", async () => {
+    deployment.deploymentStatus = "failed";
+    mocks.scopeReady = false;
+    await render(true);
+    expect(button("Investigate with AI").disabled).toBe(true);
+    expect(host.querySelector('a[aria-label="Investigate with AI"]')).toBeNull();
+    mocks.scopeReady = true;
+    await render(true);
+    expect(host.querySelector('a[aria-label="Investigate with AI"]')).not.toBeNull();
+  });
+
+  it.each([false, true])("offers the exact failed deployment to investigate from the shared header (Compose: %s)", async isCompose => {
+    if (isCompose) compose();
+    deployment.deploymentStatus = "failed";
+    await render(true);
+    const link = host.querySelector<HTMLAnchorElement>('a[aria-label="Investigate with AI"]')!;
+    const search = new URL(link.href).searchParams;
+    expect(search.get("deployment")).toBe("deployment");
+    expect(search.get("project")).toBe("project");
+    expect(search.get("scope")).toMatch(/^[a-f0-9]{64}$/);
+    expect(redeploy).not.toHaveBeenCalled();
+    expect(mocks.stop).not.toHaveBeenCalled();
+  });
+
+  it.each(["ready", "building", "deploying", "cancelled"] as const)("does not offer a failed-deploy investigation for %s", async status => {
+    deployment.deploymentStatus = status;
+    await render(true);
+    expect(host.querySelector('a[aria-label="Investigate with AI"]')).toBeNull();
+  });
+
   it("opens the sole public hostname directly", async () => {
     deployment.config.publicEndpoints = [endpoint("  WWW.Example.com  ")];
     await render();

@@ -41,6 +41,7 @@ vi.mock("@/components/shared", async () => ({
 // unrelated providers fetch account/provider state and are not needed here.
 vi.mock("@/context/AuthContext", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
+  useAuth: () => ({ user: null, isLoading: false }),
 }));
 vi.mock("@/context/GitHubContext", () => ({
   GitHubProvider: ({ children }: { children: ReactNode }) => children,

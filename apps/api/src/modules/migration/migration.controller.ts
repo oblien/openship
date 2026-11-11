@@ -842,7 +842,8 @@ export async function streamMigration(c: Context) {
  * POST /migration/migrations/:id/cutover  { confirmationToken, kill? }
  *
  * Confirm the destructive teardown of the originals (kill=true) or finish the
- * migration keeping them stopped (kill=false). A failed destructive cutover can
+ * migration retaining them (kill=false). External imports restart sources by default;
+ * restartOriginals=false leaves both hosts untouched. A failed destructive cutover can
  * be retried with kill=true; it can never be changed back to the keep choice.
  */
 export async function confirmCutover(c: Context) {
@@ -850,8 +851,11 @@ export async function confirmCutover(c: Context) {
   const ctx = getRequestContext(c);
   const id = param(c, "id");
   const body = await c.req
-    .json<{ confirmationToken?: string; kill?: boolean }>()
-    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return ({}) as { confirmationToken?: string; kill?: boolean }; });
+    .json<{ confirmationToken?: string; kill?: boolean; restartOriginals?: boolean }>()
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller");
+      return {} as { confirmationToken?: string; kill?: boolean; restartOriginals?: boolean };
+    });
   if (!body.confirmationToken) {
     return c.json({ error: "confirmationToken is required" }, 400);
   }
@@ -861,6 +865,7 @@ export async function confirmCutover(c: Context) {
     ctx.organizationId,
     body.confirmationToken,
     body.kill === true,
+    body.restartOriginals !== false,
   );
   if (!result.ok) return c.json({ error: result.error }, result.status as 400);
   return c.json({ success: true });

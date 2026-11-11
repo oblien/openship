@@ -4,7 +4,7 @@ import { AppError, PRICING } from "@repo/core";
 import { repos } from "@repo/db";
 import { OperationError, type ManagementPurchase, type ManagementState } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
-import { env, runtimeTarget } from "../../config/env";
+import { env } from "../../config/env";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import {
   oblienCheckoutInputSchema,
@@ -14,6 +14,7 @@ import { ensureCloudNamespace } from "../../lib/oblien-namespace";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { isExpiredCheckout } from "./workspace-checkout";
+import { billingReturnUrl, preserveCheckoutReturnUrls } from "./billing-return-url";
 import {
   managementOffer,
   managementPlan,
@@ -28,7 +29,6 @@ import {
 const ACCESS_REFRESH_MS = 60_000;
 const lock = <T>(org: string, work: () => Promise<T>) =>
   createProvisionLock(`management-billing:${org}`).run(work);
-const billingUrl = () => `${runtimeTarget.dashboard}/billing/manage`;
 export const managementNamespace = (org: string) =>
   `os-manage-${createHash("sha256").update(org).digest("hex").slice(0, 32)}`;
 const key = (org: string, value: string) =>
@@ -295,15 +295,15 @@ export async function purchaseManagement(ctx: ExecutionContext, input: Managemen
           effectiveAt: quote.effectiveAt,
         };
       }
-      const request = {
+      const request = preserveCheckoutReturnUrls({
         ...selected,
         namespace: owner.namespace,
         kind: "subscription" as const,
         billingInterval: "monthly" as const,
         idempotencyKey: key(org, input.idempotencyKey),
-        successUrl: `${billingUrl()}?checkout=success`,
-        cancelUrl: `${billingUrl()}?checkout=cancelled`,
-      };
+        successUrl: `${billingReturnUrl("manage", ctx.organizationId)}&checkout=success`,
+        cancelUrl: `${billingReturnUrl("manage", ctx.organizationId)}&checkout=cancelled`,
+      }, row.checkout?.request, org);
       if (row.checkout && !isDeepStrictEqual(row.checkout.request, request))
         throw new AppError(
           "Resume or cancel the saved Manage checkout before selecting another plan",
@@ -480,7 +480,7 @@ export async function createManagementPortal(ctx: ExecutionContext) {
     portalUrl: (
       await getOblienBillingApi().createPortal({
         namespace: row.namespace,
-        returnUrl: billingUrl(),
+        returnUrl: billingReturnUrl("manage", ctx.organizationId),
       })
     ).url,
   };

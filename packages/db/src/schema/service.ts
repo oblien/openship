@@ -11,7 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { project } from "./project";
 import { deployment } from "./deployment";
-import type { ComposeAdvanced } from "@repo/core";
+import type { ComposeAdvanced, RedirectStatus } from "@repo/core";
 
 /**
  * The compose-owned fields of a service — the shape stored in `importedSpec`
@@ -48,12 +48,15 @@ export type ComposeServiceSpec = {
  * primary route), which stay authoritative for single-route readers.
  */
 export type ServicePublicEndpoint = {
-  port: number;
+  port?: number;
   domainType: "free" | "custom";
   /** Free managed subdomain label (no base domain). */
   domain?: string;
   /** Full custom hostname bound to this port. */
   customDomain?: string;
+  /** Empty string explicitly clears a legacy domain-row redirect. */
+  redirectTo?: string;
+  redirectStatus?: RedirectStatus;
 };
 
 // ─── Services ────────────────────────────────────────────────────────────────
@@ -203,6 +206,8 @@ export const service = pgTable(
     /* ── State ──────────────────────────────────────────────────────────── */
     /** Whether this service should be deployed (allows disabling individual services) */
     enabled: boolean("enabled").notNull().default(true),
+    /** Removed from the desired stack; retain history/env until runtime cleanup and for rollback. */
+    archivedAt: timestamp("archived_at"),
     /** Display / dependency order (lower = deployed first) */
     sortOrder: integer("sort_order").notNull().default(0),
 

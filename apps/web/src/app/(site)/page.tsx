@@ -2,7 +2,6 @@ import {
   Navbar,
   Hero,
   Dashboard,
-  SystemMap,
   HowItWorks,
   DeploymentModels,
   CompletePlatform,
@@ -55,11 +54,10 @@ export default function HomePage() {
       <main>
         <Hero />
         <Dashboard />
-        <SystemMap />
+        <CompletePlatform />
         <HowItWorks />
         <DeploymentModels />
         <AppsShowcase />
-        <CompletePlatform />
         <MailServer />
         <Comparison />
         <OpenSource />

@@ -4,6 +4,7 @@ export * from "./actions";
 export * from "./action-capabilities";
 export * from "./stacks";
 export * from "./package-manager-version";
+export * from "./runtime-image";
 export * from "./stack-roles";
 export * from "./duration";
 export * from "./volumes";
@@ -36,6 +37,7 @@ export * from "./domain-retry";
 export * from "./utils";
 export * from "./runtime-version";
 export * from "./errors";
+export { assertLocalHostExecutionAllowed } from "./local-execution-policy";
 export * from "./operation-state";
 export * from "./service-routing";
 export * from "./volume-spec";
@@ -84,6 +86,7 @@ export {
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./deployment-class";
+export * from "./build-commands";
 export * from "./deployment-ownership";
 export * from "./updates";
 export * from "./proxy-settings";
@@ -137,3 +140,6 @@ export * from "./build-caches";
 
 export * from "./compose-interpolation";
 export * from "./service-env-layers";
+
+export * from "./locale";
+export * from "./concurrency";

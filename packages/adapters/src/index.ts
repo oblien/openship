@@ -102,6 +102,7 @@ export {
 } from "./runtime/docker-transport";
 export {
   transferImage,
+  resolveTransferredImageRef,
   type ImageTransferOptions,
   type ImageTransferResult,
 } from "./runtime/image-transfer";
@@ -128,7 +129,7 @@ export {
   waitForCloudDockerWorkspace,
   waitForCloudWorkspaceStopped,
 } from "./runtime/cloud/workspace-ready";
-export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
+export { cloudDockerProjectPaths, isCloudProjectMountSource } from "./runtime/cloud/docker-paths";
 export { ensureCloudProjectVolume } from "./runtime/cloud/docker-volume";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
@@ -137,7 +138,7 @@ export {
   withManagedCommandTracking,
   currentManagedCommandTracking,
 } from "./runtime/cloud/command-tracking";
-export { BuildLogger } from "./runtime/build-pipeline";
+export { BuildLogger, BuildLogger as PipelineLogger } from "./runtime/build-pipeline";
 export {
   type DeployEnvironment,
   type DeployRouting,
@@ -146,6 +147,7 @@ export {
   type PromptPayload,
   type PromptUserFn,
   runDeployPipeline,
+  DeployCancelledError,
 } from "./runtime/deploy-pipeline";
 export {
   type RoutedDomainInput,
@@ -365,6 +367,7 @@ export type { UnreachableStaticRoot } from "./system/proxy/import";
 export {
   edgeProxy,
   edgeProxyFor,
+  loopbackPortInventoryFor,
   buildProxyRouteIndex,
   collectProxyCerts,
 } from "./system/proxy/api";
@@ -661,3 +664,5 @@ export { inspectDockerSwarm } from "./runtime/swarm/inspect";
 export { SwarmRuntime } from "./runtime/swarm/runtime";
 export { assertSwarmServiceConfig } from "./runtime/swarm/spec";
 export { prepareRemoteSource } from "./runtime/remote-source";
+
+export { withDeploymentProgress } from "./runtime/deployment-progress";

@@ -7,4 +7,6 @@ const { loadInstanceEnvironment } = await import("./lib/instance-environment");
 await loadInstanceEnvironment();
 const { installCloudErrorDestination } = await import("./lib/cloud-error-destination");
 await installCloudErrorDestination();
+const { startCloudTelemetry } = await import("./lib/cloud-telemetry");
+await startCloudTelemetry();
 await import("./server");

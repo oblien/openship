@@ -377,6 +377,8 @@ export async function getProjectGeo(
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", projectId);
   }
+  // A reserved domain is not published until the first deployment succeeds.
+  if (!project.activeDeploymentId) return EMPTY;
 
   const toMs = to ? new Date(to).getTime() : Date.now();
   const fromMs = from ? new Date(from).getTime() : Math.floor(toMs / 86_400_000) * 86_400_000 - 6 * 86_400_000;

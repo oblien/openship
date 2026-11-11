@@ -419,6 +419,8 @@
       "cancelled": "İptal Edildi",
       "failed": "Başarısız",
       "readyWarnings": "Uyarılarla hazır",
+      "verifying": "Doğrulanıyor",
+      "liveVerifying": "Yayında · Doğrulanıyor",
       "ready": "Hazır",
       "building": "Derleniyor"
     },

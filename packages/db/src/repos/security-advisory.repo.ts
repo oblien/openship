@@ -1,11 +1,56 @@
 import { and, eq, gt, isNull, isNotNull, lt, ne, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
-import { advisoryFeed, projectSecurity, securityRefreshAttempt } from "../schema/security-advisory";
+import { advisoryFeed, projectSecurity, securityRefreshAttempt, serverSecurity, securityScanState } from "../schema/security-advisory";
+import { servers } from "../schema/servers";
 import { project } from "../schema/project";
 import { organization } from "../schema/organization";
 
 export function createSecurityAdvisoryRepo(db: Database) {
   return {
+    async scanState(organizationId: string) {
+      return db.query.securityScanState.findFirst({ where: eq(securityScanState.organizationId, organizationId) });
+    },
+    async startScan(organizationId: string, startedAt: Date) {
+      await db.insert(securityScanState).values({ organizationId, startedAt, status: "running" })
+        .onConflictDoUpdate({ target: securityScanState.organizationId, set: { startedAt, finishedAt: null, status: "running" } });
+    },
+    async finishScan(organizationId: string, startedAt: Date, status: string) {
+      await db.update(securityScanState).set({ status, finishedAt: new Date() })
+        .where(and(eq(securityScanState.organizationId, organizationId), eq(securityScanState.startedAt, startedAt)));
+    },
+    async host(serverId: string) {
+      return db.query.serverSecurity.findFirst({ where: eq(serverSecurity.serverId, serverId) });
+    },
+    async hosts(organizationId: string) {
+      return db.query.serverSecurity.findMany({ where: eq(serverSecurity.organizationId, organizationId) });
+    },
+    async hostCandidates(probeKey: string, limit = 20) {
+      return db.select({ server: servers }).from(servers)
+        .innerJoin(organization, eq(organization.id, servers.organizationId))
+        .leftJoin(serverSecurity, eq(serverSecurity.serverId, servers.id))
+        .where(and(isNull(servers.workspaceId), eq(servers.purpose, "deployment"),
+          eq(organization.securityAdvisoryChecksEnabled, true),
+          or(isNull(serverSecurity.checkedAt), isNull(serverSecurity.nextInspectionAt),
+            gt(servers.updatedAt, serverSecurity.checkedAt),
+            ne(serverSecurity.probeKey, probeKey), lte(serverSecurity.nextInspectionAt, new Date()))))
+        .orderBy(sql`${serverSecurity.checkedAt} ASC NULLS FIRST`, servers.id).limit(limit);
+    },
+    async saveHost(data: typeof serverSecurity.$inferInsert) {
+      await db.insert(serverSecurity).values(data).onConflictDoUpdate({ target: serverSecurity.serverId,
+        set: data, setWhere: or(isNull(serverSecurity.checkedAt), lte(serverSecurity.checkedAt, sql`excluded.checked_at`)) });
+    },
+    async checksEnabled(organizationId: string) {
+      const row = await db.query.organization.findFirst({
+        where: eq(organization.id, organizationId),
+        columns: { securityAdvisoryChecksEnabled: true },
+      });
+      return row?.securityAdvisoryChecksEnabled ?? true;
+    },
+    async setChecksEnabled(organizationId: string, checksEnabled: boolean) {
+      await db.update(organization)
+        .set({ securityAdvisoryChecksEnabled: checksEnabled })
+        .where(eq(organization.id, organizationId));
+    },
     async organizationsForScan(afterId?: string, limit = 100) {
       return db
         .select({ id: organization.id })
@@ -18,13 +63,17 @@ export function createSecurityAdvisoryRepo(db: Database) {
       const rows = await db
         .select({ project })
         .from(project)
+        .innerJoin(organization, eq(organization.id, project.organizationId))
         .leftJoin(projectSecurity, eq(projectSecurity.projectId, project.id))
         .where(
           and(
             isNull(project.deletedAt),
+            eq(organization.securityAdvisoryChecksEnabled, true),
             isNotNull(project.activeDeploymentId),
             or(
               isNull(projectSecurity.evaluatedAt),
+              isNull(projectSecurity.nextInspectionAt),
+              lte(projectSecurity.nextInspectionAt, new Date()),
               isNull(projectSecurity.deploymentId),
               lt(projectSecurity.feedRevision, feedRevision),
               ne(projectSecurity.deploymentId, project.activeDeploymentId),
@@ -86,13 +135,15 @@ export function createSecurityAdvisoryRepo(db: Database) {
       deploymentId: string,
       inventory: unknown,
       checkedAt: Date,
+      nextInspectionAt = new Date(checkedAt.getTime() + 6 * 3_600_000),
+      probeFailures = 0,
     ) {
       await db
         .insert(projectSecurity)
-        .values({ projectId, organizationId, deploymentId, inventory, checkedAt })
+        .values({ projectId, organizationId, deploymentId, inventory, checkedAt, nextInspectionAt, probeFailures })
         .onConflictDoUpdate({
           target: projectSecurity.projectId,
-          set: { deploymentId, inventory, checkedAt },
+          set: { deploymentId, inventory, checkedAt, nextInspectionAt, probeFailures },
           setWhere: or(
             isNull(projectSecurity.checkedAt),
             lte(projectSecurity.checkedAt, sql`excluded.checked_at`),
@@ -118,7 +169,7 @@ export function createSecurityAdvisoryRepo(db: Database) {
     async claimAttempt(
       id: string,
       projectId: string,
-      verification?: { advisoryId: string; serviceId: string; image: string },
+      verification?: { advisoryId: string; serviceId: string | null; image?: string },
     ) {
       const rows = await db
         .insert(securityRefreshAttempt)
@@ -126,6 +177,12 @@ export function createSecurityAdvisoryRepo(db: Database) {
         .onConflictDoNothing()
         .returning();
       return rows.length === 1;
+    },
+    async attemptsForProject(projectId: string) {
+      return db.select().from(securityRefreshAttempt)
+        .where(eq(securityRefreshAttempt.projectId, projectId))
+        .orderBy(sql`${securityRefreshAttempt.createdAt} DESC`)
+        .limit(100);
     },
     async pendingAttempts() {
       return db

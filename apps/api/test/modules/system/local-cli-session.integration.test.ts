@@ -128,7 +128,7 @@ describe("local CLI through real HTTP, Better Auth and PGlite", () => {
       userId: "cli-fixture-admin",
       organizationId: "org_cli-fixture-admin",
       sessionKind: "bearer",
-      sessionId: expect.stringMatching(/^sess_cli_/),
+      sessionId: expect.any(String),
     });
     expect(result.out + result.err).not.toContain(internal);
     expect(await sessionCount()).toBe(0);

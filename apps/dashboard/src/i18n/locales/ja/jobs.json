@@ -1,10 +1,9 @@
 {
-  "cloudSubtitle": "管理対象のサーバーでスケジュール実行または手動実行するコマンド。",
+  "cloudSubtitle": "Cloud サーバーと接続済みサーバーでコマンドを定期実行または手動実行。",
   "create": {
     "commandHint": "選択した各サーバーで実行します。コンテナ内のタスクには docker run --rm を使用してください。",
-    "cloudServersHint": "既存のサーバーを使うか、独立したサブスクリプションを持つ専用サーバーを追加できます。",
-    "cloudUsageHint": "ジョブは選択したサーバーのリソースと利用枠を共有します。実行には有効なプランが必要です。",
-    "addDedicatedServer": "専用サーバーを追加",
+    "cloudServersHint": "Cloud サーバー、または Manage 経由で接続したサーバーを選択します。",
+    "cloudUsageHint": "Cloud のジョブはサーバーのプランと利用枠を使用します。SSH のジョブには有効な Manage アクセスが必要です。",
     "title": "新規ジョブ",
     "name": "名前",
     "namePlaceholder": "毎晩の DB バキューム",

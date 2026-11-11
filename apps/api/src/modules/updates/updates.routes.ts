@@ -15,6 +15,30 @@ const r = secureRouter(new Hono(), {
   basePath: "/api/updates",
 });
 r.get(
+  "/security/policy",
+  {
+    tag: "updates:read",
+    mcp: {
+      description:
+        "Read the workspace runtime security advisory check setting and whether this account can change it.",
+    },
+  },
+  ctrl.securityCheckPolicy,
+);
+r.put(
+  "/security/policy",
+  {
+    tag: "updates:write",
+    auditHandledByOperation: true,
+    body: UpdateCollectionSchemas.setSecurityCheckPolicy.input,
+    mcp: {
+      description:
+        "Enable or disable runtime security advisory checks for this workspace. Only owners and admins can change this setting.",
+    },
+  },
+  ctrl.setSecurityCheckPolicy,
+);
+r.get(
   "/advisories",
   {
     tag: "updates:read",

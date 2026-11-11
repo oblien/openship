@@ -69,6 +69,7 @@ vi.mock("@repo/db", () => ({
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
+      setVerification: vi.fn(async () => true),
       findById: async (id: string) => h.deploymentById.get(id) ?? h.previousDeployment,
     },
     project: {
@@ -272,7 +273,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     rename: vi.fn(async () => undefined), writeFile: vi.fn(async () => undefined),
   } as unknown as CommandExecutor;
   h.services = [{ id: "svc-web", name: "web", projectId: "p1", kind: "compose", enabled: true, exposed: true,
-    ports: ["8080", "9090"], image: "web:v1", dependsOn: [], environment: {}, volumes: ["data:/data"],
+    ports: ["8080", "9090"], image: "web:v1", dependsOn: [], environment: {}, volumes: ["data:/data", "./config:/etc/web:ro"],
     exposedPort: "8080", domainType: "free", domain: "app", advanced: null,
     publicEndpoints: [{ port: 8080, domain: "app", domainType: "free" }, { port: 9090, domain: "console", domainType: "free" }] },
   { id: "svc-api", name: "api", projectId: "p1", kind: "compose", enabled: true, exposed: false,
@@ -293,6 +294,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     routing, ssl: { provisionCert: vi.fn(), verifyCert: vi.fn() } as never });
   expect(result.status).toBe("ready");
   expect(result.routeWarnings ?? []).toEqual([]);
+  expect(configurations.find(config => config.serviceName === "web")?.volumes).toEqual(["data:/data", "./config:/etc/web:ro"]);
   expect(configurations.find(config => config.serviceName === "web")?.cloudEndpoints).toEqual([
     { hostname: "app.opsh.io", port: 8080, custom: false }, { hostname: "console.opsh.io", port: 9090, custom: false },
   ]);
@@ -472,7 +474,7 @@ describe("compose deploy — host channel unavailable", () => {
     await f.run();
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).not.toHaveBeenCalled();
     expect(f.activate).toHaveBeenCalledOnce();
@@ -491,7 +493,7 @@ describe("compose deploy — host channel unavailable", () => {
     await expect(f.run()).rejects.toThrow("registry unavailable");
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(
       dep.id, new Date(start.getTime() + 20_000),
@@ -894,9 +896,11 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.pull).toHaveBeenCalledTimes(1);
     expect(f.activate).not.toHaveBeenCalled();
     expect(f.runtime.destroy).not.toHaveBeenCalled();
-    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ serviceId: "svc-db", startedAt: expect.any(Date) }),
-    );
+    // Both image requests were admitted before cancellation. Neither may activate;
+    // each attempted service keeps its own timing instead of inheriting a sibling's.
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledTimes(2);
+    expect(h.startServiceDeploymentTiming.mock.calls.map(([input]) => input.serviceId).sort())
+      .toEqual(["svc-api", "svc-db"]);
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(dep.id, expect.any(Date));
   });
 
@@ -2298,6 +2302,47 @@ describe("compose deploy — host channel unavailable", () => {
     }
   });
 
+  it.each([false, true])(
+    "uses real edge inventory with an unavailable host channel (read failure: %s)",
+    async (unreadable) => {
+      vi.stubEnv("OPENSHIP_HOST_CONTROL", "false");
+      const executor = await demotedExecutor();
+      const f = imageRefreshFixture();
+      h.services[1]!.ports = ["8080"];
+      h.services[1]!.updatedAt = new Date(2000);
+      const read = vi.fn(async () => {
+        if (unreadable) throw new Error("socket edge unreadable");
+        return new Set([20000]);
+      });
+      h.prepareTargetPinnedHostPorts.mockImplementation(async ({ edgeProxy }) => {
+        await edgeProxy.listLoopbackUpstreamPortsStrict();
+        return [];
+      });
+      const run = () =>
+        f.run(
+          {
+            executor,
+            hostPortTarget: localHostPortTarget,
+            routing: {
+              registerRoute: vi.fn(),
+              removeRoute: vi.fn(),
+              listLoopbackUpstreamPortsStrict: read,
+            },
+          },
+          "manual",
+          { routeStrategy: "loopback-port" },
+        );
+      if (unreadable) {
+        await expect(run()).rejects.toThrow("socket edge unreadable");
+        expect(f.activate).not.toHaveBeenCalled();
+        expect(h.allocateAndReservePinnedHostPort).not.toHaveBeenCalled();
+      } else {
+        expect((await run()).status).toBe("ready");
+      }
+      expect(read).toHaveBeenCalled();
+    },
+  );
+
   it("stays quiet when the channel is fine", async () => {
     // Nothing was demoted, so there is nothing to report — a notice here would be a
     // false claim about the box, which is how the dashboard came to name the wrong
@@ -2661,11 +2706,12 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.convergeTargetHostPortClaimsUnlocked).not.toHaveBeenCalled();
   });
 
-  it("retains every claim while a started service has an indeterminate outcome", async () => {
+  it.each(["Channel open failure: connection lost", "database unavailable"])("retains a released runtime and claims when publication is indeterminate (%s)", async failure => {
     h.upsertServiceDeployment
-      .mockRejectedValueOnce(new Error("Channel open failure: connection lost"))
+      .mockRejectedValueOnce(new Error(failure))
       .mockResolvedValueOnce(undefined);
     const { logger } = recordingLogger();
+    const runtime = startingRuntime();
 
     const result = await deployComposeServices(
       {
@@ -2674,7 +2720,7 @@ describe("compose deploy — host channel unavailable", () => {
         routeStrategy: "loopback-port",
       } as unknown as Project,
       dep,
-      startingRuntime(),
+      runtime,
       logger,
       {
         executor: { exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })) } as never,
@@ -2694,6 +2740,7 @@ describe("compose deploy — host channel unavailable", () => {
     );
 
     expect(result.status).toBe("reconciling");
+    expect(runtime.destroy).not.toHaveBeenCalled();
     expect(h.allocateAndReservePinnedHostPort).toHaveBeenCalled();
     expect(h.releaseNewPinnedHostPortClaims).not.toHaveBeenCalled();
     expect(h.convergeTargetHostPortClaims).not.toHaveBeenCalled();
@@ -2708,6 +2755,18 @@ it("rejects an invalid GPU request before pulling images or replacing any siblin
   h.services[0]!.updatedAt = new Date(2000);
   h.services[1]!.advanced = { gpus: { driver: "amd", count: 1 } };
   await expect(fixture.run()).rejects.toThrow(/only.*NVIDIA/);
+  expect(fixture.pull).not.toHaveBeenCalled();
+  expect(fixture.activate).not.toHaveBeenCalled();
+  expect(fixture.runtime.destroy).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("refuses an external namespace provider before any cutover (scoped=%s)", async (strictScope) => {
+  const fixture = imageRefreshFixture();
+  h.services[0]!.advanced = { networkMode: "container:openship-edge" };
+  h.services[1]!.advanced = { networkMode: "service:db" };
+  await expect(fixture.run(strictScope
+    ? { strictScope: true, targetServiceIds: new Set(["svc-api"]) }
+    : {})).rejects.toThrow("direct container references");
   expect(fixture.pull).not.toHaveBeenCalled();
   expect(fixture.activate).not.toHaveBeenCalled();
   expect(fixture.runtime.destroy).not.toHaveBeenCalled();

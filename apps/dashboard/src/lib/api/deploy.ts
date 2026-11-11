@@ -58,7 +58,7 @@ export interface RestorePlanUI {
   reason?: string;
 }
 
-export type PrepareProjectSource = { includeEnv?: boolean; rootDirectory?: string } & (
+export type PrepareProjectSource = { projectId?: string; includeEnv?: boolean; rootDirectory?: string } & (
   | {
       source?: "github";
       serverId?: string;
@@ -104,10 +104,9 @@ export interface PrepareComposeService {
   domain?: string;
   customDomain?: string;
   domainType?: "free" | "custom";
-  /** Multi-route: additional public routes (one per port). Reuses the shared
-   *  PublicEndpoint shape so the routing card edits them directly; entry[0]
-   *  mirrors the scalar exposedPort/domain above. */
-  publicEndpoints?: PublicEndpoint[];
+  /** Source scans and saved rows may carry numeric ports. Normalize these to
+   * UI endpoints before editing or serializing a deployment request. */
+  publicEndpoints?: Array<Omit<Partial<PublicEndpoint>, "port"> & { port?: number | string | null }>;
 }
 
 export interface PrepareAppConfig {
@@ -186,6 +185,8 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
   /** The compose path this scan used (request value, or the one openship.json
    *  declared). Absent when the root was detected normally. */
   composePath?: string;
+  composeRevision?: string;
+  composeChanges?: { added: string[]; changed: string[]; removed: string[] };
   services?: PrepareComposeService[];
   monorepoApps?: PrepareMonorepoApp[];
   monorepoWorkspace?: PrepareMonorepoWorkspace;
@@ -343,6 +344,7 @@ export const deployApi = {
   /** Create deployment + build session for an existing project */
   buildAccess: (payload: {
     projectId: string;
+    composeRevision?: string;
     branch?: string;
     environment?: string;
     envVars?: Record<string, string>;

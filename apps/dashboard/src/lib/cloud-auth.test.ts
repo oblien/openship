@@ -119,3 +119,26 @@ describe("invitation post-auth return", () => {
       expect(validateReturnTo(unsafe)).toBeNull();
   });
 });
+
+it("preserves a signed MCP query through login and MFA without accepting oversized unrelated destinations", () => {
+  const query = new URLSearchParams({
+    client_id: "client",
+    redirect_uri: "https://client.example/callback",
+    scope: "openid profile email offline_access",
+    state: "s".repeat(400),
+    code_challenge: "c".repeat(43),
+    code_challenge_method: "S256",
+    resource: "https://ops.example/api/mcp",
+    sig: "signed-query",
+    exp: "2000000000",
+  });
+  const destination = `/mcp/authorize?${query}`;
+  expect(destination.length).toBeGreaterThan(512);
+  let href = authContinuationHref("/login", destination);
+  for (const route of ["/register", "/two-factor", "/login"] as const) {
+    href = buildAuthPageHref(route, new URL(href, "https://app.example").searchParams);
+    expect(getPostAuthRedirect(new URL(href, "https://app.example").searchParams)).toBe(destination);
+  }
+  expect(validateReturnTo(`/cloud-authorize?${query}`)).toBeNull();
+  expect(validateReturnTo(`/mcp/authorize?state=${"s".repeat(8192)}`)).toBeNull();
+});

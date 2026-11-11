@@ -33,7 +33,7 @@ const response = (totalRequests: number) => ({ data: {
 } });
 function project(id: string, domains = ["primary.example.com", "second.example.com"]) {
   return {
-    id, name: id, slug: id, description: "", framework: "docker",
+    id, name: id, slug: id, description: "", framework: "docker", activeDeploymentId: "published",
     hasServer: true, workloadType: "web" as const, deployTarget: "server" as const,
     domains: domains.map((domain, i) => ({ domain, primary: i === 0 })),
   };
@@ -85,6 +85,24 @@ afterEach(async () => {
 });
 
 describe("project analytics requests and recovery (#396)", () => {
+  it("waits for the first deployment to publish, then starts analytics without reopening Overview", async () => {
+    h.info.mockResolvedValue({
+      success: true,
+      data: { project: { ...project(id), activeDeploymentId: null } },
+    });
+    await renderProject();
+    expect(h.get).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain(
+      "Analytics will appear here after the deployed app starts receiving traffic.",
+    );
+    await act(async () =>
+      settings.setProjectData((p) => ({ ...p, activeDeploymentId: "published" })),
+    );
+    expect(h.get).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("3.1K");
+  });
+
   it.each([false, true])("counts all project domains in one first request (initial project present: %s)", async (initial) => {
     await renderProject(id, initial);
     expect(h.get).toHaveBeenCalledOnce();

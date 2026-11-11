@@ -10,27 +10,27 @@ COPY --from=node-build /usr/local/bin/node /usr/local/bin/node
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     node build.mjs
 
-# ─── Build stage ────────────────────────────────────────
+# ─── Dependencies ───────────────────────────────────────
 # Keep the dependency installer on .bun-version.
-FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS builder
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS dependencies
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
-COPY tsconfig.base.json ./
+# Preserve workspace paths without making installation depend on source edits.
+# Email's postinstall also installs its two nested packages.
+COPY --parents apps/*/package.json packages/*/package.json apps/email/*/package.json apps/email/*/bun.lock ./
 COPY patches/ ./patches/
-COPY packages/ ./packages/
-COPY apps/ ./apps/
-COPY --from=actions-runner /runner/dist ./packages/actions-runner/dist
-
-# The build died in "Resolving dependencies" — bun's network metadata resolution
-# for the whole monorepo, slow enough to trip the build's idle timeout.
-# --frozen-lockfile skips resolution entirely (installs straight from bun.lock),
-# and the BuildKit cache mount reuses bun's download store across builds so a
-# rebuild doesn't re-fetch the graph. (Cache mount needs BuildKit — Compose v2
-# enables it by default.)
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile \
- && cd apps/api && bun run build
+    bun install --frozen-lockfile
+
+# ─── Build stage ────────────────────────────────────────
+FROM dependencies AS builder
+COPY tsconfig.base.json ./
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+COPY apps/email/engine/ ./apps/email/engine/
+COPY --from=actions-runner /runner/dist ./packages/actions-runner/dist
+RUN cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────
 FROM ${NODE_IMAGE} AS runner
@@ -50,7 +50,7 @@ WORKDIR /app
 #     plane, not an optional extra.
 #   • ca-certificates provides the OS trust store used by git and SSH helpers.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-client rsync git ca-certificates \
+ && apt-get install -y --no-install-recommends openssh-client rsync git ca-certificates util-linux \
  && rm -rf /var/lib/apt/lists/*
 
 # @repo/* exports TypeScript source through workspace links under packages/.
@@ -63,9 +63,10 @@ RUN apt-get update \
 #   • the compiled apps/api/dist (+ apps/api/package.json)
 # Copying only apps/api/dist + node_modules (the previous version) made
 # @repo/db unresolvable and the API crashed on startup.
+# Keep this large, stable layer independent of application source and compilation.
+COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=builder /app/package.json /app/bun.lock /app/pnpm-workspace.yaml /app/tsconfig.base.json ./
 COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api ./apps/api
 # The iRedMail engine is DATA, not code: mail setup step 7 tars this tree and
 # stages it onto the target box (see resolveLocalEngineDir). Without it the

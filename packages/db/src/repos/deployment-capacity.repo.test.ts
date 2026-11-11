@@ -77,6 +77,22 @@ beforeEach(async () => {
 });
 
 describe("resource edits and deployment admission", () => {
+  it("records verification only for the owning active attempt without altering encrypted configuration or the live release", async () => {
+    const composeServices = [{ name: "api", environment: { SECRET: "preserve-this-secret" } }];
+    const dep = await repo.create({ ...deploy, status: "deploying", meta: { composeServices, runtimeMode: "docker" } });
+    const verification = { startedAt: new Date().toISOString(), urls: ["https://app.example.test"] };
+    const stored = (await db.select().from(schema.deployment).where(eq(schema.deployment.id, dep!.id)))[0];
+    expect(await repo.setVerification(dep!.id, "another-org", verification)).toBe(false);
+    expect(await repo.setVerification(dep!.id, "org", verification)).toBe(true);
+    const after = (await db.select().from(schema.deployment).where(eq(schema.deployment.id, dep!.id)))[0];
+    expect(after.meta).toEqual({ ...(stored.meta as Record<string, unknown>), verification });
+    expect(after.status).toBe("deploying");
+    expect((await repo.findById(dep!.id))?.meta).toMatchObject({ composeServices, verification });
+    expect((await db.select().from(schema.project))[0].activeDeploymentId).toBe("active");
+    await repo.updateStatus(dep!.id, "cancelled");
+    expect(await repo.setVerification(dep!.id, "org", { ...verification, urls: [] })).toBe(false);
+    expect((await repo.findById(dep!.id))?.status).toBe("cancelled");
+  });
   it("commits both resource edits and the queue while preserving other service configuration", async () => {
     const before = await db.select().from(schema.service);
     const dep = await repo.create(deploy, changes());

@@ -20,7 +20,9 @@ import {
   applyAppearance,
   bootAppearance,
   APPEARANCE_CACHE_POINTER,
+  persistThemeCookie,
 } from "@/lib/appearance-runtime";
+import type { ThemePreference } from "@/lib/theme-cookie";
 
 type Theme = ThemeMode | "system";
 interface ThemeContextValue {
@@ -82,12 +84,20 @@ function legacyAppearance() {
         : "light",
   );
 }
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({
+  children,
+  initialTheme,
+}: {
+  children: React.ReactNode;
+  initialTheme?: ThemePreference | null;
+}) {
   const { user, isLoading: authLoading } = useAuth();
   const owner = `${getApiBaseUrl()}:${user?.id ?? "anonymous"}`;
   const ownerRef = useRef(owner);
   ownerRef.current = owner;
-  const [saved, setSaved] = useState<AppearancePreferences>(defaultAppearance());
+  const [saved, setSaved] = useState<AppearancePreferences>(() =>
+    defaultAppearance(initialTheme?.active ?? "light"),
+  );
   const [draft, setDraft] = useState<AppearancePreferences | null>(null);
   const [stateOwner, setStateOwner] = useState(owner);
   const [ready, setReady] = useState(false);
@@ -117,7 +127,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setReady(false);
     const local = user ? cachedAppearance(appearanceCacheKey(owner)) : null;
-    const fallback = local ?? legacyAppearance();
+    const fallback =
+      local ?? (initialTheme ? defaultAppearance(initialTheme.active) : legacyAppearance());
     setSaved(fallback);
     setInitialized(true);
     if (!user) {
@@ -160,9 +171,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [owner, user?.id, authLoading, reload]);
-  const scopedSaved = stateOwner === owner ? saved : defaultAppearance();
+  const scopedSaved =
+    stateOwner === owner ? saved : defaultAppearance(initialTheme?.active ?? "light");
   const preferences = stateOwner === owner ? (draft ?? saved) : scopedSaved;
-  const [systemDark, setSystemDark] = useState(false);
+  const [systemDark, setSystemDark] = useState(
+    initialTheme?.active === "system" && initialTheme.resolved !== "light",
+  );
   useEffect(() => {
     const query = matchMedia("(prefers-color-scheme: dark)");
     setSystemDark(query.matches);
@@ -172,13 +186,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const resolvedTheme =
     typeof window === "undefined"
-      ? "light"
+      ? initialTheme?.resolved ?? "light"
       : resolveAppearance(preferences, isDesktop(), systemDark);
   useEffect(() => {
     if (!initialized || stateOwner !== owner) return;
     applyAppearance(preferences, resolvedTheme);
     setRevision((value) => value + 1);
-    if (!draft && user) cacheAppearance(appearanceCacheKey(owner), saved, resolvedTheme);
+    if (!draft) {
+      if (user) cacheAppearance(appearanceCacheKey(owner), saved, resolvedTheme);
+      else persistThemeCookie(saved, resolvedTheme);
+    }
   }, [preferences, resolvedTheme, initialized, stateOwner, owner, user?.id, draft, saved]);
   useEffect(() => {
     const changed = (event: StorageEvent) => {
@@ -270,8 +287,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 /** Uses the same cached variables as the runtime painter, before styles/hydration arrive. */
-export function ThemeScript() {
-  const script = `(${bootAppearance.toString()})(${JSON.stringify(Object.fromEntries(Object.entries(APPEARANCE_DEFAULTS).map(([mode, values]) => [mode, { "--th-bg-page": values["--th-bg-page"] }])))},${JSON.stringify(APPEARANCE_TOKENS.map(({ key, type }) => ({ key, type })))});`;
+export function ThemeScript({ initialTheme }: { initialTheme?: ThemePreference | null }) {
+  const script = `(${bootAppearance.toString()})(${JSON.stringify(Object.fromEntries(Object.entries(APPEARANCE_DEFAULTS).map(([mode, values]) => [mode, { "--th-bg-page": values["--th-bg-page"] }])))},${JSON.stringify(APPEARANCE_TOKENS.map(({ key, type }) => ({ key, type })))},${JSON.stringify(initialTheme ?? null)});`;
   return (
     <script dangerouslySetInnerHTML={{ __html: script.replaceAll("</script", "<\\/script") }} />
   );

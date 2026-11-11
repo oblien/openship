@@ -71,6 +71,8 @@ const ANALYTICS_ROLLUP_RETENTION_DAYS = 400;
 const RESOURCE_USAGE_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
+  { key: "assistant:automations", label: "Assistant automations", defaultCron: "*/15 * * * * *",
+    run: async () => (await import("../assistant/automation-events")).runAssistantAutomationSweep() },
   { key: "github:pr-previews", label: "Pull request preview environments", defaultCron: "*/30 * * * * *",
     run: async () => { await (await import("../projects/pull-request-previews")).runPullRequestPreviewsSweep(); return { checked: true }; } },
   {
@@ -459,8 +461,8 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
     key: "build-cache:gc",
     label: "Docker build-cache garbage collection",
-    // Build cache is daemon-wide and has no reliable project label. Keep a 5 GiB
-    // LRU budget on each Docker host instead of coupling it to image retention.
+    // Native build cache is daemon-wide and has no reliable project label, so it keeps a
+    // 5 GiB LRU budget per Docker host; managed project caches use the disk-relative budget.
     defaultCron: "37 4 * * *",
     run: async () => {
       const r = await runBuildCacheGcSweep();

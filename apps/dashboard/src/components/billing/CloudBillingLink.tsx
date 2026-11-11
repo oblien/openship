@@ -12,6 +12,7 @@ import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHead
 import BillingTabSkeleton from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
 import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
 import type { BillingTab } from "@/app/(dashboard)/billing/_components/billing-tabs";
+import { cloudSpaceHref, type CloudPlanTab } from "@/lib/cloud-spaces";
 
 const organizations = (
   authClient as unknown as {
@@ -31,19 +32,30 @@ export function CloudBillingLink({
   embedded = false,
   newServer = false,
   purchase,
+  returnQuery,
+  serverId,
+  planTab,
 }: {
   organizationId: string;
-  tab: BillingTab;
+  tab: BillingTab | "manage" | "home";
   workspaceId?: string;
   embedded?: boolean;
   newServer?: boolean;
   purchase?: Parameters<typeof newServerBillingHref>[1];
+  returnQuery?: Record<string, string | string[] | undefined>;
+  serverId?: string;
+  planTab?: CloudPlanTab;
 }) {
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let disposed = false;
-    if (!organizationId || organizationId.length > 255 || (workspaceId?.length ?? 0) > 255) {
+    if (
+      !organizationId ||
+      organizationId.length > 255 ||
+      (workspaceId?.length ?? 0) > 255 ||
+      (serverId?.length ?? 0) > 255
+    ) {
       setFailed(true);
       return;
     }
@@ -56,7 +68,34 @@ export function CloudBillingLink({
           return;
         }
         setActiveOrganizationId(organizationId);
-        window.location.assign(newServer ? newServerBillingHref(organizationId, purchase) : scopedBillingHref(`/billing/${tab}`, { workspaceId, organizationId }));
+        // Keep receipt reconciliation across an authorized organization switch,
+        // without carrying flags that could start another purchase.
+        const query = new URLSearchParams();
+        for (const key of [
+          "checkout",
+          "topup",
+          "session_id",
+          "tier",
+          "interval",
+          "offer",
+          "plan",
+        ]) {
+          const value = returnQuery?.[key];
+          if (typeof value === "string") query.set(key, value);
+        }
+        const path = tab === "home" ? "/billing" : `/billing/${tab}`;
+        if (tab === "manage" && (returnQuery?.tab === "overview" || returnQuery?.tab === "payment"))
+          query.set("tab", returnQuery.tab);
+        if (serverId) {
+          query.set("organizationId", organizationId);
+          if (returnQuery?.changePlan === "1") query.set("changePlan", "1");
+          window.location.assign(cloudSpaceHref(serverId, planTab, query));
+        } else
+          window.location.assign(
+            newServer
+              ? newServerBillingHref(organizationId, purchase)
+              : scopedBillingHref(`${path}?${query}`, { workspaceId, organizationId }),
+          );
       })
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/components/billing/CloudBillingLink");
@@ -65,15 +104,21 @@ export function CloudBillingLink({
     return () => {
       disposed = true;
     };
-  }, [organizationId, tab, workspaceId, newServer, purchase]);
+  }, [organizationId, tab, workspaceId, newServer, purchase, returnQuery, serverId, planTab]);
   const content = failed ? (
     <div role="alert" className="space-y-4 rounded-2xl bg-card p-5">
       <p className="text-sm text-muted-foreground">{t.billing.creditAlert.wrongOrganization}</p>
-      <Button asChild variant="secondary"><Link href="/billing">{t.billing.creditAlert.backToBilling}</Link></Button>
+      <Button asChild variant="secondary">
+        <Link href="/billing">{t.billing.creditAlert.backToBilling}</Link>
+      </Button>
     </div>
-  ) : <BillingTabSkeleton />;
+  ) : (
+    <BillingTabSkeleton />
+  );
 
-  return embedded ? content : (
+  return embedded ? (
+    content
+  ) : (
     <PageContainer className="space-y-6">
       <BillingHeader />
       {content}

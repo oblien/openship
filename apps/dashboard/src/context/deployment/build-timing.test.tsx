@@ -31,6 +31,7 @@ const api = vi.hoisted(() => ({
   stream: { isConnected: true, connect: vi.fn(), disconnect: vi.fn() },
 }));
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/api", () => ({
   deployApi: {
     getBuildStatus: api.status,
@@ -113,6 +114,38 @@ function clockText() {
   );
   return label?.nextElementSibling?.textContent;
 }
+
+it("restores live verification, keeps progress monotonic and ignores progress after a terminal outcome", async () => {
+  await mount();
+  const verification = { startedAt: START.toISOString(), urls: ["https://example.test"] };
+  await load({ status: "deploying", currentStep: 5, progress: 90, verification });
+  expect(build.deploymentStatus).toBe("verifying");
+  expect(build.state.verification).toEqual(verification);
+  await act(async () => api.callbacks.onProgress(4, 80));
+  expect(build.state.currentStepIndex).toBe(5);
+  expect(build.state.verification).toEqual(verification);
+  await act(async () => api.callbacks.onSuccess());
+  expect(build.deploymentStatus).toBe("ready");
+  expect(build.state.verification).toBeNull();
+  await act(async () => api.callbacks.onProgress(5, 90, verification));
+  expect(build.state.verification).toBeNull();
+  expect(build.state.currentStepIndex).toBe(6);
+});
+
+it("does not let an older poll hide publication received over the stream", async () => {
+  api.stream.isConnected = false;
+  await mount();
+  await load({ status: "deploying", currentStep: 4, progress: 80 });
+  const delayed = Promise.withResolvers<ReturnType<typeof snapshot>>();
+  api.status.mockReturnValueOnce(delayed.promise);
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  const verification = { startedAt: START.toISOString(), urls: ["https://example.test"] };
+  await act(async () => api.callbacks.onProgress(5, 90, verification));
+  await act(async () => { delayed.resolve(snapshot({ status: "deploying", currentStep: 4, progress: 80 })); });
+  expect(build.deploymentStatus).toBe("verifying");
+  expect(build.state.verification).toEqual(verification);
+  expect(build.state.currentStepIndex).toBe(5);
+});
 
 beforeEach(() => {
   vi.useFakeTimers();

@@ -44,3 +44,15 @@ export function monthlyCloudBilling(organizationId = "org_1", namespace = "os-cu
     blocking: false, balance: null, paidThrough: periodEnd,
   } };
 }
+
+/** Stripe's unpaid renewal and the last funded capacity describe different months. */
+export function unpaidMonthlyCloudBilling(organizationId = "org_1", namespace = "os-customer") {
+  const state = monthlyCloudBilling(organizationId, namespace);
+  state.entitlement.status = "canceled";
+  state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = false;
+  state.entitlement.capacity!.status = "expired";
+  state.subscription.status = "past_due";
+  state.subscription.periodStart = state.entitlement.periodEnd;
+  state.subscription.periodEnd = "2026-12-01T00:00:00Z";
+  return { ...state, balance: { ...state.balance, blocking: true, computeCovered: false, paidThrough: null } };
+}

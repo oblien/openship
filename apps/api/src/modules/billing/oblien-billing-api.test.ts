@@ -4,7 +4,7 @@ import { OblienBillingApi, oblienOfferSchema, assertOblienEntitlementMatchesSubs
 import { BillingOperationSchemas } from "@repo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import capacityCatalog from "../../../test/fixtures/oblien-capacity-catalog.json";
-import { monthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
+import { monthlyCloudBilling, unpaidMonthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
 
 beforeEach(() => vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {}));
 afterEach(() => vi.restoreAllMocks());
@@ -37,16 +37,16 @@ describe("Oblien billing SDK and transport contract", () => {
     ["affiliate_payout_configuration", 503, "Payout accounts are not available yet. Contact support."],
   ] as const)("explains recipient account errors without exposing provider details: %s", async (code, status, message) => {
     const { api } = setup({ success: false, code, message: "private recipient account 123456789" }, status);
-    await expect(api.affiliateRequest("POST", "/billing/affiliates/reseller/payouts", {}))
+    await expect(api.referralRequest("POST", "/billing/affiliates/reseller/payouts", {}))
       .rejects.toMatchObject({ message, statusCode: status });
     expect(JSON.stringify(vi.mocked(errorDiagnostics.warn).mock.calls)).not.toContain("123456789");
   });
-  it("preserves server-derived affiliate attribution through the bounded checkout transport", async () => {
+  it("preserves server-derived referral attribution through the bounded checkout transport", async () => {
     const { api, fetcher } = setup({ success: true, url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_test" });
     const affiliateBuyer = { namespace: "openship", buyerKey: "a".repeat(64), relatedKeys: ["b".repeat(64)] };
     await api.createCheckout({ namespace: "os-one", kind: "subscription", billingInterval: "yearly",
       offer: { ...monthlyCloudBilling().subscription.offer!, unitAmount: 12000 }, metadata,
-      affiliateBuyer, affiliateCode: "AF-0123456789", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "affiliate-transport" });
+      affiliateBuyer, affiliateCode: "AF-0123456789", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "referral-transport" });
     expect(fetcher).toHaveBeenCalledExactlyOnceWith("https://api.oblien.com/billing/checkout", expect.objectContaining({
       method: "POST", redirect: "error", signal: expect.any(AbortSignal),
       headers: expect.objectContaining({ "X-Client-ID": "test-id", "X-Client-Secret": "test-secret" }),
@@ -393,7 +393,8 @@ describe("Oblien billing SDK and transport contract", () => {
         details: { providerCode: code },
       });
       expect(error.message).toContain(message);
-      expect(error.details).not.toHaveProperty("checkoutRejected");
+      if (code === "capacity_checkout_limit") expect(error.details.checkoutRejected).toBe(true);
+      else expect(error.details).not.toHaveProperty("checkoutRejected");
       expect(error.details).not.toHaveProperty("checkoutExpired");
       expect(JSON.stringify(error)).not.toMatch(/private|other-customer|test-secret/);
       expect(fetcher).toHaveBeenCalledOnce();
@@ -655,6 +656,34 @@ describe("Oblien monthly capacity contract", () => {
         .toThrow(/does not match/);
     }
   });
+  it.each(["past_due", "unpaid", "paused", "canceled"] as const)("keeps billing readable for an expired paid month and a %s renewal", async status => {
+    const state = unpaidMonthlyCloudBilling("org-one", "os-one");
+    state.subscription.status = status;
+    const entitlement = await setup(state.entitlement).api.getEntitlement("os-one");
+    const { subscription } = await setup({ success: true, namespace: "os-one", subscription: state.subscription }).api.getSubscription("os-one");
+    expect(() => assertOblienEntitlementMatchesSubscription(entitlement, subscription)).not.toThrow();
+    expect(entitlement).toMatchObject({ status: "canceled", computeCovered: false, capacity: { status: "expired", computeCovered: false } });
+    expect(entitlement.periodEnd).not.toBe(subscription!.periodEnd);
+  });
+  it("still rejects funded, overlapping, foreign or inconsistent unpaid renewal records", () => {
+    for (const mutate of [
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.status = "active"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.status = "trialing"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.status = "active"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = true; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.status = "active"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.namespace = "other-customer"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.provider = "wallet"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.capacity = { ...state.entitlement.capacity!.capacity, vcpus: 8 }; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodStart = "2026-10-15T00:00:00Z"; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodStart = null; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodEnd = state.subscription.periodStart; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.periodEnd = "2026-10-31T00:00:00Z"; },
+    ]) {
+      const state = unpaidMonthlyCloudBilling(); mutate(state);
+      expect(() => assertOblienEntitlementMatchesSubscription(state.entitlement, state.subscription)).toThrow(/does not match/);
+    }
+  });
   it.each([0, 3900])("sends a %s-cent monthly offer through the existing hosted checkout without a credit policy", async unitAmount => {
     const { subscription } = monthlyCloudBilling("org-one", "os-one");
     subscription.offer!.unitAmount = unitAmount;
@@ -775,7 +804,7 @@ describe("Oblien subscription changes", () => {
 
 it("explains a reused payout transfer reference without forwarding provider payment details", async () => {
   const { api } = setup({ success: false, code: "affiliate_payment_reference_used", message: "private bank-transfer-reference" }, 409);
-  const error = await api.affiliateRequest("POST", "/billing/affiliates/reseller/payouts/payout-id/review", {}).catch(error => error);
+  const error = await api.referralRequest("POST", "/billing/affiliates/reseller/payouts/payout-id/review", {}).catch(error => error);
   expect(error).toMatchObject({ statusCode: 409, details: { providerCode: "affiliate_payment_reference_used" },
     message: expect.stringContaining("already recorded for another payout") });
   expect(JSON.stringify(error)).not.toContain("private bank-transfer-reference");

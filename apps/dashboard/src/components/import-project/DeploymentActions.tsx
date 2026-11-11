@@ -6,13 +6,14 @@ import { useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { InvestigationLink } from "@/components/assistant/InvestigationLink";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { useI18n } from "@/components/i18n-provider";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { encodeLocalSlug, encodeProjectSlug, encodeRepoSlug } from "@/utils/repoSlug";
-import { getDeploymentSites, type DeploymentSite } from "./deployment-sites";
+import { getDeploymentSites, getVerifyingSites, type DeploymentSite } from "./deployment-sites";
 
 function OpenDeploymentSite({ sites }: { sites: DeploymentSite[] }) {
   const { t } = useI18n();
@@ -25,7 +26,7 @@ function OpenDeploymentSite({ sites }: { sites: DeploymentSite[] }) {
   if (sites.length === 1) {
     return (
       <Button asChild className="grow sm:grow-0">
-        <a href={`https://${sites[0].hostname}`} target="_blank" rel="noopener noreferrer">
+        <a href={sites[0].url ?? `https://${sites[0].hostname}`} target="_blank" rel="noopener noreferrer">
           {copy.openSite}
           <UiIcon name="arrow-up-right" className="size-3.5" />
         </a>
@@ -66,7 +67,7 @@ function OpenDeploymentSite({ sites }: { sites: DeploymentSite[] }) {
             {sites.map((site) => (
               <li key={site.hostname}>
                 <a
-                  href={`https://${site.hostname}`}
+                  href={site.url ?? `https://${site.hostname}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
@@ -114,11 +115,13 @@ export function DeploymentActions({
   const [redeploying, setRedeploying] = useState(false);
   const retryInFlight = useRef(false);
   const projectId = state.projectId || config.projectId;
-  const working = deploymentStatus === "building" || deploymentStatus === "deploying";
+  const working = ["building", "deploying", "verifying"].includes(deploymentStatus);
   const sites =
     deploymentStatus === "ready"
       ? getDeploymentSites(config, state.serviceStatuses, baseDomain)
-      : [];
+      : deploymentStatus === "verifying"
+        ? getVerifyingSites(state.verification?.urls ?? [])
+        : [];
 
   const retry = async (reuseBuild = false) => {
     if (retryInFlight.current) return;
@@ -140,6 +143,15 @@ export function DeploymentActions({
 
   return (
     <div className="flex w-full flex-wrap items-center gap-2 sm:ms-auto sm:w-auto sm:justify-end">
+      {deploymentStatus === "verifying" && !state.cancellationPending && (
+        <>
+          <Button type="button" variant="secondary" onClick={openProject} disabled={!projectId}>
+            {copy.openProject}
+            <UiIcon name="arrow-right" className="rtl:rotate-180" />
+          </Button>
+          <OpenDeploymentSite sites={sites} />
+        </>
+      )}
       {working || state.cancellationPending ? (
         <Button
           type="button"
@@ -157,6 +169,12 @@ export function DeploymentActions({
         </Button>
       ) : (
         <>
+          {deploymentStatus === "failed" && state.deploymentId && (
+            <InvestigationLink
+              target={{ kind: "deployment", deploymentId: state.deploymentId, ...(projectId ? { projectId } : {}) }}
+              className="grow sm:grow-0"
+            />
+          )}
           <Button
             type="button"
             variant={deploymentStatus === "ready" && sites.length === 0 ? "default" : "secondary"}

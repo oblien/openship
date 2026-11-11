@@ -4,6 +4,8 @@ const { listQueued } = vi.hoisted(() => ({ listQueued: vi.fn() }));
 vi.mock("@repo/db", () => ({ repos: { backupRun: { listQueued } } }));
 import { InProcessJobRunner } from "../src/engine/lib/job-runner/in-process";
 import { deferBackgroundWork, drainBackgroundWork } from "../src/engine/lib/background-work";
+import { setDiagnosticTelemetry, type DiagnosticTelemetry } from "@repo/core/diagnostics";
+import { currentErrorContext, withErrorContext } from "@repo/core/diagnostics/node";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -11,7 +13,20 @@ function deferred<T = void>() {
   return { promise, resolve };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-12T00:00:00Z")); listQueued.mockReset().mockResolvedValue([]); });
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); setDiagnosticTelemetry(undefined); });
+
+it("carries a queued trace parent while clearing the originating request's tenant frame", async () => {
+  const parent = `00-${"a".repeat(32)}-${"b".repeat(16)}-01`;
+  const start = vi.fn(() => ({ correlation: { traceId: "a".repeat(32), spanId: "c".repeat(16) }, run: <T>(fn: () => T) => fn(), end() {} }));
+  setDiagnosticTelemetry({ start, traceparent: () => parent } as unknown as DiagnosticTelemetry);
+  const runner = new InProcessJobRunner();
+  const run = vi.fn(async () => { expect(currentErrorContext().organizationId).toBeUndefined(); });
+  await runner.start({ processRun: run });
+  await withErrorContext({ requestId: "request-a", organizationId: "org-a" }, () => runner.enqueueRun("backup-a"));
+  await runner.shutdown(Infinity);
+  expect(run).toHaveBeenCalledExactlyOnceWith("backup-a");
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ runId: "backup-a" }), expect.objectContaining({ parent, root: true, kind: "consumer" }));
+});
 
 it("drains accepted queued runs even when shutdown wins the setImmediate race", async () => {
   const runner = new InProcessJobRunner();

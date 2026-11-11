@@ -120,7 +120,13 @@ describe("DELETE project option transport", () => {
     h.teardownProject.mockResolvedValueOnce({
       ok: false,
       rowDeleted: false,
-      steps: [],
+      steps: [
+        {
+          step: "cancel_in_flight",
+          status: "failed",
+          error: "Finish the parked migration in Settings → Advanced before deletion",
+        },
+      ],
       unrecoverable: [],
       orphaned: [],
       unlinked: [],
@@ -145,6 +151,7 @@ describe("DELETE project option transport", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
       code: "PROJECT_HAS_ACTIVE_WORK",
+      error: "Finish the parked migration in Settings → Advanced before deletion",
       active: {
         hasActiveMigration: true,
         deploymentIds: ["dep-race"],

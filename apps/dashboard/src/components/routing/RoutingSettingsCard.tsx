@@ -43,8 +43,8 @@ export interface RoutingSettingsCardProps {
   onDomainChange: (value: string) => void | Promise<void>;
   onCustomDomainChange: (value: string) => void | Promise<void>;
   saveMode?: "change" | "explicit";
-  /** Optional control rendered on the RIGHT of the Free/Custom row (e.g. an
-   *  "add domain" button when the parent hides its own header). */
+  /** Optional controls beside the Free/Custom toggle, or inline with the domain
+   *  when that toggle is hidden or the port is inline. */
   actionSlot?: React.ReactNode;
   /** Place the exposed-port field to the RIGHT of the domain input (label above)
    *  instead of on its own row below — saves height when there's horizontal room. */
@@ -128,10 +128,11 @@ export function RoutingSettingsCard({
   }, [targetPath]);
 
   const visible = exposed ?? true;
+  const actionsInline = portInline || hideTypeToggle;
   const hasPortOptions = (ports ?? []).length > 0;
-  const showsPortTarget = targetMode === "proxy" && typeof exposedPort !== "undefined" && onExposedPortChange;
-  const showsPathTarget = targetMode === "static" && onTargetPathChange;
-  const showsReadOnlyTarget = !showsPortTarget && !showsPathTarget && Boolean(readOnlyTarget?.value);
+  const showsPortTarget = !redirect?.to && targetMode === "proxy" && typeof exposedPort !== "undefined" && onExposedPortChange;
+  const showsPathTarget = !redirect?.to && targetMode === "static" && onTargetPathChange;
+  const showsReadOnlyTarget = !redirect?.to && !showsPortTarget && !showsPathTarget && Boolean(readOnlyTarget?.value);
   const portOptions = useMemo(
     () => (ports ?? []).map((value) => {
       const parts = value.split(":");
@@ -296,6 +297,7 @@ export function RoutingSettingsCard({
           <CustomSelect
             variant="filled"
             triggerClassName="bg-muted/60 hover:bg-muted"
+            aria-label={w.redirectTo}
             value={redirect.to}
             onChange={(next) => void redirect.onChange({ to: next, status: redirect.status || 301 })}
             options={[
@@ -348,40 +350,34 @@ export function RoutingSettingsCard({
 
       {visible && (
         <div className="space-y-2">
-          {(!hideTypeToggle || (!portInline && actionSlot)) && (
+          {!hideTypeToggle && (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                {!hideTypeToggle && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => void onDomainTypeChange("free")}
-                      disabled={disabled}
-                      aria-label={w.freeSubdomain}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
-                    >
-                      {w.free}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void onDomainTypeChange("custom")}
-                      disabled={disabled}
-                      aria-label={w.customDomain}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
-                    >
-                      {w.custom}
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  onClick={() => void onDomainTypeChange("free")}
+                  disabled={disabled}
+                  aria-label={w.freeSubdomain}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+                >
+                  {w.free}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onDomainTypeChange("custom")}
+                  disabled={disabled}
+                  aria-label={w.customDomain}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+                >
+                  {w.custom}
+                </button>
               </div>
-              {/* When the port is inline, the add-domain "+" moves to the end of
-                  the input row (after Exposed port); otherwise it sits here. */}
-              {!portInline && actionSlot}
+              {!actionsInline && actionSlot}
             </div>
           )}
 
           {domainType === "free" ? (
-            <div className="flex items-end gap-2">
+            <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1 flex items-center gap-2">
                 <div dir="ltr" className="min-w-0 flex-1 flex items-center rounded-xl bg-background focus-within:ring-2 focus-within:ring-ring/40 focus-within:ring-offset-2 focus-within:ring-offset-background">
                   <Input
@@ -401,6 +397,7 @@ export function RoutingSettingsCard({
                       // modal is closed without clicking the inline Save pill.
                       if (saveMode === "explicit" && draftDomain !== domain) commitFreeDomain();
                     }}
+                    aria-label={t.projectSettings.domains.add.domainName}
                     placeholder={projectName || "my-project"}
                     className="min-w-0 flex-1 bg-transparent pe-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
@@ -418,11 +415,11 @@ export function RoutingSettingsCard({
                 )}
               </div>
               {portInline && portInlineField}
-              {portInline && actionSlot}
+              {actionsInline && actionSlot}
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="flex items-end gap-2">
+              <div className="flex items-center gap-2">
                 <div className="min-w-0 flex-1 flex items-center gap-2">
                   <Input
                     dir="ltr"
@@ -437,6 +434,7 @@ export function RoutingSettingsCard({
                       }
                     }}
                     onBlur={handleCustomDomainBlur}
+                    aria-label={t.projectSettings.domains.add.domainName}
                     placeholder="app.example.com"
                     className="min-w-0 flex-1"
                   />
@@ -452,7 +450,7 @@ export function RoutingSettingsCard({
                 )}
                 </div>
                 {portInline && portInlineField}
-                {portInline && actionSlot}
+                {actionsInline && actionSlot}
               </div>
 
               {/* DNS hint — shown ONLY once records actually resolve. The

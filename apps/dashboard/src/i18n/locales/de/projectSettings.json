@@ -547,6 +547,8 @@
     "cancel": "Abbrechen",
     "saveChanges": "Änderungen speichern",
     "close": "Schließen",
+    "rebuildTitle": "Neu bauen und bereitstellen",
+    "rebuildText": "Gespeichert. Baue die App neu, um diese Umgebungsvariablen anzuwenden.",
     "applyTitle": "Ohne Neubau anwenden",
     "applyText": "Gespeichert. Neustarten, um Laufzeitänderungen anzuwenden. Erneut bauen und bereitstellen, um beim Image-Build verwendete Werte anzuwenden.",
     "applyButton": "Anwenden (Neustart, kein Neubau)",
@@ -618,6 +620,12 @@
       "description": "Git-Integration, Deployment-Auslöser und Repository-Zustand",
       "repository": "Repository",
       "open": "Öffnen"
+    },
+    "branch": {
+      "label": "Deployment-Branch",
+      "description": "Wird für künftige Deployments in dieser Umgebung verwendet. Speichern löst kein neues Deployment aus.",
+      "saved": "Deployment-Branch gespeichert",
+      "saveFailed": "Deployment-Branch konnte nicht gespeichert werden"
     },
     "webhookEndpoint": {
       "title": "Webhook-Endpunkt",
@@ -1254,6 +1262,28 @@
     "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   },
   "securityAdvisories": {
+    "applyPatch": "Sicherheitspatch anwenden",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Speichert Laufzeit- und Build-Images für künftige Bereitstellungen.",
+    "bunRuntimePatchDescription": "Die gewählte Bun-Version gilt auch für die Installation der Abhängigkeiten und überschreibt Versionsvorgaben im Repository.",
+    "checksEnabled": "Sicherheitshinweise prüfen",
+    "checksDescription": "Deaktivieren pausiert Laufzeit- und Host-Prüfungen, neue Hinweise und Sicherheits-Patches für diesen Arbeitsbereich. Bisherige Daten und Projektzustimmungen bleiben erhalten.",
+    "checksDisabled": "Sicherheitsprüfungen sind für diesen Arbeitsbereich deaktiviert.",
+    "manageChecks": "Sicherheitsprüfungen verwalten",
+    "retrySettings": "Erneut versuchen",
+    "bannerSettings": "Einstellungen für Sicherheitsbanner",
+    "hideBanners": "Sicherheitsbanner ausblenden",
+    "showBanners": "Sicherheitsbanner anzeigen",
+    "bannerDescription": "Sicherheitshinweise für Apps und Server oben im Dashboard dieses Browsers und Arbeitsbereichs anzeigen. Prüfungen und Benachrichtigungskanäle werden separat gesteuert.",
+    "manualReviewRequired": "Überprüfung erforderlich",
+    "manualReviewDescription": "Prüfe anhand der Hinweise, ob dieses Advisory zutrifft. Ändere nur etwas, wenn seine Bedingungen vorliegen.",
+    "manualReviewUnverified": "Die Anwendbarkeit ist ungeprüft. Konfiguration oder Anwendung müssen geprüft werden, um eine Betroffenheit zu bestätigen.",
+    "openRuntimeConfiguration": "Laufzeitkonfiguration prüfen",
+    "severity": {
+      "critical": "Kritisch",
+      "high": "Hoch",
+      "moderate": "Mittel",
+      "low": "Niedrig"
+    },
     "sourceRedeployRequired": "Erstelle diese App aus ihrer gespeicherten Quelle neu, bevor du ihre Laufzeit aktualisierst. Das aktuelle Image hat keine verifizierte Quellrevision. Eine erneute Bereitstellung aus der Quelle kann neueren Code enthalten. Prüfe ihn unter „Bereitstellungen“ und überprüfe diesen Hinweis anschließend erneut.",
     "openSourceRedeploy": "Bereitstellung aus Quelle öffnen",
     "reviewApps": "Betroffene Apps prüfen ({count})",
@@ -1262,7 +1292,7 @@
     "checking": "Wird geprüft…",
     "title": "Sicherheitshinweise",
     "unavailable": "Sicherheitsprüfungen sind nicht verfügbar oder veraltet. Bisherige Hinweise bleiben sichtbar.",
-    "affected": "Befunde für Apps, auf die du in der aktuellen Organisation zugreifen kannst.",
+    "affected": "Ergebnisse für Apps und Server, auf die Sie in diesem Arbeitsbereich zugreifen können.",
     "noMatches": "Keine passenden Hinweise in den geprüften Daten. Dies ist kein vollständiger Schwachstellenscan.",
     "partial": "Einige Laufzeitumgebungen konnten nicht geprüft werden.",
     "guidance": "Hinweis lesen",
@@ -1276,6 +1306,47 @@
     "monitoring": "In Monitoring anzeigen",
     "persistent": "Aktive Befunde bleiben hier sichtbar, auch wenn das Banner geschlossen wird.",
     "otherApps": "Weitere Apps ({count})",
-    "details": "Details und Hinweise"
+    "details": "Details und Hinweise",
+    "refreshFailed": "Das Sicherheitsupdate ist fehlgeschlagen. Prüfe die Bereitstellung vor einem erneuten Versuch.",
+    "refreshAwaitingActions": "Prüfe die ausstehenden Bereitstellungsaktionen, um das Sicherheitsupdate fortzusetzen.",
+    "refreshInProgress": "Sicherheitsupdate läuft. Die Laufzeit wird geprüft, bevor die Warnung als behoben gilt.",
+    "viewRefresh": "Update anzeigen"
+  },
+  "hostSecurity": {
+    "title": "Serversicherheit",
+    "reviewPatch": "Patch prüfen",
+    "applyPatch": "Geprüften Patch anwenden",
+    "patchDetails": "Serverpatch prüfen",
+    "interruption": "Die aufgeführten Pakete werden installiert; Dienste können neu starten. Prüfen Sie alle Änderungen. Bereits laufende Dienste müssen eventuell manuell neu gestartet werden.",
+    "rebootRequired": "Neustart erforderlich. Der laufende Kernel muss danach geprüft werden.",
+    "manual": "Manuelle Prüfung erforderlich",
+    "runs": "Ausführungen",
+    "noRuns": "Noch keine Sicherheitspatches ausgeführt.",
+    "scanTask": "Sicherheitsprüfung",
+    "scanHint": "Läuft nach dem gespeicherten Zeitplan. Ergebnisse laufen ab; fehlgeschlagene Prüfungen werden mit zunehmendem Abstand wiederholt.",
+    "schedulerPaused": "Geplante Prüfungen sind pausiert.",
+    "checkPending": "Eine Prüfung steht aus. Zwischengespeicherte Daten können veraltet sein.",
+    "verified": "Versionsprüfung bestanden",
+    "needsReview": "Prüfung erforderlich",
+    "nextCheck": "Nächste Prüfung",
+    "notSupported": "Host-Patches sind für selbst verwaltete Ubuntu-Server verfügbar. Vom Anbieter verwaltete Infrastruktur hat einen eigenen Wartungsprozess.",
+    "package": "Paket",
+    "current": "Installiert",
+    "target": "Geplante Version",
+    "reviewResources": "Betroffene Ressourcen prüfen ({count})",
+    "openRuns": "Serverausführungen öffnen",
+    "lastRun": "Letzte Prüfung",
+    "appOpen": "Läuft, solange Openship geöffnet ist.",
+    "scanStates": {
+      "pending": "Ausstehend",
+      "running": "Läuft",
+      "completed": "Abgeschlossen",
+      "partial": "Teilweise geprüft",
+      "interrupted": "Unterbrochen"
+    },
+    "reviewReboot": "Neustart prüfen",
+    "applyReboot": "Neustart planen",
+    "rebooting": "Neustart geplant; Kernel-Prüfung ausstehend",
+    "rebootInterruption": "Der Server startet in einer Minute neu und unterbricht alle Workloads. Openship prüft den laufenden Kernel, sobald der Host wieder erreichbar ist."
   }
 }

@@ -196,6 +196,8 @@ export interface BuildConfig {
    * monorepo pipeline is container-only).
    */
   isStatic?: boolean;
+  /** Static recipe fallback; false returns 404 instead of serving index.html. */
+  spaFallback?: boolean;
   /**
    * Static build whose output is EXTRACTED, not run.
    *
@@ -655,6 +657,8 @@ interface BaseRouteConfig {
    * would fight the upstream's own.
    */
   cleanUrls?: boolean;
+  /** Missing static paths serve index.html unless explicitly disabled. */
+  spaFallback?: boolean;
   /**
    * vercel.json `trailingSlash`: true → enforce a trailing slash; false → redirect `/a/`
    * to `/a`. Unset leaves both forms served.
@@ -753,7 +757,7 @@ export interface SslResult {
 
 // ─── Log streaming callback ──────────────────────────────────────────────────
 
-export type LogCallback = (entry: LogEntry) => void;
+export type LogCallback<Step extends string = BuildStep> = (entry: LogEntry<Step>) => void;
 
 export interface RuntimeLogStreamOptions {
   tail?: number;

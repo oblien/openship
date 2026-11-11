@@ -53,6 +53,14 @@ it("reports a fetch transport failure once and preserves the original mutation e
   expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: "POST", body: '{"name":"app"}' });
 });
 
+it("requests structured API errors while preserving explicit content negotiation", async () => {
+  fetchMock.mockImplementation(async () => Response.json({ ok: true }));
+  await api.post("projects/ensure", { name: "example" });
+  expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Accept")).toBe("application/json");
+  await api.get("logs", { headers: { Accept: "text/plain" } });
+  expect(new Headers(fetchMock.mock.calls[1]![1]?.headers).get("Accept")).toBe("text/plain");
+});
+
 it("does not declare the API unavailable when request serialization throws TypeError", async () => {
   const body: { self?: unknown } = {};
   body.self = body;

@@ -199,14 +199,16 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     // This fixture deliberately has no edge daemon. Feed the allocation path
     // the strict scanner's authoritative empty result; all port claims,
     // reservations, Docker binds, and rollback lifecycle remain real.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (importOriginal) => {
       const actual = (await importOriginal()) as Record<string, unknown>;
       return {
         ...actual,
         getPlatform: () => localPlatform.platform,
-        edgeProxyFor: () => ({
-          listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
-        }),
+        edgeProxyFor: edgeInventory,
+        loopbackPortInventoryFor: edgeInventory,
       };
     });
     vi.doMock("@repo/platform/engine/modules/deployments/service-checks", async (importOriginal) => {
@@ -458,7 +460,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     expect(await get(`http://127.0.0.1:${apiPort}/version.txt`)).toBe("api-v1");
 
     const nextDep = await seedDeployment(activeProject, {
-      status: "ready",
+      status: "deploying",
       imageRef: "compose",
       containerId: "compose",
       meta: composeSnapshot(WEB_V2) as never,
@@ -482,6 +484,7 @@ describeDockerE2E("compose rollback cycle through the real entry point", () => {
     });
 
     expect(nextResult.status).toBe("ready");
+    await repos.deployment.updateStatus(nextDep.id, "ready");
     expect(await get(`http://127.0.0.1:${webPort}/version.txt`)).toBe("web-v2");
     expect(await get(`http://127.0.0.1:${apiPort}/version.txt`)).toBe("api-v1");
   }, 600_000);

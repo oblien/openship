@@ -1,0 +1,164 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "listmonk",
+  "name": "Listmonk",
+  "description": "Self-hosted newsletter and mailing list manager, with a private PostgreSQL database and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "listmonk",
+  "category": "other",
+  "repository": "https://github.com/knadh/listmonk",
+  "tags": ["newsletter", "mailing-list", "email", "marketing"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "listmonk-db",
+      "image": "postgres:16-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "listmonk",
+        "POSTGRES_DB": "listmonk"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["listmonk_db_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U listmonk -d listmonk"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      }
+    },
+    {
+      "name": "listmonk",
+      "image": "listmonk/listmonk:v6.2.0",
+      "exposed": true,
+      "ports": ["8226:9000"],
+      "exposedPort": 9000,
+      "routes": [
+        {
+          "port": 9000
+        }
+      ],
+      "restart": "unless-stopped",
+      "dependsOn": ["listmonk-db"],
+      "commandArgv": ["sh", "-c", "./listmonk --install --idempotent --yes && exec ./listmonk"],
+      "volumes": ["listmonk_uploads:/listmonk/uploads"],
+      "environment": {
+        "LISTMONK_app__address": "0.0.0.0:9000",
+        "LISTMONK_db__host": "listmonk-db",
+        "LISTMONK_db__port": "5432",
+        "LISTMONK_db__user": "listmonk",
+        "LISTMONK_db__database": "listmonk",
+        "LISTMONK_db__ssl_mode": "disable",
+        "LISTMONK_ADMIN_USER": "admin"
+      },
+      "secretEnv": ["LISTMONK_db__password", "LISTMONK_ADMIN_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/health || exit 1"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "20s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "listmonk-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "listmonk-db"
+    },
+    {
+      "key": "LISTMONK_db__password",
+      "service": "listmonk",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "listmonk-db"
+    },
+    {
+      "key": "LISTMONK_ADMIN_USER",
+      "service": "listmonk",
+      "label": "Admin username",
+      "default": "admin"
+    },
+    {
+      "key": "LISTMONK_ADMIN_PASSWORD",
+      "service": "listmonk",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "listmonk",
+      "port": 9000,
+      "label": "Listmonk",
+      "kind": "http",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "listmonk-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "connection": {
+    "title": "Sign in to Listmonk",
+    "description": "Sign in with the username and generated password below. Listmonk's Super Admin account is created from these on first start.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Listmonk",
+        "source": "publicUrl:listmonk",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:listmonk:LISTMONK_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:listmonk:LISTMONK_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. These are the initial credentials."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Newsletters and campaigns",
+        "description": "Compose, schedule, and send to your own subscriber lists."
+      },
+      {
+        "title": "Private database",
+        "description": "Subscribers and campaign data live in a dedicated, project-scoped Postgres instance."
+      },
+      {
+        "title": "No per-subscriber fees",
+        "description": "Self-hosted \u2014 no monthly list-size pricing."
+      }
+    ]
+  }
+}

@@ -24,7 +24,11 @@
     "connecting": "Verbinden…",
     "streamUnavailable": "Live-Updates sind nicht verfügbar. Die letzte Messung wird angezeigt.",
     "usageTitle": "Ressourcennutzung",
-    "setupPending": "Die Nutzung wird angezeigt, sobald dein Cloud-Bereich eingerichtet ist."
+    "setupPending": "Die Nutzung wird angezeigt, sobald dein Cloud-Bereich eingerichtet ist.",
+    "projectsAssigned": "Projekte in diesem Tarif",
+    "projectsAssignedHint": "Projekte, die Rechenleistung und Speicher dieses Tarifs gemeinsam nutzen.",
+    "showAllProjects": "Alle {count} Projekte anzeigen",
+    "storageDetails": "Zur Speichernutzung"
   },
   "github": {
     "title": "GitHub-Zugriff",
@@ -67,12 +71,8 @@
     "addThisMachine": "Diesen Rechner hinzufügen",
     "addThisMachineError": "Dieser Rechner konnte nicht als Server hinzugefügt werden.",
     "emptyTitle": "Noch keine Server",
-    "emptyDescription": "Verbinden Sie einen Server per SSH und Openship übernimmt den Rest – Docker, OpenResty, SSL und Deployments werden alle automatisch eingerichtet.",
+    "emptyDescription": "Verbinde einen Server per SSH. OpenShip kümmert sich um Docker, Routing, SSL und Deployments.",
     "addFirstServer": "Ersten Server hinzufügen",
-    "whatGetsConfigured": "Was konfiguriert wird",
-    "monitoring": "Überwachung",
-    "monitoringDesc": "Zustandsprüfungen",
-    "gitDesc": "Quell-Deployments",
     "connected": "Verbunden",
     "error": "Fehler",
     "forwarding": "{n} weitergeleitet",
@@ -135,10 +135,6 @@
       "nothingToDo": "Nichts anzuwenden",
       "applyFailed": "Updates konnten nicht gestartet werden"
     },
-    "featContainer": "Container-Laufzeitumgebung",
-    "featContainerDesc": "Führt jede App isoliert aus",
-    "featProxy": "Reverse-Proxy",
-    "featProxyDesc": "Routing und SSL",
     "seeDocs": "Dokumentation anzeigen"
   },
   "containers": {
@@ -247,7 +243,8 @@
       "ssh": "SSH-Zugriff",
       "runtimeApi": "Laufzeit-API",
       "workloads": "Workloads",
-      "settings": "Einstellungen"
+      "settings": "Einstellungen",
+      "runs": "Ausführungen"
     },
     "healthy": "Fehlerfrei",
     "issues": "Probleme",
@@ -1034,12 +1031,12 @@
       "description": "Nutze einen vorhandenen Server über SSH."
     },
     "managed": {
-      "label": "Verwalteten Server buchen",
-      "description": "Openship Cloud übernimmt Einrichtung, Routing und HTTPS."
+      "label": "Cloud-Bereich hinzufügen",
+      "description": "Apps, Builds und Daten teilen sich die Kapazität ihres Cloud-Bereichs."
     },
-    "signInHint": "Verbinde dein Cloud-Konto, um einen vorhandenen verwalteten Server zu nutzen oder einen neuen zu buchen.",
-    "chooseExisting": "Vorhandenen Cloud-Server auswählen",
-    "useServer": "Diesen Server verwenden"
+    "signInHint": "Verbinde dein Cloud-Konto, um einen vorhandenen Cloud-Bereich zu verwenden oder einen neuen hinzuzufügen.",
+    "chooseExisting": "Cloud-Bereich wählen",
+    "useServer": "Diesen Cloud-Bereich verwenden"
   },
   "managedControls": {
     "retry": "Status aktualisieren",
@@ -1251,5 +1248,21 @@
     "saved": "GPU-Einstellung gespeichert",
     "saveFailed": "GPU-Einstellung konnte nicht gespeichert werden",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "Build-Cache",
+    "subtitle": "Wie viel Build-Cache Openship auf diesem Server zwischen Deployments behält.",
+    "modeLabel": "Cache-Budget",
+    "modeAuto": "Automatisch",
+    "modeCustom": "Benutzerdefiniert",
+    "modeHint": "Automatisch behält bis zu 20 % des Docker-Speichers dieses Servers. Nach jedem Build werden Caches über dem Budget entfernt, die am längsten ungenutzten zuerst.",
+    "statusAuto": "Automatisch",
+    "statusCustom": "Benutzerdefiniert · {size} GiB",
+    "customLabel": "Budget (in GiB)",
+    "invalid": "Gib eine Größe von {min} bis {max} GiB mit höchstens zwei Nachkommastellen ein.",
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "Build-Cache-Budget gespeichert",
+    "saveFailed": "Build-Cache-Budget konnte nicht gespeichert werden"
   }
 }

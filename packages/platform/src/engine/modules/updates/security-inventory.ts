@@ -5,7 +5,7 @@ import type {
   SecurityRuntime,
   SecurityRuntimeEvidence,
 } from "@repo/core";
-import { repos } from "@repo/db";
+import { repos, withAdvisoryLock } from "@repo/db";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import type { ExecutionContext } from "../../../context";
 import { assertResourceInOrg } from "../../lib/resource-access";
@@ -14,7 +14,9 @@ import { disposeRuntime, resolveDeploymentRuntimeForRead } from "../../lib/deplo
 import { liveContainerIdWithRuntime, livePrimaryContainerId } from "../services/service-container";
 import { mapWithLimit } from "../../lib/map-with-limit";
 import { getProjectRuntimeImages } from "./runtime-image-check";
-import { parseRuntimeProbe, runtimeVersionProbe } from "./runtime-probes";
+import { hasNoApplicableRuntime, parseRuntimeProbe, runtimeVersionProbe } from "./runtime-probes";
+import { assertSecurityChecksEnabled } from "./security-check-policy";
+import { nextSecurityInspection, securityObservationDue } from "./security-freshness";
 
 export interface SecurityInventory {
   deploymentId: string | null;
@@ -39,11 +41,13 @@ function runtimeRules(advisories: readonly SecurityAdvisory[]) {
 export function securityProbeKey(advisories: readonly SecurityAdvisory[]): string {
   return createHash("sha256")
     .update(
-      JSON.stringify(
-        runtimeRules(advisories)
+      JSON.stringify({
+        // Invalidate observations made before absent runtimes had explicit evidence.
+        probeVersion: 2,
+        rules: runtimeRules(advisories)
           .map((rule) => JSON.stringify(rule))
           .sort(),
-      ),
+      }),
     )
     .digest("hex");
 }
@@ -56,6 +60,8 @@ export async function projectSecurityInventory(
 ): Promise<SecurityInventory> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+  // Shared admission point for status checks and advisory refreshes.
+  await assertSecurityChecksEnabled(ctx.organizationId);
   const active = await findActiveDeployment(project);
   const empty: SecurityInventory = {
     deploymentId: null,
@@ -71,10 +77,29 @@ export async function projectSecurityInventory(
   const running = pending.get(key);
   if (running) return running;
   const cached = stored?.inventory as SecurityInventory | null;
-  if (!refresh && stored?.deploymentId === active.id && cached?.probeKey === probeKey)
+  if (
+    !refresh &&
+    !securityObservationDue(stored) &&
+    stored?.deploymentId === active.id &&
+    cached?.probeKey === probeKey
+  )
     return cached;
   const runtimes = [...new Set(runtimeRules(advisories).map((rule) => rule.runtime))];
-  const task = readSecurityInventory(ctx, projectId, active.id, probeKey, runtimes);
+  const requestedAt = Date.now();
+  const task = withAdvisoryLock(`security:inventory:${projectId}`, async () => {
+    await assertSecurityChecksEnabled(ctx.organizationId);
+    // Another worker may have inspected while this request waited for the lock.
+    const latest = await repos.securityAdvisory.project(projectId);
+    const evidence = latest?.inventory as SecurityInventory | null;
+    if (
+      latest?.deploymentId === active.id &&
+      evidence?.probeKey === probeKey &&
+      !securityObservationDue(latest) &&
+      (!refresh || (latest.checkedAt?.getTime() ?? 0) >= requestedAt)
+    )
+      return evidence;
+    return readSecurityInventory(ctx, projectId, active.id, probeKey, runtimes);
+  });
   pending.set(key, task);
   try {
     return await task;
@@ -83,7 +108,7 @@ export async function projectSecurityInventory(
   }
 }
 
-/** Event-driven observation: changed rules/deployment or an explicit check. No host fallback. */
+/** Bounded observations on expiry, changed rules/deployment or explicit checks. */
 async function readSecurityInventory(
   ctx: ExecutionContext,
   projectId: string,
@@ -102,7 +127,7 @@ async function readSecurityInventory(
     checkedAt: null,
   };
   if (!active || active.id !== deploymentId || project.deletionInProgress) return empty;
-  const checkedAt = new Date();
+  const checkedAt = new Date(Date.now());
   const imageRows = await getProjectRuntimeImages(ctx, projectId);
   const inventory: SecurityInventory = {
     deploymentId: active.id,
@@ -162,7 +187,8 @@ async function readSecurityInventory(
           const output = await executor.exec(runtimeVersionProbe(runtimes), { timeout: 10_000 });
           const observations = parseRuntimeProbe(output.slice(0, 16_384), scope.id);
           inventory.runtimes.push(...observations);
-          if (!observations.length) inventory.unknownServices.push(scope.id);
+          if (!observations.length && !hasNoApplicableRuntime(output))
+            inventory.unknownServices.push(scope.id);
         } catch (error) {
           reportCaughtError(error, "platform/updates/security-inventory.inspect");
           inventory.unknownServices.push(scope.id);
@@ -176,12 +202,34 @@ async function readSecurityInventory(
   const current = await repos.project.findById(projectId);
   assertResourceInOrg(current, "Project", ctx.organizationId, projectId);
   if (current.activeDeploymentId !== active.id || current.deletionInProgress) return empty;
+  const previous = await repos.securityAdvisory.project(projectId);
+  const prior = previous?.inventory as SecurityInventory | null;
+  if (previous?.deploymentId === active.id && prior?.probeKey === probeKey) {
+    // One working runtime does not prove another runtime's failed/missing probe
+    // was fixed. Retain only missing runtime identities, never old versions of
+    // a runtime that was successfully observed again.
+    const identity = (row: SecurityRuntimeEvidence) => JSON.stringify([row.serviceId, row.runtime]);
+    const observed = new Set(inventory.runtimes.map(identity));
+    const retained = prior.runtimes.filter((row) => !observed.has(identity(row)));
+    inventory.runtimes.push(...retained);
+    if (retained.length) {
+      inventory.checkedAt = prior.checkedAt;
+      inventory.unknownServices = [
+        ...new Set([...inventory.unknownServices, ...retained.map((row) => row.serviceId)]),
+      ];
+    }
+  }
+  const failures = inventory.unknownServices.length
+    ? Math.min((previous?.probeFailures ?? 0) + 1, 16)
+    : 0;
   await repos.securityAdvisory.saveInventory(
     projectId,
     ctx.organizationId,
     active.id,
     inventory,
     checkedAt,
+    nextSecurityInspection(projectId, checkedAt, failures),
+    failures,
   );
   return inventory;
 }

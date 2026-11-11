@@ -9,7 +9,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *
  * Detected from the repo's vercel.json at prepare; the user can review/edit here
  * before deploy, or edit a live project (the backend re-applies to OpenResty
- * without a rebuild). Self-hosted only today — cloud edge routing is pending.
+ * without a rebuild for edge-served files). Generated static containers pick up
+ * fallback changes on redeploy.
  */
 
 import React, { useCallback } from "react";
@@ -32,6 +33,7 @@ function normalize(value: RoutingConfig | null | undefined): RoutingConfig {
     redirects: value?.redirects ?? [],
     headers: value?.headers ?? [],
     cleanUrls: value?.cleanUrls,
+    spaFallback: value?.spaFallback,
     trailingSlash: value?.trailingSlash,
     proxy: value?.proxy,
   };
@@ -44,6 +46,7 @@ function compact(cfg: RoutingConfig): RoutingConfig | null {
   if (cfg.redirects?.length) out.redirects = cfg.redirects;
   if (cfg.headers?.length) out.headers = cfg.headers;
   if (cfg.cleanUrls !== undefined) out.cleanUrls = cfg.cleanUrls;
+  if (cfg.spaFallback !== undefined) out.spaFallback = cfg.spaFallback;
   if (cfg.trailingSlash !== undefined) out.trailingSlash = cfg.trailingSlash;
   // Carried even when this editor doesn't render the section (the wizard), or
   // saving from there would silently wipe a limit set on the project tab.
@@ -393,6 +396,18 @@ export const RoutingConfigEditor: React.FC<{
 
       <section aria-label={w.urlBehavior} className="rounded-2xl bg-card p-5 space-y-4">
         <h4 className="text-sm font-medium text-foreground">{w.urlBehavior}</h4>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-foreground">{w.spaFallback}</p>
+            <p className="text-xs text-muted-foreground">{w.spaFallbackHint}</p>
+          </div>
+          <Switch
+            checked={cfg.spaFallback !== false}
+            disabled={disabled}
+            ariaLabel={w.spaFallback}
+            onChange={(checked) => patch({ spaFallback: checked })}
+          />
+        </div>
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm text-foreground">{w.cleanUrls}</p>

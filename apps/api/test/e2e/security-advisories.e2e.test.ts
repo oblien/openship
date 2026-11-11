@@ -93,7 +93,7 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
     await db
       .update(schema.advisoryFeed)
       .set({ nextCheckAt: new Date(0) })
-      .where(eq(schema.advisoryFeed.id, "security"));
+      .where(eq(schema.advisoryFeed.id, "security:v2"));
   };
   async function settle(id: string) {
     const deadline = Date.now() + 120_000;
@@ -232,10 +232,14 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
       platform: () => located.platform,
     }));
     // The real edge is intentionally absent: no service has public routing.
+    const edgeInventory = () => ({
+      listLoopbackUpstreamPortsStrict: async () => new Set<number>(),
+    });
     vi.doMock("@repo/adapters", async (original) => ({
       ...(await original<object>()),
       getPlatform: () => located.platform,
-      edgeProxyFor: () => ({ listLoopbackUpstreamPortsStrict: async () => new Set<number>() }),
+      edgeProxyFor: edgeInventory,
+      loopbackPortInventoryFor: edgeInventory,
     }));
     h.key = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
     proof = signed([]);
@@ -244,7 +248,7 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (
         url.includes(
-          "api.github.com/repos/oblien/openship/contents/security-advisories.signed.json",
+          "api.github.com/repos/oblien/openship/contents/security-advisories.v2.signed.json",
         )
       )
         return Response.json(proof, { headers: { etag: `"${revision}"` } });
@@ -399,9 +403,12 @@ describeDockerE2E("signed security advisories through real Node.js and PHP deplo
     );
     const status = await updates.projectSecurityStatus(ctx, project.id, undefined, true);
     expect(status.findings.some((f) => f.id === CASES[1]!.advisory)).toBe(false);
-    expect(status.findings.find((f) => f.id === "CVE-2026-115560-php-review")?.canRefresh).toBe(
-      false,
-    );
+    expect(status.findings.find((f) => f.id === "CVE-2026-115560-php-review")).toMatchObject({
+      severity: "low",
+      confidence: "possible",
+      manualReviewRequired: true,
+      canRefresh: false,
+    });
     expect(status.findings.some((f) => f.id === CASES[0]!.advisory)).toBe(true);
     expect((await repos.service.findById(services[1]!.id))?.image).toBe(CASES[1]!.image);
   }, 300_000);

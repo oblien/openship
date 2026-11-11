@@ -182,6 +182,24 @@ describe("durable native database tasks", () => {
           "pg_restore private-database-password private-storage-key postgresql://user:pass@database.private",
         ),
       ),
-    ).toBe("pg_restore [redacted] [redacted] postgresql://[redacted]@database.private");
+    ).toBe("pg_restore [REDACTED] [REDACTED] postgresql://database.private");
+  });
+  it("redacts overlapping and JSON-escaped task credentials without rewriting markers", () => {
+    vi.stubEnv("REDISCLI_AUTH", "x");
+    vi.stubEnv("PGPASSWORD", "redacted");
+    vi.stubEnv("BACKUP_SECRET_ACCESS_KEY", 'private"value\nnext');
+    expect(taskError(new Error(`x ${JSON.stringify(process.env.BACKUP_SECRET_ACCESS_KEY)}`)))
+      .toBe('[REDACTED] "[REDACTED]"');
+  });
+  it("keeps raw archive credentials out of cleanup diagnostics", async () => {
+    const secret = "opaque-archive-value";
+    vi.stubEnv("BACKUP_SECRET_ACCESS_KEY", secret);
+    data.archives = encodeArchiveEntries([entry("old")]);
+    vi.mocked(TaskArchiveStore.prototype.removeArchive).mockRejectedValueOnce(new Error(`Cleanup failed for ${secret}`));
+    await runDatabaseTask(config, AbortSignal.timeout(5000));
+    expect(TaskArchiveStore.prototype.removeArchive).toHaveBeenCalledOnce();
+    const logs = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logs).toContain("Cleanup failed");
+    expect(logs).not.toContain(secret);
   });
 });

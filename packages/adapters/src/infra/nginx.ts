@@ -15,6 +15,7 @@
  * ```
  */
 
+import { renderStaticFallback, renderStaticTryFiles } from "./static-routing";
 import { renderRouteProtection, assertRouteProtection, withRouteProtectionRuntime, ROUTE_AUTH_STATE, type RouteProtection } from "./route-protection";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
@@ -64,6 +65,7 @@ import {
 } from "./openresty-lua";
 import { reloadBareOpenResty } from "./openresty-reload";
 import {
+  assertLocalHostExecutionAllowed,
   safeErrorMessage,
   withKeyedMutex,
   isLoopbackHost,
@@ -219,8 +221,9 @@ const FORWARD_VARS = `    set $openship_fwd_proto $scheme;
  * 3 — the upstream-down `error_page` handler ({@link EDGE_UPSTREAM_DOWN_HANDLER}). Vhosts
  *     written before it serve OpenResty's stock 502 — which, behind Openship Cloud's
  *     edge, is a page branded for a third party on the operator's own domain (#556).
+ * 4 — explicit static SPA fallback with isolated custom 404 handling.
  */
-export const VHOST_GENERATION = 3;
+export const VHOST_GENERATION = 4;
 
 /** Marker line carrying {@link VHOST_GENERATION}, matched by {@link readVhostGeneration}. */
 const GENERATION_MARKER = `# openship-vhost-gen: ${VHOST_GENERATION}`;
@@ -620,65 +623,10 @@ function renderUrlShape(route: RouteConfig): string {
   // redirected before anything checked whether the path resolves, so an extension-less
   // REAL file was unreachable: `/LICENSE` 308'd to `/LICENSE/` and then served the SPA
   // index with a 200 — worse than a 404, because monitoring and crawlers see success.
-  // It is now the `try_files` fallback instead ({@link SLASH_FALLBACK}), which by
+  // It is now the `try_files` fallback instead ({@link renderStaticFallback}), which by
   // construction only runs once nothing resolved.
   // Interpolated where `location /` is already indented, so the first line drops its own.
   return rules.length > 0 ? `${rules.join("\n").trimStart()}\n\n        ` : "";
-}
-
-/** The named location `trailingSlash: true` falls back to — see {@link SLASH_FALLBACK}. */
-const SLASH_FALLBACK_NAME = "@osh_add_slash";
-
-/**
- * Where a `trailingSlash: true` static route lands when `try_files` resolved nothing:
- * add the slash if the client's path lacks one, otherwise serve the SPA index.
- *
- * A named location is reached only from `try_files`, so the redirect cannot fire for a
- * path that DID resolve — which is the whole point. The `[^/?]` before the optional query
- * is what makes it loop-free: after `/a` → 308 `/a/` the retry arrives WITH the slash, so
- * the rule declines and the request falls through to the index instead of bouncing again.
- *
- * It repeats `root`: a named location inherits nothing from `location /`, so without it
- * `try_files /index.html` resolves against the SERVER default root and serves OpenResty's
- * stock welcome page instead of the site — measured on 1.27.1.1.
- */
-function renderSlashFallback(staticRoot: string): string {
-  return `    location ${SLASH_FALLBACK_NAME} {
-        root ${staticRoot};
-
-        if ($request_uri ~ "^([^?]*[^/?])([?].*)?$") {
-            return 308 $1/$2;
-        }
-
-        try_files /index.html =404;
-    }`;
-}
-
-/**
- * The static `try_files` chain. `$uri.html` is the `cleanUrls` probe (after `$uri`, so a
- * real file still wins).
- *
- * `$uri/` is DROPPED when stripping trailing slashes, and replaced by an explicit
- * `$uri/index.html`. `$uri/` triggers nginx's own 301 directory redirect adding the
- * slash, which the strip rule 308s straight back — an unbreakable loop (`curl -L` exits
- * 47) for any directory the build emits without an index, e.g. a `/blog` holding only
- * `post-1.html`. Probing `$uri/index.html` serves the same directories without ever
- * asking nginx to add a slash we are about to remove.
- *
- * When enforcing the slash, `$uri/` is kept precisely BECAUSE it 301s — that is nginx
- * doing the enforcement for us — and the fallback becomes {@link SLASH_FALLBACK} so a
- * path that resolves to nothing gets the slash while a real file still wins. With
- * `cleanUrls` also set, `$uri.html` resolves `/about` before the fallback is reached, so
- * the pair no longer needs the special case it used to (enforcement being dropped
- * outright) and no longer depends on the build emitting `about/index.html`.
- */
-function renderStaticTryFiles(route: RouteConfig): string {
-  const parts = ["$uri"];
-  if (route.cleanUrls) parts.push("$uri.html");
-  if (route.trailingSlash === false) parts.push("$uri/index.html");
-  else parts.push("$uri/");
-  parts.push(route.trailingSlash === true ? SLASH_FALLBACK_NAME : "/index.html");
-  return `try_files ${parts.join(" ")};`;
 }
 
 /**
@@ -825,6 +773,10 @@ export interface NginxProviderOptions {
    * means a failed reload kills the container and 502s every site.
    */
   containerEdge?: boolean;
+  /** Original host connection for strict inventory on an SSH-managed container
+   * edge. The command executor itself runs inside the edge. Local socket edges
+   * omit this and read the resolved configuration through their command channel. */
+  hostExecutor?: CommandExecutor;
   /**
    * Directory edge-target challenge tokens are WRITTEN to, as seen by whatever
    * performs the write. Default = the container path (`EDGE_CHALLENGE_DIR`), which
@@ -1309,6 +1261,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private reloadCommand: string;
   private readonly pinPaths: boolean;
   private readonly containerEdge: boolean;
+  private readonly hostExecutor: CommandExecutor | undefined;
   private readonly challengeDir: string;
   private readonly configLock: ProvisionLock;
   private readonly configContext = new AsyncLocalStorage<{ active: boolean }>();
@@ -1320,6 +1273,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private nginxVersion: NginxVersion | undefined;
 
   constructor(opts: NginxProviderOptions) {
+    if (!opts.executor) assertLocalHostExecutionAllowed();
     assertValidAcmeOptions(opts);
     this.sitesDir = opts.paths.sitesDir;
     this.nginxVersion = opts.paths.nginxVersion;
@@ -1334,12 +1288,26 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     this.executor = opts.executor ?? null;
     this.paths = opts.paths;
     this.containerEdge = opts.containerEdge ?? false;
+    this.hostExecutor = opts.hostExecutor;
     this.reloadCommand = buildReloadCommand(opts.paths);
     this.pinPaths = opts.pinPaths ?? false;
     this.challengeDir = opts.challengeDir ?? EDGE_CHALLENGE_DIR;
     this.configLock = opts.configLock ?? {
       run: (fn, signal) => withKeyedMutex(`edge-config:${opts.paths.sitesDir}`, fn, signal),
     };
+  }
+
+  async listLoopbackUpstreamPortsStrict(): Promise<Set<number>> {
+    const { scanOpenshipEdgeStrict, strictLoopbackUpstreamPorts } =
+      await import("../system/proxy/import/nginx");
+    if (this.containerEdge && !this.hostExecutor) {
+      // DockerEdgeExecutor uses the mounted socket. Reading through the host
+      // channel here would unnecessarily require SSH on a raw Compose install.
+      return strictLoopbackUpstreamPorts(await this._exec(this.paths.bin, ["-T"]));
+    }
+    const { createExecutor } = await import("../system/executor");
+    const executor = this.hostExecutor ?? this.executor ?? createExecutor();
+    return (await scanOpenshipEdgeStrict(executor)).loopbackUpstreamPorts;
   }
 
   private withConfigLock<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -1684,6 +1652,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       return this.executor.exec(full);
     }
     try {
+      assertLocalHostExecutionAllowed();
       const { stdout } = await execFileAsync(command, args);
       return stdout;
     } catch (err) {
@@ -2094,16 +2063,16 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       ? `    log_by_lua_file ${LUA_LOGGER_PATH};\n    access_by_lua_file ${RULES_GUARD_PATH};`
       : "";
 
-    // The `trailingSlash: true` fallback target, appended to EVERY block that serves so
+    // The static `try_files` fallback target, appended to EVERY block that serves so
     // the `try_files` reference always resolves in the same server block. A named
     // location is server-scoped, so repeating it across blocks is not a collision.
-    const slashFallback =
-      !hostRedirect && "staticRoot" in route && route.staticRoot && route.trailingSlash === true
-        ? `\n\n${renderSlashFallback(route.staticRoot)}`
+    const staticFallback =
+      !hostRedirect && "staticRoot" in route && route.staticRoot
+        ? `\n\n${renderStaticFallback(route.staticRoot, route)}`
         : "";
 
     // The upstream-down page (#556), appended to every block that serves — same reason as
-    // `slashFallback` above: it is a named location, so it has to exist in whichever server
+    // `staticFallback` above: it is a named location, so it has to exist in whichever server
     // block the `error_page` fired in.
     //
     // Only where something can actually 502. A host redirect has no upstream at all, and a
@@ -2117,7 +2086,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // `location /` for a block that serves the app.
     const serveLocation = `    location / {
         ${redirectRules}${urlShape}${locationBody}
-    }${slashFallback}${upstreamDown}`;
+    }${staticFallback}${upstreamDown}`;
 
     // `location /` for the :80 block of a route that has a real cert: send the
     // visitor to https — unless a CDN already terminated TLS and reached us on
@@ -2133,7 +2102,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       ? serveLocation
       : `    location / {
         ${HTTPS_UPGRADE}${redirectRules}${urlShape}${locationBody}
-    }${slashFallback}${upstreamDown}`;
+    }${staticFallback}${upstreamDown}`;
 
     // Everything both server blocks share, after the per-block preamble.
     const sharedBody = `${route.protection ? renderRouteProtection(route.protection) : ""}${serverHeaders}${proxyOpts}
@@ -3365,6 +3334,7 @@ ${serveLocation}
       return;
     }
 
+    assertLocalHostExecutionAllowed();
     if (this.containerEdge) {
       await execFileAsync("sh", ["-lc", this.reloadCommand], { timeout: 15_000 });
       return;

@@ -12,7 +12,7 @@ import type {
   PrepareMonorepoApp,
 } from "@/lib/api/deploy";
 import type { Service } from "@/lib/api/services";
-import { ApiError, getApiErrorMessage } from "@/lib/api/client";
+import { ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
@@ -903,7 +903,12 @@ export function useDeploymentConfig() {
           branches,
           branchPage: branchPage ?? 0,
           branchesHasMore: branchesHasMore ?? false,
-          services: response.services || [],
+          services: (response.services ?? []).map(service => ({
+            ...service,
+            publicEndpoints: service.publicEndpoints?.map(createPublicEndpoint),
+          })),
+          composeRevision: response.composeRevision,
+          composeChanges: response.composeChanges,
           publicEndpoints: routingState.publicEndpoints,
           // openship.json is an explicit deploy contract, so its env is already
           // active. A generic adjacent `.env` remains opt-in through Import .env.
@@ -947,8 +952,40 @@ export function useDeploymentConfig() {
       success: boolean;
       error?: string;
       errorType?: string;
+      errorCode?: string;
       buildInProgress?: boolean;
     }> => {
+      // The source this scan attempted, for the failure paths below. A failed
+      // scan must not leave the wizard source-less: the branch selector and
+      // compose-path rescan both read owner/repo/branch from config, so the
+      // attempted source is recorded even when prepare fails (#1666). Never
+      // clobber an identity the operator has since moved to — a scan that
+      // resolves after navigation to another project must not rewrite it.
+      let attemptedSource: { owner: string; repo: string; branch?: string } | null = null;
+      const seedAttemptedSource = () => {
+        if (!attemptedSource) return;
+        const source = attemptedSource;
+        setConfig((prev) => {
+          if (
+            (prev.owner && prev.owner !== source.owner) ||
+            (prev.repo && prev.repo !== source.repo)
+          )
+            return prev;
+          if (
+            prev.owner === source.owner &&
+            prev.repo === source.repo &&
+            prev.branch === (source.branch ?? prev.branch)
+          )
+            return prev;
+          return {
+            ...prev,
+            owner: source.owner,
+            repo: source.repo,
+            branch: source.branch ?? prev.branch,
+          };
+        });
+      };
+
       try {
         let project: PersistedProject = null;
         let projectEnvState: ProjectEnvEditState | null = null;
@@ -972,6 +1009,7 @@ export function useDeploymentConfig() {
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
         const requestedBranch = context?.branch?.trim() || projectBranch.trim() || undefined;
         const changesSavedBranch = !!project && requestedBranch !== projectBranch;
+        attemptedSource = { owner: sourceOwner, repo: sourceRepo, branch: requestedBranch };
 
         const preparedSource: PrepareProjectSource = {
           owner: sourceOwner,
@@ -982,9 +1020,10 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, changesSavedBranch ? null : project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
+        const response = await deployApi.prepare({ ...preparedSource, projectId: context?.projectId, includeEnv: true });
 
         if (response?.error) {
+          seedAttemptedSource();
           return { success: false, error: response.error, errorType: "api_error" };
         }
 
@@ -1061,10 +1100,12 @@ export function useDeploymentConfig() {
         return { success: true };
       } catch (err) {
         const errorMessage = getApiErrorMessage(err, "Failed to fetch repository data");
+        seedAttemptedSource();
         return {
           success: false,
           error: errorMessage,
           errorType: err instanceof ApiError ? "api_error" : "network_error",
+          errorCode: getApiErrorCode(err) ?? undefined,
         };
       }
     },
@@ -1093,6 +1134,7 @@ export function useDeploymentConfig() {
       setIsRescanning(true);
       try {
         const response = await deployApi.prepare({
+          projectId: config.projectId,
           owner: config.owner,
           repo: config.repo,
           serverId: config.serverId,
@@ -1204,7 +1246,7 @@ export function useDeploymentConfig() {
           ...scanComposePath(context?.composePath, project),
           ...(context?.env ? { env: { ...context.env } } : {}),
         };
-        const response = await deployApi.prepare({ ...preparedSource, includeEnv: true });
+        const response = await deployApi.prepare({ ...preparedSource, projectId: context?.projectId, includeEnv: true });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -1447,7 +1489,7 @@ export function useDeploymentConfig() {
   const initializeFromProject = useCallback(
     async (
       projectId: string,
-      context?: { branch?: string },
+      context?: { branch?: string; reviewCompose?: boolean },
     ): Promise<{
       success: boolean;
       error?: string;
@@ -1474,10 +1516,25 @@ export function useDeploymentConfig() {
         // env read fails initialization rather than masquerading as an empty env.
         const envState = loaded.envState!;
 
-        const response = buildSavedProjectResponse(project, serviceRows);
+        let response = buildSavedProjectResponse(project, serviceRows);
         const repoName = project.gitRepo || project.name || "project";
-        const branch =
-          typeof project.gitBranch === "string" ? project.gitBranch : (context?.branch ?? "");
+        const branch = context?.branch || (typeof project.gitBranch === "string" ? project.gitBranch : "");
+        if (context?.reviewCompose) {
+          const source: PrepareProjectSource = project.localPath
+            ? { source: "local", path: project.localPath }
+            : { source: "github", owner: project.gitOwner, repo: project.gitRepo, branch,
+                serverId: project.serverId ?? undefined };
+          response = await deployApi.prepare({
+            ...source,
+            projectId,
+            rootDirectory: project.rootDirectory || undefined,
+            ...scanComposePath(undefined, project),
+          });
+          if (response.error) throw new Error(response.error);
+          if (!response.composeRevision || !response.services?.length) {
+            throw new Error("The Compose configuration could not be loaded. Try again before deploying.");
+          }
+        }
 
         // Re-validated rather than trusted: an older API build omits the field entirely,
         // and anything but the three members means "no saved target", which is the same
@@ -1514,7 +1571,7 @@ export function useDeploymentConfig() {
             prev.projectId === projectId &&
             (prev.projectType === "services" || prev.projectType === "monorepo") &&
             ((prev.services?.length ?? 0) > 0 || (prev.monorepoApps?.length ?? 0) > 0);
-          if (serviceRows.length === 0 && prevHoldsThisMultiProject) {
+          if (!context?.reviewCompose && serviceRows.length === 0 && prevHoldsThisMultiProject) {
             return {
               ...prev,
               projectId,

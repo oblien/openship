@@ -15,6 +15,8 @@ export interface CloudWorkspaceOperation {
   logs: string[];
   /** Retain the last result for logs and safe retries of a lost HTTP response. */
   completedAt?: string;
+  /** Failed initial setup is escalated through the existing support outbox. */
+  support?: { status: "pending" | "created"; ticketId?: string };
   revision?: string;
   /** Upstream revision for a linked server; local revision also covers its projects. */
   remoteRevision?: string;

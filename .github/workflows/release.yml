@@ -287,7 +287,7 @@ jobs:
 
   build-cli-payload:
     name: Build CLI runtime payload (downloaded by scripts/install.sh)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || inputs.npm_release_run == ''
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -362,6 +362,43 @@ jobs:
             apps/cli/.cli-payload/openship-cli-*.tar.gz.sha256
           if-no-files-found: error
           retention-days: 7
+
+  installed-cli-update:
+    name: Installed CLI update (${{ matrix.runner }}, Node ${{ matrix.node }})
+    if: github.event_name == 'push' || inputs.npm_release_run == ''
+    needs: [images-ready, build-cli-payload]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        node: ['22', '24']
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: openship-cli-release
+          path: cli-payload
+      - name: Exercise the installed updater before publication
+        env:
+          OPENSHIP_TEST_ISOLATED_VPS: '1'
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p 'require("./apps/cli/package.json").version')"
+          export OPENSHIP_E2E_CLI_PAYLOAD="$PWD/cli-payload/openship-cli-v${VERSION}.tar.gz"
+          export OPENSHIP_E2E_NEW_API_IMAGE="ghcr.io/oblien/openship-api:${VERSION}"
+          export OPENSHIP_E2E_NEW_DASHBOARD_IMAGE="ghcr.io/oblien/openship-dashboard:${VERSION}"
+          export OPENSHIP_E2E_NEW_EDGE_IMAGE="ghcr.io/oblien/openship-edge:${VERSION}"
+          node scripts/verify-vps-cli-update.mjs
 
   build-desktop:
     name: Build desktop installer (${{ matrix.label }})
@@ -541,7 +578,7 @@ jobs:
   build-desktop-macos:
     name: Build desktop installers (macOS arm64 + x64)
     if: github.event_name == 'push'
-    runs-on: macos-14
+    runs-on: macos-15
     # Signing stays with the build; Apple's asynchronous processing has its own
     # jobs so a network failure cannot discard successfully built installers.
     env:
@@ -680,7 +717,7 @@ jobs:
     name: Submit macOS notarization (${{ matrix.arch }})
     if: github.event_name == 'push'
     needs: build-desktop-macos
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -718,7 +755,7 @@ jobs:
     name: Finish macOS notarization (${{ matrix.arch }})
     if: github.event_name == 'push'
     needs: submit-desktop-macos
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 70
     strategy:
       fail-fast: false
@@ -776,10 +813,10 @@ jobs:
     # checkout and again before publication. It builds the original tested source;
     # only the package verifier comes from this workflow's maintenance revision.
     # An ordinary dispatch still requires a fresh gate.
-    needs: [gate, publish, images-ready]
+    needs: [gate, publish, images-ready, installed-cli-update]
     if: >-
       always() &&
-      ((needs.gate.result == 'success' &&
+      ((needs.gate.result == 'success' && needs.installed-cli-update.result == 'success' &&
         ((github.event_name == 'workflow_dispatch' && needs.images-ready.result == 'success') || needs.publish.result == 'success')) ||
        (github.event_name == 'workflow_dispatch' && inputs.npm_release_run != ''))
     env:
@@ -924,7 +961,7 @@ jobs:
   publish:
     name: Publish GitHub release
     if: github.event_name == 'push'
-    needs: [gate, images-ready, build-openship, build-email, build-dashboard, build-cli-payload, build-desktop, notarize-desktop-macos]
+    needs: [gate, images-ready, installed-cli-update, build-openship, build-email, build-dashboard, build-cli-payload, build-desktop, notarize-desktop-macos]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout

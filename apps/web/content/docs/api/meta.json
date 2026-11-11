@@ -39,6 +39,8 @@
     "settings",
     "mcp",
     "mcp-tools",
+    "assistant",
+    "chat-apps",
     "---Infrastructure---",
     "servers",
     "system",
@@ -50,7 +52,7 @@
     "---Cloud---",
     "cloud",
     "billing",
-    "affiliates",
+    "referrals",
     "support"
   ]
 }

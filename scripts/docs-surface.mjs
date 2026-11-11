@@ -61,6 +61,7 @@ export function sdkSurface() {
   const groups = new Map();
   for (const [surface, location] of [["native", declaration], ["remote", remote]]) {
     for (const property of checker.getTypeAtLocation(location).getProperties()) {
+      if (property.getJsDocTags().some(tag => tag.name === "deprecated")) continue;
       if (["deploy", "deployment", "organizationId", "http", "options"].includes(property.name)) continue;
       const type = checker.getTypeOfSymbolAtLocation(property, location);
       // Root workflow functions are documented separately; groups contain named methods.
@@ -150,7 +151,7 @@ export function httpSurface() {
   );
   // Browser callback and OAuth discovery routes are mounted at the origin root.
   // Resolve the two explicit MCP resource aliases without importing the app.
-  const resourceFile = join(root, "apps/api/src/lib/mcp-resource.ts");
+  const resourceFile = join(root, "packages/platform/src/engine/lib/mcp-resources.ts");
   const resources = ts.createSourceFile(
     resourceFile,
     readFileSync(resourceFile, "utf8"),

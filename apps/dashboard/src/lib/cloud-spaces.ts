@@ -1,9 +1,15 @@
 import { PLAN_IDS, resolvePlan, toPricingLocale } from "@repo/core";
 
-/** Keep the execution identity in Cloud space links, not the subscription ID. */
-export function cloudSpaceHref(serverId: string, tab?: "activity") {
-  const query = new URLSearchParams({ pool: serverId });
-  if (tab) query.set("tab", tab);
+export type CloudPlanTab = "overview" | "usage" | "payment" | "activity" | "topups";
+
+/** A plan keeps its execution identity, including billing and checkout-return links. */
+export function cloudSpaceHref(serverId: string, tab?: CloudPlanTab, params?: URLSearchParams) {
+  const query = new URLSearchParams(params);
+  query.delete("workspaceId");
+  query.delete("newServer");
+  query.set("pool", serverId);
+  if (tab && tab !== "overview") query.set("tab", tab);
+  else query.delete("tab");
   return `/resources?${query}`;
 }
 

@@ -17,27 +17,18 @@ const monthlyPro = (): NonNullable<OblienSubscription> => ({ ...savedPro(),
   offer: subscriptionOffer("pro", "monthly"), metadata: subscriptionMetadata("pro", "org-a", "ns-a") });
 
 describe("funded Cloud offers and isolated capacity", () => {
-  it("publishes Openship PAYG pool tiers independently of provider account plans and usage prices", () => {
-    const catalog = presentCloudPlans();
-    expect(catalog.payg).toEqual(PRICING.payg);
-    expect(Value.Check(BillingPlansSchema, catalog)).toBe(true);
-    expect(catalog.payg?.tiers.map(tier => tier.minimumFundingCents)).toEqual([500, 2000, 5000]);
-    catalog.payg!.tiers[0]!.pool.cpuCores = 999;
-    expect(presentCloudPlans().payg!.tiers[0]!.pool.cpuCores).toBe(2);
-    expect(catalog.computePricing).toBeUndefined();
-  });
-  it("publishes the provider's credit conversion and cap factor without activating customer PAYG checkout", () => {
-    const provider = oblienCapacityCatalogSchema.parse(capacityFixture);
-    provider.tariff.creditsPerDollar = 200;
-    provider.tariff.paygCapPercent = 130;
-    const catalog = presentCloudPlans("en", provider);
-    expect(Value.Check(BillingPlansSchema, catalog)).toBe(true);
-    expect(catalog.computePricing).toMatchObject({
-      creditsPerDollar: 200, paygCapPercent: 130,
-      usage: provider.tariff.usage, paygCheckoutAvailable: false,
-    });
-    expect(presentCloudPlans().computePricing).toBeUndefined();
-  });
+  it.each([undefined, oblienCapacityCatalogSchema.parse(capacityFixture)])(
+    "publishes only subscription plans without prepaid compute offers (with or without provider capacity)",
+    (provider) => {
+      const catalog = presentCloudPlans("en", provider);
+      expect(Value.Check(BillingPlansSchema, catalog)).toBe(true);
+      expect(catalog).not.toHaveProperty("payg");
+      expect(catalog).not.toHaveProperty("computePricing");
+      expect(catalog.plans.filter(plan => plan.availableForPurchase && plan.price.monthly! > 0).every(plan => plan.billingMode === "monthly")).toBe(true);
+      expect(catalog.custom).toBeDefined();
+      expect(catalog.management).toBeDefined();
+    },
+  );
   it("sells the approved monthly prices with explicit pools and no credit policy", () => {
     for (const tier of ["hobby", "starter", "pro", "team"] as const) {
       const offer = subscriptionOffer(tier, "monthly");

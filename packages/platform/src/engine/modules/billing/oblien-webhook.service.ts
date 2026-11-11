@@ -22,9 +22,9 @@ import {
 } from "@repo/platform/engine/modules/billing/oblien-webhook-crypto";
 
 import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
-import { observeVerifiedBillingEvent } from "../cloud-analytics/billing";
 import { creditAlertNotification } from "./billing-credit-alert";
 import { findBillingOwnerByNamespace } from "./billing-namespace-owner";
+import { prepareCustomerBillingEmails } from "../customer-email/billing";
 
 const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
@@ -173,8 +173,13 @@ export async function handleOblienWebhook(
     const organizationId = orgId = owner.organizationId;
     if (owner.kind === "management") {
       const { syncManagementBilling } = await import("./management.service");
-      await syncManagementBilling(organizationId);
-      await upsertWebhookEventProcessed(db, eventId, eventType);
+      const { subscription } = await syncManagementBilling(organizationId);
+      const enqueue = await prepareCustomerBillingEmails({ organizationId, namespace, scope: "management", eventType, data: payload.data, subscription });
+      await db.transaction(async transaction => {
+        const tx = transaction as unknown as Database;
+        if (enqueue) await enqueue(tx);
+        await upsertWebhookEventProcessed(tx, eventId, eventType);
+      });
       return { status: 200, payload: { received: true } };
     }
     if (owner.kind === "actions") {
@@ -201,25 +206,26 @@ export async function handleOblienWebhook(
         .from(schema.oblienWebhookEvent)
         .where(eq(schema.oblienWebhookEvent.oblienEventId, eventId)).limit(1);
       if (existing?.processedAt) {
-        await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
         return;
       }
       // Every relevant notification refreshes provider truth. In particular,
       // old payment/suspension events cannot revert a newer paid entitlement.
-      const { entitlement, tier } = await sync({ syncResourceLimits: false });
+      const { entitlement, tier, subscription } = await sync({ syncResourceLimits: false });
       if (entitlement.namespace !== namespace) throw new Error("Billing namespace changed during delivery");
       // This historical display cache belongs to the old organization namespace.
       // Workspace billing reads its own provider usage; never overwrite siblings.
       if (eventType === "credits.usage" && !owner.workspaceId) await handleCreditsUsage(organizationId, payload, entitlement.quota.balance);
       const alert = creditAlertNotification({ eventType, eventId, data: payload.data ?? {},
         timestamp: payload.timestamp, organizationId, workspaceId: owner.workspaceId ?? undefined, entitlement, dashboardUrl: localDashboardUrl });
-      await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
       const enqueue = alert ? await notification.prepare(alert) : null;
+      const enqueueEmail = await prepareCustomerBillingEmails({ organizationId, namespace, scope: "hosting",
+        workspaceId: owner.workspaceId, eventType, data: payload.data, subscription });
       // No email is sent while holding this transaction. The receiver only ACKs
       // once notifications, the exhaustion activity, and its checkpoint commit together.
       await db.transaction(async transaction => {
         const tx = transaction as unknown as Database;
         if (enqueue) await enqueue(tx);
+        if (enqueueEmail) await enqueueEmail(tx);
         if (alert?.eventType === "billing.credit_exhausted") {
           await createAuditEventRepo(tx, createAuditSettingsRepo(tx)).create({
             organizationId,

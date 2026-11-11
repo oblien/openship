@@ -1,0 +1,94 @@
+---
+title: server security
+description: Commands, arguments, and options for openship server security.
+cliGroup: openship server security
+---
+
+See the [workflow guide](/docs/cli/self-host) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship server security
+
+Inspect server advisories and review host maintenance runs
+
+```text
+openship server security [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`get <id>`](/docs/cli/reference/server/security#openship-server-security-get) | Read cached findings and inspection freshness |
+| [`check <id>`](/docs/cli/reference/server/security#openship-server-security-check) | Inspect the host without installing packages |
+| [`runs <id>`](/docs/cli/reference/server/security#openship-server-security-runs) | Read this server's patch and reboot history |
+| [`plan [options] <id> [file]`](/docs/cli/reference/server/security#openship-server-security-plan) | Review exact package changes or a kernel reboot; package planning refreshes APT indexes |
+| [`apply [options] <id> [file]`](/docs/cli/reference/server/security#openship-server-security-apply) | Apply the reviewed expiring token and return a server run ID |
+
+## openship server security apply
+
+Apply the reviewed expiring token and return a server run ID
+
+```text
+openship server security apply [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship server security check
+
+Inspect the host without installing packages
+
+```text
+openship server security check [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server security get
+
+Read cached findings and inspection freshness
+
+```text
+openship server security get [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |
+
+## openship server security plan
+
+Review exact package changes or a kernel reboot; package planning refreshes APT indexes
+
+```text
+openship server security plan [options] <id> [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Resource ID |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship server security runs
+
+Read this server's patch and reboot history
+
+```text
+openship server security runs [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Server ID |

@@ -188,6 +188,7 @@ afterEach(async () => {
   container.remove();
   delete window.desktop;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("release check requests (#661)", () => {
@@ -288,6 +289,82 @@ const affectedOverview = {
   unknownProjects: 0,
 };
 describe("global runtime advisories", () => {
+  it.each(["high", "critical"])(
+    "preserves %s warnings that require manual review",
+    async (severity) => {
+      const project = affectedOverview.projects[0];
+      feed.overview = {
+        ...affectedOverview,
+        projects: [
+          {
+            ...project,
+            findings: [
+              {
+                ...project.findings[0],
+                severity,
+                confidence: "possible",
+                manualReviewRequired: true,
+                canRefresh: false,
+              },
+            ],
+          },
+        ],
+      };
+      await mount();
+      expect(state[0].runtimeAdvisories[0].severity).toBe("critical");
+      expect(state[0].runtimeAdvisories[0].manualReview).not.toBe(true);
+      expect(state[0].securityOverview.projects[0].findings[0].severity).toBe(severity);
+    },
+  );
+
+  it.each(["desktop", "selfhosted", "cloud"])(
+    "keeps conditional manual reviews informational and prioritizes confirmed findings in %s",
+    async (mode) => {
+      if (mode !== "desktop") delete window.desktop;
+      deployment.selfHosted = mode !== "cloud";
+      const project = affectedOverview.projects[0];
+      const manual = {
+        ...project,
+        projectId: "manual-app",
+        findings: [
+          {
+            ...project.findings[0],
+            id: "conditional-review",
+            severity: "low",
+            confidence: "possible",
+            manualReviewRequired: true,
+            canRefresh: false,
+          },
+        ],
+      };
+      feed.overview = { ...affectedOverview, projects: [manual, project] };
+      await mount();
+      const notice = state[0].runtimeAdvisories.find((item) =>
+        item.id.endsWith(":conditional-review:1"),
+      );
+      expect(notice).toMatchObject({ severity: "info", manualReview: true });
+      expect(state[0].securityOverview.projects[0].findings[0]).toMatchObject({
+        severity: "low",
+        confidence: "possible",
+        manualReviewRequired: true,
+      });
+      expect(state[0].state?.advisories.map((item) => item.id)).toEqual([
+        expect.stringContaining(":runtime-fix:1"),
+        expect.stringContaining(":conditional-review:1"),
+      ]);
+      // A confirmed match of the same advisory must retain the upstream warning priority.
+      manual.findings.push({
+        ...manual.findings[0],
+        serviceId: "confirmed-service",
+        confidence: "confirmed",
+      });
+      await act(async () => state[0].refresh());
+      expect(
+        state[0].runtimeAdvisories.find((item) => item.id.endsWith(":conditional-review:1")),
+      ).toMatchObject({ severity: "recommended" });
+    },
+  );
+
   it.each([false, true])(
     "rechecks a completed deployment before clearing its banner (still affected: %s)",
     async (stillAffected) => {
@@ -381,6 +458,35 @@ describe("global runtime advisories", () => {
     };
     await act(async () => state[0].refresh());
     expect(state[0].securityOverview.projects[0].findings).toEqual([]);
+  });
+
+  it("replaces an actionable banner with persisted update progress and restores it on failure", async () => {
+    const progress = (status: "running" | "failed") => ({
+      ...affectedOverview,
+      projects: affectedOverview.projects.map((p) => ({
+        ...p,
+        findings: p.findings.map((f) => ({
+          ...f,
+          refresh: {
+            status,
+            deploymentId: "security-deployment",
+            error: status === "failed" ? "Runtime is still affected" : null,
+          },
+        })),
+      })),
+    });
+    vi.useFakeTimers();
+    feed.overview = progress("running");
+    await mount();
+    expect(state[0].runtimeAdvisories).toEqual([]);
+    expect(state[0].securityOverview.projects[0].findings[0].refresh?.status).toBe("running");
+    feed.overview = progress("failed");
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(state[0].runtimeAdvisories).toHaveLength(1);
+    expect(state[0].securityOverview.projects[0].findings[0].refresh?.error).toBe(
+      "Runtime is still affected",
+    );
+    vi.useRealTimers();
   });
 
   it("groups only the apps and service evidence belonging to each advisory", async () => {

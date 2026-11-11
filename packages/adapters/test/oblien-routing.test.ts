@@ -160,3 +160,11 @@ describe("compileRoutingToOblien", () => {
     expect(input.routes).toEqual([]);
   });
 });
+
+
+describe("Cloud static fallback", () => {
+  it.each([undefined, true, false])("carries the static setting to the provider: %s", (spaFallback) => {
+    expect(compileRoutingToOblien({ spaFallback }, { staticPage: "site" }).spa).toBe(spaFallback);
+    expect(compileRoutingToOblien({ spaFallback }, { root: { workspace: "app", port: 8080 } })).not.toHaveProperty("spa");
+  });
+});

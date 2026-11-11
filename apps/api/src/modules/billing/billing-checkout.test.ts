@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
   quota: vi.fn(),
   pending: new Map<string, unknown[]>(),
   members: vi.fn(),
-  env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true, AFFILIATES_ENABLED: false, OBLIEN_AFFILIATE_NAMESPACE: "openship" },
+  env: { CLOUD_MODE: true, BILLING_ENABLED: true, BILLING_TOPUPS_ENABLED: true, REFERRALS_ENABLED: false, REFERRAL_NAMESPACE: "openship" },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env, runtimeTarget: { dashboard: "https://app.openship.io" } }));
 vi.mock("@repo/db", () => {
@@ -58,7 +58,7 @@ vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({
 import { createCheckoutSession, createTopupCheckoutSession, createPortalSession, cancelSubscription, resumeSubscription, listActiveCreditPacks } from "@repo/platform/engine/modules/billing/billing.service";
 import { customSubscriptionOffer, validCustomOffer } from "@repo/platform/engine/modules/billing/billing-custom-offer";
 import { presentCloudPlans, subscriptionPlan } from "@repo/platform/engine/modules/billing/billing-catalog";
-import { affiliateParticipantKey } from "@repo/platform/engine/modules/affiliates/affiliate-provider";
+import { referralParticipantKey } from "@repo/platform/engine/modules/referrals/referral-provider";
 
 const ctx = (organizationId = "org-a") => ({ organizationId }) as never;
 const subscription = {
@@ -71,7 +71,7 @@ beforeEach(() => {
   h.pending.clear();
   h.env.BILLING_ENABLED = true;
   h.env.BILLING_TOPUPS_ENABLED = true;
-  h.env.AFFILIATES_ENABLED = false;
+  h.env.REFERRALS_ENABLED = false;
   h.members.mockResolvedValue([{ userId: "owner" }, { userId: "buyer" }]);
   h.namespace.mockImplementation(async (org) => `ns-${org}`);
   h.sync.mockImplementation(async (orgId) => {
@@ -94,24 +94,24 @@ beforeEach(() => {
 });
 describe("Cloud customer checkout", () => {
   it.each(["monthly", "annual"] as const)("binds verified buyer and workspace members to the normal %s referral checkout", async interval => {
-    h.env.AFFILIATES_ENABLED = true;
+    h.env.REFERRALS_ENABLED = true;
     await createCheckoutSession({ organizationId: "org-a", userId: "buyer" } as never, "starter", interval,
-      "affiliate-attempt-0001", undefined, undefined, "AF-0123456789");
+      "referral-attempt-0001", undefined, undefined, "AF-0123456789");
     expect(h.members).toHaveBeenCalledWith("org-a");
     expect(h.checkout).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       namespace: "ns-org-a", kind: "subscription", billingInterval: interval === "annual" ? "yearly" : "monthly",
-      affiliateCode: "AF-0123456789", affiliateBuyer: { namespace: "openship", buyerKey: affiliateParticipantKey("buyer"),
-        relatedKeys: [affiliateParticipantKey("owner"), affiliateParticipantKey("buyer")] },
+      affiliateCode: "AF-0123456789", affiliateBuyer: { namespace: "openship", buyerKey: referralParticipantKey("buyer"),
+        relatedKeys: [referralParticipantKey("owner"), referralParticipantKey("buyer")] },
     }));
     expect(h.pending.get("org-a")).toHaveLength(1);
   });
   it("saves buyer identity for later hosted code entry but rejects codes when the feature is disabled", async () => {
-    await expect(createCheckoutSession(ctx(), "starter", "monthly", "affiliate-disabled", undefined, undefined, "AF-0123456789"))
+    await expect(createCheckoutSession(ctx(), "starter", "monthly", "referral-disabled", undefined, undefined, "AF-0123456789"))
       .rejects.toMatchObject({ code: "AFFILIATE_INELIGIBLE" });
     expect(h.checkout).not.toHaveBeenCalled(); expect(h.members).not.toHaveBeenCalled();
-    h.env.AFFILIATES_ENABLED = true;
-    await createCheckoutSession({ organizationId: "org-a", userId: "buyer" } as never, "starter", "monthly", "affiliate-hosted-entry");
-    expect(h.checkout.mock.calls[0]![0]).toHaveProperty("affiliateBuyer.buyerKey", affiliateParticipantKey("buyer"));
+    h.env.REFERRALS_ENABLED = true;
+    await createCheckoutSession({ organizationId: "org-a", userId: "buyer" } as never, "starter", "monthly", "referral-hosted-entry");
+    expect(h.checkout.mock.calls[0]![0]).toHaveProperty("affiliateBuyer.buyerKey", referralParticipantKey("buyer"));
     expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("affiliateCode");
   });
   it("does not create a paid checkout while a complimentary plan is active", async () => {
@@ -152,6 +152,11 @@ describe("Cloud customer checkout", () => {
       },
     });
     expect(input.successUrl).toContain("session_id={CHECKOUT_SESSION_ID}");
+    for (const value of [input.successUrl, input.cancelUrl]) {
+      const url = new URL(value);
+      expect(url.searchParams.get("organizationId")).toBe("org-a");
+      expect(url.searchParams.get("workspaceId")).toBe("workspace-org-a");
+    }
     expect(input.offer).not.toHaveProperty("policy");
     expect(input).not.toHaveProperty("planTierId");
     expect(input).not.toHaveProperty("customer");
@@ -172,6 +177,36 @@ describe("Cloud customer checkout", () => {
           max_ram_mb: 4096, max_total_ram_mb: 4096, max_disk_gb: 50, max_total_disk_gb: 50 },
       }),
     }));
+  });
+
+  it("retries a pre-upgrade checkout with its original redirect URLs and payment key", async () => {
+    await createCheckoutSession(ctx(), "starter", "monthly", "existing-checkout");
+    const request = h.checkout.mock.calls[0]![0];
+    const legacy = { ...request,
+      successUrl: request.successUrl.replace("organizationId=org-a&", ""),
+      cancelUrl: request.cancelUrl.replace("organizationId=org-a&", ""),
+    };
+    h.pending.set("org-a", [{ request: legacy, checkoutId: "cs_test" }]);
+    h.checkout.mockClear();
+    await createCheckoutSession(ctx(), "starter", "monthly", "existing-checkout");
+    expect(h.checkout).toHaveBeenCalledExactlyOnceWith(legacy);
+    expect(h.pending.get("org-a")).toHaveLength(1);
+  });
+
+  it.each(["organization", "price"])("does not accept a changed %s as a legacy retry", async (change) => {
+    await createCheckoutSession(ctx(), "starter", "monthly", "foreign-return");
+    const request = h.checkout.mock.calls[0]![0];
+    const changed = change === "organization" ? { ...request,
+      successUrl: request.successUrl.replace("organizationId=org-a", "organizationId=org-b"),
+    } : { ...request, offer: { ...request.offer, unitAmount: request.offer.unitAmount + 100 },
+      successUrl: request.successUrl.replace("organizationId=org-a&", ""),
+      cancelUrl: request.cancelUrl.replace("organizationId=org-a&", ""),
+    };
+    h.pending.set("org-a", [{ request: changed, checkoutId: "cs_test" }]);
+    h.checkout.mockClear();
+    await expect(createCheckoutSession(ctx(), "starter", "monthly", "foreign-return"))
+      .rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_CONFLICT" });
+    expect(h.checkout).not.toHaveBeenCalled();
   });
   it("refuses a retired offer before creating a checkout", async () => {
     const plan = PRICING.plans.find(plan => plan.id === "hobby")!;
@@ -407,7 +442,7 @@ describe("Cloud customer checkout", () => {
   it("opens a separate customer portal for each trusted organization", async () => {
     for (const org of ["org-a", "org-b"]) {
       expect(await createPortalSession(org)).toEqual({ portalUrl: "https://billing.stripe.com/p/session/test" });
-      expect(h.portal).toHaveBeenLastCalledWith({ namespace: `ns-${org}`, returnUrl: "https://app.openship.io/billing/overview" });
+      expect(h.portal).toHaveBeenLastCalledWith({ namespace: `ns-${org}`, returnUrl: `https://app.openship.io/billing/overview?organizationId=${org}&workspaceId=workspace-${org}` });
     }
   });
   it("stops renewal at the paid period end and can resume without granting credits", async () => {

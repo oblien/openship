@@ -24,7 +24,11 @@
     "connecting": "Conectando…",
     "streamUnavailable": "As atualizações ao vivo estão indisponíveis. Exibindo a última medição.",
     "usageTitle": "Uso de recursos",
-    "setupPending": "O uso aparecerá quando seu espaço Cloud estiver configurado."
+    "setupPending": "O uso aparecerá quando seu espaço Cloud estiver configurado.",
+    "projectsAssigned": "Projetos neste plano",
+    "projectsAssignedHint": "Projetos que partilham a computação e o armazenamento deste plano.",
+    "showAllProjects": "Ver todos os {count} projetos",
+    "storageDetails": "Sobre o uso do armazenamento"
   },
   "github": {
     "title": "Acesso ao GitHub",
@@ -67,12 +71,8 @@
     "addThisMachine": "Adicionar esta máquina",
     "addThisMachineError": "Não foi possível adicionar esta máquina como servidor.",
     "emptyTitle": "Ainda não há servidores",
-    "emptyDescription": "Conecte um servidor via SSH e o Openship trata do resto — Docker, OpenResty, SSL e implantações, tudo configurado automaticamente.",
+    "emptyDescription": "Conecte um servidor via SSH. O OpenShip cuida do Docker, roteamento, SSL e implantações.",
     "addFirstServer": "Adicionar o Seu Primeiro Servidor",
-    "whatGetsConfigured": "O que é configurado",
-    "monitoring": "Monitoramento",
-    "monitoringDesc": "Verificações de saúde",
-    "gitDesc": "Implantações a partir do código-fonte",
     "connected": "Conectado",
     "error": "Erro",
     "forwarding": "{n} encaminhamento(s)",
@@ -135,10 +135,6 @@
       "nothingToDo": "Nada a aplicar",
       "applyFailed": "Não foi possível iniciar as atualizações"
     },
-    "featContainer": "Runtime de contêineres",
-    "featContainerDesc": "Executa cada aplicação de forma isolada",
-    "featProxy": "Proxy reverso",
-    "featProxyDesc": "Roteamento e SSL",
     "seeDocs": "Ver documentação"
   },
   "containers": {
@@ -247,7 +243,8 @@
       "ssh": "Acesso SSH",
       "runtimeApi": "API de execução",
       "workloads": "Cargas de trabalho",
-      "settings": "Configurações"
+      "settings": "Configurações",
+      "runs": "Execuções"
     },
     "healthy": "Saudável",
     "issues": "Problemas",
@@ -1034,12 +1031,12 @@
       "description": "Use um servidor que você já possui via SSH."
     },
     "managed": {
-      "label": "Obter um servidor gerenciado",
-      "description": "O Openship Cloud cuida da configuração, das rotas e do HTTPS."
+      "label": "Adicionar espaço Cloud",
+      "description": "Apps, builds e dados compartilham a capacidade do seu espaço Cloud."
     },
-    "signInHint": "Conecte sua conta Cloud para usar um servidor gerenciado existente ou obter um novo.",
-    "chooseExisting": "Escolher um servidor Cloud existente",
-    "useServer": "Usar este servidor"
+    "signInHint": "Conecte sua conta Cloud para usar um espaço Cloud existente ou adicionar um novo.",
+    "chooseExisting": "Escolha um espaço Cloud",
+    "useServer": "Usar este espaço Cloud"
   },
   "managedControls": {
     "retry": "Atualizar status",
@@ -1251,5 +1248,21 @@
     "saved": "Configuração de GPU salva",
     "saveFailed": "Não foi possível salvar a configuração de GPU",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "Cache de build",
+    "subtitle": "Quanto cache de build o Openship mantém neste servidor entre implantações.",
+    "modeLabel": "Limite do cache",
+    "modeAuto": "Automático",
+    "modeCustom": "Personalizado",
+    "modeHint": "O modo automático mantém até 20% do disco Docker deste servidor. Após cada build, os caches acima do limite são removidos, começando pelos usados há mais tempo.",
+    "statusAuto": "Automático",
+    "statusCustom": "Personalizado · {size} GiB",
+    "customLabel": "Limite em GiB",
+    "invalid": "Digite um tamanho entre {min} e {max} GiB, com até duas casas decimais.",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "saved": "Limite do cache de build salvo",
+    "saveFailed": "Não foi possível salvar o limite do cache de build"
   }
 }

@@ -24,7 +24,11 @@
     "connecting": "正在连接…",
     "streamUnavailable": "实时更新不可用。正在显示最近测量的使用量。",
     "usageTitle": "资源使用情况",
-    "setupPending": "云空间设置完成后将显示使用情况。"
+    "setupPending": "云空间设置完成后将显示使用情况。",
+    "projectsAssigned": "此套餐中的项目",
+    "projectsAssignedHint": "共享此套餐计算和存储资源的项目。",
+    "showAllProjects": "查看全部 {count} 个项目",
+    "storageDetails": "关于存储使用量"
   },
   "github": {
     "title": "GitHub 访问",
@@ -67,12 +71,8 @@
     "addThisMachine": "添加本机",
     "addThisMachineError": "无法将本机添加为服务器。",
     "emptyTitle": "还没有服务器",
-    "emptyDescription": "通过 SSH 连接一台服务器，其余的交给 Openship 处理——Docker、OpenResty、SSL 和部署都会自动配置好。",
+    "emptyDescription": "通过 SSH 连接服务器。OpenShip 负责 Docker、路由、SSL 和部署。",
     "addFirstServer": "添加你的第一台服务器",
-    "whatGetsConfigured": "将会配置的内容",
-    "monitoring": "监控",
-    "monitoringDesc": "健康检查",
-    "gitDesc": "源码部署",
     "connected": "已连接",
     "error": "错误",
     "forwarding": "{n} 个转发",
@@ -135,10 +135,6 @@
       "nothingToDo": "没有可应用的内容",
       "applyFailed": "无法开始更新"
     },
-    "featContainer": "容器运行时",
-    "featContainerDesc": "隔离运行每个应用",
-    "featProxy": "反向代理",
-    "featProxyDesc": "路由与SSL",
     "seeDocs": "查看文档"
   },
   "containers": {
@@ -247,7 +243,8 @@
       "ssh": "SSH 访问",
       "runtimeApi": "运行时 API",
       "workloads": "工作负载",
-      "settings": "设置"
+      "settings": "设置",
+      "runs": "运行记录"
     },
     "healthy": "健康",
     "issues": "问题",
@@ -1034,12 +1031,12 @@
       "description": "通过 SSH 使用你已有的服务器。"
     },
     "managed": {
-      "label": "获取托管服务器",
-      "description": "Openship Cloud 负责配置、路由和 HTTPS。"
+      "label": "添加云空间",
+      "description": "应用、构建和数据共享所在云空间的容量。"
     },
-    "signInHint": "连接 Cloud 账户，即可使用已有的托管服务器或获取新服务器。",
-    "chooseExisting": "选择已有的 Cloud 服务器",
-    "useServer": "使用此服务器"
+    "signInHint": "连接您的 Cloud 账户以使用现有的 Cloud 空间或添加新空间。",
+    "chooseExisting": "选择云空间",
+    "useServer": "使用此 Cloud 空间"
   },
   "managedControls": {
     "retry": "刷新状态",
@@ -1251,5 +1248,21 @@
     "saved": "GPU 设置已保存",
     "saveFailed": "无法保存 GPU 设置",
     "badge": "GPU"
+  },
+  "buildCache": {
+    "title": "构建缓存",
+    "subtitle": "Openship 在两次部署之间于此服务器上保留多少构建缓存。",
+    "modeLabel": "缓存上限",
+    "modeAuto": "自动",
+    "modeCustom": "自定义",
+    "modeHint": "自动模式最多保留此服务器 Docker 磁盘的 20%。每次构建后，超出上限的缓存会按最久未使用的顺序删除。",
+    "statusAuto": "自动",
+    "statusCustom": "自定义 · {size} GiB",
+    "customLabel": "上限（GiB）",
+    "invalid": "请输入 {min} 到 {max} GiB 之间的大小，最多两位小数。",
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "已保存构建缓存上限",
+    "saveFailed": "无法保存构建缓存上限"
   }
 }

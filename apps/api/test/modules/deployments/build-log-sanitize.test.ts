@@ -245,6 +245,13 @@ describe("sanitizeLogsForPersistence", () => {
  * and `build_session.logs` outlives the ~60-minute token in backups and exports.
  */
 describe("redactCredentials", () => {
+  it("strips a long JWT-style installation token from a clone URL (#979)", () => {
+    const token = `eyJ${"a".repeat(1000)}.${"b".repeat(500)}`;
+    expect(redactCredentials(`git clone https://x-access-token:${token}@github.com/a/b.git`)).toBe(
+      "git clone https://***@github.com/a/b.git",
+    );
+  });
+
   it("redacts the userinfo of the URL the clone path actually builds", () => {
     const out = redactCredentials(
       "Cloning into 'app'... https://x-access-token:ghs_AbCdEf0123456789xyz@github.com/acme/app.git",

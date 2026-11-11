@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposeReview } from "@/hooks/useComposeReview";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -10,6 +11,7 @@ import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/
 import type { PendingAction } from "@/lib/api/projects";
 import { updatesApi } from "@/lib/api/updates";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
+import { canRefreshProjectEnvironment } from "@/lib/project-application";
 import { useModal } from "@/context/ModalContext";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
@@ -39,6 +41,7 @@ export const Deployments = () => {
   const { t } = useI18n();
   const { showToast } = useToast();
   const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
+  const showComposeReview = useComposeReview(projectData?.id);
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 
@@ -87,16 +90,8 @@ export const Deployments = () => {
     };
   }, [projectData?.id, isBlocked, projectData?.latestDeploymentId]);
 
-  /**
-   * Redeploy = take the project's CURRENT saved configuration + env vars, pull
-   * the latest commit, and create a new version. There is NO wizard and NO
-   * reconfiguration here — config edits live in the Runtime tab. This is the
-   * exact snapshot-current-config path the webhook uses (triggerDeployment), so
-   * manual / webhook / single-entry redeploys all behave identically. We pass
-   * forceAll because a manual redeploy has no changed-files signal to scope by,
-   * so it rebuilds every service (a no-op for single-app projects). On success
-   * we land on the build screen for the new version.
-   */
+  // Redeploy saved settings against the latest source. Source changes stop at
+  // the shared review gate and open the existing configuration wizard.
   const runRedeploy = React.useCallback(
     async (mode: "smart" | "all" | "refresh" | "update" = "smart") => {
       if (!projectData?.id) return;
@@ -122,6 +117,10 @@ export const Deployments = () => {
         const res = await deployApi.trigger(body);
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
+        if (showComposeReview(error)) {
+          setIsRedeploying(false);
+          return;
+        }
         if (showCloudPricing(error, () => runRedeploy(mode))) {
           setIsRedeploying(false);
           return;
@@ -152,7 +151,7 @@ export const Deployments = () => {
         setIsRedeploying(false); // success navigates away; only clear on failure
       }
     },
-    [projectData?.id, router, showToast, showCloudPricing, t],
+    [projectData?.id, router, showToast, showCloudPricing, showComposeReview, t],
   );
 
   const handleRedeploy = async () => {
@@ -419,12 +418,16 @@ export const Deployments = () => {
                 supported={!!canUpdateRuntime}
                 disabled={isRedeploying || runtimeUpdate.updating}
                 actions={[
-                  {
-                    id: "refresh",
-                    label: t.projects.redeploy.refreshEnv,
-                    icon: <UiIcon name="refresh" className="size-4" />,
-                    onClick: () => runRedeploy("refresh"),
-                  },
+                  ...(canRefreshProjectEnvironment(projectData, servicesData.services)
+                    ? [
+                        {
+                          id: "refresh",
+                          label: t.projects.redeploy.refreshEnv,
+                          icon: <UiIcon name="refresh" className="size-4" />,
+                          onClick: () => runRedeploy("refresh"),
+                        },
+                      ]
+                    : []),
                   ...(hasMultipleServices
                     ? [
                         {

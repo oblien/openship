@@ -33,6 +33,11 @@ export function createBuildOperations(authorization: Authorization, dependencies
     async prepare(ctx, value) {
       const input = parseInput(PrepareDeployBody, value);
       const context = await authorizePreparation(ctx);
+      // Review combines source with saved configuration and interpolation env.
+      // Require the same write authority as editing/revealing that configuration.
+      if (input.projectId) await authorization.authorize(context, {
+        resourceType: "project", resourceId: input.projectId, action: "write",
+      });
       const data = await resources().prepare(context, input);
       resources().recordAudit(context, "*", input.includeEnv ? { includeEnv: true } : undefined);
       return { context, data };

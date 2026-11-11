@@ -15,6 +15,7 @@
  */
 
 import { Type, type Static } from "@sinclair/typebox";
+import { PublicEndpointInput } from "./deployment-inputs";
 import { EnvironmentScopeSchema } from "./environment-scope";
 import {
   MAX_GENERATED_CONFIG_FILES,
@@ -92,6 +93,11 @@ const AdvancedSchema = Type.Object(
     // alone" so a partial caller can't wipe the rest of the blob, which makes an
     // explicit `null` the way to say "remove this one".
     healthcheck: Type.Optional(Type.Union([HealthcheckSchema, Type.Null()])),
+    dependsOnConditions: Type.Optional(Type.Union([
+      Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Union([
+        Type.Literal("service_started"), Type.Literal("service_healthy"), Type.Literal("service_completed_successfully"),
+      ])), Type.Null(),
+    ])),
     monitoringEnabled: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
     /**
      * Per-service DEPLOY-TIME readiness gate, overriding the project's for this
@@ -250,6 +256,8 @@ const ComposeFieldsBlock = {
         domain: Type.Optional(Type.String({ maxLength: 255 })),
         customDomain: Type.Optional(Type.String({ maxLength: 255 })),
         domainType: Type.Optional(Type.Union([Type.Literal("free"), Type.Literal("custom")])),
+        redirectTo: PublicEndpointInput.properties.redirectTo,
+        redirectStatus: PublicEndpointInput.properties.redirectStatus,
       }),
       { maxItems: 20 },
     ),
@@ -427,6 +435,8 @@ export const SyncServicesBody = Type.Object({
                 customDomain: Type.Optional(Type.String()),
                 domainType: Type.Optional(Type.String()),
                 targetPath: Type.Optional(Type.String()),
+                redirectTo: PublicEndpointInput.properties.redirectTo,
+                redirectStatus: PublicEndpointInput.properties.redirectStatus,
               },
               { additionalProperties: true },
             ),

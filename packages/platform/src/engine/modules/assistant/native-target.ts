@@ -1,0 +1,240 @@
+import { assertLocalHostExecutionAllowed } from "@repo/core";
+import { access, lstat, mkdir, chmod, mkdtemp, readlink, rm, symlink } from "node:fs/promises";
+import { join, delimiter } from "node:path";
+import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { Mindwire, local, type NativeAuthSource, type TargetHandle } from "mindwire";
+import {
+  assistantEnvironment,
+  HARNESS,
+  PROVIDERS,
+  probeHarness,
+  writeHarnessWrapper,
+  type HarnessProbe,
+} from "./harness-policy";
+import type { AssistantProvider } from "@repo/contracts";
+import type { AssistantConnectionRow } from "@repo/db";
+
+/** Private daemon placement shared by assistant sessions and deterministic chat connectors. */
+export type MindwireHostConnection = Pick<
+  AssistantConnectionRow,
+  "userId" | "organizationId" | "serverId" | "origin"
+>;
+
+export interface AssistantNativeClient {
+  mindwire: Mindwire;
+  probe(provider: AssistantProvider): Promise<HarnessProbe>;
+  setup?(provider: AssistantProvider): Promise<void>;
+  workspace(id: string): Promise<string>;
+  healthy(): boolean;
+  close(): Promise<void>;
+}
+export type AssistantClientFactory = (
+  connection: AssistantConnectionRow,
+) => Promise<AssistantNativeClient>;
+
+/** Mindwire owns native auth and daemon startup; OpenShip supplies scope and private workspaces. */
+
+/**
+ * #1614 — on macOS, Claude Code stores its login in the keychain, which macOS
+ * locates via $HOME/Library/Keychains. The isolated assistant HOME has no
+ * such directory, so sign-in fails with "A keychain cannot be found". Link
+ * the real keychain directory into the isolated home so sign-in can
+ * complete. Isolation is not weakened in practice: the agent runs as the
+ * same OS user, and macOS still gates access to each keychain item.
+ * No-op on other platforms, and when the real keychain directory is absent.
+ */
+export async function linkMacosKeychain(
+  isolatedHome: string,
+  realHome: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  if (platform !== "darwin") return;
+  const target = join(realHome, "Library", "Keychains");
+  try {
+    await access(target);
+  } catch {
+    // diagnostics-ignore: A missing keychain directory is the expected no-op case, not a failure.
+    return;
+  }
+  const link = join(isolatedHome, "Library", "Keychains");
+  await mkdir(join(isolatedHome, "Library"), { recursive: true, mode: 0o700 });
+  const stat = await lstat(link).catch(() => {
+    /* diagnostics-ignore: A missing link path is the normal first-run case; null means no existing entry. */
+    return null;
+  });
+  if (stat?.isSymbolicLink()) {
+    if ((await readlink(link)) === target) return;
+    // A symlink to somewhere else is stale — replace it.
+    await rm(link);
+  } else if (stat) {
+    // A real file or directory already occupies the path: leave it alone,
+    // never delete user data to make the link.
+    return;
+  }
+  await symlink(target, link);
+}
+
+/**
+ * #1669 — a GUI app launched from Finder or the Dock inherits launchd's
+ * minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), so agent CLIs installed by
+ * Homebrew, npm, Bun or the vendor installers are invisible to the probe
+ * even though they run fine in a terminal. On macOS, append the well-known
+ * install directories (same class of repair as the gh fallback paths in
+ * github.local-auth.ts). The existing PATH keeps priority, entries are
+ * de-duplicated, and other platforms are left alone.
+ */
+export function assistantSearchPath(
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): string {
+  const base = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
+  if (platform !== "darwin") return base;
+  const extra = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    join(home, ".local", "bin"),
+    join(home, ".bun", "bin"),
+    join(home, ".npm-global", "bin"),
+    join(home, ".claude", "local"),
+  ];
+  const seen = new Set<string>();
+  return [...base.split(delimiter), ...extra]
+    .filter(Boolean)
+    .filter((dir) => (seen.has(dir) ? false : (seen.add(dir), true)))
+    .join(delimiter);
+}
+
+export async function createAssistantClient(
+  directory: string,
+  userId: string,
+  authSource: NativeAuthSource | "host" | "private" = "host",
+  purpose: "assistant" | "chat-apps" = "assistant",
+): Promise<AssistantNativeClient> {
+  assertLocalHostExecutionAllowed();
+  const system = process.platform,
+    arch = process.arch;
+  if ((system !== "darwin" && system !== "linux") || (arch !== "arm64" && arch !== "x64"))
+    throw new Error("Scoped native agents currently require macOS or Linux on ARM64 or x64.");
+  const root = join(directory, createHash("sha256").update(userId).digest("hex"));
+  for (const name of [
+    "",
+    "home",
+    "home/.codex",
+    "home/.claude",
+    "tmp",
+    "cache",
+    "bin",
+    "work",
+    "toolchains",
+  ]) {
+    const path = join(root, name);
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    await chmod(path, 0o700);
+  }
+  // #1614: let Claude Code reach the macOS keychain from the isolated home.
+  await linkMacosKeychain(join(root, "home"));
+  const searchPath = assistantSearchPath();
+  // macOS Unix sockets have a short path limit. Mindwire's local Git broker also starts at boot.
+  const temporary = await mkdtemp("/tmp/openship-mw-");
+  const env = {
+    ...assistantEnvironment(root, [join(root, "bin"), searchPath].join(":")),
+    TMPDIR: temporary,
+    TMP: temporary,
+    TEMP: temporary,
+  };
+  const target = local({
+    cwd: join(root, "work"),
+    statePath: join(root, "state.json"),
+    environment: { ...env, AGENT_TYPE: HARNESS.codex.agent },
+    authSource:
+      authSource === "private"
+        ? { home: join(root, "home"), environment: {}, reuse: "manual" }
+        : authSource,
+    shared: false,
+    exactVersion: true,
+  });
+  // Older SDKs silently ignore environment/authSource/shared. Do not start a
+  // daemon or inspect a native harness unless the SDK implements this contract.
+  const profileSupported = target.profileVersion >= 1;
+  const updateMessage =
+    "Update the Mindwire SDK to connect local agents. Reinstall OpenShip dependencies and restart the app.";
+  const probes = new Map<AssistantProvider, { result: HarnessProbe; checked: number }>();
+  const probing = new Map<AssistantProvider, Promise<HarnessProbe>>();
+  async function probe(provider: AssistantProvider) {
+    if (!profileSupported)
+      return { provider, version: "", available: false, issue: updateMessage, flags: [] };
+    const cached = probes.get(provider);
+    if (cached && Date.now() - cached.checked < 3000) return cached.result;
+    let pending = probing.get(provider);
+    if (!pending) {
+      pending = (async () => {
+        const result = await probeHarness(provider, searchPath, env);
+        await writeHarnessWrapper(join(root, "bin"), result);
+        probes.set(provider, { result, checked: Date.now() });
+        return result;
+      })().finally(() => probing.delete(provider));
+      probing.set(provider, pending);
+    }
+    return pending;
+  }
+  try {
+    if (purpose === "assistant") await Promise.all(PROVIDERS.map(probe));
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true });
+    throw error;
+  }
+  let handle: TargetHandle | undefined;
+  let stopped = false;
+  let failed = false;
+  const mindwire = new Mindwire({
+    agent: "codex",
+    requestTimeoutMs: 30000,
+    target: {
+      name: target.name,
+      async connect(spec) {
+        if (stopped) throw new Error("Assistant host is closed.");
+        if (!profileSupported) throw new Error(updateMessage);
+        try {
+          handle = await target.connect(spec);
+          return handle;
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      },
+    },
+  });
+  async function close() {
+    if (stopped) return;
+    stopped = true;
+    try {
+      await mindwire.close();
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+  }
+  return {
+    mindwire,
+    probe,
+    healthy: () => !stopped && !failed && (!handle || handle.isAlive?.() !== false),
+    async workspace(id) {
+      // Neither browser nor model can select a filesystem path.
+      const path = join(root, "work", createHash("sha256").update(id).digest("hex"));
+      await mkdir(path, { recursive: true, mode: 0o700 });
+      return path;
+    },
+    close,
+  };
+}
+
+export { ApiError } from "mindwire";
+export type {
+  AuthMethod,
+  AuthState,
+  Interaction,
+  MessagePage,
+  Message,
+  QuestionAnswer,
+  Run,
+} from "mindwire";

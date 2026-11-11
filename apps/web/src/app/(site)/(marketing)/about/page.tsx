@@ -1,6 +1,12 @@
 import type { Metadata, ResolvingMetadata } from "next";
 import { inheritSocialImages } from "@/lib/social-metadata";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { Navbar, Footer } from "@/components/landing";
+import { MarketingIntro } from "@/components/marketing/marketing-intro";
+import { MarketingSection } from "@/components/marketing/marketing-section";
+import { MarketingCta } from "@/components/marketing/marketing-cta";
+import { IllustratedLink } from "@/components/marketing/illustrated-link";
 
 const PAGE_TITLE = "About";
 const PAGE_DESCRIPTION =
@@ -30,132 +36,104 @@ export async function generateMetadata(
   return inheritSocialImages(metadata, parent);
 }
 
-const TOC = [
-  { id: "what", title: "What we build" },
-  { id: "open-source", title: "Open source" },
-  { id: "who", title: "Who's behind it" },
-  { id: "involved", title: "Get involved" },
-];
-
 export default function AboutPage() {
   return (
     <>
       <Navbar />
-      <main className="legal-root">
-        <section className="legal-hero">
-          <div className="legal-container">
-            <p className="legal-eyebrow">About</p>
-            <h1 className="legal-title">
-              Deployment you own,<br />
-              <span className="legal-title-soft">open from top to bottom.</span>
-            </h1>
-            <p className="legal-meta">
-              Built and maintained by the team at{" "}
-              <a href="https://oblien.com" className="legal-meta-link" target="_blank" rel="noreferrer">
-                Oblien
-              </a>
-              .
-            </p>
-          </div>
-        </section>
-
-        <section className="legal-body">
-          <div className="legal-container">
-            <div className="legal-grid">
-              <aside className="legal-toc" aria-label="Table of contents">
-                <p className="legal-toc-title">On this page</p>
-                <ol>
-                  {TOC.map((t, i) => (
-                    <li key={t.id}>
-                      <a href={`#${t.id}`}>
-                        <span className="legal-toc-n">{String(i + 1).padStart(2, "0")}</span>
-                        {t.title}
-                      </a>
-                    </li>
-                  ))}
-                </ol>
-              </aside>
-
-              <article className="legal-article">
-                <section id="what" className="legal-section">
-                  <header className="legal-section-head">
-                    <span className="legal-section-n">01</span>
-                    <h2 className="legal-section-title">What we build</h2>
-                  </header>
-                  <p className="legal-p">
-                    Openship is a deployment platform you run yourself. Point it at a repository and it
-                    detects your stack, builds it, and ships it to any Linux server you own — with databases,
-                    domains, SSL, mail, and backups managed from one place.
-                  </p>
-                  <p className="legal-p">
-                    The same platform comes as a CLI, a web dashboard, and a desktop app. Use whichever fits
-                    how you work; they all drive the same backend.
-                  </p>
-                </section>
-
-                <section id="open-source" className="legal-section">
-                  <header className="legal-section-head">
-                    <span className="legal-section-n">02</span>
-                    <h2 className="legal-section-title">Open source</h2>
-                  </header>
-                  <p className="legal-p">
-                    Openship is open-source software under the{" "}
-                    <a href="https://github.com/oblien/openship/blob/main/LICENSE" target="_blank" rel="noreferrer">
-                      Apache License 2.0
-                    </a>
-                    . The dashboard, CLI, agents, and infrastructure adapters are all public and auditable on{" "}
-                    <a href="https://github.com/oblien/openship" target="_blank" rel="noreferrer">GitHub</a>.
-                  </p>
-                  <p className="legal-p">
-                    Every deployment is a standard Docker container with standard manifests — no proprietary
-                    formats, no lock-in. Run it on a Raspberry Pi, a single VPS, or a fleet, and move between
-                    providers whenever you like.
-                  </p>
-                </section>
-
-                <section id="who" className="legal-section">
-                  <header className="legal-section-head">
-                    <span className="legal-section-n">03</span>
-                    <h2 className="legal-section-title">Who&rsquo;s behind it</h2>
-                  </header>
-                  <p className="legal-p">
-                    Openship is built and maintained by the team at{" "}
-                    <a href="https://oblien.com" target="_blank" rel="noreferrer">Oblien</a> (Oblien LLC), which
-                    builds cloud and developer infrastructure. It stays open under Apache 2.0 for everyone who
-                    deploys with it.
-                  </p>
-                  <p className="legal-p">
-                    Openship Cloud — the managed option — is operated by Oblien, but the platform itself is
-                    yours to self-host, forever, at no cost.
-                  </p>
-                </section>
-
-                <section id="involved" className="legal-section">
-                  <header className="legal-section-head">
-                    <span className="legal-section-n">04</span>
-                    <h2 className="legal-section-title">Get involved</h2>
-                  </header>
-                  <p className="legal-p">
-                    Star or fork the project, open an issue, or send a pull request on{" "}
-                    <a href="https://github.com/oblien/openship" target="_blank" rel="noreferrer">GitHub</a>.
-                    Bug reports and feature ideas are genuinely welcome — the docs and the platform improve
-                    fastest with them.
-                  </p>
-                  <p className="legal-p">
-                    New here? Start with the <a href="/docs">documentation</a> or{" "}
-                    <a href="/download">install in one command</a>.
-                  </p>
-                </section>
-
-                <footer className="legal-foot">
-                  <p>
-                    Want to reach us? Head to <a href="/contact">Contact</a>.
-                  </p>
-                </footer>
-              </article>
+      <main className="marketing-page">
+        <MarketingIntro
+          eyebrow="About Openship"
+          title={
+            <>
+              Built in the open.
+              <br />
+              <span>Yours to run.</span>
+            </>
+          }
+          description="Deployment, data, and operations in one open-source platform. Built and maintained by the team at Oblien."
+        />
+        <div className="site-container marketing-content">
+          <MarketingSection
+            id="what"
+            title="One platform"
+            description="From your first deployment to the services your team relies on."
+          >
+            <div className="marketing-grid">
+              <IllustratedLink
+                illustration="deploy-anywhere"
+                title="Choose where it runs"
+                description="Use Openship Cloud or connect your own infrastructure. Manage apps, data, domains, and backups together."
+                href="/features/deploy-anywhere"
+              />
+              <IllustratedLink
+                illustration="dashboard-cli-desktop"
+                title="Work your way"
+                description="Use the dashboard, desktop app, CLI, or API. Each connects to the same deployment and management tools."
+                href="/features/dashboard-cli-desktop"
+              />
             </div>
-          </div>
-        </section>
+          </MarketingSection>
+          <MarketingSection
+            id="open-source"
+            title="Open from the start"
+            description="Read the code. Run it yourself. Help shape what comes next."
+          >
+            <div className="marketing-prose">
+              <p>
+                Openship is open source under the Apache License 2.0. The dashboard, CLI, and
+                platform code are public on GitHub, so you can inspect how it works and contribute
+                improvements.
+              </p>
+              <p>
+                Deployments use standard containers. Self-host the platform on your own
+                infrastructure, or choose Openship Cloud when you want managed hosting.
+              </p>
+              <a href="https://github.com/oblien/openship" className="marketing-text-link">
+                Explore the source <ArrowRight size={16} aria-hidden="true" />
+              </a>
+            </div>
+          </MarketingSection>
+          <MarketingSection
+            id="who"
+            title="The team behind it"
+            description="Built and maintained by Oblien."
+          >
+            <div className="marketing-prose">
+              <p>
+                Openship is built by <a href="https://oblien.com">Oblien LLC</a>, a team working on
+                cloud and developer infrastructure. We also operate Openship Cloud.
+              </p>
+              <p>
+                The platform stays open under Apache 2.0 and free to self-host. Cloud provides a
+                managed option for teams who want to focus on their applications.
+              </p>
+              <Link href="/contact" className="marketing-text-link">
+                Talk to the team <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+            </div>
+          </MarketingSection>
+          <MarketingSection
+            id="involved"
+            title="Build with us"
+            description="Good feedback makes the platform better for everyone."
+          >
+            <div className="marketing-grid">
+              <IllustratedLink
+                illustration="configuration-as-code"
+                title="Contribute to Openship"
+                description="Report a bug, suggest a feature, improve a guide, or send a pull request."
+                href="https://github.com/oblien/openship"
+              />
+              <IllustratedLink
+                illustration="app-catalog"
+                title="Grow the app catalog"
+                description="Share a useful app template so other teams can deploy it too."
+                href="/docs/guides/add-an-app"
+              />
+            </div>
+          </MarketingSection>
+        </div>
+        <MarketingCta />
       </main>
       <Footer />
     </>

@@ -1,10 +1,10 @@
 /** Customer billing delegates to Oblien Mode B; no Stripe SDK or credit writes. */
 import { repos } from "@repo/db";
-import { affiliateCheckoutBinding } from "../affiliates/affiliate-checkout";
+import { referralCheckoutBinding } from "../referrals/referral-checkout";
 import { createHash } from "node:crypto";
 import type { CustomSubscriptionSelection } from "@repo/contracts";
 import { AppError, PRICING, type PlanTierId } from "@repo/core";
-import { runtimeTarget, env } from "../../config/env";
+import { env } from "../../config/env";
 import type { ExecutionContext as RequestContext } from "../../../context";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 import { ensureNamespace } from "../../lib/openship-cloud";
@@ -18,10 +18,10 @@ import { syncOblienEntitlement, withCloudBillingLock } from "./billing-oblien-qu
 import { listLiveSubscriptions } from "./billing.repository";
 import { canStartCloudSubscription, canTopUpCloudSubscription, hasPendingSubscriptionChange, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
-import { cloudAnalytics } from "../cloud-analytics";
 import { cloudBillingOwner, type CloudWorkspaceScope } from "../../lib/cloud-workspace-scope";
 import { readCloudWorkspaceHost } from "../../lib/cloud-workspace-host";
 import { createTrackedWorkspaceCheckout } from "./workspace-checkout";
+import { billingReturnUrl } from "./billing-return-url";
 
 export function assertBillingEnabled(): void {
   if (!env.BILLING_ENABLED) {
@@ -43,10 +43,10 @@ function checkoutKey(orgId: string, resource: string, requestKey?: string): stri
   return "openship:" + createHash("sha256").update(JSON.stringify([orgId, resource, nonce])).digest("hex");
 }
 
-async function assertBillingOwnerAvailable(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<void> {
+async function assertBillingOwnerAvailable(orgId: string, workspaceId?: CloudWorkspaceScope) {
   const owner = await cloudBillingOwner(orgId, workspaceId);
   if (owner.workspace?.deletionInProgress) throw new AppError("This workspace is being deleted", 409, "CLOUD_WORKSPACE_DELETING");
-
+  return owner;
 }
 
 export async function createCheckoutSession(
@@ -56,14 +56,13 @@ export async function createCheckoutSession(
   requestKey?: string,
   workspaceId?: CloudWorkspaceScope,
   custom?: CustomSubscriptionSelection,
-  affiliateCode?: string,
+  referralCode?: string,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
   const { offer, customLimits } = await resolveSubscriptionSelection(planTierId, interval, custom);
   await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
-  const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
   return withCloudBillingLock(ctx.organizationId, async (sync) => {
     await assertBillingOwnerAvailable(ctx.organizationId, owner.workspaceId);
     const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
@@ -86,9 +85,9 @@ export async function createCheckoutSession(
       }
     }
     await getOblienBillingApi().assertResellerSupport();
-    const referral = affiliateCheckoutBinding({ enabled: env.AFFILIATES_ENABLED, namespace: env.OBLIEN_AFFILIATE_NAMESPACE,
-      userId: ctx.userId, memberIds: env.AFFILIATES_ENABLED ? (await repos.member.listByOrganization(ctx.organizationId)).map(member => member.userId) : [],
-      offer, interval, affiliateCode });
+    const referral = referralCheckoutBinding({ enabled: env.REFERRALS_ENABLED, namespace: env.REFERRAL_NAMESPACE,
+      userId: ctx.userId, memberIds: env.REFERRALS_ENABLED ? (await repos.member.listByOrganization(ctx.organizationId)).map(member => member.userId) : [],
+      offer, interval, referralCode });
     const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
       ...referral,
       namespace,
@@ -96,16 +95,14 @@ export async function createCheckoutSession(
       offer,
       metadata: { ...subscriptionMetadata(planTierId, ctx.organizationId, namespace, customLimits), ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}) },
       billingInterval: interval === "annual" ? "yearly" : "monthly",
-      successUrl: `${runtimeTarget.dashboard}/billing/overview?checkout=success&tier=${planTierId}&interval=${interval}&offer=${encodeURIComponent(offer.reference!)}&session_id={CHECKOUT_SESSION_ID}${selection}`,
-      cancelUrl: `${runtimeTarget.dashboard}/billing/plans?checkout=cancelled${selection}`,
+      successUrl: `${billingReturnUrl("overview", ctx.organizationId, owner.workspaceId)}&checkout=success&tier=${planTierId}&interval=${interval}&offer=${encodeURIComponent(offer.reference!)}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${billingReturnUrl("plans", ctx.organizationId, owner.workspaceId)}&checkout=cancelled`,
       idempotencyKey: checkoutKey(
         ctx.organizationId,
         `subscription:${owner.workspaceId ? `${namespace}:` : ""}${offer.reference}:${interval}`,
         requestKey,
       ),
     });
-    // A checkout redirect is not proof of payment. Webhooks/polling mirror access.
-    await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "subscription", amount: offer.unitAmount, plan: planTierId, interval });
     return { checkoutUrl: result.url };
   }, owner.workspaceId);
 }
@@ -116,7 +113,6 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
   const offer = topupOffer(packId);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
   const owner = await cloudBillingOwner(ctx.organizationId, workspaceId);
-  const selection = owner.workspaceId ? `&workspaceId=${encodeURIComponent(owner.workspaceId)}` : "";
   return withCloudBillingLock(ctx.organizationId, async sync => {
   await assertBillingOwnerAvailable(ctx.organizationId, owner.workspaceId);
   const currentOwner = await cloudBillingOwner(ctx.organizationId, owner.workspaceId);
@@ -137,11 +133,10 @@ export async function createTopupCheckoutSession(ctx: RequestContext, packId: st
       ...(owner.workspaceId ? { openship_workspace: owner.workspaceId } : {}),
       openship_pack: packId,
     },
-    successUrl: `${runtimeTarget.dashboard}/billing/overview?topup=success&session_id={CHECKOUT_SESSION_ID}${selection}`,
-    cancelUrl: `${runtimeTarget.dashboard}/billing/overview?topup=cancelled${selection}`,
+    successUrl: `${billingReturnUrl("overview", ctx.organizationId, owner.workspaceId)}&topup=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${billingReturnUrl("overview", ctx.organizationId, owner.workspaceId)}&topup=cancelled`,
     idempotencyKey: checkoutKey(ctx.organizationId, `topup:${owner.workspaceId ? `${namespace}:` : ""}${offer.reference}`, requestKey),
   });
-  await cloudAnalytics.checkoutStarted(ctx, { checkoutId: result.checkoutId, kind: "topup", amount: offer.unitAmount });
   return { checkoutUrl: result.url };
   }, owner.workspaceId);
 }
@@ -168,7 +163,6 @@ export async function getCheckoutStatus(orgId: string, checkoutId: string, works
       await requestPaidWorkspaceProvisioning(orgId, owner.workspaceId);
     }
   }
-  await cloudAnalytics.checkoutObserved(orgId, checkout);
   const { namespaceCreditsGranted, ...state } = checkout;
   return { ...state, creditsGranted: fromOblienCredits(namespaceCreditsGranted) };
 }
@@ -176,10 +170,10 @@ export async function getCheckoutStatus(orgId: string, checkoutId: string, works
 // Disabling new purchases must not prevent existing customers from stopping
 // renewal or managing their invoices/payment details.
 export async function createPortalSession(orgId: string, workspaceId?: CloudWorkspaceScope): Promise<{ portalUrl: string }> {
-  await assertBillingOwnerAvailable(orgId, workspaceId);
-  const namespace = await ensureNamespace(orgId, workspaceId);
+  const owner = await assertBillingOwnerAvailable(orgId, workspaceId);
+  const namespace = await ensureNamespace(orgId, owner.workspaceId);
   const result = await getOblienBillingApi().createPortal({
-    namespace, returnUrl: `${runtimeTarget.dashboard}/billing/overview${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""}`,
+    namespace, returnUrl: billingReturnUrl("overview", orgId, owner.workspaceId),
   });
   return { portalUrl: result.url };
 }

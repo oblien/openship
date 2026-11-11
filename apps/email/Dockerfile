@@ -142,6 +142,13 @@ RUN set -eu; \
       sed -i 's/^[[:space:]]*module(load="imklog")/#module(load="imklog")/' /etc/rsyslog.conf; \
     fi
 
+# Reuse the sender ownership query for iRedAPD's existing strict alias check.
+# Its upstream per-user query ignores disabled aliases. Gate the pinned source
+# at build time; no policy code is patched on a running server.
+RUN python3 /opt/openship-mail/sender_aliases.py \
+      /opt/iredapd/plugins/reject_sender_login_mismatch.py \
+      /opt/iRedMail-engine/samples/postfix/pgsql/sender_login_maps.cf
+
 # Preserve the baked config OUTSIDE the mount paths so the entrypoint can
 # seed-if-absent into empty bind mounts on first boot (a bind mount over
 # /etc/postfix would otherwise hide the built config).

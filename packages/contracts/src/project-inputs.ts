@@ -342,6 +342,7 @@ const RoutingConfigSchema = Type.Object({
     ),
   ),
   cleanUrls: Type.Optional(Type.Boolean()),
+  spaFallback: Type.Optional(Type.Boolean()),
   trailingSlash: Type.Optional(Type.Boolean()),
   // No explicit null: `routingConfig` is replaced wholesale on save, so omitting
   // `proxy` already clears it (and null-ing the whole blob clears everything).

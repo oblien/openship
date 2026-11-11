@@ -1,3 +1,4 @@
+import { assertServiceRedirects } from "../../lib/service-redirects";
 import { nativeJobsEnabled } from "../../native/execution-policy";
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
 /**
@@ -23,6 +24,7 @@ import { findActiveDeployment } from "@repo/platform/engine/lib/active-deploymen
 import {
   repos,
   toComposeSpec,
+  composeValuesEqual,
   unresolvedComposeEnvironmentKeys,
   type Project,
   type Service,
@@ -80,6 +82,7 @@ import {
   type ProjectInfo,
   type ProjectSourceEnv,
 } from "./prepare.service";
+import { assertComposeReviewed } from "./compose-review";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 import { getFolderSession } from "../projects/folder/session-store";
 import {
@@ -703,56 +706,52 @@ async function resolveProjectBranch(ctx: RequestContext, project: Project, branc
   return "main";
 }
 
-function withComposeImageSource(
+// Values and provenance travel together. This definition is shared by source
+// copying and change detection so a newly modeled field cannot be lost in one.
+const COMPOSE_SOURCE_FIELDS = {
+  image: { columns: ["image"], provenance: "imageTemplate" },
+  command: { columns: ["command", "commandArgv"], provenance: "commandTemplate" },
+  buildArgs: { columns: ["buildArgs"], provenance: "buildArgTemplateKeys" },
+} as const;
+type ComposeSourceField = keyof typeof COMPOSE_SOURCE_FIELDS;
+type ComposeSource = Pick<DeployableService, "image" | "command" | "commandArgv" | "buildArgs" | "advanced">;
+
+/** Copy only the fields owned by this source, retaining other operator settings. */
+function withComposeSourceFields(
   service: DeployableService,
-  source: Pick<DeployableService, "image" | "advanced">,
+  source: ComposeSource,
+  fields: readonly ComposeSourceField[],
 ): DeployableService {
   const advanced = { ...(service.advanced ?? {}) };
-  const imageTemplate = source.advanced?.imageTemplate;
-  if (imageTemplate) {
-    // Copy the unresolved-variable array too: this becomes release metadata and
-    // must not share mutable request/session state with a later scan.
-    advanced.imageTemplate = {
-      expression: imageTemplate.expression,
-      unresolvedVariables: [...imageTemplate.unresolvedVariables],
-      ...(imageTemplate.sourceValue !== undefined && { sourceValue: imageTemplate.sourceValue }),
-    };
-  } else {
-    delete advanced.imageTemplate;
+  const merged: DeployableService = { ...service, advanced };
+  for (const field of fields) {
+    const { columns, provenance } = COMPOSE_SOURCE_FIELDS[field];
+    for (const column of columns) {
+      const value = column === "buildArgs" ? source.buildArgs ?? undefined : source[column];
+      Object.assign(merged, { [column]: structuredClone(value) });
+    }
+    const marker = source.advanced?.[provenance];
+    // An explicit empty build-arg marker is authoritative too.
+    if (marker || (field === "buildArgs" && Object.hasOwn(source.advanced ?? {}, provenance))) {
+      Object.assign(advanced, { [provenance]: structuredClone(marker ?? []) });
+    } else {
+      delete advanced[provenance];
+    }
   }
-
-  return {
-    ...service,
-    image: source.image,
-    ...(Object.keys(advanced).length > 0 ? { advanced } : { advanced: undefined }),
-  };
+  if (!Object.keys(advanced).length) merged.advanced = undefined;
+  return merged;
 }
 
-/** Copy the source-owned Docker build arguments and their interpolation marker
- * without replacing unrelated advanced settings edited in the wizard. */
-function withComposeBuildArgsSource(
-  service: DeployableService,
-  source: Pick<DeployableService, "buildArgs" | "advanced">,
-): DeployableService {
-  const advanced = { ...(service.advanced ?? {}) };
-  if (Object.hasOwn(source.advanced ?? {}, "buildArgTemplateKeys")) {
-    advanced.buildArgTemplateKeys = [...(source.advanced?.buildArgTemplateKeys ?? [])];
-  } else {
-    delete advanced.buildArgTemplateKeys;
-  }
-
-  return {
-    ...service,
-    buildArgs: source.buildArgs ? { ...source.buildArgs } : undefined,
-    ...(Object.keys(advanced).length > 0 ? { advanced } : { advanced: undefined }),
-  };
+function sameComposeSourceValues(a: ComposeSource, b: ComposeSource, field: ComposeSourceField): boolean {
+  return COMPOSE_SOURCE_FIELDS[field].columns.every((column) =>
+    column === "buildArgs" || column === "commandArgv"
+      ? composeValuesEqual(a[column] ?? null, b[column] ?? null)
+      : a[column] === b[column],
+  );
 }
 
-function withComposeBuildSource(
-  service: DeployableService,
-  source: Pick<DeployableService, "image" | "buildArgs" | "advanced">,
-): DeployableService {
-  return withComposeBuildArgsSource(withComposeImageSource(service, source), source);
+function withComposeBuildSource(service: DeployableService, source: ComposeSource): DeployableService {
+  return withComposeSourceFields(service, source, ["image", "buildArgs"]);
 }
 
 /**
@@ -765,7 +764,9 @@ function withComposeBuildSource(
 function mergeCanonicalComposeBuildSource(
   requested: DeployableService[],
   canonical: DeployableService[],
+  initial: DeployableService[],
 ): DeployableService[] {
+  const initialByName = new Map(initial.map((service) => [service.name, service]));
   const byName = new Map(
     canonical
       .filter((service) => serviceKind(service) === "compose")
@@ -774,7 +775,21 @@ function mergeCanonicalComposeBuildSource(
   return requested.map((service) => {
     if (serviceKind(service) !== "compose") return service;
     const source = byName.get(service.name);
-    return source ? withComposeBuildSource(service, source) : service;
+    if (!source) return service;
+    const withBuild = withComposeBuildSource(service, source);
+    // #1613: the canonical command template is re-attached only when the
+    // request did not edit the command — a wizard runtime edit is literal
+    // input, and the file's expression must not reinterpret it.
+    const baseline = initialByName.get(service.name);
+    const commandUnchanged = sameComposeSourceValues(service, source, "command") ||
+      (baseline !== undefined && sameComposeSourceValues(service, baseline, "command"));
+    return withComposeSourceFields(
+      withBuild,
+      commandUnchanged
+        ? source
+        : { command: service.command, commandArgv: service.commandArgv, advanced: undefined },
+      ["command"],
+    );
   });
 }
 
@@ -799,31 +814,34 @@ function mergeRefreshedFolderBuildSource(
     if (!refreshed) return service;
 
     const initial = initialByName.get(service.name);
-    if (initial && service.image !== initial.image) {
-      // The image changed after scan, so it is operator-owned literal input.
-      // Never leave the scan's expression attached to reinterpret that edit.
-      return withComposeBuildArgsSource(
-        withComposeImageSource(service, { image: service.image, advanced: undefined }),
-        refreshed,
-      );
-    }
-    return withComposeBuildSource(service, refreshed);
+    // #1613: same rule as the image above, for the command — an operator edit
+    // after the initial scan is literal input, and the scan's expression must
+    // not reinterpret it. Otherwise the refreshed template (fresh diagnostics)
+    // replaces whatever the service carried.
+    const commandEditedAfterScan =
+      initial !== undefined &&
+      !sameComposeSourceValues(service, initial, "command");
+    const commandSource = commandEditedAfterScan
+      ? { command: service.command, commandArgv: service.commandArgv, advanced: undefined }
+      : refreshed;
+    const buildSource = initial && service.image !== initial.image
+      ? { ...refreshed, image: service.image,
+          advanced: { ...refreshed.advanced, imageTemplate: undefined } }
+      : refreshed;
+    return withComposeSourceFields(withComposeBuildSource(service, buildSource), commandSource, ["command"]);
   });
 }
 
-function sameComposeBuildSource(a: DeployableService[], b: DeployableService[]): boolean {
+function sameComposeSource(a: DeployableService[], b: DeployableService[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((service, index) => {
     const other = b[index];
-    return (
-      other?.name === service.name &&
-      other.image === service.image &&
-      JSON.stringify(other.buildArgs ?? null) === JSON.stringify(service.buildArgs ?? null) &&
-      JSON.stringify(other.advanced?.imageTemplate ?? null) ===
-        JSON.stringify(service.advanced?.imageTemplate ?? null) &&
-      JSON.stringify(other.advanced?.buildArgTemplateKeys ?? null) ===
-        JSON.stringify(service.advanced?.buildArgTemplateKeys ?? null)
-    );
+    return other?.name === service.name &&
+      (Object.keys(COMPOSE_SOURCE_FIELDS) as ComposeSourceField[]).every((field) => {
+        const { provenance } = COMPOSE_SOURCE_FIELDS[field];
+        return sameComposeSourceValues(service, other, field) &&
+          composeValuesEqual(service.advanced?.[provenance] ?? null, other.advanced?.[provenance] ?? null);
+      });
   });
 }
 
@@ -888,6 +906,7 @@ async function reconcileComposeSource(
   branch: string,
   options: {
     changedPaths?: string[] | null;
+    composeRevision?: string;
     interpolationEnv?: Record<string, string>;
   } = {},
 ): Promise<ProjectInfo | undefined> {
@@ -969,10 +988,36 @@ async function reconcileComposeSource(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );
     }
+    assertComposeReviewed(project.id, composeRows, services, options.composeRevision);
     await repos.service.reconcileFromCompose(project.id, services);
     return info;
   } catch (err) {
     if (err instanceof AppError) throw err;
+    // If localPath is inaccessible (e.g. controller runs containerized where the
+    // host directory isn't mounted) but the project's existing Compose services
+    // are already stored and image-only (no build context), warn and keep the
+    // stored service definitions instead of failing closed (#1583).
+    const isEnoent = (err as NodeJS.ErrnoException)?.code === "ENOENT";
+    if (
+      isLocalSource &&
+      isEnoent &&
+      !bootstrapping
+    ) {
+      const composeRows = await listProjectComposeServices(project.id).catch((error) => {
+        observeCaughtError(error, "platform/engine/modules/deployments/build.service");
+        return [];
+      });
+      const isImageOnly =
+        composeRows.length > 0 &&
+        composeRows.every((s) => serviceKind(s) === "compose" && !s.build && Boolean(s.image));
+      if (isImageOnly) {
+        errorDiagnostics.warn(
+          "platform/engine/modules/deployments/build.service",
+          `[compose-source] localPath "${localPath}" is inaccessible (${safeErrorMessage(err)}); keeping stored image-only services for ${project.id}.`,
+        );
+        return undefined;
+      }
+    }
     const action = bootstrapping ? "initialize" : "refresh";
     // Once a source refresh is required, running a cached definition after a
     // failed read cannot claim to deploy the requested configuration (#893).
@@ -1018,6 +1063,23 @@ async function resolveLifecycleSourceEnv(
           project.rootDirectory ?? "",
         );
   } catch (err) {
+    const isEnoent = (err as NodeJS.ErrnoException)?.code === "ENOENT";
+    if (localPath && isEnoent) {
+      const composeRows = await listProjectComposeServices(project.id).catch((error) => {
+        observeCaughtError(error, "platform/engine/modules/deployments/build.service");
+        return [];
+      });
+      const isImageOnly =
+        composeRows.length > 0 &&
+        composeRows.every((s) => serviceKind(s) === "compose" && !s.build && Boolean(s.image));
+      if (isImageOnly) {
+        errorDiagnostics.warn(
+          "platform/engine/modules/deployments/build.service",
+          `[source-env] localPath "${localPath}" is inaccessible (${safeErrorMessage(err)}); keeping stored environment for ${project.id}.`,
+        );
+        return undefined;
+      }
+    }
     if (localPath) {
       throw new AppError(`Could not read project environment: ${safeErrorMessage(err)}`, 400);
     }
@@ -1338,11 +1400,10 @@ export async function checkNoActiveBuild(projectId: string) {
   // its claimed build worker is still unwinding. Status-only history paging can
   // neither prove worker completion nor guarantee the active row is on page 1.
   const [active] = await repos.deployment.listInFlightByProject(projectId);
-  if (active && !["queued", "building", "deploying"].includes(active.status) &&
-      (active.meta as { managedWorkspaceId?: string } | null)?.managedWorkspaceId) {
+  if (active && !["queued", "building", "deploying"].includes(active.status)) {
     const project = await repos.project.findById(projectId);
-    const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
-    if (project && await recoverManagedDeploymentExecution(active, project)) return;
+    const { recoverDeploymentExecution } = await import("./deployment-recovery");
+    if (project && await recoverDeploymentExecution(active, project)) return;
   }
   if (active) {
     const cancelling = active.status === "cancelled";
@@ -1371,8 +1432,6 @@ async function createQueuedDeploymentUnlocked(opts: {
   /** Internal, reviewed resource edit committed with deployment admission. */
   roleChanges?: import("@repo/db").DeploymentRoleChanges;
   resourceChanges?: DeploymentResourceChanges;
-  /** Attribution only; ownership/authorization still comes from organizationId. */
-  analyticsActor?: Pick<RequestContext, "userId" | "source">;
   projectId: string;
   /** Org that owns this deployment. Pass project.organizationId — the
    *  scoping key for the row. (Actor attribution lives on the audit
@@ -1591,8 +1650,6 @@ async function createQueuedDeploymentUnlocked(opts: {
       errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[build] supersede pending decisions for ${opts.projectId} failed:`, err),
     );
 
-  const { cloudAnalytics } = await import("../cloud-analytics");
-  await cloudAnalytics.record({ ...opts.analyticsActor, organizationId: opts.organizationId }, "cloud_deployment_started", { project_id: opts.projectId, deployment_id: dep.id }, `deployment-started:${dep.id}`);
   return dep;
 }
 
@@ -1766,12 +1823,16 @@ export async function requestBuildAccess(
   // The uploaded folder's compose file is the only description a new folder
   // deploy has of its service set. Adopt the refreshed scan when neither the
   // request nor the canonical table has rows yet.
-  // `imageTemplate` is parser provenance, never client authority. Strip any
-  // copy supplied on the wire; the canonical repo row / server-side upload scan
-  // below is the only producer allowed to attach it again.
+  // `imageTemplate` and `commandTemplate` (#1613) are parser provenance, never
+  // client authority. Strip any copy supplied on the wire; the canonical repo
+  // row / server-side upload scan below is the only producer allowed to
+  // attach them again.
   let effectiveServices: DeployableService[] | undefined = services?.map((service) =>
     serviceKind(service) === "compose"
-      ? withComposeImageSource(service, { image: service.image, advanced: undefined })
+      ? withComposeSourceFields(service, {
+          image: service.image, command: service.command, commandArgv: service.commandArgv,
+          advanced: undefined,
+        }, ["image", "command"])
       : service,
   );
   if (
@@ -1784,6 +1845,9 @@ export async function requestBuildAccess(
   }
 
   const resolvedBranch = await resolveProjectBranch(ctx, project, branch);
+  // Pin the source checked by the review gate and the source built by the worker
+  // to the same commit, even if the branch moves while this request is running.
+  const { commitSha, commitMessage } = await resolveLatestCommitInfo(ctx, project, resolvedBranch);
 
   // Reconcile the repo's compose BEFORE resolving the service set — the third
   // deploy entry point (alongside redeployBuildSession + triggerDeployment) that
@@ -1796,8 +1860,12 @@ export async function requestBuildAccess(
   // compose is taken from the repo. An explicit single-app deploy is an
   // authoritative topology choice: do not parse, materialize, or validate the
   // declared compose file behind the caller's back.
+  const initialComposeServices = !uploadSession && effectiveServices?.length && serviceDeploymentMode !== "single"
+    ? projectServicesToDeployableServices(await listProjectComposeServices(project.id))
+    : [];
   if (serviceDeploymentMode !== "single") {
-    const reconciled = await reconcileComposeSource(ctx, project, resolvedBranch, {
+    const reconciled = await reconcileComposeSource(ctx, project, commitSha ?? resolvedBranch, {
+      composeRevision: input.composeRevision,
       interpolationEnv: composeInterpolationEnv,
     });
     sourceInfo ??= reconciled;
@@ -1870,11 +1938,11 @@ export async function requestBuildAccess(
         initialUploadServices,
         refreshedUploadServices,
       );
-      if (effectiveServices?.length || !sameComposeBuildSource(current, merged)) {
+      if (effectiveServices?.length || !sameComposeSource(current, merged)) {
         effectiveServices = merged;
       }
     } else if (effectiveServices?.length && canonicalServices.length > 0) {
-      effectiveServices = mergeCanonicalComposeBuildSource(effectiveServices, canonicalServices);
+      effectiveServices = mergeCanonicalComposeBuildSource(effectiveServices, canonicalServices, initialComposeServices);
     }
   }
 
@@ -2059,6 +2127,7 @@ export async function requestBuildAccess(
     const composeOnly = effectiveServices.filter((s) => serviceKind(s) === "compose");
     if (composeOnly.length) {
       const storedServices = await repos.service.listByProject(project.id);
+      await assertServiceRedirects(project, composeOnly);
       const routes = composeEndpointChanges(composeOnly, storedServices);
       await assertFreeEndpointsAllowed(project.organizationId, routes.endpoints, {
         capability: "managed-compose-domains", workspaceId: project.workspaceId,
@@ -2186,9 +2255,6 @@ export async function requestBuildAccess(
     appTemplateId: project.appTemplateId,
   });
 
-  // ── Resolve commit info from the branch HEAD ────
-  const { commitSha, commitMessage } = await resolveLatestCommitInfo(ctx, project, snapshot.branch);
-
   // ── Resolve rollback context (shared helper — single default) ─────────
   const { rollbackStrategy, commitShaBefore } = await resolveRollbackContext(
     project,
@@ -2196,7 +2262,6 @@ export async function requestBuildAccess(
   );
 
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch: snapshot.branch,
@@ -2377,10 +2442,10 @@ export async function cancelBuildSession(
   // an immediate redeploy while the old worker may still touch the target host.
   let quiescent = await waitForDeploymentQuiescence(dep.id, dep.projectId);
   let recoveryWarning: string | undefined;
-  if (!quiescent && project.workspaceId) {
+  if (!quiescent) {
     try {
-      const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
-      quiescent = await recoverManagedDeploymentExecution({ ...dep, status: "cancelled" }, project);
+      const { recoverDeploymentExecution } = await import("./deployment-recovery");
+      quiescent = await recoverDeploymentExecution({ ...dep, status: "cancelled" }, project);
     } catch (error) {
       recoveryWarning = safeErrorMessage(error);
       errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[CANCEL] ${dep.id}: recovery pending: ${recoveryWarning}`, error);
@@ -2569,7 +2634,6 @@ export async function redeployBuildSession(
   // Service-scoped rows stay out of this flat capture: the compose deployer
   // reads them live per service and applies them after compose inline env.
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch,
@@ -3192,7 +3256,6 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
   }
 
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch,
