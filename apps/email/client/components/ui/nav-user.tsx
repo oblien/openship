@@ -1,5 +1,5 @@
 import {
-  HelpCircle,
+  Check,
   LogOut,
   MoonIcon,
   Settings,
@@ -9,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -102,6 +103,47 @@ export function NavUser() {
     return data.connections.filter((connection) => connection.id !== activeAccount?.id);
   }, [data, activeAccount]);
 
+  const visibleConnections = otherConnections.slice(0, 2);
+  const hiddenConnectionCount = otherConnections.length - visibleConnections.length;
+  const accountMenuItems = (
+    <div className="max-h-64 overflow-y-auto">
+      {data?.connections.map((connection) => (
+        <DropdownMenuItem
+          key={connection.id}
+          onSelect={handleAccountSwitch(connection.id)}
+          aria-current={connection.id === activeConnection?.id ? 'true' : undefined}
+          textValue={connection.email}
+          className="flex cursor-pointer items-center gap-3 py-2"
+        >
+          <Avatar className="size-7 rounded-lg">
+            <AvatarImage
+              className="rounded-lg"
+              src={connection.picture || undefined}
+              alt={connection.name || connection.email}
+            />
+            <AvatarFallback className="rounded-lg text-[10px]">
+              {(connection.name || connection.email)
+                .split(' ')
+                .map((n) => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            {connection.name && connection.name !== connection.email && (
+              <p className="truncate text-xs">{connection.name}</p>
+            )}
+            <p className="break-all text-xs text-muted-foreground">{connection.email}</p>
+          </div>
+          {connection.id === activeConnection?.id && (
+            <Check className="size-4 shrink-0" aria-hidden="true" />
+          )}
+        </DropdownMenuItem>
+      ))}
+    </div>
+  );
+
   const handleThemeToggle = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
@@ -147,7 +189,7 @@ export function NavUser() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
-                className="w-(--radix-dropdown-menu-trigger-width) ml-3 min-w-56 bg-white font-medium dark:bg-[#131313]"
+                className="w-(--radix-dropdown-menu-trigger-width) ml-3 min-w-56 max-w-80 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto bg-white font-medium dark:bg-[#131313]"
                 align="end"
                 side={'bottom'}
                 sideOffset={8}
@@ -191,41 +233,7 @@ export function NavUser() {
                       {m['common.navUser.accounts']()}
                     </p>
 
-                    {data?.connections
-                      ?.filter((connection) => connection.id !== activeConnection?.id)
-                      .map((connection) => (
-                        <DropdownMenuItem
-                          key={connection.id}
-                          onClick={handleAccountSwitch(connection.id)}
-                          className="flex cursor-pointer items-center gap-3 py-1"
-                        >
-                          <Avatar className="size-7 rounded-lg">
-                            <AvatarImage
-                              className="rounded-lg"
-                              src={connection.picture || undefined}
-                              alt={connection.name || connection.email}
-                            />
-                            <AvatarFallback className="rounded-lg text-[10px]">
-                              {(connection.name || connection.email)
-                                .split(' ')
-                                .map((n) => n[0])
-                                .join('')
-                                .toUpperCase()
-                                .slice(0, 2)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="-space-y-0.5">
-                            <p className="text-[12px]">{connection.name || connection.email}</p>
-                            {connection.name && (
-                              <p className="text-muted-foreground text-[11px]">
-                                {connection.email.length > 25
-                                  ? `${connection.email.slice(0, 25)}...`
-                                  : connection.email}
-                              </p>
-                            )}
-                          </div>
-                        </DropdownMenuItem>
-                      ))}
+                    {accountMenuItems}
                     <AddConnectionDialog />
 
                     <DropdownMenuSeparator className="my-1" />
@@ -303,7 +311,7 @@ export function NavUser() {
                   </div>
                 </div>
               )}
-              {otherConnections.slice(0, 2).map((connection) => (
+              {visibleConnections.map((connection) => (
                 <Tooltip key={connection.id}>
                   <TooltipTrigger asChild>
                     <div
@@ -342,52 +350,25 @@ export function NavUser() {
                 </Tooltip>
               ))}
 
-              {otherConnections.length > 3 && (
+              {hiddenConnectionCount > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="hover:bg-muted flex h-7 w-7 cursor-pointer items-center justify-center rounded-[5px]">
-                      <span className="text-[10px]">+{otherConnections.length - 3}</span>
+                    <button
+                      type="button"
+                      aria-label={m['common.navUser.accounts']()}
+                      className="hover:bg-muted flex h-7 w-7 cursor-pointer items-center justify-center rounded-[5px]"
+                    >
+                      <span className="text-[10px]">+{hiddenConnectionCount}</span>
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
-                    className="ml-3 min-w-56 bg-white font-medium dark:bg-[#131313]"
+                    className="ml-3 min-w-56 max-w-80 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto bg-white font-medium dark:bg-[#131313]"
                     align="end"
                     side={'bottom'}
                     sideOffset={8}
                   >
-                    {otherConnections.slice(3).map((connection) => (
-                      <DropdownMenuItem
-                        key={connection.id}
-                        onClick={handleAccountSwitch(connection.id)}
-                        className="flex cursor-pointer items-center gap-3 py-1"
-                      >
-                        <Avatar className="size-7 rounded-lg">
-                          <AvatarImage
-                            className="rounded-lg"
-                            src={connection.picture || undefined}
-                            alt={connection.name || connection.email}
-                          />
-                          <AvatarFallback className="rounded-lg text-[10px]">
-                            {(connection.name || connection.email)
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                              .toUpperCase()
-                              .slice(0, 2)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="-space-y-0.5">
-                          <p className="text-[12px]">{connection.name || connection.email}</p>
-                          {connection.name && (
-                            <p className="text-muted-foreground text-[11px]">
-                              {connection.email.length > 25
-                                ? `${connection.email.slice(0, 25)}...`
-                                : connection.email}
-                            </p>
-                          )}
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
+                    <DropdownMenuLabel>{m['common.navUser.accounts']()}</DropdownMenuLabel>
+                    {accountMenuItems}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -419,11 +400,14 @@ export function NavUser() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
-                  className="ml-3 min-w-56 bg-white font-medium dark:bg-[#131313]"
+                  className="ml-3 min-w-56 max-w-80 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto bg-white font-medium dark:bg-[#131313]"
                   align="end"
                   side={'bottom'}
                   sideOffset={8}
                 >
+                  <DropdownMenuLabel>{m['common.navUser.accounts']()}</DropdownMenuLabel>
+                  {accountMenuItems}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <a href={getSettingsHref()} className="cursor-pointer">
                       <div className="flex items-center gap-2">
