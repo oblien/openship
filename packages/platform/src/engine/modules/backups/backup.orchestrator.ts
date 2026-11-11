@@ -63,7 +63,7 @@ import {
 import { notification } from "../../lib/notification-dispatcher";
 import { prunePolicy } from "./retention-prune";
 import { assertPlausibleBackupSizes } from "./backup-size-check";
-import { withBackupPolicyLock } from "./backup-lock";
+import { withBackupDestinationLock, withBackupPolicyLock } from "./backup-lock";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
@@ -344,12 +344,16 @@ export class BackupOrchestrator {
     if (!pending || pending.status !== "queued") return;
     // Freeze the settings used by this worker; a policy edit applies to the next run.
     const policy = pending.policyId ? await repos.backupPolicy.findById(pending.policyId) : null;
-    const work = () => pending.projectId
+    const destinationId = pending.destinationId ?? policy?.destinationId;
+    const executeUnderProject = () => pending.projectId
       ? withProjectRuntimeLock(pending.projectId, () => this.executeRun(runId, policy ?? null))
       : this.executeRun(runId, policy ?? null);
+    const executeUnderDestination = () => destinationId
+      ? withBackupDestinationLock(destinationId, executeUnderProject)
+      : executeUnderProject();
     const completed = policy?.payloadConfig?.incremental === true
-      ? await withBackupPolicyLock(policy.id, work)
-      : await work();
+      ? await withBackupPolicyLock(policy.id, executeUnderDestination)
+      : await executeUnderDestination();
     // Pruning takes the same lock as incremental capture, after capture releases it.
     if (completed) {
       try { await prunePolicy(completed); }
