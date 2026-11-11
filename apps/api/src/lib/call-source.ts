@@ -60,8 +60,9 @@ export function internalClientHeader(principalId: string): Record<string, string
 
 /** Constant-time, because the nonce is the whole gate: leak it and `mcp` is claimable. */
 function nonceMatches(candidate: string): boolean {
-  if (candidate.length !== PROCESS_NONCE.length) return false;
-  return timingSafeEqual(Buffer.from(candidate), Buffer.from(PROCESS_NONCE));
+  const supplied = Buffer.from(candidate);
+  const expected = Buffer.from(PROCESS_NONCE);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
 /**
@@ -78,22 +79,30 @@ function signedPayload(raw: string | undefined): string | null {
 }
 
 /** The claimed source, but only if the claim came from this process. */
-function trustedClaim(c: Context): AuditSource | null {
+export function resolveTrustedCallSource(c: Context): AuditSource | null {
   const claimed = signedPayload(c.req.header(CALL_SOURCE_HEADER));
   return claimed && isAuditSource(claimed) ? claimed : null;
 }
 
 /**
- * Which client of the surface made this request — `oauth:<clientId>` /
- * `pat:<tokenId>` — or null when nobody trustworthy said.
- *
- * Deliberately NOT derived from the credential as a fallback: the surfaces that
- * have one client per request (a browser, the CLI) gain nothing from the column,
- * and guessing here would put a value in it that no dispatcher stands behind.
+ * Prefer the nonce-verified client claim, then the authenticated token principal
+ * (`pat:<tokenId>` / `oauth:<clientId>`). Browser session IDs are never client IDs.
  */
 export function resolveCallClientId(c: Context): string | null {
   const claimed = signedPayload(c.req.header(CALL_CLIENT_HEADER));
-  return isAuditClientId(claimed) ? claimed : null;
+  if (isAuditClientId(claimed)) return claimed;
+  try {
+    const ctx = getRequestContext(c);
+    if (
+      (ctx.principalKind === "pat" || ctx.principalKind === "oauth") &&
+      isAuditClientId(ctx.sessionId)
+    ) {
+      return ctx.sessionId;
+    }
+  } catch {
+    // diagnostics-ignore: pre-auth request has no RequestContext yet, so there is no credential to derive from.
+  }
+  return null;
 }
 
 /**
@@ -112,7 +121,7 @@ export function resolveCallClientId(c: Context): string | null {
  * `dashboard` are not reachable that way.
  */
 export function resolveCallSource(c: Context): AuditSource {
-  const claim = trustedClaim(c);
+  const claim = resolveTrustedCallSource(c);
   const resolved = claim ?? derive(c);
   // Share the best answer with emitters that run outside the handler chain.
   setOperationSource(resolved);
@@ -160,5 +169,5 @@ function fromHeaders(c: Context): AuditSource {
 
 /** Seed the per-request ambient source. Call once, in a global middleware. */
 export function runWithCallSource<T>(c: Context, fn: () => T): T {
-  return runWithOperationSource(trustedClaim(c) ?? fromHeaders(c), fn);
+  return runWithOperationSource(resolveTrustedCallSource(c) ?? fromHeaders(c), fn);
 }

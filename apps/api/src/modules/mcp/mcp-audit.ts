@@ -6,10 +6,10 @@
  * route-permission.ts — now carrying `source: "mcp"` and the calling client. Two
  * kinds of call that emitter never covers are exactly the two that were missing:
  *
- *   - READS. A `read`/`list` route audits nothing, deliberately: for a human
- *     clicking around a dashboard, logging every page view is noise. For an
- *     autonomous agent it is the whole question — "what did it look at" had no
- *     answer at all.
+ *   - READS. The route emitter delegates nonce-verified MCP reads to this
+ *     module. Direct token-authenticated REST reads are recorded by the route
+ *     emitter; browser page views stay unaudited. An agent's tool-call row
+ *     answers "what did it look at" without duplicating the inner route read.
  *   - FAILURES. The emitter fires only on 2xx/3xx, so a permission-denied write
  *     left no trace. An agent probing the edge of its scope was invisible
  *     precisely when someone would want to see it.
