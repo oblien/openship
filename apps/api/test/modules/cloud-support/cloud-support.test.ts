@@ -23,6 +23,7 @@ const state = vi.hoisted(() => ({
   limiter: vi.fn(),
   routeLimiter: vi.fn(),
   wake: vi.fn(),
+  challenge: vi.fn(),
   customer: null as ExecutionContext | null,
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: state.env }));
@@ -34,6 +35,7 @@ vi.mock("@repo/platform/engine/modules/cloud-support/index", () => ({
   ),
   deliverCloudSupport: state.wake,
 }));
+vi.mock("../../../src/modules/cloud-support/contact-challenge", () => ({ verifyContactChallenge: state.challenge }));
 vi.mock("../../../src/lib/rate-limit", () => ({ rateLimit: state.limiter }));
 // Auth for the operator routes stays real. Only unrelated identity/permission
 // registration and the router's ordinary IP limiter are isolated here.
@@ -63,7 +65,7 @@ const input = (extra = {}) => ({
   email: "customer@example.com",
   subject: "Deployment does not start",
   message: "The Docker connection never becomes ready.",
-  source: "support",
+  source: "contact",
   ...extra,
 });
 const call = (path: string, method = "GET", body?: unknown, operator = false) =>
@@ -73,7 +75,7 @@ const call = (path: string, method = "GET", body?: unknown, operator = false) =>
       "Content-Type": "application/json",
       ...(operator ? { "X-Internal-Token": state.env.INTERNAL_TOKEN } : {}),
     },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(body !== undefined ? { body: JSON.stringify(path === "" && method === "POST" ? { ...body as object, turnstileToken: "fixture-token" } : body) } : {}),
   });
 
 beforeAll(async () => {
@@ -93,6 +95,7 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await client.exec(readFileSync(new URL("../../../../../packages/db/drizzle/0229_support_intake_blocks.sql", import.meta.url), "utf8"));
   db = drizzle(client);
   repo = createCloudSupportRepo(db as unknown as Database);
   state.service = new CloudSupportService({ enabled: () => state.env.CLOUD_MODE, repo, send });
@@ -111,10 +114,11 @@ beforeAll(async () => {
 beforeEach(async () => {
   state.env.CLOUD_MODE = true;
   state.customer = null;
-  await client.exec("TRUNCATE cloud_support_ticket CASCADE");
+  await client.exec("TRUNCATE cloud_support_ticket, cloud_support_block CASCADE");
   send.mockReset().mockResolvedValue(true);
   state.limiter.mockReset().mockResolvedValue({ allowed: true, resetMs: 1000, remaining: 4 });
   state.wake.mockClear();
+  state.challenge.mockReset().mockResolvedValue(undefined);
 });
 afterAll(async () => {
   await client?.close();
@@ -162,17 +166,17 @@ describe("Cloud support tickets", () => {
     ]);
     expect(send).not.toHaveBeenCalled();
     expect(state.wake).toHaveBeenCalledOnce();
-    expect(state.limiter.mock.calls[0]![0].subjectId).toMatch(/^[a-f0-9]{64}$/);
+    expect(state.limiter.mock.calls.find(([call]) => call.policy === "support-contact")![0].subjectId).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("retries a lost response without duplicating requests or charging the contact limit again", async () => {
     const body = input();
     const first = await (await call("", "POST", body)).json();
-    state.limiter.mockResolvedValue({ allowed: false, resetMs: 900_000 });
+    state.limiter.mockImplementation(async ({ policy }) => ({ allowed: policy === "support-contact-ip", resetMs: 900_000 }));
     const retry = await call("", "POST", body);
     expect(retry.status).toBe(201);
     expect(await retry.json()).toEqual(first);
-    expect(state.limiter).toHaveBeenCalledOnce();
+    expect(state.limiter.mock.calls.filter(([call]) => call.policy !== "support-contact-ip")).toHaveLength(1);
     expect(await repo.messages(first.id)).toHaveLength(2);
     expect((await call("", "POST", { ...body, message: "A different message" })).status).toBe(409);
   });
@@ -449,7 +453,7 @@ describe("private Cloud customer support", () => {
     };
     state.limiter.mockResolvedValue({ allowed: false, resetMs: 1000 });
     expect(await (await call("/mine", "POST", body)).json()).toEqual(first);
-    expect(state.limiter).toHaveBeenCalledOnce();
+    expect(state.limiter.mock.calls.filter(([call]) => call.policy !== "support-contact-ip")).toHaveLength(1);
     expect(await repo.messages(first.id)).toHaveLength(2);
     expect((await call("/mine", "POST", { ...body, message: "Changed" })).status).toBe(409);
     expect((await call("/mine", "POST", customerInput())).status).toBe(429);
@@ -612,5 +616,56 @@ describe("private Cloud customer support", () => {
     state.env.CLOUD_MODE = false;
     for (const [method, path, body] of paths)
       expect((await call(path, method, body)).status).toBe(404);
+  });
+});
+
+describe("support abuse controls", () => {
+  it("requires login for new support even when a caller supplies a bot token", async () => {
+    expect((await call("", "POST", input({ source: "support" }))).status).toBe(401);
+    expect(state.challenge).not.toHaveBeenCalled();
+    expect(await repo.list({ limit: 10 })).toEqual([]);
+  });
+  it("requires a challenge on direct public API submissions", async () => {
+    state.challenge.mockRejectedValue(new AppError("Complete the bot check", 403));
+    expect((await call("", "POST", input())).status).toBe(403);
+    expect(await repo.list({ limit: 10 })).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("only the instance operator can list, create or remove sender/IP blocks", async () => {
+    const block = { kind: "email", value: "Test@Example.com", reason: "Unwanted test submissions" };
+    for (const method of ["GET", "POST", "DELETE"]) expect((await call("/blocks", method, method === "GET" ? undefined : block)).status).toBe(401);
+    expect((await call("/blocks", "POST", block, true)).status).toBe(200);
+    expect((await call("", "POST", input({ email: "test@example.com" }))).status).toBe(403);
+    expect(state.challenge).not.toHaveBeenCalled();
+    expect(await repo.list({ limit: 10 })).toEqual([]);
+    expect((await call("/blocks", "GET", undefined, true)).status).toBe(200);
+    expect((await call("/blocks", "DELETE", block, true)).status).toBe(200);
+    expect((await call("", "POST", input({ email: "test@example.com" }))).status).toBe(201);
+  });
+  it("blocks canonical IPs, including mapped IPv6, without trusting an input field", async () => {
+    await state.service!.setBlock({ kind: "ip", value: "::ffff:192.0.2.44" });
+    await expect(state.service!.submit(input(), async () => {}, "192.0.2.44")).rejects.toMatchObject({ code: "SUPPORT_SENDER_BLOCKED" });
+    await expect(state.service!.submit(input(), async () => {}, "0:0:0:0:0:ffff:c000:022c")).rejects.toMatchObject({ code: "SUPPORT_SENDER_BLOCKED" });
+    expect((await call("", "POST", input({ clientIp: "192.0.2.44" }))).status).toBe(400);
+    expect((await call("/blocks", "POST", { kind: "ip", value: "not-an-ip" }, true)).status).toBe(400);
+  });
+  it("records the transport IP only in operator data and suppresses blocked queued deliveries", async () => {
+    const receipt = await state.service!.submit(input(), async () => {}, "192.0.2.4");
+    expect(await repo.find(receipt.id)).toMatchObject({ clientIp: "192.0.2.4" });
+    await state.service!.setBlock({ kind: "ip", value: "192.0.2.4" });
+    await state.service!.flush();
+    expect(send).not.toHaveBeenCalled();
+    expect((await repo.messages(receipt.id)).every(message => message.nextAttemptAt === null)).toBe(true);
+  });
+  it("delivers public contact to its configured inbox while customer support keeps its inbox", async () => {
+    const contactSend = vi.fn(async () => true);
+    const service = new CloudSupportService({ enabled: () => true, repo, send: contactSend, contactEmail: () => "contact@openship.io" });
+    const ticket = await service.submit(input(), async () => {});
+    await service.flush();
+    expect(contactSend.mock.calls.map(([mail]) => mail)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ to: "contact@openship.io", replyTo: "customer@example.com" }),
+      expect.objectContaining({ to: "customer@example.com", replyTo: "contact@openship.io" }),
+    ]));
+    expect((await repo.find(ticket.id))?.source).toBe("contact");
   });
 });

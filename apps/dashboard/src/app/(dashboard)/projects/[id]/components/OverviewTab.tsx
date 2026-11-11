@@ -67,8 +67,19 @@ export const OverviewTab = () => {
     workloadType: projectData.workloadType ?? projectData.options?.workloadType,
     hasServer: projectData.hasServer ?? projectData.options?.hasServer,
   });
-  const modeLabel =
-    workload === "static"
+  // A Compose import is a stack of services, not a static site — but its
+  // workload resolves to static (no single server, no workloadType), so the
+  // Mode row mislabels it (#1670). `projectType` comes from getInfo, derived
+  // from the service rows, so it is the reliable signal here.
+  const isComposeStack = projectData.projectType === "services";
+  const modeLabel = isComposeStack
+    ? interpolate(
+        serviceCount === 1
+          ? t.projects.overview.modeComposeOne
+          : t.projects.overview.modeComposeOther,
+        { count: serviceCount },
+      )
+    : workload === "static"
       ? t.projects.overview.modeStatic
       : workload === "worker"
         ? t.projects.overview.modeWorker

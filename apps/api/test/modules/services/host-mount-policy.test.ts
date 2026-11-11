@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
-import { CloudDockerRuntime, DockerRuntime } from "@repo/adapters";
+import { CloudDockerRuntime, DockerRuntime, cloudDockerProjectPaths } from "@repo/adapters";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
-import { assertDeployVolumePolicy } from "@repo/platform/engine/modules/deployments/host-mount-policy";
+import { assertDeployVolumePolicy, assertHostMountWriteAccess } from "@repo/platform/engine/modules/deployments/host-mount-policy";
 import { createServiceRuntimeConfig } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
 import { createServerDeployConfig } from "@repo/platform/engine/modules/deployments/build-pipeline";
 import { env } from "@repo/platform/engine/config/env";
@@ -24,9 +24,16 @@ const app = new Hono()
   .route("/api/projects/:id/services", serviceRoutes)
   .route("/api/projects", projectRoutes);
 
-async function setup(instanceAdmin = false, bound = false) {
+async function setup(instanceAdmin = false, bound = false, cloudTarget = false) {
   const owner = await seedOwner({ instanceAdmin, bound });
-  const project = await seedProject(owner.orgId, { framework: "docker-compose" });
+  const workspace = cloudTarget
+    ? await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Cloud" })
+    : null;
+  const server = workspace ? await repos.server.findByWorkspace(workspace.id, owner.orgId) : null;
+  const project = await seedProject(owner.orgId, {
+    framework: "docker-compose",
+    ...(workspace && { workspaceId: workspace.id, serverId: server!.id }),
+  });
   const service = await seedService(project.id, { name: "web", image: "alpine:3" });
   const user = (await repos.user.findById(owner.userId))!;
   const ship = createShip({
@@ -145,9 +152,113 @@ describe("authored mounts through HTTP and native operations", () => {
       }
     },
   );
+
+  it.each(["native", "http"] as const)(
+    "%s explains Cloud host-mount refusals for both owners and instance admins",
+    async (transport) => {
+      const cloud = env.CLOUD_MODE;
+      env.CLOUD_MODE = true;
+      try {
+        for (const instanceAdmin of [false, true]) {
+          const { project, service, clients } = await setup(instanceAdmin);
+          const client = clients[transport];
+          for (const volumes of [["/media:/media:ro"], ["/var/run/docker.sock:/socket"]]) {
+            const writes = [
+              () => client.services.update(project.id, service.id, { volumes }),
+              () => client.projects.setOptions(project.id, { volumes }),
+              () =>
+                client.deployments.buildAccess({
+                  projectId: project.id,
+                  services: [{
+                    name: "blocked",
+                    image: "alpine:3",
+                    volumes,
+                    ports: [],
+                    dependsOn: [],
+                    environment: {},
+                  }],
+                }),
+            ];
+            for (const write of writes) {
+              const error = await write().catch((error) => error);
+              expect(error).toMatchObject({
+                ...(transport === "native" ? { statusCode: 403 } : { status: 403 }),
+                code: "HOST_MOUNT_FORBIDDEN",
+              });
+              expect(error.message).toContain("Host bind mounts are disabled in Cloud");
+            }
+          }
+          expect((await repos.service.findById(service.id))?.volumes ?? []).toEqual([]);
+          expect((await repos.project.findById(project.id))?.volumes ?? []).toEqual([]);
+        }
+      } finally {
+        env.CLOUD_MODE = cloud;
+      }
+    },
+  );
+
+  it.each(["native", "http"] as const)(
+    "%s preserves imported storage only inside the authorized Cloud project",
+    async (transport) => {
+      const { project, service, owner, clients } = await setup(false, false, true);
+      const root = cloudDockerProjectPaths(project.id).mounts;
+      const volumes = [`${root}/imports/run/data:/data:ro`];
+      const deployment = await seedDeployment(project);
+      const builds = await import("@repo/platform/engine/modules/deployments/build.service");
+      const requestBuild = vi.spyOn(builds, "requestBuildAccess").mockResolvedValue({
+        deployment_id: deployment.id,
+        project_id: project.id,
+      });
+      const cloud = env.CLOUD_MODE;
+      env.CLOUD_MODE = true;
+      try {
+        const client = clients[transport];
+        await client.services.update(project.id, service.id, { volumes });
+        await client.services.sync(project.id, { services: [{ name: "web", image: "alpine:3", volumes }] });
+        await client.projects.setOptions(project.id, { volumes });
+        await client.projects.update(project.id, { volumes });
+        await client.projects.ensure({ projectId: project.id, name: project.name, volumes });
+        await client.deployments.buildAccess({
+          projectId: project.id,
+          services: [{ name: "web", image: "alpine:3", volumes, ports: [], dependsOn: [], environment: {} }],
+        });
+        expect(requestBuild).toHaveBeenCalledOnce();
+        expect((await repos.service.findById(service.id))?.volumes).toEqual(volumes);
+        expect((await repos.project.findById(project.id))?.volumes).toEqual(volumes);
+
+        const context = { userId: owner.userId, organizationId: owner.orgId, role: "owner", scopeMode: "resource" } as const;
+        await expect(assertHostMountWriteAccess(context, { services: [{ volumes }] }, project.id)).resolves.toBeUndefined();
+        const other = await seedProject(owner.orgId);
+        const foreignRoot = cloudDockerProjectPaths(other.id).mounts;
+        for (const source of [foreignRoot + "/imports/run/data", root + "/../other/data", root + "-other/data", "/media", "/var/run/docker.sock"]) {
+          await expect(client.services.update(project.id, service.id, { volumes: [`${source}:/data`] })).rejects.toMatchObject({ code: "HOST_MOUNT_FORBIDDEN" });
+        }
+        // Matching the path's project ID is insufficient without a Cloud target
+        // and organization ownership; a fresh project cannot claim it either.
+        const plainRoot = cloudDockerProjectPaths(other.id).mounts;
+        await expect(assertHostMountWriteAccess(context, { volumes: [`${plainRoot}/imports/data:/data`] }, other.id)).rejects.toMatchObject({ code: "HOST_MOUNT_FORBIDDEN" });
+        await expect(assertHostMountWriteAccess({ ...context, organizationId: "foreign-org" }, { volumes }, project.id)).rejects.toMatchObject({ code: "HOST_MOUNT_FORBIDDEN" });
+        await expect(client.projects.create({ name: "cannot-adopt", volumes })).rejects.toMatchObject({ code: "HOST_MOUNT_FORBIDDEN" });
+        expect((await repos.service.findById(service.id))?.volumes).toEqual(volumes);
+      } finally {
+        requestBuild.mockRestore();
+        env.CLOUD_MODE = cloud;
+      }
+    },
+  );
 });
 
 describe("deployment boundary for repository, restored and previously stored mounts", () => {
+  it("admits project-owned imported storage only to its matching Cloud runtime", async () => {
+    const { project } = await setup();
+    const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), { projectId: project.id }) as CloudDockerRuntime;
+    const source = `${cloudDockerProjectPaths(project.id).mounts}/imports/run/data`;
+    expect(() => assertDeployVolumePolicy([`${source}:/data`], runtime)).not.toThrow();
+    expect(() => assertDeployVolumePolicy([`${source}:/data`], Object.create(DockerRuntime.prototype))).toThrow();
+    const foreign = Object.assign(Object.create(CloudDockerRuntime.prototype), { projectId: "different-project" });
+    expect(() => assertDeployVolumePolicy([`${source}:/data`], foreign)).toThrow();
+    expect(() => assertDeployVolumePolicy([`${source}/../../../../other:/data`], runtime)).toThrow();
+  });
   it("permits repository mounts only through the managed Cloud resolver", async () => {
     vi.stubEnv("OPENSHIP_ALLOW_HOST_BIND_MOUNTS", undefined);
     const runtime = Object.create(CloudDockerRuntime.prototype) as CloudDockerRuntime;

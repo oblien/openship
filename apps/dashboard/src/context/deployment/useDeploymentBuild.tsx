@@ -7,6 +7,7 @@ import { persistRouteProtectionDrafts, clearRouteProtectionDrafts } from "./rout
 import { actionsApi } from "@/lib/api/actions";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { IconName } from "@repo/ui/icons";
+import type { DeploymentVerification } from "@repo/core";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
@@ -226,6 +227,7 @@ const STEPS: { label: string; icon: IconName }[] = [
   { label: "Installing", icon: "download" },
   { label: "Building", icon: "wrench" },
   { label: "Deploying", icon: "rocket" },
+  { label: "Verifying", icon: "shield-check" },
   { label: "Ready", icon: "check-circle" },
 ];
 
@@ -311,9 +313,11 @@ export function useDeploymentBuild(
       ? "failed"
       : state.deploymentSuccess
         ? "ready"
-        : state.currentStepIndex >= 4
-          ? "deploying"
-          : "building";
+        : state.verification
+          ? "verifying"
+          : state.currentStepIndex >= 4
+            ? "deploying"
+            : "building";
 
   // ── Terminal helpers ──────────────────────────────────────────────────────
 
@@ -372,7 +376,8 @@ export function useDeploymentBuild(
         cancellationPending: false,
         pendingPrompt: null,
         currentProgress: 100,
-        currentStepIndex: 5,
+        currentStepIndex: 6,
+        verification: null,
         isDeploying: false,
         queue: null,
         failureMessage: "",
@@ -455,7 +460,7 @@ export function useDeploymentBuild(
     [showToast],
   );
 
-  const handleProgressUpdate = useCallback((currentStep: number, progress: number) => {
+  const handleProgressUpdate = useCallback((currentStep: number, progress: number, verification?: DeploymentVerification) => {
     const now = Date.now();
     // Mark when this phase became current (first sighting wins; running +
     // completed events for the same step share an index).
@@ -463,6 +468,7 @@ export function useDeploymentBuild(
       phaseStartRef.current[currentStep] = now;
     }
     setState((prev) => {
+      if (prev.deploymentSuccess || prev.deploymentFailed || prev.deploymentCanceled) return prev;
       // Finalize live durations for any phase we've advanced past.
       let nextDurations = prev.phaseDurations;
       for (let i = prev.currentStepIndex; i < currentStep; i++) {
@@ -476,8 +482,9 @@ export function useDeploymentBuild(
       return {
         ...prev,
         queue: null,
-        currentStepIndex: currentStep,
-        currentProgress: progress,
+        currentStepIndex: Math.max(prev.currentStepIndex, currentStep),
+        currentProgress: Math.max(prev.currentProgress, progress),
+        verification: verification ?? prev.verification,
         phaseDurations: nextDurations,
       };
     });
@@ -749,6 +756,7 @@ export function useDeploymentBuild(
         buildLogs: [],
         currentProgress: 0,
         currentStepIndex: 0,
+        verification: null,
         phaseDurations: {},
         deploymentSuccess: false,
         deploymentFailed: false,
@@ -1180,8 +1188,9 @@ export function useDeploymentBuild(
           }
           return {
             ...prev,
-            currentProgress: data.progress ?? prev.currentProgress,
-            currentStepIndex: data.currentStep ?? prev.currentStepIndex,
+            currentProgress: isLive ? Math.max(prev.currentProgress, data.progress ?? 0) : data.progress ?? prev.currentProgress,
+            currentStepIndex: isLive ? Math.max(prev.currentStepIndex, data.currentStep ?? 0) : data.currentStep ?? prev.currentStepIndex,
+            verification: isLive ? data.verification ?? prev.verification : null,
             isDeploying: isLive,
             queue: status === "queued" ? (data.queue ?? null) : null,
             deploymentSuccess: !isLive && status === "ready",
@@ -1434,6 +1443,7 @@ export function useDeploymentBuild(
           projectId: data.project_id || prev.projectId,
           currentProgress: data.progress || 0,
           currentStepIndex: data.currentStep || 0,
+          verification: data.verification ?? null,
           deploymentSuccess: !isActive && status === "ready",
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",

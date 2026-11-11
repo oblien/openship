@@ -24,7 +24,7 @@ export {
 } from "./actions.repo";
 import { createCloudSupportRepo } from "./cloud-support.repo";
 import { createCloudCustomerEmailRepo } from "./cloud-customer-email.repo";
-export { createCloudCustomerEmailRepo, type CloudCustomerEmailRepo, type CustomerEmail, type CustomerEmailInput, type CustomerPaymentEmail } from "./cloud-customer-email.repo";
+export { createCloudCustomerEmailRepo, type CloudCustomerEmailRepo, type CustomerEmail, type CustomerEmailInput, type CustomerPaymentEmail, type CustomerCancellationEmail } from "./cloud-customer-email.repo";
 import { createCloudWorkspaceRepo } from "./cloud-workspace.repo";
 export { createCloudWorkspaceRepo, type CloudWorkspace } from "./cloud-workspace.repo";
 export {

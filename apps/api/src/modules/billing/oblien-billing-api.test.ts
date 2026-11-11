@@ -37,16 +37,16 @@ describe("Oblien billing SDK and transport contract", () => {
     ["affiliate_payout_configuration", 503, "Payout accounts are not available yet. Contact support."],
   ] as const)("explains recipient account errors without exposing provider details: %s", async (code, status, message) => {
     const { api } = setup({ success: false, code, message: "private recipient account 123456789" }, status);
-    await expect(api.affiliateRequest("POST", "/billing/affiliates/reseller/payouts", {}))
+    await expect(api.referralRequest("POST", "/billing/affiliates/reseller/payouts", {}))
       .rejects.toMatchObject({ message, statusCode: status });
     expect(JSON.stringify(vi.mocked(errorDiagnostics.warn).mock.calls)).not.toContain("123456789");
   });
-  it("preserves server-derived affiliate attribution through the bounded checkout transport", async () => {
+  it("preserves server-derived referral attribution through the bounded checkout transport", async () => {
     const { api, fetcher } = setup({ success: true, url: "https://checkout.stripe.com/c/pay/test", checkoutId: "cs_test" });
     const affiliateBuyer = { namespace: "openship", buyerKey: "a".repeat(64), relatedKeys: ["b".repeat(64)] };
     await api.createCheckout({ namespace: "os-one", kind: "subscription", billingInterval: "yearly",
       offer: { ...monthlyCloudBilling().subscription.offer!, unitAmount: 12000 }, metadata,
-      affiliateBuyer, affiliateCode: "AF-0123456789", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "affiliate-transport" });
+      affiliateBuyer, affiliateCode: "AF-0123456789", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "referral-transport" });
     expect(fetcher).toHaveBeenCalledExactlyOnceWith("https://api.oblien.com/billing/checkout", expect.objectContaining({
       method: "POST", redirect: "error", signal: expect.any(AbortSignal),
       headers: expect.objectContaining({ "X-Client-ID": "test-id", "X-Client-Secret": "test-secret" }),
@@ -804,7 +804,7 @@ describe("Oblien subscription changes", () => {
 
 it("explains a reused payout transfer reference without forwarding provider payment details", async () => {
   const { api } = setup({ success: false, code: "affiliate_payment_reference_used", message: "private bank-transfer-reference" }, 409);
-  const error = await api.affiliateRequest("POST", "/billing/affiliates/reseller/payouts/payout-id/review", {}).catch(error => error);
+  const error = await api.referralRequest("POST", "/billing/affiliates/reseller/payouts/payout-id/review", {}).catch(error => error);
   expect(error).toMatchObject({ statusCode: 409, details: { providerCode: "affiliate_payment_reference_used" },
     message: expect.stringContaining("already recorded for another payout") });
   expect(JSON.stringify(error)).not.toContain("private bank-transfer-reference");

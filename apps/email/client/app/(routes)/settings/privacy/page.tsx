@@ -7,6 +7,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { BlockedSenders } from '@/components/settings/blocked-senders';
 import { SettingsCard } from '@/components/settings/settings-card';
 import { userSettingsSchema } from '@zero/server/schemas';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -67,6 +68,7 @@ export default function PrivacyPage() {
 
   return (
     <div className="grid gap-6">
+      <BlockedSenders />
       <SettingsCard
         title={m['pages.settings.privacy.title']()}
         description={m['pages.settings.privacy.description']()}

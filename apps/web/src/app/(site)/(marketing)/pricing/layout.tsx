@@ -1,13 +1,19 @@
 import type { Metadata, ResolvingMetadata } from "next";
 import { inheritSocialImages } from "@/lib/social-metadata";
 import type { ReactNode } from "react";
-import { CURRENCY_LD, getCloudPricing, priceLd, type CloudPricing } from "@/lib/pricing";
+import {
+  CURRENCY_LD,
+  cloudPlanSummary,
+  getCloudPricing,
+  priceLd,
+  type CloudPricing,
+} from "@/lib/pricing";
 import { faq } from "./_data";
+import { CLOUD_SLA } from "@/lib/cloud-service";
 
 const PAGE_URL = "https://openship.io/pricing";
 export const revalidate = 60;
-const DESCRIPTION =
-  "Compare Openship Cloud managed servers. Monthly or yearly CPU, RAM and storage for your projects, with clear resource limits and no per-seat fees.";
+const DESCRIPTION = `Compare Openship Cloud resource pools for your projects. Shared CPU, RAM and storage, support included, and a ${CLOUD_SLA.monthlyUptimePercent}% monthly uptime guarantee on every plan.`;
 const metadata: Metadata = {
   title: "Pricing",
   description: DESCRIPTION,
@@ -32,7 +38,7 @@ function buildLd(pricing: CloudPricing) {
   const offers = pricing.tiers.map((plan) => ({
     "@type": "Offer",
     name: `Openship Cloud ${plan.name}`,
-    description: plan.description,
+    description: cloudPlanSummary(plan),
     price: priceLd(plan.price.monthly),
     priceCurrency: CURRENCY_LD,
     url: PAGE_URL,

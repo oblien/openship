@@ -117,6 +117,7 @@ describe("Dockerfile base-image receipts", () => {
     },
   ])("records every literal image input in generated $stack recipes", async (fields) => {
     const dockerfile = generateDockerfile({
+      sessionId: "base-image-receipt",
       installCommand: "echo install",
       buildCommand: "echo build",
       startCommand: "echo start",

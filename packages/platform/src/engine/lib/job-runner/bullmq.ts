@@ -164,11 +164,13 @@ export class BullMQJobRunner implements JobRunner {
     this.recurringCallbacks.set(opts.jobId, opts.onTick);
 
     // Remove any existing repeatable with the same jobId so cron edits
-    // take effect. BullMQ keys repeatables by `pattern + jobId`; we
-    // iterate to find a match.
+    // take effect. BullMQ stores repeatables under an opaque hashed key
+    // and getRepeatableJobs() reports the job name, not the id (its `id`
+    // is null/undefined), so match on the name — scheduleRecurring adds
+    // the job under its jobId as the name.
     const repeatables = await this.recurringQueue.getRepeatableJobs();
     for (const r of repeatables) {
-      if (r.id === opts.jobId) {
+      if (r.name === opts.jobId) {
         await this.recurringQueue.removeRepeatableByKey(r.key);
       }
     }
@@ -189,7 +191,7 @@ export class BullMQJobRunner implements JobRunner {
     if (!this.recurringQueue) return;
     const repeatables = await this.recurringQueue.getRepeatableJobs();
     for (const r of repeatables) {
-      if (r.id === jobId) await this.recurringQueue.removeRepeatableByKey(r.key);
+      if (r.name === jobId) await this.recurringQueue.removeRepeatableByKey(r.key);
     }
   }
 

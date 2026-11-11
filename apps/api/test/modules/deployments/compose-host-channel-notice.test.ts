@@ -69,6 +69,7 @@ vi.mock("@repo/db", () => ({
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
+      setVerification: vi.fn(async () => true),
       findById: async (id: string) => h.deploymentById.get(id) ?? h.previousDeployment,
     },
     project: {
@@ -473,7 +474,7 @@ describe("compose deploy — host channel unavailable", () => {
     await f.run();
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).not.toHaveBeenCalled();
     expect(f.activate).toHaveBeenCalledOnce();
@@ -492,7 +493,7 @@ describe("compose deploy — host channel unavailable", () => {
     await expect(f.run()).rejects.toThrow("registry unavailable");
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(
       dep.id, new Date(start.getTime() + 20_000),
@@ -895,9 +896,11 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.pull).toHaveBeenCalledTimes(1);
     expect(f.activate).not.toHaveBeenCalled();
     expect(f.runtime.destroy).not.toHaveBeenCalled();
-    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ serviceId: "svc-db", startedAt: expect.any(Date) }),
-    );
+    // Both image requests were admitted before cancellation. Neither may activate;
+    // each attempted service keeps its own timing instead of inheriting a sibling's.
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledTimes(2);
+    expect(h.startServiceDeploymentTiming.mock.calls.map(([input]) => input.serviceId).sort())
+      .toEqual(["svc-api", "svc-db"]);
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(dep.id, expect.any(Date));
   });
 
@@ -2703,11 +2706,12 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.convergeTargetHostPortClaimsUnlocked).not.toHaveBeenCalled();
   });
 
-  it("retains every claim while a started service has an indeterminate outcome", async () => {
+  it.each(["Channel open failure: connection lost", "database unavailable"])("retains a released runtime and claims when publication is indeterminate (%s)", async failure => {
     h.upsertServiceDeployment
-      .mockRejectedValueOnce(new Error("Channel open failure: connection lost"))
+      .mockRejectedValueOnce(new Error(failure))
       .mockResolvedValueOnce(undefined);
     const { logger } = recordingLogger();
+    const runtime = startingRuntime();
 
     const result = await deployComposeServices(
       {
@@ -2716,7 +2720,7 @@ describe("compose deploy — host channel unavailable", () => {
         routeStrategy: "loopback-port",
       } as unknown as Project,
       dep,
-      startingRuntime(),
+      runtime,
       logger,
       {
         executor: { exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })) } as never,
@@ -2736,6 +2740,7 @@ describe("compose deploy — host channel unavailable", () => {
     );
 
     expect(result.status).toBe("reconciling");
+    expect(runtime.destroy).not.toHaveBeenCalled();
     expect(h.allocateAndReservePinnedHostPort).toHaveBeenCalled();
     expect(h.releaseNewPinnedHostPortClaims).not.toHaveBeenCalled();
     expect(h.convergeTargetHostPortClaims).not.toHaveBeenCalled();

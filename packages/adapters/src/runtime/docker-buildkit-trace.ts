@@ -24,11 +24,10 @@
  * Defensive by construction: a malformed or unexpected payload yields NO lines
  * rather than throwing, because this runs inside a live build's event handler.
  *
- * Why hand-rolled: the pinned dockerode (4.0.9) ships no BuildKit decoder at all, and
- * the build stream is consumed through `docker.modem.followProgress`, which has none
- * either. 4.0.12 added a protobufjs-based `decodeBuildKitStatus` behind
- * `Docker.prototype.followProgress` — if this repo ever moves onto that call, this
- * module becomes redundant and should be deleted rather than left as a second decoder.
+ * The build stream is consumed through `docker.modem.followProgress`, which does
+ * not decode BuildKit status. Dockerode 4.0.12 added a protobufjs-based decoder
+ * behind `Docker.prototype.followProgress` (also present in 5.x). If this repo
+ * moves onto that call, delete this module rather than retain a second decoder.
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
@@ -127,6 +126,7 @@ interface TraceLog {
   vertex: string;
   stream: number;
   msg: string;
+  bytes: Uint8Array;
 }
 
 function decodeVertex(bytes: Uint8Array): TraceVertex | null {
@@ -205,7 +205,7 @@ function decodeLog(bytes: Uint8Array): TraceLog | null {
   // log. Dropping it degrades to "no per-command output", never to garbage.
   if (!vertex.startsWith("sha256:") || !msg?.length) return null;
 
-  return { vertex, stream, msg: text(msg) };
+  return { vertex, stream, msg: text(msg), bytes: msg };
 }
 
 /**
@@ -222,6 +222,7 @@ export class BuildKitTraceDecoder {
   push(
     auxBase64: string,
     onOutput?: (data: string, streamId: string) => void,
+    filterOutput?: (data: Uint8Array, streamId: string) => string,
   ): BuildKitTraceLine[] {
     let payload: Uint8Array;
     try {
@@ -254,8 +255,10 @@ export class BuildKitTraceDecoder {
         if (entry) {
           // Preserve fragment boundaries and stdout/stderr identity before the
           // renderer splits lines or adds step prefixes.
-          onOutput?.(entry.msg, `${entry.vertex}:${entry.stream}`);
-          lines.push(...this.renderLog(entry));
+          const streamId = `${entry.vertex}:${entry.stream}`;
+          const output = filterOutput?.(entry.bytes, streamId) ?? entry.msg;
+          onOutput?.(output, streamId);
+          lines.push(...this.renderLog({ ...entry, msg: output }));
         }
         continue;
       }

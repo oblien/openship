@@ -5,10 +5,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { useCloud } from "@/context/CloudContext";
-import { usePlatform } from "@/context/PlatformContext";
-import { ServerAcquisitionPicker } from "@/components/servers/ServerAcquisition";
-import { newServerBillingHref } from "@/lib/billing-links";
+import { useAddServerModal } from "@/components/servers/add-server-modal";
+import { Button } from "@/components/ui/button";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, ServerInfo } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -67,7 +65,7 @@ function getMissingComponentNames(components: ComponentState[]): string[] {
     .map((component) => component.name);
 }
 
-/** One sidebar in both setup modes; on narrow screens only the choices move
+/** On narrow screens the managed-server action moves
  * before the form, while supporting guidance follows it. */
 function ServerSetupLayout({ choice, guidance, children }: {
   choice?: ReactNode;
@@ -88,17 +86,15 @@ function ServerSetupLayout({ choice, guidance, children }: {
 }
 
 export default function AddServerPage() {
-  const { selfHosted } = usePlatform();
-  const router = useRouter();
-  const { requireCloud } = useCloud();
-
-  return (
-    <ConnectedServerSetup choice={
-      <ServerAcquisitionPicker value="connected" stacked onChange={async (mode) => {
-        if (mode === "managed" && (!selfHosted || await requireCloud("billing"))) router.push(newServerBillingHref());
-      }} />
-    } />
-  );
+  const { t } = useI18n();
+  const addManagedServer = useAddServerModal({ initialMode: "managed" });
+  return <ConnectedServerSetup choice={
+    <Button type="button" variant="secondary" className="w-full" onClick={() => addManagedServer()}>
+      <UiIcon name="cloud" className="size-4" />
+      {t.servers.acquire.managed.label}
+      <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
+    </Button>
+  } />;
 }
 
 function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {

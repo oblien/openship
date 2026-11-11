@@ -44,29 +44,6 @@ backups are separate. Expired disks are retained for at least 30 days with no au
 retained storage remains billable until deletion. The UI discloses provider
 retention terms and amounts due instead of treating them as compute credits.
 
-## PAYG resource tiers
-
-`pricing.json#payg` owns the PAYG resource tiers and suggested credit packages.
-The API publishes this catalog as `GET /api/billing/plans` → `payg`; the dashboard
-must not derive customer tiers from the reseller owner's Oblien account plan.
-
-| Tier | Credit purchases to unlock | Pool vCPU | Pool RAM | Pool disk | Servers |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | $5 | 2 | 8 GiB | 64 GiB | 2 |
-| 2 | $20 | 4 | 16 GiB | 128 GiB | 4 |
-| 3 | $50 | 8 | 32 GiB | 256 GiB | 8 |
-
-These are Openship pool allowances shared across servers, not monthly prices or
-provider account upgrades. Unlocking is based on cumulative verified credit
-purchases, not the declining spendable balance. One server may use the whole
-pool within effective provider limits. Adding servers does not multiply it.
-Usage rates and credit conversion remain provider-owned.
-
-The current PAYG surface previews this catalog and validates proposed allocations.
-It does not grant access, change namespaces or activate checkout. Persisted
-customer funding and runtime entitlement must be integrated before selling PAYG;
-the preview's package selection is never payment evidence.
-
 ## Provider checkout and authority
 
 New purchases use the existing tracked `/billing/checkout` flow:
@@ -144,10 +121,8 @@ They retain the existing allowance, signed webhook and renewal code. Internally,
 New monthly servers cannot be fabricated with the operator's complimentary-credit
 grant command. Previously saved grants can still be inspected, reused and revoked.
 
-PAYG displays the published active-vCPU-hour, reserved-GiB-hour, retained-GiB-month
-and managed-proxy rates. Customer PAYG checkout remains unavailable: the deployed
-capacity confirmation spends the reseller wallet, not a customer-specific funded
-balance. No purchase button is enabled for that flow.
+New Cloud space purchases use monthly or yearly plans, including Custom
+resources. There is no prepaid compute offering or pricing estimator.
 
 See [the Cloud release gate](../../../../docs/openship-cloud-launch.md) for payment,
 renewal, isolation and deployment acceptance requirements.

@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { Button } from "@/components/ui/button";
@@ -9,28 +10,26 @@ import { useI18n } from "@/components/i18n-provider";
 export function BillingEmptyState({ kind }: { kind: "usage" | "payment" | "topups" }) {
   const { t } = useI18n();
   const copy = t.billing.onboarding;
-  const { Icon, title, description } = {
+  const { illustration, title, description } = {
     usage: {
-      Icon: "chart-bar" as const,
+      illustration: "logs-monitoring" as const,
       title: copy.usageTitle,
       description: copy.usageDescription,
     },
     payment: {
-      Icon: "credit-card" as const,
+      illustration: "audit-log" as const,
       title: copy.paymentTitle,
       description: copy.paymentDescription,
     },
     topups: {
-      Icon: "coins" as const,
+      illustration: "app-catalog" as const,
       title: copy.topupsTitle,
       description: copy.topupsDescription,
     },
   }[kind];
   return (
     <section className="flex min-h-60 flex-col items-center justify-center rounded-2xl bg-card p-6 text-center">
-      <span className="mb-4 flex size-10 items-center justify-center rounded-2xl bg-muted/50 text-muted-foreground">
-        <UiIcon name={Icon} className="size-5" aria-hidden="true" />
-      </span>
+      <FeatureIllustration name={illustration} className="illustration-color mb-4 h-auto w-20" />
       <h2 className="text-base font-medium text-foreground">{title}</h2>
       <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>
       <Button asChild variant="secondary" className="mt-5">

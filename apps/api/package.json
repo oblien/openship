@@ -12,11 +12,12 @@
     "build-release": "bun scripts/build-release.ts",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "cloud:check": "bun scripts/cloud-readiness.ts",
-    "affiliate": "node --import tsx scripts/affiliate.ts",
+    "referral": "node --import tsx scripts/referral.ts",
     "billing:grant": "bun scripts/plan-grant.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
+    "test:live-source": "vitest run -c vitest.live-github.config.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
@@ -40,17 +41,17 @@
     "bullmq": "^5.70.4",
     "bytesmap": "0.1.2",
     "cron-parser": "^4.9.0",
-    "hono": "^4.12.5",
+    "hono": "^4.13.18",
     "ioredis": "^5.10.0",
     "ipaddr.js": "^2.4.0",
     "jose": "6.2.13",
     "maxmind": "^5.0.6",
-    "nodemailer": "^10.1.7",
+    "nodemailer": "^10.5.0",
     "pino": "^10.3.1",
     "stripe": "^20.4.0",
     "ws": "^8.21.3",
     "yaml": "^2.8.2",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@repo/sdk": "workspace:*",

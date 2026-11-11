@@ -5,7 +5,7 @@
  * transfer) that runs BEFORE the build timer starts — so it's shown as its own
  * phase and excluded from the reported build duration.
  */
-export type BuildStep = "prepare" | "clone" | "install" | "build" | "deploy";
+export type BuildStep = "prepare" | "clone" | "install" | "build" | "deploy" | "verify";
 
 export const BUILD_STEPS: readonly BuildStep[] = [
   "prepare",
@@ -13,7 +13,14 @@ export const BUILD_STEPS: readonly BuildStep[] = [
   "install",
   "build",
   "deploy",
+  "verify",
 ] as const;
+
+/** Published destinations while the worker is still checking the new release. */
+export interface DeploymentVerification {
+  startedAt: string;
+  urls: string[];
+}
 
 export interface LogEntry<Step extends string = BuildStep> {
   timestamp: string;
@@ -23,6 +30,7 @@ export interface LogEntry<Step extends string = BuildStep> {
   step?: Step;
   /** Step lifecycle status */
   stepStatus?: "running" | "completed" | "failed" | "skipped";
+  verification?: DeploymentVerification;
   /** Compose service name when this log belongs to one service. */
   serviceName?: string;
   /** Stable id of the service this log belongs to (compose deployments). Routes

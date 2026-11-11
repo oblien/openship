@@ -53,20 +53,6 @@ function leafKeys(value: unknown, prefix = ""): string[] {
 }
 
 describe("pricing catalog (pricing.json)", () => {
-  it("rejects PAYG tiers that cannot fit their server count or shrink a higher tier's pool", () => {
-    const impossible = structuredClone(PRICING);
-    impossible.payg.tiers[0]!.pool.servers = 3;
-    expect(pricingCatalogSchema.safeParse(impossible).success).toBe(false);
-    const shrinking = structuredClone(PRICING);
-    shrinking.payg.tiers[1]!.pool.diskGb = 60;
-    expect(pricingCatalogSchema.safeParse(shrinking).success).toBe(false);
-    const duplicate = structuredClone(PRICING);
-    duplicate.payg.tiers[1]!.id = duplicate.payg.tiers[0]!.id;
-    expect(pricingCatalogSchema.safeParse(duplicate).success).toBe(false);
-    const threshold = structuredClone(PRICING);
-    threshold.payg.tiers[1]!.minimumFundingCents = 100;
-    expect(pricingCatalogSchema.safeParse(threshold).success).toBe(false);
-  });
   it("rejects unfunded plan or top-up allowances and inherited retail capacity", () => {
     const overfundedPlan = structuredClone(PRICING);
     const metered = overfundedPlan.plans.find(plan => plan.id === "pro")!;

@@ -80,7 +80,7 @@ export const projectDependencies: ProjectDependencies = {
       isEnsureProjectResult,
     );
     if (cloud) return cloud;
-    await assertHostMountWriteAccess(ctx, input);
+    await assertHostMountWriteAccess(ctx, input, input.projectId);
     const service = await import("./project.service");
     await checkSource(input);
     return service.ensureProject(input, ctx.organizationId, ctx);
@@ -92,7 +92,7 @@ export const projectDependencies: ProjectDependencies = {
     return project;
   },
   async update(ctx, id, input) {
-    await assertHostMountWriteAccess(ctx, input);
+    await assertHostMountWriteAccess(ctx, input, id);
     const service = await import("./project.service");
     await checkSource(input);
     return service.updateProject(id, input, ctx.organizationId);

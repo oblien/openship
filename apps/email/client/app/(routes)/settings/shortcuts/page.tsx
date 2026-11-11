@@ -66,7 +66,7 @@ export default function ShortcutsPage() {
 
                   const message =
                     m[`pages.settings.shortcuts.actions.${shortcut.action}` as ShortcutMessage];
-                  let label = message?.() ?? shortcut.action;
+                  let label: string = message?.() ?? shortcut.action;
 
                   if (shortcut.action in categoryActionIndex && categorySettings.length) {
                     const idx = categoryActionIndex[shortcut.action];

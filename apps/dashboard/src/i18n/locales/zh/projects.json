@@ -209,6 +209,8 @@
     "modeStandalone": "独立",
     "modeServer": "服务器",
     "modeWorker": "工作进程",
+    "modeComposeOne": "Compose 服务栈 · {count} 个服务",
+    "modeComposeOther": "Compose 服务栈 · {count} 个服务",
     "infrastructure": "基础设施",
     "platform": "平台",
     "mode": "模式",

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import {
   probeHarness,
   writeHarnessWrapper,
 } from "../src/engine/modules/assistant/harness-policy";
+import { assistantSearchPath } from "../src/engine/modules/assistant/native-target";
 
 const codexFeatures = [
   "shell_tool stable true",
@@ -197,6 +198,24 @@ for (const provider of ["codex", "claude"] as const)
     }
   });
 
+test("scoped Claude removes the unused bypass opt-in while preserving permission mode, MCP policy and argument boundaries", async () => {
+  const fixture = await harnessFixture("claude", "2.1.293");
+  try {
+    const probe = await fixture.probe();
+    await writeHarnessWrapper(fixture.wrapper, probe);
+    const args = ["-p", "--input-format", "stream-json", "--allow-dangerously-skip-permissions",
+      "--permission-mode", "dontAsk", "--mcp-config", "/tmp/path with spaces/config.json", "--system-prompt", "Keep scoped tools."];
+    const result = await invokeWrapper(fixture, "claude", args);
+    expect(result.args).toEqual([...probe.flags, ...args.filter(arg => arg !== "--allow-dangerously-skip-permissions")]);
+    expect(result.args).toContain("--strict-mcp-config");
+    expect(result.args).toContain("AskUserQuestion");
+    expect(result.args).not.toContain("bypassPermissions");
+    expect(result.args).not.toContain("--dangerously-skip-permissions");
+  } finally {
+    await fixture.close();
+  }
+});
+
 import { spawn } from "node:child_process";
 import { CODEX_GUARD } from "../src/engine/modules/assistant/codex-guard";
 test("Node guard strips external MCP, dynamic tools and permission changes before native execution", async () => {
@@ -346,5 +365,84 @@ test("remote Codex guard accepts only the exact configured HTTPS MCP endpoint", 
       expect(messages.find((m) => m.id === id).error.code).toBe(-32601);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// #1669 — a macOS GUI app inherits launchd's minimal PATH, so agent CLIs
+// installed by Homebrew, npm, Bun or the vendor installers are invisible
+// to the probe even though they work in a terminal.
+async function macosHomeFixture(provider: AssistantProvider, version: string) {
+  const home = await mkdtemp("/tmp/openship-macos-home-");
+  const bunBin = join(home, ".bun", "bin");
+  const state = join(home, "fixture.json");
+  await mkdir(bunBin, { recursive: true });
+  await writeFile(
+    state,
+    JSON.stringify({ version, help: claudeHelp, features: codexFeatures, servers: [] }),
+  );
+  // Same fixture executable as harnessFixture, installed where Bun puts it.
+  await writeFile(
+    join(bunBin, provider),
+    `#!${process.execPath}
+import { readFileSync } from 'node:fs'
+const config = JSON.parse(readFileSync(${JSON.stringify(state)}, 'utf8'))
+const args = process.argv.slice(2)
+if (args[0] === '--version') console.log(${JSON.stringify(provider)} + ' ' + config.version)
+else if (args[0] === '--help') console.log(config.help)
+else if (args[0] === 'features') console.log(config.features)
+else if (args[0] === 'mcp') console.log(JSON.stringify(config.servers))
+else console.log(JSON.stringify({ version: config.version, args }))
+`,
+    { mode: 0o700 },
+  );
+  return { home, bunBin, close: () => rm(home, { recursive: true, force: true }) };
+}
+
+function restorePath(previous: string | undefined) {
+  if (previous === undefined) delete process.env.PATH;
+  else process.env.PATH = previous;
+}
+
+test("macOS launchd PATH still finds a Claude installed under ~/.bun/bin", async () => {
+  const fixture = await macosHomeFixture("claude", "2.2.0");
+  const launchdPath = "/usr/bin:/bin:/usr/sbin:/sbin";
+  const previousPath = process.env.PATH;
+  process.env.PATH = launchdPath;
+  try {
+    const repaired = assistantSearchPath("darwin", fixture.home);
+    expect(repaired).toContain(join(fixture.home, ".bun", "bin"));
+    expect(repaired).toContain("/opt/homebrew/bin");
+    const env = assistantEnvironment(fixture.home, repaired);
+    const probe = await probeHarness("claude", repaired, env);
+    expect(probe).toMatchObject({ provider: "claude", available: true, version: "2.2.0" });
+    expect(probe.path).toBe(await realpath(join(fixture.bunBin, "claude")));
+    // Without the repair the same minimal PATH misses the installed binary:
+    // this is the reported bug, not a missing installation.
+    const missed = await probeHarness("claude", launchdPath, env);
+    expect(missed).toMatchObject({ available: false, path: undefined });
+  } finally {
+    restorePath(previousPath);
+    await fixture.close();
+  }
+});
+
+test("assistantSearchPath leaves a non-macOS PATH alone", () => {
+  const previousPath = process.env.PATH;
+  process.env.PATH = "/usr/bin:/bin";
+  try {
+    expect(assistantSearchPath("linux", "/tmp/no-home")).toBe("/usr/bin:/bin");
+  } finally {
+    restorePath(previousPath);
+  }
+});
+
+test("assistantSearchPath does not duplicate entries already on PATH", () => {
+  const previousPath = process.env.PATH;
+  process.env.PATH = "/opt/homebrew/bin:/usr/bin:/bin";
+  try {
+    const repaired = assistantSearchPath("darwin", "/tmp/no-home");
+    expect(repaired.split(":").filter((dir) => dir === "/opt/homebrew/bin")).toHaveLength(1);
+  } finally {
+    restorePath(previousPath);
   }
 });

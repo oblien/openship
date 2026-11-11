@@ -143,3 +143,58 @@ describe("transactional workflow imports", () => {
     expect(await repo.listWorkflows(f.org)).toHaveLength(0);
   });
 });
+
+describe("workflow run summaries", () => {
+  it("returns each workflow's latest status within the owning organization", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    const first = generateId("awf"),
+      second = generateId("awf");
+    await repo.saveWorkflows([f.entry(first), f.entry(second)]);
+    await repo.saveWorkflows([other.entry(generateId("awf"))]);
+    const addRun = (workflowId: string, status: "success" | "failure", createdAt: Date) =>
+      connection.db.insert(schema.actionRun).values({
+        id: generateId("arn"),
+        organizationId: f.org,
+        workflowId,
+        number: Math.floor(createdAt.getTime() / 1000),
+        idempotencyKey: generateId("idem"),
+        status,
+        source: "test",
+        plan: { name: "CI", triggers: {}, jobs: [] },
+        configuration: {
+          owner: "acme",
+          repo: "app",
+          path: ".github/workflows/ci.yml",
+          defaultBranch: "main",
+          runnerIds: [],
+          variables: {},
+          secrets: {},
+        },
+        authority: {
+          version: 1,
+          userId: "test",
+          organizationId: f.org,
+          token: null,
+          restrictions: null,
+        },
+        revision: "abc",
+        ref: "main",
+        eventName: "push",
+        event: {},
+        actor: "test",
+        createdAt,
+      });
+    await addRun(first, "failure", new Date("2026-01-01T00:00:00Z"));
+    await addRun(first, "success", new Date("2026-01-02T00:00:00Z"));
+    await addRun(second, "failure", new Date("2026-01-03T00:00:00Z"));
+    expect(await repo.latestRunStatuses(f.org, [first, second])).toEqual(
+      expect.arrayContaining([
+        { workflowId: first, status: "success" },
+        { workflowId: second, status: "failure" },
+      ]),
+    );
+    expect(await repo.latestRunStatuses(other.org, [first, second])).toEqual([]);
+    expect(await repo.latestRunStatuses(f.org, [])).toEqual([]);
+  });
+});

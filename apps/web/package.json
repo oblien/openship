@@ -7,7 +7,7 @@
     "dev": "next dev --port 3009",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit",
+    "lint": "next typegen && tsc --noEmit",
     "test:metadata": "node ../../scripts/check-web-social-metadata.mjs",
     "clean": "rm -rf .next .turbo node_modules"
   },
@@ -23,12 +23,12 @@
     "lucide-react": "0.474.0",
     "marked": "^15.0.0",
     "motion": "12.4.7",
-    "next": "^16.1.6",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "next": "^16.4.6",
+    "react": "~19.2.9",
+    "react-dom": "~19.2.9",
     "react-wrap-balancer": "^1.1.1",
     "tailwind-merge": "3.0.2",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",

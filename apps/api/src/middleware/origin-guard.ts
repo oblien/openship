@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import { trustedOrigins } from "@repo/platform/engine/config/env";
+import { publicContactOrigin } from "../modules/cloud-support/contact-origin";
 
 /**
  * CSRF defence via Origin-header check.
@@ -38,7 +39,7 @@ export async function originGuard(c: Context, next: Next) {
     return next();
   }
 
-  if (!trustedOrigins.includes(origin)) {
+  if (!trustedOrigins.includes(origin) && !publicContactOrigin(c.req.path, origin)) {
     return c.json(
       { error: "Origin not allowed", code: "ORIGIN_REJECTED" },
       403,

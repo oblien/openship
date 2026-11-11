@@ -2,6 +2,7 @@ import type { Metadata, ResolvingMetadata } from "next";
 import { inheritSocialImages } from "@/lib/social-metadata";
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { AppDirectory } from "@/components/apps/app-directory";
+import { MarketingIntro } from "@/components/marketing/marketing-intro";
 
 const description =
   "Find your next backend, database, CMS, or developer tool. Explore ready-to-deploy app templates for Openship Cloud and your own infrastructure.";
@@ -31,20 +32,21 @@ export default async function AppsPage({
   // Articles stay on server-rendered detail pages, outside the directory's client payload.
   const cards = apps.map(({ article: _, ...app }) => app);
   return (
-    <main className="marketplace-main">
-      <header className="marketplace-hero">
-        <p className="marketplace-eyebrow">The app catalog</p>
-        <h1>
-          Your next app,
-          <br />
-          <span>ready to ship.</span>
-        </h1>
-        <p className="marketplace-intro">
-          Backends, databases, and the tools your projects run on. Explore the app, choose where it
-          lives, and make it yours.
-        </p>
-      </header>
-      <AppDirectory apps={cards} initialCategory={category} initialQuery={query?.slice(0, 200)} />
+    <main className="marketing-page marketplace-main">
+      <MarketingIntro
+        eyebrow="The app catalog"
+        title={
+          <>
+            Your next app.
+            <br />
+            <span>Ready to deploy.</span>
+          </>
+        }
+        description="Backends, databases, and the tools your projects run on. Explore an app, review its services, and choose where it lives."
+      />
+      <div className="site-container">
+        <AppDirectory apps={cards} initialCategory={category} initialQuery={query?.slice(0, 200)} />
+      </div>
     </main>
   );
 }

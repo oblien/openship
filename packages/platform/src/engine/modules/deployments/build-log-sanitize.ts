@@ -82,10 +82,9 @@ const REDACTED = "***";
 /**
  * Strip credentials from text on its way into storage.
  *
- * Deliberately NOT trying to be a general secret scanner — env values are already
- * masked upstream by `maskServicesEnv`/`secret-env`, and a greedy matcher here would
- * corrupt legitimate build output. This covers the one class the deploy path
- * manufactures itself: a credential the pipeline embedded in a command it ran.
+ * Deployment env values are masked by BuildLogger before streaming or buffering.
+ * This fallback does not know those values and must not guess from key names.
+ * It covers credentials the pipeline embeds in commands it runs.
  */
 export function redactCredentials(text: string): string {
   if (!text) return text;
@@ -278,8 +277,8 @@ function boundTotalSize(entries: LogEntry[]): LogEntry[] {
  * writes land BEFORE the deployment's outcome is recorded — so a hostile byte
  * there doesn't just lose the message, it fails the deploy.
  */
-export function sanitizeStorableStrings<T>(value: T, depth = 0): T {
-  return deepStorable(value, depth, null, false) as T;
+export function sanitizeStorableStrings<T>(value: T, depth = 0, redact?: (value: string) => string): T {
+  return deepStorable(value, depth, null, false, redact) as T;
 }
 
 /**
@@ -333,16 +332,19 @@ function deepStorable(
   depth: number,
   preserveKeys: ReadonlySet<string> | null,
   preserve: boolean,
+  redact?: (value: string) => string,
 ): unknown {
   if (typeof value === "string") {
-    return preserve ? storableTextPreservingSecrets(value) : sanitizeLogText(value);
+    return preserve ? storableTextPreservingSecrets(value) : sanitizeLogText(redact ? redact(value) : value);
   }
-  if (depth >= 8 || value === null || typeof value !== "object") return value;
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= 8) return redact ? null : value;
   if (Array.isArray(value)) {
-    return value.map((item) => deepStorable(item, depth + 1, preserveKeys, preserve));
+    return value.map((item) => deepStorable(item, depth + 1, preserveKeys, preserve, redact));
   }
-  // Only plain objects — a Date (or any class instance) is left alone.
-  if (Object.getPrototypeOf(value) !== Object.prototype) return value;
+  // Known-value filtering must not let opaque objects bypass the diagnostic
+  // boundary. The storage-only path retains its existing class-instance behavior.
+  if (Object.getPrototypeOf(value) !== Object.prototype) return redact ? null : value;
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
     out[key] = deepStorable(
@@ -350,6 +352,7 @@ function deepStorable(
       depth + 1,
       preserveKeys,
       preserve || preserveKeys?.has(key) === true,
+      redact,
     );
   }
   return out;

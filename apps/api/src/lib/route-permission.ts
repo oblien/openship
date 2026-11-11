@@ -31,6 +31,7 @@ import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
 import { repos } from "@repo/db";
 import { audit, auditContextFrom } from "./audit";
+import { resolveTrustedCallSource } from "./call-source";
 import {
   canUseGitHubRepo,
   checkSourceTier,
@@ -757,13 +758,21 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
     if (spec.authorizationHandledByOperation && c.res.status < 400 && !c.get("operationContextApplied"))
       throw new Error("An operation-authorized route did not apply its authorized context");
 
-    // After handler success: emit an audit event for write/admin/list-
-    // -with-side-effects. Read/list are typically too noisy to log unless
-    // the route opts in (TODO: per-route auditOnRead flag).
+    // Audit token REST reads; only nonce-verified MCP reads use the tool-call emitter.
+    // TODO: per-route auditOnRead flag for browser reads.
     const action = parsed.action;
+    const principalKind = getRequestContext(c).principalKind;
+    const isTokenPrincipal = principalKind === "pat" || principalKind === "oauth";
+    const auditable =
+      action === "write" ||
+      action === "admin" ||
+      (isTokenPrincipal &&
+        (action === "read" || action === "list") &&
+        parsed.root !== "audit" &&
+        resolveTrustedCallSource(c) !== "mcp");
     // A cloud proxy may finish before reaching a migrated operation. Only skip
     // this emitter when that operation actually recorded this invocation.
-    if ((!spec.auditHandledByOperation || !c.get("operationAuditRecorded")) && (action === "write" || action === "admin")) {
+    if ((!spec.auditHandledByOperation || !c.get("operationAuditRecorded")) && auditable) {
       const status = c.res.status;
       if (status >= 200 && status < 400) {
         // For CREATE flows, the handler stamps the new id via

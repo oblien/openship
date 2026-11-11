@@ -39,7 +39,7 @@ describe("service icon fallback", () => {
 
   it("keeps a recognized image's brand logo", () => {
     act(() => root.render(<ServiceIcon service={{ name: "db", image: "postgres:16" }} />));
-    expect(host.querySelector("img")?.getAttribute("src")).toBe("https://cdn.simpleicons.org/postgresql");
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/app-logos/postgresql.svg");
     expect(host.querySelector("[data-icon]")).toBeNull();
   });
 

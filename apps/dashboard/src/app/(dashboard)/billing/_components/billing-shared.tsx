@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { BillingLink as Link } from "@/components/billing/BillingWorkspaceContext";
 import { PendingCheckoutsPanel } from "@/components/billing/CheckoutRecovery";
-import { PLANS } from "@repo/core";
+import { PLANS, type CloudAllocation } from "@repo/core";
+import { CapacitySummary } from "@/components/shared/CapacitySummary";
 import type { BillingState } from "@/lib/api/billing";
 import { isNewCloudCustomer, needsCloudPlan } from "@/lib/billing-presentation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -53,24 +54,31 @@ export function BillingPlanSummary({
   compact = false,
   showPlanAction = false,
   notice,
+  allocatedResources,
 }: {
   state: BillingState;
   compact?: boolean;
   showPlanAction?: boolean;
   notice?: ReactNode;
+  allocatedResources?: CloudAllocation | null;
 }) {
   const { t, locale } = useI18n();
   const hasPlan = !needsCloudPlan(state);
   const plan = state.plan;
   const interval = state.subscription?.interval ?? "monthly";
   const price = plan?.price[interval];
-  const status = state.compute?.billingMode === "monthly"
-    ? state.compute.covered ? t.billing.compute.covered : t.billing.compute.needsAttention
-    : hasPlan
-    ? ((t.billing.sidebar.statuses as Record<string, string>)[state.status] ??
-      state.status.replace(/_/g, " "))
-    : t.billing.sidebar.statusInactive;
-  const healthy = state.compute ? state.compute.covered : hasPlan && (state.status === "active" || state.status === "trialing");
+  const status =
+    state.compute?.billingMode === "monthly"
+      ? state.compute.covered
+        ? t.billing.compute.covered
+        : t.billing.compute.needsAttention
+      : hasPlan
+        ? ((t.billing.sidebar.statuses as Record<string, string>)[state.status] ??
+          state.status.replace(/_/g, " "))
+        : t.billing.sidebar.statusInactive;
+  const healthy = state.compute
+    ? state.compute.covered
+    : hasPlan && (state.status === "active" || state.status === "trialing");
   const complimentary = state.complimentary;
   const renewal = state.subscription?.currentPeriod.end ?? state.currentPeriod?.end;
   const formatDate = (value: string) =>
@@ -95,37 +103,26 @@ export function BillingPlanSummary({
       className={`rounded-2xl bg-card ${compact ? "flex flex-wrap items-center justify-between gap-x-6 gap-y-3 p-4" : "space-y-4 p-5"}`}
       aria-label={t.billing.pricing.currentPlan}
     >
-      <div className={compact ? "min-w-0" : "space-y-4"}>
-        <div
-          className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "justify-between"}`}
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className={`flex shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground/80 ${compact ? "size-8" : "size-10"}`}
         >
-          <p className="text-xs font-medium text-muted-foreground">
-            {state.workspace ? t.billing.workspaces.plan : t.billing.pricing.currentPlan}
-          </p>
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${healthy ? "bg-success-bg text-success" : "bg-warning-bg text-warning"}`}
-          >
-            {status}
-          </span>
-        </div>
-        <div>
-          <div className="flex items-center gap-3">
-            <span
-              className={`flex shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground/80 ${compact ? "size-8" : "size-10"}`}
-            >
-              {hasPlan ? (
-                <PlanIcon planId={state.subscription?.tier ?? state.tier} />
-              ) : (
-                <UiIcon name="server" className="size-4" />
-              )}
-            </span>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">
-              {hasPlan
-                ? (plan?.name ?? PLANS[state.subscription?.tier ?? state.tier].name)
-                : t.billing.sidebar.noActivePlan}
-            </h2>
-          </div>
-        </div>
+          {hasPlan ? (
+            <PlanIcon planId={state.subscription?.tier ?? state.tier} />
+          ) : (
+            <UiIcon name="server" className="size-4" />
+          )}
+        </span>
+        <h2 className="min-w-0 flex-1 break-words text-lg font-medium tracking-tight text-foreground">
+          {hasPlan
+            ? (plan?.name ?? PLANS[state.subscription?.tier ?? state.tier].name)
+            : t.billing.sidebar.noActivePlan}
+        </h2>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${healthy ? "bg-success-bg text-success" : "bg-warning-bg text-warning"}`}
+        >
+          {status}
+        </span>
       </div>
       <div className={compact ? "min-w-0" : ""}>
         {!hasPlan ? (
@@ -152,9 +149,9 @@ export function BillingPlanSummary({
           </div>
         ) : (
           price != null && (
-            <div className={compact ? "flex flex-wrap items-baseline gap-2" : "mt-2"}>
+            <div className="flex flex-wrap items-baseline gap-2">
               <p
-                className={`${compact ? "text-lg" : "text-2xl"} font-medium tracking-tight tabular-nums text-foreground`}
+                className={`${compact ? "text-lg" : "text-xl"} font-medium tracking-tight tabular-nums text-foreground`}
               >
                 {new Intl.NumberFormat(locale, {
                   style: "currency",
@@ -171,7 +168,7 @@ export function BillingPlanSummary({
           )
         )}
         {hasPlan && !complimentary && renewal && (
-          <p className={`text-muted-foreground ${compact ? "mt-1 text-xs" : "mt-4 text-sm"}`}>
+          <p className="mt-2 text-xs text-muted-foreground">
             {interpolate(
               state.subscription?.cancelAtPeriodEnd
                 ? t.billing.sidebar.accessUntil
@@ -181,8 +178,13 @@ export function BillingPlanSummary({
           </p>
         )}
       </div>
-      {hasPlan && plan && (
-        <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} compact={compact} />
+      {allocatedResources ? (
+        <CapacitySummary resources={allocatedResources} />
+      ) : (
+        hasPlan &&
+        plan && (
+          <PlanCapacity plan={plan} workspaceScoped={Boolean(state.workspace)} compact={compact} />
+        )
       )}
       {notice && <div className={compact ? "basis-full" : undefined}>{notice}</div>}
       {showPlanAction && (
@@ -201,35 +203,45 @@ export function BillingPlanSummary({
   );
 }
 
-type PortalPanelProps = { portalAvailable?: boolean; hasHistory?: boolean };
+type PortalPanelProps = {
+  portalAvailable?: boolean;
+  hasHistory?: boolean;
+  workspaceId?: string;
+  children?: ReactNode;
+};
 
 export function BillingPaymentsPanel({
   portalAvailable = false,
   hasHistory = true,
+  workspaceId,
+  children,
 }: PortalPanelProps) {
   const { t } = useI18n();
   const copy = t.billing.paymentPanel;
   return (
     <div className="space-y-4">
       <section className="rounded-2xl bg-card p-5">
-        <PendingCheckoutsPanel />
+        <PendingCheckoutsPanel workspaceId={workspaceId} />
       </section>
-      {hasHistory ? (
-        <section className="rounded-2xl bg-card p-5">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-              <UiIcon name="credit-card" className="size-5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-base font-medium text-foreground">{copy.title}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
+      {children ||
+        (hasHistory ? (
+          <section className="rounded-2xl bg-card p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+                <UiIcon name="credit-card" className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-medium text-foreground">{copy.title}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
+              </div>
             </div>
-          </div>
-          <div className="mt-5">
-            <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
-          </div>
-        </section>
-      ) : <BillingEmptyState kind="payment" />}
+            <div className="mt-5">
+              <OpenStripePortalButton enabled={portalAvailable} label={copy.openStripe} />
+            </div>
+          </section>
+        ) : !workspaceId ? (
+          <BillingEmptyState kind="payment" />
+        ) : null)}
     </div>
   );
 }

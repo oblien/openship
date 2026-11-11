@@ -58,31 +58,11 @@ export const BillingPlansSchema = Type.Object({
   management: Type.Optional(ManagementPricingSchema),
   locale: Type.String(), annual: Type.Object({ enabled: Type.Boolean(), monthsFree: Type.Number() }),
   ui: Type.Record(Type.String(), Type.String()),
-  computePricing: Type.Optional(Type.Object({
-    tariffId: Type.String(), currency: Type.Literal("usd"),
-    creditsPerDollar: Type.Number(), paygCapPercent: Type.Number(),
-    usage: Type.Object({ activeVcpuHourCents: Type.Number(), reservedGiBHourCents: Type.Number(), retainedGiBMonthCents: Type.Number(), monthHours: Type.Number() }),
-    network: Type.Object({ managedProxyGiBCents: Type.Number(), minimumTopupCents: Type.Number() }),
-    retentionDays: Type.Number(), paygCheckoutAvailable: Type.Boolean(),
-  })),
   custom: Type.Optional(Type.Object({
     resources: Type.Object({ cpuCores: resourceRange, memoryMb: resourceRange, diskGb: resourceRange }),
     extraMonthlyCents: Type.Object({ cpuCore: Type.Integer(), memoryGb: Type.Integer(), diskGb: Type.Integer() }),
     extraAnnualCents: Type.Optional(Type.Object({ cpuCore: Type.Integer(), memoryGb: Type.Integer(), diskGb: Type.Integer() })),
   })),
-  payg: Type.Optional(Type.Object({
-    version: Type.Integer({ minimum: 1 }),
-    creditPackagesCents: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 }),
-    tiers: Type.Array(Type.Object({
-      id: Type.String({ pattern: "^tier_[1-9]\\d*$" }),
-      level: Type.Integer({ minimum: 1 }),
-      minimumFundingCents: Type.Integer({ minimum: 1 }),
-      pool: Type.Object({
-        cpuCores: Type.Integer({ minimum: 1 }), memoryMb: Type.Integer({ minimum: 1 }),
-        diskGb: Type.Integer({ minimum: 1 }), servers: Type.Integer({ minimum: 1 }),
-      }, { additionalProperties: false }),
-    }, { additionalProperties: false }), { minItems: 1 }),
-  }, { additionalProperties: false })),
   plans: Type.Array(Type.Object({
     id: tier, availableForPurchase: Type.Optional(Type.Boolean()), name: Type.String(), description: Type.String(), popular: Type.Boolean(),
     billingMode: Type.Optional(Type.Union([Type.Literal("monthly"), Type.Literal("metered")])),

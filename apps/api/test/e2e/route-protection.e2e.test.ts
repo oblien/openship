@@ -36,11 +36,12 @@ const proxyLocations = [
   { pathPrefix: "/api/", targetUrl: "http://127.0.0.1:39482", external: true },
 ];
 
-async function exec(command: string): Promise<string> {
+async function exec(command: string, options?: { user?: string; timeout?: number }): Promise<string> {
   const process = await container!.exec({
     Cmd: ["sh", "-c", command],
     AttachStdout: true,
     AttachStderr: true,
+    ...(options?.user ? { User: options.user } : {}),
   });
   const stream = await process.start({ hijack: true, stdin: false });
   const output = new PassThrough();
@@ -190,7 +191,7 @@ describeDockerE2E("password-protected routes through the real edge", () => {
     await write(
       paths.confPath,
       ports(bakedEdgeNginxConf())
-        .replace("worker_processes auto;", "worker_processes 2;")
+        .replace("worker_processes auto;", "user nobody;\nworker_processes 2;")
         .replace(/error_log .*?;/, "error_log /tmp/route-auth-error.log notice;"),
     );
     await write("/opt/openship/route-test/index.html", "private document");
@@ -269,6 +270,28 @@ describeDockerE2E("password-protected routes through the real edge", () => {
       } finally {
         await container.remove({ force: true, v: true });
       }
+    }
+  });
+
+  it.each([0, 10001])("reloads private configs owned by UID %i with unprivileged workers", async (uid) => {
+    expect((await exec("id -u")).trim()).toBe("0");
+    const processes = await exec("ps -o user,args");
+    expect(processes).toMatch(/^root\s+.*nginx: master process/m);
+    expect(processes).toMatch(/^nobody\s+.*nginx: worker process/m);
+    const files = ["private-test.conf", "private-test.route.json"]
+      .map((name) => sq(join(paths.sitesDir, name)));
+    try {
+      await exec(`chown ${uid} ${files.join(" ")}`);
+      for (const path of files) {
+        expect((await exec(`stat -c '%u:%a' ${path}`)).trim()).toBe(`${uid}:600`);
+        await expect(exec(`cat ${path} > /dev/null`, { user: "nobody" })).rejects.toThrow(/Permission denied/);
+      }
+      await exec("openresty -t && openresty -s reload");
+      await settleReload();
+      expect((await ask("/", { host: "public.test" })).status).toBe(200);
+      expect((await ask("/")).status).toBe(401);
+    } finally {
+      await exec(`chown 0 ${files.join(" ")}`);
     }
   });
 

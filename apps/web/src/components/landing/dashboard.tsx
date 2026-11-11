@@ -5,7 +5,7 @@
 export function Dashboard() {
   return (
     <section className="dashboard-showcase">
-      <div className="mx-auto max-w-6xl px-6">
+      <div className="site-container">
         <div className="dashboard-stack">
           {/* eslint-disable @next/next/no-img-element */}
           <div className="dashboard-stack__back dashboard-stack__back--left" aria-hidden="true">

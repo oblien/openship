@@ -1400,11 +1400,10 @@ export async function checkNoActiveBuild(projectId: string) {
   // its claimed build worker is still unwinding. Status-only history paging can
   // neither prove worker completion nor guarantee the active row is on page 1.
   const [active] = await repos.deployment.listInFlightByProject(projectId);
-  if (active && !["queued", "building", "deploying"].includes(active.status) &&
-      (active.meta as { managedWorkspaceId?: string } | null)?.managedWorkspaceId) {
+  if (active && !["queued", "building", "deploying"].includes(active.status)) {
     const project = await repos.project.findById(projectId);
-    const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
-    if (project && await recoverManagedDeploymentExecution(active, project)) return;
+    const { recoverDeploymentExecution } = await import("./deployment-recovery");
+    if (project && await recoverDeploymentExecution(active, project)) return;
   }
   if (active) {
     const cancelling = active.status === "cancelled";
@@ -2443,10 +2442,10 @@ export async function cancelBuildSession(
   // an immediate redeploy while the old worker may still touch the target host.
   let quiescent = await waitForDeploymentQuiescence(dep.id, dep.projectId);
   let recoveryWarning: string | undefined;
-  if (!quiescent && project.workspaceId) {
+  if (!quiescent) {
     try {
-      const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
-      quiescent = await recoverManagedDeploymentExecution({ ...dep, status: "cancelled" }, project);
+      const { recoverDeploymentExecution } = await import("./deployment-recovery");
+      quiescent = await recoverDeploymentExecution({ ...dep, status: "cancelled" }, project);
     } catch (error) {
       recoveryWarning = safeErrorMessage(error);
       errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[CANCEL] ${dep.id}: recovery pending: ${recoveryWarning}`, error);

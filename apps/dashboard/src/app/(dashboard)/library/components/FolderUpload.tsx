@@ -2,6 +2,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React, { useState, useRef, useCallback } from "react";
 import { usePlatform } from "@/context/PlatformContext";
@@ -204,9 +205,10 @@ export function FolderUpload() {
               multiple
               onChange={(e) => e.target.files && void handleFiles(e.target.files)}
             />
-            <div className="w-10 h-10 rounded-xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-2">
-              <UiIcon name="upload" className="size-5 text-muted-foreground" />
-            </div>
+            <FeatureIllustration
+              name="local-folder-deploys"
+              className="illustration-color mx-auto mb-3 h-auto w-16"
+            />
             <p className="text-sm font-medium text-foreground mb-0.5">
               {t.library.folderUpload.dropTitle}
             </p>

@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **560 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **568 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -196,6 +196,7 @@ The current API has **560 unique tools**. Permission tags below describe the rou
 | `get_credentials_providers`<br />`GET /api/credentials/providers` | List the credential providers this instance supports, with the fields each needs. | `settings:read` |
 | `patch_credentials_by_id`<br />`PATCH /api/credentials/:id` | Rename, re-scope or rotate a stored credential. | `settings:admin` |
 | `post_credentials`<br />`POST /api/credentials` | Store a credential for a third-party provider (registry login, DNS token). | `settings:admin` |
+| `post_credentials_authorization`<br />`POST /api/credentials/authorization` | Start an organization platform connection. Open the returned authorization URL; no provider credentials are returned. | `settings:admin` |
 | `post_credentials_by_id_verify`<br />`POST /api/credentials/:id/verify` | Re-check a stored credential with its provider and record the result. | `settings:admin` |
 
 ### deployments
@@ -387,6 +388,7 @@ The current API has **560 unique tools**. Permission tags below describe the rou
 | `delete_migration_sources_by_serverId`<br />`DELETE /api/migration/sources/:serverId` | Remove a migration-only connection and its stored credentials after its runs finish. Does not delete the external server, source containers, data or imported projects. | `server:write` |
 | `get_migration_active`<br />`GET /api/migration/active` | Find an existing active migration involving query.serverId before starting or reattaching to work. Returns its ID and cutover state; source environment values remain masked. | `server:read` |
 | `get_migration_migrations_by_id`<br />`GET /api/migration/migrations/:id` | Read migration state, saved progress, logs and pendingPrompt. When awaiting_cutover, review target health/routing before confirmation. A partial run can be resumed; polling never starts another migration. | `server:read` |
+| `get_migration_platforms_projects`<br />`GET /api/migration/platforms/projects` | List projects accessible to a saved Railway or Vercel connection in this workspace. | `settings:admin` |
 | `get_migration_runs`<br />`GET /api/migration/runs` | List up to 50 recent migration summaries for query.serverId or query.projectId. Read a specific run for logs, prompts and cutover details. | `server:read` |
 | `get_migration_sources`<br />`GET /api/migration/sources` | List reusable migration-only SSH sources in the active organization. These connections cannot host Openship deployments or run general server commands. | `server:read` |
 | `post_migration_adopt`<br />`POST /api/migration/adopt` | Register selected discovered Docker services as an Openship project while preserving running containers and volumes. Rediscovers values on the server; do not send masked secrets as replacements. Deployment and cutover are separate. | `server:write`<br />Self-hosted |
@@ -396,6 +398,9 @@ The current API has **560 unique tools**. Permission tags below describe the rou
 | `post_migration_migrations_by_id_cutover`<br />`POST /api/migration/migrations/:id/cutover` | Confirm migration cutover using the returned confirmationToken. kill:true destroys original containers. False retains them: external cross-server imports restart previously running sources; existing project moves and same-server imports leave them stopped. For external cross-server imports, kill:false with restartOriginals:false explicitly finishes without contacting either host or changing containers/volumes; pending transfer/recovery work must be resolved first. Source volumes remain. Failed destructive cutover can only resume that same choice. | `server:write` |
 | `post_migration_migrations_by_id_respond`<br />`POST /api/migration/migrations/:id/respond` | Answer the migration’s current pendingPrompt with its promptId and an offered action ID. Use the run’s actual options and expiry; do not invent takeover decisions. | `server:write` |
 | `post_migration_migrations_by_id_resume`<br />`POST /api/migration/migrations/:id/resume` | Resume a partial migration’s remaining paths, optionally with reviewed source-path overrides or skips. Skipping excludes data from the move. Poll the run through verification and cutover. | `server:write` |
+| `post_migration_platforms_discover`<br />`POST /api/migration/platforms/discover` | Discover a platform environment for migration. Returns configuration names and data requirements, never secret values; does not change source workloads. | `settings:admin` |
+| `post_migration_platforms_import`<br />`POST /api/migration/platforms/import` | Import a reviewed platform plan through the shared migration pipeline. Explicitly confirm source writes/workers are paused when required; source resources are never deleted. Poll the returned migration ID. | `server:write` |
+| `post_migration_platforms_review`<br />`POST /api/migration/platforms/review` | Review selected provider services, destination and data choices. Supply missing environment values here. Does not create projects or deploy. | `settings:admin` |
 | `post_migration_preview`<br />`POST /api/migration/preview` | Preview a Docker migration’s images, volumes, destination conflicts and downtime warnings without moving workloads. Use the same server and service selection for the subsequent migrate call. | `server:write` |
 | `post_migration_project`<br />`POST /api/migration/project` | Move or copy an existing Docker project to a registered server through the migration pipeline. Requires access to the project and both servers. Returns migrationId; poll and explicitly confirm cutover. Does not move k3s projects or convert database replication. | `server:write` |
 | `post_migration_reimport`<br />`POST /api/migration/reimport` | Re-register an orphaned Openship project found on this server, preserving its scanned project ID and configuration. Use scan to identify the project; this is recovery of existing workloads. | `server:write`<br />Self-hosted |
@@ -708,6 +713,9 @@ The current API has **560 unique tools**. Permission tags below describe the rou
 | `post_updates_by_projectId_apply`<br />`POST /api/updates/:projectId/apply` | Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup). | `project:write` |
 | `post_updates_by_projectId_runtime`<br />`POST /api/updates/:projectId/runtime` | Refresh published runtime images and rebuild selected services at the active commit, without upgrading application code. Omit serviceIds to update the project. | `project:write` |
 | `post_updates_by_projectId_runtime_check`<br />`POST /api/updates/:projectId/runtime/check` | Check configured image tags and recorded build bases against their current registry digests. Does not deploy. | `project:read` |
+| `post_updates_by_projectId_runtime_source`<br />`POST /api/updates/:projectId/runtime/source` | Read literal Dockerfile or Compose image references from the deployment branch. Requires repository source access. | `project:read` |
+| `post_updates_by_projectId_runtime_source_preview`<br />`POST /api/updates/:projectId/runtime/source/preview` | Preview one source image change against an exact Git commit. Does not write or deploy. | `project:read` |
+| `post_updates_by_projectId_runtime_source_publish`<br />`POST /api/updates/:projectId/runtime/source/publish` | Create a draft GitHub PR for a reviewed source image change. Requires project write and repository/file write access. Never merges or deploys. | `project:write` |
 | `post_updates_by_projectId_security_apply`<br />`POST /api/updates/:projectId/security/apply` | Refresh an affected runtime through the existing deployment pipeline. Rechecks the advisory and active deployment before admission. | `project:write` |
 | `post_updates_by_projectId_security_check`<br />`POST /api/updates/:projectId/security/check` | Refresh this project's isolated runtime observations and compare them with verified advisories. Does not deploy or bypass GitHub feed backoff. | `project:read` |
 | `post_updates_scan`<br />`POST /api/updates/scan` | Trigger a fresh update scan across the org's projects/apps. | `updates:write` |
@@ -878,7 +886,10 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/servers/:id/activity/release` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/servers/:id/authorize` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/servers/:id/connection` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
-| `POST /api/cloud/support` | Public Cloud support intake, including customers who cannot sign in. Only returns a receipt; no ticket data can be read anonymously. |
+| `POST /api/cloud/support` | Public contact intake requires a server-verified bot challenge. Customer support requires a signed-in account through /mine. Only receipts are returned anonymously. |
+| `DELETE /api/cloud/support/blocks` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `GET /api/cloud/support/blocks` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
+| `POST /api/cloud/support/blocks` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `GET /api/cloud/support/mine` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
 | `POST /api/cloud/support/mine` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
 | `GET /api/cloud/support/mine/:id` | Private Cloud account support. Requires a real user session; local installations use the caller's own verified Cloud link. Cloud enforces ticket ownership and message quotas. Organization grants, another member's link and API tokens do not grant access. |
@@ -892,6 +903,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/support/tickets/:id/retry` | Cloud support operator API. Requires the instance's internal token; never available to customer organization owners. |
 | `POST /api/cloud/teardown-project` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/token` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
+| `POST /api/credentials/authorization/complete` | Browser OAuth callback, bound to the initiating authenticated session. |
 | `POST /api/deployments/:id/build` | Legacy start-by-deployment-ID adapter. Start or redeploy through /api/deployments or /api/deployments/build/access. |
 | `GET /api/deployments/:id/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/deployments/ssl/renew` | Legacy hostname renewal; use POST /api/domains/:id/renew for managed domain identity and ownership. |
@@ -965,6 +977,17 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/projects/:id/services/:serviceId/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/projects/folder/scan/:sessionId/env-reveal` | Explicit dashboard secret reveal. MCP passes uploadSessionId to project ensure so real values stay server-side. |
 | `POST /api/projects/folder/upload/:sessionId` | Binary tarball upload; use the authenticated upload URL from folder/session outside JSON-RPC. |
+| `GET /api/referral-program` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/enroll` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/offers` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/offers` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/offers/revoke` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/payout-destination` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/payouts` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/payouts` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `POST /api/referral-program/payouts/cancel` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/referrals` | Personal referral earnings and cash payout requests are managed in the Referral page. |
+| `GET /api/referral-program/referrals/payments` | Personal referral earnings and cash payout requests are managed in the Referral page. |
 | `GET /api/referrals/:code` | Public commercial referral terms for signup and checkout; contains no account or earnings data. |
 | `POST /api/services/terminal/ticket` | Single-use browser WebSocket terminal ticket. Use the service exec tool for bounded commands over MCP. |
 | `GET /api/services/terminal/ws/:serviceId` | WebSocket upgrade — auth happens inside upgradeWebSocket via ticket subprotocol or session-cookie fallback (HTTP middleware blocks the handshake) |

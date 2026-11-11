@@ -4,7 +4,6 @@ import { normalizeDockerRootDirectory } from "../docker-paths";
 import {
   builderSourceDir,
   normalizeRelativePath,
-  buildEnvPrefix,
   workspacePrepareRunLine,
   installBuildRunLine,
   nodeBinPathEnvLine,
@@ -80,7 +79,6 @@ export function generateStaticDockerfile(config: BuildConfig): string {
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
-  const envPrefix = buildEnvPrefix(config.envVars);
   const workspacePrepare = config.workspacePrepareCommand?.trim();
   const outputPath = staticBuilderOutputPath(config);
   const nginxTemplate = staticNginxTemplateLines(config)
@@ -92,10 +90,10 @@ export function generateStaticDockerfile(config: BuildConfig): string {
   if (buildBinPath) lines.push(buildBinPath);
   lines.push(`WORKDIR /workspace`, `COPY . /workspace`);
   if (workspacePrepare) {
-    lines.push(workspacePrepareRunLine(config, envPrefix, workspacePrepare));
+    lines.push(workspacePrepareRunLine(config, workspacePrepare));
   }
   lines.push(`WORKDIR ${sourceDir}`);
-  const stepsLine = installBuildRunLine(config, envPrefix);
+  const stepsLine = installBuildRunLine(config);
   if (stepsLine) lines.push(stepsLine);
 
   // Extract-only: the caller lifts the built files out and deletes the image, so

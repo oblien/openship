@@ -257,7 +257,7 @@ function StatusMark({ status }: { status: Status }) {
 export function Comparison() {
   return (
     <section className="cmp-section">
-      <div className="cmp-container">
+      <div className="site-container cmp-container">
         <header className="cmp-head">
           <p className="cmp-eyebrow">Straight comparison</p>
           <h2 className="cmp-title">

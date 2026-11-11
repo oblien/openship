@@ -140,7 +140,9 @@ describe("generateDockerfile — Ruby recipe", () => {
     expect(builder.indexOf("ruby prepare.rb")).toBeLessThan(
       builder.indexOf("WORKDIR /workspace/apps/store"),
     );
-    expect(builder).toContain("APP_BUILD_FLAG='enabled'");
+    expect(builder).not.toContain("APP_BUILD_FLAG='enabled'");
+    expect(builder).toContain("--mount=type=secret");
+    expect(builder).toContain(". /run/secrets/openship-build-env");
     expect(runtimeStage(df)).toContain("COPY --from=builder /workspace/apps/store /app");
     expect(runtimeStage(df)).not.toContain("APP_BUILD_FLAG");
   });

@@ -7,7 +7,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { billingApi } from "@/lib/api/billing";
 import { getApiErrorMessage } from "@/lib/api/client";
 
-/** Read-only quote, shared by monthly checkout and prepaid price comparisons. */
+/** Read-only quote for custom monthly and yearly plans. */
 export function useCustomPlanQuote(resources: CustomServerResources | null, revision = 0, interval: "monthly" | "annual" = "monthly") {
   const { t } = useI18n();
   const resourceKey = JSON.stringify(resources);

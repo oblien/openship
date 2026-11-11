@@ -1,12 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
 import { SUPPORT_EMAIL } from "@repo/core";
 import { z } from "zod";
-import type { CloudCustomerEmailRepo, CustomerEmail, CustomerPaymentEmail } from "@repo/db/repos";
+import type {
+  CloudCustomerEmailRepo,
+  CustomerEmail,
+  CustomerPaymentEmail,
+  CustomerCancellationEmail,
+} from "@repo/db/repos";
+import type { OblienSubscription } from "../../lib/oblien-billing-api";
 import type { SendMailOptions } from "../../lib/mail";
-import { signupWelcome, purchaseWelcome, invoiceEmail } from "./templates";
+import { signupWelcome, purchaseWelcome, invoiceEmail, cancellationEmail } from "./templates";
+import { subscriptionCancellation } from "./cancellation";
 
 export const customerEmailId = (key: string) => createHash("sha256").update(key).digest("hex");
-export function customerBillingPath(payment: CustomerPaymentEmail, organizationId: string) {
+export function customerBillingPath(
+  payment: CustomerPaymentEmail | CustomerCancellationEmail,
+  organizationId: string,
+) {
   const query = new URLSearchParams({ organizationId });
   if (payment.workspaceId) query.set("workspaceId", payment.workspaceId);
   return `${payment.scope === "management" ? "/billing/manage" : "/billing/payment"}?${query}`;
@@ -21,6 +31,7 @@ export class CustomerEmailService {
       send: (input: SendMailOptions) => Promise<boolean>;
       dashboardUrl: string;
       now?: () => Date;
+      readSubscription?: (namespace: string) => Promise<OblienSubscription>;
     },
   ) {}
 
@@ -62,6 +73,25 @@ export class CustomerEmailService {
           ),
         ),
       };
+    if (row.kind === "cancellation") {
+      if (!row.cancellation || !this.options.readSubscription)
+        throw new Error("Cancellation email verification is unavailable");
+      const current = subscriptionCancellation(
+        await this.options.readSubscription(row.cancellation.namespace),
+      );
+      if (!current || current.canceledAt !== row.cancellation.canceledAt) return null;
+      return {
+        ...base,
+        customerSender: "support",
+        replyTo: SUPPORT_EMAIL,
+        ...cancellationEmail(
+          recipient.name,
+          { ...row.cancellation, ...current },
+          this.url(customerBillingPath(row.cancellation, row.organizationId)),
+          this.now(),
+        ),
+      };
+    }
     if (!row.payment) throw new Error("Payment email is missing its receipt");
     const billingUrl = this.url(customerBillingPath(row.payment, row.organizationId));
     return row.kind === "purchase"

@@ -9,7 +9,7 @@ import ProjectGridCard from "./components/ProjectGridCard";
 import { ViewToggle, type ProjectView } from "./components/ViewToggle";
 import { ProjectFilters, buildProjectFilterOptions, projectMatchesFilter, type ProjectFilter } from "./components/ProjectFilters";
 import EmptyState from "@/components/overview/EmptyState";
-import { ProjectIllustration } from "@/components/overview/ProjectIllustration";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { useDashboardHome } from "@/hooks/useDashboardHome";
 import { updatesApi } from "@/lib/api/updates";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -54,7 +54,7 @@ export default function ProjectsPage() {
     let cancelled = false;
     updatesApi.list(true)
       .then(response => {
-        if (!cancelled) setUpdatesBehind(new Set(response.data.map(update => update.projectId)));
+        if (!cancelled) setUpdatesBehind(new Set(response.data.filter(update => update.behind || update.latestInProgress).map(update => update.projectId)));
       })
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/page");
@@ -118,7 +118,10 @@ export default function ProjectsPage() {
               )
             ) : (
               <div className="flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center">
-                <ProjectIllustration className="relative mx-auto mb-6 h-40 w-56" />
+                <FeatureIllustration
+                  name="app-catalog"
+                  className="illustration-color mx-auto mb-6 h-auto w-20"
+                />
                 {search ? (
                   <p className="max-w-sm text-sm text-muted-foreground">{interpolate(copy.noResultsFound, { query: search })}</p>
                 ) : (

@@ -24,19 +24,26 @@ export async function requireConnectedServer(ctx: ExecutionContext, id: string):
 
 /** Check before best-effort provider catches, so a policy refusal stays explicit. */
 export async function assertServerExecution(server: Server): Promise<void> {
-  assertDeploymentServer(server);
+  await assertServerExecutionTarget(server);
   if (server.workspaceId) throw new AppError("Use the Cloud workspace's execution context for this managed server", 409, "MANAGED_SERVER_CONTEXT_REQUIRED");
   if (env.CLOUD_MODE) {
-    if (!server.organizationId || server.isLocal || !server.sshHost || await isLocalHostRow(server))
-      throw new AppError("The Cloud control plane cannot be used as a deployment server", 403, "LOCAL_HOST_ACCESS_DENIED");
     const { assertManagementAccess } = await import("../billing/management.service");
-    await assertManagementAccess(server.organizationId, server.id);
+    await assertManagementAccess(server.organizationId!, server.id);
   }
   if (process.env.OPENSHIP_NATIVE !== "true") return;
   // Match SSH target selection, including founding-org loopback rows that have
   // not yet been adopted as the canonical local server.
   if (await isLocalHostRow(server)) assertNativeHostExecution();
   else assertNativeSshSettings(server);
+}
+
+/** Target eligibility is independent of billing so saved jobs remain readable
+ * and removable after access expires. Execution still checks the current plan. */
+export async function assertServerExecutionTarget(server: Server): Promise<void> {
+  assertDeploymentServer(server);
+  if (env.CLOUD_MODE && !server.workspaceId &&
+      (!server.organizationId || server.isLocal || !server.sshHost || await isLocalHostRow(server)))
+    throw new AppError("The Cloud control plane cannot be used as a deployment server", 403, "LOCAL_HOST_ACCESS_DENIED");
 }
 
 /** A saved import connection grants no deployment, terminal or infrastructure capability. */

@@ -185,8 +185,8 @@ const envSchema = z.object({
    * "coming soon" surface and live usage/capacity.
    */
   BILLING_ENABLED: envBool("false"),
-  AFFILIATES_ENABLED: envBool("false"),
-  OBLIEN_AFFILIATE_NAMESPACE: z.string().max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).default("openship"),
+  REFERRALS_ENABLED: z.preprocess(value => value ?? process.env.AFFILIATES_ENABLED, envBool("false")),
+  REFERRAL_NAMESPACE: z.string().max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).default(process.env.OBLIEN_AFFILIATE_NAMESPACE ?? "openship"),
   /**
    * Sub-switch for one-time credit top-ups WITHIN billing. Top-ups are
    * available only when BILLING_ENABLED is also on. OFF by default → the state
@@ -325,6 +325,10 @@ const envSchema = z.object({
   /** Optional Cloud customer aliases authorized by the same SMTP credentials.
    * Unset/blank aliases use the transport's configured sender. */
   SMTP_SUPPORT_FROM: z.string().trim().optional(),
+  /** Public contact intake fails closed until a production Turnstile widget is configured. */
+  CONTACT_TURNSTILE_SECRET: z.string().trim().optional(),
+  CONTACT_TURNSTILE_HOSTNAMES: z.string().default("openship.io,www.openship.io"),
+  CONTACT_EMAIL: z.string().email().default("contact@openship.io"),
   SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */

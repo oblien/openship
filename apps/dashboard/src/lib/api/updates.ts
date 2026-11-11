@@ -2,31 +2,23 @@ import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type {
   CreateDeploymentResult,
+  ProjectUpdate,
   UpdateRuntimeInput,
   RuntimeImageCheckResult,
   ProjectSecurityResult,
   AdvisoryFeedResult,
   ApplySecurityInput,
   SecurityCheckPolicy,
+  RuntimeSourceInput,
+  RuntimeSourceEdit,
+  RuntimeSource,
+  RuntimeSourcePreview,
+  PublishRuntimeSourceInput,
+  PublishedRepositoryChange,
 } from "@repo/contracts";
 
 /** One entity's update status (project/app/self-app/webmail). */
-export interface UpdateStatusItem {
-  projectId: string;
-  name: string;
-  slug: string | null;
-  isApp: boolean;
-  appTemplateId: string | null;
-  kind: "commit" | "release" | "image";
-  behind: boolean;
-  latestInProgress: boolean;
-  inProgressDeploymentId?: string | null;
-  currentLabel: string | null;
-  latestLabel: string | null;
-  detail: unknown;
-  /** When the UPSTREAM side was last polled. `behind` itself is computed live. */
-  checkedAt: string;
-}
+export type UpdateStatusItem = ProjectUpdate;
 
 export interface ScanSummary {
   scanned: number;
@@ -34,6 +26,22 @@ export interface ScanSummary {
 }
 
 export const updatesApi = {
+  runtimeSource: (projectId: string, input: RuntimeSourceInput) =>
+    api.post<{ data: RuntimeSource }>(
+      `/updates/${encodeURIComponent(projectId)}/runtime/source`,
+      input,
+    ),
+  previewRuntimeSource: (projectId: string, input: RuntimeSourceEdit) =>
+    api.post<{ data: RuntimeSourcePreview }>(
+      `/updates/${encodeURIComponent(projectId)}/runtime/source/preview`,
+      input,
+    ),
+  publishRuntimeSource: (projectId: string, input: PublishRuntimeSourceInput) =>
+    api.post<{ data: PublishedRepositoryChange }>(
+      `/updates/${encodeURIComponent(projectId)}/runtime/source/publish`,
+      input,
+      { timeout: 60_000 },
+    ),
   securityCheckPolicy: () =>
     api.get<{ data: SecurityCheckPolicy }>("/updates/security/policy"),
   setSecurityCheckPolicy: (checksEnabled: boolean) =>

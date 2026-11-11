@@ -209,6 +209,8 @@
     "modeStandalone": "مستقل",
     "modeServer": "خادم",
     "modeWorker": "عامل",
+    "modeComposeOne": "مجموعة Compose · خدمة واحدة ({count})",
+    "modeComposeOther": "مجموعة Compose · {count} خدمات",
     "infrastructure": "البنية التحتية",
     "platform": "المنصة",
     "mode": "الوضع",
