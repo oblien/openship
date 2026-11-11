@@ -1611,6 +1611,13 @@
       "when": 1794373200000,
       "tag": "0229_support_intake_blocks",
       "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1794373201000,
+      "tag": "0230_restore_workspace_security_fields",
+      "breakpoints": true
     }
   ]
 }

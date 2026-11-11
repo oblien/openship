@@ -115,6 +115,18 @@ export class PkCollisionError extends Error {
   }
 }
 
+/** The archive is valid, but the destination has not applied its schema upgrades. */
+export class RestoreSchemaError extends Error {
+  readonly code = "DESTINATION_SCHEMA_MISMATCH" as const;
+  constructor(cause: unknown) {
+    super(
+      "The destination database is missing required fields. Update and restart Openship to apply its database migrations, then retry the import.",
+      { cause },
+    );
+    this.name = "RestoreSchemaError";
+  }
+}
+
 /**
  * Extract the underlying Postgres driver error (with its `.code`) from a
  * thrown error. Drizzle wraps the driver error in a `DrizzleQueryError`, so
@@ -1966,6 +1978,7 @@ export async function restoreSubgraphInTransaction(
       // target" from a real server fault. The code lives on the driver
       // error, which Drizzle wraps — resolve it through the cause chain.
       const pg = resolvePgError(err);
+      if (pg?.code === "42703") throw new RestoreSchemaError(err);
       if (pg?.code === "23505") {
         throw new PkCollisionError(spec.sqlName, pg);
       }
