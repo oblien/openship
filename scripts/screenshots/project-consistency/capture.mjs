@@ -63,6 +63,8 @@ try {
   await page.locator('a[href$="/application/env"]').click();
   await page.locator('input[value="SITE_URL"]').waitFor();
   await shot("after-app-environment");
+  assert.equal(await page.locator('input[value="SITE_URL"]').getAttribute("readonly"), null);
+  assert.equal(await page.getByRole("button", { name: "Edit as text", exact: true }).count(), 1);
   await page.locator('input[value="info"]').fill("debug");
   await page.getByRole("button", { name: "Save environment", exact: true }).click();
   await page
@@ -77,6 +79,30 @@ try {
   await page.getByRole("button", { name: "Apply & restart", exact: true }).click();
   await page.locator('a[href="/build/preview-apply"]').waitFor();
   await shot("after-app-apply");
+  await page.locator('a[href$="/application/settings"]').click();
+  await page.locator('input[value="bun run build"]').waitFor();
+  await page.locator('input[value="bun run build"]').fill("bun run build:production");
+  await page.locator('a[href$="/application/overview"]').click();
+  await page.locator('a[href$="/application/settings"]').click();
+  assert.equal(await page.locator('input[value="bun run build:production"]').count(), 1);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).isDisabled();
+  await shot("after-app-settings");
+  const savedConfig = await (await fetch(api + "/api/preview/scenario")).json();
+  assert.deepEqual(
+    savedConfig.writes.filter((w) => w.path.endsWith("/options")).map((w) => w.input),
+    [{ buildCommand: "bun run build:production" }],
+  );
+  assert.equal(savedConfig.writes.filter((w) => w.path === "/api/deployments").length, 1);
+  await page.locator('a[href$="/application/domains"]').click();
+  await page.getByText("website.example.com", { exact: true }).first().waitFor();
+  assert.equal(await page.getByRole("button", { name: /Routing configuration/ }).count(), 0);
+  await shot("after-app-domains");
+  await page.locator('nav a[href="/projects/environment-preview/advanced"]').click();
+  await page.getByText("Project environment", { exact: true }).waitFor();
+  await shot("after-single-project-settings");
+  await page.locator('a[href="/projects/environment-preview/services"]').first().click();
+  await page.locator('a[href="/projects/environment-preview/services/application"]').click();
   await page.getByRole("button", { name: "All services", exact: true }).click();
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await page.locator("[data-modal-surface]").waitFor();
@@ -111,9 +137,16 @@ try {
   await page.locator('a[href$="/env"]').click();
   await page.locator('input[value="POSTGRES_DB"]').waitFor();
   await shot("after-postgres-environment");
-  await page.locator('a[href="/projects/environment-preview/advanced"]').click();
-  await page.getByText("Shared project environment", { exact: true }).waitFor();
+  await page.locator('nav a[href="/projects/environment-preview/advanced"]').click();
+  await page.getByText("Project environment", { exact: true }).waitFor();
   await shot("after-project-settings");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.locator('[data-modal-surface] input[value="debug"]').waitFor();
+  await shot("after-project-environment-editor");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.locator('a[href$="/application/settings"]').click();
+  await page.locator('input[value="bun run build:production"]').waitFor();
+  await shot("after-app-settings-with-postgres");
   await page.goto(origin + "/projects/environment-preview/services/application/env", {
     waitUntil: "networkidle",
   });
@@ -148,13 +181,34 @@ try {
           "saved app env retained",
           "untouched secret preserved",
           "save separate from apply",
-          "draft retained across tabs",
+          "configuration draft retained across tabs",
+          "inline configuration save writes only edited fields and does not deploy",
+          "project settings own shared environment and resource limits before and after add",
+          "single app edits environment inline with the same controls as services",
+          "same project environment component used in app panel and project settings",
+          "app Domains excludes project routing policy",
           "shared settings scope",
           "service editor",
           "light/dim/dark",
           "mobile/Arabic overflow",
         ],
-        writes: (await (await fetch(api + "/api/preview/scenario")).json()).writes,
+        writes: (await (await fetch(api + "/api/preview/scenario")).json()).writes.map((write) => ({
+          ...write,
+          input: write.input?.environment
+            ? {
+                ...write.input,
+                environment:
+                  typeof write.input.environment === "object"
+                    ? Object.fromEntries(
+                        Object.entries(write.input.environment).map(([key, value]) => [
+                          key,
+                          /PASSWORD|SECRET|TOKEN/.test(key) ? "[redacted preview value]" : value,
+                        ]),
+                      )
+                    : write.input.environment,
+              }
+            : write.input,
+        })),
       },
       null,
       2,

@@ -116,7 +116,14 @@ managed image defaults from the stack's runtime policy; show incompatible custom
 Blank resets an image override. Unsupported destinations explain which source or server owns the
 runtime, and saved overrides remain visible so users can clear them. Static Docker builds show
 only the build image. Do not repeat these fields under Advanced. The saved project Configuration
-card shows the selected runtime version.
+form reuses these same fields inline, with a separate save action.
+Apps & Services lists the primary app from the start. Adding infrastructure keeps
+its identity, route and detail tabs. App Settings owns build and runtime configuration;
+project Settings always owns shared environment, resource limits and build-cache policy.
+Workload Environment edits inline through the shared environment panel. Project Settings
+opens that same editor for shared variables; service overrides retain their source review. Saving never
+deploys implicitly. App and service Domains show their own routes; routing policy and
+route rules stay in project Domains. Keep these owners stable as services are added.
 Build-location choices and summaries describe execution, independently of source cloning.
 Keep local building in the destination's advanced controls only when the runtime supports it.
 Remote Docker, static sandbox, service, managed Cloud and cluster builds name their build

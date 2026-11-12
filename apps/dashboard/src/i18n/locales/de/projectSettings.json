@@ -482,7 +482,7 @@
     },
     "runtime": {
       "title": "Laufzeitkonfiguration",
-      "description": "Schreibgeschützt. Bearbeiten Sie über den Deploy-Assistenten, damit jede Änderung als neue Version ausgeliefert wird.",
+      "description": "Konfiguration hier speichern. Änderungen werden bei der nächsten Bereitstellung wirksam.",
       "framework": "Framework",
       "packageManager": "Paketmanager",
       "runtimeIsolation": "Laufzeit-Isolation",
@@ -498,7 +498,11 @@
       "modeSandboxed": "Sandbox (Container)",
       "modeDirect": "Direkt (Host-Prozess)",
       "modeDefault": "Standard (beim Deploy aufgelöst)",
-      "modeStatic": "Keine – als statische Dateien ausgeliefert"
+      "modeStatic": "Keine – als statische Dateien ausgeliefert",
+      "saved": "Konfiguration gespeichert. Stelle die App bereit, um die Änderungen anzuwenden.",
+      "saveFailed": "Die Konfiguration konnte nicht gespeichert werden. Deine Änderungen bleiben im Formular erhalten.",
+      "projectSettingsHint": "Die gemeinsame Umgebung und Ressourcenlimits werden in den Projekteinstellungen verwaltet.",
+      "invalidPort": "Gib einen Port zwischen 1 und 65535 ein."
     },
     "storage": {
       "title": "Dauerhafter Speicher",
@@ -540,7 +544,7 @@
     "env": {
       "title": "Projektumgebung",
       "sharedTitle": "Gemeinsame Projektumgebung",
-      "description": "Wird beim Build und zur Laufzeit verwendet. Geheimnisse bleiben maskiert.",
+      "description": "Gemeinsame Standardwerte für Image-Builds und Laufzeit. Dienstwerte haben Vorrang. Geheimnisse bleiben verborgen.",
       "edit": "Bearbeiten"
     }
   },

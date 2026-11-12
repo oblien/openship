@@ -532,7 +532,7 @@
     },
     "runtime": {
       "title": "Çalışma zamanı yapılandırması",
-      "description": "Salt okunur. Dağıtım sihirbazı aracılığıyla düzenleyin, böylece her değişiklik yeni bir sürüm olarak yayınlansın.",
+      "description": "Yapılandırmayı buradan kaydedin. Değişiklikler bir sonraki dağıtımda uygulanır.",
       "framework": "Framework",
       "packageManager": "Paket yöneticisi",
       "runtimeIsolation": "Çalışma zamanı izolasyonu",
@@ -548,7 +548,11 @@
       "modeSandboxed": "Korumalı Alan (konteyner)",
       "modeDirect": "Doğrudan (ana makine süreci)",
       "modeDefault": "Varsayılan (dağıtımda çözümlenir)",
-      "modeStatic": "Yok — statik dosya olarak sunulur"
+      "modeStatic": "Yok — statik dosya olarak sunulur",
+      "saved": "Yapılandırma kaydedildi. Değişiklikleri uygulamak için dağıtım yapın.",
+      "saveFailed": "Yapılandırma kaydedilemedi. Değişiklikleriniz formda korunuyor.",
+      "projectSettingsHint": "Paylaşılan ortam ve kaynak sınırları proje ayarlarından yönetilir.",
+      "invalidPort": "1 ile 65535 arasında bir bağlantı noktası girin."
     },
     "storage": {
       "title": "Kalıcı depolama",
@@ -590,7 +594,7 @@
     "env": {
       "title": "Proje ortamı",
       "sharedTitle": "Paylaşılan proje ortamı",
-      "description": "Derleme ve çalışma sırasında kullanılır. Gizli değerler maskeli kalır.",
+      "description": "İmaj derlemeleri ve çalışma zamanı için paylaşılan varsayılan değerler. Hizmet değerleri önceliklidir. Gizli değerler maskelenir.",
       "edit": "Düzenle"
     }
   },

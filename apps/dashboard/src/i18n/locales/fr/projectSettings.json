@@ -482,7 +482,7 @@
     },
     "runtime": {
       "title": "Configuration d'exécution",
-      "description": "Lecture seule. Modifiez via l'assistant de déploiement afin que chaque changement soit livré comme une nouvelle version.",
+      "description": "Enregistrez la configuration ici. Les modifications prendront effet au prochain déploiement.",
       "framework": "Framework",
       "packageManager": "Gestionnaire de paquets",
       "runtimeIsolation": "Isolation d'exécution",
@@ -498,7 +498,11 @@
       "modeSandboxed": "En bac à sable (conteneur)",
       "modeDirect": "Direct (processus hôte)",
       "modeDefault": "Par défaut (résolu au déploiement)",
-      "modeStatic": "Aucun — servi en fichiers statiques"
+      "modeStatic": "Aucun — servi en fichiers statiques",
+      "saved": "Configuration enregistrée. Déployez pour appliquer vos modifications.",
+      "saveFailed": "Impossible d’enregistrer la configuration. Vos modifications sont conservées dans le formulaire.",
+      "projectSettingsHint": "L’environnement partagé et les limites de ressources se gèrent dans les paramètres du projet.",
+      "invalidPort": "Saisissez un port compris entre 1 et 65535."
     },
     "storage": {
       "title": "Stockage persistant",
@@ -540,7 +544,7 @@
     "env": {
       "title": "Environnement du projet",
       "sharedTitle": "Environnement partagé du projet",
-      "description": "Utilisé lors de la compilation et de l’exécution. Les secrets restent masqués.",
+      "description": "Valeurs par défaut partagées pour la création des images et l’exécution. Les valeurs du service sont prioritaires. Les secrets restent masqués.",
       "edit": "Modifier"
     }
   },

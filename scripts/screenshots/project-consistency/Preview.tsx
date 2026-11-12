@@ -8,6 +8,7 @@ import { GitHubProvider } from "@/context/GitHubContext";
 import { ProjectSettingsProvider } from "@/context/ProjectSettingsContext";
 import { ServicesTab } from "@/app/(dashboard)/projects/[id]/components/ServicesTab";
 import { BuildSettings } from "@/app/(dashboard)/projects/[id]/components/BuildSettings";
+import { DomainSettings } from "@/app/(dashboard)/projects/[id]/components/DomainSettings";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
@@ -38,6 +39,7 @@ export default function Preview() {
   const pathname = usePathname();
   const slug = pathname.split("/").slice(3);
   const settings = slug[0] === "advanced";
+  const domains = slug[0] === "domains";
   const services = !slug[0] || slug[0] === "services";
   const { t } = useI18n();
   const { setTheme } = useTheme();
@@ -98,12 +100,21 @@ export default function Preview() {
                 </header>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h1 className="text-2xl font-medium">
-                    {settings ? t.projects.sidebar.tabs.settings : t.projects.sidebar.tabs.services}
+                    {settings
+                      ? t.projects.sidebar.tabs.settings
+                      : domains
+                        ? t.projects.sidebar.tabs.domains
+                        : t.projects.sidebar.tabs.services}
                   </h1>
-                  <nav className="flex gap-2">
+                  <nav className="flex flex-wrap gap-2">
                     <Button asChild size="sm" variant={settings ? "ghost" : "secondary"}>
                       <Link href="/projects/environment-preview/services">
                         {t.projects.sidebar.tabs.services}
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant={domains ? "secondary" : "ghost"}>
+                      <Link href="/projects/environment-preview/domains">
+                        {t.projects.sidebar.tabs.domains}
                       </Link>
                     </Button>
                     <Button asChild size="sm" variant={settings ? "secondary" : "ghost"}>
@@ -115,6 +126,8 @@ export default function Preview() {
                 </div>
                 {settings ? (
                   <BuildSettings />
+                ) : domains ? (
+                  <DomainSettings />
                 ) : services ? (
                   <ServicesTab />
                 ) : (

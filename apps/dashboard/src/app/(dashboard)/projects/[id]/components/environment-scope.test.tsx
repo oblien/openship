@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, useState, type ComponentProps, type ReactNode } from "react";
+import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
@@ -7,6 +7,7 @@ import { ModalProvider } from "@/context/ModalContext";
 import { ProjectSettingsProvider, useProjectSettings } from "@/context/ProjectSettingsContext";
 import { BuildSettings } from "./BuildSettings";
 import { AppConfiguration } from "./AppConfiguration";
+import { ApplicationSettingsForm } from "@/components/project-settings/ApplicationSettingsForm";
 import { ProjectApplicationPanel } from "./services/ProjectApplicationPanel";
 
 const api = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const api = vi.hoisted(() => ({
   inspectCaches: vi.fn(),
   push: vi.fn(),
   connections: vi.fn(),
+  setOptions: vi.fn(),
 }));
 vi.mock("@/lib/api", () => ({
   projectsApi: { getEnv: api.getEnv, mergeEnv: api.mergeEnv, getCommitStatus: async () => ({ data: { supported: false } }) },
@@ -31,13 +33,14 @@ vi.mock("@/lib/api/client", () => ({
   getApiRequestScopeVersion: () => 0,
   getApiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
-vi.mock("@/lib/api/projects", () => ({ projectsApi: { getEnv: api.getEnv } }));
+vi.mock("@/lib/api/projects", () => ({ projectsApi: { getEnv: api.getEnv, setOptions: api.setOptions } }));
 vi.mock("@/lib/api/connections", () => ({ connectionsApi: { list: api.connections } }));
 vi.mock("@/components/services/RuntimeRoles", () => ({ RuntimeRolesCard: () => null }));
 vi.mock("@/components/services/RuntimeRoleConfiguration", () => ({ RuntimeRoleConfigurationControl: () => null }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({
   useProjectInfo: () => ({ isLoading: false }),
   invalidateProjectCachesFor: vi.fn(),
+  invalidateProjectCaches: vi.fn(),
   PROJECT_INFO_NOT_FOUND: "missing",
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: api.push, replace: vi.fn() }) }));
@@ -76,6 +79,7 @@ beforeEach(() => {
       },
     ],
   });
+  api.setOptions.mockReset();
   api.mergeEnv.mockResolvedValue({ upserted: 1, deleted: 0 });
   api.trigger.mockReset().mockResolvedValue({ data: { deployment: { id: "next-deployment" } } });
   host = document.createElement("div");
@@ -100,14 +104,6 @@ function TabsProbe() {
     </nav>
   );
 }
-function RoutedSettings({ children }: { children: ReactNode }) {
-  const [environment, setEnvironment] = useState(false);
-  return <div onClick={event => {
-    if ((event.target as HTMLElement).closest('a[href$="/application/env"]')) {
-      event.preventDefault(); setEnvironment(true);
-    }
-  }}>{environment ? <ProjectApplicationPanel /> : children}</div>;
-}
 async function mountProject(
   framework: string,
   children: ReactNode = <BuildSettings />,
@@ -130,7 +126,7 @@ async function mountProject(
         }}
       >
         <TabsProbe />
-        <RoutedSettings>{children}</RoutedSettings>
+        {children}
       </ProjectSettingsProvider></ModalProvider>,
     ),
   );
@@ -173,8 +169,7 @@ describe("project environment access (GH-881)", () => {
   });
 
   it("keeps Apply available after revisiting the app Environment tab without another save", async () => {
-    await mountProject("node", <BuildSettings />, { runtimeMode: "bare" });
-    await act(async () => button("Edit").click());
+    await mountProject("node", <ProjectApplicationPanel />, { runtimeMode: "bare" });
     await editInput([...document.querySelectorAll("input")].find(input => input.value === "old")!, "new");
     await act(async () => button("Save").click());
     await act(async () => button("Overview").click());
@@ -336,7 +331,7 @@ describe("project environment access (GH-881)", () => {
     async (framework) => {
       await mountProject(framework);
       expect(host.querySelector('nav a[href$="/advanced"]')).not.toBeNull();
-      expect(host.textContent).toContain(framework === "docker-compose" ? "Project environment" : "Environment");
+      expect(host.textContent).toContain("Project environment");
       await act(async () => button("Edit").click());
       expect(api.getEnv).toHaveBeenCalledWith("project");
       const value = [...document.querySelectorAll("input")].find((input) => input.value === "old")!;
@@ -363,7 +358,7 @@ describe("project environment access (GH-881)", () => {
   it("keeps the shared editor for monorepos", async () => {
     api.services.mockResolvedValue({ success: true, services: [{ id: "sub", name: "api", kind: "monorepo" }] });
     await mountProject("node");
-    expect(host.textContent).toContain("Shared project environment");
+    expect(host.textContent).toContain("Project environment");
     expect(host.querySelector('nav a[href$="/advanced"]')).not.toBeNull();
     expect(host.querySelectorAll('section[aria-label="Machine power"]')).toHaveLength(1);
   });
@@ -393,7 +388,71 @@ describe("project environment access (GH-881)", () => {
       ? [{ id: "cache", name: "redis", kind: "compose" }]
       : [] });
     await mountProject("static", <BuildSettings />, { options: { hasServer: false, workloadType: "static" } });
-    expect(host.querySelectorAll('section[aria-label="Machine power"]')).toHaveLength(hasCompanion ? 1 : 0);
-    expect(host.textContent).toContain(hasCompanion ? "Shared project environment" : "Environment");
+    expect(host.querySelectorAll('section[aria-label="Machine power"]')).toHaveLength(1);
+    expect(host.textContent).toContain("Project environment");
+  });
+});
+
+
+describe("permanent configuration ownership", () => {
+  const options = { workloadType: "web" as const, hasServer: true, hasBuild: true,
+    buildCommand: "bun run build", startCommand: "bun run start", productionPort: "3000" };
+  const saved = { id: "project", name: "Test", slug: "test", description: "", framework: "nextjs",
+    runtimeMode: "bare", ...options, port: 3000 };
+
+  it.each([false, true])("keeps project limits and the shared editor in Settings with companions=%s", async (companions) => {
+    if (companions) api.services.mockResolvedValue({ success: true, services: [{ id: "db", name: "postgres", kind: "compose" }] });
+    await mountProject("nextjs", <BuildSettings />, { options });
+    expect(host.querySelectorAll('section[aria-label="Machine power"]')).toHaveLength(1);
+    expect(host.textContent).toContain("Project environment");
+    expect(host.querySelector('a[href$="/application/env"]')).toBeNull();
+    expect(host.querySelector('a[href$="/application/settings"]')).not.toBeNull();
+    await act(async () => button("Edit").click());
+    expect(document.querySelector('[data-modal-surface] input[value="BUILD_VALUE"]')).not.toBeNull();
+  });
+
+  it("saves only edited app configuration inline without touching environment or deploying", async () => {
+    api.setOptions.mockResolvedValue({ success: true, data: { ...saved, buildCommand: "bun run build:production" } });
+    await mountProject("nextjs", <ApplicationSettingsForm />, { options, runtimeMode: "bare" });
+    expect(host.querySelector('section[aria-label="Machine power"]')).toBeNull();
+    expect(host.querySelector('a[href^="/deploy/"]')).toBeNull();
+    await editInput(host.querySelector('input[value="bun run build"]')!, "bun run build:production");
+    await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(api.setOptions).toHaveBeenCalledExactlyOnceWith("project", { buildCommand: "bun run build:production" });
+    expect(host.querySelector('input[value="bun run build:production"]')).not.toBeNull();
+    expect(api.trigger).not.toHaveBeenCalled();
+    expect(api.mergeEnv).not.toHaveBeenCalled();
+    expect(api.push).not.toHaveBeenCalled();
+    expect(button("Save").disabled).toBe(true);
+  });
+
+  it("preserves a failed configuration draft for retry and ignores a double submit", async () => {
+    let reject!: (error: Error) => void;
+    api.setOptions.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+    await mountProject("nextjs", <ApplicationSettingsForm />, { options, runtimeMode: "bare" });
+    await editInput(host.querySelector('input[value="bun run build"]')!, "bun run build:changed");
+    await act(async () => {
+      const submit = () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      submit(); submit();
+    });
+    expect(api.setOptions).toHaveBeenCalledOnce();
+    expect(host.querySelector("fieldset")!.disabled).toBe(true);
+    await act(async () => reject(new Error("unavailable")));
+    expect(host.querySelector('input[value="bun run build:changed"]')).not.toBeNull();
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    api.setOptions.mockResolvedValueOnce({ success: true, data: { ...saved, buildCommand: "bun run build:changed" } });
+    await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(api.setOptions).toHaveBeenCalledTimes(2);
+    expect(button("Save").disabled).toBe(true);
+  });
+
+  it("retains an unsaved app configuration when switching local tabs", async () => {
+    await mountProject("nextjs", <ProjectApplicationPanel />, { options, runtimeMode: "bare" });
+    await act(async () => host.querySelector<HTMLAnchorElement>('a[href$="/application/settings"]')!.click());
+    await editInput(host.querySelector('input[value="bun run build"]')!, "bun run build:draft");
+    await act(async () => button("Overview").click());
+    await act(async () => host.querySelector<HTMLAnchorElement>('a[href$="/application/settings"]')!.click());
+    expect(host.querySelector('input[value="bun run build:draft"]')).not.toBeNull();
+    expect(api.setOptions).not.toHaveBeenCalled();
   });
 });

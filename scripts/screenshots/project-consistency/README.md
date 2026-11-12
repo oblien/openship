@@ -42,5 +42,12 @@ node scripts/screenshots/project-consistency/review.mjs
 
 The capture uses the real Add form to add PostgreSQL, verifies the stable application
 URL and saved environment, preserves untouched secrets, and checks separate Save/Apply,
-local tabs, shared Settings scope, all three themes, and English/Arabic mobile widths.
-The original before images are retained from `artifacts/project-environment`.
+local tabs, inline configuration saving without deployment, permanent Settings ownership,
+app route scope, all three themes, and English/Arabic mobile widths.
+Generated screenshots and comparison data are local-only under the ignored `artifacts/` directory.
+Before images appear in the gallery when a local baseline capture is available.
+
+The cleanup comparisons also include app configuration before/after, project Settings
+before and after adding PostgreSQL, and direct inline environment editing for the app. Project Settings opens the same
+environment component for shared values. `ApplicationSettingsForm` adapts the flat save API response to the
+page context and renders the existing wizard fields; it does not define a second field set.

@@ -9,13 +9,13 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { ProjectEnvironmentPanel } from "@/components/project-settings/ProjectEnvironmentPanel";
+import { ApplicationSettingsForm } from "@/components/project-settings/ApplicationSettingsForm";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { RuntimeRoleConfigurationControl } from "@/components/services/RuntimeRoleConfiguration";
 import { RuntimeRolesCard } from "@/components/services/RuntimeRoles";
 import { canConfigureRuntimeRoles } from "@/lib/runtime-roles";
 import { applicationServiceRoute, projectApplication } from "@/lib/project-application";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
-import { BuildSettings } from "../BuildSettings";
 import { LogsSettings } from "../LogsSettings";
 import { DomainSettings } from "../DomainSettings";
 import { StorageSettings } from "../StorageSettings";
@@ -50,7 +50,10 @@ export function ProjectApplicationPanel({
     supported.includes(requested) ? requested : "overview",
   );
   const [envVisited, setEnvVisited] = useState(requested === "env");
-  const [busy, setBusy] = useState(false);
+  const [settingsVisited, setSettingsVisited] = useState(requested === "settings");
+  const [envBusy, setEnvBusy] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const busy = envBusy || settingsBusy;
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     setActiveTab(supported.includes(requested) ? requested : "overview");
@@ -59,6 +62,7 @@ export function ProjectApplicationPanel({
   }, [requested, workload]);
   useEffect(() => {
     if (activeTab === "env") setEnvVisited(true);
+    if (activeTab === "settings") setSettingsVisited(true);
   }, [activeTab]);
   const changeTab = (tab: WorkloadTab) => {
     if (busy) return;
@@ -171,17 +175,22 @@ export function ProjectApplicationPanel({
       )}
       {(envVisited || activeTab === "env") && (
         <div hidden={activeTab !== "env"}>
-          <ProjectEnvironmentPanel key={id} onBusyChange={setBusy} />
+          <ProjectEnvironmentPanel key={id} onBusyChange={setEnvBusy} />
         </div>
       )}
       {activeTab === "logs" && <LogsSettings applicationOnly />}
       {activeTab === "domains" && (
         <DomainSettings
+          applicationScope
           serviceScope={application?.service ? { serviceId: application.service.id } : undefined}
         />
       )}
       {activeTab === "volumes" && <StorageSettings />}
-      {activeTab === "settings" && <BuildSettings scope="application" />}
+      {(settingsVisited || activeTab === "settings") && (
+        <div hidden={activeTab !== "settings"}>
+          <ApplicationSettingsForm key={id} onBusyChange={setSettingsBusy} />
+        </div>
+      )}
     </div>
   );
 }

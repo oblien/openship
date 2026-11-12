@@ -482,7 +482,7 @@
     },
     "runtime": {
       "title": "Configuração de runtime",
-      "description": "Apenas leitura. Edite através do assistente de implementação para que cada alteração seja publicada como uma nova versão.",
+      "description": "Salve a configuração aqui. As alterações entram em vigor na próxima implantação.",
       "framework": "Framework",
       "packageManager": "Gestor de pacotes",
       "runtimeIsolation": "Isolamento de runtime",
@@ -498,7 +498,11 @@
       "modeSandboxed": "Isolado (contentor)",
       "modeDirect": "Direto (processo do anfitrião)",
       "modeDefault": "Predefinido (resolvido na implementação)",
-      "modeStatic": "Nenhum — servido como ficheiros estáticos"
+      "modeStatic": "Nenhum — servido como ficheiros estáticos",
+      "saved": "Configuração salva. Implante para aplicar as alterações.",
+      "saveFailed": "Não foi possível salvar a configuração. Suas alterações continuam no formulário.",
+      "projectSettingsHint": "O ambiente compartilhado e os limites de recursos são gerenciados nas configurações do projeto.",
+      "invalidPort": "Informe uma porta entre 1 e 65535."
     },
     "storage": {
       "title": "Armazenamento persistente",
@@ -540,7 +544,7 @@
     "env": {
       "title": "Ambiente do projeto",
       "sharedTitle": "Ambiente compartilhado do projeto",
-      "description": "Usado durante a compilação e a execução. Os segredos permanecem ocultos.",
+      "description": "Valores padrão compartilhados para criar imagens e executar serviços. Os valores do serviço têm prioridade. Os segredos permanecem ocultos.",
       "edit": "Editar"
     }
   },

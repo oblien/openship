@@ -482,7 +482,7 @@
     },
     "runtime": {
       "title": "运行时配置",
-      "description": "只读。请通过部署向导进行编辑，使每次更改都作为新版本发布。",
+      "description": "在此保存配置。更改将在下次部署时生效。",
       "framework": "框架",
       "packageManager": "包管理器",
       "runtimeIsolation": "运行时隔离",
@@ -498,7 +498,11 @@
       "modeSandboxed": "沙盒化（容器）",
       "modeDirect": "直接（主机进程）",
       "modeDefault": "默认（部署时解析）",
-      "modeStatic": "无 — 以静态文件形式提供"
+      "modeStatic": "无 — 以静态文件形式提供",
+      "saved": "配置已保存。请部署以应用更改。",
+      "saveFailed": "无法保存配置。您的更改仍保留在表单中。",
+      "projectSettingsHint": "共享环境和资源限制在项目设置中管理。",
+      "invalidPort": "请输入 1 到 65535 之间的端口号。"
     },
     "storage": {
       "title": "持久化存储",
@@ -540,7 +544,7 @@
     "env": {
       "title": "项目环境变量",
       "sharedTitle": "项目共享环境变量",
-      "description": "在构建和运行时使用。密钥保持隐藏。",
+      "description": "用于镜像构建和运行时的共享默认值。服务中的值优先，密钥保持隐藏。",
       "edit": "编辑"
     }
   },
