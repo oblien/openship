@@ -19,6 +19,7 @@ interface OgOptions {
   subtitle?: string;
   eyebrow?: string;
   accent?: OgAccent;
+  logos?: readonly { name: string; src: string }[];
 }
 
 export function renderOgImage({
@@ -26,6 +27,7 @@ export function renderOgImage({
   subtitle = "Open source, self-hostable deployment platform. AI-powered builds. Free SSL. Instant rollback.",
   eyebrow,
   accent = GREEN_ACCENT,
+  logos = [],
 }: OgOptions = {}) {
   return new ImageResponse(
     (
@@ -56,20 +58,40 @@ export function renderOgImage({
             position: "relative",
             display: "flex",
             alignItems: "center",
-            gap: 18,
+            justifyContent: "space-between",
           }}
         >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 999,
-              border: "4px solid #FFFFFF",
-            }}
-          />
-          <div style={{ fontSize: 36, fontWeight: 600, letterSpacing: -0.5 }}>
-            Openship
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 999,
+                border: "4px solid #FFFFFF",
+              }}
+            />
+            <div style={{ fontSize: 36, fontWeight: 600, letterSpacing: -0.5 }}>Openship</div>
           </div>
+          {logos.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {logos.map((logo) => (
+                <div
+                  key={logo.name}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 80,
+                    height: 80,
+                    borderRadius: 20,
+                    background: "#FFFFFF",
+                  }}
+                >
+                  <img src={logo.src} alt={logo.name} width={48} height={48} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div

@@ -130,7 +130,22 @@ try {
     pages.set(path, tags);
   });
   assert.match(pages.get("/pricing").get("og:title"), /Pricing/);
-  assert.equal(pages.get("/pricing").get("og:image"), pages.get("/").get("og:image"));
+  // These pages own their images. Inheriting the homepage's metadata can hide
+  // a route's provider artwork even when its image handler itself works.
+  const customPreviews = [...paths].filter(
+    (path) => path === "/pricing" || path === "/migrate" || path.startsWith("/migrate/"),
+  );
+  for (const path of customPreviews) {
+    for (const [key, filename] of [
+      ["og:image", "opengraph-image"],
+      ["twitter:image", "twitter-image"],
+    ]) {
+      assert(
+        new URL(pages.get(path).get(key)).pathname.startsWith(`${path}/${filename}`),
+        `${path}: ${key} must use its own image`,
+      );
+    }
+  }
   assert.match(
     new URL(pages.get("/download").get("og:image")).pathname,
     /^\/download\/opengraph-image/,

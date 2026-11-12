@@ -155,6 +155,8 @@ and practical questions. Keep Cloud copy about shared plan capacity and projects
 and read prices from the live pricing catalog. Do not promise a fixed migration
 duration or zero downtime for data transfers. Existing campaign hashes remain
 native anchors on visible content rather than selecting a hidden panel.
+Provider migration labels use sentence case and normal letter spacing, with the
+original provider logo and a slightly stronger provider name. Avoid all-caps badge styling.
 
 ## Component and theme integration
 
@@ -210,10 +212,19 @@ headers use 56–64 px artwork; onboarding and empty states use 80 px. Keep actu
 payment and runtime status in their existing labeled status components.
 
 Empty-state placements reuse existing subjects: Jobs uses `jobs-triggers`, Backups
-uses `backups-restore`, Clusters uses `server-management`, and Private networks uses
-`private-networking`. Replace the old oversized panel drawings rather than keeping
+uses `backups-restore`, Servers and Clusters use `server-management`, and Private networks uses
+`private-networking`. The disconnected Openship Cloud card uses `deploy-anywhere`
+at the same 80 px size. Connections keeps the standard Settings key icon in its header
+and the original provider logos in its rows. Replace the old oversized panel drawings rather than keeping
 a second illustration implementation beside the shared catalog. Filters and compact
 inline messages can continue to use utility icons or text alone.
+
+The AI Agents empty-state card uses `ai-mcp` above its centered heading. Its local example
+preview uses `push-to-deploy`, `logs-monitoring` and `jobs-triggers` at 80 px,
+with `illustration-color` across all themes. Keep the surrounding request, actions
+and outcome readable in the welcome column; the artwork does not simulate live status.
+Native provider marks stay in the separate setup card, with their original shapes
+and colors, rather than using feature illustrations to identify providers.
 
 The component is decorative by default (`aria-hidden`). Supply `title` or an
 accessible label only when the drawing conveys information not already present

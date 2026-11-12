@@ -157,6 +157,7 @@
     "running": "稼動中",
     "upToDate": "最新",
     "notInstalled": "未インストール",
+    "notChecked": "未確認 — スキャンしてインストール済みのバージョンを検出してください。",
     "installEdge": "エッジをインストール",
     "edgeAbsentImpactOne": "このサーバーには {n} 件のプロジェクトがありますが、トラフィックを転送するものがありません。",
     "edgeAbsentImpactMany": "このサーバーには {n} 件のプロジェクトがありますが、トラフィックを転送するものがありません。"

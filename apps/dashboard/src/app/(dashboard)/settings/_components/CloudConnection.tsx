@@ -2,6 +2,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import { useState } from "react";
 import { cloudApi } from "@/lib/api";
@@ -9,7 +10,6 @@ import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CloudIllustration } from "./CloudIllustration";
 
 /* ── Component ──────────────────────────────────────────────────── */
 
@@ -120,7 +120,7 @@ export function CloudConnection() {
            real CloudCapability (packages/core/src/cloud-capability.ts), so nothing
            here promises something `requireCloud` doesn't gate. */
         <div className="flex flex-col items-center px-1 pb-1 pt-3 text-center">
-          <CloudIllustration className="relative mb-6 h-24 w-72 max-w-full" />
+          <FeatureIllustration name="deploy-anywhere" className="illustration-color mb-6 h-16 w-20" />
 
           <h4 className="text-lg font-medium text-foreground" style={{ letterSpacing: "-0.2px" }}>
             {pitch.title}

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { Metadata, ResolvingMetadata } from "next";
 import { inheritSocialImages } from "../apps/web/src/lib/social-metadata";
-import { generateMetadata as pricingMetadata } from "../apps/web/src/app/(site)/(marketing)/pricing/layout";
 
 const ogImages = [
   {
@@ -20,14 +19,6 @@ const parent = Promise.resolve({
 }) as ResolvingMetadata;
 
 describe("page social previews", () => {
-  it("includes both crawler images in Pricing's actual metadata", async () => {
-    const result = await pricingMetadata({}, parent);
-    expect(result.openGraph?.images).toEqual(ogImages);
-    expect(result.twitter?.images).toEqual(twitterImages);
-    expect(result.title).toBe("Pricing");
-    expect(result.alternates?.canonical).toBe("/pricing");
-  });
-
   it("keeps Next's resolved image URLs when a page overrides its social metadata", async () => {
     const page: Metadata = {
       title: "Pricing",

@@ -1,16 +1,15 @@
-import type { Metadata, ResolvingMetadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { AppLogo } from "@repo/ui/app-logo";
 import { FeatureIllustration } from "@repo/ui/illustrations";
-import { Navbar, Footer } from "@/components/landing";
+import { Navbar, Footer, Comparison } from "@/components/landing";
 import { MarketingIntro } from "@/components/marketing/marketing-intro";
 import { MarketingSection } from "@/components/marketing/marketing-section";
 import { IllustratedLink } from "@/components/marketing/illustrated-link";
 import { cloudFrom, getCloudPricing } from "@/lib/pricing";
 import { cloudPlanHref } from "@/lib/cloud-links";
 import { MIGRATION_SOURCES } from "@/lib/migration-sources";
-import { inheritSocialImages } from "@/lib/social-metadata";
 import { MigrationFaq } from "./_components/migration-faq";
 import { MigrationSteps } from "./_components/migration-steps";
 import { STARTING_POINTS, REASONS, STEPS, faq } from "./_data";
@@ -20,32 +19,24 @@ export const revalidate = 60;
 
 const TITLE = "Move your app to Openship";
 const DESCRIPTION =
-  "Migrate from Railway, Vercel or a Docker server to Openship. Review services and data, deploy to Cloud or your own infrastructure, then switch your domains.";
+  "Migrate from Railway, Vercel, Coolify, Dokploy or a Docker server to Openship. Review services and data, deploy to Cloud or your own infrastructure, then switch your domains.";
 
-export async function generateMetadata(
-  _props: unknown,
-  parent: ResolvingMetadata,
-): Promise<Metadata> {
-  return inheritSocialImages(
-    {
-      title: TITLE,
-      description: DESCRIPTION,
-      alternates: { canonical: "/migrate" },
-      openGraph: {
-        title: `${TITLE} - Openship`,
-        description: DESCRIPTION,
-        url: "/migrate",
-        type: "website",
-      },
-      twitter: {
-        card: "summary_large_image",
-        title: `${TITLE} - Openship`,
-        description: DESCRIPTION,
-      },
-    },
-    parent,
-  );
-}
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: "/migrate" },
+  openGraph: {
+    title: `${TITLE} - Openship`,
+    description: DESCRIPTION,
+    url: "/migrate",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${TITLE} - Openship`,
+    description: DESCRIPTION,
+  },
+};
 
 export default async function MigratePage() {
   const from = cloudFrom(await getCloudPricing());
@@ -81,7 +72,17 @@ export default async function MigratePage() {
                   href={`/migrate/${source.slug}`}
                   className="mg-provider-link"
                 >
-                  <AppLogo slug={source.logo} className="size-9" invertOnDark={false} />
+                  <span className="mg-provider-logos" aria-hidden="true">
+                    {source.logos.map((logo) => (
+                      <AppLogo
+                        key={logo}
+                        slug={logo}
+                        src={`/provider-logos/${logo}.svg`}
+                        className="size-9"
+                        invertOnDark={false}
+                      />
+                    ))}
+                  </span>
                   <div>
                     <h3>From {source.name}</h3>
                     <p>{source.summary}</p>
@@ -162,6 +163,7 @@ export default async function MigratePage() {
             <MigrationFaq items={faq(from)} />
           </MarketingSection>
         </div>
+        <Comparison />
       </main>
       <script
         type="application/ld+json"

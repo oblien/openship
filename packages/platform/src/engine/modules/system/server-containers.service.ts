@@ -114,9 +114,9 @@ export interface ApplyContainerResult {
 /**
  * A component probe outcome. The three-way split is what keeps the drift cache
  * honest:
- *   - `present` → the component is installed (running OR stopped); upsert its row.
- *   - `absent`  → the probe RAN and the component is genuinely not here; drop the
- *     row. A trustworthy state change, safe to write.
+ *   - `present` → a conclusive component observation; upsert its row. For the
+ *     edge, containerMissing records confirmed absence as well.
+ *   - `absent`  → optional mail was not provisioned; drop its row.
  *   - `unknown` → the probe couldn't tell (a `docker ps`/`inspect` that errored
  *     out under a reachable daemon, an SSH hiccup). Leave the last-known cached
  *     row exactly as it is — never upsert a guess, never delete.
@@ -134,13 +134,13 @@ type ContainerProbe =
  * Track the edge whenever it's INSTALLED, not only when it's running:
  * `detectEdgeContainer` (`docker ps -a`) resolves a stopped edge too, so a
  * provisioned-but-down edge is reported `present` + `down` (kept in the cache)
- * instead of vanishing. `detectEdgeContainer` returns `null` when the probe itself
- * failed — we map that to `unknown` (keep the cache), NOT to absence.
+ * instead of vanishing. A missing edge gets a cached containerMissing observation.
+ * `detectEdgeContainer` returns `null` when the probe itself failed — we map that
+ * to `unknown` (keep the cache), NOT to absence.
  */
 async function detectEdge(executor: CommandExecutor): Promise<ContainerProbe> {
   const detected = await detectEdgeContainer(executor).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server-containers.service"); return null; });
   if (detected === null) return { kind: "unknown" };
-  if (!detected.exists) return { kind: "absent" };
   const pinnedLabel = pinnedEdgeImage();
   return {
     kind: "present",
@@ -152,9 +152,9 @@ async function detectEdge(executor: CommandExecutor): Promise<ContainerProbe> {
       pinnedVersion: imageTag(pinnedLabel),
       behind: detected.running && detected.image !== pinnedLabel,
       down: !detected.running,
-      // `present` already implies the container exists (absence is its own probe
-      // result), so a down edge is always a stopped one — never a missing one.
-      containerMissing: false,
+      // Persist confirmed absence too: no cached edge row means "not checked",
+      // especially after an instance import, never proof of a missing edge.
+      containerMissing: !detected.exists,
     },
   };
 }
@@ -242,7 +242,7 @@ async function detectMail(
   };
 }
 
-function upsertView(server: Server, view: ServerContainerView, lastError?: string): Promise<void> {
+function upsertView(server: Server, view: ServerContainerView, lastError?: string, onlyWhenIdle = false): Promise<void> {
   // `flavor: "host"` is persisted even for a perfectly healthy row: it is what the
   // UI reads to label a legacy box instead of rendering a blank running version.
   const legacy = view.flavor === "host";
@@ -255,7 +255,7 @@ function upsertView(server: Server, view: ServerContainerView, lastError?: strin
           ...(lastError ? { lastError } : {}),
         }
       : null;
-  return repos.serverContainerStatus.upsert({
+  const data = {
     organizationId: server.organizationId ?? null,
     serverId: server.id,
     component: view.component,
@@ -268,12 +268,15 @@ function upsertView(server: Server, view: ServerContainerView, lastError?: strin
     // apply is mid-flight. `upsert` preserves the flag when it's omitted, so a scan
     // landing during a swap can no longer erase the state every surface renders.
     detail,
-  });
+  };
+  return onlyWhenIdle
+    ? repos.serverContainerStatus.upsert(data, { onlyWhenIdle: true })
+    : repos.serverContainerStatus.upsert(data);
 }
 
 /**
- * Detect edge + mail drift on one server (no image swap), caching each present
- * component and dropping the row for any CONFIDENTLY absent one. Best-effort.
+ * Detect edge + mail drift on one server (no image swap), caching conclusive edge
+ * observations and dropping optional mail that was not provisioned. Best-effort.
  *
  * The cache is mutated on the happy path only. Two guards keep a bad read from
  * corrupting it:
@@ -283,8 +286,8 @@ function upsertView(server: Server, view: ServerContainerView, lastError?: strin
  *   - per-component `unknown`: even with Docker up, a `docker ps`/`inspect` can
  *     fail transiently; `detectEdge`/`detectMail` report that as `unknown` and we
  *     skip the write, so a hiccup can never DELETE a live component's row (the
- *     scan-wiped-my-components bug). Only a probe that actually confirmed absence
- *     removes the row.
+ *     scan-wiped-my-components bug). Confirmed edge absence is cached explicitly;
+ *     missing optional mail removes its row.
  */
 export async function detectServerContainers(server: Server, options: { refreshCertificate?: boolean } = {}): Promise<ServerContainerView[]> {
   const views: ServerContainerView[] = [];
@@ -294,8 +297,8 @@ export async function detectServerContainers(server: Server, options: { refreshC
       probe: ContainerProbe,
     ): Promise<void> => {
       if (probe.kind === "present") {
-        views.push(probe.view);
-        await upsertView(server, probe.view).catch((diagnosticFailure) => {
+        if (component !== "edge" || !probe.view.containerMissing) views.push(probe.view);
+        await upsertView(server, probe.view, undefined, probe.view.containerMissing).catch((diagnosticFailure) => {
           observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server-containers.service");
         });
       } else if (probe.kind === "absent") {
@@ -417,7 +420,7 @@ export async function applyServerContainer(
  *  - never REMOVE here. We just acted on this box, so "the probe says absent" is far
  *    more likely to be a probe that lost the race than a component that vanished;
  *    dropping the row would erase the very issue the operator is trying to fix.
- *    `detectServerContainers` (the scan) owns removal.
+ *    Missing optional mail is removed only by `detectServerContainers` (the scan).
  */
 async function cacheAfterAction(
   server: Server,
@@ -654,7 +657,7 @@ export async function applyAllContainers(
       skipped.push({ ...base, reason: "already_running" });
       continue;
     }
-    if (intent === "repair" && row.detail?.containerMissing && component === "mail") {
+    if (intent === "repair" && row.detail?.containerMissing) {
       skipped.push({ ...base, reason: "container_missing" });
       continue;
     }
@@ -820,7 +823,7 @@ interface IssueRow {
  * Classify each server's managed components into actionable issues, purely from
  * the cached rows + the active-deployment→server project attribution.
  *
- * An edge is an issue when it's `down` (installed, not running) or ABSENT on a box
+ * An edge is an issue when it's `down` (installed, not running) or confirmed ABSENT on a box
  * that hosts routed projects (projectCounts > 0) — absent on an empty box is an
  * offer, not an alarm. A mail engine is an issue only when a TRACKED row says it's
  * down: mail is optional per box, so no row means no mail here (never an alarm),
@@ -848,7 +851,10 @@ export function classifyContainerIssues(
     const server = { id: s.id, name: s.name ?? s.sshHost };
 
     const edgeRow = own.find((r) => r.component === "edge");
-    if (edgeRow?.detail?.down) {
+    if (edgeRow?.detail?.containerMissing && (projectCounts[s.id] ?? 0) > 0) {
+      edgeMissing++;
+      issues.push({ server, component: "edge", issue: "absent", containerMissing: true });
+    } else if (edgeRow?.detail?.down && !edgeRow.detail.containerMissing) {
       edgeDown++;
       issues.push({
         server,
@@ -857,9 +863,6 @@ export function classifyContainerIssues(
         containerMissing: Boolean(edgeRow.detail.containerMissing),
         ...(edgeRow.detail.lastError ? { reason: edgeRow.detail.lastError } : {}),
       });
-    } else if (!edgeRow && (projectCounts[s.id] ?? 0) > 0) {
-      edgeMissing++;
-      issues.push({ server, component: "edge", issue: "absent", containerMissing: true });
     }
 
     const mailRow = own.find((r) => r.component === "mail");

@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React, { useCallback, useState } from "react";
 import Link from "next/link";
@@ -124,10 +125,12 @@ export default function BackupsPage() {
           >
             <UiIcon name="refresh" className={`size-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-          <Button onClick={() => setModalOpen(true)}>
-            <UiIcon name="plus" className="size-4" />
-            {m.addDestination}
-          </Button>
+          {data?.length !== 0 && (
+            <Button onClick={() => setModalOpen(true)}>
+              <UiIcon name="plus" className="size-4" />
+              {m.addDestination}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -141,30 +144,40 @@ export default function BackupsPage() {
         </div>
       ) : data ? (
         <div className="space-y-6">
-          <BackupStorageSummary destinations={items} showDestinationCount compact />
-          <div className="min-w-0 space-y-5">
-            <BackupDestinationHistory refreshKey={data} />
+          {items.length > 0 ? (
+            <BackupStorageSummary destinations={items} showDestinationCount compact />
+          ) : (
             <section
-              aria-label={t.projectSettings.backup.destinations.title}
-              className="rounded-2xl bg-card"
+              aria-label={m.emptyTitle}
+              className="rounded-2xl bg-card px-6 py-10 text-center"
             >
-              <div className="px-5 py-4">
-                <h2 className="text-sm font-medium text-foreground">
-                  {t.projectSettings.backup.destinations.title}
-                </h2>
-                <p className="sr-only">{m.destinationsDescription}</p>
-              </div>
-              {items.length === 0 ? (
-                <div className="flex items-center gap-4 px-5 pb-6 pt-3">
-                  <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-                    <UiIcon name="hard-drive" className="size-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{m.emptyTitle}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{m.emptyDescription}</p>
-                  </div>
+              <FeatureIllustration
+                name="backups-restore"
+                className="illustration-color mx-auto mb-4 h-auto w-20"
+              />
+              <h2 className="text-xl font-medium tracking-tight text-foreground">{m.emptyTitle}</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                {m.emptyDescription}
+              </p>
+              <Button className="mt-6" onClick={() => setModalOpen(true)}>
+                <UiIcon name="plus" className="size-4" />
+                {m.addDestination}
+              </Button>
+            </section>
+          )}
+          <div className="min-w-0 space-y-5">
+            <BackupDestinationHistory refreshKey={data} hideWhenEmpty={items.length === 0} />
+            {items.length > 0 && (
+              <section
+                aria-label={t.projectSettings.backup.destinations.title}
+                className="rounded-2xl bg-card"
+              >
+                <div className="px-5 py-4">
+                  <h2 className="text-sm font-medium text-foreground">
+                    {t.projectSettings.backup.destinations.title}
+                  </h2>
+                  <p className="sr-only">{m.destinationsDescription}</p>
                 </div>
-              ) : (
                 <ul className="divide-y divide-border/40">
                   {items.map((row) => {
                     const icon = KIND_ICONS[row.kind] ?? "cloud";
@@ -285,8 +298,8 @@ export default function BackupsPage() {
                     );
                   })}
                 </ul>
-              )}
-            </section>
+              </section>
+            )}
           </div>
         </div>
       ) : null}

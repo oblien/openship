@@ -1,4 +1,18 @@
-# Infrastructure provider logos
+# Provider logos
+
+## AI Agents
+
+The welcome card reuses the shared Codex and Claude icons. Grok uses the same
+[LobeHub SVG](https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/grok.svg)
+as BytesMap, under the bundled `LICENSE.lobehub` (MIT). Antigravity uses the
+[official full-color icon](https://antigravity.google/assets/image/brand/antigravity-icon__full-color.svg)
+from Google's [press assets](https://antigravity.google/press), retrieved 2026-11-12.
+Both are bundled locally and rendered through `IconArtwork`: Grok follows the
+foreground with a mask; Antigravity retains its brand colors. The marks identify
+their respective products, not new native runtime integrations. Antigravity links
+to the existing MCP setup; Grok uses the existing custom API connection.
+
+## Infrastructure
 
 Railway and Vercel migration connections share the `AppLogo` renderer. Railway uses
 the [Devicon v2.16.0 mark](https://github.com/devicons/devicon/blob/v2.16.0/icons/railway/railway-original.svg)

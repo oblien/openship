@@ -3,6 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DataTransferFile, ImportPreview, TransferManifest } from "@/lib/api/data-transfer";
+import { getActiveOrganizationId, setActiveOrganizationId } from "@/lib/api/client";
 import { ExportPanel } from "./ExportPanel";
 import { ImportModal } from "./ImportModal";
 import { ALL_HISTORY } from "./TransferOptions";
@@ -47,6 +48,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  setActiveOrganizationId("destination-workspace");
   vi.stubGlobal("URL", class extends URL {
     static createObjectURL = h.objectUrl;
     static revokeObjectURL = h.revokeUrl;
@@ -70,6 +72,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  setActiveOrganizationId(null);
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -92,6 +95,15 @@ async function chooseImportFile() {
   Object.defineProperty(input, "files", { configurable: true, value: [file] });
   await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); });
   return file;
+}
+async function selectOption(label: string, text: string) {
+  const trigger = host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  expect(trigger).not.toBeNull();
+  await act(async () => trigger.click());
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+    .find((node) => node.textContent?.trim() === text);
+  expect(option, text).toBeDefined();
+  await act(async () => option!.click());
 }
 
 describe("project file transfer", () => {
@@ -149,31 +161,35 @@ describe("project file transfer", () => {
 
   it("preserves instance scope and requires confirmation before replacement", async () => {
     h.previewFile.mockResolvedValue({ ...importPreview, scope: "instance" });
+    h.importFile.mockResolvedValue({ mode: "wipe", rowsRestored: 12, secretsRehydrated: 4,
+      secretsSkipped: false, localPathProjects: [] });
     const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
     vi.stubGlobal("confirm", confirm);
     const file = await chooseImportFile();
-    expect(host.querySelector<HTMLSelectElement>('[aria-label="Import scope"]')!.value).toBe("instance");
-    expect(host.querySelector<HTMLSelectElement>('[aria-label="Instance import mode"]')!.value).toBe("wipe");
+    expect(host.querySelector('[aria-label="Import scope"]')!.textContent).toContain("Entire instance");
+    expect(host.querySelector('[aria-label="Instance import mode"]')!.textContent).toContain("Replace the entire destination instance");
     expect(host.querySelector('input[type="password"]')).toBeNull();
     await act(async () => button("Replace instance").click());
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(h.importFile).not.toHaveBeenCalled();
+    expect(getActiveOrganizationId()).toBe("destination-workspace");
     await act(async () => {
       button("Replace instance").click();
       button("Replace instance").click();
     });
     expect(h.importFile).toHaveBeenCalledExactlyOnceWith(file, undefined, "wipe", expect.any(Function),
       expect.objectContaining({ scope: "instance", includeSecrets: true }));
+    expect(getActiveOrganizationId()).toBeNull();
+    expect(window.localStorage.getItem("openship.activeOrgId")).toBeNull();
+    const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+    await act(async () => button("Continue to restored workspaces").click());
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/select-organization");
   });
 
   it("requires a fresh review when the instance import mode changes", async () => {
     h.previewFile.mockResolvedValue({ ...importPreview, scope: "instance" });
     await chooseImportFile();
-    await act(async () => {
-      const select = host.querySelector<HTMLSelectElement>('[aria-label="Instance import mode"]')!;
-      select.value = "merge";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await selectOption("Instance import mode", "Add new records; stop if project records conflict");
     expect(button("Import selection").disabled).toBe(true);
     await act(async () => button("Review selection").click());
     expect(button("Import selection").disabled).toBe(false);
@@ -181,11 +197,7 @@ describe("project file transfer", () => {
 
   it("reviews an explicit project overwrite and shows destination-only record removal", async () => {
     await chooseImportFile();
-    await act(async () => {
-      const select = host.querySelector<HTMLSelectElement>('[aria-label="Project conflict policy"]')!;
-      select.value = "overwrite";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await selectOption("Project conflict policy", "Overwrite matching project records");
     expect(button("Import selection").disabled).toBe(true);
     h.previewFile.mockResolvedValue({ ...importPreview, rowsRemoved: 3,
       projects: [{ ...project, action: "overwrite", existingProjectId: "web" }],
@@ -209,6 +221,17 @@ describe("project file transfer", () => {
     );
     expect(host.textContent).toContain("Import complete");
     expect(host.textContent).toContain("4 credential records restored");
+    expect(getActiveOrganizationId()).toBe("destination-workspace");
+  });
+
+  it("keeps the current workspace when a replacement fails", async () => {
+    h.previewFile.mockResolvedValue({ ...importPreview, scope: "instance" });
+    h.importFile.mockRejectedValue(new Error("Destination unavailable"));
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    await chooseImportFile();
+    await act(async () => button("Replace instance").click());
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Destination unavailable");
+    expect(getActiveOrganizationId()).toBe("destination-workspace");
   });
 
   it("still unlocks older password-protected files before importing", async () => {

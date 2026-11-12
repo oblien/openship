@@ -4,7 +4,39 @@
 .mg-provider-label {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  color: var(--th-text-body);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.5;
+  text-transform: none;
+}
+.mg-provider-caption > span {
+  color: var(--th-text-heading);
+  font-weight: 500;
+}
+.mg-provider-logos {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.mg-screenshot {
+  margin-bottom: 40px;
+}
+.mg-screenshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--th-divider);
+  border-radius: 20px;
+}
+.mg-screenshot figcaption {
+  margin-top: 14px;
+  color: var(--th-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 .mg-intro-actions {
   display: flex;
@@ -24,7 +56,7 @@
 }
 .mg-provider-link {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 16px;
+  grid-template-columns: auto minmax(0, 1fr) 16px;
   align-items: start;
   gap: 20px;
   padding: 28px;
@@ -33,6 +65,9 @@
 }
 .mg-provider-link:hover {
   background: var(--th-bg-hover);
+}
+.mg-provider-link:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 .mg-provider-link > svg {
   margin-top: 6px;
