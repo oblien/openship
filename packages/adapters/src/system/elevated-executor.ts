@@ -150,6 +150,9 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
       inner.exec(elevateCommand(command), opts),
     streamExec: (command: string, onLog: (log: LogEntry) => void, opts?: { signal?: AbortSignal }) =>
       inner.streamExec(elevateCommand(command), onLog, opts),
+    ...(inner.execWithInput ? {
+      execWithInput: (command, body) => inner.execWithInput!(elevateCommand(command), body),
+    } satisfies Partial<CommandExecutor> : {}),
     writeFile: writeFileElevated,
     readFile: readFileElevated,
     exists: existsElevated,

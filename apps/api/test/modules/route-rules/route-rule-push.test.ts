@@ -41,8 +41,8 @@ vi.mock("@repo/db", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@repo/platform/engine/lib/project-analytics", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/platform/engine/lib/project-analytics")>()),
+vi.mock("@repo/platform/engine/lib/edge-management", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/edge-management")>()),
   postEdgeMgmt,
 }));
 

@@ -31,7 +31,6 @@ vi.mock("@repo/platform/engine/lib/ssh-tunnel", () => ({
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: vi.fn(), release: vi.fn(), acquire: vi.fn() },
 }));
-vi.mock("@repo/platform/engine/lib/platform-mode", () => ({ isOblienBackedDeployment: async () => false }));
 const { findLocal } = vi.hoisted(() => ({ findLocal: vi.fn() }));
 vi.mock("@repo/db", () => ({
   repos: {
@@ -39,7 +38,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-const { postEdgeMgmt } = await import("@repo/platform/engine/lib/project-analytics");
+const { postEdgeMgmt } = await import("@repo/platform/engine/lib/edge-management");
 
 beforeEach(() => {
   vi.clearAllMocks();

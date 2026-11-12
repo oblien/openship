@@ -28,6 +28,8 @@ vi.mock("@repo/db", () => ({ repos: {
 vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   resolveProjectTrafficSources: async (_id: string, options: { domain?: string }) =>
     h.sources.filter((source) => !options.domain || source.domain === options.domain),
+}));
+vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   fetchMgmt: h.readLive,
 }));
 vi.mock("@repo/platform/engine/modules/system/analytics-scraper", () => ({ scrapeServerIfStale: h.scrape }));

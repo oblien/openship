@@ -14,7 +14,7 @@ import { findActiveDeployment } from "@repo/platform/engine/lib/active-deploymen
 import { repos } from "@repo/db";
 import type { RouteRuleSpec } from "@repo/core";
 import { safeErrorMessage } from "@repo/core";
-import { postEdgeMgmt } from "../../lib/project-analytics";
+import { postEdgeMgmt } from "../../lib/edge-management";
 import { withDeploymentPlatform } from "../../lib/deployment-runtime";
 
 /** One host's rules in the shape `rules_guard.lua` reads (longest prefix wins). */
@@ -74,14 +74,14 @@ async function pushHost(
   // it a local target has no edge to reach — see postEdgeMgmt.
   const hasResponses = rules.some(rule => rule.spec.response);
   const capabilities = hasResponses
-    ? await postEdgeMgmt(serverId, "/rules/capabilities", {}, organizationId) as { staticResponses?: boolean } | null
+    ? await postEdgeMgmt<{ staticResponses?: boolean }>(serverId, "/rules/capabilities", {}, organizationId)
     : null;
   const responseSupported = !hasResponses || capabilities?.staticResponses === true;
   // Old guards interpret unknown rule kinds as access policies. Never send
   // responses to one; existing policy edits must still reach that edge.
   const supportedRules = responseSupported ? rules : rules.filter(rule => !rule.spec.response);
-  const result = await postEdgeMgmt(serverId, "/rules", { host, rules: supportedRules }, organizationId) as
-    { ok?: boolean; staticResponses?: boolean } | null;
+  const result = await postEdgeMgmt<{ ok?: boolean; staticResponses?: boolean }>(
+    serverId, "/rules", { host, rules: supportedRules }, organizationId);
   if (!result?.ok) throw new Error("The edge has not acknowledged its route rules.");
   if (!responseSupported || (hasResponses && result.staticResponses !== true))
     throw new Error("Update the edge scripts and reload the edge to apply static responses.");

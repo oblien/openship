@@ -27,6 +27,8 @@ vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: {} }));
 vi.mock("@repo/platform/engine/lib/openresty-paths", () => ({ getOpenRestyPaths: vi.fn() }));
 vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   resolveProjectTrafficSource: h.source, resolveProjectTrafficSources: h.sources,
+}));
+vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   fetchMgmt: h.fetchMgmt, mgmtStream: vi.fn(), probeMgmt: vi.fn(),
 }));
 import { getProjectHome } from "@repo/platform/engine/modules/projects/project-home.operations";
