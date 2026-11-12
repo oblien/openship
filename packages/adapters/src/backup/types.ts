@@ -401,9 +401,8 @@ export interface ProducerOpts {
 export interface RestoreOpts {
   /** Pass clearTarget through. */
   clearTarget?: boolean;
-  /** Forwarded to the executor so a cancel doesn't have to wait out the
-   *  whole extract. Producers that restore through `pipeIntoCommand` ignore
-   *  it — those writes are transactional at the engine, not the volume. */
+  /** Abort in-flight restore work. The payload's failure semantics determine
+   *  whether an interrupted write rolls back or leaves partial data. */
   signal?: AbortSignal;
 }
 

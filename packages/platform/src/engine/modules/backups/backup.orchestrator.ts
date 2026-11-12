@@ -63,11 +63,12 @@ import {
 import { notification } from "../../lib/notification-dispatcher";
 import { prunePolicy } from "./retention-prune";
 import { assertPlausibleBackupSizes } from "./backup-size-check";
-import { withBackupDestinationLock, withBackupPolicyLock } from "./backup-lock";
+import { withBackupDestinationLock, withBackupPolicyLock, withMailBackupLock } from "./backup-lock";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { serviceHandleFor, withContainerEnv } from "./service-handle";
 import { resolveSourceExecutor } from "./source-platform";
 import { projectBackupVolumes, resolveProjectBackupSource } from "./project-source";
+import type { prepareMailBackup } from "../mail/backup-lifecycle";
 import crypto from "node:crypto";
 import { detectDbImage, incrementalBackupStorage, payloadSpec, safeErrorMessage, ValidationError } from "@repo/core";
 import {
@@ -347,7 +348,9 @@ export class BackupOrchestrator {
     const destinationId = pending.destinationId ?? policy?.destinationId;
     const executeUnderProject = () => pending.projectId
       ? withProjectRuntimeLock(pending.projectId, () => this.executeRun(runId, policy ?? null))
-      : this.executeRun(runId, policy ?? null);
+      : pending.mailServerId
+        ? withMailBackupLock(pending.mailServerId, () => this.executeRun(runId, policy ?? null))
+        : this.executeRun(runId, policy ?? null);
     const executeUnderDestination = () => destinationId
       ? withBackupDestinationLock(destinationId, executeUnderProject)
       : executeUnderProject();
@@ -402,6 +405,7 @@ export class BackupOrchestrator {
     // remote server it carries a Docker-over-SSH loopback bridge that only
     // `dispose()` closes, so a scheduled policy would otherwise strand one per run.
     let sourceRuntime: RuntimeAdapter | null = null;
+    let mailCapture: Awaited<ReturnType<typeof prepareMailBackup>> | null = null;
     /** Did `destination.preflight()` succeed this run? Gates the failure path's
      *  verdict on the destination — see the catch block. */
     let destinationProven = false;
@@ -590,6 +594,13 @@ export class BackupOrchestrator {
       // value outside the codec vocabulary reached the shell layer and produced an
       // artifact whose recorded codec no restore can read. See that function.
       const producerOpts = sanitizeProducerOpts(policy.payloadConfig);
+      if (policy.sourceKind === "mail_server") {
+        if (policy.payloadKind !== "custom_command")
+          throw new Error("The mail policy does not target a supported mail host");
+        const { prepareMailBackup } = await import("../mail/backup-lifecycle");
+        mailCapture = await prepareMailBackup(sourceRuntime, runId, policy.payloadConfig);
+        Object.assign(producerOpts, mailCapture.payload.payloadConfig);
+      }
       const incremental = producerOpts.incremental === true;
       // Compress blocks independently so editing one file does not change a
       // compressor's state for the remainder of a filesystem archive.
@@ -633,6 +644,7 @@ export class BackupOrchestrator {
       };
 
       for await (const artifact of producer.produce(serviceHandle, executor, producerOpts)) {
+        if (mailCapture) artifact.metadata = { ...artifact.metadata, mail: mailCapture.metadata };
         const key = artifactKey(baseKey, artifact.name);
         if (artifactNames.has(key) || key === manifestKey(baseKey)) {
           artifact.stream.destroy();
@@ -656,6 +668,11 @@ export class BackupOrchestrator {
           artifacts: storableArtifacts(artifactsRecorded),
           bytesTransferred: totalBytes,
         });
+      }
+
+      if (mailCapture) {
+        await mailCapture.cleanup();
+        mailCapture = null;
       }
 
       // 5b. A run that captured nothing is a FAILED run, whichever producer ran.
@@ -794,7 +811,19 @@ export class BackupOrchestrator {
       await finishHook();
       // Both forms are scrubbed independently: a second `.slice` over an
       // already-scrubbed string can split a surrogate pair back open.
-      const raw = safeErrorMessage(err);
+      let raw = safeErrorMessage(err);
+      // Recover the source before recording the terminal verdict. A failed
+      // restart must be included in that verdict, not lost to the terminal guard.
+      if (mailCapture) {
+        const capture = mailCapture;
+        mailCapture = null;
+        try {
+          await capture.cleanup();
+        } catch (recoveryError) {
+          raw += `\nMail recovery needs attention: ${safeErrorMessage(recoveryError)}`;
+          observeCaughtError(recoveryError, "platform/engine/modules/backups/backup.orchestrator");
+        }
+      }
       const message = boundedStorableText(raw, TRUNCATE_ERROR);
       const summary = boundedStorableText(raw, TRUNCATE_ERROR_SUMMARY);
       const finalizedElsewhere = err instanceof BackupRunFinalizedElsewhereError;
@@ -919,7 +948,13 @@ export class BackupOrchestrator {
         });
       }
     } finally {
-      disposeRuntime(sourceRuntime);
+      try {
+        if (mailCapture) await mailCapture.cleanup();
+      } catch (error) {
+        errorDiagnostics.error("platform/engine/modules/backups/backup.orchestrator", "Mail backup cleanup/restart needs attention", error);
+      } finally {
+        disposeRuntime(sourceRuntime);
+      }
       // Status says what happened; this acknowledgement says the worker can no
       // longer mutate project resources. It must be the last durable write in
       // the outermost worker boundary so project teardown never treats an early

@@ -89,7 +89,7 @@ export function BackupTab({ serverId, domain }: { serverId: string; domain: stri
 
   // Form state
   const [destinationId, setDestinationId] = useState("");
-  const [messageData, setMessageData] = useState(false);
+  const [messageData, setMessageData] = useState(true);
   const [keys, setKeys] = useState(true);
   const [schedule, setSchedule] = useState<ScheduleParts>(DEFAULT_SCHEDULE_PARTS);
   // Kept as strings: an empty box is "no limit", which a number state can't hold

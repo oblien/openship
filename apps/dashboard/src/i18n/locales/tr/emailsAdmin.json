@@ -519,7 +519,7 @@
     "accountsTitle": "Hesaplar, alan adları ve takma adlar",
     "accountsDesc": "Posta kutuları (parola özetleriyle), alan adları ve takma adlar — vmail veritabanı.",
     "messageTitle": "Posta kutusu mesaj verileri",
-    "messageDesc": "Saklanan tüm e-postalar (/var/vmail maildir klasörleri). Büyük boyutlu olabilir.",
+    "messageDesc": "İletiler, klasörler, kuyruk ve karantina. Kopyalama sırasında teslimat ve IMAP duraklatılır.",
     "keysTitle": "DKIM anahtarları ve gizli veriler",
     "keysDesc": "DKIM anahtarları + yapılandırma + mail-state.json. Geri yüklemede DKIM'i geçerli tutar — ancak arşiv özel anahtarları ve gizli verileri barındırır.",
     "keysWarning": "Yedek; şifre özetlerini, DKIM özel anahtarlarını ve düz metin hâlindeki gizli verileri içerir. Yedekleme hedefine erişimi kısıtlı tutun.",

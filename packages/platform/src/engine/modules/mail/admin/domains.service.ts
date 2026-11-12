@@ -12,6 +12,7 @@
  */
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { validateMailDomain as validateDomain } from "../mail-domain";
 import { sshManager } from "../../../lib/ssh-manager";
 import { readState } from "../mail-state";
 import { provisionDomainDkim, genSecret } from "../mail.service";
@@ -24,7 +25,6 @@ import {
 } from "./domain-dns.service";
 import { relaySpfInclude } from "./outbound-relay.service";
 
-const DOMAIN_RE = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/i;
 
 export interface DomainRow {
   domain: string;
@@ -82,12 +82,7 @@ const SELECT_COLUMNS = `
  * `openship_meta` table on the mail VPS (NOT on openship's DB).
  */
 
-export function validateDomain(domain: string): void {
-  const d = domain.trim().toLowerCase();
-  if (!DOMAIN_RE.test(d) || d.length > 255) {
-    throw new Error(`Invalid domain: ${domain}`);
-  }
-}
+export { validateMailDomain as validateDomain } from "../mail-domain";
 
 export async function listDomains(serverId: string): Promise<DomainRow[]> {
   return queryRows<DomainRow>(

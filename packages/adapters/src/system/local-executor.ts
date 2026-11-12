@@ -1,5 +1,8 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { exec, spawn } from "node:child_process";
+import { pipeline, type Readable } from "node:stream";
+import { promisify } from "node:util";
 import {
   access,
   mkdir as fsMkdir,
@@ -27,6 +30,103 @@ import {
  * File operations use node:fs directly.
  */
 export class LocalExecutor implements CommandExecutor {
+  private readonly abortScope = new AsyncLocalStorage<AbortSignal>();
+  private readonly activeRawCommands = new Set<{ kill: () => void; onClose: Promise<number> }>();
+
+  runWithAbortSignal<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+    return this.abortScope.run(signal, work);
+  }
+
+  /** Binary transport for self-hosted/desktop workloads. Never available to a
+   * Cloud controller, including when this executor predates mode initialization. */
+  private async spawnRawCommand(command: string) {
+    assertLocalHostExecutionAllowed();
+    const signal = this.abortScope.getStore();
+    signal?.throwIfAborted();
+    const grouped = process.platform !== "win32";
+    const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: getLocalExecEnv(),
+      detached: grouped,
+    });
+    let terminating = false;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    const send = (kind: NodeJS.Signals) => {
+      try {
+        if (grouped && child.pid) process.kill(-child.pid, kind);
+        else child.kill(kind);
+      } catch (error) {
+        // A child can exit between the close event and cancellation.
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH")
+          observeCaughtError(error, "adapters/system/local-executor");
+      }
+    };
+    const kill = () => {
+      if (terminating) return;
+      terminating = true;
+      send("SIGTERM");
+      escalation = setTimeout(() => send("SIGKILL"), 1_000);
+      escalation.unref?.();
+    };
+    const onClose = new Promise<number>((resolve, reject) => {
+      let failure: Error | undefined;
+      child.once("error", (error) => {
+        // diagnostics-ignore: onClose rejects with this failure after stdio closes.
+        failure = error;
+      });
+      child.once("close", (code) => {
+        if (terminating && grouped) send("SIGKILL");
+        clearTimeout(escalation);
+        signal?.removeEventListener("abort", kill);
+        this.activeRawCommands.delete(active);
+        if (signal?.aborted) reject(signal.reason ?? new Error("Local command cancelled"));
+        else if (failure) reject(failure);
+        else resolve(code ?? 1);
+      });
+    });
+    // The process can fail before the caller attaches its stream lifecycle.
+    void onClose.catch((error) => observeCaughtError(error, "adapters/system/local-executor"));
+    const active = { kill, onClose };
+    this.activeRawCommands.add(active);
+    signal?.addEventListener("abort", kill, { once: true });
+    if (signal?.aborted) kill();
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    return { child, ...active };
+  }
+
+  async rawExec(command: string) {
+    const { child, onClose, kill } = await this.spawnRawCommand(command);
+    child.stdin.end();
+    return { stdout: child.stdout, stderr: child.stderr, onClose, kill };
+  }
+
+  async execWithInput(command: string, body: Readable) {
+    const { child, onClose, kill } = await this.spawnRawCommand(command);
+    let stderr = "";
+    let stdout = "";
+    child.stdout.on("data", (data: Buffer) => { stdout = (stdout + data.toString()).slice(-16 * 1024); });
+    child.stderr.on("data", (data: Buffer) => { stderr = (stderr + data.toString()).slice(-16 * 1024); });
+    let inputError: NodeJS.ErrnoException | undefined;
+    const input = promisify(pipeline)(body, child.stdin).catch((error) => {
+      // diagnostics-ignore: propagated below after the subprocess and input settle.
+      inputError = error;
+      kill();
+    });
+    try {
+      const code = await onClose;
+      await input;
+      if (inputError && (code === 0 || !["EPIPE", "ERR_STREAM_PREMATURE_CLOSE"].includes(inputError.code ?? "")))
+        throw inputError;
+      return { code, stderr: stderr.trim(), stdout: stdout.trim() };
+    } finally {
+      // Await upstream teardown before a restore releases its execution lock.
+      await input;
+    }
+  }
+
   async exec(command: string, opts?: { timeout?: number }): Promise<string> {
     assertLocalHostExecutionAllowed();
     return new Promise((resolve, reject) => {
@@ -221,6 +321,8 @@ export class LocalExecutor implements CommandExecutor {
   }
 
   async dispose(): Promise<void> {
-    // Nothing to clean up for local execution
+    const commands = [...this.activeRawCommands];
+    for (const command of commands) command.kill();
+    await Promise.allSettled(commands.map((command) => command.onClose));
   }
 }

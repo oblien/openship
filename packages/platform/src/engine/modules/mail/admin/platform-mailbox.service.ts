@@ -37,6 +37,7 @@
  */
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { MAIL_DOMAIN_RE as DOMAIN_RE } from "../mail-domain";
 import { randomBytes } from "node:crypto";
 import type { CommandExecutor } from "@repo/adapters";
 import { safeErrorMessage, mailHostname } from "@repo/core";
@@ -59,7 +60,7 @@ import {
 } from "./maildir";
 import { recountDomain } from "./domains.service";
 
-export const DOMAIN_RE = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/i;
+export { MAIL_DOMAIN_RE as DOMAIN_RE } from "../mail-domain";
 export const PLATFORM_LOCAL_PART = "openship";
 
 export class PlatformMailboxError extends Error {}

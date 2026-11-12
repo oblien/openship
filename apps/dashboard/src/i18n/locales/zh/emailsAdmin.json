@@ -519,7 +519,7 @@
     "accountsTitle": "账户、域名与别名",
     "accountsDesc": "邮箱（含密码哈希）、域名和别名——即 vmail 数据库。",
     "messageTitle": "邮箱邮件数据",
-    "messageDesc": "所有已存储的电子邮件（/var/vmail maildir 目录）。可能会很大。",
+    "messageDesc": "邮件、文件夹、队列和隔离数据。复制期间暂停投递和 IMAP。",
     "keysTitle": "DKIM 密钥与机密信息",
     "keysDesc": "DKIM 密钥 + 配置 + mail-state.json。还原后可保持 DKIM 有效——但此后归档文件中将包含私钥和机密信息。",
     "keysWarning": "备份将包含密码哈希、DKIM 私钥和明文机密信息。请对目标位置保密。",

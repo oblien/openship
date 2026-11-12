@@ -519,7 +519,7 @@
     "accountsTitle": "Cuentas, dominios y alias",
     "accountsDesc": "Buzones (con hashes de contraseñas), dominios y alias: la base de datos vmail.",
     "messageTitle": "Datos de los mensajes del buzón",
-    "messageDesc": "Cada correo almacenado (los maildirs de /var/vmail). Puede ser grande.",
+    "messageDesc": "Mensajes, carpetas, cola y cuarentena. La entrega e IMAP se pausan durante la copia.",
     "keysTitle": "Claves DKIM y secretos",
     "keysDesc": "Claves DKIM + configuración + mail-state.json. Mantiene DKIM válido al restaurar, pero el archivo contendrá entonces claves privadas y secretos.",
     "keysWarning": "La copia de seguridad contendrá hashes de contraseñas, claves privadas DKIM y secretos en texto plano. Mantén el destino privado.",

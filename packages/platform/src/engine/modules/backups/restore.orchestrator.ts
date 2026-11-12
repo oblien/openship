@@ -78,8 +78,9 @@ import { notification } from "../../lib/notification-dispatcher";
 import { boundedStorableText } from "../deployments/build-log-sanitize";
 import { deferBackgroundWork } from "../../lib/background-work";
 import { assertNativeJobs } from "../../native/execution-policy";
-import { withBackupRunLock } from "./backup-lock";
+import { withBackupRunLock, withMailBackupLock } from "./backup-lock";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import type { prepareMailRestore } from "../mail/backup-lifecycle";
 
 const TRUNCATE_ERROR = 4096;
 
@@ -976,7 +977,12 @@ export class RestoreOrchestrator {
     const restore = await repos.backupRestore.findById(restoreId);
     const target = restore?.forkServiceId ? await repos.service.findById(restore.forkServiceId) : null;
     const projectId = target?.projectId ?? restore?.projectId;
-    return projectId ? withProjectRuntimeLock(projectId, () => this.runApplyLocked(restoreId)) : this.runApplyLocked(restoreId);
+    if (projectId) return withProjectRuntimeLock(projectId, () => this.runApplyLocked(restoreId));
+    const run = restore ? await repos.backupRun.findById(restore.runId) : null;
+    const mailServerId = restore?.mode === "to_fork" ? restore.forkMailServerId : run?.mailServerId;
+    return mailServerId
+      ? withMailBackupLock(mailServerId, () => this.runApplyLocked(restoreId))
+      : this.runApplyLocked(restoreId);
   }
 
   private async runApplyLocked(restoreId: string): Promise<void> {
@@ -988,6 +994,7 @@ export class RestoreOrchestrator {
     this.inFlight.set(restoreId, controller);
     // Released alongside the in-flight handle at the bottom — see resolveTarget.
     let targetRuntime: RuntimeAdapter | null = null;
+    let mailRestore: Awaited<ReturnType<typeof prepareMailRestore>> | null = null;
     // The two facts the terminal row reports, hoisted to the function because the outer
     // catch is what writes them and they are decided deep inside the apply.
     //
@@ -1067,9 +1074,23 @@ export class RestoreOrchestrator {
         await executor.stopService(serviceHandle);
         serviceDown = true;
       }
+      if (sourceRun.sourceKind === "mail_server") {
+        const { prepareMailRestore, readMailBackupMetadata } = await import("../mail/backup-lifecycle");
+        const metadata = readMailBackupMetadata(recordedArtifacts(sourceRun)[0]?.metadata ?? {});
+        if (metadata) {
+          const serverId = restore.mode === "to_fork" ? restore.forkMailServerId : sourceRun.mailServerId;
+          if (!serverId) throw new Error("Mail restore has no target server");
+          mailRestore = await prepareMailRestore(runtime, serverId, restoreId, metadata);
+          serviceDown = mailRestore.stopped;
+        }
+      }
 
       // Checkpoint 2 — stopped, still nothing written.
       await this.throwIfCancelRequested(restoreId, null, async () => {
+        if (mailRestore) {
+          await mailRestore.resume();
+          serviceDown = false;
+        }
         if (stoppedByUs) {
           await executor
             .startService(serviceHandle)
@@ -1135,7 +1156,9 @@ export class RestoreOrchestrator {
               executor,
               {
                 key: recorded.key,
-                metadata: recorded.metadata,
+                metadata: mailRestore
+                  ? { ...recorded.metadata, restoreCommand: mailRestore.restoreCommand }
+                  : recorded.metadata,
                 payloadKind: recorded.payloadKind,
                 sha256: recorded.sha256 ?? "",
                 sizeBytes: recorded.sizeBytes,
@@ -1207,6 +1230,10 @@ export class RestoreOrchestrator {
         // telling the operator their data is partial and to re-run the restore. The one
         // exception raises its own `PartialWriteError` with its own precise wording: a
         // failed bounce means the bytes are down but the server has not loaded them.
+        if (mailRestore) {
+          await mailRestore.finalize();
+          serviceDown = false;
+        }
         unfinishedTarget = null;
 
         // Checkpoint 4 DECLINES: every byte is written and the only thing left is
@@ -1306,6 +1333,17 @@ export class RestoreOrchestrator {
         throw innerErr;
       }
     } catch (err) {
+      // Mail's writer pause is independent of the synthetic host service. A
+      // download/probe failure before the first write must undo that pause too.
+      if (mailRestore) serviceDown = mailRestore.stopped;
+      if (mailRestore && unfinishedTarget === null && !(err instanceof PartialWriteError)) {
+        try {
+          await mailRestore.resume();
+          serviceDown = false;
+        } catch (recoveryError) {
+          observeCaughtError(recoveryError, "platform/engine/modules/backups/restore.orchestrator");
+        }
+      }
       // Two INDEPENDENT facts, stamped independently — see the declarations at the top
       // of this method. `partialWrite` is about the data, `serviceLeftStopped` about the
       // container, and a restore can be any combination of the two: a cancelled volume
@@ -1352,7 +1390,13 @@ export class RestoreOrchestrator {
       });
     } finally {
       this.inFlight.delete(restoreId);
-      disposeRuntime(targetRuntime);
+      try {
+        await mailRestore?.cleanup();
+      } catch (cleanupError) {
+        observeCaughtError(cleanupError, "platform/engine/modules/backups/restore.orchestrator");
+      } finally {
+        disposeRuntime(targetRuntime);
+      }
     }
   }
 
@@ -1531,6 +1575,9 @@ export class RestoreOrchestrator {
       if (!targetMailServerId) {
         throw new Error("Mail restore has no target mail server");
       }
+      const { assertMailRestoreTarget, readMailBackupMetadata } = await import("../mail/backup-lifecycle");
+      const metadata = readMailBackupMetadata(recordedArtifacts(sourceRun)[0]?.metadata ?? {});
+      if (metadata) await assertMailRestoreTarget(targetMailServerId, metadata);
       const built = await this.buildMailTarget(targetMailServerId, destinationRow.organizationId);
       return { executor: built.executor, serviceHandle: built.handle, runtime: built.runtime };
     }
