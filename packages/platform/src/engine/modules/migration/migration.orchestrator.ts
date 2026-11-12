@@ -691,7 +691,7 @@ class MigrationOrchestratorImpl {
         id: `dmr_${crypto.randomUUID()}`,
         organizationId: ctx.organizationId,
         targetServerId: target.id,
-        projectName: plan.inventory.projectName,
+        projectName: plan.project.name,
         serviceNames: plan.services.map((s) => s.create.name),
         status: "queued",
         mode: "provider_import",
@@ -763,7 +763,7 @@ class MigrationOrchestratorImpl {
         );
       await this.publishTransition(id, "awaiting_cutover");
       log(
-        "Import verified. Review the projects, move custom domains through Domains & Routes, then confirm completion. Source services and data were retained.",
+        "Import verified. Review the project and its services, move custom domains through Domains & Routes, then confirm completion. Source services and data were retained.",
       );
     } catch (error) {
       const run = await repos.dockerMigrationRun.findById(id);

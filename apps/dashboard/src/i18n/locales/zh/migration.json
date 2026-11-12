@@ -1,4 +1,18 @@
 {
+  "platformDomains": {
+    "title": "域名与 DNS",
+    "intro": "导入不会更改 DNS 或切换流量。",
+    "customAction": "更新 DNS",
+    "providerAction": "替换 URL",
+    "customHint": "自定义域名会导入对应服务的“域名与路由”。检查导入的应用后，请核对 DNS 记录并完成验证。",
+    "providerHint": "提供商拥有的 URL 无法迁移到 OpenShip。请选择新地址，并更新使用旧地址的应用 URL、OAuth 回调和 Webhook。",
+    "empty": "未发现公共域名。请将内部服务保持为私有，仅为需要公共访问的服务添加域名。",
+    "next": "确认流量切换前",
+    "test": "打开“域名与路由”以检查导入的路由。按需添加测试域名，并检查应用及其数据。",
+    "dns": "在“域名与路由”中检查自定义域名并添加缺失的域名。然后在 DNS 提供商处准确应用显示的记录，或通过支持的连接检查自动 DNS 配置。替换旧的路由记录，保留无关记录。",
+    "verify": "在 OpenShip 中验证 DNS 和 HTTPS，然后测试公共 URL，再确认完成。",
+    "openDomains": "检查域名与 DNS"
+  },
   "wizard": {
     "edgeReview": {
       "detected": "已检测到 {proxy}",

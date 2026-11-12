@@ -71,6 +71,12 @@ website.
   destination review, progress reporting and cancellation.
 - Keep migration environment fields visible while entering missing secrets, with
   a plain section heading instead of a nested disclosure that collapses during editing.
+- Preserve source project boundaries during platform imports: one project contains
+  its native services, private DNS, encrypted service environments and separate volumes.
+  Keep service environment values scoped correctly during source builds too.
+- Carry imported custom domains and aliases through the existing migration routing
+  flow, pending normal verification. Show DNS cutover guidance and replacement
+  notices for Railway and Vercel URLs in review and saved migration progress.
 - Restore portable instance exports with their server credentials and workspace
   ownership. Normalize restored data for the destination schema and keep the
   instance import and server selection views consistent.

@@ -62,6 +62,7 @@ export const PlatformMigrationReviewSchema = Type.Object(
   {
     draftId: id,
     targetServerId: id,
+    projectName: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
     services: Type.Array(serviceChoice, { minItems: 1, maxItems: 50 }),
   },
   { additionalProperties: false },

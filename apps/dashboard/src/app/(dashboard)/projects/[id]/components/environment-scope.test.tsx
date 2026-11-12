@@ -8,6 +8,7 @@ import { ProjectSettingsProvider, useProjectSettings } from "@/context/ProjectSe
 import { BuildSettings } from "./BuildSettings";
 import { AppConfiguration } from "./AppConfiguration";
 import { ApplicationSettingsForm } from "@/components/project-settings/ApplicationSettingsForm";
+import { ProjectEnvironmentPanel } from "@/components/project-settings/ProjectEnvironmentPanel";
 import { ProjectApplicationPanel } from "./services/ProjectApplicationPanel";
 
 const api = vi.hoisted(() => ({
@@ -269,8 +270,7 @@ describe("project environment access (GH-881)", () => {
   ])(
     "rebuilds saved environment changes for $framework on $deployTarget",
     async ({ framework, ...extra }) => {
-      await mountProject(framework, <BuildSettings />, extra);
-      await act(async () => button("Edit").click());
+      await mountProject(framework, <ProjectApplicationPanel />, extra);
       await editInput(
         [...document.querySelectorAll("input")].find((input) => input.value === "old")!,
         "new",
@@ -293,8 +293,7 @@ describe("project environment access (GH-881)", () => {
     },
     { framework: "docker-compose", deployTarget: "cloud" as const, options: {} },
   ])("preserves runtime refresh for $framework on $deployTarget", async ({ framework, ...extra }) => {
-    await mountProject(framework, <BuildSettings />, extra);
-    await act(async () => button("Edit").click());
+    await mountProject(framework, <ProjectEnvironmentPanel />, extra);
     await editInput(
       [...document.querySelectorAll("input")].find((input) => input.value === "old")!,
       "new",
@@ -307,8 +306,7 @@ describe("project environment access (GH-881)", () => {
 
   it("keeps a static site's saved values available when starting the rebuild fails", async () => {
     api.trigger.mockRejectedValueOnce(new Error("unavailable"));
-    await mountProject("static", <BuildSettings />, { options: { workloadType: "static" } });
-    await act(async () => button("Edit").click());
+    await mountProject("static", <ProjectApplicationPanel />, { options: { workloadType: "static" } });
     await editInput(
       [...document.querySelectorAll("input")].find((input) => input.value === "old")!,
       "new",
@@ -329,6 +327,7 @@ describe("project environment access (GH-881)", () => {
   it.each(["nextjs", "docker-compose"])(
     "keeps %s Settings reachable and edits shared project inputs without overwriting secrets",
     async (framework) => {
+      api.services.mockResolvedValue({ success: true, services: [{ id: "cache", name: "redis", kind: "compose" }] });
       await mountProject(framework);
       expect(host.querySelector('nav a[href$="/advanced"]')).not.toBeNull();
       expect(host.textContent).toContain("Project environment");
@@ -400,15 +399,21 @@ describe("permanent configuration ownership", () => {
   const saved = { id: "project", name: "Test", slug: "test", description: "", framework: "nextjs",
     runtimeMode: "bare", ...options, port: 3000 };
 
-  it.each([false, true])("keeps project limits and the shared editor in Settings with companions=%s", async (companions) => {
+  it.each([false, true])("opens the correct environment scope from Settings with companions=%s", async (companions) => {
     if (companions) api.services.mockResolvedValue({ success: true, services: [{ id: "db", name: "postgres", kind: "compose" }] });
     await mountProject("nextjs", <BuildSettings />, { options });
     expect(host.querySelectorAll('section[aria-label="Machine power"]')).toHaveLength(1);
     expect(host.textContent).toContain("Project environment");
-    expect(host.querySelector('a[href$="/application/env"]')).toBeNull();
     expect(host.querySelector('a[href$="/application/settings"]')).not.toBeNull();
-    await act(async () => button("Edit").click());
-    expect(document.querySelector('[data-modal-surface] input[value="BUILD_VALUE"]')).not.toBeNull();
+    if (companions) {
+      expect(host.querySelector('a[href$="/application/env"]')).toBeNull();
+      await act(async () => button("Edit").click());
+      expect(document.querySelector('[data-modal-surface] input[value="BUILD_VALUE"]')).not.toBeNull();
+    } else {
+      expect(host.querySelector('a[href="/projects/project/services/application/env"]')?.textContent).toBe("Environment");
+      expect(document.querySelector('[data-modal-surface]')).toBeNull();
+      expect(api.getEnv).not.toHaveBeenCalled();
+    }
   });
 
   it("saves only edited app configuration inline without touching environment or deploying", async () => {

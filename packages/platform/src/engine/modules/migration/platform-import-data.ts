@@ -228,6 +228,7 @@ export async function copyPlatformData(input: {
   runId: string;
   service: PlannedImportService;
   projectId: string;
+  serviceId: string;
   deploymentId?: string;
   signal: AbortSignal;
   log: (text: string) => void;
@@ -245,26 +246,22 @@ export async function copyPlatformData(input: {
     let sourceConnection: Awaited<ReturnType<typeof openRailwayDataSource>> | undefined;
     try {
       const targetExecutor = resolveExecutor(runtime.name, runtime);
-      const row = (await repos.service.listByProject(project.id))[0];
+      const row = (await repos.service.listByProject(project.id)).find(
+        (service) => service.id === input.serviceId,
+      );
+      if (!row)
+        throw new AppError(
+          "The destination service no longer matches this import. Review its storage before retrying.",
+          409,
+          "IMPORT_TARGET_SERVICE_MISSING",
+        );
       const deployment = input.deploymentId
         ? await repos.deployment.findById(input.deploymentId)
         : undefined;
-      const target: ServiceHandle = row
-        ? await serviceHandleFor(row, {
-            projectSlug: project.slug,
-            containerId: deployment ? await containerIdForService(deployment, row) : null,
-          })
-        : {
-            id: project.id,
-            projectId: project.id,
-            name: project.slug,
-            image: null,
-            env: service.source.env,
-            volumes: service.create.volumes ?? [],
-            containerId: deployment?.containerId ?? null,
-            projectSlug: project.slug,
-            namespaceVolumes: true,
-          };
+      const target = await serviceHandleFor(row, {
+        projectSlug: project.slug,
+        containerId: deployment ? await containerIdForService(deployment, row) : null,
+      });
       const source = providerHandle(service.source);
       let sourceExecutor: BackupExecutor;
       if (service.source.externalDatabase) {

@@ -4,8 +4,8 @@ description: Connect a platform, review its services and data, and import throug
 ---
 
 Open **New project → Import existing project** and choose **Railway** or **Vercel**.
-Railway imports the complete selected project environment in one operation, with each service
-becoming an Openship project. Repository access, deployments, private service
+Railway imports the complete selected environment into one Openship project containing its
+services. Importing another source project creates a separate project. Repository access, deployments, private service
 connections, data transfer and destination selection use the same workflows as other projects.
 
 ## Connect the source
@@ -29,7 +29,7 @@ register a temporary SSH key and read the attached storage. A metadata-only toke
 ## Discover and review
 
 Select the source project and environment. Railway keeps all services in the import so their
-writers, dependencies and storage move together. Open **Configure** to inspect the repository or image, destination name,
+writers, dependencies and storage move together. Name the destination project once. Open **Configure** to inspect each service's repository or image, service name,
 variables, storage and domains. Missing secrets open automatically. Private repositories
 also need [GitHub access](/docs/guides/git-authentication) in Openship.
 
@@ -41,7 +41,7 @@ health checks and restart policies are preserved when they can be represented in
 
 Exportable variables stay on the server. Railway sealed values and Vercel Secret/Sensitive
 values need to be entered again. Optional variables can be excluded. Railway private addresses
-become ordinary Openship project connections, preserving the original protocol, credentials,
+resolve through service names on the project's private network, preserving the original protocol, credentials,
 database name and URL options. Unresolved provider references are
 shown as blockers instead of being silently copied.
 
@@ -73,22 +73,50 @@ For an external PostgreSQL copy, pause writers yourself and keep them paused thr
   This is not an export of every provider feature. Vercel Blob, Edge Config, provider-specific
   functions and external storage other than supported PostgreSQL copies need separate handling. Cron
   services, multiple replicas, Railway pre-deploy commands, multiple public ports, non-GitHub
-  repositories, unsupported build settings and unresolved connections block review. Sleeping
-  services run continuously after import. Dependency cycles and variables containing several private
-  service addresses require review. External PostgreSQL logical copies do not include other
+  repositories, unsupported build settings and unresolved connections block review. Source-built
+  services must share one repository and deployed revision; project-wide release commands require
+  review. Sleeping services run continuously after import. Dependency cycles require review;
+  variables containing several private service addresses are preserved with their new service names.
+  External PostgreSQL logical copies do not include other
   databases or server-wide roles; a Railway volume copy preserves the whole persisted directory.
 </Callout>
 
 ## Import, verify and finish
 
-Start the reviewed import. The configuration is checked again, destination projects are allocated,
+Start the reviewed import. The configuration is checked again, one destination project and its services are created,
 and the source lifecycle and storage copy are recorded in a recovery checkpoint. The saved migration
-page shows progress, deployment logs and links to every project and survives a browser refresh.
+page shows progress, deployment logs and a link to the imported project and survives a browser refresh.
 Dependencies deploy before their consumers, and imported containers must pass runtime verification.
 
-Open the imported projects, verify their data, and add a test domain in **Domains & Routes**.
-Then move your custom domains through the normal domain flow and confirm cutover. Provider-owned
-domains such as `vercel.app` addresses cannot be transferred.
+### Move domains and traffic
+
+Importing does not change DNS or move public traffic. **Domains & DNS** in the review and saved
+migration page lists each discovered hostname alongside its service and the required action:
+
+- **Update DNS:** a custom domain you can keep, such as `app.example.com`.
+- **Replace URL:** a provider-owned address, such as `my-app.up.railway.app` or `my-app.vercel.app`.
+  These addresses cannot be transferred to OpenShip. Choose a new address and update application
+  URLs, OAuth callback URLs, webhook destinations and other clients that use the old address.
+
+After the import reaches **Verify apps and move traffic**:
+
+1. Choose **Review domains & DNS** to open the imported project's **Domains & Routes**.
+   Custom domains and aliases are already assigned to their matching services using the same
+   routing flow as server/Docker migration. They start unverified; importing never marks them
+   verified on your behalf. Add a test domain if needed and verify the app and its copied data.
+2. Open the DNS settings for each imported custom domain. OpenShip shows the exact DNS
+   records for that destination, including any ownership verification records. Apply those
+   records at your DNS provider, replacing the old routing records for that hostname.
+   Keep unrelated records, including email records. If you have a supported DNS connection,
+   you can review and apply the changes through **Auto-configure DNS** in the same flow.
+3. Use OpenShip's domain verification, wait for DNS propagation and HTTPS readiness, and test
+   the public URLs. Only then choose **Confirm cutover complete** on the migration page.
+
+The destination can be OpenShip Cloud or your server; use the records shown for that destination
+instead of copying the old Railway or Vercel target. See the
+[custom-domain guide](/docs/guides/custom-domains) for DNS setup and verification.
+Keep databases and other internal services private unless they explicitly need public access.
+Confirmation records your review; it does not change DNS or automatically prove that traffic has moved.
 
 Source services, domains and data remain at the provider. Retire them there after verification.
 A failed Railway import retains copied data and configuration, stops the destination workloads

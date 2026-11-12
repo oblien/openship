@@ -186,6 +186,170 @@ afterEach(async () => {
 });
 
 describe("platform import flow", () => {
+  it("reviews custom domains and provider URLs before starting the import", async () => {
+    h.review.mockResolvedValue({
+      ...plan,
+      services: plan.services.map((service) => ({
+        ...service,
+        domains:
+          service.id === "web"
+            ? [
+                { hostname: "shop.example.com", portable: true },
+                { hostname: "shop.up.railway.app", portable: false },
+              ]
+            : [],
+      })),
+    });
+    await render();
+    await selectServices();
+    await click("Check import");
+    const rows = [...host.querySelectorAll("li")];
+    expect(
+      rows.find((row) => row.textContent?.includes("shop.example.com"))?.textContent,
+    ).toContain("Update DNS");
+    expect(
+      rows.find((row) => row.textContent?.includes("shop.up.railway.app"))?.textContent,
+    ).toContain("Replace URL");
+    expect(host.textContent).toContain("Importing does not change DNS or move traffic");
+    expect(host.textContent).toContain("Provider-owned URLs cannot move to OpenShip");
+    expect(host.textContent).toContain("OAuth callbacks and webhooks");
+    expect(h.start).not.toHaveBeenCalled();
+    expect(host.querySelector('a[href$="/domains"]')).toBeNull();
+  });
+
+  it.each([
+    ["railway", "shop.up.railway.app"],
+    ["vercel", "shop.vercel.app"],
+  ] as const)(
+    "restores %s domain guidance and links each imported project once",
+    async (provider, providerDomain) => {
+      h.getMigration.mockResolvedValue({
+        run: {
+          id: "run",
+          status: "awaiting_cutover",
+          projectName: "Commerce",
+          importedProjects: { web: "commerce", db: "commerce", api: "legacy-api" },
+          logs: "",
+          confirmationToken: "confirmation",
+          inputSnapshot: {
+            services: [
+              {
+                id: "web",
+                name: "Storefront",
+                domains: [
+                  { hostname: "shop.example.com", portable: true },
+                  { hostname: providerDomain, portable: false },
+                ],
+              },
+              { id: "db", name: "PostgreSQL", domains: [] },
+              {
+                id: "api",
+                name: "API",
+                domains: [{ hostname: "api.example.com", portable: true }],
+              },
+              {
+                id: "external",
+                name: "Retained service",
+                domains: [{ hostname: "external.example.com", portable: true }],
+              },
+            ],
+          },
+        },
+      });
+      await render(provider, "run");
+      const rows = [...host.querySelectorAll("li")];
+      const custom = rows.find((row) => row.textContent?.includes("shop.example.com"));
+      expect(custom?.textContent).toContain("Storefront");
+      expect(custom?.textContent).toContain("Update DNS");
+      expect(rows.find((row) => row.textContent?.includes(providerDomain))?.textContent).toContain(
+        "Replace URL",
+      );
+      expect(
+        rows.find((row) => row.textContent?.includes("api.example.com"))?.textContent,
+      ).toContain("API");
+      expect(host.textContent).not.toContain("external.example.com");
+      expect(host.querySelectorAll('a[href="/projects/commerce/domains"]')).toHaveLength(1);
+      expect(host.querySelectorAll('a[href="/projects/legacy-api/domains"]')).toHaveLength(1);
+      expect(host.textContent).toContain("apply the exact DNS records shown");
+      expect(host.textContent).toContain("Verify DNS and HTTPS");
+      expect(h.discover).not.toHaveBeenCalled();
+      expect(h.confirmCutover).not.toHaveBeenCalled();
+      await click("Confirm cutover complete");
+      expect(h.confirmCutover).toHaveBeenCalledWith("run", "confirmation", false, false);
+    },
+  );
+
+  it("does not request custom DNS changes when only a provider URL needs replacing", async () => {
+    h.getMigration.mockResolvedValue({
+      run: {
+        id: "run",
+        status: "awaiting_cutover",
+        projectName: "Website",
+        logs: "",
+        importedProjects: { web: "website" },
+        inputSnapshot: {
+          services: [
+            {
+              id: "web",
+              name: "Web",
+              domains: [{ hostname: "website.up.railway.app", portable: false }],
+            },
+          ],
+        },
+      },
+    });
+    await render("railway", "run");
+    expect(host.textContent).toContain("Replace URL");
+    expect(host.textContent).toContain("Choose a new address");
+    expect(host.textContent).not.toContain("Update DNS");
+    expect(host.textContent).not.toContain("Add your custom domains");
+    expect(button("Confirm cutover complete").disabled).toBe(true);
+  });
+
+  it("keeps internal services private and handles saved runs without domain inventory", async () => {
+    h.getMigration.mockResolvedValue({
+      run: {
+        id: "run",
+        status: "awaiting_cutover",
+        projectName: "Jobs",
+        logs: "",
+        importedProjects: { worker: "jobs", db: "jobs" },
+        inputSnapshot: {
+          services: [
+            { id: "worker", name: "Worker", domains: [] },
+            { id: "db", name: "Database" },
+          ],
+        },
+      },
+    });
+    await render("railway", "run");
+    expect(host.textContent).toContain("Keep internal services private");
+    expect(host.textContent).not.toContain("Add your custom domains");
+    expect(host.querySelectorAll('a[href="/projects/jobs/domains"]')).toHaveLength(1);
+  });
+
+  it("shows one imported project when several source services share it", async () => {
+    h.getMigration.mockResolvedValue({
+      run: {
+        id: "run",
+        status: "succeeded",
+        projectName: "Commerce",
+        importedProjects: { app: "commerce", db: "commerce", redis: "commerce" },
+        logs: "",
+        inputSnapshot: {
+          services: [
+            { id: "app", name: "API" },
+            { id: "db", name: "PostgreSQL" },
+          ],
+        },
+      },
+    });
+    await render("railway", "run");
+    expect(host.querySelectorAll('a[href="/projects/commerce"]')).toHaveLength(1);
+    expect(host.textContent).toContain("Imported project");
+    expect(host.textContent).toContain("Commerce");
+  });
+
   it("keeps an accepted stop visible through stale polls until the worker finishes", async () => {
     vi.useFakeTimers();
     let current = {
@@ -369,18 +533,20 @@ describe("platform import flow", () => {
     await render();
     await click("Choose services");
     expect(button("Check import").disabled).toBe(true);
+    expect(host.textContent).toContain("Services stay together in one project");
     await fill(host.querySelector<HTMLInputElement>('input[type="password"]')!, "fixture-secret");
     await click("Check import");
     expect(h.review).toHaveBeenCalledWith(
       expect.objectContaining({
         targetServerId: "server-a",
+        projectName: "Production",
         services: expect.arrayContaining([
           expect.objectContaining({ id: "web", env: { API_TOKEN: "fixture-secret" } }),
         ]),
       }),
     );
     expect(h.start).not.toHaveBeenCalled();
-    expect(button("Import 2 projects").disabled).toBe(true);
+    expect(button("Import project").disabled).toBe(true);
     await act(async () => host.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
     let resolve!: (value: unknown) => void;
     h.start.mockImplementation(
@@ -389,7 +555,7 @@ describe("platform import flow", () => {
           resolve = done;
         }),
     );
-    const start = button("Import 2 projects");
+    const start = button("Import project");
     await act(async () => {
       start.click();
       start.click();
@@ -427,7 +593,7 @@ describe("platform import flow", () => {
     expect(h.review).toHaveBeenLastCalledWith(
       expect.objectContaining({ targetServerId: "server-b" }),
     );
-    expect(button("Import 2 projects").disabled).toBe(true);
+    expect(button("Import project").disabled).toBe(true);
   });
 
   it("returns to editable services when a review request fails", async () => {

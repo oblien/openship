@@ -1,4 +1,18 @@
 {
+  "platformDomains": {
+    "title": "Domains & DNS",
+    "intro": "Importing does not change DNS or move traffic.",
+    "customAction": "Update DNS",
+    "providerAction": "Replace URL",
+    "customHint": "Custom domains are carried into Domains & Routes on the matching service. After checking the imported app, review its DNS records and complete verification.",
+    "providerHint": "Provider-owned URLs cannot move to OpenShip. Choose a new address and update application URLs, OAuth callbacks and webhooks that use the old one.",
+    "empty": "No public domains were discovered. Keep internal services private; add a domain only if a service needs public access.",
+    "next": "Before confirming cutover",
+    "test": "Open Domains & Routes to review the imported routes. Add a test domain if needed and check the app and its data.",
+    "dns": "Review your custom domains in Domains & Routes, adding any missing domains. Then apply the exact DNS records shown at your DNS provider, or review Auto-configure DNS with a supported connection. Replace the old routing records; keep unrelated records.",
+    "verify": "Verify DNS and HTTPS in OpenShip, then test the public URLs before confirming completion.",
+    "openDomains": "Review domains & DNS"
+  },
   "wizard": {
     "title": "Migrate apps",
     "intro": "Inspect this server's running apps and adopt them into OpenShip. It's read-only — nothing changes on the server until you deploy.",

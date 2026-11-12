@@ -46,7 +46,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
         illustration: "compose-multi-service",
         title: "Your services, together",
         description:
-          "Import the complete selected project environment. Each service becomes an OpenShip project, using its GitHub source or portable registry image.",
+          "Import the complete selected environment into one OpenShip project. Its services stay together, using compatible GitHub sources or portable registry images.",
       },
       {
         illustration: "persistent-storage",
@@ -58,7 +58,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
         illustration: "private-networking",
         title: "Connections between services",
         description:
-          "Railway private addresses become OpenShip project connections. Credentials, database names and connection options stay with them.",
+          "Railway private addresses resolve through service names on the project's private network. Credentials, database names and connection options stay with them.",
       },
       {
         illustration: "secrets-credentials",
@@ -102,7 +102,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       },
       {
         q: "Can every Railway project move unchanged?",
-        a: "Review checks compatibility before import. Scheduled jobs, multiple replicas, pre-deploy commands, multiple public ports, unsupported build settings and non-GitHub repositories need changes first. Unresolved connections and dependency cycles also need attention. Sealed variables must be re-entered; sleeping services run continuously after import.",
+        a: "Review checks compatibility before import. Source-built services must share a GitHub repository and deployed revision. Scheduled jobs, multiple replicas, pre-deploy commands, multiple public ports and unsupported build settings need changes first. Unresolved connections and dependency cycles also need attention. Sealed variables must be re-entered; sleeping services run continuously after import.",
       },
       {
         q: "Will my application be offline?",

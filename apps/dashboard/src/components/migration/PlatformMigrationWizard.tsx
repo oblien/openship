@@ -63,6 +63,7 @@ export function PlatformMigrationWizard({
   const [projectId, setProjectId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [discovery, setDiscovery] = useState<PlatformDiscovery>();
+  const [projectName, setProjectName] = useState("");
   const [choices, setChoices] = useState<Record<string, ImportChoice>>({});
   const [targetId, setTargetId] = useState(initialTargetId ?? "");
   const [targetName, setTargetName] = useState("");
@@ -263,6 +264,7 @@ export function PlatformMigrationWizard({
       const data = await platformMigrationApi.discover({ connectionId, projectId, environmentId });
       if (!alive.current) return;
       setDiscovery(data);
+      setProjectName(data.projectName);
       setChoices(
         Object.fromEntries(
           data.services.map((service) => [
@@ -289,6 +291,7 @@ export function PlatformMigrationWizard({
       const result = await platformMigrationApi.review({
         draftId: discovery!.draftId,
         targetServerId: targetId,
+        projectName,
         services: Object.values(choices)
           .filter((choice) => choice.selected)
           .map(({ selected: _selected, ...choice }) => choice),
@@ -461,6 +464,11 @@ export function PlatformMigrationWizard({
           busy={busy}
           targetId={targetId}
           targetReady={targetReady}
+          projectName={projectName}
+          onProjectName={(name) => {
+            setProjectName(name);
+            invalidateReview();
+          }}
           onChoose={(id, patch) => {
             setChoices((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
             invalidateReview();

@@ -1,5 +1,5 @@
 import { createHash, randomUUID, randomBytes } from "node:crypto";
-import { AppError, normalizeProjectRootDirectory, validateImageReference } from "@repo/core";
+import { AppError, normalizeAliasStrict, slugify, normalizeProjectRootDirectory, validateImageReference } from "@repo/core";
 import type {
   PlatformDiscovery,
   PlatformMigrationSource,
@@ -24,6 +24,7 @@ import {
 } from "./providers/types";
 import { discoverExternalDatabases } from "./providers/external-databases";
 import { resolveRailwayBindings } from "./providers/railway-wiring";
+import { platformImportProject } from "./platform-import-project";
 
 export interface ImportBinding {
   sourceId: string;
@@ -45,6 +46,7 @@ export interface PrivateImportPlan {
   inventory: ProviderInventory;
   fingerprint: string;
   targetServerId: string;
+  project: TEnsureProjectBody;
   services: PlannedImportService[];
   requiresWritePause: boolean;
   requiresWorkerPause: boolean;
@@ -134,12 +136,6 @@ function publicInventory(inventory: ProviderInventory) {
     warnings: inventory.warnings,
   };
 }
-const slug = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50);
 const ref = /^\$\{\{([^{}]+)\.([A-Za-z_][A-Za-z0-9_]*)\}\}$/;
 const databaseUrlKeys = {
   pg_dump: ["DATABASE_URL", "DATABASE_PRIVATE_URL", "PRIVATE_URL"],
@@ -258,13 +254,14 @@ export async function reviewPlatform(
     if (!source || selected.has(choice.id))
       throw new AppError("Choose each discovered service once", 400, "IMPORT_SELECTION_INVALID");
     const name = choice.name.trim();
-    if (!slug(name) || names.has(slug(name)))
+    const serviceName = normalizeAliasStrict(name);
+    if (!serviceName || names.has(serviceName))
       throw new AppError(
-        "Choose a distinct name for each imported project",
+        "Choose a distinct name for each imported service",
         400,
         "IMPORT_NAME_INVALID",
       );
-    names.add(slug(name));
+    names.add(serviceName);
     if (choice.data === "external" && !source.externalDatabase)
       throw new AppError(
         "Only an external database can be kept as an external connection",
@@ -276,11 +273,10 @@ export async function reviewPlatform(
       data: choice.data,
       bindings: [],
       environment: {},
-      create: { name, serverId: input.targetServerId },
+      create: { name: serviceName, internalAlias: serviceName, serverId: input.targetServerId },
       ...(inventory.provider === "railway" ? { transfer: "cold-volume" as const } : {}),
     };
     selected.set(source.id, service);
-    if (inventory.provider === "railway") service.create.internalAlias = `import-${randomUUID()}`;
     if (choice.data === "external") {
       source.blockers = [];
       continue;
@@ -312,6 +308,7 @@ export async function reviewPlatform(
         POSTGRES_PASSWORD: randomBytes(32).toString("base64url"),
         POSTGRES_DB: decodeURIComponent(url.pathname.slice(1)) || "postgres",
       };
+      source.port = 5432;
     }
     for (const variable of source.variables)
       if (variable.required && !Object.hasOwn(source.env, variable.key))
@@ -381,7 +378,9 @@ export async function reviewPlatform(
           ),
       ),
     );
-    const volumes = source.volumes.map((volume, index) => `data-${index}:${volume.mountPath}`);
+    const volumes = source.volumes.map(
+      (volume, index) => `${service.create.name}-data-${index}:${volume.mountPath}`,
+    );
     service.create.readiness = source.readiness;
     const composeService = {
       name: "app",
@@ -526,6 +525,10 @@ export async function reviewPlatform(
   };
   for (const id of selected.keys()) visit(id);
   const services = [...selected.values()];
+  const projectName = (input.projectName ?? inventory.projectName).trim();
+  if (!slugify(projectName))
+    throw new AppError("Choose a name for the imported project", 400, "IMPORT_NAME_INVALID");
+  const project = platformImportProject(projectName, input.targetServerId, services);
   const plan: PrivateImportPlan = {
     id: randomUUID(),
     organizationId: ctx.organizationId,
@@ -533,6 +536,7 @@ export async function reviewPlatform(
     inventory: draft.inventory,
     fingerprint: inventoryFingerprint(draft.inventory),
     targetServerId: input.targetServerId,
+    project,
     services,
     ...(inventory.provider === "railway" ? { sourceControl: "railway-project" as const } : {}),
     requiresWritePause: services.some(
@@ -554,6 +558,7 @@ export async function reviewPlatform(
   return {
     planId: plan.id,
     ...publicInventory({ ...inventory, services: services.map((s) => s.source) }),
+    projectName,
     targetServerId: plan.targetServerId,
     requiresWritePause: plan.requiresWritePause,
     requiresWorkerPause: plan.requiresWorkerPause,
@@ -567,6 +572,8 @@ export async function loadReviewedImport(
   id: string,
 ): Promise<PrivateImportPlan> {
   const plan = await get<PrivateImportPlan>(ctx, "plan", id);
+  if (!plan.project)
+    throw new AppError("Review this import again before starting it.", 409, "IMPORT_REVIEW_EXPIRED");
   if (!plan.ready)
     throw new AppError("Resolve the import review before starting", 409, "IMPORT_NOT_READY");
   const access = await getProviderAccess(ctx.organizationId, plan.inventory.source.connectionId);

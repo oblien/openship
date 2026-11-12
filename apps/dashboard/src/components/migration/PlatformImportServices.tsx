@@ -28,6 +28,8 @@ export function PlatformImportServices({
   busy,
   targetId,
   targetReady,
+  projectName,
+  onProjectName,
   onChoose,
   onTarget,
   onTargetReady,
@@ -40,6 +42,8 @@ export function PlatformImportServices({
   busy: boolean;
   targetId: string;
   targetReady: boolean;
+  projectName: string;
+  onProjectName: (name: string) => void;
   onChoose: (id: string, patch: Partial<ImportChoice>) => void;
   onTarget: (id: string, name: string) => void;
   onTargetReady: (ready: boolean) => void;
@@ -115,6 +119,17 @@ export function PlatformImportServices({
         {sidebarHeader}
         <div className="space-y-5">
           <h3 className="font-semibold">Import destination</h3>
+          <label className="block text-xs font-medium">
+            Project name
+            <Input
+              variant="filled"
+              className="mt-2"
+              value={projectName}
+              maxLength={100}
+              disabled={busy}
+              onChange={(event) => onProjectName(event.target.value)}
+            />
+          </label>
           <ServerSelector
             forDeployment
             value={targetId}
@@ -126,7 +141,11 @@ export function PlatformImportServices({
           />
           <dl className="space-y-3 text-sm">
             <div className="flex items-center justify-between">
-              <dt className="text-muted-foreground">New projects</dt>
+              <dt className="text-muted-foreground">New project</dt>
+              <dd>{imports.length ? 1 : 0}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-muted-foreground">Services</dt>
               <dd>{imports.length}</dd>
             </div>
             <div className="flex items-center justify-between">
@@ -149,7 +168,14 @@ export function PlatformImportServices({
           )}
           <Button
             className="w-full"
-            disabled={busy || !targetReady || !targetId || !imports.length || missing > 0}
+            disabled={
+              busy ||
+              !targetReady ||
+              !targetId ||
+              !projectName.trim() ||
+              !imports.length ||
+              missing > 0
+            }
             onClick={onReview}
           >
             {busy ? (
@@ -165,8 +191,8 @@ export function PlatformImportServices({
           </p>
         </div>
         <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-          Each selected service becomes a project. Configure test domains after import, then move
-          production traffic.
+          Services stay together in one project on its private network. Configure test domains after
+          import, then move production traffic.
         </p>
       </aside>
     </div>
@@ -252,7 +278,7 @@ function ImportServiceCard({
         <div id={regionId} className="space-y-5 border-t border-border/50 p-4 sm:p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-xs font-medium">
-              Project name
+              Service name
               <Input
                 variant="filled"
                 className="mt-2"

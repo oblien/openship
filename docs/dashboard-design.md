@@ -120,8 +120,9 @@ form reuses these same fields inline, with a separate save action.
 Apps & Services lists the primary app from the start. Adding infrastructure keeps
 its identity, route and detail tabs. App Settings owns build and runtime configuration;
 project Settings always owns shared environment, resource limits and build-cache policy.
-Workload Environment edits inline through the shared environment panel. Project Settings
-opens that same editor for shared variables; service overrides retain their source review. Saving never
+Workload Environment edits inline through the shared environment panel. For a single app,
+Project Settings links to its Environment tab, like the app Settings shortcut. Projects with
+companion services open the shared-variable editor; service overrides retain their source review. Saving never
 deploys implicitly. App and service Domains show their own routes; routing policy and
 route rules stay in project Domains. Keep these owners stable as services are added.
 Build-location choices and summaries describe execution, independently of source cloning.
@@ -1028,7 +1029,15 @@ from an existing run. Keep loading, fetch errors and empty inventory distinct, a
 the selected destination's validation and transfer review before enabling Migrate.
 
 Platform imports share three steps: Connect, Select services, and Review & import. Show
-provider marks through `AppLogo` and service marks through `ServiceIcon`. Reuse the Connections
+one destination project for each source project, with its selected services and private
+connections kept together. Name the project once in the destination sidebar; service cards
+edit service names. Review and progress link to that project without repeating it for each service.
+Review and saved progress share a Domains & DNS guide, using the provider's recorded domain
+ownership per service. Imported custom domains are saved through the normal migration routing
+path, initially unverified. Distinguish domains that need DNS changes from provider URLs that
+need new addresses. Link once per imported project to the existing Domains & Routes flow for
+destination records and verification; do not duplicate DNS editors or imply cutover is automatic.
+Show provider marks through `AppLogo` and service marks through `ServiceIcon`. Reuse the Connections
 form for authorization and tokens, with an explicit access test and retry. The provider import
 heading and Change source action belong in one compact `bg-card p-5` sidebar
 throughout setup and review. Use the standard 340px right column across these steps, with
