@@ -134,7 +134,7 @@ async function review(
 }
 
 describe("reviewed platform imports", () => {
-  it("keeps secrets server-side and replaces provider database addresses with shared project bindings", async () => {
+  it("keeps secrets server-side and replaces provider database addresses with native service aliases", async () => {
     const plan = await review();
     expect(plan.ready).toBe(true);
     expect(plan.requiresWritePause).toBe(true);
@@ -144,10 +144,14 @@ describe("reviewed platform imports", () => {
       {
         sourceId: "db",
         envKey: "DATABASE_URL",
-        valueTemplate: "postgres://app:source-secret@${host}/app",
       },
     ]);
-    expect(privatePlan.services[1].environment).not.toHaveProperty("DATABASE_URL");
+    expect(privatePlan.services[1].environment.DATABASE_URL).toBe(
+      "postgres://app:source-secret@database/app",
+    );
+    expect(privatePlan.project.name).toBe("Project");
+    expect(privatePlan.project.services?.map((row) => row.name)).toEqual(["database", "website"]);
+    expect(JSON.stringify(privatePlan.project)).not.toContain("source-secret");
     expect(privatePlan.services[0].environment.PGHOST).toBe(
       privatePlan.services[0].create.internalAlias,
     );
@@ -174,6 +178,33 @@ describe("reviewed platform imports", () => {
     await expect(loadReviewedImport(ctx, plan.planId)).rejects.toMatchObject({
       code: "IMPORT_SOURCE_CHANGED",
     });
+  });
+  it("names storage per service inside one destination project", async () => {
+    inventory.services[1].volumes = [{ id: "files", mountPath: "/data" }];
+    const plan = await loadReviewedImport(ctx, (await review()).planId);
+    expect(plan.project.services?.flatMap((service) => service.volumes ?? [])).toEqual([
+      "database-data-0:/var/lib/postgresql/data",
+      "website-data-0:/data",
+    ]);
+    expect(plan.project.services?.[1].dependsOn).toEqual(["database"]);
+  });
+  it("blocks incompatible Git sources instead of splitting the source project", async () => {
+    inventory.services = ["one", "two"].map((id) =>
+      service({
+        id,
+        name: id,
+        image: undefined,
+        repository: `owner/${id}`,
+        commit: "a".repeat(40),
+      }),
+    );
+    const result = await review(
+      inventory.services.map((service) => ({ id: service.id, name: service.name, data: "empty" })),
+    );
+    expect(result.ready).toBe(false);
+    expect(result.services.flatMap((service) => service.blockers).join(" ")).toContain(
+      "one Git source",
+    );
   });
   it("ignores pagination order and changing volume size, but never ignores changed configuration", () => {
     const next = structuredClone(inventory);
@@ -202,14 +233,20 @@ describe("reviewed platform imports", () => {
     const reviewed = await review();
     expect(reviewed.ready).toBe(true);
     expect(
-      (await loadReviewedImport(ctx, reviewed.planId)).services[1].bindings[0].valueTemplate,
-    ).toBe("postgres://app:source-secret@${host}/app");
+      (await loadReviewedImport(ctx, reviewed.planId)).services[1].environment.DATABASE_URL,
+    ).toBe("postgres://app:source-secret@database/app");
   });
-  it("rejects conflicting project names and enforces destination access before planning", async () => {
+  it("rejects conflicting service names and enforces destination access before planning", async () => {
     await expect(
       review([
         { id: "db", name: "Same Name", data: "copy" },
         { id: "app", name: "same-name", data: "empty" },
+      ]),
+    ).rejects.toMatchObject({ code: "IMPORT_NAME_INVALID" });
+    await expect(
+      review([
+        { id: "db", name: "api.v2", data: "copy" },
+        { id: "app", name: "api v2", data: "empty" },
       ]),
     ).rejects.toMatchObject({ code: "IMPORT_NAME_INVALID" });
     h.authorize.mockRejectedValue(new Error("forbidden"));
@@ -252,7 +289,7 @@ describe("reviewed platform imports", () => {
       { sourceId: external.id, envKey: "DATABASE_URL" },
     ]);
     expect(privatePlan.services[1].create.services?.[0].volumes).toEqual([
-      "data-0:/var/lib/postgresql",
+      "database-data-0:/var/lib/postgresql",
     ]);
     // Supplying secrets does not falsely report provider configuration drift.
     expect(h.discover).toHaveBeenCalledTimes(2);
@@ -281,6 +318,7 @@ it("uses the existing Compose build for a custom Dockerfile and preserves readin
     readiness: { path: "/health" },
     services: [{ build: "apps/api", dockerfile: "docker/production.Dockerfile" }],
   });
+  expect(plan.project.services?.[0].advanced).toMatchObject({ readiness: { path: "/health", port: 3000 } });
   expect(h.info).not.toHaveBeenCalled();
 });
 it("blocks an unavailable custom Dockerfile before import", async () => {

@@ -58,11 +58,12 @@ describe("Railway project wiring", () => {
       {
         sourceId: "store",
         envKey: "ARBITRARY_SETTING",
-        valueTemplate: "custom://alice:password@${host}:7878/second-db?option=1",
       },
     ]);
     expect(store.source.port).toBe(7878);
-    expect(app.source.env).toEqual({});
+    expect(app.source.env).toEqual({
+      ARBITRARY_SETTING: "custom://alice:password@import-store:7878/second-db?option=1",
+    });
   });
   it("keeps literal shared secrets and rewrites self-hosts without a recursive connection", () => {
     const store = service("store", { TOKEN: "secret", HOST: "store.railway.internal" }, 7878);
@@ -77,5 +78,24 @@ describe("Railway project wiring", () => {
     expect(resolveRailwayBindings(app, new Map([["app", app]]))).toEqual([]);
     expect(app.source.blockers.join(" ")).toMatch(/MISSING/);
     expect(app.source.blockers.join(" ")).toMatch(/UNRESOLVED/);
+  });
+  it("keeps hostname-only and multi-host values on the native project network", () => {
+    const db = service("db"),
+      redis = service("redis");
+    const app = service("app", {
+      HOST: "db.railway.internal",
+      HOSTS: "db.railway.internal,redis.railway.internal",
+    });
+    const bindings = resolveRailwayBindings(
+      app,
+      new Map([
+        ["db", db],
+        ["redis", redis],
+        ["app", app],
+      ]),
+    );
+    expect(app.source.env).toEqual({ HOST: "import-db", HOSTS: "import-db,import-redis" });
+    expect(new Set(bindings.map((binding) => binding.sourceId))).toEqual(new Set(["db", "redis"]));
+    expect(app.source.blockers).toEqual([]);
   });
 });

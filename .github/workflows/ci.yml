@@ -150,6 +150,7 @@ jobs:
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/platform-import-data.e2e.test.ts
+              test/e2e/platform-import-project.e2e.test.ts
           # Separate independent daemons keep real-Docker coverage within the job
           # budget. Tests remain serial inside each daemon to preserve isolation.
           - suite: Compose cutover and rollback

@@ -6,16 +6,23 @@ New Project → Import existing project offers Server or Docker, Railway, and Ve
 
 1. An organization admin adds a Railway or Vercel connection in Settings → Connections or directly in the import flow. Existing registry and DNS credentials remain on the same page. Old `?tab=credentials` and `?tab=dns` links still work.
 2. Select a project and environment. Railway discovers services, deployed revisions, variables, domains, and attached volumes. Vercel discovers a production or latest ready preview deployment and its GitHub source, build configuration, variables, domains, and PostgreSQL URLs.
-3. Review all services in the Railway environment together, distinct destination project names, a managed plan or connected server, and whether to copy storage or explicitly start empty. An external PostgreSQL connection can also remain with its current provider. Supply non-exportable secrets and resolve unsupported provider references.
+3. Review all services in the Railway environment together, one destination project name, distinct service names, a managed plan or connected server, and whether to copy storage or explicitly start empty. Each source project becomes one OpenShip project containing its services; importing a second source project creates a separate project. An external PostgreSQL connection can also remain with its current provider. Supply non-exportable secrets and resolve unsupported provider references.
 4. Review checks source compatibility, repository access and destination access. The plan expires after 30 minutes. Starting rechecks the provider inventory; changed configuration requires a fresh discovery. Source admission is reserved transactionally by Railway project and environment, across destinations and connection records.
-5. Allow Railway project downtime and pause external deployment automation. The worker prepares the selected managed Cloud host before source downtime, creates all destination projects, disables automatic push deployments, stops the entire source environment and copies its volumes before deploying any destination. Private addresses become normal project connections with encrypted value templates; only the hostname changes, including when those connections refresh on redeploy.
-6. Follow progress, logs and project links at `/migrations/<id>`, including after a browser refresh. Add a test domain through each project's Domains & Routes, verify the applications, move the existing domains, and confirm completion. Retire the old provider resources separately.
+5. Allow Railway project downtime and pause external deployment automation. The worker prepares the selected managed Cloud host before source downtime, creates one destination project with native services, disables automatic push deployments, stops the entire source environment and copies its volumes before deploying the destination. Private addresses resolve through the services' native aliases on the project network. Environment values are encrypted and scoped per service. Named volumes include the service name and use the normal project namespace, keeping databases and separate projects isolated.
+6. Follow progress, logs and the project link at `/migrations/<id>`, including after a browser refresh. Review **Domains & DNS**: each saved source hostname is associated with its service. Custom domains and aliases are already added through the same `saveMigrationRoutes` path used by server/Docker migration, initially unverified. Provider-owned Railway and Vercel URLs require replacement addresses and updates to clients, OAuth callbacks and webhooks. **Review domains & DNS** opens the native project Domains & Routes flow. Test the destination, apply the exact DNS records shown for Cloud or the destination server, then verify DNS, HTTPS and application traffic before confirming completion. Retire the old provider resources separately.
+
+Domain guidance reuses the public `domains` inventory and its `portable` flag, persisted in the
+run's input snapshot. Route persistence validates hostname ownership before stopping the source;
+cross-project claims and invalid routes stop admission. It never reconstructs DNS records from source hostnames or mutates DNS during
+import. The existing Domains & Routes flow owns route configuration, DNS records, supported
+provider automation and verification. The same guidance is shown before admission and when
+reopening a saved run; confirmation remains an operator acknowledgment, not an automated DNS check.
 
 ## What transfers
 
 | Source              | Supported                                                                                                                                                                                                                      | Explicit review or separate work                                                                                                                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Railway             | Complete project environments, GitHub repositories at the deployed commit, custom Dockerfiles, portable registry images, build settings, HTTP readiness, restart policy, variables and all selected persistent volume contents | Sealed secrets, unresolved references, dependency cycles, multi-host connection variables, scheduled jobs, multiple replicas, pre-deploy commands, multiple public ports, private registry access and provider-specific features |
+| Railway             | Complete project environments, GitHub repositories at the deployed commit, custom Dockerfiles, portable registry images, build settings, HTTP readiness, restart policy, variables and all selected persistent volume contents | Sealed secrets, unresolved references, dependency cycles, incompatible Git sources, scheduled jobs, multiple replicas, pre-deploy commands, multiple public ports, private registry access and provider-specific features |
 | Vercel              | GitHub source at the deployed commit, build/root/output settings, exportable environment values, discovered domains, external PostgreSQL connections                                                                           | Non-exportable Secret/Sensitive values, functions and provider APIs requiring application changes, Edge Config, Blob, other storage services, and non-GitHub repositories                                                        |
 | External PostgreSQL | A logical copy of the configured database to the selected major version, or preservation of its external connection                                                                                                            | Other databases, roles, provider authentication, extensions unavailable in the destination image, pooler/client settings and non-public source endpoints                                                                         |
 
@@ -27,7 +34,7 @@ Managed Cloud and connected servers use the same import worker and transfer pipe
 
 External PostgreSQL copies use the shared logical backup producer. Source/target majors and available extensions are checked before restore, and fresh destination databases must finish initialization before receiving data. External writers still require manual quiescence.
 
-Repository imports preserve ordinary Openship build roles and release commands. Railway pre-deploy commands, cron, replica topology, unsupported Vercel configuration and invalid paths block review rather than being dropped. Railway sleeping services become continuously running services, with a review warning.
+Repository imports use ordinary OpenShip source-service build recipes. Each provider service remains one native service, including explicitly discovered workers. A native project has one Git source: services using different repositories or deployed commits must be aligned before review can succeed. Repository-wide release commands require a service-compatible recipe; review blocks them instead of silently skipping their release phase. Railway pre-deploy commands, cron, replica topology, unsupported Vercel configuration and invalid paths also block review. Railway sleeping services become continuously running services, with a review warning.
 
 Vercel cannot export Secret/Sensitive values. After entering a missing PostgreSQL URL, Review adds its database to the same choice list. It stays external unless the user chooses to copy it. Copies require a direct public PostgreSQL URL with TLS and a source database role permitted to export its contents. DNS is validated and pinned; the client runs inside the destination database container.
 
@@ -63,7 +70,51 @@ Import tests cover review binding and drift, exact Git revisions, destination pr
 source downtime, database-first ordering, transfer failures, cancellation and owned SSH-key
 recovery. Database tests exercise multi-project migration locks and pending cleanup guards.
 
+### Grouped project verification — 2026-11-12
+
+`apps/api/test/e2e/platform-import-project.e2e.test.ts` imports two projects, each with
+two Redis services and a worker, through both Docker and Cloud runtime adapters.
+It uses the real migrated control database, review planner, import worker, encrypted
+service environments, volume transfer and native Compose deployment engine. Both
+projects deliberately reuse the same service names: assertions check project and
+service counts, private DNS, separate secrets and volumes, copied data and new writes
+after restart. The worker also serves an HTTP health endpoint: its imported custom
+domain and alias retain the correct service/port and remain unverified, while its
+Railway-owned URL is excluded. Persisted routing tests additionally cover Cloud-owned
+targets, idempotent domain staging and cross-organization hostname conflicts. Public
+DNS cutover is not exercised by these fixtures. The provider control/SSH boundary and asynchronous build queue are
+substituted. The Cloud provider tunnel connects to the test Docker daemon; this is
+not a live SaaS test.
+
+A live Railway project with two Redis volumes and an Alpine worker also passed
+discovery, SSH access, whole-project pause, cold copy, grouped native deployment,
+private service connections and restart persistence on a local Docker destination.
+The original Railway images and commands were restored with the source workloads
+stopped, and its temporary SSH
+key was revoked. The disposable project was removed after verification; the existing
+user project was retained. Railway's account resource limit prevented a second live
+project, so simultaneous two-project isolation is covered by the repeatable Docker
+suite above. Sanitized live evidence is
+`/tmp/openship-railway-grouping-live-evidence.json`.
+
+The grouped flow then passed a separate **live Railway → OpenShip Cloud** run on
+a real managed VM (2 vCPUs, 4 GB RAM). This used the current engine in Cloud mode,
+the normal saved-credential verification, namespace token issuance, managed host
+provisioning, volume transfer, deployment admission/queue and runtime. One source
+project became one destination project with all three services. Both Redis datasets,
+encrypted service environments and private DNS were verified on the Cloud VM.
+After new Redis writes and per-service environment changes, a normal redeployment
+replaced all three containers; the original data, new writes, updated environments
+and service connections all remained correct. Source configuration restoration and
+temporary SSH-key revocation were also confirmed. Only subscription entitlement
+was a test fixture; this does not verify checkout or browser sign-in. Sanitized
+evidence is `/tmp/openship-grouped-cloud-live-evidence.json`.
+The disposable Cloud VM, namespace and Railway project were removed after the run.
+
 ### Live API and data verification — 2026-11-11 (UTC+2)
+
+These historical runs predate project grouping; the current grouped-flow checks are
+documented above.
 
 | Direction                       | Result                                  | Verified workload and behavior                                                                                                                                               |
 | ------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

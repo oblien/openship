@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { InstallStepper } from "@/components/deploy/InstallStepper";
 import { importDataLabel, type ImportChoice } from "./platform-import-model";
+import { PlatformImportDomains } from "./PlatformImportDomains";
 
 export function PlatformImportReview({
   sidebarHeader,
@@ -98,6 +99,12 @@ export function PlatformImportReview({
             })}
           </div>
         </section>
+        <PlatformImportDomains
+          services={imports.map((service) => ({
+            ...service,
+            name: choices[service.id].name,
+          }))}
+        />
         {(plan.requiresWritePause || plan.requiresWorkerPause) && (
           <section className="space-y-4 rounded-2xl bg-card p-5 sm:p-6">
             <div>
@@ -154,7 +161,7 @@ export function PlatformImportReview({
           <div>
             <h3 className="font-semibold">Review complete</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              {imports.length} new {imports.length === 1 ? "project" : "projects"}
+              One project · {imports.length} {imports.length === 1 ? "service" : "services"}
             </p>
           </div>
           <InstallStepper
@@ -178,9 +185,7 @@ export function PlatformImportReview({
               name={busy ? "spinner" : "arrow-right"}
               className={`size-4 ${busy ? "animate-spin" : ""}`}
             />
-            {busy
-              ? "Starting import…"
-              : `Import ${imports.length} ${imports.length === 1 ? "project" : "projects"}`}
+            {busy ? "Starting import…" : "Import project"}
           </Button>
           <Button variant="ghost" className="w-full" disabled={busy} onClick={onEdit}>
             Edit selection

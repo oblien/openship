@@ -1,4 +1,18 @@
 {
+  "platformDomains": {
+    "title": "Domaines et DNS",
+    "intro": "L’importation ne modifie pas le DNS et ne déplace pas le trafic.",
+    "customAction": "Mettre à jour le DNS",
+    "providerAction": "Remplacer l’URL",
+    "customHint": "Les domaines personnalisés sont ajoutés dans Domaines et routes au service correspondant. Après avoir testé l’application importée, vérifiez ses enregistrements DNS et terminez la vérification.",
+    "providerHint": "Les URL appartenant au fournisseur ne peuvent pas être transférées vers OpenShip. Choisissez une nouvelle adresse et mettez à jour les URL de l’application, les callbacks OAuth et les webhooks qui utilisent l’ancienne.",
+    "empty": "Aucun domaine public n’a été trouvé. Gardez les services internes privés ; ajoutez un domaine uniquement si un service nécessite un accès public.",
+    "next": "Avant de confirmer le basculement",
+    "test": "Ouvrez Domaines et routes pour vérifier les routes importées. Ajoutez un domaine de test si nécessaire et vérifiez l’application et ses données.",
+    "dns": "Vérifiez vos domaines personnalisés dans Domaines et routes et ajoutez ceux qui manquent. Appliquez ensuite les enregistrements DNS exacts affichés chez votre fournisseur DNS, ou vérifiez la configuration DNS automatique avec une connexion compatible. Remplacez les anciens enregistrements de routage et conservez les autres.",
+    "verify": "Vérifiez le DNS et HTTPS dans OpenShip, puis testez les URL publiques avant de confirmer la fin de la migration.",
+    "openDomains": "Vérifier les domaines et le DNS"
+  },
   "wizard": {
     "edgeReview": {
       "detected": "{proxy} détecté",

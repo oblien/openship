@@ -1,4 +1,18 @@
 {
+  "platformDomains": {
+    "title": "Domains und DNS",
+    "intro": "Der Import ändert weder DNS noch die Weiterleitung des Datenverkehrs.",
+    "customAction": "DNS aktualisieren",
+    "providerAction": "URL ersetzen",
+    "customHint": "Eigene Domains werden unter Domains & Routen dem passenden Dienst zugeordnet. Prüfe die importierte App, kontrolliere dann ihre DNS-Einträge und schließe die Verifizierung ab.",
+    "providerHint": "URLs des Anbieters können nicht zu OpenShip umziehen. Wähle eine neue Adresse und aktualisiere App-URLs, OAuth-Callbacks und Webhooks, die die alte verwenden.",
+    "empty": "Es wurden keine öffentlichen Domains gefunden. Halte interne Dienste privat; füge nur dann eine Domain hinzu, wenn ein Dienst öffentlichen Zugriff benötigt.",
+    "next": "Vor der Bestätigung der Umstellung",
+    "test": "Öffne Domains & Routen, um die importierten Routen zu prüfen. Füge bei Bedarf eine Testdomain hinzu und prüfe die App und ihre Daten.",
+    "dns": "Prüfe deine eigenen Domains unter Domains & Routen und füge fehlende hinzu. Übernimm dann die angezeigten DNS-Einträge exakt bei deinem DNS-Anbieter oder prüfe die automatische DNS-Konfiguration mit einer unterstützten Verbindung. Ersetze die alten Routing-Einträge und behalte alle anderen Einträge.",
+    "verify": "Prüfe DNS und HTTPS in OpenShip und teste die öffentlichen URLs, bevor du den Abschluss bestätigst.",
+    "openDomains": "Domains & DNS prüfen"
+  },
   "wizard": {
     "edgeReview": {
       "detected": "{proxy} erkannt",

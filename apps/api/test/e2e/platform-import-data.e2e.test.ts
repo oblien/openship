@@ -23,14 +23,15 @@ import { describeDockerE2E, requireDocker, dockerSocketPath } from "../helpers/d
 const h = vi.hoisted(() => ({
   project: {} as any,
   source: undefined as unknown,
+  service: undefined as any,
   runtime: undefined as unknown,
   workspaceId: undefined as string | undefined,
   exportOnly: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
-    project: { findById: async () => h.project },
-    service: { listByProject: async () => [] },
+    project: { findById: async () => h.project, getEnvMap: async () => ({}) },
+    service: { listByProject: async () => h.service ? [h.service] : [] },
   },
 }));
 vi.mock("@repo/platform/engine/modules/migration/migration-access", () => ({
@@ -378,10 +379,16 @@ describeDockerE2E("generic stopped-volume provider import", () => {
         environment: {},
         bindings: [],
       } as PlannedImportService;
+      h.service = {
+        id: `${projectId}-service`, projectId, name: fixture.name,
+        image: fixture.image, environment: {},
+        volumes: service.create.volumes, namespaceVolumes: true,
+      };
       const args = {
         runId: tag,
         service,
         projectId,
+        serviceId: h.service.id,
         signal: new AbortController().signal,
         log: () => {},
         progress: vi.fn(),

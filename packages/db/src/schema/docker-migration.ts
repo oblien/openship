@@ -25,8 +25,12 @@ export interface DockerMigrationRecovery {
     planEnc: string;
     connectionId: string;
     projects: Record<string, string>;
+    /** Provider service → native service row, all within the imported project. */
+    services?: Record<string, string>;
     completed: string[];
     deployments?: Record<string, string>;
+    /** All deployments admitted by this import, including database-only restores. */
+    ownedDeploymentIds?: string[];
     cleanupPending?: boolean;
     sshKeyId?: string;
     sshPrivateKeyEnc?: string;

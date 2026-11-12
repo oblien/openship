@@ -9,6 +9,7 @@ import { InstallStepper, type StepStatus } from "@/components/deploy/InstallStep
 import { useI18n } from "@/components/i18n-provider";
 import { formatBytes } from "@/lib/formatBytes";
 import { statusTone } from "./MigrationRunList";
+import { PlatformImportDomains, type ImportDomainService } from "./PlatformImportDomains";
 
 export const importFinished = (status: string) =>
   ["failed", "rolled_back", "succeeded"].includes(status);
@@ -48,7 +49,10 @@ export function PlatformImportProgress({
     run.status,
   );
   const stopped = run.status === "rolled_back" && run.cancelRequested === true;
-  const projects = Object.entries(run.importedProjects ?? {});
+  const services = (run.inputSnapshot?.services ?? []) as ImportDomainService[];
+  const projects = [
+    ...new Map(Object.entries(run.importedProjects ?? {}).map(([source, id]) => [id, source])),
+  ].map(([id, source]) => ({ id, source }));
   const steps: Array<{ id: string; label: string; status: StepStatus }> = [
     {
       id: "import",
@@ -77,7 +81,9 @@ export function PlatformImportProgress({
       <div className="min-w-0 space-y-5">
         <section className="rounded-2xl bg-card p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="font-semibold">Imported projects</h3>
+            <h3 className="font-semibold">
+              {projects.length > 1 ? "Imported projects" : "Imported project"}
+            </h3>
             <span
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${tone.bg} ${tone.text}`}
             >
@@ -104,47 +110,37 @@ export function PlatformImportProgress({
             </p>
           )}
           <div className="mt-4 space-y-2">
-            {projects.map(([source, id], index) => (
-              <Link
-                key={id}
-                href={`/projects/${encodeURIComponent(id)}`}
-                className="flex items-center gap-3 rounded-xl bg-card p-4 hover:bg-muted"
-              >
-                <Icon name="project" className="size-5" />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                  {(
-                    run.inputSnapshot?.services as Array<{ id: string; name: string }> | undefined
-                  )?.find((s) => s.id === source)?.name ?? `Project ${index + 1}`}
-                </span>
-                <span className="text-xs text-muted-foreground">Open project</span>
-                <Icon name="arrow-up-right" className="size-4" />
-              </Link>
+            {projects.map(({ source, id }, index) => (
+              <div key={id}>
+                <Link
+                  href={`/projects/${encodeURIComponent(id)}`}
+                  className="flex items-center gap-3 rounded-xl bg-card p-4 hover:bg-muted"
+                >
+                  <Icon name="project" className="size-5" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {projects.length === 1
+                      ? run.projectName
+                      : (services.find((s) => s.id === source)?.name ?? `Project ${index + 1}`)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Open project</span>
+                  <Icon name="arrow-up-right" className="size-4" />
+                </Link>
+                {run.status === "awaiting_cutover" && (
+                  <Button asChild variant="secondary" size="sm" className="ms-4">
+                    <Link href={`/projects/${encodeURIComponent(id)}/domains`}>
+                      {t.migration.platformDomains.openDomains}
+                      <Icon name="arrow-up-right" className="size-4" />
+                    </Link>
+                  </Button>
+                )}
+              </div>
             ))}
             {!projects.length && (
               <p className="py-4 text-sm text-muted-foreground">
-                Created projects will appear here as the import progresses.
+                The imported project will appear here as the import progresses.
               </p>
             )}
           </div>
-          {run.status === "awaiting_cutover" && (
-            <div className="mt-6 space-y-4 border-t border-border/50 pt-5">
-              <div>
-                <h4 className="text-sm font-semibold">Verify before moving traffic</h4>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  Open each project, check its data, and add a test domain in Domains &amp; Routes.
-                  Then move your existing domains and confirm below.
-                </p>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Keep source writers paused until cutover. Retire the old services at the provider
-                after verifying the destination.
-              </p>
-              <Button disabled={busy || !canConfirm} onClick={onConfirm}>
-                Confirm cutover complete
-                <Icon name="check" className="size-4" />
-              </Button>
-            </div>
-          )}
           {run.status === "succeeded" && (
             <p className="mt-5 text-sm text-muted-foreground">
               Migration complete. Your source resources remain at the provider until you retire
@@ -163,6 +159,24 @@ export function PlatformImportProgress({
             </p>
           )}
         </section>
+        {run.status === "awaiting_cutover" && (
+          <>
+            <PlatformImportDomains
+              services={services.filter((service) => run.importedProjects?.[service.id])}
+              cutover
+            />
+            <div className="space-y-4 px-1">
+              <p className="text-sm text-muted-foreground">
+                Keep source writers paused until cutover. Retire the old services at the provider
+                after verifying the destination.
+              </p>
+              <Button disabled={busy || !canConfirm} onClick={onConfirm}>
+                Confirm cutover complete
+                <Icon name="check" className="size-4" />
+              </Button>
+            </div>
+          </>
+        )}
         {run.deploymentId && (
           <DeploymentTerminal
             deploymentId={run.deploymentId}

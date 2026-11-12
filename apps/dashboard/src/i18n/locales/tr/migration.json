@@ -1,4 +1,18 @@
 {
+  "platformDomains": {
+    "title": "Alan adları ve DNS",
+    "intro": "İçe aktarma DNS’i değiştirmez veya trafiği taşımaz.",
+    "customAction": "DNS’i güncelle",
+    "providerAction": "URL’yi değiştir",
+    "customHint": "Özel alan adları, ilgili hizmetin Alan adları ve rotalar bölümüne aktarılır. İçe aktarılan uygulamayı kontrol ettikten sonra DNS kayıtlarını inceleyin ve doğrulamayı tamamlayın.",
+    "providerHint": "Sağlayıcıya ait URL’ler OpenShip’e taşınamaz. Yeni bir adres seçin ve eski adresi kullanan uygulama URL’lerini, OAuth geri çağrılarını ve webhook’ları güncelleyin.",
+    "empty": "Herkese açık alan adı bulunamadı. Dahili hizmetleri özel tutun; yalnızca herkese açık erişim gereken hizmetlere alan adı ekleyin.",
+    "next": "Trafik geçişini onaylamadan önce",
+    "test": "İçe aktarılan rotaları incelemek için Alan adları ve rotaları açın. Gerekirse bir test alan adı ekleyin ve uygulamayı ve verilerini kontrol edin.",
+    "dns": "Alan adları ve rotalar bölümünde özel alan adlarınızı inceleyin ve eksik olanları ekleyin. Ardından gösterilen DNS kayıtlarını DNS sağlayıcınızda aynen uygulayın veya desteklenen bir bağlantıyla otomatik DNS yapılandırmasını inceleyin. Eski yönlendirme kayıtlarını değiştirin; diğer kayıtları koruyun.",
+    "verify": "OpenShip’te DNS ve HTTPS’i doğrulayın, ardından tamamlandığını onaylamadan önce herkese açık URL’leri test edin.",
+    "openDomains": "Alan adlarını ve DNS’i incele"
+  },
   "wizard": {
     "edgeReview": {
       "detected": "{proxy} algılandı",

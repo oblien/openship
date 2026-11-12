@@ -6,6 +6,8 @@ const h = vi.hoisted(() => ({
   pinned: vi.fn(),
   source: vi.fn(),
   target: vi.fn(),
+  list: vi.fn(),
+  handle: vi.fn(),
   produce: vi.fn(),
   restore: vi.fn(),
   dispose: vi.fn(),
@@ -28,7 +30,7 @@ vi.mock("@repo/db", () => ({
         activeDeploymentId: "build",
       }),
     },
-    service: { listByProject: async () => [] },
+    service: { listByProject: h.list },
     deployment: { findById: async () => ({ containerId: "target-container" }) },
   },
 }));
@@ -52,7 +54,7 @@ vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
   withProjectRuntimeLock: async (_id: string, work: () => Promise<unknown>) => work(),
 }));
 vi.mock("@repo/platform/engine/modules/backups/service-handle", () => ({
-  serviceHandleFor: vi.fn(),
+  serviceHandleFor: h.handle,
 }));
 vi.mock("@repo/platform/engine/modules/services/service-container", () => ({
   containerIdForService: vi.fn(),
@@ -107,6 +109,8 @@ let target: BackupExecutor;
 beforeEach(() => {
   vi.resetAllMocks();
   h.workspaceId = undefined;
+  h.list.mockResolvedValue([{ id: "db", name: "db", projectId: "project" }]);
+  h.handle.mockResolvedValue(handle);
   h.activity.mockImplementation(async (_id: string, work: () => Promise<unknown>) => work());
   h.pinned.mockResolvedValue({ ip: "203.0.113.8" });
   target = {
@@ -121,12 +125,23 @@ beforeEach(() => {
   });
 });
 describe("provider data copy", () => {
+  it("rejects a missing native target service before opening a source or restoring data", async () => {
+    h.list.mockResolvedValue([{ id: "other-service", name: "api", projectId: "project" }]);
+    await expect(copyPlatformData({
+      runId: "run", service, projectId: "project", serviceId: "db", deploymentId: "build",
+      signal: new AbortController().signal, log: vi.fn(), progress: vi.fn(),
+    })).rejects.toMatchObject({ code: "IMPORT_TARGET_SERVICE_MISSING" });
+    expect(h.source).not.toHaveBeenCalled();
+    expect(h.restore).not.toHaveBeenCalled();
+    expect(h.handle).not.toHaveBeenCalled();
+  });
   it("leaves a destination changed by the operator untouched", async () => {
     await expect(
       copyPlatformData({
         runId: "run",
         service,
         projectId: "project",
+        serviceId: "db",
         deploymentId: "replaced-build",
         signal: new AbortController().signal,
         log: vi.fn(),
@@ -174,6 +189,10 @@ describe("provider data copy", () => {
     ).rejects.toMatchObject({ code: "IMPORT_DATABASE_EXTENSIONS_MISSING" });
   });
   it("streams every byte with backpressure, verifies after restore and closes both transports", async () => {
+    const targetRow = { id: "db", name: "database", projectId: "project" };
+    h.list.mockResolvedValue([
+      { id: "api", name: "api", projectId: "project" }, targetRow,
+    ]);
     const payload = Buffer.alloc(256 * 1024, 0x41);
     let producerCompleted = false;
     h.produce.mockImplementation(async function* () {
@@ -197,12 +216,14 @@ describe("provider data copy", () => {
       runId: "run",
       service,
       projectId: "project",
+      serviceId: "db",
       deploymentId: "build",
       signal: new AbortController().signal,
       log: vi.fn(),
       progress,
     });
     expect(restored).toEqual(payload);
+    expect(h.handle).toHaveBeenCalledWith(targetRow, expect.objectContaining({ projectSlug: "app" }));
     expect(producerCompleted).toBe(true);
     expect(h.dispose).toHaveBeenCalledOnce();
     expect(h.source).not.toHaveBeenCalled();
@@ -228,6 +249,7 @@ describe("provider data copy", () => {
         runId: "run",
         service,
         projectId: "project",
+        serviceId: "db",
         deploymentId: "build",
         signal: new AbortController().signal,
         log: vi.fn(),
@@ -245,6 +267,7 @@ describe("provider data copy", () => {
         runId: "run",
         service,
         projectId: "project",
+        serviceId: "db",
         deploymentId: "build",
         signal: new AbortController().signal,
         log: vi.fn(),
@@ -269,6 +292,7 @@ it("holds the owning Cloud workspace activity lock for the whole transfer", asyn
     runId: "run",
     service,
     projectId: "project",
+    serviceId: "db",
     deploymentId: "build",
     signal,
     log: vi.fn(),

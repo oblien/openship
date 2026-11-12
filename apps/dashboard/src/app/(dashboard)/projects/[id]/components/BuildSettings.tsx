@@ -112,9 +112,12 @@ export const BuildSettings = () => {
 
 /** One shared editor, accessible here and through workload shortcuts. */
 export function ProjectEnvironmentSettings() {
-  const { id } = useProjectSettings();
+  const { id, projectData, servicesData } = useProjectSettings();
   const { t } = useI18n();
   const [envOpen, setEnvOpen] = useState(false);
+  const application = projectApplication(projectData, servicesData.services);
+  const opensApplication = application?.mode === "project" &&
+    !servicesData.services.some((service) => !service.applicationMode);
   return (
     <>
       <SectionCard
@@ -122,7 +125,15 @@ export function ProjectEnvironmentSettings() {
         iconTone="violet"
         title={t.projectSettings.build.env.title}
         description={t.projectSettings.build.env.description}
-        actions={
+        actions={opensApplication ? (
+          <Link
+            href={`/projects/${id}/services/application/env`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:underline underline-offset-4"
+          >
+            {t.projectDetail.services.detail.tabs.env}
+            <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
+          </Link>
+        ) : (
           <button
             type="button"
             onClick={() => setEnvOpen(true)}
@@ -131,9 +142,11 @@ export function ProjectEnvironmentSettings() {
             <UiIcon name="edit" className="size-3.5" />
             {t.projectSettings.build.env.edit}
           </button>
-        }
+        )}
       />
-      <EnvVarsEditor key={id} projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
+      {!opensApplication && (
+        <EnvVarsEditor key={id} projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
+      )}
     </>
   );
 }

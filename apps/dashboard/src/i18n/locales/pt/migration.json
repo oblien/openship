@@ -1,4 +1,18 @@
 {
+  "platformDomains": {
+    "title": "Domínios e DNS",
+    "intro": "A importação não altera o DNS nem transfere o tráfego.",
+    "customAction": "Atualizar DNS",
+    "providerAction": "Substituir URL",
+    "customHint": "Os domínios personalizados são incluídos em Domínios e rotas no serviço correspondente. Depois de verificar a aplicação importada, revise os registros DNS e conclua a verificação.",
+    "providerHint": "As URLs do provedor não podem ser transferidas para o OpenShip. Escolha um novo endereço e atualize as URLs da aplicação, os callbacks OAuth e os webhooks que usam o endereço antigo.",
+    "empty": "Nenhum domínio público foi encontrado. Mantenha os serviços internos privados; adicione um domínio apenas se um serviço precisar de acesso público.",
+    "next": "Antes de confirmar a mudança de tráfego",
+    "test": "Abra Domínios e rotas para revisar as rotas importadas. Adicione um domínio de teste se necessário e verifique a aplicação e os seus dados.",
+    "dns": "Revise os seus domínios personalizados em Domínios e rotas e adicione os que faltam. Depois aplique os registros DNS exatos exibidos no seu provedor de DNS, ou revise a configuração automática de DNS com uma conexão compatível. Substitua os registros de roteamento antigos e mantenha os demais.",
+    "verify": "Verifique DNS e HTTPS no OpenShip e teste as URLs públicas antes de confirmar a conclusão.",
+    "openDomains": "Revisar domínios e DNS"
+  },
   "wizard": {
     "edgeReview": {
       "detected": "{proxy} detectado",
