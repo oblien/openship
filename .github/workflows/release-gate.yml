@@ -226,18 +226,24 @@ jobs:
     # https://github.com/actions/runner-images/issues/15005
     runs-on: ${{ matrix.scope == 'fast' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     # Files remain serial within each disposable daemon. Split the growing
-    # ordinary suite across two hosts so it fits the gate without relaxing tests.
+    # ordinary suite across four hosts so it fits the gate without relaxing tests.
     timeout-minutes: ${{ matrix.scope == 'fast' && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - scope: fast
-            label: fast 1/2
-            shard: 1/2
+            label: fast 1/4
+            shard: 1/4
           - scope: fast
-            label: fast 2/2
-            shard: 2/2
+            label: fast 2/4
+            shard: 2/4
+          - scope: fast
+            label: fast 3/4
+            shard: 3/4
+          - scope: fast
+            label: fast 4/4
+            shard: 4/4
           - scope: heavy
             label: heavy
             shard: ""
