@@ -1076,7 +1076,7 @@ jobs:
             fi
           else
             gh release create "${TAG}" \
-              --title "Openship ${TAG}" \
+              --title "OpenShip ${TAG}" \
               --notes-file "${NOTES_FILE}" \
               ${PRERELEASE_FLAG} \
               "${CORE_ASSETS[@]}"
