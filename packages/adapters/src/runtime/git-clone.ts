@@ -246,6 +246,8 @@ function scopedTokenInvocation(auth: GitCloneAuth): GitCloneInvocation {
   url.password = "";
   const pair = gitCredentialPair(url.hostname, auth.gitToken!.trim());
   const base = `https://${url.host}/`;
+  const repoUrl = `${base}${url.pathname.replace(/^\/+/, "")}`;
+  const namespaceUrl = `${base}${segments.join("/")}/`;
   const settings = [
     ["credential.helper", ""],
     ["credential.helper", SCOPED_TOKEN_HELPER],
@@ -259,6 +261,14 @@ function scopedTokenInvocation(auth: GitCloneAuth): GitCloneInvocation {
     [`url.${base}.insteadOf`, `git@${url.hostname}:`],
     [`url.${base}.insteadOf`, `ssh://git@${url.hostname}/`],
     [`url.${base}.insteadOf`, `ssh://${url.hostname}/`],
+    // The opposite rewrite, https:// to ssh, is a common user setting that this
+    // clone must not follow: only HTTPS is allowed above, so git would fail with
+    // "transport 'ssh' not allowed". Git applies the longest matching insteadOf,
+    // so mapping the repository and its namespace onto themselves outranks a
+    // broader rule in the user's global or system config. A rule of exactly the
+    // same length as ours is still ordered by config scope and can win.
+    [`url.${repoUrl}.insteadOf`, repoUrl],
+    [`url.${namespaceUrl}.insteadOf`, namespaceUrl],
   ];
   const baseInvocation = invocation(
     url.href,
