@@ -15,6 +15,7 @@ import {
   type KubernetesObject,
 } from "@repo/adapters";
 import type { ClusterRuntimePlan, ClusterDatabaseConfig } from "@repo/core";
+import { SecretValues } from "@repo/core/diagnostics";
 import type { ClusterDatabase } from "@repo/contracts";
 import {
   DATABASE_IMAGES,
@@ -441,8 +442,32 @@ done
 
     afterEach(async (context) => {
       console.info(`[database-e2e] ${context.task.result?.state}: ${context.task.name}`);
-      if (context.task.result?.state === "fail") console.error(await lab.diagnostics());
-    });
+      if (context.task.result?.state !== "fail") return;
+      console.error(await lab.diagnostics());
+      // Pod readiness alone cannot explain an operator stalled during a resize.
+      // Keep its status and reconciliation errors, with the lab's secrets masked.
+      try {
+        const secrets = await lab.api.request<{ items: KubernetesObject[] }>(
+          "GET",
+          `/api/v1/secrets?labelSelector=${encodeURIComponent(`openship.io/runtime=${lab.runtimeId}`)}`,
+        );
+        const redactor = new SecretValues(
+          secrets.items.flatMap((secret) =>
+            Object.values(secret.data ?? {}).map((value) =>
+              Buffer.from(String(value), "base64").toString(),
+            ),
+          ),
+        );
+        for (const args of [
+          ["get", "redisclusters", "-A", "-o", "yaml"],
+          ["logs", "-n", "ot-operators", "deployment/redis-operator", "--tail=200"],
+        ]) {
+          console.error(redactor.redact(await lab.nodeExec(0, ["kubectl", ...args])));
+        }
+      } catch (error) {
+        console.error("Database operator diagnostics unavailable:", String(error));
+      }
+    }, 180000);
     afterAll(async () => {
       for (const index of paused) await resume(index).catch(() => {});
       const { stopNetworkSetups } =
