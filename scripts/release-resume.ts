@@ -61,7 +61,8 @@ export function affectsScope(path: string, scope: string): boolean {
               ? "heavy"
               : path === "apps/api/test/e2e/actions-runner.e2e.test.ts" || path === "apps/api/test/helpers/workspace-runtime.ts"
                 ? "actions-linux"
-                : path === "apps/api/test/e2e/update-from-previous-release.e2e.test.ts"
+              : path === "apps/api/test/e2e/update-from-previous-release.e2e.test.ts" ||
+                  path.startsWith("apps/api/test/fixtures/upgrade/")
                 ? "update"
                 : path.startsWith("apps/api/test/e2e/")
                   ? "fast"

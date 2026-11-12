@@ -332,6 +332,15 @@ describe("release continuation", () => {
         artifact: undefined,
       };
       expect(await findReusableJob(unitOptions)).toEqual({ runId: "123", url: job.html_url });
+      const baseline = "apps/api/test/fixtures/upgrade/compose-0.9.11.yml";
+      write(baseline, "the frozen previous-release Compose template");
+      commit();
+      expect(await findReusableJob(options)).toEqual({ runId: "123", url: job.html_url, artifactId: 789 });
+      expect(await findReusableJob(unitOptions)).toEqual({ runId: "123", url: job.html_url });
+      // A baseline-only correction cannot reuse the affected upgrade or archive
+      // builds, even though unrelated successful runtime journeys still match.
+      expect(affectsScope(baseline, "update")).toBe(true);
+      expect(affectsScope(baseline, "build")).toBe(true);
       write(
         "packages/platform/src/engine/modules/actions/github-checks.test.ts",
         "corrected typed Checks fixture",
