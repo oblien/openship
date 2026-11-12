@@ -203,8 +203,11 @@ describe("release continuation", () => {
     );
   });
 
-  it("reruns fixture-dependent checks after dashboard teardown changes", () => {
-    const file = "apps/dashboard/src/app/(dashboard)/servers/[serverId]/offline-server.render.test.tsx";
+  it.each([
+    "apps/dashboard/src/app/(dashboard)/servers/[serverId]/offline-server.render.test.tsx",
+    "packages/platform/src/engine/modules/actions/github-checks.test.ts",
+    "packages/adapters/src/system/proxy/replace-edge-container.test.ts",
+  ])("reruns fixture-dependent checks after changes to %s", (file) => {
     for (const scope of ["application", "databases", "storage", "actions-linux", "actions-macos", "fast", "heavy", "update"])
       expect(affectsScope(file, scope)).toBe(false);
     for (const scope of ["unit", "build", "sdk"])

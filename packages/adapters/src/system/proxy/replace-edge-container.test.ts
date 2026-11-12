@@ -110,7 +110,9 @@ default: throw new Error('Unexpected Docker command: ' + a.join(' '));
     container: "test-edge",
     image: "edge:new",
     mounts: [],
-    verifyTimeoutMs: 1,
+    // These probes launch a real CLI process. Allow startup under CI contention;
+    // a one-second rounded deadline can expire before the first probe even runs.
+    verifyTimeoutMs: 5_000,
     predecessor: {
       id: old,
       labels: {
@@ -174,7 +176,8 @@ describe("server-owned edge replacement", () => {
 
   it("validates before stopping and removes the predecessor only after the new edge is healthy", async () => {
     const f = await fixture();
-    expect((await f.run()).code).toBe(0);
+    const result = await f.run();
+    expect(result.code, result.stderr).toBe(0);
     const state = await f.state();
     expect(Object.keys(state)).toEqual([next]);
     expect(state[next]).toMatchObject({
