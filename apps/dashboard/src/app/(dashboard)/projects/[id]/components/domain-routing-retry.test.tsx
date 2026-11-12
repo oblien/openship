@@ -41,6 +41,7 @@ vi.mock("@/lib/api", async (original) => {
       ...actual.projectsApi,
       getEdgeStatus: mocks.edgeStatus,
       listRouteProtection: async () => ({ data: [] }),
+      listRouteRules: async () => ({ rules: [] }),
     },
     domainsApi: { ...actual.domainsApi, list: mocks.listDomains, verifySsl: mocks.verifySsl },
     deployApi: {

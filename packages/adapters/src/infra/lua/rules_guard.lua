@@ -8,7 +8,7 @@
 --
 -- Enforcement uses the connecting peer (ngx.var.remote_addr); front a real_ip
 -- config if behind a trusted proxy. No user-supplied value is ever used as a
--- Lua pattern or written into a response header.
+-- Lua pattern. Static response headers are validated at the API and compile boundary.
 
 -- GeoIP owns the worker's IP cache; share its result with rules and analytics.
 -- A lookup failure must not turn ordinary app traffic into a 500.
@@ -34,7 +34,8 @@ local host = ngx.var.host
 if not host then return end
 
 local raw = rules:get(host)
-if not raw then
+local response_revision = rules:get("responses-version:" .. host)
+if not raw and not response_revision then
     -- A wildcard vhost's rules are stored under its server_name ("*.example.com"),
     -- while $host is the concrete name the visitor asked for. Each vhost declares
     -- exactly one server_name, so it is the rule key for any subdomain depth.
@@ -42,30 +43,32 @@ if not raw then
     if name and name ~= host and string.sub(name, 1, 2) == "*." then
         host = name
         raw = rules:get(host)
+        response_revision = rules:get("responses-version:" .. host)
     end
 end
-if not raw then return end          -- fast path: nothing configured for this host
+if not raw and not response_revision then return end -- nothing configured for this host
 
 local lib = require "openship.rules_lib"
-local entries = lib.get(host, raw)
-local n = #entries
-if n == 0 then return end
-
--- ── Longest matching pathPrefix wins ──
+local entries = raw and lib.get(host, raw) or {}
+-- Longest policy prefix wins independently of the virtual response.
 local uri = ngx.var.uri or "/"
 local chosen, chosen_len = nil, -1
-for i = 1, n do
+for i = 1, #entries do
     local e = entries[i]
     local p = e.pathPrefix
-    if p == nil or p == "" or p == "/" then
-        if chosen_len < 0 then chosen, chosen_len = e, 0 end
-    elseif uri == p or string.sub(uri, 1, #p) == p then
-        if #p > chosen_len then chosen, chosen_len = e, #p end
+    if not e.spec.isResponse then
+        if p == nil or p == "" or p == "/" then
+            if chosen_len < 0 then chosen, chosen_len = e, 0 end
+        elseif uri == p or string.sub(uri, 1, #p) == p then
+            if #p > chosen_len then chosen, chosen_len = e, #p end
+        end
     end
 end
-if not chosen then return end
+if not chosen and not response_revision then return end
 
-local spec = chosen.spec
+-- Select policy independently: a static response can never replace a more
+-- general ban, method allow-list, or rate limit simply by matching its path.
+local spec = chosen and chosen.spec or {}
 local deny_status = spec.blockStatus or 403
 
 local ips = ngx.var.remote_addr or "0.0.0.0"
@@ -140,4 +143,27 @@ if rl then
         ngx.header["Retry-After"] = "1"
         return ngx.exit(rl.status)
     end
+end
+
+local response, method
+if response_revision and not lib.reserved_path(uri) then
+    -- Internal SPA/index rewrites must not turn an unrelated request into a
+    -- virtual route. Decode the original path only on configured domains.
+    local response_uri = ngx.unescape_uri(string.match(ngx.var.request_uri or uri, "^[^?]*"))
+    method = ngx.req.get_method()
+    response = lib.response_for(host, response_revision, rules, response_uri, method)
+end
+
+-- Literal content only, after ALL access policies. Never generated nginx/Lua
+-- source. ngx.print preserves the exact body (including an empty response).
+if response then
+    ngx.status = response.status
+    ngx.header["Content-Type"] = response.contentType
+    for name, value in pairs(response.headers) do ngx.header[name] = value end
+    if response.status ~= 204 and response.status ~= 304 then
+        ngx.header["Content-Length"] = #response.body
+    end
+    ngx.send_headers()
+    if method ~= "HEAD" and response.body ~= "" then ngx.print(response.body) end
+    return ngx.exit(ngx.HTTP_OK)
 end

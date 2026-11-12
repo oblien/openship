@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
+import { DomainResponseRoutes } from "@/components/routing/DomainResponseRoutes";
 import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
 import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
@@ -2008,6 +2009,11 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
       <DomainOverviewCard
         key={item.id}
         domain={item}
+        responseRoutes={item.domainId && !isCloudProject && selfHosted &&
+          projectData.deployTarget !== "cluster" && !item.externalIngress && !item.redirectTo &&
+          !item.hostname.toLowerCase().endsWith(`.${baseDomain}`) ? (
+          <DomainResponseRoutes key={item.domainId} projectId={String(id)} domainId={item.domainId} hostname={item.hostname} />
+        ) : undefined}
         protectionControl={<RouteProtectionButton hostname={item.hostname} projectId={String(id)}
           unsupported={isCloudProject || projectData.deployTarget === "cluster" || !selfHosted || !!item.externalIngress || item.hostname.endsWith(`.${baseDomain}`) || item.hostname.startsWith("*.")} />}
         menuActions={menuActions}
@@ -3109,6 +3115,7 @@ function DiagnosablePill({
 
 function DomainOverviewCard({
   domain,
+  responseRoutes,
   protectionControl,
   menuActions = [],
   sslActionBusy = false,
@@ -3128,6 +3135,7 @@ function DomainOverviewCard({
   ingressSettings,
 }: {
   domain: DomainSummaryItem;
+  responseRoutes?: React.ReactNode;
   protectionControl?: React.ReactNode;
   /** Secondary actions (edit, renew, …) collapsed into a ⋯ menu. Visit is a
    *  plain icon; Verify is a direct inline button below, not a menu item. */
@@ -3501,6 +3509,7 @@ function DomainOverviewCard({
           </div>
         ) : null}
       </div>
+      {responseRoutes}
     </div>
   );
 }

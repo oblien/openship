@@ -189,6 +189,7 @@ export interface RouteRuleRow {
   pathPrefix: string | null;
   spec: RouteRuleSpec;
   enabled: boolean;
+  edgeApplied?: boolean;
 }
 
 /**
@@ -567,7 +568,7 @@ export const projectsApi = {
   updateRouteRule: (id: string | number, ruleId: string, body: RouteRuleInput) =>
     api.patch<{ rule: RouteRuleRow }>(endpoints.projects.routeRule(id, ruleId), body),
   deleteRouteRule: (id: string | number, ruleId: string) =>
-    api.delete<{ success: boolean }>(endpoints.projects.routeRule(id, ruleId)),
+    api.delete<{ success: boolean; edgeApplied?: boolean }>(endpoints.projects.routeRule(id, ruleId)),
 
   /** Create a new deployment session */
   createDeploymentSession: (id: string | number) =>

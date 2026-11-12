@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { normalizeEdgeResponse } from "@repo/core";
 import {
   NginxProvider,
   OPENRESTY_DEFAULT_PATHS,
@@ -203,6 +204,8 @@ describeDockerE2E("password-protected routes through the real edge", () => {
       `${paths.sitesDir}/_test_upstream.conf`,
       `server {
       listen 127.0.0.1:39482;
+      # Test-only bridge to the loopback management listener.
+      location = /api/test-rules { proxy_pass http://127.0.0.1:9145/rules; }
       location / {
         add_header Cache-Control "public, max-age=3600";
         content_by_lua_block { ngx.print(ngx.var.http_cookie or "none") }
@@ -349,6 +352,21 @@ describeDockerE2E("password-protected routes through the real edge", () => {
       expect(
         (await ask("/asset.js", { cookie: `__Host-openship_route=${expiry}.${mac}` })).status,
       ).toBe(401);
+    }
+  });
+
+  it("protects literal edge responses and prevents them from making private content cacheable", async () => {
+    const payload = JSON.stringify({ host: "private.test", rules: [{ pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ body: "private response", headers: { "Cache-Control": "public, max-age=3600" } }) } }] });
+    try {
+      const applied = await ask("/api/test-rules", { cookie, method: "POST", body: payload, headers: { "Content-Type": "application/json" } });
+      expect(applied.status).toBe(200);
+      expect(JSON.parse(applied.body)).toMatchObject({ ok: true, staticResponses: true });
+      expect((await ask("/virtual")).status).toBe(401);
+      const response = await ask("/virtual", { cookie });
+      expect(response).toMatchObject({ status: 200, body: "private response" });
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+    } finally {
+      expect((await ask("/api/test-rules?host=private.test", { cookie, method: "DELETE" })).status).toBe(200);
     }
   });
 

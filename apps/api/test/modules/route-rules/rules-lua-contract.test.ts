@@ -202,7 +202,7 @@ describe("rules_guard.lua keeps the properties its comments promise", () => {
 
   it("returns early when the host has no rules (the common case)", () => {
     const head = guard.slice(0, guard.indexOf("local lib ="));
-    expect(head).toContain("if not raw then return end");
+    expect(head).toContain("if not raw and not response_revision then return end");
   });
 
   it("picks the longest matching path prefix", () => {
@@ -231,10 +231,8 @@ describe("rules_guard.lua keeps the properties its comments promise", () => {
     expect(guard).not.toContain("http_x_forwarded_for");
   });
 
-  it("never writes a rule value into a response header", () => {
-    const headerWrites = [...guard.matchAll(/ngx\.header\[[^\]]+\]\s*=\s*(.+)/g)].map((m) => m[1]!);
-    expect(headerWrites).toEqual(['"1"']); // Retry-After only, a literal
-  });
+  // Literal response headers now have an explicit validator. Header injection
+  // and access-policy preservation are exercised by routing-rules.e2e.test.ts.
 
   it("applies access before ban before hotlink before rate limit", () => {
     // After resolving the country header, keep the cheaper access/ban checks

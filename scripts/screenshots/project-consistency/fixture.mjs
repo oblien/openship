@@ -94,6 +94,8 @@ let services = [],
   started = new Set(),
   writes = [],
   pending = false;
+let routeRules = [];
+let nextRuleId = 1;
 let env = [
   {
     id: "site",
@@ -185,6 +187,8 @@ const server = createServer(async (req, res) => {
         serviceEnv = structuredClone(initialServiceEnv);
         writes = [];
         pending = false;
+        routeRules = [];
+        nextRuleId = 1;
       }
       services = input.services ? [primary, structuredClone(postgres)] : [];
       started = new Set(input.services ? ["postgres"] : []);
@@ -198,7 +202,22 @@ const server = createServer(async (req, res) => {
         ? primary.id
         : undefined;
     }
-    body = { project, services, writes };
+    body = { project, services, writes, routeRules };
+  } else if (path.includes("/route-rules")) {
+    const ruleId = path.split("/route-rules/")[1];
+    if (method === "GET") body = { rules: routeRules };
+    else if (method === "POST") {
+      const rule = { ...input, id: `preview-rule-${nextRuleId++}`, projectId: project.id, edgeApplied: true };
+      routeRules.push(rule);
+      body = { rule };
+    } else if (method === "PATCH") {
+      const rule = routeRules.find(row => row.id === ruleId);
+      if (rule) { Object.assign(rule, input, { edgeApplied: true }); body = { rule }; }
+      else { status = 404; body = { error: "Route not found" }; }
+    } else if (method === "DELETE") {
+      routeRules = routeRules.filter(row => row.id !== ruleId);
+      body = { success: true, edgeApplied: true };
+    }
   } else if (path.endsWith("/get-session")) body = null;
   else if (path.endsWith("/health/env"))
     body = { selfHosted: true, deployMode: "server", authMode: "none", isServerHost: true };
@@ -339,5 +358,5 @@ const server = createServer(async (req, res) => {
   res.end(JSON.stringify(body));
 });
 server.listen(Number(process.env.PREVIEW_API_PORT || 3013), "127.0.0.1", () =>
-  console.log("Fixture API: http://localhost:3013 (sample data only)"),
+  console.log(`Fixture API: http://127.0.0.1:${server.address().port} (sample data only)`),
 );

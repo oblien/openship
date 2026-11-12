@@ -123,13 +123,13 @@ describe("failure is best-effort by contract", () => {
     // would abort a routing reconcile over a metrics setting.
     await expect(
       postEdgeMgmt(null, "/analytics/config", { hosts: [] }, "org1"),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 
   it("resolves when the tunnel fails", async () => {
     tunnelRequest.mockRejectedValue(new Error("tunnel closed"));
     await expect(
       postEdgeMgmt("srv1", "/analytics/config", { host: "a.com", paths: true }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 });

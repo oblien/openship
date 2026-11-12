@@ -37,6 +37,13 @@ export const ProjectRoutingRetrySchema = Type.Object({
 export type ProjectRoutingRetry = Static<typeof ProjectRoutingRetrySchema>;
 const list = Type.Optional(Type.Array(Type.String()));
 export const RouteRuleSpecSchema = Type.Object({
+  response: Type.Optional(Type.Object({
+    match: Type.Union([Type.Literal("exact"), Type.Literal("prefix")]),
+    status: Type.Integer({ minimum: 200, maximum: 599 }),
+    contentType: Type.String(), body: Type.String(),
+    headers: Type.Record(Type.String(), Type.String()),
+    methods: Type.Array(Type.String()),
+  })),
   rateLimit: Type.Optional(Type.Object({ rps: Type.Number(), burst: Type.Number(), key: Type.Optional(Type.Literal("ip")), status: Type.Optional(Type.Number()) })),
   ban: Type.Optional(Type.Object({ ips: list, cidrs: list, countries: list, userAgents: list, emptyUserAgent: Type.Optional(Type.Boolean()) })),
   access: Type.Optional(Type.Object({ allowCidrs: list, denyCidrs: list, allowCountries: list, methods: list })),
@@ -47,6 +54,7 @@ export const RouteRuleSchema = Type.Object({
   id: Type.String(), organizationId: Type.String(), projectId: Type.String(),
   domainId: nullableString, pathPrefix: nullableString, spec: RouteRuleSpecSchema,
   enabled: Type.Boolean(), createdAt: Type.String(), updatedAt: Type.String(),
+  edgeApplied: Type.Optional(Type.Boolean({ description: "Mutation result: false means saved but edge publication is pending." })),
 });
 export type RouteRule = Static<typeof RouteRuleSchema>;
 export const RouteRuleInputSchema = Type.Object({
@@ -96,7 +104,7 @@ export const ProjectRoutingSchemas = {
   listRouteRules: { action: "read", output: Type.Array(RouteRuleSchema) },
   createRouteRule: { action: "write", input: RouteRuleInputSchema, output: RouteRuleSchema },
   updateRouteRule: { action: "write", input: UpdateRouteRuleInputSchema, output: RouteRuleSchema },
-  removeRouteRule: { action: "write", input: ResourceIdSchema, output: Type.Object({ success: Type.Literal(true) }) },
+  removeRouteRule: { action: "write", input: ResourceIdSchema, output: Type.Object({ success: Type.Literal(true), edgeApplied: Type.Optional(Type.Boolean()) }) },
   getIncidents: { action: "read", output: ProjectIncidentsSchema },
   connectDomain: { action: "write", input: ConnectProjectDomainInputSchema, output: Type.Composite([CreateDomainResultSchema, Type.Object({ success: Type.Literal(true) })]) },
 } as const satisfies Record<string, ResourceOperationSchema>;

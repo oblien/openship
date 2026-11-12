@@ -72,7 +72,19 @@ async function pushHost(
 ): Promise<void> {
   // organizationId is how a null serverId gets resolved to the "This Server" row. Without
   // it a local target has no edge to reach — see postEdgeMgmt.
-  await postEdgeMgmt(serverId, "/rules", { host, rules }, organizationId);
+  const hasResponses = rules.some(rule => rule.spec.response);
+  const capabilities = hasResponses
+    ? await postEdgeMgmt(serverId, "/rules/capabilities", {}, organizationId) as { staticResponses?: boolean } | null
+    : null;
+  const responseSupported = !hasResponses || capabilities?.staticResponses === true;
+  // Old guards interpret unknown rule kinds as access policies. Never send
+  // responses to one; existing policy edits must still reach that edge.
+  const supportedRules = responseSupported ? rules : rules.filter(rule => !rule.spec.response);
+  const result = await postEdgeMgmt(serverId, "/rules", { host, rules: supportedRules }, organizationId) as
+    { ok?: boolean; staticResponses?: boolean } | null;
+  if (!result?.ok) throw new Error("The edge has not acknowledged its route rules.");
+  if (!responseSupported || (hasResponses && result.staticResponses !== true))
+    throw new Error("Update the edge scripts and reload the edge to apply static responses.");
 }
 
 /**
@@ -84,7 +96,7 @@ export async function pushProjectRules(
   projectId: string,
   serverId: string | null,
   priorHostnames: string[] = [],
-): Promise<void> {
+): Promise<boolean> {
   const [map, domains, project] = await Promise.all([
     serializeProjectRules(projectId),
     repos.domain.listByProject(projectId),
@@ -98,13 +110,15 @@ export async function pushProjectRules(
     ...domains.map((d) => d.hostname.toLowerCase()),
     ...priorHostnames.map((h) => h.toLowerCase()),
   ]);
-  await Promise.all(
+  const applied = await Promise.all(
     Array.from(hosts).map((host) =>
-      pushHost(serverId, host, map.get(host) ?? [], project?.organizationId).catch((err) =>
-        errorDiagnostics.warn("platform/engine/modules/route-rules/route-rule.service", `[route-rules] push failed for ${host}: ${safeErrorMessage(err)}`, err),
-      ),
+      pushHost(serverId, host, map.get(host) ?? [], project?.organizationId).then(() => true).catch((err) => {
+        errorDiagnostics.warn("platform/engine/modules/route-rules/route-rule.service", `[route-rules] push failed for ${host}: ${safeErrorMessage(err)}`, err);
+        return false;
+      }),
     ),
   );
+  return applied.every(Boolean);
 }
 
 /**
@@ -131,8 +145,8 @@ export async function resolveProjectPushTarget(
 }
 
 /** Push after a rule mutation (resolves the target itself). Best-effort. */
-export async function pushProjectRulesResolved(projectId: string): Promise<void> {
+export async function pushProjectRulesResolved(projectId: string): Promise<boolean> {
   const target = await resolveProjectPushTarget(projectId);
-  if (!target) return;
-  await pushProjectRules(projectId, target.serverId);
+  if (!target) return false;
+  return pushProjectRules(projectId, target.serverId);
 }

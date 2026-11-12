@@ -13,6 +13,7 @@
  */
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { randomUUID } from "node:crypto";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { normalizeTrackedDomain, safeErrorMessage } from "@repo/core";
 import { repos, type Project } from "@repo/db";
@@ -266,16 +267,37 @@ async function execMgmt(
     // (totals, then one per domain for geo), and a shared /tmp name would let
     // concurrent calls read each other's bodies. The inner `sh -c` expands "$B";
     // containerCommand owns the outer quoting.
+    const payload = opts.json === undefined ? undefined : JSON.stringify(opts.json);
+    // Response bodies can exceed Linux's per-argument limit after shell quoting.
+    // Transfer large JSON as a private file; never interpolate it into a command.
+    const requestFile = payload && Buffer.byteLength(payload) > 8192
+      ? `/tmp/openship-edge-request-${randomUUID()}.json` : undefined;
     const parts = [`B="$(mktemp)"; curl -s -o "$B" -w '%{http_code}'`];
     if (opts.method && opts.method !== "GET") parts.push(`-X ${opts.method}`);
     if (opts.json !== undefined) {
       parts.push("-H 'Content-Type: application/json'");
-      parts.push(`--data-binary ${sq(JSON.stringify(opts.json))}`);
+      parts.push(`--data-binary ${sq(requestFile ? `@${requestFile}` : payload!)}`);
     }
     parts.push(sq(url));
     const cmd = `${parts.join(" ")}; printf '\\n'; cat "$B"; rm -f "$B"`;
 
-    const out = await executor.exec(containerCommand(container, cmd));
+    let out: string;
+    try {
+      if (requestFile) {
+        await executor.writeFile(requestFile, payload!, { mode: 0o600 });
+        await executor.exec(`docker cp ${sq(requestFile)} ${sq(`${container}:${requestFile}`)}`);
+      }
+      out = await executor.exec(containerCommand(container, cmd));
+    } finally {
+      if (requestFile) {
+        await executor.exec(containerCommand(container, `rm -f ${sq(requestFile)}`)).catch(error => {
+          observeCaughtError(error, "platform/engine/lib/project-analytics");
+        });
+        await executor.rm(requestFile).catch(error => {
+          observeCaughtError(error, "platform/engine/lib/project-analytics");
+        });
+      }
+    }
     // "<status>\n<body>" — status first so a body containing newlines survives.
     const nl = out.indexOf("\n");
     if (nl < 0) return null;
@@ -388,23 +410,24 @@ export async function postEdgeMgmt(
   path: string,
   json: unknown,
   organizationId?: string,
-): Promise<void> {
+): Promise<unknown | null> {
   let target = serverId;
   if (!target) {
     if (!organizationId) {
       systemDebug("analytics", `${path}: no serverId and no org to resolve the local one`);
-      return;
+      return null;
     }
     const local = await repos.server.findLocal(organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/project-analytics"); return undefined; });
     if (!local) {
       systemDebug("analytics", `${path}: no local server row; nothing of ours to configure`);
-      return;
+      return null;
     }
     target = local.id;
   }
-  await postMgmtJson(target, path, json).catch((err) =>
-    errorDiagnostics.warn("platform/engine/lib/project-analytics", `[edge-mgmt] ${path} failed for server ${target}: ${safeErrorMessage(err)}`, err),
-  );
+  return postMgmtJson(target, path, json).catch((err) => {
+    errorDiagnostics.warn("platform/engine/lib/project-analytics", `[edge-mgmt] ${path} failed for server ${target}: ${safeErrorMessage(err)}`, err);
+    return null;
+  });
 }
 
 export async function postMgmtJson<T>(
