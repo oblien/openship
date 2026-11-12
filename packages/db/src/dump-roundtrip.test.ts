@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { getTableColumns, sql } from "drizzle-orm";
+import { count, getTableColumns, sql } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { clusterRuntimePlanFixture } from "../../contracts/test/cluster-runtime-fixtures";
 
@@ -9,6 +9,7 @@ import {
   dumpSubgraph,
   restoreSubgraph,
   restoreSubgraphInTransaction,
+  RestoreSchemaError,
   topoOrderedTables,
   type TableSpec,
 } from "./dump";
@@ -173,7 +174,8 @@ async function seedOneRowPerTable(): Promise<Map<string, Record<string, unknown>
 }
 
 async function rowCount(spec: TableSpec): Promise<number> {
-  return (await db.select().from(spec.table)).length;
+  const [row] = await db.select({ value: count() }).from(spec.table);
+  return row!.value;
 }
 
 describe("whole-instance dump → restore round trip", () => {
@@ -290,6 +292,25 @@ describe("whole-instance dump → restore round trip", () => {
     const [after] = (await db.select().from(projectSpec.table)) as Array<Record<string, unknown>>;
     expect(after?.name).toBe(before?.name);
     expect(after?.name).not.toBe("must-roll-back");
+  });
+
+  it("reports missing destination columns and rolls back the entire replacement", async () => {
+    const dump = JSON.parse(JSON.stringify(await dumpSubgraph({ kind: "instance" }))) as Awaited<
+      ReturnType<typeof dumpSubgraph>
+    >;
+    const projectSpec = topoOrderedTables().find((s) => s.sqlName === "project")!;
+    const [before] = await db.select().from(projectSpec.table);
+    dump.tables.project![0]!.name = "must-not-replace-existing-data";
+    await db.execute(sql`ALTER TABLE cloud_workspace DROP COLUMN operation`);
+    try {
+      await expect(restoreSubgraph(dump, { mode: "wipe" })).rejects.toBeInstanceOf(RestoreSchemaError);
+      expect((await db.select().from(projectSpec.table))[0]).toEqual(before);
+      for (const spec of topoOrderedTables()) {
+        expect(await rowCount(spec), `${spec.sqlName} should survive rollback`).toBe(dump.tables[spec.sqlName]?.length ?? 0);
+      }
+    } finally {
+      await db.execute(sql`ALTER TABLE cloud_workspace ADD COLUMN operation jsonb`);
+    }
   });
 
   it("restores pre-separation network table names without changing approved journal payloads", async () => {

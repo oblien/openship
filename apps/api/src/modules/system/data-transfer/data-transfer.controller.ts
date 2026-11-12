@@ -16,7 +16,7 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import type { SSEStreamingApi } from "hono/streaming";
-import { PkCollisionError } from "@repo/db";
+import { PkCollisionError, RestoreSchemaError } from "@repo/db";
 
 import { audit, auditContextFrom } from "../../../lib/audit";
 import { getRequestContext } from "../../../lib/request-context";
@@ -238,6 +238,9 @@ function importOperationFailure(err: unknown): TransferFailure | null {
   }
   if (err instanceof InvalidTransferFileError || err instanceof WrongPassphraseError) {
     return { status: 400, error: err.message, code: err.code };
+  }
+  if (err instanceof RestoreSchemaError) {
+    return { status: 409, error: err.message, code: err.code };
   }
   if (err instanceof PkCollisionError) {
     return {

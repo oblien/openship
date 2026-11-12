@@ -72,6 +72,7 @@ export {
   restoreDatabase,
   DUMP_FORMAT_VERSION,
   PkCollisionError,
+  RestoreSchemaError,
   ENCRYPTED_COLUMNS,
   EXCLUDED_TABLES,
   topoOrderedTables,
