@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -162,6 +162,38 @@ describe("assembleGitClone — token / public mode", () => {
   it("public repo (no token) clones the plain URL", () => {
     const pub = assembleGitClone({ repoUrl: "https://github.com/owner/repo.git" });
     expect(pub.cloneUrl).toBe("https://github.com/owner/repo.git");
+  });
+  it("stays on HTTPS when the user's git config rewrites https:// to ssh", () => {
+    // Token clones allow only HTTPS. A common global rule such as
+    // `url."git@github.com:".insteadOf https://github.com/` would turn the clone URL
+    // into ssh and fail with "transport 'ssh' not allowed". `ls-remote --get-url`
+    // applies the same rewrites as a clone, without touching the network.
+    const dir = mkdtempSync(join(tmpdir(), "openship-git-rewrite-"));
+    const globalConfig = join(dir, "gitconfig");
+    const rules = [
+      ["git@github.com:", "https://github.com/"], // host-wide
+      ["git@github.com:owner/", "https://github.com/owner/"], // namespace-wide
+      ["git@github.com:owner/repo", "https://github.com/owner/repo"], // this repo, without .git
+    ];
+    writeFileSync(
+      globalConfig,
+      rules.map(([to, from]) => `[url "${to}"]\n\tinsteadOf = ${from}\n`).join(""),
+    );
+    const env = {
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: globalConfig,
+    };
+    try {
+      const resolved = execFileSync(
+        "sh",
+        ["-c", gitShellCommand(inv, `ls-remote --get-url ${sq(inv.cloneUrl)}`)],
+        { encoding: "utf8", cwd: dir, env },
+      ).trim();
+      expect(resolved).toBe("https://github.com/owner/repo.git");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
