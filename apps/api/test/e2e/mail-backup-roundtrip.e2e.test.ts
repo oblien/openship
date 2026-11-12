@@ -193,7 +193,9 @@ for (const targetFlavor of ["host", "container"] as const) {
     });
 
     it("restores attachments, folders, mail databases, DKIM and target registration through the shared backup workers", async () => {
-      const result = await docker([
+      let result;
+      try {
+        result = await docker([
         "exec",
         "-w",
         "/workspace",
@@ -218,7 +220,23 @@ for (const targetFlavor of ["host", "container"] as const) {
         source,
         "bun",
         "roundtrip.js",
-      ]);
+        ]);
+      } catch (error) {
+        const failure = error as Error & { stdout?: string; stderr?: string };
+        const inspect = targetFlavor === "container"
+          ? "docker exec openship-mail sh -c 'supervisorctl status; cat /tmp/supervisord.log /tmp/postfix*.log; postfix status; postfix check; ps aux'"
+          : "systemctl status postfix dovecot amavis; journalctl --no-pager -n 60 -u postfix -u dovecot -u amavis";
+        const diagnostics = await docker(["exec", target, "sh", "-c", inspect]).catch(
+          (diagnosticError: Error & { stdout?: string; stderr?: string }) => diagnosticError,
+        );
+        throw new Error([
+          failure.message,
+          failure.stdout,
+          failure.stderr,
+          diagnostics.stdout,
+          diagnostics.stderr,
+        ].filter(Boolean).join("\n"), { cause: error });
+      }
       expect(result.stdout, result.stderr).toContain("MAIL_BACKUP_ROUNDTRIP_OK");
     }, 300_000);
   });
