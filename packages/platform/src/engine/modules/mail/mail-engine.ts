@@ -711,6 +711,15 @@ export function mailUnitProbeCommand(
   unit: string,
 ): string {
   if (flavor === "container") {
+    if (unit === "postfix" && action !== "start") {
+      // start-fg keeps a shell above Postfix's master. Stopping that shell
+      // through Supervisor can leave master and its queue writers alive.
+      // Disable automatic restarts first, then let Postfix stop its own tree.
+      const stop = `supervisorctl stop ${sq(unit)}\nif postfix status >/dev/null 2>&1; then postfix stop; fi`;
+      return mailEngineCommand(flavor, `sh -ec ${sq(
+        action === "restart" ? `${stop}\nsupervisorctl start ${sq(unit)}` : stop,
+      )}`);
+    }
     return key === "postgresql"
       ? `docker inspect -f '{{.State.Running}}' ${sq(MAIL_DB_CONTAINER)} 2>&1 || true`
       : `docker exec ${sq(MAIL_CONTAINER)} supervisorctl status ${sq(unit)} 2>&1 || true`;

@@ -24,6 +24,7 @@ import {
   mailEngineCommand,
   mailHostPath,
   mailPsqlFromStdin,
+  pauseMailDaemons,
   type MailEngineFlavor,
 } from "@repo/platform/engine/modules/mail/mail-engine";
 import {
@@ -256,6 +257,16 @@ try {
       process.env.MAIL_TEST_TARGET_FLAVOR as MailEngineFlavor,
     ),
   );
+  if (process.env.MAIL_TEST_TARGET_FLAVOR === "container") {
+    await sshManager.withExecutor(target.id, async (exec) => {
+      const paused = await pauseMailDaemons(exec, "container");
+      // Supervisor's STOPPED verdict alone is insufficient: the old image's
+      // start-fg wrapper can leave Postfix's master and queue writers alive.
+      await mail(exec, "if postfix status >/dev/null 2>&1; then exit 1; fi");
+      await paused.resume();
+      await mail(exec, "postfix status");
+    });
+  }
 
   const original = await local.exec(`doveadm fetch -u ${sq(user)} 'mailbox text' all`);
   const keys = await local.exec("sha256sum /var/lib/dkim/*.pem");
