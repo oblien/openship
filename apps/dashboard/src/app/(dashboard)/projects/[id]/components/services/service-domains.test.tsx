@@ -32,7 +32,7 @@ vi.mock("@/lib/api", async (original) => {
   return {
     ...actual,
     servicesApi: { ...actual.servicesApi, get: mocks.get, update: mocks.update },
-    projectsApi: { ...actual.projectsApi, update: mocks.updateProject, connectDomain: mocks.connect, getEdgeStatus: async () => ({ ready: true }), listRouteProtection: async () => ({ data: [] }) },
+    projectsApi: { ...actual.projectsApi, update: mocks.updateProject, connectDomain: mocks.connect, getEdgeStatus: async () => ({ ready: true }), listRouteProtection: async () => ({ data: [] }), listRouteRules: async () => ({ rules: [] }) },
     deployApi: { ...actual.deployApi, checkPorts: async () => ({ data: [] }), checkOutput: async () => ({ data: [] }) },
     domainsApi: { ...actual.domainsApi, remove: mocks.remove, verify: mocks.verify, records: mocks.records,
       list: mocks.listDomains, dnsChallenge: mocks.dnsChallenge, startDnsChallenge: mocks.startDnsChallenge, dnsPlan: mocks.dnsPlan,

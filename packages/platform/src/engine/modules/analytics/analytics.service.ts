@@ -24,10 +24,8 @@ import { NotFoundError, AppError, safeErrorMessage } from "@repo/core";
 import type { ResourceUsage } from "@repo/adapters";
 import { resolveDeploymentRuntimeForRead, disposeRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import { livePrimaryContainerId } from "@repo/platform/engine/modules/services/service-container";
-import {
-  resolveProjectTrafficSources,
-  fetchMgmt,
-} from "@repo/platform/engine/lib/project-analytics";
+import { resolveProjectTrafficSources } from "@repo/platform/engine/lib/project-analytics";
+import { fetchMgmt } from "@repo/platform/engine/lib/edge-management";
 import { getAdminOblienClient } from "@repo/platform/engine/lib/oblien-user-client";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
 import { scrapeServerIfStale } from "@repo/platform/engine/modules/system/analytics-scraper";

@@ -69,13 +69,14 @@ import {
   type RootChecked,
   type RouteConfig,
 } from "@repo/adapters";
-import type { RoutingConfig } from "@repo/core";
+import { normalizeEdgeResponse, type RoutingConfig } from "@repo/core";
 import { compileProjectRoutingFields } from "@repo/platform/engine/lib/project-routing-fields";
 import { buildDomainFanoutRegistrations } from "@repo/platform/engine/modules/deployments/compose/composite-route";
 import type Dockerode from "dockerode";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { freePort } from "../helpers/free-port";
 import { EMBEDDED_LUA } from "../../../../packages/adapters/src/infra/lua-embedded";
+import { EDGE_CLIENT_MAX_BODY_SIZE } from "../../../../packages/adapters/src/infra/openresty-lua";
 import type { HostRuleEntry } from "@repo/platform/engine/modules/route-rules/route-rule.service";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -268,16 +269,94 @@ events { worker_connections 128; }
 http {
     include       ${OPENRESTY_DEFAULT_PATHS.confDir}/mime.types;
     default_type  application/octet-stream;
+    client_max_body_size ${EDGE_CLIENT_MAX_BODY_SIZE};
     access_log off;
     lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";
     ${EDGE_SHARED_DICTS.filter(({ name }) => name === "rules" || name === "rl_counters")
       .map(({ name, size }) => `lua_shared_dict ${name} ${size};`)
       .join("\n    ")}
 
+    # Deterministic hot-path instrumentation, isolated to this fixture worker.
+    init_worker_by_lua_block {
+        local counts = { decodes=0, pathDecodes=0, bodyReads=0, bodyBytes=0, hashes=0 }
+        package.loaded.response_test_costs = counts
+        local json = require "cjson.safe"
+        local decode = json.decode
+        json.decode = function(...)
+            counts.decodes = counts.decodes + 1
+            return decode(...)
+        end
+        local unescape = ngx.unescape_uri
+        ngx.unescape_uri = function(...)
+            counts.pathDecodes = counts.pathDecodes + 1
+            return unescape(...)
+        end
+        local dict = ngx.shared.rules
+        local get = dict.get
+        dict.get = function(self, key, ...)
+            local value = get(self, key, ...)
+            if string.sub(key, 1, 10) == "responses:" then
+                counts.bodyReads = counts.bodyReads + 1
+                counts.bodyBytes = counts.bodyBytes + (value and #value or 0)
+            end
+            return value
+        end
+        local lib = require "openship.rules_lib"
+        local digest = lib.response_revision
+        lib.response_revision = function(...)
+            counts.hashes = counts.hashes + 1
+            return digest(...)
+        end
+    }
+
     # Test-only management vhost, on the same loopback-published test port.
     server {
         listen 80;
         server_name management.test;
+        location = /response-legacy-worker {
+            content_by_lua_block {
+                local lib = require "openship.rules_lib"
+                if ngx.req.get_method() == "POST" then
+                    local previous = {}
+                    for _, key in ipairs({ "static_responses", "valid_responses", "response_revision", "response_for" }) do
+                        previous[key], lib[key] = lib[key], nil
+                    end
+                    package.loaded.response_test_previous = previous
+                else
+                    for key, value in pairs(package.loaded.response_test_previous or {}) do lib[key] = value end
+                end
+                ngx.say("ok")
+            }
+        }
+        location = /response-costs {
+            content_by_lua_block {
+                local counts = package.loaded.response_test_costs
+                if ngx.req.get_method() == "POST" then
+                    for key in pairs(counts) do counts[key] = 0 end
+                end
+                ngx.say(require("cjson.safe").encode(counts))
+            }
+        }
+        location = /response-memory {
+            content_by_lua_block {
+                local dict = ngx.shared.rules
+                if ngx.req.get_method() == "POST" then
+                    local i = 0
+                    while dict:safe_set("test-fill:" .. i, string.rep("x", 65536)) do i = i + 1 end
+                    ngx.say(i)
+                else
+                    for _, key in ipairs(dict:get_keys(0)) do
+                        if string.sub(key, 1, 10) == "test-fill:" then dict:delete(key) end
+                    end
+                    ngx.say("cleared")
+                end
+            }
+        }
+        location = /policy-cache-check {
+            content_by_lua_block {
+                ngx.say(ngx.shared.rules:get("rules.test") or "[]")
+            }
+        }
         location = /country-cache-check {
             content_by_lua_block {
                 ngx.say(assert(loadfile("/tmp/visitor-country.lua"))())
@@ -942,6 +1021,366 @@ http {
     expect(response.status, response.body).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({ ok: true, host, count: rules.length });
   }
+
+  it("serves exact literal responses with headers, query strings, Unicode and HEAD", async () => {
+    const body = '{"message":"مرحبا","literal":"$host; return 500;"}';
+    await pushRules("rules.test", [
+      {
+        pathPrefix: "/virtual",
+        spec: {
+          response: normalizeEdgeResponse({
+            status: 201,
+            contentType: "application/json",
+            body,
+            headers: { "X-Example": "literal-$host" },
+          }),
+        },
+      },
+    ]);
+    const result = await ask(port, "/virtual?source=test", "rules.test");
+    expect(result).toMatchObject({ status: 201, body });
+    expect(result.headers["content-type"]).toBe("application/json");
+    expect(result.headers["x-example"]).toBe("literal-$host");
+    expect(result.headers["content-length"]).toBe(String(Buffer.byteLength(body)));
+    const head = await ask(port, "/virtual", "rules.test", { method: "HEAD" });
+    expect(head).toMatchObject({ status: 201, body: "" });
+    expect(head.headers["content-length"]).toBe(String(Buffer.byteLength(body)));
+    for (const path of ["/virtual/child", "/virtual-other"]) {
+      expect((await ask(port, path, "rules.test")).body).not.toBe(body);
+    }
+    expect((await ask(port, "/virtual", "other-rules.test")).body).not.toBe(body);
+    expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).not.toBe(201);
+  });
+
+  it("keeps responses out of the legacy policy cache during edge upgrades", async () => {
+    const capability = await ask(port, "/rules/capabilities", "management.test", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(JSON.parse(capability.body)).toMatchObject({ ok: true, staticResponses: true });
+    const policy = { pathPrefix: null, spec: { access: { methods: ["GET"] } } };
+    await pushRules("rules.test", [
+      policy,
+      { pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ body: "ready" }) } },
+    ]);
+    const legacy = await ask(port, "/policy-cache-check", "management.test");
+    expect(JSON.parse(legacy.body)).toEqual([policy]);
+    const stored = await ask(port, "/rules?host=rules.test", "management.test");
+    expect(JSON.parse(stored.body).rules).toHaveLength(2);
+    await ask(port, "/rules?host=rules.test", "management.test", { method: "DELETE" });
+    expect((await ask(port, "/virtual", "rules.test")).body).not.toBe("ready");
+  });
+
+  it("still publishes policies while a worker has the previous rules library loaded", async () => {
+    await pushRules("rules.test", [
+      { pathPrefix: null, spec: { access: { methods: ["GET"] } } },
+      {
+        pathPrefix: "/virtual",
+        spec: { response: normalizeEdgeResponse({ body: "new worker response" }) },
+      },
+    ]);
+    await ask(port, "/response-legacy-worker", "management.test", { method: "POST" });
+    try {
+      // A new worker may already have published a response into shared memory.
+      // This worker must still enforce its policies and serve ordinary traffic.
+      const ordinary = await ask(port, "/virtual", "rules.test");
+      expect(ordinary.status).toBe(200);
+      expect(ordinary.body).not.toBe("new worker response");
+      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
+      await pushRules("rules.test", [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }]);
+      const capability = await ask(port, "/rules/capabilities", "management.test");
+      expect(JSON.parse(capability.body).staticResponses).toBe(false);
+      const response = await ask(port, "/rules", "management.test", {
+        method: "POST",
+        body: JSON.stringify({
+          host: "rules.test",
+          rules: [
+            {
+              pathPrefix: "/virtual",
+              spec: { response: normalizeEdgeResponse({ body: "not yet" }) },
+            },
+          ],
+        }),
+      });
+      expect(response.status).toBe(409);
+      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
+    } finally {
+      await ask(port, "/response-legacy-worker", "management.test", { method: "DELETE" });
+    }
+  });
+
+  it("retains domain access, bans and rate limits in front of a static response", async () => {
+    const response = {
+      pathPrefix: "/virtual",
+      spec: { response: normalizeEdgeResponse({ body: "answer", methods: [] }) },
+    };
+    for (const policy of [
+      { access: { methods: ["POST"] } },
+      { ban: { userAgents: ["blocked-client"] } },
+      { hotlink: { allowReferers: ["allowed.test"], allowEmpty: false } },
+    ]) {
+      await pushRules("rules.test", [response, { pathPrefix: null, spec: policy }]);
+      expect(
+        (await ask(port, "/virtual", "rules.test", { headers: { "User-Agent": "blocked-client" } }))
+          .status,
+      ).toBe(403);
+    }
+    await pushRules("rules.test", [
+      response,
+      { pathPrefix: "/virtual", spec: { rateLimit: { rps: 1, burst: 0 } } },
+    ]);
+    const statuses = await Promise.all(
+      Array.from({ length: 8 }, () => ask(port, "/virtual", "rules.test").then((r) => r.status)),
+    );
+    expect(statuses).toContain(429);
+  });
+
+  it("matches prefixes at a path boundary and gives exact responses precedence", async () => {
+    const rules = [
+      {
+        pathPrefix: "/virtual",
+        spec: { response: normalizeEdgeResponse({ match: "prefix", body: "prefix" }) },
+      },
+      { pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ body: "exact" }) } },
+    ];
+    for (const ordered of [rules, [...rules].reverse()]) {
+      await pushRules("rules.test", ordered);
+      expect((await ask(port, "/virtual", "rules.test")).body).toBe("exact");
+      expect((await ask(port, "/virtual/child", "rules.test")).body).toBe("prefix");
+      expect((await ask(port, "/virtual-other", "rules.test")).body).not.toBe("prefix");
+    }
+    await pushRules("rules.test", [
+      {
+        pathPrefix: "/index.html",
+        spec: { response: normalizeEdgeResponse({ body: "only-index" }) },
+      },
+    ]);
+    expect((await ask(port, "/unmatched-spa-path", "rules.test")).body).not.toBe("only-index");
+  });
+
+  it("keeps custom error content and empty responses exact, including bodyless statuses", async () => {
+    for (const [status, body] of [
+      [404, "Custom missing page"],
+      [503, ""],
+      [204, ""],
+      [205, ""],
+      [304, ""],
+    ] as const) {
+      await pushRules("rules.test", [
+        { pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ status, body }) } },
+      ]);
+      const answer = await ask(port, "/virtual", "rules.test");
+      expect(answer).toMatchObject({ status, body });
+      if (status === 204 || status === 304)
+        expect(answer.headers["content-length"]).toBeUndefined();
+    }
+  });
+
+  it("applies large bodies, updates and removal without a reload", async () => {
+    const body = "ع".repeat(32000);
+    await pushRules("rules.test", [
+      { pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ body }) } },
+    ]);
+    expect((await ask(port, "/virtual", "rules.test")).body).toBe(body);
+    await pushRules("rules.test", [
+      { pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ body: "updated" }) } },
+    ]);
+    expect((await ask(port, "/virtual", "rules.test")).body).toBe("updated");
+    await pushRules("rules.test", []);
+    expect((await ask(port, "/virtual", "rules.test")).body).not.toBe("updated");
+  });
+
+  it("rejects unsafe or malformed responses before changing active rules", async () => {
+    const original = normalizeEdgeResponse({ body: "original response" });
+    await pushRules("rules.test", [
+      { pathPrefix: null, spec: { access: { methods: ["GET"] } } },
+      { pathPrefix: "/virtual", spec: { response: original } },
+    ]);
+    const invalid = [
+      { headers: { "X-Test": "ok\r\nInjected: yes" } },
+      { headers: { "X-Test": "nul\0value" } },
+      { headers: { "Bad Header": "value" } },
+      { headers: { "X-Test": "one", "x-test": "two" } },
+      ...[
+        "Content-Length",
+        "Transfer-Encoding",
+        "Content-Encoding",
+        "Connection",
+        "X-Accel-Redirect",
+      ].map((name) => ({ headers: { [name]: "unsafe" } })),
+      { headers: { "X-Test": "a".repeat(2049) } },
+      { headers: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`X-${i}`, "value"])) },
+      {
+        headers: Object.fromEntries(
+          Array.from({ length: 5 }, (_, i) => [`X-${i}`, "a".repeat(2048)]),
+        ),
+      },
+      { body: "ع".repeat(32769) },
+      { status: 101 },
+      { status: 204 },
+      { status: 200.5 },
+      { contentType: "text/plain\r\nInjected: yes" },
+      { contentType: "bad-type" },
+      { methods: "GET" },
+      { methods: ["TRACE"] },
+      { methods: { GET: true } },
+      { match: "regex" },
+    ];
+    for (const override of invalid) {
+      const rejected = await ask(port, "/rules", "management.test", {
+        method: "POST",
+        body: JSON.stringify({
+          host: "rules.test",
+          rules: [{ pathPrefix: "/virtual", spec: { response: { ...original, ...override } } }],
+        }),
+      });
+      expect(rejected.status, JSON.stringify(override).slice(0, 100)).toBe(400);
+      const answer = await ask(port, "/virtual", "rules.test");
+      expect(answer.body).toBe(original.body);
+      expect(answer.headers["injected"]).toBeUndefined();
+      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
+    }
+    for (const pathPrefix of [
+      "/_openship/hooks/probe",
+      "/.openship/auth",
+      "/.well-known/acme-challenge/probe",
+      "/../virtual",
+      "/bad//path",
+      "/bad%2Fpath",
+      "/" + "x".repeat(512),
+    ]) {
+      const rejected = await ask(port, "/rules", "management.test", {
+        method: "POST",
+        body: JSON.stringify({
+          host: "rules.test",
+          rules: [{ pathPrefix, spec: { response: original } }],
+        }),
+      });
+      expect(rejected.status, pathPrefix).toBe(400);
+    }
+  });
+
+  it("bounds route counts and preserves access policies when response storage is full", async () => {
+    const responses = Array.from({ length: 64 }, (_, i) => ({
+      pathPrefix: `/bounded/${i}`,
+      spec: { response: normalizeEdgeResponse({ body: `response-${i}` }) },
+    }));
+    await pushRules("rules.test", responses);
+    expect((await ask(port, "/bounded/63", "rules.test")).body).toBe("response-63");
+    for (const extra of [responses[0], { ...responses[0], pathPrefix: "/overflow" }]) {
+      const rejected = await ask(port, "/rules", "management.test", {
+        method: "POST",
+        body: JSON.stringify({ host: "rules.test", rules: [...responses, extra] }),
+      });
+      expect(rejected.status).toBe(400);
+      expect((await ask(port, "/bounded/63", "rules.test")).body).toBe("response-63");
+    }
+    await pushRules("rules.test", [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }]);
+    try {
+      expect(
+        (await ask(port, "/response-memory", "management.test", { method: "POST" })).status,
+      ).toBe(200);
+      const failed = await ask(port, "/rules", "management.test", {
+        method: "POST",
+        body: JSON.stringify({
+          host: "other-rules.test",
+          rules: responses.map((entry) => ({
+            ...entry,
+            spec: { response: normalizeEdgeResponse({ body: "x".repeat(65536) }) },
+          })),
+        }),
+      });
+      expect(failed.status, failed.body).toBe(503);
+      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
+    } finally {
+      await ask(port, "/response-memory", "management.test", { method: "DELETE" });
+    }
+  });
+
+  it("keeps unconfigured traffic cheap and reuses compiled responses without copying bodies", async () => {
+    const reset = () => ask(port, "/response-costs", "management.test", { method: "POST" });
+    const costs = async () =>
+      JSON.parse((await ask(port, "/response-costs", "management.test")).body);
+    for (const policies of [[], [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }]]) {
+      await pushRules("rules.test", policies);
+      await ask(port, "/", "rules.test"); // warm existing policy/GeoIP caches
+      await reset();
+      for (let i = 0; i < 16; i++) await ask(port, "/", "rules.test");
+      expect(await costs()).toEqual({
+        decodes: 0,
+        pathDecodes: 0,
+        bodyReads: 0,
+        bodyBytes: 0,
+        hashes: 0,
+      });
+    }
+    const entries = (body: string) => [
+      { pathPrefix: "/virtual", spec: { response: normalizeEdgeResponse({ body }) } },
+    ];
+    const body = "x".repeat(65536);
+    await pushRules("rules.test", entries(body));
+    await reset();
+    expect((await ask(port, "/virtual", "rules.test")).body).toBe(body);
+    expect(await costs()).toMatchObject({ decodes: 1, pathDecodes: 1, bodyReads: 1, hashes: 1 });
+    await reset();
+    for (let i = 0; i < 16; i++)
+      expect((await ask(port, `/virtual?request=${i}`, "rules.test")).body).toBe(body);
+    expect(await costs()).toEqual({
+      decodes: 0,
+      pathDecodes: 16,
+      bodyReads: 0,
+      bodyBytes: 0,
+      hashes: 0,
+    });
+    await pushRules("rules.test", entries("refreshed"));
+    await reset();
+    expect((await ask(port, "/virtual", "rules.test")).body).toBe("refreshed");
+    expect(await costs()).toMatchObject({ decodes: 1, bodyReads: 1, hashes: 1 });
+    await pushRules("rules.test", []);
+    await reset();
+    expect((await ask(port, "/virtual", "rules.test")).body).not.toBe("refreshed");
+    expect(await costs()).toEqual({
+      decodes: 0,
+      pathDecodes: 0,
+      bodyReads: 0,
+      bodyBytes: 0,
+      hashes: 0,
+    });
+  });
+
+  it("supports an OPTIONS response and leaves platform paths alone under a catch-all", async () => {
+    await pushRules("rules.test", [
+      {
+        pathPrefix: "/virtual",
+        spec: {
+          response: normalizeEdgeResponse({
+            status: 204,
+            methods: ["OPTIONS"],
+            headers: { "Access-Control-Allow-Origin": "https://client.test" },
+          }),
+        },
+      },
+    ]);
+    const options = await ask(port, "/virtual", "rules.test", { method: "OPTIONS" });
+    expect(options).toMatchObject({ status: 204, body: "" });
+    expect(options.headers["access-control-allow-origin"]).toBe("https://client.test");
+    await pushRules("rules.test", [
+      {
+        pathPrefix: null,
+        spec: { response: normalizeEdgeResponse({ match: "prefix", body: "catch-all" }) },
+      },
+    ]);
+    expect((await ask(port, "/ordinary", "rules.test")).body).toBe("catch-all");
+    for (const path of [
+      "/_openship/hooks/probe",
+      "/.openship/auth",
+      "/.well-known/acme-challenge/probe",
+      "/ignored/../.openship/auth",
+      "//.openship/auth",
+    ]) {
+      expect((await ask(port, path, "rules.test")).body).not.toBe("catch-all");
+    }
+  });
 
   it.each([
     ["JSON null", null],

@@ -13,6 +13,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
 import { useTheme } from "@/components/theme-provider";
+import { getApiBaseUrl } from "@/lib/api/client";
 const project = {
   id: "environment-preview",
   name: "website",
@@ -46,7 +47,7 @@ export default function Preview() {
   const [loading, setLoading] = useState(false);
   async function scenario(services: boolean) {
     setLoading(true);
-    await fetch("http://127.0.0.1:3013/api/preview/scenario", {
+    await fetch(new URL("preview/scenario", getApiBaseUrl()), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ services }),

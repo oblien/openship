@@ -491,6 +491,8 @@ export function mergeAdvanced(
  * upstream/LB weights, …) as a pure shape-widening — no migration (JSONB).
  */
 export type RouteRuleSpec = {
+  /** Domain-scoped virtual route. Access rules are evaluated independently first. */
+  response?: import("./edge-response").EdgeResponse;
   /**
    * Per-client rate limit (fixed 1s window, keyed by client IP). Omit = unlimited.
    * `status` overrides the 429 response code. Runs alongside (does not replace)

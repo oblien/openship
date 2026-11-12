@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { execFileSync } from "node:child_process";
+import { Readable } from "node:stream";
 import { elevatedExecutor, elevateCommand, ensureOwnedDir } from "./elevated-executor";
 import { framedCatCommand } from "./exact-file-read";
 import { probeOutput } from "./environment.fixtures";
@@ -63,6 +64,17 @@ describe("elevateCommand", () => {
 });
 
 describe("elevatedExecutor", () => {
+  it("preserves elevation and stream identity for stdin uploads without inventing capability", async () => {
+    const { inner } = fakeExecutor();
+    expect(elevatedExecutor(inner).execWithInput).toBeUndefined();
+    const body = Readable.from(["request bytes"]);
+    const result = { code: 0, stdout: "", stderr: "" };
+    inner.execWithInput = vi.fn(async () => result);
+    const command = "docker exec -i edge sh -c 'cat > /tmp/request'";
+    expect(await elevatedExecutor(inner).execWithInput!(command, body)).toBe(result);
+    expect(inner.execWithInput).toHaveBeenCalledWith(elevateCommand(command), body);
+  });
+
   it("elevates exec and streamExec", async () => {
     const { inner, exec, streamExec } = fakeExecutor();
     const el = elevatedExecutor(inner);

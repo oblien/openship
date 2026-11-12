@@ -51,14 +51,14 @@ vi.mock("@repo/platform/engine/lib/system-debug", () => ({
   formatDuration: () => "1ms",
 }));
 
-vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   probeMgmt: vi.fn(async (serverId: string) => {
     h.scraped.push(serverId);
     if (h.failing.has(serverId)) throw new Error("ssh refused");
     return true;
   }),
   fetchMgmt: vi.fn(async () => h.totals),
-  postMgmt: vi.fn(async () => ({ buckets: [], flushed: 0 })),
+  postMgmtJson: vi.fn(async () => ({ buckets: [], flushed: 0 })),
 }));
 
 const { runAnalyticsScrapeSweep } = await import("@repo/platform/engine/modules/system/analytics-scraper");
@@ -98,7 +98,7 @@ describe("runAnalyticsScrapeSweep", () => {
   it("goes one server at a time — a 50-box control plane must not connect to all at once", async () => {
     let concurrent = 0;
     let peak = 0;
-    const { probeMgmt } = await import("@repo/platform/engine/lib/project-analytics");
+    const { probeMgmt } = await import("@repo/platform/engine/lib/edge-management");
     (probeMgmt as unknown as { mockImplementation: (f: unknown) => void }).mockImplementation(
       async (serverId: string) => {
         concurrent += 1;

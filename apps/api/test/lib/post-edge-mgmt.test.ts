@@ -31,7 +31,6 @@ vi.mock("@repo/platform/engine/lib/ssh-tunnel", () => ({
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { retain: vi.fn(), release: vi.fn(), acquire: vi.fn() },
 }));
-vi.mock("@repo/platform/engine/lib/platform-mode", () => ({ isOblienBackedDeployment: async () => false }));
 const { findLocal } = vi.hoisted(() => ({ findLocal: vi.fn() }));
 vi.mock("@repo/db", () => ({
   repos: {
@@ -39,7 +38,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-const { postEdgeMgmt } = await import("@repo/platform/engine/lib/project-analytics");
+const { postEdgeMgmt } = await import("@repo/platform/engine/lib/edge-management");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -123,13 +122,13 @@ describe("failure is best-effort by contract", () => {
     // would abort a routing reconcile over a metrics setting.
     await expect(
       postEdgeMgmt(null, "/analytics/config", { hosts: [] }, "org1"),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 
   it("resolves when the tunnel fails", async () => {
     tunnelRequest.mockRejectedValue(new Error("tunnel closed"));
     await expect(
       postEdgeMgmt("srv1", "/analytics/config", { host: "a.com", paths: true }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 });

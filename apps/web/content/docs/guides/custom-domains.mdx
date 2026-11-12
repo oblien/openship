@@ -186,6 +186,34 @@ require a new TXT challenge at renewal; the domain details show when renewal is 
 
 </Steps>
 
+## Return content directly from the edge
+
+Open the domain card under your app's **Domains** tab or the project's **Domains & Routes**.
+In **Virtual routes**, choose **Add route** to return a small response without changing or
+redeploying your application. Single apps and Compose services use the same editor.
+
+For example, create `/health`, choose status `200` and content type `application/json`,
+and enter `{"status":"ok"}`. Add response headers such as `Cache-Control: no-store`, then
+choose **Save response**. You can edit, pause, or remove the response from that domain card.
+
+- **Exact path** matches only the path you entered; query parameters do not affect it.
+- **Path prefix** also matches child paths. The longest path wins, with exact matches taking
+  precedence at the same path.
+- GET and HEAD are selected initially. Request methods can be narrowed in the editor.
+- Content is literal UTF-8 text up to 64 KiB, including JSON, HTML, XML, and custom content types.
+  Statuses `204`, `205`, and `304` require an empty body. Protocol headers such as
+  `Content-Length` are managed automatically.
+- Each domain can have up to 64 virtual routes, including paused routes.
+
+Existing domain redirects, password protection, access policies, and rate limits still apply.
+Platform and certificate-verification paths are reserved. This feature requires a domain
+served by the OpenShip edge; Cloud, cluster, external-ingress, and redirect-only domains
+are not supported.
+
+**Saved and applied** means the edge acknowledged the update. If the response is saved but
+pending, update or reconnect the edge and use the domain's **Retry routing** action. Older
+edges need updated scripts and a reload before they can serve virtual responses.
+
 ## Wildcard domains
 
 Add `*.example.com` to the project's **Domains** tab or the service's public routes. Openship

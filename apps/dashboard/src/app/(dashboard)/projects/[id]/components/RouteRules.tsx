@@ -69,7 +69,7 @@ export function RouteRules() {
     setLoading(true);
     try {
       const res = await projectsApi.listRouteRules(projectData.id);
-      const list = res?.rules ?? [];
+      const list = (res?.rules ?? []).filter(rule => !rule.spec.response);
       setRules(list);
       if (!autoOpened.current && list.length > 0) {
         setOpen(true);

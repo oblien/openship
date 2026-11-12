@@ -7,8 +7,8 @@ import { explainEdgeDown, isEdgeDownFailure } from "./edge-exec-error";
 import { framedCatCommand, unframeFileRead } from "./exact-file-read";
 
 /** Wrap a command so it runs INSIDE the named edge container. */
-export function containerCommand(container: string, command: string): string {
-  return `docker exec ${sq(container)} sh -c ${sq(command)}`;
+export function containerCommand(container: string, command: string, opts?: { stdin?: boolean }): string {
+  return `docker exec ${opts?.stdin ? "-i " : ""}${sq(container)} sh -c ${sq(command)}`;
 }
 
 /**

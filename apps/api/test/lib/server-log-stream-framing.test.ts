@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { streamChunkBytes } from "@repo/platform/engine/lib/project-analytics";
+import { streamChunkBytes } from "@repo/platform/engine/lib/edge-management";
 
 /**
  * The server-logs live tail relays the EDGE's SSE frames. `pipe_stream.lua` emits

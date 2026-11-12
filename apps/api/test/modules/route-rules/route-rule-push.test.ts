@@ -1,6 +1,6 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { RouteRuleSpec } from "@repo/core";
+import { normalizeEdgeResponse, type RouteRuleSpec } from "@repo/core";
 
 /**
  * The DB is the source of truth for route rules; the edge only knows what was last
@@ -41,8 +41,8 @@ vi.mock("@repo/db", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@repo/platform/engine/lib/project-analytics", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/platform/engine/lib/project-analytics")>()),
+vi.mock("@repo/platform/engine/lib/edge-management", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/platform/engine/lib/edge-management")>()),
   postEdgeMgmt,
 }));
 
@@ -88,7 +88,7 @@ function capturedPushes() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  postEdgeMgmt.mockResolvedValue(undefined);
+  postEdgeMgmt.mockResolvedValue({ ok: true, staticResponses: true });
   // pushProjectRules now loads the project too, for the organizationId that resolves a
   // null serverId to the "This Server" row. The real repo always returns a promise; an
   // unset mock returns undefined and blows up on `.catch`.
@@ -171,6 +171,38 @@ describe("serializeProjectRules", () => {
 });
 
 describe("pushProjectRules", () => {
+  it("checks response support before publishing and keeps the response bound to its domain", async () => {
+    const response = { response: normalizeEdgeResponse({ body: "ready" }) };
+    listByProject.mockResolvedValue([rule({ domainId: "d1", pathPrefix: "/health", spec: response })]);
+    listDomains.mockResolvedValue([domain("d1", "a.com"), domain("d2", "b.com")]);
+    await expect(pushProjectRules("p1", "srv1")).resolves.toBe(true);
+    const calls = capturedPushes();
+    expect(calls.findIndex(call => call.path === "/rules/capabilities")).toBeLessThan(
+      calls.findIndex(call => call.path === "/rules" && call.body.host === "a.com"));
+    expect(calls.find(call => call.body.host === "a.com")?.body.rules).toEqual([{ pathPrefix: "/health", spec: response }]);
+    expect(calls.find(call => call.body.host === "b.com")?.body.rules).toEqual([]);
+  });
+
+  it.each([null, { ok: true }, { ok: true, staticResponses: false }])("does not send a response to an older edge: %j", async (capability) => {
+    listByProject.mockResolvedValue([rule(), rule({ id: "response", domainId: "d1", spec: { response: normalizeEdgeResponse({ body: "ready" }) } })]);
+    listDomains.mockResolvedValue([domain("d1", "a.com")]);
+    postEdgeMgmt.mockImplementation(async (_server, path) => path === "/rules/capabilities" ? capability : { ok: true });
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
+    try {
+      await expect(pushProjectRules("p1", "srv1")).resolves.toBe(false);
+      expect(capturedPushes().find(call => call.path === "/rules")?.body.rules).toEqual([{ pathPrefix: null, spec: RL }]);
+    } finally { warn.mockRestore(); }
+  });
+
+  it("reports an unacknowledged push as pending", async () => {
+    listByProject.mockResolvedValue([]);
+    listDomains.mockResolvedValue([domain("d1", "a.com")]);
+    postEdgeMgmt.mockResolvedValue(null);
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
+    try { await expect(pushProjectRules("p1", "srv1")).resolves.toBe(false); }
+    finally { warn.mockRestore(); }
+  });
+
   it("pushes every current host, even the ones with no rules", async () => {
     // An empty ruleset is how a host is CLEARED. Pushing only hosts that still have
     // rules is exactly the bug where a deleted rule keeps enforcing.
@@ -212,7 +244,7 @@ describe("pushProjectRules", () => {
     postEdgeMgmt.mockRejectedValueOnce(new Error("tunnel closed")).mockResolvedValue({ ok: true });
     const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
 
-    await expect(pushProjectRules("p1", "srv1")).resolves.toBeUndefined();
+    await expect(pushProjectRules("p1", "srv1")).resolves.toBe(false);
     expect(postEdgeMgmt).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();

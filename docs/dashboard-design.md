@@ -980,6 +980,28 @@ is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
 editing other routing rules.
 
+Literal edge responses live in **Virtual routes** inside each domain card. Single apps,
+Compose services, and project domains use the same `DomainResponseRoutes` list and editor;
+do not add a second Settings form or a page for each path. The shared dialog edits path,
+exact/prefix matching, HTTP status, content type, content, headers, and optional methods.
+Keep its header and Save/Cancel footer fixed while the form body scrolls. On wide screens,
+place response content beside the headers/methods sidebar; stack these on mobile. Use visible
+filled field surfaces within the modal, label the custom content type, and switch the body
+editor between content and an escaped response preview in one compact toolbar.
+Default to exact GET/HEAD matching. Preview content as escaped text, never executable HTML.
+Keep existing drafts on failed saves and distinguish a failed list read from an empty list.
+Show **Saved and applied** only after edge acknowledgement; otherwise show saved/pending and
+point to the domain's existing routing retry. Saves do not trigger an app deployment.
+
+Virtual routes use the existing domain-scoped route-rule API and storage, but stay out of
+the access-policy editor. They run after access policies, rate limits, and password checks.
+The longest matching path wins, with exact before prefix at the same path; prefixes match
+path boundaries. Query strings are ignored. Response content is literal UTF-8 text up to
+64 KiB. Reserved platform and ACME paths are excluded. Offer the editor for domains served
+by the OpenShip edge; Cloud, cluster, external-ingress, and redirect-only domains do not
+support it. Older edges retain their access policies and report responses as pending until
+their scripts are updated and the edge is reloaded.
+
 Project and service route saves share the same inline preparation and HTTPS progress viewer.
 The first exposed route retains proxy takeover consent and completes domain checks after edge
 setup. New custom hostnames on an existing edge use the existing project routing/HTTPS check;

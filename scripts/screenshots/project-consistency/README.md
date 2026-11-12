@@ -31,6 +31,12 @@ The normal Add form, app/service switcher, tabs, and environment Save/Apply cont
 are interactive. The fixture has no production credentials or live deployment engine;
 unsupported operations report that they are outside the preview.
 
+Domain cards also include the real **Virtual routes** editor. Create, edit, pause, and
+remove sample responses under `/projects/environment-preview/services/application/domains`.
+The fixture keeps these changes in memory and simulates edge acknowledgement; actual HTTP
+response behavior is covered by the isolated OpenResty routing E2E suite.
+Set `PREVIEW_API_PORT` and the two API URL variables above to use a different fixture port.
+
 Capture the walkthrough and theme/mobile checks with an installed Playwright:
 
 ```sh
@@ -39,6 +45,11 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chrome-headless-shell \
 node scripts/screenshots/project-consistency/capture.mjs
 node scripts/screenshots/project-consistency/review.mjs
 ```
+
+Run `response-routes.mjs` in the same directory with those Playwright variables for
+the virtual-route editor checks and local captures. `PREVIEW_ORIGIN` and
+`PREVIEW_API_ORIGIN` override its default preview and fixture addresses. It checks
+create/edit/pause/remove, failed-save recovery, adding a service, themes, and mobile.
 
 The capture uses the real Add form to add PostgreSQL, verifies the stable application
 URL and saved environment, preserves untouched secrets, and checks separate Save/Apply,

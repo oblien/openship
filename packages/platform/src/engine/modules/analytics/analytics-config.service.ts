@@ -28,7 +28,8 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
-import { postEdgeMgmt, resolveProjectTrafficSources } from "../../lib/project-analytics";
+import { resolveProjectTrafficSources } from "../../lib/project-analytics";
+import { postEdgeMgmt } from "../../lib/edge-management";
 
 /**
  * Push the current setting to every hostname the project serves.

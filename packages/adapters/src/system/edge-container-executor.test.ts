@@ -46,6 +46,12 @@ describe("containerCommand", () => {
     const wrapped = containerCommand("openship-edge", `pkill -f '[o]penresty'`);
     expect(wrapped).toBe(`docker exec 'openship-edge' sh -c 'pkill -f '\\''[o]penresty'\\'''`);
   });
+
+  it("keeps stdin attached only when an upload requests it", () => {
+    expect(containerCommand("openship-edge", "cat > /tmp/request.json", { stdin: true })).toBe(
+      "docker exec -i 'openship-edge' sh -c 'cat > /tmp/request.json'",
+    );
+  });
 });
 
 describe("edgeContainerExecutor", () => {
