@@ -8,12 +8,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "next typegen && tsc --noEmit",
+    "test": "bun test ./test",
     "test:metadata": "node ../../scripts/check-web-social-metadata.mjs",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "@repo/core": "workspace:*",
     "@repo/contracts": "workspace:*",
+    "@repo/core": "workspace:*",
     "@repo/ui": "workspace:*",
     "clsx": "2.1.1",
     "fumadocs-core": "^16.10.7",
@@ -24,6 +25,8 @@
     "marked": "^15.0.0",
     "motion": "12.4.7",
     "next": "^16.4.6",
+    "next-intl": "4.15.0",
+    "parse5": "7.3.0",
     "react": "~19.2.9",
     "react-dom": "~19.2.9",
     "react-wrap-balancer": "^1.1.1",

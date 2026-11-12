@@ -22,7 +22,7 @@ export function MigrationProxyReview({ stack }: { stack: DiscoveredStack }) {
         <span className="min-w-0 flex-1 font-medium text-foreground">
           {stack.proxy
             ? interpolate(copy.detected, {
-                proxy: stack.proxy.ours ? "Openship" : stack.proxy.kind,
+                proxy: stack.proxy.ours ? "OpenShip" : stack.proxy.kind,
               })
             : warnings.length
               ? interpolate(copy.warnings, { count: String(warnings.length) })

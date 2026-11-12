@@ -1,0 +1,35 @@
+---
+title: "OpenShip 0.9.1: explore aplicativos, controle tempos de execução, recupere seu fluxo de trabalho"
+description: "Um catálogo de aplicativos públicos, configuração de tempo de execução mais clara e correções para salvamentos de fluxo de trabalho, conexões na nuvem, webmail e preparação de imagem de implantação."
+date: "2026-10-13"
+category: "Product"
+author: "OpenShip Team"
+---
+
+OpenShip 0.9.1 melhora as etapas de uma implantação: escolher um aplicativo, configurar seu tempo de execução, retornar a uma configuração salva e preparar a próxima versão.
+
+## Explore antes de instalar
+
+O [catálogo de aplicativos públicos](/apps) permite navegar por back-ends, bancos de dados, ferramentas de publicação e automação sem abrir o painel primeiro. Pesquise ou filtre por categoria e abra um aplicativo para ver seus recursos, serviços incluídos e requisitos.
+
+A instalação continua através do fluxo de configuração existente. Os links de aplicativos e planos mantêm seu destino por meio de login e verificação, e as configurações de instalação confirmadas podem ser retomadas após a finalização da compra.
+
+## Configuração de tempo de execução mais deliberada
+
+As compilações PHP geradas suportam PHP 8.3 e 8.4 por meio da configuração da versão de tempo de execução. Docker builds de origem também expõem uma substituição avançada de imagem de produção. As receitas verificam os recursos e a compatibilidade do tempo de execução antes da ativação, e as reversões de imagens retidas preservam a configuração original do tempo de execução.
+
+Manual Docker reimplanta tags de registro mutáveis ​​de atualização, preservando compilações locais e artefatos de reversão fixados. As imagens de substituição são preparadas antes da ativação do serviço. Uma preparação falhada deixa os contêineres atuais em execução; a transição multisserviço posterior permanece sequencial.
+
+## Recupere sem recriar tudo
+
+Os links salvos do servidor em nuvem têm ações de reconexão mais claras e orientações para incompatibilidades de contas e falhas temporárias. Um aplicativo de webmail existente também pode ser reconectado quando seu registro de e-mail perder o link do projeto, reutilizando seu projeto e armazenamento persistente.
+
+A migração agora preserva domínios que roteiam apenas caminhos selecionados. As rotas exatas e de prefixo permanecem anexadas aos seus serviços e as solicitações sem correspondência permanecem sem correspondência.
+
+## Melhorias no fluxo de trabalho e na linguagem
+
+Os fluxos de trabalho de ações independentes podem salvar YAML personalizado válido com orientação mais clara para nomes ausentes, executores, validação ou configurações de acesso. As instâncias de desktop conectadas e auto-hospedadas encaminham o fluxo de trabalho da nuvem e as operações do executor para a instância da nuvem proprietária.
+
+O russo se junta aos idiomas do painel e o webmail recebe atualizações ao vivo na caixa de entrada por meio de seu stream de eventos.
+
+Leia o [changelog completo](/changelog), explore o [diretório de recursos](/features) ou siga o [guia de atualização](/docs/guides/updating) para sua instalação.

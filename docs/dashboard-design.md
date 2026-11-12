@@ -414,6 +414,14 @@ use their installed tools and physical CPU.
 
 ## Layout and density
 
+The Library's **Import existing project** flow has a direct route at
+`/library/migrate`. Use `?from=railway`, `?from=vercel`, or `?from=server` to
+select a source; unknown hints open the source chooser. Public migration actions
+use the same route and preserve it through sign-in. The shared Library layout
+keeps the existing wizard mounted when browsing its other tabs. Opening a link
+only selects the source; connection, destination, review and import confirmation
+remain in the existing flow.
+
 Settings uses one navigation card without a separate account/Settings identity card.
 Connections is the provider workspace; legacy Credentials and DNS URLs still open it.
 Show provider logos, a short description and Add in compact rows, with the shared
@@ -1150,6 +1158,30 @@ The project Apps & Services view keeps runtime-role configuration and live role 
 available when the primary app is represented by a service row. The existing role editor
 reads support from the API; do not add a duplicate primary application card. Service-only
 changes retain the web process and roles, while the toolbar wraps on narrow screens.
+
+Apps & Services uses one list from the first app onward. Primary applications use
+`WorkloadListItem` and `WorkloadDetailHeader`, the same row, header, switcher and tab
+layout as services. Keep the common tabs in the order Overview, Environment, Logs;
+show additional runtime capabilities before Settings. Adding infrastructure adds
+rows without relocating the application. `/services/application` is its stable
+address, including after its backing service row is created or the last companion
+is removed. The API's `applicationMode` resolves configuration ownership: project
+controls for an inherited primary app, service controls when existing overrides or
+a different deployment pipeline require them. Never discard service overrides to
+make the screen look uniform, and never send a synthetic app ID to service APIs.
+
+Reuse `EnvironmentPanel` and `EnvironmentVariables` in app details, services and
+shared project Settings. Keep primary app runtime configuration in its Settings
+tab; project Settings links there and owns shared inputs and project-wide limits.
+For a single app, the Settings environment shortcut opens its Environment tab.
+With companions, explicitly label project-wide inputs “Shared project environment”.
+Keep Save separate from Apply & restart and Rebuild & redeploy. Project apply stays
+available after reopening, uses the existing deployment engine, and links to its
+actual progress without claiming the running values are synchronized. Static and
+single-app Cloud destinations offer rebuilding. Service environments retain their
+live comparison, source review and focused apply operation. Protect integration
+values, preserve untouched secrets and drafts across local tabs, and retain import,
+text editing and download in the shared editor.
 
 Webhook delivery rows show a short, localized explanation below the repository when change analysis records a decision. Reuse the existing feed; keep unknown reason codes out of user-facing text.
 

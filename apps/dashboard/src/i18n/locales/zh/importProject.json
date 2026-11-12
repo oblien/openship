@@ -61,7 +61,7 @@
       "title": "健康检查",
       "subtitle": "关闭 — 应用一启动，部署即完成",
       "subtitleOn": "开启 — 部署会先等待应用响应再上线",
-      "description": "Openship 在应用启动后不会等待它，因此启动缓慢绝不会拖慢或搞失败一次部署。上线后仍会检查端口并报告结果，且不会阻塞任何环节。只有当你希望部署本身拒绝转为成功时，才开启这些选项。",
+      "description": "OpenShip 在应用启动后不会等待它，因此启动缓慢绝不会拖慢或搞失败一次部署。上线后仍会检查端口并报告结果，且不会阻塞任何环节。只有当你希望部署本身拒绝转为成功时，才开启这些选项。",
       "probeLabel": "等待应用响应",
       "probeDesc": "容器启动后连接应用端口，并等待它接受连接。",
       "pathLabel": "HTTP 路径",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "运行时版本",
     "runtimeVersionDefault": "默认",
-    "runtimeVersionDesc": "使用与所选版本匹配的构建和运行镜像。需要由 Openship 生成的 Docker 构建。",
+    "runtimeVersionDesc": "使用与所选版本匹配的构建和运行镜像。需要由 OpenShip 生成的 Docker 构建。",
     "buildImageLabel": "构建镜像",
     "buildImageDesc": "用于云端或服务器构建的构建容器镜像。当检测到的基础镜像有误时可覆盖此项。",
     "productionPathsLabel": "生产路径",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "不会被保留",
       "statefulWarnPart2": "。替换工作区之前，请明确执行数据备份和恢复。",
       "volumeHint": "命名卷或主机路径 → 容器路径。",
-      "volumeCloudNote": "Openship Cloud 不支持持久卷挂载。需要卷的工作负载请选择服务器。",
+      "volumeCloudNote": "OpenShip Cloud 不支持持久卷挂载。需要卷的工作负载请选择服务器。",
       "sourcePlaceholder": "来源",
       "containerPathPlaceholder": "容器路径",
       "readOnlyMount": "只读挂载",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Cloud",
+    "targetOpenshipCloud": "OpenShip Cloud",
     "targetServerNamed": "服务器 · {name}",
     "targetServer": "服务器",
     "targetLocal": "本地机器",
@@ -379,9 +379,9 @@
       "port": "端口",
       "process": "进程",
       "unitDescription": "单元描述",
-      "openshipDeployment": "Openship 部署",
+      "openshipDeployment": "OpenShip 部署",
       "sites": {
-        "lead": "现有代理当前提供 {count} 个站点。迁移会先将它们导入 Openship，然后接管 80/443 端口：",
+        "lead": "现有代理当前提供 {count} 个站点。迁移会先将它们导入 OpenShip，然后接管 80/443 端口：",
         "tlsBadge": "TLS",
         "staticLabel": "静态：",
         "warningsTitle": "无法自动迁移 — 请手动重新添加："
@@ -531,7 +531,7 @@
     "title": "部分仓库部署设置未应用",
     "description": "部署前请检查以下跳过的设置。",
     "titleWholeFile": "已忽略此仓库的 openship.json",
-    "descriptionWholeFile": "文件中没有任何内容生效。本次部署将使用 Openship 自动检测到的设置继续。",
+    "descriptionWholeFile": "文件中没有任何内容生效。本次部署将使用 OpenShip 自动检测到的设置继续。",
     "refused": "已拒绝",
     "unrecognized": "无法识别",
     "hint": "下次部署前，请检查指定的配置文件并更新不受支持的设置。"

@@ -202,7 +202,7 @@ describe("release check requests (#661)", () => {
           {
             id: "control-plane-patch",
             revision: 1,
-            title: "Update Openship",
+            title: "Update OpenShip",
             message: "Install the patched control plane.",
             severity: "high",
             url: "https://example.com/security",

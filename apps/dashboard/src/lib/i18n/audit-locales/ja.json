@@ -302,7 +302,7 @@
   "server.unreachable": {
     "label": "サーバー到達不能",
     "action": "サーバー到達不能を報告しました",
-    "description": "OpenshipはこのサーバーへのSSH接続を開けませんでした。"
+    "description": "OpenShipはこのサーバーへのSSH接続を開けませんでした。"
   },
   "server.reachable": {
     "label": "サーバー再接続完了",
@@ -335,7 +335,7 @@
   "identity.provisioned": {
     "label": "IDプロビジョニング完了",
     "action": "IDをプロビジョニングしました",
-    "description": "信頼できるホストが外部IDをOpenshipユーザーにマッピングしました。"
+    "description": "信頼できるホストが外部IDをOpenShipユーザーにマッピングしました。"
   },
   "organization.created": {
     "label": "組織作成",
@@ -460,7 +460,7 @@
   "mcp.tool_called": {
     "label": "AIツール呼び出し",
     "action": "MCPツールを実行しました",
-    "description": "MCPクライアントによってOpenshipツールが実行されました。"
+    "description": "MCPクライアントによってOpenShipツールが実行されました。"
   },
   "admin.bootstrapped": {
     "label": "初期管理者アカウント作成",
@@ -567,7 +567,7 @@
   "updates:write": {
     "label": "システム更新",
     "action": "更新プログラムを確認または適用しました",
-    "description": "Openshipコンポーネントの更新が実行されました。"
+    "description": "OpenShipコンポーネントの更新が実行されました。"
   },
   "cloud.disconnect": {
     "label": "Cloud切断",

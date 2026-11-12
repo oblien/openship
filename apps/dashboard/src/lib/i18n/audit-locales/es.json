@@ -309,7 +309,7 @@
   "server.unreachable": {
     "label": "Servidor inaccesible",
     "action": "reportó servidor inaccesible",
-    "description": "Openship no pudo establecer una conexión SSH con este servidor."
+    "description": "OpenShip no pudo establecer una conexión SSH con este servidor."
   },
   "server.reachable": {
     "label": "Servidor accesible de nuevo",
@@ -342,7 +342,7 @@
   "identity.provisioned": {
     "label": "Identidad aprovisionada",
     "action": "aprovisionó la identidad",
-    "description": "Un host confiable asignó una identidad externa a un usuario de Openship."
+    "description": "Un host confiable asignó una identidad externa a un usuario de OpenShip."
   },
   "organization.created": {
     "label": "Organización creada",
@@ -481,7 +481,7 @@
   "mcp.tool_called": {
     "label": "Llamada de herramienta de IA",
     "action": "ejecutó la herramienta MCP",
-    "description": "Un cliente MCP ejecutó una herramienta de Openship."
+    "description": "Un cliente MCP ejecutó una herramienta de OpenShip."
   },
   "admin.bootstrapped": {
     "label": "Primera cuenta de administrador creada",
@@ -596,7 +596,7 @@
   "updates:write": {
     "label": "Actualización del sistema",
     "action": "buscó o aplicó actualizaciones",
-    "description": "Se inició una actualización del sistema Openship."
+    "description": "Se inició una actualización del sistema OpenShip."
   },
   "cloud.disconnect": {
     "label": "Cloud desconectado",

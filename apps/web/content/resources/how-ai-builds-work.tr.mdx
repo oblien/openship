@@ -1,0 +1,53 @@
+---
+title: "OpenShip Bölgesinde Yapay Zeka Yapıları Nasıl Çalışır?"
+description: "OpenShip adlı çocuğun çerçeveleri algılamak, yapılandırmalar oluşturmak ve derlemeleri otomatik olarak optimize etmek için yapay zekayı nasıl kullandığına ayrıntılı bir bakış."
+date: "2026-03-08"
+category: "Engineering"
+author: "OpenShip Team"
+---
+
+`openship deploy` uygulamasını çalıştırdığınızda, uygulamanız yayınlanmadan önce pek çok şey gerçekleşir. Yapay zeka derleme sistemi şu şekilde çalışır.
+
+## Adım 1: Çerçeve tespiti
+
+OpenShip projenizi sinyaller için tarar:
+
+- `package.json` komut dosyası ve bağımlılık
+- Yapılandırma dosyaları (`next.config.js`, `nuxt.config.ts`, `Cargo.toml` vb.)
+- Dockerdosya varlığı
+- Dizin yapısı kalıpları
+
+Bu, güven puanlı bir çerçeve eşleşmesi üretir. OpenShip, Next.js öğesini %95 güvenle algılarsa, Next.js derleme ardışık düzenini kullanır. Bir Dockerdosyası varsa doğrudan onu kullanır.
+
+## Adım 2: Yapılandırma oluşturma
+
+OpenShip, algılanan çerçeveye göre şunu oluşturur:
+
+- **Derleme komutu** - `npm run build`, `go build` vb.
+- **Komutu başlat** - `npm start`, `./server` vb.
+- **Bağlantı noktası eşleme** - Uygulamanızın hangi bağlantı noktasını dinlediğini algılar
+- **Ortam değişkenleri** - Çerçeve kurallarına göre gerekli değişkenleri önerir
+
+Bunlardan herhangi birini `openship.json` içinde geçersiz kılabilirsiniz.
+
+## 3. Adım: Optimizasyon oluşturun
+
+Yapay zeka katmanı yapıyı optimize eder:
+
+- **Katman önbelleğe alma** - Bağımlılık katmanları kaynak kodundan ayrı olarak önbelleğe alınır
+- **Çok aşamalı derlemeler** - Üretim görselleri geliştirici bağımlılıklarını hariç tutar
+- **Paralel derlemeler** - Çoklu hizmet projeleri eş zamanlı olarak derleniyor
+
+## 4. Adım: Durum kontrolleri
+
+Dağıtımdan sonra OpenShip şunları doğrular:
+
+- Konteyner başarıyla başlatılıyor
+- Durum denetimi uç noktası yanıt verir
+- SSL sağlandı ve geçerli
+
+Herhangi bir kontrol başarısız olursa dağıtım otomatik olarak geri alınır.
+
+## Sırada ne var
+
+Yapay zeka destekli teşhis üzerinde çalışıyoruz; bir derleme başarısız olduğunda OpenShip hatayı analiz edecek ve düzeltmeler önerecektir. Bizi izlemeye devam edin.

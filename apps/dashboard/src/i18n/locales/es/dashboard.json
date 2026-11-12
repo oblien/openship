@@ -140,7 +140,7 @@
       "addCustom": "Añadir personalizada",
       "howToAddApp": "Cómo añadir una aplicación",
       "removeCustomApp": "Eliminar aplicación personalizada",
-      "needsUpdateDesc": "Actualiza tu instancia de Openship para instalar esta aplicación.",
+      "needsUpdateDesc": "Actualiza tu instancia de OpenShip para instalar esta aplicación.",
       "needsUpdateBadge": "Requiere actualización",
       "needsVersionBadge": "Requiere v{version}",
       "removedToast": "Se eliminó \"{name}\".",

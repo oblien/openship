@@ -67,6 +67,15 @@ describe("dashboard proxy middleware", () => {
     expect(new URL(response.headers.get("location")!).searchParams.get("returnTo")).toBe(destination);
   });
 
+  it.each(["/library/migrate", "/library/migrate?from=railway", "/library/migrate?from=vercel", "/library/migrate?from=server"])(
+    "retains the migration entry %s through login", (destination) => {
+      const response = proxy(new NextRequest(`https://app.openship.io${destination}`));
+      const login = new URL(response.headers.get("location")!);
+      expect(login.pathname).toBe("/login");
+      expect(login.searchParams.get("returnTo")).toBe(destination);
+    },
+  );
+
   it.each([
     "/auth/callback/install?state=install-nonce",
     "/auth/callback/close?error=unable_to_link_account",

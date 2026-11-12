@@ -1,7 +1,8 @@
-import { Fragment } from "react";
+import { useCopy } from "@/i18n/use-copy";
+import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
 
 /**
- * Comparison - grouped table, Openship column highlighted with a tinted rail.
+ * Comparison - open grouped rows with a soft OpenShip column highlight.
  * Each cell carries a refined status mark (win / loss / neutral) so it reads at
  * a glance without bright colors.
  *
@@ -14,7 +15,7 @@ import { Fragment } from "react";
  *    manufactured `loss`. Every claim here is verified against Vercel/Netlify
  *    and Coolify/Dokploy/Dokku as of July 2026.
  *
- * 2. SAY IT THE CALM WAY. These capabilities involve Openship touching servers
+ * 2. SAY IT THE CALM WAY. These capabilities involve OpenShip touching servers
  *    the reader already runs, so the wording leads with what they get, not with
  *    what we do to their box. "Works with the proxy you already run", never
  *    "take over your proxy"; "picks up what's already running", never "adopt and
@@ -27,16 +28,17 @@ import { Fragment } from "react";
 type Status = "win" | "loss" | "neutral";
 type Cell = { text: string; status: Status };
 type Row = { feature: string; openship: Cell; managed: Cell; selfhost: Cell };
-type Group = { title: string; rows: Row[] };
+type Group = { title: string; illustration: FeatureIllustrationName; rows: Row[] };
 
 const GROUPS: Group[] = [
   {
     title: "Where it runs, and what stays on",
+    illustration: "deploy-anywhere",
     rows: [
       {
         feature: "Who runs your workload",
         openship: {
-          text: "Openship Cloud runs it, or self-host free on machines you own. One tool, one dashboard, and you can move either direction later.",
+          text: "OpenShip Cloud runs it, or self-host free on machines you own. One tool, one dashboard, and you can move either direction later.",
           status: "win",
         },
         managed: {
@@ -82,6 +84,7 @@ const GROUPS: Group[] = [
   },
   {
     title: "Included, not bolted on",
+    illustration: "compose-multi-service",
     rows: [
       {
         feature: "Email from your own domain",
@@ -147,6 +150,7 @@ const GROUPS: Group[] = [
   },
   {
     title: "Fits the setup you already have",
+    illustration: "server-management",
     rows: [
       {
         feature: "Servers with things already on them",
@@ -197,6 +201,7 @@ const GROUPS: Group[] = [
   },
   {
     title: "If you change your mind",
+    illustration: "migration-import",
     rows: [
       {
         feature: "Moving to a different server",
@@ -214,9 +219,9 @@ const GROUPS: Group[] = [
         },
       },
       {
-        feature: "Leaving Openship",
+        feature: "Leaving OpenShip",
         openship: {
-          text: "On your own servers, removing a project deletes our record and nothing else. Containers, data and config keep serving traffic, and Openship can pick them back up later.",
+          text: "On your own servers, removing a project deletes our record and nothing else. Containers, data and config keep serving traffic, and OpenShip can pick them back up later.",
           status: "win",
         },
         managed: {
@@ -237,12 +242,23 @@ function StatusMark({ status }: { status: Status }) {
     <span className={`cmp-mark cmp-mark--${status}`} aria-hidden="true">
       {status === "win" && (
         <svg viewBox="0 0 14 14" fill="none">
-          <path d="M3 7.2 L6 10 L11 4.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M3 7.2 L6 10 L11 4.4"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
       {status === "loss" && (
         <svg viewBox="0 0 14 14" fill="none">
-          <path d="M4 4 L10 10 M10 4 L4 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <path
+            d="M4 4 L10 10 M10 4 L4 10"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
         </svg>
       )}
       {status === "neutral" && (
@@ -254,62 +270,107 @@ function StatusMark({ status }: { status: Status }) {
   );
 }
 
-export function Comparison() {
+function ComparisonValue({
+  label,
+  text,
+  status,
+  highlighted = false,
+}: {
+  label: string;
+  text: string;
+  status: Status;
+  highlighted?: boolean;
+}) {
   return (
-    <section className="cmp-section">
+    <div className={`cmp-cell${highlighted ? " cmp-cell--win" : ""}`} role="cell">
+      <span className="cmp-provider-label">{label}</span>
+      <StatusMark status={status} />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+export function Comparison() {
+  const copy = useCopy();
+
+  return (
+    <section id="comparison" className="cmp-section" aria-labelledby="comparison-title">
       <div className="site-container cmp-container">
         <header className="cmp-head">
-          <p className="cmp-eyebrow">Straight comparison</p>
-          <h2 className="cmp-title">
-            Where Openship is<br />genuinely different.
-          </h2>
+          <div>
+            <p className="cmp-eyebrow">{copy("Straight comparison")}</p>
+            <h2 id="comparison-title" className="cmp-title">
+              {copy("Where OpenShip is")}
+              <br />
+              <span>{copy("genuinely different.")}</span>
+            </h2>
+          </div>
           <p className="cmp-sub">
-            Git deploys, TLS, databases, backups, cron &mdash; every tool here has those, so
-            they are not on this list. What is below is where the choice actually changes
-            what you can do, and what it costs you to change your mind.
+            {copy(
+              "Git deploys, TLS, databases, backups, cron — every tool here has those, so they are not on this list. What is below is where the choice actually changes what you can do, and what it costs you to change your mind.",
+            )}
           </p>
         </header>
 
-        <div className="cmp">
-          <div className="cmp-highlight" aria-hidden="true" />
-
+        <div className="cmp" role="table" aria-labelledby="comparison-title" aria-colcount={4}>
           {/* Header */}
-          <div className="cmp-row cmp-row--head">
-            <div className="cmp-cell cmp-cell--feature">Feature</div>
-            <div className="cmp-cell cmp-cell--win">Openship</div>
-            <div className="cmp-cell">Managed (Vercel, Netlify)</div>
-            <div className="cmp-cell">Self-host (Coolify, Dokploy, Dokku)</div>
+          <div className="cmp-row cmp-row--head" role="row">
+            <div className="cmp-cell cmp-cell--feature" role="columnheader">{copy("Feature")}</div>
+            <div className="cmp-cell cmp-cell--win" role="columnheader">
+              <span className="cmp-brand"><span className="cmp-brand-mark" aria-hidden="true" />OpenShip</span>
+            </div>
+            <div className="cmp-cell" role="columnheader">
+              {copy("Managed")}
+              <bdi className="cmp-providers" dir="ltr">
+                Vercel · Netlify
+              </bdi>
+            </div>
+            <div className="cmp-cell" role="columnheader">
+              {copy("Self-host")}
+              <bdi className="cmp-providers" dir="ltr">
+                Coolify · Dokploy · Dokku
+              </bdi>
+            </div>
           </div>
 
           {/* Body, grouped */}
           {GROUPS.map((g) => (
-            <Fragment key={g.title}>
-              <p className="cmp-group">{g.title}</p>
+            <div key={g.title} className="cmp-body-group" role="rowgroup">
+              <div className="cmp-group" role="row">
+                <div className="cmp-group-heading" role="cell" aria-colspan={4}>
+                  <FeatureIllustration name={g.illustration} className="cmp-illustration" />
+                  <h3>{copy(g.title)}</h3>
+                </div>
+              </div>
               {g.rows.map((r) => (
-                <div key={r.feature} className="cmp-row">
-                  <div className="cmp-cell cmp-cell--feature">{r.feature}</div>
-                  <div className="cmp-cell cmp-cell--win">
-                    <StatusMark status={r.openship.status} />
-                    <span>{r.openship.text}</span>
-                  </div>
-                  <div className="cmp-cell">
-                    <StatusMark status={r.managed.status} />
-                    <span>{r.managed.text}</span>
-                  </div>
-                  <div className="cmp-cell">
-                    <StatusMark status={r.selfhost.status} />
-                    <span>{r.selfhost.text}</span>
-                  </div>
+                <div key={r.feature} className="cmp-row" role="row">
+                  <div className="cmp-cell cmp-cell--feature" role="rowheader">{copy(r.feature)}</div>
+                  <ComparisonValue
+                    label="OpenShip"
+                    status={r.openship.status}
+                    text={copy(r.openship.text)}
+                    highlighted
+                  />
+                  <ComparisonValue
+                    label={copy("Managed")}
+                    status={r.managed.status}
+                    text={copy(r.managed.text)}
+                  />
+                  <ComparisonValue
+                    label={copy("Self-host")}
+                    status={r.selfhost.status}
+                    text={copy(r.selfhost.text)}
+                  />
                 </div>
               ))}
-            </Fragment>
+            </div>
           ))}
         </div>
 
         <p className="cmp-foot">
-          Compared against the shipping versions of each tool, July 2026. A dash means
-          that tool genuinely matches Openship, or that the row does not apply to it.
-          We would rather score a row even than invent a cross.
+          {copy(
+            "Compared against the shipping versions of each tool, July 2026. A dash means that tool genuinely matches OpenShip, or that the row does not apply to it. We would rather score a row even than invent a cross.",
+          )}
         </p>
       </div>
     </section>

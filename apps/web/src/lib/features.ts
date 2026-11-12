@@ -63,7 +63,7 @@ export const FEATURES: Feature[] = [
     summary:
       "Import a project from your machine through the desktop workflow, folder upload, or CLI. Review detection and stream its build output to the chosen destination.",
     body: [
-      "Select a local project or upload a folder, then review the detected stack, commands, and destination. Openship sends source files while excluding rebuildable dependencies, Git metadata, and common build outputs.",
+      "Select a local project or upload a folder, then review the detected stack, commands, and destination. OpenShip sends source files while excluding rebuildable dependencies, Git metadata, and common build outputs.",
       "Redeploy subsequent local changes into the same project. Source upload and build location are separate choices: importing a local folder does not mean every build executes on your laptop.",
     ],
     highlights: [
@@ -108,7 +108,7 @@ export const FEATURES: Feature[] = [
     category: "Manage",
     tagline: "Automate platform operations with documented HTTP routes and typed clients.",
     summary:
-      "Integrate Openship into your own tooling through the API and SDK. Read resources, deploy projects, inspect operation status, and manage authorized workflows from code.",
+      "Integrate OpenShip into your own tooling through the API and SDK. Read resources, deploy projects, inspect operation status, and manage authorized workflows from code.",
     body: [
       "Connect a client to the intended instance with an authorized credential and workspace context. The generated reference maps SDK methods to HTTP routes and explains required capabilities and destination availability.",
       "Use operation IDs and documented progress or log interfaces for long-running work. API and SDK calls use the platform's permission checks; a typed request is not a substitute for access to the resources involved.",
@@ -136,13 +136,13 @@ export const FEATURES: Feature[] = [
     guide: "/docs/getting-started/first-deployment",
     title: "Deploy anywhere",
     category: "Deploy",
-    tagline: "Openship Cloud, your own VPS, or a homelab — one workflow.",
+    tagline: "OpenShip Cloud, your own VPS, or a homelab — one workflow.",
     screenshot: null,
     summary:
       "Choose where your application lives: managed Cloud, a connected server, or your homelab. Keep source, builds, deployments, domains, and logs together.",
     body: [
       "Connect an SSH-accessible server or choose managed Cloud compute, then select it when creating a project. Inspect its capabilities and configure the build and runtime your application needs.",
-      "Self-host the controller, manage remote servers through the desktop app, or use Openship Cloud. Infrastructure operations and runtimes depend on the destination; setup shows the supported choices.",
+      "Self-host the controller, manage remote servers through the desktop app, or use OpenShip Cloud. Infrastructure operations and runtimes depend on the destination; setup shows the supported choices.",
     ],
     highlights: [
       {
@@ -233,7 +233,7 @@ export const FEATURES: Feature[] = [
     tagline: "Restore a retained application image from deployment history.",
     screenshot: null,
     summary:
-      "Return to an available retained release when an application change goes wrong. Openship creates a rollback deployment using its recorded image and configuration.",
+      "Return to an available retained release when an application change goes wrong. OpenShip creates a rollback deployment using its recorded image and configuration.",
     body: [
       "Inspect a previous release and review its restore plan before rolling back. Retained images avoid rebuilding old source against new dependencies. Artifact availability follows your configured retention.",
       "Replacement images are prepared before activation. Service cutover remains sequential, and rollback does not reverse database writes or restore persistent volumes; use a backup for data recovery.",
@@ -262,7 +262,7 @@ export const FEATURES: Feature[] = [
       "Inspect build logs, service output, HTTP requests, traffic analytics, resource usage, and health notices from the project view.",
     body: [
       "Switch between build output, a service runtime stream, and request logs. Search, copy, or download visible output. Request analytics summarize paths, response times, status codes, and bandwidth.",
-      "Monitoring checks deployed services and records incidents. If a server cannot be observed, Openship reports unavailable monitoring rather than declaring applications stopped. A successful check after connectivity returns updates that state.",
+      "Monitoring checks deployed services and records incidents. If a server cannot be observed, OpenShip reports unavailable monitoring rather than declaring applications stopped. A successful check after connectivity returns updates that state.",
     ],
     highlights: [
       {
@@ -334,7 +334,7 @@ export const FEATURES: Feature[] = [
     tagline: "Connect domains, verify DNS, and manage HTTPS certificates.",
     screenshot: null,
     summary:
-      "Put your application on a domain you control. Openship guides DNS verification and certificate setup and keeps status visible next to the deployment.",
+      "Put your application on a domain you control. OpenShip guides DNS verification and certificate setup and keeps status visible next to the deployment.",
     body: [
       "Add a domain to its project or service, point DNS to the displayed target, and verify it. Set the primary address and inspect routing and HTTPS status in the same view.",
       "Self-hosted destinations use their certificate workflow, including automatic renewal; managed Cloud uses its edge certificate path. Wildcard and DNS-provider requirements vary by destination and configuration.",
@@ -427,7 +427,7 @@ export const FEATURES: Feature[] = [
   {
     slug: "mail",
     availability:
-      "Mail-server provisioning is available through desktop and self-hosted Openship. The hosted Cloud mail console is not available yet.",
+      "Mail-server provisioning is available through desktop and self-hosted OpenShip. The hosted Cloud mail console is not available yet.",
     guide: "/docs/guides/email-webmail",
     title: "Mail server & webmail",
     category: "Data",
@@ -436,7 +436,7 @@ export const FEATURES: Feature[] = [
     summary:
       "Run mail on your domain with mailbox administration and built-in webmail, or connect webmail to an existing provider. Configure supported outbound relays.",
     body: [
-      "Mail setup guides server selection, domain records, and the stack. Manage mailboxes and aliases in Openship and use webmail alongside desktop or mobile clients.",
+      "Mail setup guides server selection, domain records, and the stack. Manage mailboxes and aliases in OpenShip and use webmail alongside desktop or mobile clients.",
       "Keep existing mailboxes when you only need webmail, or relay outbound mail through SMTP or a supported provider. Delivery depends on suitable DNS, host reputation, and provider settings.",
     ],
     highlights: [
@@ -482,7 +482,7 @@ export const FEATURES: Feature[] = [
     tagline: "Drive deploys from Claude, Cursor, or any MCP client.",
     screenshot: null,
     summary:
-      "Openship ships an MCP server, so AI agents can deploy, read logs, manage domains, and more — through standard, authenticated tools, scoped to exactly what you allow.",
+      "OpenShip ships an MCP server, so AI agents can deploy, read logs, manage domains, and more — through standard, authenticated tools, scoped to exactly what you allow.",
     body: [
       'Connect Claude, Cursor, or any MCP client and let it operate your infrastructure with the same permissions model as a human — including narrow scopes like "only projects it creates."',
       "Every agent action runs through the same authorization and audit path as the dashboard and CLI, so AI access is powerful without being a back door.",
@@ -504,7 +504,7 @@ export const FEATURES: Feature[] = [
     summary:
       "Create a live application from a selected branch, with its own configuration, address, deployment history, and logs.",
     body: [
-      "Use the project's environment switcher to add a branch. Openship copies its build settings into a new environment; deploy that environment to create its own live address for review.",
+      "Use the project's environment switcher to add a branch. OpenShip copies its build settings into a new environment; deploy that environment to create its own live address for review.",
       "Each environment has independent variables and deployment history. Choose its services deliberately, share the address with reviewers, and remove the environment when it is no longer needed.",
     ],
     highlights: [
@@ -529,7 +529,7 @@ export const FEATURES: Feature[] = [
     summary:
       "Build, test, and automate with workflows linked to projects or saved independently. Edit job dependencies, steps, matrices, and YAML in one editor.",
     body: [
-      "Files in .openship/workflows/ and standalone definitions are scheduled by Openship and executed with act. Manual, repository-event, and scheduled triggers use Openship permissions, capacity, and run history without GitHub's Actions scheduler.",
+      "Files in .openship/workflows/ and standalone definitions are scheduled by OpenShip and executed with act. Manual, repository-event, and scheduled triggers use OpenShip permissions, capacity, and run history without GitHub's Actions scheduler.",
       "Files in .github/workflows/ stay coordinated by GitHub. Official runners execute matching jobs on your selected destinations, while GitHub manages workflow credentials, protected environments, and results. Independent mode has documented compatibility boundaries.",
     ],
     highlights: [
@@ -539,7 +539,7 @@ export const FEATURES: Feature[] = [
       },
       {
         title: "Independent CI",
-        desc: "Let Openship schedule workflows outside .github/workflows/.",
+        desc: "Let OpenShip schedule workflows outside .github/workflows/.",
       },
       {
         title: "GitHub coordination",
@@ -555,7 +555,7 @@ export const FEATURES: Feature[] = [
     category: "Run",
     tagline: "Existing servers, dedicated machines, or disposable Cloud VMs.",
     summary:
-      "Choose where CI executes and how much capacity it can use. Openship checks destination capabilities and manages worker startup, cancellation, and cleanup.",
+      "Choose where CI executes and how much capacity it can use. OpenShip checks destination capabilities and manages worker startup, cancellation, and cleanup.",
     body: [
       "Select an existing server, create a dedicated managed server, or use temporary Cloud runners. Configure OS and architecture labels, execution images, per-job CPU and memory, and parallel limits.",
       "Linux supports container or native execution; connected Macs support native jobs. Temporary jobs receive disposable Linux VMs funded from the Actions balance. Persistent destinations execute code trusted by their administrator.",
@@ -617,7 +617,7 @@ export const FEATURES: Feature[] = [
     category: "Connect",
     tagline: "Trigger supported automation from authenticated external events.",
     summary:
-      "Connect a script or another system to deployment and job workflows through incoming webhooks, with execution visible in Openship.",
+      "Connect a script or another system to deployment and job workflows through incoming webhooks, with execution visible in OpenShip.",
     body: [
       "Configure a hook for the supported action, such as redeploying a project or invoking a job. Use its required token or signature mechanism rather than exposing an unauthenticated command endpoint.",
       "Repository webhooks also feed automatic deployments and Actions events. The triggered operation follows the normal authorization and execution pipeline, with its own status and logs.",
@@ -730,10 +730,10 @@ export const FEATURES: Feature[] = [
     category: "Data",
     tagline: "Deploy MinIO or connect an existing bucket for backups.",
     summary:
-      "Use object storage for application files and recovery copies. Openship includes a MinIO template and S3-compatible backup destinations.",
+      "Use object storage for application files and recovery copies. OpenShip includes a MinIO template and S3-compatible backup destinations.",
     body: [
       "Review the MinIO template's services and persistent storage before deploying it. Configure the application's endpoint and credentials through its environment settings.",
-      "Connect an existing S3-compatible bucket for backups, including S3, R2, B2, or MinIO. Bucket replication and lifecycle capabilities belong to the selected storage service; Openship manages its configured backup destination and retention.",
+      "Connect an existing S3-compatible bucket for backups, including S3, R2, B2, or MinIO. Bucket replication and lifecycle capabilities belong to the selected storage service; OpenShip manages its configured backup destination and retention.",
     ],
     highlights: [
       { title: "MinIO template", desc: "Deploy an S3-compatible service from the catalog." },
@@ -791,9 +791,9 @@ export const FEATURES: Feature[] = [
     slug: "instance-transfer",
     title: "Instance export & transfer",
     category: "Manage",
-    tagline: "Move the Openship control plane with reviewed credential handling.",
+    tagline: "Move the OpenShip control plane with reviewed credential handling.",
     summary:
-      "Export and import supported instance data when changing where Openship runs. Keep credentials and infrastructure bindings explicit.",
+      "Export and import supported instance data when changing where OpenShip runs. Keep credentials and infrastructure bindings explicit.",
     body: [
       "Prepare an export and select the records and credentials to include. Import validates the archive and handles supported encrypted credentials for the destination.",
       "External accounts or Cloud workspace bindings may need reconnection. Preserving account protections such as 2FA requires transferring their credentials; project-only exports do not move account identity.",
@@ -947,7 +947,7 @@ export const FEATURES: Feature[] = [
     category: "Secure",
     tagline: "Review instance and supported infrastructure versions before updating.",
     summary:
-      "See available Openship releases and supported managed component updates. Follow the documented workflow with a recovery plan.",
+      "See available OpenShip releases and supported managed component updates. Follow the documented workflow with a recovery plan.",
     body: [
       "Review available instance releases and their notes. Supported self-hosted infrastructure scans also compare configured and running versions of managed modules and containers.",
       "Prepare an instance backup before updating. Automatic behavior follows your configured preferences, while manual updates retain the review and recovery steps in the guide.",

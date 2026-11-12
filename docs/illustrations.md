@@ -139,9 +139,29 @@ Features, Migrate, Apps, About, Trust, Contact and Support use this shared found
 Keep their container width at `site-container`; do not add route-specific maximum
 widths to imitate the layout.
 
+The download page keeps its seafoam hero, then presents all desktop downloads
+together and the CLI beneath them. Use the shared platform detection and
+`PlatformIcon` for operating-system marks, `InstallTabs` for the same commands as
+the documentation, and the illustration family for explanatory sections. Display
+release metadata only when available; do not invent sizes or installation output.
+
 For the homepage's scrolling product walkthrough, see
 [deployment walkthrough](design/deploy-walkthrough.md) for layout behavior and
 instructions to regenerate its screenshots from actual dashboard components.
+
+The homepage mail section and `/mail` share `MailPreview`: the mail client in front
+of a lightly angled, localized administration capture, inside a soft violet frame.
+Keep the client dominant and the admin header visible behind it. Regenerate admin captures with
+the [mail capture script](../scripts/screenshots/mail/README.md). Keep mail features
+in `apps/web/src/lib/mail-features.ts`; use the shared illustrations beside them.
+The product page distinguishes Desktop/self-hosted mail administration from Cloud
+webmail connected to an existing provider. Keep the layers still and avoid simulated
+live counters or animated card swapping.
+
+The homepage comparison uses the same two-tone heading and small shared artwork
+beside each group. Keep rows open, with only light separators and a soft OpenShip
+column highlight. On phones, each row shows all three providers with explicit labels;
+retain the table's accessible row and column relationships.
 
 The app directory uses `MarketplaceAppLink` for both search results and related apps.
 It reuses the open row layout but keeps each provider's original logo, catalog
@@ -149,6 +169,11 @@ availability and hosting requirements. Categories wrap on phones so none require
 discovering a horizontal scroll. Search and category selection continue to use the
 existing URL state and catalog filtering. App articles and installation metadata
 stay in the existing catalog pipeline.
+
+Homepage app cards use a soft neutral fill, with the original logo beside the
+name, a short description and a quiet category-and-arrow footer. Keep names
+readable in both text directions and stack cards on phones. Use a subtle hover
+fill and visible keyboard focus rather than outlines, shadows or lifting cards.
 
 Migrate is organized around starting points, a move checklist, destination choices,
 and practical questions. Keep Cloud copy about shared plan capacity and projects,

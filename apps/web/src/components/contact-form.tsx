@@ -1,4 +1,6 @@
 "use client";
+import { useCopy } from "@/i18n/use-copy";
+
 import { reportCaughtError } from "@repo/core/diagnostics";
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
@@ -16,6 +18,8 @@ type FieldProps = {
 };
 
 function Field({ label, id, required, children }: FieldProps) {
+  const copy = useCopy();
+
   return (
     <div>
       <label
@@ -23,7 +27,7 @@ function Field({ label, id, required, children }: FieldProps) {
         className="block text-sm font-medium mb-2"
         style={{ color: "var(--th-text-body)" }}
       >
-        {label}
+        {copy(label)}
         {required && <span style={{ color: "var(--th-clr-terra)" }}> *</span>}
       </label>
       {children}
@@ -51,6 +55,8 @@ declare global {
 }
 
 export function ContactForm({ siteKey }: { siteKey: string }) {
+  const copy = useCopy();
+
   const [ready, setReady] = useState(false);
   const [token, setToken] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
@@ -149,14 +155,15 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
         <span className="contact-receipt-icon" aria-hidden="true">
           <Check size={24} />
         </span>
-        <h2>Request received</h2>
-        <p>Your request is saved for the Openship team. We’ll reply by email.</p>
+        <h2>{copy("Request received")}</h2>
+        <p>{copy("Your request is saved for the OpenShip team. We’ll reply by email.")}</p>
         <p>
-          Reference: <strong>{receipt?.id}</strong>
+          {copy("Reference: ")}
+          <strong>{copy(receipt?.id)}</strong>
         </p>
-        <p>Keep this reference. You can reply to the team’s email with more details.</p>
+        <p>{copy("Keep this reference. You can reply to the team’s email with more details.")}</p>
         <button type="button" className="contact-again" onClick={() => setStatus("idle")}>
-          Send another message
+          {copy("Send another message")}
         </button>
       </div>
     );
@@ -173,7 +180,7 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
           setStatus("error");
         }}
       />
-      <Field label="Name" id="contact-name" required>
+      <Field label={copy("Name")} id="contact-name" required>
         <input
           id="contact-name"
           maxLength={120}
@@ -183,10 +190,10 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
-          placeholder="Your name"
+          placeholder={copy("Your name")}
         />
       </Field>
-      <Field label="Email" id="contact-email" required>
+      <Field label={copy("Email")} id="contact-email" required>
         <input
           id="contact-email"
           maxLength={254}
@@ -196,10 +203,10 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          placeholder="you@example.com"
+          placeholder={copy("you@example.com")}
         />
       </Field>
-      <Field label="Subject" id="contact-subject" required>
+      <Field label={copy("Subject")} id="contact-subject" required>
         <input
           id="contact-subject"
           maxLength={200}
@@ -208,10 +215,10 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
           required
-          placeholder="How can we help?"
+          placeholder={copy("How can we help?")}
         />
       </Field>
-      <Field label="Message" id="contact-message" required>
+      <Field label={copy("Message")} id="contact-message" required>
         <textarea
           id="contact-message"
           maxLength={12_000}
@@ -219,26 +226,27 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           required
-          placeholder="Tell us more about your question or issue…"
+          placeholder={copy("Tell us more about your question or issue…")}
         />
       </Field>
       {status === "error" && (
         <p role="alert" className="contact-error">
-          {errorText}
+          {copy(errorText)}
         </p>
       )}
       <p className="contact-form-note">
-        Include the project or deployment reference and the error you see. Please leave out
-        passwords, tokens, and payment card details.
+        {copy(
+          "Include the project or deployment reference and the error you see. Please leave out passwords, tokens, and payment card details.",
+        )}
       </p>
-      <div ref={challenge} aria-label="Bot verification" />
+      <div ref={challenge} aria-label={copy("Bot verification")} />
       {!siteKey && (
         <p role="alert" className="contact-error">
-          Contact is temporarily unavailable. Please try again later.
+          {copy("Contact is temporarily unavailable. Please try again later.")}
         </p>
       )}
       <button type="submit" className="contact-submit" disabled={status === "sending" || !token}>
-        {status === "sending" ? "Sending…" : "Send message"}
+        {status === "sending" ? copy("Sending…") : copy("Send message")}
       </button>
     </form>
   );

@@ -61,7 +61,7 @@
       "title": "Verificações de saúde",
       "subtitle": "Desligadas — o deploy termina assim que a app está a correr",
       "subtitleOn": "Ligadas — o deploy espera pela tua app antes de ficar no ar",
-      "description": "O Openship não espera pela tua app depois de a arrancar, por isso um arranque lento nunca atrasa nem falha um deploy. Depois de estar no ar, a porta é verificada de qualquer forma e reportada sem bloquear nada. Liga isto só se quiseres que o próprio deploy se recuse a ficar verde.",
+      "description": "O OpenShip não espera pela tua app depois de a arrancar, por isso um arranque lento nunca atrasa nem falha um deploy. Depois de estar no ar, a porta é verificada de qualquer forma e reportada sem bloquear nada. Liga isto só se quiseres que o próprio deploy se recuse a ficar verde.",
       "probeLabel": "Esperar que a app responda",
       "probeDesc": "Depois de o contentor arrancar, contactar a porta da app e esperar que aceite uma ligação.",
       "pathLabel": "Caminho HTTP",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "Versão do runtime",
     "runtimeVersionDefault": "Padrão",
-    "runtimeVersionDesc": "Usa imagens de compilação e execução compatíveis com a versão selecionada. Requer uma compilação Docker gerada pelo Openship.",
+    "runtimeVersionDesc": "Usa imagens de compilação e execução compatíveis com a versão selecionada. Requer uma compilação Docker gerada pelo OpenShip.",
     "buildImageLabel": "Imagem de Build",
     "buildImageDesc": "Imagem de container do compilador para builds em cloud ou servidor. Substitua-a quando a imagem base detectada estiver incorreta.",
     "productionPathsLabel": "Caminhos de Produção",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "não são mantidos entre rebuilds",
       "statefulWarnPart2": ". Faça o backup e a restauração dos dados explicitamente antes de substituir o workspace.",
       "volumeHint": "Volume nomeado ou caminho do host → caminho do container.",
-      "volumeCloudNote": "O Openship Cloud não oferece suporte a montagens de volumes persistentes. Escolha um servidor para cargas que precisam de volumes.",
+      "volumeCloudNote": "O OpenShip Cloud não oferece suporte a montagens de volumes persistentes. Escolha um servidor para cargas que precisam de volumes.",
       "sourcePlaceholder": "Origem",
       "containerPathPlaceholder": "Caminho do container",
       "readOnlyMount": "Montagem somente leitura",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Cloud",
+    "targetOpenshipCloud": "OpenShip Cloud",
     "targetServerNamed": "Servidor · {name}",
     "targetServer": "Servidor",
     "targetLocal": "Máquina local",
@@ -379,9 +379,9 @@
       "port": "Porta",
       "process": "Processo",
       "unitDescription": "Descrição da Unidade",
-      "openshipDeployment": "Implantação Openship",
+      "openshipDeployment": "Implantação OpenShip",
       "sites": {
-        "lead": "O proxy existente serve atualmente {count} site(s). A migração os importa para o Openship antes de assumir as portas 80/443:",
+        "lead": "O proxy existente serve atualmente {count} site(s). A migração os importa para o OpenShip antes de assumir as portas 80/443:",
         "tlsBadge": "TLS",
         "staticLabel": "estático:",
         "warningsTitle": "Não puderam ser migrados automaticamente — adicione-os manualmente:"
@@ -531,7 +531,7 @@
     "title": "Algumas configurações de implantação do repositório não foram aplicadas",
     "description": "Revise as configurações ignoradas abaixo antes de implantar.",
     "titleWholeFile": "O openship.json deste repositório foi ignorado",
-    "descriptionWholeFile": "Nada do arquivo foi aplicado. O deploy vai continuar com as configurações que o Openship detectou.",
+    "descriptionWholeFile": "Nada do arquivo foi aplicado. O deploy vai continuar com as configurações que o OpenShip detectou.",
     "refused": "Recusado",
     "unrecognized": "Não reconhecido",
     "hint": "Verifique os arquivos de configuração indicados e atualize as configurações não suportadas antes da próxima implantação."

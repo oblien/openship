@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "Kendi sunucunuza dağıtın",
-    "description": "Openship Bulut'un yanında kendi altyapınızda da projeler çalıştırmak için SSH üzerinden bir sunucu bağlayın.",
+    "description": "OpenShip Bulut'un yanında kendi altyapınızda da projeler çalıştırmak için SSH üzerinden bir sunucu bağlayın.",
     "button": "Bir sunucu bağla"
   },
   "filters": {
     "title": "Hedefe göre filtrele",
     "subtitle": "Projelerin dağıtıldığı yer",
     "allProjects": "Tüm projeler",
-    "cloud": "Openship Bulut",
+    "cloud": "OpenShip Bulut",
     "local": "Yerel"
   },
   "card": {
@@ -111,8 +111,8 @@
     "cleanupPending": "Silme işlemi başladı. Temizleme tamamlanana kadar proje kullanılamaz.",
     "alreadyDeleted": "Proje zaten silinmiş",
     "forceModalTitle": "Kaynaktan kaldırılamadı",
-    "forceModalBody": "Çalışma zamanına ulaşılamadı (veya hata vermeye devam etti), bu nedenle bu proje kaldırılamadı. Yine de Openship'ten silebilirsiniz — kayıt şimdi kaldırılır ve sunucu erişilebilir olduğunda kalan kaynaklar otomatik olarak temizlenir.",
-    "forceModalConfirm": "Openship kayıtlarından sil",
+    "forceModalBody": "Çalışma zamanına ulaşılamadı (veya hata vermeye devam etti), bu nedenle bu proje kaldırılamadı. Yine de OpenShip'ten silebilirsiniz — kayıt şimdi kaldırılır ve sunucu erişilebilir olduğunda kalan kaynaklar otomatik olarak temizlenir.",
+    "forceModalConfirm": "OpenShip kayıtlarından sil",
     "forceModalCancel": "İptal",
     "unlinked": "{projects} bağlantısı kaldırıldı — uygulamak için yeniden dağıtın.",
     "unlinkedTitle": "Bağlı projeler güncellendi"
@@ -202,7 +202,7 @@
     "subtextNoSource": "İlk dağıtımını yapılandırmak için bir kaynak bağla."
   },
   "overview": {
-    "platformCloud": "Openship Bulut",
+    "platformCloud": "OpenShip Bulut",
     "platformServer": "Self-hosted (Sunucu)",
     "platformLocal": "Self-hosted (Yerel)",
     "modeStatic": "Statik Site",
@@ -354,7 +354,7 @@
     "failedCreateService": "Servis oluşturulamadı",
     "requestFailed": "İstek başarısız oldu",
     "application": "Uygulama",
-    "applicationHint": "Bu projenin dağıtımları üzerinden yönetilir.",
+    "applicationHint": "Bu uygulamanın ortamını ve dağıtımlarını yönetin.",
     "companionsTitle": "Başka bir uygulama veya servis ekle"
   },
   "serviceStatus": {
@@ -503,7 +503,7 @@
     "modePublic": "Genel",
     "modePublicDesc": "Yayınlanan host:port kullanın. Her yerde çalışır; veritabanı portunun açık olması gerekir.",
     "envKeyLabel": "Ortam değişkeni",
-    "redeployHint": "Hedef zaten dağıtılmışsa Openship onu hemen yeniden dağıtmayı dener. Önce diğer ortam değişikliklerini kaydedin.",
+    "redeployHint": "Hedef zaten dağıtılmışsa OpenShip onu hemen yeniden dağıtmayı dener. Önce diğer ortam değişikliklerini kaydedin.",
     "cancel": "İptal",
     "connect": "Bağla",
     "connected": "Bağlantı kaydedildi. Hedefin dağıtım durumunu kontrol edin.",
@@ -558,7 +558,7 @@
     "watchOffTitle": "Konteyner sağlık izlemesi kapalı",
     "watchOffBody": "Hiçbir olay kaydedilmiyor ve uyarı gönderilmiyor; bu yüzden buradaki boş liste her şeyin yolunda olduğu anlamına gelmez.",
     "watchOffCta": "Görevler bölümünden aç",
-    "serverDownTitle": "Openship bu projenin sunucusuna erişemiyor",
+    "serverDownTitle": "OpenShip bu projenin sunucusuna erişemiyor",
     "serverDownBody": "Bu makinede {duration} boyunca hiçbir şey gözlemlenemedi, bu nedenle aşağıdaki olaylar güncel olmayabilir.",
     "loadFailed": "Olaylar yüklenemedi.",
     "ongoing": "{duration} sürüyor",

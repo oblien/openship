@@ -88,7 +88,7 @@
     "updating": "Güncelleniyor…",
     "updateFailed": "Güncelleme başarısız oldu",
     "toastTitle": "Kaynak",
-    "cliManaged": "Bu Openship kontrol panelidir — kendi kendini günceller. Yükseltmek için ana makinede \"openship update\" komutunu çalıştırın; burada değiştirilecek bir şey yoktur."
+    "cliManaged": "Bu OpenShip kontrol panelidir — kendi kendini günceller. Yükseltmek için ana makinede \"openship update\" komutunu çalıştırın; burada değiştirilecek bir şey yoktur."
   },
   "appSettings": {
     "modeApp": "Uygulama ayarları",
@@ -217,7 +217,7 @@
       "hostsRequired": "Hem IMAP hem de SMTP sunucu adresini girin."
     },
     "nameLabel": "Ad",
-    "nameHint": "Bu uygulamanın Openship'te nasıl görüneceği.",
+    "nameHint": "Bu uygulamanın OpenShip'te nasıl görüneceği.",
     "showLogs": "Günlükleri göster",
     "hideLogs": "Günlükleri gizle",
     "deployLogs": "dağıtım günlükleri",
@@ -230,8 +230,8 @@
     "routePortLabel": "Yalnızca bağlantı noktası (etki alanı yok)",
     "routePortDesc": "Ana makine adresi ve bağlantı noktasından erişilebilir — etki alanı veya Cloud gerekmez.",
     "routeFreeLabel": "Ücretsiz alt etki alanı",
-    "routeFreeDesc": "Openship Cloud tarafından yönlendirilen, {domain} üzerinde ücretsiz bir alt etki alanı.",
-    "routeFreeNeedsCloud": "Ücretsiz bir alt etki alanı kullanmak için Openship Cloud'a bağlanın.",
+    "routeFreeDesc": "OpenShip Cloud tarafından yönlendirilen, {domain} üzerinde ücretsiz bir alt etki alanı.",
+    "routeFreeNeedsCloud": "Ücretsiz bir alt etki alanı kullanmak için OpenShip Cloud'a bağlanın.",
     "routeCustomLabel": "Kendi etki alanınız",
     "routeCustomDesc": "Sahip olduğunuz bir etki alanını bu uygulamaya yönlendirin.",
     "routeDomainLabel": "Etki alanı",
@@ -279,7 +279,7 @@
     },
     "statusActive": "Aktif",
     "statusDisabled": "Pasif",
-    "hostedCloud": "Openship Bulut",
+    "hostedCloud": "OpenShip Bulut",
     "hostedServer": "Sunucu",
     "hostedLocal": "Yerel",
     "projectStatus": {
@@ -300,7 +300,7 @@
       "currentServer": "Mevcut sunucu",
       "migrate": "Taşı",
       "noOtherServers": "Bu projeyi taşımak için ikinci bir sunucu ekleyin.",
-      "cloudLater": "Sunucudan sunucuya. Openship Cloud'a veya oradan taşıma henüz desteklenmiyor.",
+      "cloudLater": "Sunucudan sunucuya. OpenShip Cloud'a veya oradan taşıma henüz desteklenmiyor.",
       "startFailed": "Taşıma başlatılamadı",
       "confirmTitle": "{project} projesini {server} sunucusuna taşı",
       "confirmSubtitle": "Taşımayı başlatana kadar hiçbir şey değişmez.",
@@ -348,7 +348,7 @@
       "anotherServer": "Başka bir sunucu",
       "targetLocal": "Yerel Bilgisayar",
       "targetServer": "Self-Hosted Sunucu",
-      "targetCloud": "Openship Bulut"
+      "targetCloud": "OpenShip Bulut"
     },
     "danger": {
       "title": "Tehlikeli Bölge",
@@ -517,7 +517,7 @@
   "build": {
     "edit": "Düzenle",
     "webmail": {
-      "title": "Openship tarafından yönetilmektedir",
+      "title": "OpenShip tarafından yönetilmektedir",
       "description": "Webmail sabit bir derleme ve başlatma hattı kullanır — yükleme, derleme ve çalıştırma komutları yapılandırılamaz. Güncellemeleri almak için e-posta genel bakışından yeniden dağıtın."
     },
     "services": {
@@ -588,8 +588,9 @@
       "appliesOnDeploy": "Bir sonraki dağıtımda uygulanır."
     },
     "env": {
-      "title": "Proje ortamı (derleme ve ortak çalışma zamanı)",
-      "description": "İmaj derlemelerinde ve ortak çalışma zamanı girdisi olarak kullanılır. Çalışma zamanında Compose ve servise özel değerler önceliklidir. Gizli değerler maskeli kalır.",
+      "title": "Proje ortamı",
+      "sharedTitle": "Paylaşılan proje ortamı",
+      "description": "Derleme ve çalışma sırasında kullanılır. Gizli değerler maskeli kalır.",
       "edit": "Düzenle"
     }
   },
@@ -633,7 +634,14 @@
     "linkedManaged": "{app} üzerinden",
     "linkedTitle": "Bağlı entegrasyon",
     "linkedBody": "Bu değer {app} bağlantısından gelir. Bunu o uygulamadan yönetin — buradaki değişiklikler kalıcı olmaz.",
-    "unlink": "Bağlantıyı kaldır"
+    "unlink": "Bağlantıyı kaldır",
+    "reload": "Kaydedilen değerleri yeniden yükle",
+    "buildHint": "Derleme sırasında kullanılan değerleri uygulamak için yeniden derleyip dağıtın.",
+    "runtimeHint": "Uygula, kayıtlı çalışma zamanı değerlerini kullanır ve yeniden derlemeden yeniden başlatır. Derleme değerleri için yeniden derleyin.",
+    "sharedHint": "Bu değişkenler projenin servisleriyle paylaşılır. Uygulamak, etkilenen servisleri yeniden başlatabilir.",
+    "firstDeployHint": "Kaydedilen değişkenler ilk dağıtımda kullanılacak.",
+    "applyProject": "Projeye uygula",
+    "updateStarted": "Ortam güncellemesi başlatıldı. İlerlemeyi Dağıtımlar bölümünden izleyin."
   },
   "gitInfo": {
     "autoDeploy": "Otomatik dağıtım"
@@ -663,7 +671,7 @@
     "webhookBanner": {
       "summary": "Herkese açık uç nokta gerekli",
       "title": "Otomatik dağıtımı etkinleştirin",
-      "description": "Otomatik dağıtım doğrudan bir webhook uç noktasına ihtiyaç duyar. Bu Openship API'sini herkese açık bir URL'de kullanıma sunun veya doğrudan teslimat için doğrulanmış bir webhook alan adı yapılandırın."
+      "description": "Otomatik dağıtım doğrudan bir webhook uç noktasına ihtiyaç duyar. Bu OpenShip API'sini herkese açık bir URL'de kullanıma sunun veya doğrudan teslimat için doğrulanmış bir webhook alan adı yapılandırın."
     },
     "source": {
       "title": "Kaynak Depo",
@@ -704,7 +712,7 @@
       "active": "Aktif",
       "inactive": "Pasif",
       "descDirect": "Olaylar {domain} üzerinden doğrudan teslim edilir",
-      "descActive": "Depo olayları Openship'e ulaşıyor",
+      "descActive": "Depo olayları OpenShip'e ulaşıyor",
       "descInactive": "Webhook yapılandırılmadı veya yanıt vermiyor"
     },
     "rollbackStrategy": {
@@ -913,10 +921,10 @@
     "linkedTitleOther": "{count} proje bu uygulamaya bağlı",
     "linkedNote": "Verileri dokunulmadan çalışmaya devam eder — yalnızca bu bağlantıyı kaybederler. Uygulamak için yeniden dağıtın.",
     "linkedNoteRecordOnly": "Çalışmaya devam ederler, ama bağlantı kayıtla birlikte gider — uygulamayı sonra yeniden içe aktarmak onu geri getirmez.",
-    "recordOnlyLabel": "Yalnızca Openship'ten kaldır",
-    "recordOnlyDesc": "Uygulamayı ve verilerini sunucunuzda çalışır durumda tutar — yalnızca Openship kaydı kaldırılır. Daha sonra tekrar içe aktarabilirsiniz.",
+    "recordOnlyLabel": "Yalnızca OpenShip'ten kaldır",
+    "recordOnlyDesc": "Uygulamayı ve verilerini sunucunuzda çalışır durumda tutar — yalnızca OpenShip kaydı kaldırılır. Daha sonra tekrar içe aktarabilirsiniz.",
     "recordOnlyReversible": "Geri alınabilir — uygulama sunucunuzda kalır.",
-    "recordOnlyNote": "Sunucudaki hiçbir şeye dokunulmaz — uygulama verileriyle çalışmaya devam eder. Yalnızca Openship'in kaydı kaldırılır ve daha sonra tekrar içe aktarılabilir.",
+    "recordOnlyNote": "Sunucudaki hiçbir şeye dokunulmaz — uygulama verileriyle çalışmaya devam eder. Yalnızca OpenShip'in kaydı kaldırılır ve daha sonra tekrar içe aktarılabilir.",
     "confirmRecordOnly": "Kaydı kaldır"
   },
   "routing": {
@@ -999,7 +1007,7 @@
       "includeWwwDesc": "Ayrıca www.{domain} için de kayıtlar oluştur",
       "includeWwwFallback": "alanadiniz.com",
       "externalIngress": "Harici trafik girişi ve TLS",
-      "externalIngressDesc": "TLS ters proxy’nizde (Cloudflare Tunnel, Nginx Proxy Manager veya yük dengeleyici) sonlandırılır. Alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "externalIngressDesc": "TLS ters proxy’nizde (Cloudflare Tunnel, Nginx Proxy Manager veya yük dengeleyici) sonlandırılır. Alan adının bu sunucuya yönlenmesi gerekmez ve OpenShip sertifika düzenlemez.",
       "dnsChallenge": "DNS-01 doğrulamasını kullan",
       "dnsChallengeDesc": "Bir DNS sağlayıcısı veya geçici TXT kaydı ile doğrulayın. Port 80 kullanılamadığında yararlıdır.",
       "dnsChallengeWildcardDesc": "Joker alan adı için HTTPS kurulumunda gereklidir. Bağlı bir DNS sağlayıcısı kullanın veya HTTPS kurulumu sırasında geçici bir TXT kaydı ekleyin.",
@@ -1165,8 +1173,8 @@
         "deployment": "Bu rota dağıtım bekliyor. Uygulamak için projeyi dağıtın.",
         "disabled": "Bu proje veya hizmet devre dışı. Rotayı kontrol etmeden önce etkinleştirin.",
         "removing": "Bu alan adı kaldırılıyor. Planlanmış doğrulama yok.",
-        "manual_certificate": "Bu alan adı yüklenmiş bir sertifika kullanıyor. Geçerli bir yenisini yükleyip tekrar kontrol edin. Openship bunu otomatik yenilemez.",
-        "managed_certificate": "TLS, harici vekil sunucunuz veya Openship Cloud tarafından yönetiliyor. Sağlayıcının yapılandırmasını kontrol edin.",
+        "manual_certificate": "Bu alan adı yüklenmiş bir sertifika kullanıyor. Geçerli bir yenisini yükleyip tekrar kontrol edin. OpenShip bunu otomatik yenilemez.",
+        "managed_certificate": "TLS, harici vekil sunucunuz veya OpenShip Cloud tarafından yönetiliyor. Sağlayıcının yapılandırmasını kontrol edin.",
         "route_missing": "Yapılandırılmış bu rota henüz uygulanmadı. Uygulamak için yönlendirmeyi yeniden deneyin. Otomatik yönlendirme denemesi planlanmamış.",
         "manual_dns": "Bu sertifika manuel TXT doğrulaması kullanıyor. Yeni bir TXT kaydını onaylamak için HTTPS kurulumunu açın veya otomatik yenileme için bağlı bir DNS sağlayıcısı seçin.",
         "managed_owner": "Bu ana makine adı ve sertifikası, sahibi olan hizmet tarafından yönetilir. O hizmetin alan adı ayarlarını kontrol edin."
@@ -1179,7 +1187,7 @@
       "automatic": "Otomatik sağlayıcı",
       "manual": "Manuel TXT",
       "automaticHint": "Sertifika doğrulama kayıtları oluşturmak ve HTTPS'i otomatik yenilemek için Ayarlar → Kimlik bilgileri bölümünden bir DNS sağlayıcısı bağlayın.",
-      "manualHint": "DNS sağlayıcınızda geçici bir TXT kaydı ekleyin. Her yenileme yeni bir TXT kaydı gerektirir; Openship yenileme zamanını gösterecektir.",
+      "manualHint": "DNS sağlayıcınızda geçici bir TXT kaydı ekleyin. Her yenileme yeni bir TXT kaydı gerektirir; OpenShip yenileme zamanını gösterecektir.",
       "routing": "1. Alan adını bu sunucuya yönlendirin",
       "certificate": "2. HTTPS'i etkinleştirin",
       "startAutomatic": "HTTPS'i otomatik etkinleştir",
@@ -1337,7 +1345,7 @@
     "reviewResources": "Etkilenen kaynakları incele ({count})",
     "openRuns": "Sunucu çalıştırmalarını aç",
     "lastRun": "Son inceleme",
-    "appOpen": "Openship açıkken çalışır.",
+    "appOpen": "OpenShip açıkken çalışır.",
     "scanStates": {
       "pending": "Bekliyor",
       "running": "Çalışıyor",
@@ -1348,7 +1356,7 @@
     "reviewReboot": "Yeniden başlatmayı incele",
     "applyReboot": "Yeniden başlatmayı zamanla",
     "rebooting": "Yeniden başlatma zamanlandı; çekirdek doğrulaması bekleniyor",
-    "rebootInterruption": "Sunucu bir dakika içinde yeniden başlatılır ve tüm iş yükleri kesintiye uğrar. Openship, bağlantı yeniden kurulduğunda çalışan çekirdeği doğrular."
+    "rebootInterruption": "Sunucu bir dakika içinde yeniden başlatılır ve tüm iş yükleri kesintiye uğrar. OpenShip, bağlantı yeniden kurulduğunda çalışan çekirdeği doğrular."
   },
   "sourceImageUpdate": {
     "github_access_required": "GitHub bağlantınızda bu depo için Contents ve Pull requests okuma/yazma erişimi verin. Güncellenen uygulama izinlerini bir sahibin onaylaması gerekebilir.",

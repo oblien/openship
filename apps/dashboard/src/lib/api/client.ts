@@ -4,7 +4,7 @@ import { reportClientError } from "../error-reporting";
 import { localizeDiagnosisMessage } from "../i18n/localize-issues";
 
 /**
- * Standard API client for the Openship dashboard.
+ * Standard API client for the OpenShip dashboard.
  *
  * Use this for all non-auth API calls (projects, deployments, domains, etc.).
  * Auth calls should go through `auth-client.ts` (Better Auth SDK).
@@ -50,7 +50,7 @@ function reportReachability(sequence: number, reachable: boolean): void {
   reachabilitySequence = sequence;
   try {
     if (reachable) _networkRecoveryHandler?.();
-    else _networkErrorHandler?.("Cannot reach Openship. Check the connection and server availability.");
+    else _networkErrorHandler?.("Cannot reach OpenShip. Check the connection and server availability.");
   } catch (error) {
     // A notice subscriber must not change the original request's outcome.
     observeCaughtError(error, "dashboard/lib/api/client");

@@ -140,7 +140,7 @@
       "addCustom": "إضافة مخصصة",
       "howToAddApp": "كيفية إضافة تطبيق",
       "removeCustomApp": "إزالة التطبيق المخصص",
-      "needsUpdateDesc": "قم بتحديث نسخة Openship لتثبيت هذا التطبيق.",
+      "needsUpdateDesc": "قم بتحديث نسخة OpenShip لتثبيت هذا التطبيق.",
       "needsUpdateBadge": "يتطلب التحديث",
       "needsVersionBadge": "يتطلب الإصدار {version}",
       "removedToast": "تمت إزالة \"{name}\".",

@@ -1,0 +1,57 @@
+---
+title: "Plataformas de alojamiento propio frente a plataformas administradas: el desglose de los costos reales"
+description: "Comparamos el costo real de ejecutar una aplicación de producción Next.js en Vercel, AWS y una configuración autohospedada OpenShip. Los números pueden sorprenderte."
+date: "2026-03-05"
+category: "Guide"
+author: "OpenShip Team"
+---
+
+"Simplemente usa Vercel" es un buen consejo, hasta que llegue tu factura. Ejecutamos la misma aplicación Next.js en tres configuraciones y realizamos un seguimiento de cada costo durante 30 días.
+
+## La aplicación de prueba
+
+Una aplicación de producción Next.js 15 con:
+- ~50 rutas, ISR habilitado
+- Base de datos Postgres
+- Redis para almacenamiento en caché
+- ~100.000 visitantes mensuales
+- ~500 GB de ancho de banda/mes
+
+## Los resultados
+
+| | Vercel Profesional | AWS (ECS + RDS) | OpenShip (autohospedado) |
+|---|---|---|---|
+| Calcular | $150/mes | $85/mes | $24/mes |
+| Base de datos | $50/mes (neón) | $45/mes | Incluido |
+| Ancho de banda | $120/mes | $45/mes | Incluido |
+| SSL/Dominios | Incluido | $1/mes | Incluido |
+| **Totales** | **$320/mes** | **$176/mes** | **$24/mes** |
+
+La configuración autohospedada OpenShip se ejecuta en un único VPS de Hetzner (CPX31: 4 vCPU, 8 GB de RAM, 160 GB de SSD).
+
+## Las compensaciones
+
+Las plataformas administradas le brindan operaciones cero. Insertas el código y se implementa. Ese es el valor real.
+
+Pero OpenShip cierra la brecha significativamente:
+- **AI maneja la configuración** - La detección de compilaciones, la generación de Dockerarchivos y SSL son automáticos.
+- **Implementaciones con un solo comando** - `openship deploy` es igual de rápido.
+- **Monitoreo integrado** - Registros, métricas y alertas listas para usar.
+
+La compensación restante es el mantenimiento del servidor: actualizaciones del sistema operativo, espacio en disco, monitoreo del tiempo de actividad. Para la mayoría de los equipos, son unas pocas horas por mes.
+
+## Cuándo autohospedarse
+
+El autohospedaje tiene sentido cuando:
+- Su factura mensual supera ~$100 en plataformas administradas
+- Necesita soberanía de datos o cumplimiento
+- Quiere precios fijos y predecibles
+- Estás implementando varias aplicaciones (el costo sigue siendo el mismo)
+
+## Pruébalo
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+Tu servidor, tus datos, tu factura.

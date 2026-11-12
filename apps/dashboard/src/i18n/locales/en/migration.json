@@ -1,14 +1,14 @@
 {
   "wizard": {
     "title": "Migrate apps",
-    "intro": "Inspect this server's running apps and adopt them into Openship. It's read-only — nothing changes on the server until you deploy.",
+    "intro": "Inspect this server's running apps and adopt them into OpenShip. It's read-only — nothing changes on the server until you deploy.",
     "selectServer": "Select a server",
     "scan": "Scan server",
     "scanning": "Scanning…",
     "rescan": "Re-scan",
     "flatDocker": "Flat listing",
-    "flatDockerHint": "Ignore Openship labels — adopt everything (incl. Openship-managed containers) as plain Docker.",
-    "flatDockerShort": "Adopt Openship-managed containers too.",
+    "flatDockerHint": "Ignore OpenShip labels — adopt everything (incl. OpenShip-managed containers) as plain Docker.",
+    "flatDockerShort": "Adopt OpenShip-managed containers too.",
     "cancel": "Cancel",
     "close": "Close",
     "projectName": "Project name",
@@ -113,7 +113,7 @@
   "run": {
     "title": "Migrating your stack",
     "queued": "Queued…",
-    "adopting": "Creating the Openship project…",
+    "adopting": "Creating the OpenShip project…",
     "moving_data": "Moving volume data to the target…",
     "deploying": "Deploying on the target server…",
     "verifying": "Verifying the new deployment…",
@@ -146,8 +146,8 @@
   },
   "discover": {
     "buildBlocked": "Built from source — can't migrate yet (publish an image first)",
-    "proxyExcluded": "Reverse proxy ({ports}) — not imported; Openship’s edge replaces it.",
-    "edgePortReserved": "Ports {ports} reserved for Openship’s edge; not published.",
+    "proxyExcluded": "Reverse proxy ({ports}) — not imported; OpenShip’s edge replaces it.",
+    "edgePortReserved": "Ports {ports} reserved for OpenShip’s edge; not published.",
     "nothing": "No adoptable Docker containers were found on this server.",
     "servicesTitle": "Services",
     "volumesTitle": "Volumes",
@@ -174,14 +174,14 @@
     "reused": "reused in place",
     "volumeReuse": "Take over",
     "volumeCopy": "Copy",
-    "volumeCopyHint": "Take over reuses the existing volume in place. Copy duplicates it into a new Openship volume and leaves the original untouched (uses extra disk).",
+    "volumeCopyHint": "Take over reuses the existing volume in place. Copy duplicates it into a new OpenShip volume and leaves the original untouched (uses extra disk).",
     "bind": "host path",
     "nVolumes": "{n} volumes",
     "nEnv": "{n} env vars",
     "envFromImage": "{n} vars come from the image",
     "envFromImageHint": "Not imported as config — the image supplies these at runtime. Import them to pin the values before you rebuild from source.",
     "envFromImageImport": "Import anyway",
-    "alreadyManaged": "{count} container(s) already managed by Openship were skipped.",
+    "alreadyManaged": "{count} container(s) already managed by OpenShip were skipped.",
     "chooseProject": "Choose what to import",
     "chooseHint": "Select a Compose project or individual services.",
     "topology": "Topology",
@@ -198,8 +198,8 @@
     "expandProject": "Services in {name}"
   },
   "reimport": {
-    "title": "Openship projects found",
-    "intro": "These Openship projects are running on this server but aren't in this instance (a reset database, or a server from another Openship). Re-import to recover them — the original id is preserved so the live containers re-attach.",
+    "title": "OpenShip projects found",
+    "intro": "These OpenShip projects are running on this server but aren't in this instance (a reset database, or a server from another OpenShip). Re-import to recover them — the original id is preserved so the live containers re-attach.",
     "services": "{n} service(s)",
     "lastSeen": "Last deployed {when}",
     "fullRestore": "Full restore",
@@ -213,7 +213,7 @@
     "failed": "Re-import failed",
     "review": "Recover project",
     "reviewNamed": "Recover {name}",
-    "groupLabel": "Openship project",
+    "groupLabel": "OpenShip project",
     "recoverHint": "Restore its settings and reconnect the running containers.",
     "configuration": "Configuration",
     "snapshot": "Saved snapshot",
@@ -225,7 +225,7 @@
   "adoptFailed": "Couldn't create the project",
   "entry": {
     "cardTitle": "Existing services",
-    "cardDesc": "Migrate a running Docker or Compose deployment into Openship.",
+    "cardDesc": "Migrate a running Docker or Compose deployment into OpenShip.",
     "action": "Migrate apps",
     "tab": "Import existing project",
     "comingSoon": "Docker migration is coming soon"
@@ -241,7 +241,7 @@
   "tab": {
     "new": "New migration",
     "empty": "No migrations yet",
-    "emptyDesc": "Move a running Docker or Compose stack from this server into Openship, or bring one in from another server.",
+    "emptyDesc": "Move a running Docker or Compose stack from this server into OpenShip, or bring one in from another server.",
     "close": "Close",
     "sessionLog": "Session log",
     "noLogs": "No log output yet.",
@@ -293,7 +293,7 @@
     "disconnect": "Disconnect source",
     "empty": "Connect the server you want to import from.",
     "hint": "For migrations only. Remove the connection when you're done.",
-    "importHint": "Copy apps and data to a managed Openship server. Keep the source until you confirm cutover."
+    "importHint": "Copy apps and data to a managed OpenShip server. Keep the source until you confirm cutover."
   },
   "review": {
     "progress": "Import progress",

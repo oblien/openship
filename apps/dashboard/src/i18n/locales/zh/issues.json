@@ -1,6 +1,6 @@
 {
   "title": "监控",
-  "subtitle": "Openship 在你的项目、服务器和域名中发现的所有问题。",
+  "subtitle": "OpenShip 在你的项目、服务器和域名中发现的所有问题。",
   "tabs": {
     "open": "概览",
     "health": "健康",
@@ -23,7 +23,7 @@
     "clear": "清除筛选"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "服务器",
     "project": "项目",
     "domain": "域名"
@@ -106,12 +106,12 @@
     "offlineHint": "显示的状态可能已过时。重新连接以刷新。",
     "retryStatus": "重试获取状态",
     "recheck": "重新检查",
-    "unknownHealth": "在 Openship 能够连接此服务器之前，容器健康状态未知。",
-    "monitoringHint": "Openship 无法连接受影响的服务器。它们当前的运行状况未知。",
+    "unknownHealth": "在 OpenShip 能够连接此服务器之前，容器健康状态未知。",
+    "monitoringHint": "OpenShip 无法连接受影响的服务器。它们当前的运行状况未知。",
     "details": "技术详情",
     "mailTitle": "邮件状态不可用",
-    "mailHint": "Openship 无法检查此邮件服务器。它可能仍在运行。请检查连接后重试。",
-    "apiTitle": "无法连接到 Openship",
+    "mailHint": "OpenShip 无法检查此邮件服务器。它可能仍在运行。请检查连接后重试。",
+    "apiTitle": "无法连接到 OpenShip",
     "apiHint": "状态更新可能会延迟。"
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "请求超时。服务器响应耗时过长。",
     "requestCancelled": "请求已取消。",
     "requestFailed": "请求失败。",
-    "networkUnreachable": "无法连接到 Openship。请检查网络连接及服务器可用性。",
+    "networkUnreachable": "无法连接到 OpenShip。请检查网络连接及服务器可用性。",
     "hostUnreachable": "主机不可达",
     "sshConnectionRefused": "SSH 连接被拒绝"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "实例管理员可以启用自动检查。",
       "scheduleEveryMinute": "每分钟",
       "scheduleCustom": "自定义计划",
-      "runsWhileOpen": "保持 Openship 运行",
+      "runsWhileOpen": "保持 OpenShip 运行",
       "runsInBackground": "在后台运行",
       "saving": "保存中…",
       "disable": "禁用监控",

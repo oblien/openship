@@ -1,0 +1,54 @@
+.mail-page .marketing-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.mail-page .marketing-eyebrow .marketing-illustration {
+  width: 42px;
+  height: 34px;
+}
+.mail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 24px;
+  margin-top: 24px;
+}
+.mail-hero-preview { margin-bottom: 48px; }
+.mail-client-options,
+.mail-hosting-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.mail-client-options article { padding: 20px 12px; }
+.mail-hosting-options article {
+  padding: 28px;
+  border-radius: 20px;
+  background: var(--th-bg-subtle);
+}
+.mail-page article h3 {
+  margin-top: 20px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -.02em;
+}
+.mail-page article p {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--th-text-body);
+}
+.mail-client-links { display: flex; flex-wrap: wrap; gap: 14px 24px; margin-top: 24px; }
+.mail-client-links a { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.mail-client-links a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.mail-hosting-options .marketing-text-link { margin-top: 24px; }
+.mail-hosting-options small { display: block; margin-top: 16px; font-size: 12px; line-height: 1.6; color: var(--th-text-muted); }
+@media (max-width: 640px) {
+  .mail-client-options, .mail-hosting-options { grid-template-columns: minmax(0, 1fr); }
+  .mail-hero-preview { margin-bottom: 24px; }
+}

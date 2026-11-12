@@ -962,7 +962,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       !isEditingMode ? "cursor-default" : ""
                     } ${inputStateClass}`}
                   />
-                  <div className="relative min-w-0 flex-1">
+                  <div dir="ltr" className="relative min-w-0 flex-1">
                     <Input
                       dir="ltr"
                       variant="filled"

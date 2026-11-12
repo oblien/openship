@@ -241,7 +241,7 @@ export function ClusterDetail({ id }: { id: string }) {
               title={c.removeCluster}
               description={
                 cluster.scaling?.provider === "swarm"
-                  ? "Disconnecting removes this cluster from Openship. It does not leave Swarm or change its nodes. Remove the Openship projects and retained deployments using it first."
+                  ? "Disconnecting removes this cluster from OpenShip. It does not leave Swarm or change its nodes. Remove the OpenShip projects and retained deployments using it first."
                   : c.removeDescription
               }
               confirmLabel={c.removeCluster}

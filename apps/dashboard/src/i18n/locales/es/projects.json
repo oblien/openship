@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "Despliega en tu propio servidor",
-    "description": "Conecta un servidor por SSH para ejecutar proyectos en tu propia infraestructura junto a Openship Cloud.",
+    "description": "Conecta un servidor por SSH para ejecutar proyectos en tu propia infraestructura junto a OpenShip Cloud.",
     "button": "Conectar un servidor"
   },
   "filters": {
     "title": "Filtrar por destino",
     "subtitle": "Dónde se despliegan los proyectos",
     "allProjects": "Todos los proyectos",
-    "cloud": "Openship Cloud",
+    "cloud": "OpenShip Cloud",
     "local": "Local"
   },
   "card": {
@@ -111,7 +111,7 @@
     "cleanupPending": "La eliminación ha comenzado. El proyecto no estará disponible hasta completar la limpieza.",
     "alreadyDeleted": "El proyecto ya fue eliminado",
     "forceModalTitle": "No se pudo eliminar en el origen",
-    "forceModalBody": "No se pudo alcanzar el runtime (o siguió fallando), así que este proyecto no se desmontó. Puedes eliminarlo de Openship igualmente: el registro se borra ahora y los recursos restantes se reclaman automáticamente cuando el servidor vuelva a estar accesible.",
+    "forceModalBody": "No se pudo alcanzar el runtime (o siguió fallando), así que este proyecto no se desmontó. Puedes eliminarlo de OpenShip igualmente: el registro se borra ahora y los recursos restantes se reclaman automáticamente cuando el servidor vuelva a estar accesible.",
     "forceModalConfirm": "Eliminar del almacenamiento",
     "forceModalCancel": "Cancelar",
     "unlinked": "Se desvinculó de {projects}: vuelve a desplegarlos para aplicarlo.",
@@ -202,7 +202,7 @@
     "subtextNoSource": "Conecta una fuente para configurar tu primer despliegue."
   },
   "overview": {
-    "platformCloud": "Openship Cloud",
+    "platformCloud": "OpenShip Cloud",
     "platformServer": "Autoalojado (Servidor)",
     "platformLocal": "Autoalojado (Local)",
     "modeStatic": "Sitio estático",
@@ -354,7 +354,7 @@
     "failedCreateService": "No se pudo crear el servicio",
     "requestFailed": "La solicitud falló",
     "application": "Aplicación",
-    "applicationHint": "Se administra mediante los despliegues de este proyecto.",
+    "applicationHint": "Gestiona el entorno y los despliegues de esta app.",
     "companionsTitle": "Añadir otra aplicación o servicio"
   },
   "serviceStatus": {
@@ -442,7 +442,7 @@
     "modePublic": "Público",
     "modePublicDesc": "Usa el host:port publicado. Funciona en cualquier lugar; requiere el puerto de la base de datos abierto.",
     "envKeyLabel": "Variable de entorno",
-    "redeployHint": "Si el destino ya está desplegado, Openship intenta volver a desplegarlo de inmediato. Guarda primero los demás cambios de entorno.",
+    "redeployHint": "Si el destino ya está desplegado, OpenShip intenta volver a desplegarlo de inmediato. Guarda primero los demás cambios de entorno.",
     "cancel": "Cancelar",
     "connect": "Conectar",
     "connected": "Conexión guardada. Revisa el estado del despliegue del destino.",
@@ -558,7 +558,7 @@
     "watchOffTitle": "La supervisión de estado de los contenedores está desactivada",
     "watchOffBody": "No se registran incidencias ni se envían alertas, así que una lista vacía aquí no significa que todo esté bien.",
     "watchOffCta": "Actívala en Trabajos",
-    "serverDownTitle": "Openship no puede acceder al servidor de este proyecto",
+    "serverDownTitle": "OpenShip no puede acceder al servidor de este proyecto",
     "serverDownBody": "No se ha observado nada en esta máquina desde hace {duration}, por lo que las incidencias de abajo pueden estar desactualizadas.",
     "loadFailed": "No se pudieron cargar las incidencias.",
     "ongoing": "en curso desde hace {duration}",

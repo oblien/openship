@@ -105,7 +105,7 @@
   "page": {
     "title": "Paramètres",
     "subtitle": "Gérez vos préférences, votre équipe et la configuration de l'instance",
-    "cloudConnectedToast": "Connecté à Openship Cloud"
+    "cloudConnectedToast": "Connecté à OpenShip Cloud"
   },
   "sidebar": {
     "title": "Paramètres",
@@ -132,7 +132,7 @@
     "noInstallations": "Connecté · Aucune installation pour l'instant",
     "connectedOne": "Connecté · 1 installation",
     "connectedMany": "Connecté · {count} installations",
-    "requiresCloud": "Nécessite Openship Cloud — l'App appartient à openship.io",
+    "requiresCloud": "Nécessite OpenShip Cloud — l'App appartient à openship.io",
     "connectPrompt": "Connectez votre compte GitHub pour déployer des dépôts",
     "checkingConnection": "Vérification de la connexion…",
     "addAccount": "Ajouter un compte",
@@ -140,10 +140,10 @@
     "manageOnGithub": "Gérer sur GitHub",
     "disconnect": "Déconnecter",
     "disconnectTitle": "Déconnecter {label}",
-    "disconnectAppLabel": "Openship GitHub App",
-    "disconnectAppBody": "Cela supprime l'entrée du compte OAuth Openship. L'installation de la GitHub App reste en place jusqu'à ce que vous la désinstalliez sur GitHub.",
-    "cloudExplainer": "L'Openship GitHub App appartient à openship.io. Connectez votre instance à Openship Cloud pour utiliser des jetons d'installation à portée limitée pour cloner des dépôts privés (fonctionne pour les déploiements locaux ET distants).",
-    "connectCloud": "Connecter Openship Cloud",
+    "disconnectAppLabel": "OpenShip GitHub App",
+    "disconnectAppBody": "Cela supprime l'entrée du compte OAuth OpenShip. L'installation de la GitHub App reste en place jusqu'à ce que vous la désinstalliez sur GitHub.",
+    "cloudExplainer": "L'OpenShip GitHub App appartient à openship.io. Connectez votre instance à OpenShip Cloud pour utiliser des jetons d'installation à portée limitée pour cloner des dépôts privés (fonctionne pour les déploiements locaux ET distants).",
+    "connectCloud": "Connecter OpenShip Cloud",
     "noCloudTitle": "Cloner des dépôts privés sans le cloud",
     "useSshPerServer": "Clé SSH par serveur",
     "usePat": "Jeton d’accès",
@@ -162,8 +162,8 @@
       "usedForDeploys": "Utilisé pour les déploiements",
       "usedForDeploysTitle": "Aucune connexion cloud — la CLI gh est actuellement la source principale pour tout",
       "activeWarnStrong": "La CLI gh est la source active.",
-      "activeWarnRest": "Les déploiements vers des serveurs distants seront refusés — connectez l'Openship App ou définissez un jeton de clonage par projet pour déployer vers des cibles distantes.",
-      "primaryNotePrefix": "L'Openship App est la source principale. La CLI gh prend le relais pour les",
+      "activeWarnRest": "Les déploiements vers des serveurs distants seront refusés — connectez l'OpenShip App ou définissez un jeton de clonage par projet pour déployer vers des cibles distantes.",
+      "primaryNotePrefix": "L'OpenShip App est la source principale. La CLI gh prend le relais pour les",
       "primaryNoteStrong": "builds locaux",
       "primaryNoteSuffix": "sur des dépôts hors de vos installations App.",
       "optionalPrefix": "Optionnel. Exécutez",
@@ -179,7 +179,7 @@
       "forwardOnNote": "Le transfert est activé — gh CLI authentifie aussi les clones sur les serveurs distants. Votre identité est acheminée via SSH pour chaque clone ; rien n'est stocké sur le serveur.",
       "forwardOffHint": "Builds locaux uniquement pour le moment. Activez « Transférer mon identité git aux serveurs de build » pour utiliser gh CLI aussi pour les déploiements distants.",
       "manageForward": "Gérer le transfert",
-      "disconnectBody": "Openship supprimera cet identifiant de cette instance et cessera de l'utiliser pour les clones. Il reste valide sur GitHub jusqu'à ce que vous le révoquiez là-bas. Vous pouvez vous reconnecter à tout moment.",
+      "disconnectBody": "OpenShip supprimera cet identifiant de cette instance et cessera de l'utiliser pour les clones. Il reste valide sur GitHub jusqu'à ce que vous le révoquiez là-bas. Vous pouvez vous reconnecter à tout moment.",
       "recheck": "Vérifier à nouveau"
     },
     "replaceToken": "Remplacer le jeton GitHub",
@@ -187,7 +187,7 @@
     "tokenEditorDescription": "Utilisez un jeton d’accès personnel GitHub pour parcourir les dépôts et compiler sur cette instance.",
     "methodTokenDesc": "Utilisez un jeton GitHub pour parcourir les dépôts et compiler localement.",
     "activeVia": "Connecté via {method}",
-    "pickMethod": "Choisissez la manière dont Openship accède à vos dépôts.",
+    "pickMethod": "Choisissez la manière dont OpenShip accède à vos dépôts.",
     "methodDevice": "Connexion GitHub",
     "methodApp": "Application GitHub",
     "methodAppDesc": "Jetons d'installation temporaires à portée limitée pour les déploiements locaux et distants.",
@@ -207,11 +207,11 @@
     "methodHostCli": "gh CLI sur cet hôte",
     "manageTokensOnGithub": "Gérer les jetons sur GitHub",
     "manageAccessOnGithub": "Gérer les accès sur GitHub",
-    "disconnectScopeNote": "La déconnexion supprime cet identifiant d'Openship et cesse de l'utiliser pour les clones. Il reste valide sur GitHub tant que vous ne le révoquez pas là-bas.",
+    "disconnectScopeNote": "La déconnexion supprime cet identifiant d'OpenShip et cesse de l'utiliser pour les clones. Il reste valide sur GitHub tant que vous ne le révoquez pas là-bas.",
     "credentialRejected": "GitHub a rejeté l'identifiant {method} enregistré.",
     "credentialRejectedImpact": "Il a été révoqué, a expiré ou a perdu une autorisation requise. Les déploiements effectuant un clone échoueront jusqu'à ce que vous vous reconnectiez ci-dessous.",
     "credentialUnreachable": "Impossible de joindre GitHub avec {method}.",
-    "credentialUnreachableImpact": "Il s'agit généralement d'un problème réseau plutôt que d'un mauvais identifiant — Openship continue de l'utiliser. Se reconnecter n'aidera pas si GitHub est inaccessible.",
+    "credentialUnreachableImpact": "Il s'agit généralement d'un problème réseau plutôt que d'un mauvais identifiant — OpenShip continue de l'utiliser. Se reconnecter n'aidera pas si GitHub est inaccessible.",
     "credentialCheckedAt": "Dernière vérification à {time}"
   },
   "deployDefaults": {
@@ -234,7 +234,7 @@
     },
     "labelFor": {
       "yourServer": "votre serveur",
-      "cloud": "Openship Cloud"
+      "cloud": "OpenShip Cloud"
     },
     "toast": {
       "pickServer": "Choisissez d'abord un serveur",
@@ -270,10 +270,10 @@
   "githubSources": {
     "title": "Applications GitHub auto-hébergées",
     "description": "Gérez la connexion GitHub sur cette instance avec des identifiants chiffrés, des webhooks directs et des jetons d'installation temporaires.",
-    "publicUrlRequired": "Configurez d'abord une URL HTTPS publique pour cette instance Openship. GitHub doit pouvoir joindre le rappel de configuration et le webhook.",
+    "publicUrlRequired": "Configurez d'abord une URL HTTPS publique pour cette instance OpenShip. GitHub doit pouvoir joindre le rappel de configuration et le webhook.",
     "createWithGithub": "Créer avec GitHub",
     "registerExisting": "Enregistrer une application existante",
-    "manifestHelp": "Openship enverra à GitHub un manifeste aux autorisations minimales. GitHub créera l'application, renverra ses identifiants une seule fois, puis ouvrira l'installation des dépôts.",
+    "manifestHelp": "OpenShip enverra à GitHub un manifeste aux autorisations minimales. GitHub créera l'application, renverra ses identifiants une seule fois, puis ouvrira l'installation des dépôts.",
     "nameLabel": "Nom de la source",
     "namePlaceholder": "GitHub Acme",
     "continueOnGithub": "Continuer sur GitHub",
@@ -291,9 +291,9 @@
     "makeDefault": "Définir par défaut",
     "manage": "Gérer sur GitHub",
     "delete": "Supprimer",
-    "confirmDelete": "Supprimer {name} d'Openship ? Ses identifiants locaux et liaisons d'installation seront supprimés, mais l'application restera installée sur GitHub jusqu'à sa désinstallation.",
+    "confirmDelete": "Supprimer {name} d'OpenShip ? Ses identifiants locaux et liaisons d'installation seront supprimés, mais l'application restera installée sur GitHub jusqu'à sa désinstallation.",
     "editHelp": "Laissez les champs secrets vides pour conserver les valeurs chiffrées déjà enregistrées.",
-    "manualHelp": "Saisissez les identifiants d'une application GitHub existante. Openship vérifie la clé privée avant tout enregistrement.",
+    "manualHelp": "Saisissez les identifiants d'une application GitHub existante. OpenShip vérifie la clé privée avant tout enregistrement.",
     "appIdLabel": "Identifiant de l'application",
     "clientIdLabel": "Identifiant du client",
     "clientSecretLabel": "Secret du client",
@@ -409,11 +409,11 @@
   },
   "mcp": {
     "title": "MCP",
-    "description": "Connectez des agents IA à votre API Openship via le Model Context Protocol.",
+    "description": "Connectez des agents IA à votre API OpenShip via le Model Context Protocol.",
     "loading": "Chargement…",
     "connectAnother": "Connecter un autre client",
     "bannerStrong": "Collez le point de terminaison ci-dessous dans votre client MCP",
-    "bannerRest": "(Claude, Cursor, …) — il ouvre une fenêtre de navigateur où vous approuvez l'accès et choisissez ce que le client peut atteindre. Aucun jeton à copier. Openship est un serveur MCP OAuth 2.1 conforme aux standards.",
+    "bannerRest": "(Claude, Cursor, …) — il ouvre une fenêtre de navigateur où vous approuvez l'accès et choisissez ce que le client peut atteindre. Aucun jeton à copier. OpenShip est un serveur MCP OAuth 2.1 conforme aux standards.",
     "addToClient": "Ajouter à votre client",
     "install": "Installer",
     "endpoint": "Point de terminaison",
@@ -552,13 +552,13 @@
     },
     "reachability": {
       "description": "Les membres de l'équipe ont besoin d'une URL publique pour accéder à cet espace de travail.",
-      "notInstalledTitle": "Donner une adresse publique à Openship",
-      "notInstalledBody": "Openship n'est pas encore configuré avec une URL publique. Déployez-le avec une adresse publique (ex. `openship up --public-url …`), puis ajoutez un domaine ici afin que vos collègues puissent y accéder.",
-      "noDomainTitle": "Ajouter un domaine à Openship",
-      "noDomainBody": "Ajoutez un domaine à l'application Openship afin que vos collaborateurs puissent accéder à cet espace — les invitations s'activent automatiquement dès sa mise en ligne.",
+      "notInstalledTitle": "Donner une adresse publique à OpenShip",
+      "notInstalledBody": "OpenShip n'est pas encore configuré avec une URL publique. Déployez-le avec une adresse publique (ex. `openship up --public-url …`), puis ajoutez un domaine ici afin que vos collègues puissent y accéder.",
+      "noDomainTitle": "Ajouter un domaine à OpenShip",
+      "noDomainBody": "Ajoutez un domaine à l'application OpenShip afin que vos collaborateurs puissent accéder à cet espace — les invitations s'activent automatiquement dès sa mise en ligne.",
       "addDomain": "Ajouter un domaine",
       "pendingTitle": "Terminez la configuration de votre domaine",
-      "pendingBody": "Votre domaine Openship est en attente de vérification (DNS / SSL). Les invitations s'activeront dès qu'il sera en ligne.",
+      "pendingBody": "Votre domaine OpenShip est en attente de vérification (DNS / SSL). Les invitations s'activeront dès qu'il sera en ligne.",
       "viewDomain": "Voir le domaine"
     }
   },
@@ -579,7 +579,7 @@
     "grantsMany": "{count} octrois",
     "sendVia": "Envoyer via",
     "yourMailServer": "Votre serveur de messagerie",
-    "openshipCloud": "Openship Cloud",
+    "openshipCloud": "OpenShip Cloud",
     "pickerTitle": "Accès initial aux ressources",
     "pickerDesc": "Les membres restreints commencent sans aucun accès. Choisissez ce que cette invitation déverrouille une fois acceptée — vous pourrez en accorder davantage plus tard depuis la ligne du membre.",
     "sendInvite": "Envoyer l'invitation",
@@ -609,13 +609,13 @@
     "cloudNotReady": "Non connecté",
     "noMailSystem": "Aucun système de messagerie n'est configuré, l'invitation ne sera donc pas distribuée.",
     "setUpEmail": "Configurer l'e-mail →",
-    "cloudNotConnected": "Openship Cloud n'est pas connecté et ne peut donc pas envoyer l'invitation.",
-    "connectCloud": "Connecter Openship Cloud →"
+    "cloudNotConnected": "OpenShip Cloud n'est pas connecté et ne peut donc pas envoyer l'invitation.",
+    "connectCloud": "Connecter OpenShip Cloud →"
   },
   "teamWorkspace": {
     "title": "Espace de travail d'équipe",
     "description": "Passez cette instance en mode multi-utilisateur.",
-    "body": "Pour l'instant, cette instance est mono-utilisateur — vous seul pouvez vous connecter. Lorsque vous serez prêt à ajouter des coéquipiers, migrez le déploiement vers un emplacement partagé : votre propre serveur, Openship Cloud, ou exposez cette machine via un tunnel.",
+    "body": "Pour l'instant, cette instance est mono-utilisateur — vous seul pouvez vous connecter. Lorsque vous serez prêt à ajouter des coéquipiers, migrez le déploiement vers un emplacement partagé : votre propre serveur, OpenShip Cloud, ou exposez cette machine via un tunnel.",
     "currentMode": "Mode actuel",
     "singleUserLocal": "Mono-utilisateur (local)",
     "migrate": "Migrer",
@@ -624,7 +624,7 @@
   },
   "cloud": {
     "checking": "Vérification…",
-    "fallbackName": "Openship Cloud",
+    "fallbackName": "OpenShip Cloud",
     "connectedAccount": "Compte cloud connecté",
     "connected": "Connecté",
     "disconnect": "Déconnecter",
@@ -633,14 +633,14 @@
     "unlockDesktop": "Débloquez les déploiements cloud, le SSL géré et le CDN mondial.",
     "deployLocal": "Déployez vers le cloud directement depuis votre instance locale.",
     "waitingSignIn": "En attente de connexion…",
-    "connectButton": "Se connecter à Openship Cloud",
-    "confirmDisconnect": "Se déconnecter d'Openship Cloud ? Les déploiements cloud cesseront de fonctionner jusqu'à ce que vous vous reconnectiez.",
+    "connectButton": "Se connecter à OpenShip Cloud",
+    "confirmDisconnect": "Se déconnecter d'OpenShip Cloud ? Les déploiements cloud cesseront de fonctionner jusqu'à ce que vous vous reconnectiez.",
     "toast": {
-      "disconnected": "Déconnecté d'Openship Cloud",
+      "disconnected": "Déconnecté d'OpenShip Cloud",
       "disconnectFailed": "Échec de la déconnexion"
     },
     "pitch": {
-      "title": "Ajouter Openship Cloud",
+      "title": "Ajouter OpenShip Cloud",
       "body": "Chaque projet bénéficie d'un domaine .{domain} gratuit avec SSL automatique — sans DNS ni certificats. Vos propres serveurs continuent de fonctionner exactement comme maintenant.",
       "perkDomain": "Domaine .{domain} gratuit + SSL automatique sur chaque projet",
       "perkDeploy": "Déployez sur le cloud managé ou restez sur vos propres serveurs",
@@ -650,15 +650,15 @@
       "viewPricing": "Voir les tarifs"
     },
     "connectModal": {
-      "title": "Connecter Openship Cloud",
-      "requiresConnection": "{feature} nécessite une connexion Openship Cloud. Connectez votre compte pour débloquer :",
+      "title": "Connecter OpenShip Cloud",
+      "requiresConnection": "{feature} nécessite une connexion OpenShip Cloud. Connectez votre compte pour débloquer :",
       "features": {
         "deployments": "Déploiements cloud",
         "infra": "Infrastructure gérée",
         "ssl": "SSL et domaines automatiques",
         "cdn": "CDN mondial"
       },
-      "connect": "Se connecter à Openship Cloud",
+      "connect": "Se connecter à OpenShip Cloud",
       "waitingSignIn": "En attente de connexion…",
       "maybeLater": "Peut-être plus tard"
     }
@@ -668,7 +668,7 @@
       "title": "Emplacement de l’instance",
       "thisDesktop": "Cet ordinateur",
       "thisServer": "Ce serveur",
-      "desktopHint": "Connectez-vous à une instance existante ou déplacez Openship sur un serveur pour le garder disponible.",
+      "desktopHint": "Connectez-vous à une instance existante ou déplacez OpenShip sur un serveur pour le garder disponible.",
       "serverHint": "Les tâches, webhooks et accès d’équipe sont gérés ici.",
       "remoteHint": "Vous utilisez les données en direct de l’instance distante.",
       "retiredHint": "Ce serveur ne gère plus de projets. Déplacez une instance ici pour le réutiliser.",
@@ -683,7 +683,7 @@
       "receiveInstance": "Déplacer une instance ici",
       "disconnect": "Revenir à l’instance locale",
       "moreOptions": "Autres options de l’instance",
-      "memberTitle": "Utiliser Openship depuis Desktop",
+      "memberTitle": "Utiliser OpenShip depuis Desktop",
       "memberHint": "Connectez Desktop avec les mêmes droits d’accès qu’ici.",
       "loading": "Chargement de l’instance…",
       "sendHint": "Créez un code de transfert, puis choisissez {action} dans les autres options des paramètres d’instance de Desktop. Le contrôle reste ici jusqu’à la fin du transfert.",
@@ -696,9 +696,9 @@
       "pairHint": "Utilisez votre autre Desktop avec les données actuelles de cette instance et vos autorisations actuelles. Aucune donnée n’est déplacée.",
       "pairOwnDevice": "Ce code vous connecte avec votre compte. Utilisez Équipe pour inviter une autre personne.",
       "teamAccessTitle": "Activer les invitations d’équipe",
-      "teamAccessHint": "Les invitations nécessitent une instance accessible. Donnez à Openship une adresse publique ou déplacez-le vers un serveur toujours disponible.",
+      "teamAccessHint": "Les invitations nécessitent une instance accessible. Donnez à OpenShip une adresse publique ou déplacez-le vers un serveur toujours disponible.",
       "adminRequired": "Demandez à l’administrateur de votre instance de le configurer.",
-      "webhookAccessHint": "GitHub a besoin d’une API Openship accessible pour envoyer les événements de déploiement. Déplacez cette instance vers un serveur toujours disponible ou donnez à son API une adresse publique."
+      "webhookAccessHint": "GitHub a besoin d’une API OpenShip accessible pour envoyer les événements de déploiement. Déplacez cette instance vers un serveur toujours disponible ou donnez à son API une adresse publique."
     },
     "transfer": {
       "installOnServer": "Nouvelle installation",
@@ -725,7 +725,7 @@
     "descCloud": "Cloud",
     "descSelfHosted": "Auto-hébergé",
     "typeDesktop": "Bureau",
-    "typeCloud": "Openship Cloud",
+    "typeCloud": "OpenShip Cloud",
     "typeSelfHosted": "Auto-hébergé",
     "deployMode": "Mode de déploiement : {mode}",
     "authNone": "Zero Auth",
@@ -754,7 +754,7 @@
       "invitationHint": "Votre instance locale est en pause pendant la connexion. Aucune donnée n’est déplacée."
     },
     "recovery": {
-      "title": "Votre instance Openship",
+      "title": "Votre instance OpenShip",
       "subtitle": "Terminez le déplacement ou reconnectez-vous pour continuer à gérer vos projets.",
       "checkConnection": "Vérifier la connexion",
       "signInRemote": "Se connecter à l'instance distante"
@@ -762,7 +762,7 @@
   },
   "upgradeAuth": {
     "title": "Ajouter un mot de passe",
-    "description": "Définissez une adresse e-mail et un mot de passe pour protéger l’accès à Openship. Vos projets et votre historique sont conservés.",
+    "description": "Définissez une adresse e-mail et un mot de passe pour protéger l’accès à OpenShip. Vos projets et votre historique sont conservés.",
     "close": "Fermer",
     "name": "Nom",
     "namePlaceholder": "Jean Dupont",
@@ -1034,7 +1034,7 @@
       },
       "security.advisory": {
         "label": "Avis de sécurité",
-        "description": "Un avis de sécurité concerne Openship ou un service déployé. Inclut la cause et la mise à jour disponible."
+        "description": "Un avis de sécurité concerne OpenShip ou un service déployé. Inclut la cause et la mise à jour disponible."
       }
     }
   },
@@ -1292,9 +1292,9 @@
   },
   "updates": {
     "title": "Mises à jour",
-    "description": "Comment Openship recherche et applique les nouvelles versions",
+    "description": "Comment OpenShip recherche et applique les nouvelles versions",
     "checking": "Recherche de mises à jour…",
-    "available": "Openship {version} est disponible",
+    "available": "OpenShip {version} est disponible",
     "upToDate": "Vous utilisez la dernière version",
     "current": "Actuelle : {version}",
     "rerunToUpdate": " · relancez votre installation pour mettre à jour",
@@ -1307,12 +1307,12 @@
     "viewChangelog": "Voir le journal des modifications et les versions",
     "securityTitle": "Comment fonctionnent les vérifications de mise à jour",
     "securityDescription": "Transparence totale sur ce qui communique avec votre installation",
-    "security1": "Openship recherche les mises à jour et les avis de sécurité",
+    "security1": "OpenShip recherche les mises à jour et les avis de sécurité",
     "securityOnlyGithub": "uniquement depuis les versions publiques GitHub",
     "security2": "du dépôt open-source (",
     "security3": "). Il ne fait que",
     "securityPulls": "récupérer",
-    "security4": "ces données — aucun service tiers ni serveur exploité par Openship ne peut pousser de mises à jour ou de signaux vers votre installation. Les avis sont épinglés à chaque version, de sorte que les changements non publiés ne vous parviennent jamais. Les avis de sécurité critiques sont toujours affichés une fois ; tout le reste respecte le paramètre ci-dessus."
+    "security4": "ces données — aucun service tiers ni serveur exploité par OpenShip ne peut pousser de mises à jour ou de signaux vers votre installation. Les avis sont épinglés à chaque version, de sorte que les changements non publiés ne vous parviennent jamais. Les avis de sécurité critiques sont toujours affichés une fois ; tout le reste respecte le paramètre ci-dessus."
   },
   "infrastructure": {
     "title": "Composants de la plateforme",
@@ -1365,7 +1365,7 @@
     "import": {
       "title": "Importer les données",
       "description": "Restaurez un fichier exporté sur cette instance.",
-      "intro": "Chargez un fichier exporté depuis une autre installation Openship. Saisissez la phrase secrète utilisée lors de l'export pour restaurer aussi les secrets.",
+      "intro": "Chargez un fichier exporté depuis une autre installation OpenShip. Saisissez la phrase secrète utilisée lors de l'export pour restaurer aussi les secrets.",
       "importFromFile": "Importer depuis un fichier…",
       "modalTitle": "Importer les données de l'instance",
       "modalSubtitle": "Restaurez un instantané exporté.",
@@ -1383,7 +1383,7 @@
       "importing": "Importation…",
       "import": "Importer",
       "confirmWipe": "Remplacer TOUTES les données de cette instance par l'instantané importé ? Cette action est irréversible et vous serez déconnecté.",
-      "notExport": "Cela ne ressemble pas à un fichier d'export Openship.",
+      "notExport": "Cela ne ressemble pas à un fichier d'export OpenShip.",
       "cantRead": "Impossible de lire ce fichier — est-ce un export valide ?",
       "importFailed": "Échec de l'importation.",
       "rowsRestored": "{count} lignes restaurées",
@@ -1392,7 +1392,7 @@
     },
     "backupTitle": "Sauvegarde et récupération",
     "backupDesc": "Exportez un fichier ou restaurez une sauvegarde existante.",
-    "backupWarning": "Les archives incluent la base de données et les identifiants Openship. Le contenu des volumes Docker reste sur leurs serveurs ; utilisez les sauvegardes de projet pour les données de service.",
+    "backupWarning": "Les archives incluent la base de données et les identifiants OpenShip. Le contenu des volumes Docker reste sur leurs serveurs ; utilisez les sauvegardes de projet pour les données de service.",
     "exportInstanceTitle": "Exporter l'instance ou des projets",
     "exportInstanceDesc": "Choisissez une instance complète ou des projets sélectionnés, avec leurs environnements et dépendances.",
     "exportProjectTitle": "Exporter le projet",
@@ -1425,12 +1425,12 @@
     "recordsSelected": "{count} enregistrements sélectionnés.",
     "recordsAcrossEnvsSelected": "{count} enregistrements sur {envs} environnements sélectionnés.",
     "selectAtLeastOne": "Sélectionnez au moins un projet ou un environnement.",
-    "cloudNotice": "Les projets Cloud ne fonctionneront pas tant que l'espace de travail de destination n'est pas connecté au même compte Openship Cloud."
+    "cloudNotice": "Les projets Cloud ne fonctionneront pas tant que l'espace de travail de destination n'est pas connecté au même compte OpenShip Cloud."
   },
   "migrate": {
     "chooseTitle": "Passer en mode multi-utilisateur",
     "serverTitle": "Migrer vers votre serveur",
-    "cloudTitle": "Migrer vers Openship Cloud",
+    "cloudTitle": "Migrer vers OpenShip Cloud",
     "tunnelTitle": "Exposer via un tunnel",
     "completeTitle": "Migration terminée",
     "back": "Retour",
@@ -1439,11 +1439,11 @@
       "serverTitle": "Migrer vers votre serveur",
       "serverBody": "Déployez openship via SSH sur un VPS que vous possédez. Les données y sont déplacées. Idéal pour les équipes qui disposent déjà d'une infrastructure.",
       "serverMeta": "Aucune dépendance externe",
-      "cloudTitle": "Migrer vers Openship Cloud",
+      "cloudTitle": "Migrer vers OpenShip Cloud",
       "cloudBody": "Poussez vos données vers api.openship.io. Nous hébergeons tout. Idéal pour les équipes qui ne veulent aucune infrastructure.",
       "cloudMetaConnected": "Compte cloud connecté",
       "metaRequiresCloud": "Nécessite un compte cloud",
-      "cloudWarn": "Connectez-vous d'abord à Openship Cloud.",
+      "cloudWarn": "Connectez-vous d'abord à OpenShip Cloud.",
       "tunnelTitle": "Rester en local, exposer via un tunnel",
       "tunnelBody": "Vos données restent sur cette machine. Nous provisionnons un tunnel de périphérie Oblien afin que vos coéquipiers puissent vous joindre sur l'internet public — votre machine doit être en ligne.",
       "tunnelMetaConnected": "Tunnel via Oblien",
@@ -1463,7 +1463,7 @@
       "customHostPlaceholder": "equipe.acme.com",
       "preflight": "Contrôle préalable",
       "sshReachable": "SSH joignable",
-      "releaseAvailable": "Version Openship disponible",
+      "releaseAvailable": "Version OpenShip disponible",
       "domainReady": "Domaine prêt",
       "runPreflight": "Lancer le contrôle préalable",
       "recheck": "Revérifier",
@@ -1491,7 +1491,7 @@
     },
     "tunnel": {
       "connectFirstTitle": "Connectez d'abord votre compte cloud",
-      "connectFirstBody": "Les tunnels sont provisionnés via Openship Cloud. Ouvrez Paramètres → Cloud et connectez-vous, puis revenez ici.",
+      "connectFirstBody": "Les tunnels sont provisionnés via OpenShip Cloud. Ouvrez Paramètres → Cloud et connectez-vous, puis revenez ici.",
       "headsUp": "À noter",
       "bullet1": "Vos données restent sur cette machine. Rien n'est déplacé.",
       "bullet2": "Vos coéquipiers ne peuvent vous joindre que lorsque cette machine est en ligne.",
@@ -1529,7 +1529,7 @@
     "heading": "Revenir au mono-utilisateur",
     "intro": "Sortez cette instance de {mode} et remettez-la en mode solo sur cette machine.",
     "modeServer": "votre serveur",
-    "modeCloud": "Openship Cloud",
+    "modeCloud": "OpenShip Cloud",
     "modeTunnel": "le tunnel",
     "current": "Actuel",
     "noUrl": "(aucune URL enregistrée)",
@@ -1572,7 +1572,7 @@
   },
   "credentials": {
     "title": "Connexions",
-    "description": "Jetons et connexions qu'Openship utilise pour vous — récupération d'images privées, écriture d'enregistrements DNS. Stockés chiffrés et jamais réaffichés.",
+    "description": "Jetons et connexions qu'OpenShip utilise pour vous — récupération d'images privées, écriture d'enregistrements DNS. Stockés chiffrés et jamais réaffichés.",
     "noProviders": "Aucun fournisseur d'identifiants n'est disponible sur cette instance.",
     "noneForProvider": "Aucun ajouté pour le moment.",
     "add": "Ajouter",
@@ -1587,7 +1587,7 @@
     "namePlaceholder": "ex. GHCR lecture seule",
     "secretKeptPlaceholder": "•••••••• (enregistré — laisser vide pour conserver)",
     "selectPlaceholder": "Choisir…",
-    "verifyNote": "Openship vérifie l'identifiant auprès du fournisseur avant de l'enregistrer.",
+    "verifyNote": "OpenShip vérifie l'identifiant auprès du fournisseur avant de l'enregistrer.",
     "confirmDelete": "Supprimer « {name} » ? Tout ce qui en dépend cessera de fonctionner.",
     "toast": {
       "loadFailed": "Impossible de charger les identifiants",
@@ -1619,17 +1619,17 @@
       },
       "cloudflare": {
         "label": "Cloudflare",
-        "summary": "Permettre à Openship d'écrire les enregistrements DNS nécessaires au lieu de les coller manuellement.",
+        "summary": "Permettre à OpenShip d'écrire les enregistrements DNS nécessaires au lieu de les coller manuellement.",
         "fields": {
           "apiToken": {
             "label": "Jeton d'API",
-            "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec Openship. Créez-le dans My Profile → API Tokens."
+            "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec OpenShip. Créez-le dans My Profile → API Tokens."
           }
         }
       },
       "digitalocean": {
         "label": "DigitalOcean",
-        "summary": "Permettre à Openship d'écrire dans DigitalOcean DNS les enregistrements DNS nécessaires à un domaine personnalisé.",
+        "summary": "Permettre à OpenShip d'écrire dans DigitalOcean DNS les enregistrements DNS nécessaires à un domaine personnalisé.",
         "fields": {
           "apiToken": {
             "label": "Jeton d'API",
@@ -1721,8 +1721,8 @@
     "description": "Ce que cette instance présente. C'est la valeur par défaut pour tous — chaque utilisateur peut choisir sa propre vue dans Paramètres → Général.",
     "platformLabel": "Plateforme complète",
     "platformDesc": "Projets, applications, déploiements, serveurs — toutes les capacités de cette installation.",
-    "mailLabel": "Openship Mail",
-    "mailDesc": "Définit l'instance sous la marque Openship Mail et transforme la barre latérale en plan de contrôle de messagerie.",
+    "mailLabel": "OpenShip Mail",
+    "mailDesc": "Définit l'instance sous la marque OpenShip Mail et transforme la barre latérale en plan de contrôle de messagerie.",
     "savedOverridden": "Enregistré. Votre propre vue reste inchangée — vous l'avez choisie dans Paramètres → Général.",
     "errorToast": "Impossible de modifier le mode produit.",
     "envNote": "Cette instance suit OPENSHIP_PRODUCT=mail défini dans l'environnement. Choisir un mode ici le remplace."
@@ -1730,7 +1730,7 @@
   "email": {
     "title": "E-mail (SMTP)",
     "description": "Le service SMTP par lequel cette instance envoie des e-mails",
-    "intro": "Utilisé pour la réinitialisation de mot de passe, la vérification d'e-mail, les invitations d'équipe et les notifications. Collez simplement les identifiants SMTP de n'importe quel fournisseur — Amazon SES, Gmail, Mailgun, un relais d'entreprise — hôte, port, nom d'utilisateur, mot de passe. Aucun serveur à configurer ; Openship s'y connecte directement. Le mot de passe est chiffré et ne sera plus jamais affiché.",
+    "intro": "Utilisé pour la réinitialisation de mot de passe, la vérification d'e-mail, les invitations d'équipe et les notifications. Collez simplement les identifiants SMTP de n'importe quel fournisseur — Amazon SES, Gmail, Mailgun, un relais d'entreprise — hôte, port, nom d'utilisateur, mot de passe. Aucun serveur à configurer ; OpenShip s'y connecte directement. Le mot de passe est chiffré et ne sera plus jamais affiché.",
     "loading": "Chargement…",
     "configuredBadge": "Configuré",
     "notConfigured": "Pas encore configuré — la réinitialisation de mot de passe, les invitations et les notifications par e-mail restent désactivées tant que vous n'avez pas saisi d'identifiants SMTP ci-dessous.",
@@ -1744,7 +1744,7 @@
     "passwordPlaceholder": "Mot de passe SMTP ou clé d'application",
     "passwordKeepPlaceholder": "•••••••• (laisser vide pour conserver l'actuel)",
     "fromLabel": "Adresse d'expédition",
-    "fromPlaceholder": "Openship <noreply@exemple.fr>",
+    "fromPlaceholder": "OpenShip <noreply@exemple.fr>",
     "fromHint": "Optionnel. Par défaut identique au nom d'utilisateur.",
     "fromHintRequired": "Requis — votre nom d'utilisateur n'est pas une adresse e-mail, les destinataires ont donc besoin d'une vraie adresse d'expédition.",
     "fromRequired": "Saisissez une adresse d'expédition — le nom d'utilisateur de ce fournisseur n'étant pas un e-mail, il ne peut pas servir d'expéditeur.",
@@ -1768,13 +1768,13 @@
   },
   "edgeOrphans": {
     "title": "Routes edge non suivies",
-    "description": "Noms d'hôtes que cette machine sert encore mais dont Openship n'a aucune trace",
+    "description": "Noms d'hôtes que cette machine sert encore mais dont OpenShip n'a aucune trace",
     "scan": "Analyser",
     "scanning": "Analyse en cours…",
     "allClear": "Chaque nom d'hôte servi par le point d'entrée est répertorié.",
     "comparedTo": "Comparé à {count} noms d'hôtes suivis.",
     "unavailable": "Impossible de vérifier le point d'entrée",
-    "explain": "Supprimer un projet avec « Supprimer d'Openship uniquement » laisse délibérément sa route active. Une route d'application résiduelle renvoie alors 502 une fois son conteneur supprimé, mais une route STATIQUE résiduelle continue de servir les anciens fichiers avec un code 200 — même sur un nom d'hôte réattribué à un autre projet.",
+    "explain": "Supprimer un projet avec « Supprimer d'OpenShip uniquement » laisse délibérément sa route active. Une route d'application résiduelle renvoie alors 502 une fois son conteneur supprimé, mais une route STATIQUE résiduelle continue de servir les anciens fichiers avec un code 200 — même sur un nom d'hôte réattribué à un autre projet.",
     "kindStatic": "Fichiers statiques",
     "kindProxy": "Route d'application",
     "staticWarning": "Sert toujours des fichiers. Répond aux requêtes aujourd'hui.",

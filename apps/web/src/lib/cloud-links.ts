@@ -1,4 +1,8 @@
-import { CLOUD_DASHBOARD_URL } from "@repo/core";
+import { CLOUD_DASHBOARD_URL, migrationHref, type MigrationSourceKind } from "@repo/core";
+
+export function cloudMigrationHref(source?: MigrationSourceKind): string {
+  return new URL(migrationHref(source), CLOUD_DASHBOARD_URL).toString();
+}
 
 /** Cloud owns authentication and checkout; keep the purchase intent in its URL. */
 export function cloudPlanHref(planId?: string, interval?: "monthly" | "annual"): string {

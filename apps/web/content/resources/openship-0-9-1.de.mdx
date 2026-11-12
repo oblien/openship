@@ -1,0 +1,35 @@
+---
+title: "OpenShip 0.9.1: Apps erkunden, Laufzeiten steuern, Ihren Workflow wiederherstellen"
+description: "Ein öffentlicher App-Katalog, eine klarere Laufzeitkonfiguration und Korrekturen für Workflow-Speicherungen, Cloud-Verbindungen, Webmail und Bereitstellungs-Image-Vorbereitung."
+date: "2026-10-13"
+category: "Product"
+author: "OpenShip Team"
+---
+
+OpenShip 0.9.1 verbessert die Schritte rund um eine Bereitstellung: Auswählen einer App, Konfigurieren ihrer Laufzeit, Zurückkehren zu einem gespeicherten Setup und Vorbereiten der nächsten Version.
+
+## Erkunden Sie es vor der Installation
+
+Mit dem [öffentlichen App-Katalog](/apps) können Sie Backends, Datenbanken, Veröffentlichungstools und Automatisierung durchsuchen, ohne zuerst das Dashboard öffnen zu müssen. Suchen oder filtern Sie nach Kategorie und öffnen Sie dann eine App, um deren Funktionen, enthaltene Dienste und Anforderungen anzuzeigen.
+
+Die Installation wird mit dem bestehenden Setup-Ablauf fortgesetzt. App- und Plan-Links behalten ihr Ziel über die Anmeldung und Überprüfung hinweg und bestätigte Installationseinstellungen können nach dem Auschecken fortgesetzt werden.
+
+## Bewußtere Laufzeitkonfiguration
+
+Generierte PHP Builds unterstützen PHP 8.3 und 8.4 über die Laufzeitversionseinstellung. Docker Quell-Builds stellen außerdem eine erweiterte Überschreibung des Produktionsimages zur Verfügung. Rezepte prüfen vor der Aktivierung die Laufzeitfähigkeiten und -kompatibilität, und Rollbacks mit beibehaltenem Image bewahren die ursprüngliche Laufzeitkonfiguration.
+
+Manuell Docker stellt veränderbare Aktualisierungs-Registrierungstags erneut bereit und behält dabei lokale Builds und angeheftete Rollback-Artefakte bei. Ersatzbilder werden vor der Aktivierung des Dienstes vorbereitet. Bei einer fehlgeschlagenen Vorbereitung bleiben die aktuellen Container aktiv; die spätere Multi-Service-Umstellung bleibt sequentiell.
+
+## Wiederherstellen, ohne alles neu zu erstellen
+
+Gespeicherte Cloud-Server-Links verfügen über klarere Aktionen zur Wiederherstellung der Verbindung und Anleitungen für Kontokonflikte und vorübergehende Ausfälle. Eine vorhandene Webmail-Anwendung kann auch wieder verbunden werden, wenn ihre E-Mail-Registrierung die Projektverknüpfung verliert, wodurch ihr Projekt und ihr persistenter Speicher wiederverwendet werden.
+
+Bei der Migration bleiben jetzt Domänen erhalten, die nur ausgewählte Pfade weiterleiten. Exakte und Präfix-Routen bleiben mit ihren Diensten verbunden, und nicht zugeordnete Anfragen bleiben unverändert.
+
+## Workflow- und Sprachverbesserungen
+
+Eigenständige Aktionsworkflows können gültiges benutzerdefiniertes YAML mit klarerer Anleitung für fehlende Namen, Läufer, Validierung oder Zugriffseinstellungen speichern. Verbundene Desktop- und selbstgehostete Instanzen leiten Cloud-Workflow- und Runner-Vorgänge an die besitzende Cloud-Instanz weiter.
+
+Russisch schließt sich den Dashboard-Sprachen an und Webmail erhält Live-Posteingangsaktualisierungen über seinen Event-Stream.
+
+Lesen Sie das [vollständige Änderungsprotokoll](/changelog), erkunden Sie das [Feature-Verzeichnis](/features) oder folgen Sie der [Update-Anleitung](/docs/guides/updating) für Ihre Installation.

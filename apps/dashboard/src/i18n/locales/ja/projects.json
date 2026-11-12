@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "自分のサーバーにデプロイ",
-    "description": "SSH でサーバーを接続し、Openship Cloud と並行して自分のインフラでプロジェクトを実行できます。",
+    "description": "SSH でサーバーを接続し、OpenShip Cloud と並行して自分のインフラでプロジェクトを実行できます。",
     "button": "サーバーを接続"
   },
   "filters": {
     "title": "ターゲットで絞り込む",
     "subtitle": "プロジェクトのデプロイ先",
     "allProjects": "すべてのプロジェクト",
-    "cloud": "Openship Cloud",
+    "cloud": "OpenShip Cloud",
     "local": "ローカル"
   },
   "card": {
@@ -111,7 +111,7 @@
     "cleanupPending": "削除を開始しました。クリーンアップが完了するまで、プロジェクトは利用できません。",
     "alreadyDeleted": "プロジェクトはすでに削除されています",
     "forceModalTitle": "ソースから削除できませんでした",
-    "forceModalBody": "ランタイムに到達できなかった（または失敗が続いた）ため、このプロジェクトは削除処理されていません。それでも Openship から削除できます — レコードは今すぐ消え、残ったリソースはサーバーに到達できるようになり次第、自動的に回収されます。",
+    "forceModalBody": "ランタイムに到達できなかった（または失敗が続いた）ため、このプロジェクトは削除処理されていません。それでも OpenShip から削除できます — レコードは今すぐ消え、残ったリソースはサーバーに到達できるようになり次第、自動的に回収されます。",
     "forceModalConfirm": "ストレージから削除",
     "forceModalCancel": "キャンセル",
     "unlinked": "{projects} とのリンクを解除しました — 反映するには再デプロイしてください。",
@@ -202,7 +202,7 @@
     "subtextNoSource": "ソースを接続して最初のデプロイを設定します。"
   },
   "overview": {
-    "platformCloud": "Openship Cloud",
+    "platformCloud": "OpenShip Cloud",
     "platformServer": "セルフホスト（サーバー）",
     "platformLocal": "セルフホスト（ローカル）",
     "modeStatic": "静的サイト",
@@ -354,7 +354,7 @@
     "failedCreateService": "サービスの作成に失敗しました",
     "requestFailed": "リクエストに失敗しました",
     "application": "アプリケーション",
-    "applicationHint": "このプロジェクトのデプロイを通じて管理されます。",
+    "applicationHint": "このアプリの環境変数とデプロイを管理します。",
     "companionsTitle": "別のアプリやサービスを追加"
   },
   "serviceStatus": {
@@ -442,7 +442,7 @@
     "modePublic": "公開",
     "modePublicDesc": "公開された host:port を使用します。どこからでも動作しますが、データベースのポートを開放する必要があります。",
     "envKeyLabel": "環境変数",
-    "redeployHint": "対象がすでにデプロイ済みの場合、Openship はすぐに再デプロイを試みます。他の環境変数の変更は先に保存してください。",
+    "redeployHint": "対象がすでにデプロイ済みの場合、OpenShip はすぐに再デプロイを試みます。他の環境変数の変更は先に保存してください。",
     "cancel": "キャンセル",
     "connect": "接続",
     "connected": "接続を保存しました。対象のデプロイ状態を確認してください。",

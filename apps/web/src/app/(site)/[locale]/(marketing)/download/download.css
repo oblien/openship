@@ -1,0 +1,228 @@
+/* ═══════════════════════════════════════════════════════════════
+   Download - page-specific overrides.
+   Same hero structure as the landing (grain + grid + aurora),
+   but a distinct cool seafoam/cyan palette so it doesn't read
+   as a clone of the home page's violet/amber aurora.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Aurora - core (centered, seafoam green) ───────────────── */
+.dl-hero .hero-aurora-core {
+  background: radial-gradient(
+    ellipse 58% 78% at 50% 92%,
+    rgba(0, 184, 148, .52)  0%,
+    rgba(85, 239, 196, .30) 20%,
+    rgba(0, 184, 148, .12)  45%,
+    transparent             70%
+  );
+}
+
+/* ── Aurora - left wing (cool sky-blue) ────────────────────── */
+.dl-hero .hero-aurora-wing--left {
+  background: radial-gradient(
+    ellipse 60% 72% at 65% 85%,
+    rgba(56, 189, 248, .34)  0%,
+    rgba(125, 211, 252, .18) 30%,
+    rgba(14, 165, 233, .08)  55%,
+    transparent              72%
+  );
+}
+
+/* ── Aurora - right wing (soft mint / cyan) ────────────────── */
+.dl-hero .hero-aurora-wing--right {
+  background: radial-gradient(
+    ellipse 60% 72% at 35% 85%,
+    rgba(94, 234, 212, .30)  0%,
+    rgba(125, 211, 252, .16) 30%,
+    rgba(45, 212, 191, .08)  55%,
+    transparent              72%
+  );
+}
+
+/* ── Grid - slightly cooler tint to match the aurora ───────── */
+.dl-hero .hero-grid {
+  background-image:
+    linear-gradient(rgba(10, 25, 40, .04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 25, 40, .04) 1px, transparent 1px);
+}
+
+/* ── Second headline - desaturated seafoam vs home's grey ──── */
+.dl-hero .hero-headline-second {
+  color: rgba(0, 184, 148, .55);
+}
+
+/* ── Product screenshot frame (hero → showcase) ────────────── */
+.dl-shot {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--th-card-bd);
+  background: var(--th-card-bg);
+  box-shadow:
+    0 1px 0 0 var(--th-on-05),
+    0 40px 90px -50px rgba(0, 0, 0, .38);
+}
+.dl-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dl-page {
+  --dl-accent: #167567;
+  --dl-accent-soft: rgba(0, 184, 148, .06);
+  padding-bottom: 40px;
+}
+.dl-hero {
+  position: relative;
+  overflow: hidden;
+  padding-block: 148px 152px;
+}
+.dl-hero-content {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+}
+.dl-hero-art { margin: 0 auto 22px; }
+.dl-title {
+  color: var(--th-text-heading);
+  font-size: clamp(40px, 5.5vw, 68px);
+  font-weight: 500;
+  letter-spacing: -.035em;
+  line-height: 1.08;
+}
+.dl-title span { display: block; font-weight: 300; }
+.dl-hero-description {
+  max-width: 540px;
+  margin: 24px auto 0;
+  color: var(--th-text-body);
+  font-size: 17px;
+  line-height: 1.7;
+}
+.dl-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 20px 30px;
+  margin-top: 30px;
+}
+.dl-primary { padding: 14px 24px; border-radius: 999px; font-size: 15px; }
+.dl-button-icon { width: 20px; height: 20px; flex: none; }
+.dl-page .marketing-text-link { max-width: 100%; white-space: normal; }
+.dl-page .marketing-text-link svg,
+.dl-platform-download svg { flex: none; }
+.dl-release {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 22px;
+  color: var(--th-text-muted);
+  font-size: 12px;
+}
+.dl-release bdi { color: var(--th-text-body); }
+.dl-showcase { position: relative; z-index: 10; margin-top: -80px; }
+.dl-showcase figcaption {
+  margin: 20px auto 0;
+  color: var(--th-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+.dl-downloads { padding-block: 72px 48px; scroll-margin-top: 64px; }
+.dl-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+.dl-section-head h2,
+.dl-cli h2 {
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 500;
+  letter-spacing: -.03em;
+  line-height: 1.2;
+}
+.dl-section-head p { margin-top: 12px; color: var(--th-text-body); font-size: 16px; line-height: 1.6; }
+.dl-platforms { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.dl-platform {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 26px;
+  border-radius: 22px;
+  background: var(--th-bg-subtle);
+}
+.dl-platform[data-recommended="true"] { background: var(--dl-accent-soft); }
+.dl-platform-mark { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 36px; margin-bottom: 24px; }
+.dl-os-icon { width: 30px; height: 30px; flex: none; color: var(--th-text-heading); }
+.dl-recommended { color: var(--dl-accent); font-size: 12px; }
+.dl-platform h3 { color: var(--th-text-heading); font-size: 24px; font-weight: 500; letter-spacing: -.025em; }
+.dl-platform-variant { margin-top: 4px; color: var(--th-text-body); font-size: 14px; }
+.dl-platform-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-block: 22px; color: var(--th-text-muted); font-size: 12px; }
+.dl-platform-download { justify-content: space-between; margin-top: auto; padding: 12px 18px; border-radius: 999px; font-size: 14px; }
+.dl-platform-download.th-btn-ghost { border: 0; background: var(--th-card-bg); }
+.dl-platform-download.th-btn-ghost:hover { background: var(--th-on-08); }
+.dl-install-help { margin-top: 24px; }
+.dl-cli {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: clamp(32px, 6vw, 88px);
+  padding-block: 56px;
+  scroll-margin-top: 96px;
+}
+.dl-cli-copy > .marketing-illustration { margin-bottom: 22px; }
+.dl-cli h2 span { display: block; color: var(--th-text-muted); font-weight: 300; }
+.dl-cli-copy p { max-width: 400px; margin-top: 20px; color: var(--th-text-body); font-size: 16px; line-height: 1.7; }
+.dl-cli-copy > .marketing-text-link { margin-top: 24px; }
+.dl-cli-install { min-width: 0; }
+.dl-cli .install-tabs { margin: 0; border: 0; border-radius: 18px; }
+.dl-cli .install-methods { padding: 12px; background: var(--th-bg-subtle); }
+.dl-cli .install-command { padding: 28px 22px; }
+.dl-cli-next { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 18px; color: var(--th-text-body); font-size: 14px; }
+.dl-cli-next code { padding: 8px 12px; border-radius: 8px; background: var(--th-bg-subtle); color: var(--th-text-heading); font-size: 13px; }
+.dl-page :is(a, button):focus-visible { outline: 2px solid var(--th-text-heading); outline-offset: 4px; }
+.dl-page .th-btn:focus-visible { background: var(--th-btn-bg); }
+
+@media (max-width: 1100px) {
+  .dl-platforms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 820px) {
+  .dl-hero { padding-block: 132px 112px; }
+  .dl-showcase { margin-top: -60px; }
+  .dl-cli { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .dl-cli-copy p { max-width: 540px; }
+}
+@media (max-width: 560px) {
+  .dl-hero { padding-block: 116px 90px; }
+  .dl-hero-description { font-size: 15px; }
+  .dl-hero-actions { gap: 22px; }
+  .dl-showcase { margin-top: -36px; }
+  .dl-shot { border-radius: 10px; }
+  .dl-showcase figcaption { font-size: 12px; }
+  .dl-downloads { padding-block: 48px 24px; }
+  .dl-platforms { gap: 12px; }
+  .dl-platform { padding: 20px 16px; border-radius: 16px; }
+  .dl-platform-mark { min-height: 60px; align-content: start; gap: 8px; margin-bottom: 16px; }
+  .dl-recommended { width: 100%; font-size: 11px; }
+  .dl-platform h3 { font-size: 21px; }
+  .dl-platform-download { padding-inline: 12px; font-size: 13px; }
+  .dl-platform-meta { margin-block: 18px; }
+  .dl-cli { padding-block: 40px; }
+  .dl-cli .install-command { padding: 22px 14px; }
+}
+@media (max-width: 380px) {
+  .dl-platforms { grid-template-columns: minmax(0, 1fr); }
+  .dl-platform { padding: 24px; }
+  .dl-platform-mark { min-height: 36px; align-content: center; }
+  .dl-recommended { width: auto; }
+  .dl-platform-download { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dl-hero .hero-aurora-core,
+  .dl-hero .hero-aurora-wing { animation: none; }
+}

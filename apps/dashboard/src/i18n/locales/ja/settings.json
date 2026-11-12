@@ -105,7 +105,7 @@
   "page": {
     "title": "設定",
     "subtitle": "設定、チーム、インスタンス構成を管理します",
-    "cloudConnectedToast": "Openship Cloud に接続しました"
+    "cloudConnectedToast": "OpenShip Cloud に接続しました"
   },
   "sidebar": {
     "title": "設定",
@@ -132,7 +132,7 @@
     "noInstallations": "接続済み · インストールはまだありません",
     "connectedOne": "接続済み · 1 件のインストール",
     "connectedMany": "接続済み · {count} 件のインストール",
-    "requiresCloud": "Openship Cloud が必要です — この App は openship.io が所有しています",
+    "requiresCloud": "OpenShip Cloud が必要です — この App は openship.io が所有しています",
     "connectPrompt": "GitHub アカウントを接続してリポジトリをデプロイしましょう",
     "checkingConnection": "接続を確認中…",
     "addAccount": "アカウントを追加",
@@ -140,10 +140,10 @@
     "manageOnGithub": "GitHub で管理",
     "disconnect": "切断",
     "disconnectTitle": "{label} を切断",
-    "disconnectAppLabel": "Openship GitHub App",
-    "disconnectAppBody": "これにより Openship の OAuth アカウント行が削除されます。GitHub App のインストールは、GitHub 上でアンインストールするまで残ります。",
-    "cloudExplainer": "Openship GitHub App は openship.io が所有しています。インスタンスを Openship Cloud に接続すると、プライベートリポジトリのクローンにスコープ付きのインストールトークンを使用できます（ローカルおよびリモートの両方のデプロイで機能します）。",
-    "connectCloud": "Openship Cloud に接続",
+    "disconnectAppLabel": "OpenShip GitHub App",
+    "disconnectAppBody": "これにより OpenShip の OAuth アカウント行が削除されます。GitHub App のインストールは、GitHub 上でアンインストールするまで残ります。",
+    "cloudExplainer": "OpenShip GitHub App は openship.io が所有しています。インスタンスを OpenShip Cloud に接続すると、プライベートリポジトリのクローンにスコープ付きのインストールトークンを使用できます（ローカルおよびリモートの両方のデプロイで機能します）。",
+    "connectCloud": "OpenShip Cloud に接続",
     "noCloudTitle": "クラウドなしでプライベートリポジトリをクローン",
     "useSshPerServer": "サーバーごとのSSHキー",
     "usePat": "アクセストークン",
@@ -162,8 +162,8 @@
       "usedForDeploys": "デプロイに使用",
       "usedForDeploysTitle": "クラウド接続がありません — 現在は gh CLI がすべての主要なソースです",
       "activeWarnStrong": "gh CLI がアクティブなソースです。",
-      "activeWarnRest": "リモートサーバーへのデプロイは拒否されます — リモートターゲットへデプロイするには、Openship App を接続するか、プロジェクトごとのクローントークンを設定してください。",
-      "primaryNotePrefix": "Openship App が主要なソースです。gh CLI は次の場合を補完します:",
+      "activeWarnRest": "リモートサーバーへのデプロイは拒否されます — リモートターゲットへデプロイするには、OpenShip App を接続するか、プロジェクトごとのクローントークンを設定してください。",
+      "primaryNotePrefix": "OpenShip App が主要なソースです。gh CLI は次の場合を補完します:",
       "primaryNoteStrong": "ローカルビルド",
       "primaryNoteSuffix": "App のインストール範囲外のリポジトリに対して。",
       "optionalPrefix": "任意です。次を実行してください:",
@@ -179,7 +179,7 @@
       "forwardOnNote": "転送が有効です — gh CLI はリモートサーバーのクローンも認証します。あなたの ID はクローンごとに SSH 経由でトンネリングされ、サーバーには何も保存されません。",
       "forwardOffHint": "現在はローカルビルドのみです。「ビルドサーバーに git ID を転送する」をオンにすると、リモートサーバーのデプロイにも gh CLI を使用できます。",
       "manageForward": "転送を管理",
-      "disconnectBody": "Openship はこのインスタンスからこの認証情報を削除し、クローンへの使用を停止します。GitHub で取り消すまで GitHub 上では有効なままです。いつでも再接続できます。",
+      "disconnectBody": "OpenShip はこのインスタンスからこの認証情報を削除し、クローンへの使用を停止します。GitHub で取り消すまで GitHub 上では有効なままです。いつでも再接続できます。",
       "recheck": "再確認"
     },
     "replaceToken": "GitHubトークンを置き換える",
@@ -187,7 +187,7 @@
     "tokenEditorDescription": "GitHubの個人アクセストークンを使用して、リポジトリの閲覧やこのインスタンスでのビルドを行います。",
     "methodTokenDesc": "GitHubトークンを使用して、リポジトリの閲覧やローカルビルドを行います。",
     "activeVia": "{method} 経由で接続中",
-    "pickMethod": "Openship がリポジトリにアクセスする方法を選択してください。",
+    "pickMethod": "OpenShip がリポジトリにアクセスする方法を選択してください。",
     "methodDevice": "GitHub サインイン",
     "methodApp": "GitHub App",
     "methodAppDesc": "ローカルおよびリモートデプロイ用の、スコープ制限された短期間のインストールトークン。",
@@ -207,11 +207,11 @@
     "methodHostCli": "このホスト上の gh CLI",
     "manageTokensOnGithub": "GitHub でトークンを管理",
     "manageAccessOnGithub": "GitHub でアクセス権を管理",
-    "disconnectScopeNote": "切断すると、Openship からこの認証情報が削除され、クローンへの使用が停止されます。GitHub 上で取り消すまでは有効なままです。",
+    "disconnectScopeNote": "切断すると、OpenShip からこの認証情報が削除され、クローンへの使用が停止されます。GitHub 上で取り消すまでは有効なままです。",
     "credentialRejected": "GitHub は保存された {method} を拒否しました。",
     "credentialRejectedImpact": "取り消されたか、有効期限が切れたか、必要なスコープが失われました。これを使用してクローンするデプロイは、以下で再接続するまで失敗し続けます。",
     "credentialUnreachable": "保存された {method} を確認するために GitHub に接続できませんでした。",
-    "credentialUnreachableImpact": "これは通常、認証情報の問題ではなくネットワークの問題です — Openship は引き続きこれを使用します。GitHub に接続できない場合、再接続しても解決しません。",
+    "credentialUnreachableImpact": "これは通常、認証情報の問題ではなくネットワークの問題です — OpenShip は引き続きこれを使用します。GitHub に接続できない場合、再接続しても解決しません。",
     "credentialCheckedAt": "最終確認 {time}"
   },
   "deployDefaults": {
@@ -234,7 +234,7 @@
     },
     "labelFor": {
       "yourServer": "自分のサーバー",
-      "cloud": "Openship Cloud"
+      "cloud": "OpenShip Cloud"
     },
     "toast": {
       "pickServer": "まずサーバーを選択してください",
@@ -270,10 +270,10 @@
   "githubSources": {
     "title": "セルフホスト GitHub App",
     "description": "暗号化された App 認証情報、直接 Webhook、短期インストールトークンを使って、このインスタンスの GitHub 接続を管理します。",
-    "publicUrlRequired": "先にこの Openship インスタンスの公開 HTTPS URL を設定してください。GitHub からセットアップコールバックと Webhook に到達できる必要があります。",
+    "publicUrlRequired": "先にこの OpenShip インスタンスの公開 HTTPS URL を設定してください。GitHub からセットアップコールバックと Webhook に到達できる必要があります。",
     "createWithGithub": "GitHub で作成",
     "registerExisting": "既存 App を登録",
-    "manifestHelp": "Openship が最小権限の App マニフェストを GitHub に送信します。GitHub が App を作成して認証情報を一度だけ返し、その後リポジトリへのインストールを開きます。",
+    "manifestHelp": "OpenShip が最小権限の App マニフェストを GitHub に送信します。GitHub が App を作成して認証情報を一度だけ返し、その後リポジトリへのインストールを開きます。",
     "nameLabel": "ソース名",
     "namePlaceholder": "Acme の GitHub",
     "continueOnGithub": "GitHub で続行",
@@ -291,9 +291,9 @@
     "makeDefault": "既定にする",
     "manage": "GitHub で管理",
     "delete": "削除",
-    "confirmDelete": "Openship から {name} を削除しますか？ローカルの認証情報とインストールの関連付けは削除されますが、GitHub でアンインストールするまで App 自体は残ります。",
+    "confirmDelete": "OpenShip から {name} を削除しますか？ローカルの認証情報とインストールの関連付けは削除されますが、GitHub でアンインストールするまで App 自体は残ります。",
     "editHelp": "暗号化して保存済みの値を維持するには、秘密情報の欄を空のままにしてください。",
-    "manualHelp": "既存の GitHub App の認証情報を入力してください。Openship は保存前に秘密鍵を検証します。",
+    "manualHelp": "既存の GitHub App の認証情報を入力してください。OpenShip は保存前に秘密鍵を検証します。",
     "appIdLabel": "アプリ ID",
     "clientIdLabel": "クライアント ID",
     "clientSecretLabel": "クライアントシークレット",
@@ -409,11 +409,11 @@
   },
   "mcp": {
     "title": "MCP",
-    "description": "Model Context Protocol を介して AI エージェントを Openship API に接続します。",
+    "description": "Model Context Protocol を介して AI エージェントを OpenShip API に接続します。",
     "loading": "読み込み中…",
     "connectAnother": "別のクライアントを接続",
     "bannerStrong": "以下のエンドポイントを MCP クライアントに貼り付けてください",
-    "bannerRest": "（Claude、Cursor など） — ブラウザウィンドウが開き、アクセスを承認してクライアントが到達できる範囲を選択できます。コピーするトークンはありません。Openship は標準準拠の OAuth 2.1 MCP サーバーです。",
+    "bannerRest": "（Claude、Cursor など） — ブラウザウィンドウが開き、アクセスを承認してクライアントが到達できる範囲を選択できます。コピーするトークンはありません。OpenShip は標準準拠の OAuth 2.1 MCP サーバーです。",
     "addToClient": "クライアントに追加",
     "install": "インストール",
     "endpoint": "エンドポイント",
@@ -552,13 +552,13 @@
     },
     "reachability": {
       "description": "チームメンバーがこのワークスペースにアクセスするには公開 URL が必要です。",
-      "notInstalledTitle": "Openship に公開アドレスを設定",
-      "notInstalledBody": "Openship はまだ公開 URL で設定されていません。公開アドレスを指定してデプロイし（例: `openship up --public-url …`）、ここにドメインを追加してチームメンバーがアクセスできるようにしてください。",
-      "noDomainTitle": "Openship にドメインを追加",
-      "noDomainBody": "チームメンバーがこのワークスペースにアクセスできるように Openship アプリにドメインを追加してください — 稼働すると招待機能が自動的に有効になります。",
+      "notInstalledTitle": "OpenShip に公開アドレスを設定",
+      "notInstalledBody": "OpenShip はまだ公開 URL で設定されていません。公開アドレスを指定してデプロイし（例: `openship up --public-url …`）、ここにドメインを追加してチームメンバーがアクセスできるようにしてください。",
+      "noDomainTitle": "OpenShip にドメインを追加",
+      "noDomainBody": "チームメンバーがこのワークスペースにアクセスできるように OpenShip アプリにドメインを追加してください — 稼働すると招待機能が自動的に有効になります。",
       "addDomain": "ドメインを追加",
       "pendingTitle": "ドメインの設定を完了してください",
-      "pendingBody": "Openship ドメインは検証待機中です (DNS / SSL)。稼働すると招待機能が有効になります。",
+      "pendingBody": "OpenShip ドメインは検証待機中です (DNS / SSL)。稼働すると招待機能が有効になります。",
       "viewDomain": "ドメインを表示"
     }
   },
@@ -579,7 +579,7 @@
     "grantsMany": "{count} 件の付与",
     "sendVia": "送信方法",
     "yourMailServer": "自分のメールサーバー",
-    "openshipCloud": "Openship Cloud",
+    "openshipCloud": "OpenShip Cloud",
     "pickerTitle": "初期リソースアクセス",
     "pickerDesc": "制限付きメンバーはアクセス権なしで開始します。承認後にこの招待が解放するものを選択してください — 後からメンバーの行でさらに付与できます。",
     "sendInvite": "招待を送信",
@@ -609,13 +609,13 @@
     "cloudNotReady": "未接続",
     "noMailSystem": "メールシステムが設定されていないため、招待は送信されません。",
     "setUpEmail": "メールを設定 →",
-    "cloudNotConnected": "Openship Cloud が接続されていないため、招待を送信できません。",
-    "connectCloud": "Openship Cloud を接続 →"
+    "cloudNotConnected": "OpenShip Cloud が接続されていないため、招待を送信できません。",
+    "connectCloud": "OpenShip Cloud を接続 →"
   },
   "teamWorkspace": {
     "title": "チームワークスペース",
     "description": "このインスタンスをマルチユーザーモードに移行します。",
-    "body": "現在このインスタンスはシングルユーザーです — あなただけがサインインできます。チームメンバーを追加する準備ができたら、デプロイを共有の場所に移行してください: 自分のサーバー、Openship Cloud、またはトンネル経由でこのマシンを公開します。",
+    "body": "現在このインスタンスはシングルユーザーです — あなただけがサインインできます。チームメンバーを追加する準備ができたら、デプロイを共有の場所に移行してください: 自分のサーバー、OpenShip Cloud、またはトンネル経由でこのマシンを公開します。",
     "currentMode": "現在のモード",
     "singleUserLocal": "シングルユーザー（ローカル）",
     "migrate": "移行",
@@ -624,7 +624,7 @@
   },
   "cloud": {
     "checking": "確認中…",
-    "fallbackName": "Openship Cloud",
+    "fallbackName": "OpenShip Cloud",
     "connectedAccount": "接続済みのクラウドアカウント",
     "connected": "接続済み",
     "disconnect": "切断",
@@ -633,14 +633,14 @@
     "unlockDesktop": "クラウドデプロイ、マネージド SSL、グローバル CDN のロックを解除します。",
     "deployLocal": "ローカルインスタンスから直接クラウドにデプロイします。",
     "waitingSignIn": "サインインを待機中…",
-    "connectButton": "Openship Cloud に接続",
-    "confirmDisconnect": "Openship Cloud から切断しますか？再接続するまでクラウドデプロイは機能しなくなります。",
+    "connectButton": "OpenShip Cloud に接続",
+    "confirmDisconnect": "OpenShip Cloud から切断しますか？再接続するまでクラウドデプロイは機能しなくなります。",
     "toast": {
-      "disconnected": "Openship Cloud から切断しました",
+      "disconnected": "OpenShip Cloud から切断しました",
       "disconnectFailed": "切断に失敗しました"
     },
     "pitch": {
-      "title": "Openship Cloud を追加",
+      "title": "OpenShip Cloud を追加",
       "body": "すべてのプロジェクトが自動 SSL 付きの無料 .{domain} ドメインを取得できます（DNS や証明書の設定は不要）。独自のサーバーも現在とまったく同様に機能し続けます。",
       "perkDomain": "すべてのプロジェクトで無料の .{domain} ドメイン + 自動 SSL",
       "perkDeploy": "マネージドクラウドにデプロイ、または独自のサーバーをそのまま利用",
@@ -650,15 +650,15 @@
       "viewPricing": "料金プランを見る"
     },
     "connectModal": {
-      "title": "Openship Cloud に接続",
-      "requiresConnection": "{feature} には Openship Cloud の接続が必要です。アカウントを接続してロック解除:",
+      "title": "OpenShip Cloud に接続",
+      "requiresConnection": "{feature} には OpenShip Cloud の接続が必要です。アカウントを接続してロック解除:",
       "features": {
         "deployments": "クラウドデプロイ",
         "infra": "マネージドインフラ",
         "ssl": "自動SSLとドメイン",
         "cdn": "グローバルCDN"
       },
-      "connect": "Openship Cloud に接続",
+      "connect": "OpenShip Cloud に接続",
       "waitingSignIn": "サインイン待機中…",
       "maybeLater": "後で"
     }
@@ -668,7 +668,7 @@
       "title": "インスタンスの場所",
       "thisDesktop": "このコンピューター",
       "thisServer": "このサーバー",
-      "desktopHint": "既存のインスタンスのデータを使うには接続し、常時稼働させるには Openship をサーバーへ移動してください。",
+      "desktopHint": "既存のインスタンスのデータを使うには接続し、常時稼働させるには OpenShip をサーバーへ移動してください。",
       "serverHint": "ジョブ、Webhook、チームのアクセスはここで管理されます。",
       "remoteHint": "リモートインスタンスの最新データを使用しています。",
       "retiredHint": "このサーバーはプロジェクトを管理していません。再び使うには、ここにインスタンスを移動してください。",
@@ -683,7 +683,7 @@
       "receiveInstance": "ここにインスタンスを移動",
       "disconnect": "ローカルインスタンスに戻る",
       "moreOptions": "その他のインスタンス操作",
-      "memberTitle": "DesktopからOpenshipを使う",
+      "memberTitle": "DesktopからOpenShipを使う",
       "memberHint": "ここでのアクセス権限を使ってDesktopを接続します。",
       "loading": "インスタンスを読み込み中…",
       "sendHint": "移動コードを作成し、Desktopのインスタンス設定のその他の操作から「{action}」を選択してください。Desktopが引き継ぎを完了するまで、管理はここで行われます。",
@@ -696,9 +696,9 @@
       "pairHint": "別のDesktopから、このインスタンスの最新データを現在の権限で利用できます。データは移動しません。",
       "pairOwnDevice": "このコードはあなたのアカウントでログインします。他の人を招待するには「チーム」を使ってください。",
       "teamAccessTitle": "チーム招待を有効にする",
-      "teamAccessHint": "チームへの招待には、アクセス可能なインスタンスが必要です。Openshipに公開アドレスを設定するか、常時稼働するサーバーに移動してください。",
+      "teamAccessHint": "チームへの招待には、アクセス可能なインスタンスが必要です。OpenShipに公開アドレスを設定するか、常時稼働するサーバーに移動してください。",
       "adminRequired": "インスタンス管理者に設定を依頼してください。",
-      "webhookAccessHint": "GitHubがデプロイイベントを送信するには、アクセス可能なOpenship APIが必要です。このインスタンスを常時稼働するサーバーに移動するか、APIに公開アドレスを設定してください。"
+      "webhookAccessHint": "GitHubがデプロイイベントを送信するには、アクセス可能なOpenShip APIが必要です。このインスタンスを常時稼働するサーバーに移動するか、APIに公開アドレスを設定してください。"
     },
     "transfer": {
       "installOnServer": "新規インストール",
@@ -725,7 +725,7 @@
     "descCloud": "クラウド",
     "descSelfHosted": "セルフホスト",
     "typeDesktop": "デスクトップ",
-    "typeCloud": "Openship Cloud",
+    "typeCloud": "OpenShip Cloud",
     "typeSelfHosted": "セルフホスト",
     "deployMode": "デプロイモード: {mode}",
     "authNone": "ゼロ認証",
@@ -754,7 +754,7 @@
       "invitationHint": "接続中はローカルインスタンスが一時停止します。データは移動しません。"
     },
     "recovery": {
-      "title": "あなたのOpenshipインスタンス",
+      "title": "あなたのOpenShipインスタンス",
       "subtitle": "プロジェクトの管理を続けるには、移行を完了するか再接続してください。",
       "checkConnection": "接続を確認",
       "signInRemote": "リモートインスタンスにサインイン"
@@ -762,7 +762,7 @@
   },
   "upgradeAuth": {
     "title": "パスワードを追加",
-    "description": "メールアドレスとパスワードを設定してOpenshipへのアクセスを保護します。プロジェクトと履歴は保持されます。",
+    "description": "メールアドレスとパスワードを設定してOpenShipへのアクセスを保護します。プロジェクトと履歴は保持されます。",
     "close": "閉じる",
     "name": "名前",
     "namePlaceholder": "山田 太郎",
@@ -1034,7 +1034,7 @@
       },
       "security.advisory": {
         "label": "セキュリティ情報",
-        "description": "Openship またはデプロイ済みサービスに影響するセキュリティ情報です。原因と利用可能な更新を含みます。"
+        "description": "OpenShip またはデプロイ済みサービスに影響するセキュリティ情報です。原因と利用可能な更新を含みます。"
       }
     }
   },
@@ -1292,9 +1292,9 @@
   },
   "updates": {
     "title": "アップデート",
-    "description": "Openship が新しいリリースを確認して適用する方法",
+    "description": "OpenShip が新しいリリースを確認して適用する方法",
     "checking": "アップデートを確認中…",
-    "available": "Openship {version} が利用可能です",
+    "available": "OpenShip {version} が利用可能です",
     "upToDate": "最新バージョンを使用しています",
     "current": "現在: {version}",
     "rerunToUpdate": " · インストールを再実行して更新してください",
@@ -1307,12 +1307,12 @@
     "viewChangelog": "変更履歴とリリースを表示",
     "securityTitle": "アップデート確認の仕組み",
     "securityDescription": "何があなたのインストールと通信するかを完全に透明化します",
-    "security1": "Openship はアップデートとセキュリティアドバイザリを確認します",
+    "security1": "OpenShip はアップデートとセキュリティアドバイザリを確認します",
     "securityOnlyGithub": "公開されている GitHub リリースからのみ",
     "security2": "オープンソースリポジトリの（",
     "security3": "）。データを取得するのは",
     "securityPulls": "取得",
-    "security4": "このデータのみです — サードパーティのサービスも、Openship が運用するサーバーも、アップデートやシグナルをあなたのインストールにプッシュすることはできません。アドバイザリは各リリースに固定されているため、未リリースの変更が届くことはありません。重大なセキュリティアドバイザリは常に一度だけ表示され、それ以外はすべて上記のトグルに従います。"
+    "security4": "このデータのみです — サードパーティのサービスも、OpenShip が運用するサーバーも、アップデートやシグナルをあなたのインストールにプッシュすることはできません。アドバイザリは各リリースに固定されているため、未リリースの変更が届くことはありません。重大なセキュリティアドバイザリは常に一度だけ表示され、それ以外はすべて上記のトグルに従います。"
   },
   "infrastructure": {
     "title": "プラットフォームコンポーネント",
@@ -1365,7 +1365,7 @@
     "import": {
       "title": "データをインポート",
       "description": "エクスポートしたファイルをこのインスタンスに復元します。",
-      "intro": "別の Openship インストールからエクスポートしたファイルを読み込みます。シークレットも復元するには、エクスポート時に使用したパスフレーズを入力してください。",
+      "intro": "別の OpenShip インストールからエクスポートしたファイルを読み込みます。シークレットも復元するには、エクスポート時に使用したパスフレーズを入力してください。",
       "importFromFile": "ファイルからインポート…",
       "modalTitle": "インスタンスデータをインポート",
       "modalSubtitle": "エクスポートしたスナップショットを復元します。",
@@ -1383,7 +1383,7 @@
       "importing": "インポート中…",
       "import": "インポート",
       "confirmWipe": "このインスタンス上のすべてのデータをインポートしたスナップショットで置き換えますか？これは元に戻せず、サインアウトされます。",
-      "notExport": "これは Openship のエクスポートファイルには見えません。",
+      "notExport": "これは OpenShip のエクスポートファイルには見えません。",
       "cantRead": "そのファイルを読み取れませんでした — 有効なエクスポートですか？",
       "importFailed": "インポートに失敗しました。",
       "rowsRestored": "{count} 行を復元しました",
@@ -1392,7 +1392,7 @@
     },
     "backupTitle": "バックアップと復元",
     "backupDesc": "ファイルをエクスポートするか、既存のバックアップを復元します。",
-    "backupWarning": "アーカイブファイルには Openship データベースと資格情報が含まれます。Docker ボリュームの内容はサーバーに残ります。サービスデータにはプロジェクトバックアップを使用してください。",
+    "backupWarning": "アーカイブファイルには OpenShip データベースと資格情報が含まれます。Docker ボリュームの内容はサーバーに残ります。サービスデータにはプロジェクトバックアップを使用してください。",
     "exportInstanceTitle": "インスタンスまたはプロジェクトのエクスポート",
     "exportInstanceDesc": "完全なインスタンスまたは選択したプロジェクトを、環境と依存関係を含めてエクスポートします。",
     "exportProjectTitle": "プロジェクトのエクスポート",
@@ -1425,12 +1425,12 @@
     "recordsSelected": "{count} 件のレコードが選択されました。",
     "recordsAcrossEnvsSelected": "{envs} 個の環境にわたる {count} 件のレコードが選択されました。",
     "selectAtLeastOne": "少なくとも 1 つのプロジェクトまたは環境を選択してください。",
-    "cloudNotice": "移行先のワークスペースが同じ Openship Cloud アカウントに接続されるまで、Cloud プロジェクトは動作しません。"
+    "cloudNotice": "移行先のワークスペースが同じ OpenShip Cloud アカウントに接続されるまで、Cloud プロジェクトは動作しません。"
   },
   "migrate": {
     "chooseTitle": "マルチユーザーモードに移行",
     "serverTitle": "自分のサーバーに移行",
-    "cloudTitle": "Openship Cloud に移行",
+    "cloudTitle": "OpenShip Cloud に移行",
     "tunnelTitle": "トンネル経由で公開",
     "completeTitle": "移行完了",
     "back": "戻る",
@@ -1439,11 +1439,11 @@
       "serverTitle": "自分のサーバーに移行",
       "serverBody": "あなたが所有する VPS 上に openship を SSH でデプロイします。データはそこへ移動します。すでにインフラを持っているチームに最適です。",
       "serverMeta": "外部依存なし",
-      "cloudTitle": "Openship Cloud に移行",
+      "cloudTitle": "OpenShip Cloud に移行",
       "cloudBody": "データを api.openship.io にプッシュします。すべてを当社がホストします。インフラを一切持ちたくないチームに最適です。",
       "cloudMetaConnected": "クラウドアカウント接続済み",
       "metaRequiresCloud": "クラウドアカウントが必要です",
-      "cloudWarn": "まず Openship Cloud に接続してください。",
+      "cloudWarn": "まず OpenShip Cloud に接続してください。",
       "tunnelTitle": "ローカルのまま、トンネル経由で公開",
       "tunnelBody": "データはこのマシンに残ります。Oblien エッジトンネルをプロビジョニングし、チームメンバーがインターネット経由で到達できるようにします — あなたのマシンはオンラインである必要があります。",
       "tunnelMetaConnected": "Oblien 経由のトンネル",
@@ -1463,7 +1463,7 @@
       "customHostPlaceholder": "team.acme.com",
       "preflight": "プリフライト",
       "sshReachable": "SSH に到達可能",
-      "releaseAvailable": "Openship リリースが利用可能",
+      "releaseAvailable": "OpenShip リリースが利用可能",
       "domainReady": "ドメインの準備完了",
       "runPreflight": "プリフライトを実行",
       "recheck": "再チェック",
@@ -1491,7 +1491,7 @@
     },
     "tunnel": {
       "connectFirstTitle": "まずクラウドアカウントを接続してください",
-      "connectFirstBody": "トンネルは Openship Cloud を通じてプロビジョニングされます。設定 → クラウド を開いてサインインし、その後ここに戻ってください。",
+      "connectFirstBody": "トンネルは OpenShip Cloud を通じてプロビジョニングされます。設定 → クラウド を開いてサインインし、その後ここに戻ってください。",
       "headsUp": "ご注意",
       "bullet1": "データはこのマシンに残ります。何も移動しません。",
       "bullet2": "チームメンバーは、このマシンがオンラインのときのみあなたに到達できます。",
@@ -1529,7 +1529,7 @@
     "heading": "シングルユーザーに戻す",
     "intro": "このインスタンスを {mode} から取り出し、このマシン上でソロモードに戻します。",
     "modeServer": "自分のサーバー",
-    "modeCloud": "Openship Cloud",
+    "modeCloud": "OpenShip Cloud",
     "modeTunnel": "トンネル",
     "current": "現在",
     "noUrl": "（URL は記録されていません）",
@@ -1572,7 +1572,7 @@
   },
   "credentials": {
     "title": "接続",
-    "description": "Openship があなたの代わりに使うトークンとログイン情報です（プライベートイメージの取得、DNS レコードの書き込みなど）。暗号化して保存され、保存後に再表示されることはありません。",
+    "description": "OpenShip があなたの代わりに使うトークンとログイン情報です（プライベートイメージの取得、DNS レコードの書き込みなど）。暗号化して保存され、保存後に再表示されることはありません。",
     "noProviders": "このインスタンスで利用できるプロバイダーはありません。",
     "noneForProvider": "まだ追加されていません。",
     "add": "追加",
@@ -1587,7 +1587,7 @@
     "namePlaceholder": "例: GHCR 読み取り専用",
     "secretKeptPlaceholder": "••••••••（保存済み — 空のままで維持）",
     "selectPlaceholder": "選択…",
-    "verifyNote": "保存する前に、Openship がプロバイダーへ認証情報を確認します。",
+    "verifyNote": "保存する前に、OpenShip がプロバイダーへ認証情報を確認します。",
     "confirmDelete": "「{name}」を削除しますか？これに依存しているものは動作しなくなります。",
     "toast": {
       "loadFailed": "認証情報を読み込めませんでした",
@@ -1619,17 +1619,17 @@
       },
       "cloudflare": {
         "label": "Cloudflare",
-        "summary": "カスタムドメインに必要なDNSレコードを手動で貼り付ける代わりに、Openshipが自動登録します。",
+        "summary": "カスタムドメインに必要なDNSレコードを手動で貼り付ける代わりに、OpenShipが自動登録します。",
         "fields": {
           "apiToken": {
             "label": "APIトークン",
-            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。My Profile → API Tokens で作成してください。"
+            "help": "OpenShipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。My Profile → API Tokens で作成してください。"
           }
         }
       },
       "digitalocean": {
         "label": "DigitalOcean",
-        "summary": "カスタムドメインに必要なDNSレコードを、OpenshipがDigitalOcean DNSに自動登録します。",
+        "summary": "カスタムドメインに必要なDNSレコードを、OpenShipがDigitalOcean DNSに自動登録します。",
         "fields": {
           "apiToken": {
             "label": "APIトークン",
@@ -1721,8 +1721,8 @@
     "description": "このインスタンスの表示モード。ここでの全ユーザーのデフォルトとなります（各ユーザーは「設定」→「一般」で個別に変更可能）。",
     "platformLabel": "フルプラットフォーム",
     "platformDesc": "プロジェクト、アプリ、デプロイ、サーバー — この環境の全機能。",
-    "mailLabel": "Openship Mail",
-    "mailDesc": "インスタンスを Openship Mail としてブランド化し、サイドバーをメール管理画面にします。",
+    "mailLabel": "OpenShip Mail",
+    "mailDesc": "インスタンスを OpenShip Mail としてブランド化し、サイドバーをメール管理画面にします。",
     "savedOverridden": "保存しました。個人の表示設定は変更されません（「設定」→「一般」で選択済み）。",
     "errorToast": "プロダクトモードを変更できませんでした。",
     "envNote": "このインスタンスは環境変数の OPENSHIP_PRODUCT=mail に従っています。ここでモードを選択すると上書きされます。"
@@ -1730,7 +1730,7 @@
   "email": {
     "title": "メール (SMTP)",
     "description": "このインスタンスがメール送信に使用する SMTP サービス",
-    "intro": "パスワードリセット、メール確認、チームへの招待、通知に使用されます。任意のプロバイダー（Amazon SES、Gmail、Mailgun、企業リレーなど）の SMTP 認証情報（ホスト、ポート、ユーザー名、パスワード）を貼り付けるだけです。サーバーのセットアップは不要で、Openship が直接接続します。パスワードは暗号化され、再表示されることはありません。",
+    "intro": "パスワードリセット、メール確認、チームへの招待、通知に使用されます。任意のプロバイダー（Amazon SES、Gmail、Mailgun、企業リレーなど）の SMTP 認証情報（ホスト、ポート、ユーザー名、パスワード）を貼り付けるだけです。サーバーのセットアップは不要で、OpenShip が直接接続します。パスワードは暗号化され、再表示されることはありません。",
     "loading": "読み込み中…",
     "configuredBadge": "設定済み",
     "notConfigured": "まだ設定されていません — 下記に SMTP 認証情報を入力するまで、パスワードリセット、招待、メール通知は無効のままです。",
@@ -1744,7 +1744,7 @@
     "passwordPlaceholder": "SMTP パスワードまたはアプリキー",
     "passwordKeepPlaceholder": "•••••••• (現在のパスワードを保持する場合は空欄)",
     "fromLabel": "送信元アドレス (From)",
-    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromPlaceholder": "OpenShip <no-reply@example.com>",
     "fromHint": "任意。デフォルトはユーザー名です。",
     "fromHintRequired": "必須 — ユーザー名がメールアドレス形式ではないため、受信者に実際の送信元アドレスが必要です。",
     "fromRequired": "送信元アドレスを入力してください — このプロバイダーのユーザー名はメールアドレスではないため、送信者になれません。",
@@ -1768,13 +1768,13 @@
   },
   "edgeOrphans": {
     "title": "未追跡のエッジルート",
-    "description": "このマシンが現在も配信しているが、Openship に記録がないホスト名",
+    "description": "このマシンが現在も配信しているが、OpenShip に記録がないホスト名",
     "scan": "スキャン",
     "scanning": "スキャン中…",
     "allClear": "エッジが配信しているすべてのホスト名が把握されています。",
     "comparedTo": "{count} 件の追跡対象ホスト名と比較済み。",
     "unavailable": "エッジを確認できませんでした",
-    "explain": "「Openship からのみ削除」でプロジェクトを削除した場合、そのルートは意図的に実行されたまま残ります。残されたアプリルートはコンテナが削除されると 502 を返しますが、残された静的 (STATIC) ルートは古いファイルを 200 で配信し続けます（そのホスト名がその後別のプロジェクトに割り当てられた場合でも同様です）。",
+    "explain": "「OpenShip からのみ削除」でプロジェクトを削除した場合、そのルートは意図的に実行されたまま残ります。残されたアプリルートはコンテナが削除されると 502 を返しますが、残された静的 (STATIC) ルートは古いファイルを 200 で配信し続けます（そのホスト名がその後別のプロジェクトに割り当てられた場合でも同様です）。",
     "kindStatic": "静的ファイル",
     "kindProxy": "アプリルート",
     "staticWarning": "現在もファイルを配信しています。今日もリクエストに応答しています。",

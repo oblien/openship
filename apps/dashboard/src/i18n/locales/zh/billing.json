@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "准备好上线了吗？",
     "plansAndBilling": "套餐与账单",
     "description": "托管构建与部署，助力项目持续成长。",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "容量与用量",
-    "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",
+    "subtitle": "您套餐包含的容量以及已用量。实时数据从 OpenShip Cloud 同步。",
     "routes": "免费路由",
     "runningServices": "运行中的服务",
     "projects": "项目",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "连接到 Openship Cloud 以管理账单",
-      "description": "您的本地实例尚未连接到 Openship Cloud。连接后即可查看订阅状态、用量、账单和充值。",
-      "connect": "连接到 Openship Cloud",
+      "title": "连接到 OpenShip Cloud 以管理账单",
+      "description": "您的本地实例尚未连接到 OpenShip Cloud。连接后即可查看订阅状态、用量、账单和充值。",
+      "connect": "连接到 OpenShip Cloud",
       "connecting": "正在等待登录…"
     },
     "sessionExpired": {
-      "title": "您的 Openship Cloud 会话已过期",
-      "description": "您仍处于关联状态，但 Openship Cloud 签发的会话令牌已失效。重新连接即可刷新，无需先断开连接。",
-      "reconnect": "重新连接到 Openship Cloud",
+      "title": "您的 OpenShip Cloud 会话已过期",
+      "description": "您仍处于关联状态，但 OpenShip Cloud 签发的会话令牌已失效。重新连接即可刷新，无需先断开连接。",
+      "reconnect": "重新连接到 OpenShip Cloud",
       "connecting": "正在等待登录…"
     },
     "unreachable": {
-      "title": "无法连接到 Openship Cloud 账单服务",
+      "title": "无法连接到 OpenShip Cloud 账单服务",
       "description": "您的云会话可能已过期，或云服务暂时不可用。请重试，或从“设置 → 云”重新连接。",
       "tryAgain": "重试",
       "reconnect": "重新连接"
     },
     "notEnabled": {
       "title": "Cloud 购买功能尚未开放",
-      "description": "Openship 尚未启用订阅和积分购买。请稍后重试。"
+      "description": "OpenShip 尚未启用订阅和积分购买。请稍后重试。"
     },
     "notConfigured": {
       "title": "Cloud 账单设置尚未完成",
-      "description": "Openship 需要完成账单设置。请联系 Openship 支持团队。"
+      "description": "OpenShip 需要完成账单设置。请联系 OpenShip 支持团队。"
     },
     "forbidden": {
       "title": "你无权访问账单",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "无法加载账单",
-      "description": "账单功能暂时不可用。请重试。如果问题仍然存在，请联系 Openship 支持团队。"
+      "description": "账单功能暂时不可用。请重试。如果问题仍然存在，请联系 OpenShip 支持团队。"
     }
   },
   "plansRoute": {
@@ -409,7 +409,7 @@
     "planRequired": "需要订阅计划",
     "savedCredits": "保留的用量余额",
     "savedCreditsHint": "预付用量保留在此工作区中。选择套餐即可用于 Cloud 部署。",
-    "offerTitle": "在 Openship Cloud 上线",
+    "offerTitle": "在 OpenShip Cloud 上线",
     "offerLabel": "开始部署",
     "offerDescription": "为项目提供托管资源。",
     "startingWith": "从 {name} 开始",
@@ -450,7 +450,7 @@
     "diskHint": "应用磁盘的读写数据量，不是已占用的存储容量。",
     "transfer": "应用数据传输",
     "transferHint": "应用的入站和出站数据。Edge 分发流量单独显示。",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge 流量",
     "bandwidthHint": "工作空间所有 Edge 路由的入站和出站流量。此月度额度独立于计算额度。达到上限后路由暂停，直到重置或升级。",
     "requests": "Edge 请求",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "云空间",
     "singular": "云空间",
-    "description": "选择套餐即可部署。Openship 管理服务器，项目共享 CPU、内存和存储。",
+    "description": "选择套餐即可部署。OpenShip 管理服务器，项目共享 CPU、内存和存储。",
     "loading": "正在加载云空间…",
     "choose": "选择服务器",
     "chooseBilling": "选择云空间以查看其账单。",
@@ -559,7 +559,7 @@
     "create": "添加云空间",
     "mode": "项目隔离",
     "createHint": "创建服务器免费。接下来选择套餐，完成付款后才开始计费。",
-    "cloudOnly": "托管服务器适用于 Openship Cloud。请使用“服务器”管理自托管基础设施。",
+    "cloudOnly": "托管服务器适用于 OpenShip Cloud。请使用“服务器”管理自托管基础设施。",
     "projectCount": "{count} 个项目",
     "noProjects": "此服务器中尚无项目。",
     "liveUsage": "实时用量",
@@ -616,7 +616,7 @@
     "plan": "服务器套餐",
     "actions": "服务器操作",
     "changePlan": "更改套餐",
-    "managedBy": "由 Openship Cloud 管理",
+    "managedBy": "由 OpenShip Cloud 管理",
     "network": {
       "title": "网络",
       "description": "此托管服务器的提供商设置。",
@@ -811,7 +811,7 @@
     "priority": "优先",
     "email": "电子邮件支持",
     "prioritySupport": "优先支持",
-    "description": "部署和更新应用、监控运行状态并备份数据。通过 Openship 管理您自己的服务器。",
+    "description": "部署和更新应用、监控运行状态并备份数据。通过 OpenShip 管理您自己的服务器。",
     "basicDescription": "适合日常应用和个人项目。",
     "priorityDescription": "适合需要优先支持的生产应用。",
     "serversIncluded": "{count} 台已连接服务器",
@@ -848,9 +848,9 @@
   },
   "managementDetail": {
     "servers": "此套餐中的服务器",
-    "description": "由您的 Openship Manage 套餐管理的服务器。",
+    "description": "由您的 OpenShip Manage 套餐管理的服务器。",
     "empty": "尚未连接服务器",
-    "emptyHint": "连接您自己的服务器，以便通过 Openship 部署应用并进行管理。",
+    "emptyHint": "连接您自己的服务器，以便通过 OpenShip 部署应用并进行管理。",
     "addServer": "添加服务器",
     "addSlots": "增加服务器名额",
     "additionalServers": "新增服务器数量",

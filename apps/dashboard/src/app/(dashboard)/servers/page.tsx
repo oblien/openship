@@ -387,7 +387,7 @@ function ServerInventoryPage() {
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {t.servers.list.title}
           </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">{selfHosted ? t.servers.list.subtitle : "Your infrastructure, managed from Openship Cloud."}</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">{selfHosted ? t.servers.list.subtitle : "Your infrastructure, managed from OpenShip Cloud."}</p>
         </div>
         <div className="flex items-center gap-2">
         {activeTab === "servers" && <Button variant="ghost" size="icon" disabled={refreshing} aria-label={t.servers.networks.refresh} onClick={() => void fetchServers()}><UiIcon name="refresh" className={`size-4 ${refreshing ? "animate-spin" : ""}`} /></Button>}

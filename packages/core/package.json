@@ -5,6 +5,10 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./locale": {
+      "types": "./src/locale.ts",
+      "import": "./src/locale.ts"
+    },
     "./diagnostics": {
       "types": "./src/diagnostics/index.ts",
       "import": "./src/diagnostics/index.ts"

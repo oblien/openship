@@ -18,7 +18,7 @@
     "switchOrganization": "Organizasyonu değiştir",
     "current": "Mevcut",
     "cloudLabel": "Bulut: {email}",
-    "linkedToCloud": "Openship Bulut'a {email} hesabıyla bağlı",
+    "linkedToCloud": "OpenShip Bulut'a {email} hesabıyla bağlı",
     "backToSetup": "Kurulum ekranına dön",
     "personal": "Kişisel"
   },
@@ -34,14 +34,14 @@
     "newLocation": "Yeni konum",
     "switchBackPrompt": "Bu makinede yeniden tek kullanıcılı moda mı ihtiyacınız var?",
     "switchBackAction": "Tek kullanıcılı moda geri dön",
-    "cloudTitle": "Bu Openship kurulumu Openship Bulut'a taşındı",
-    "cloudBody": "Ekibiniz artık aşağıdaki URL üzerinden iş birliği yapıyor. Bu yerel Openship kurulumu artık projelerinizi, ayarlarınızı veya dağıtımlarınızı barındırmıyor — devam etmek için bulut panelini açın.",
+    "cloudTitle": "Bu OpenShip kurulumu OpenShip Bulut'a taşındı",
+    "cloudBody": "Ekibiniz artık aşağıdaki URL üzerinden iş birliği yapıyor. Bu yerel OpenShip kurulumu artık projelerinizi, ayarlarınızı veya dağıtımlarınızı barındırmıyor — devam etmek için bulut panelini açın.",
     "cloudCta": "Bulut panelini aç",
-    "tunneledTitle": "Openship kurulumunuza artık tünel üzerinden erişilebilir",
+    "tunneledTitle": "OpenShip kurulumunuza artık tünel üzerinden erişilebilir",
     "tunneledBody": "Makineniz çevrimiçi olduğunda ekip arkadaşlarınız aşağıdaki URL'den giriş yapabilir. Veriler hâlâ bu cihazda bulunur — tünel yalnızca cihazınızı Oblien edge ağı üzerinden erişime açar.",
     "tunneledCta": "Tünel URL'sini aç",
-    "serverTitle": "Bu Openship kurulumu sunucunuza taşındı",
-    "serverBody": "Ekibiniz artık aşağıdaki URL üzerinden iş birliği yapıyor. Bu yerel Openship kurulumu artık projelerinizi, ayarlarınızı veya dağıtımlarınızı barındırmıyor — devam etmek için ekip panelini açın.",
+    "serverTitle": "Bu OpenShip kurulumu sunucunuza taşındı",
+    "serverBody": "Ekibiniz artık aşağıdaki URL üzerinden iş birliği yapıyor. Bu yerel OpenShip kurulumu artık projelerinizi, ayarlarınızı veya dağıtımlarınızı barındırmıyor — devam etmek için ekip panelini açın.",
     "serverCta": "Ekip panelini aç"
   },
   "notFound": {
@@ -65,7 +65,7 @@
   },
   "apiDown": {
     "title": "API'ye ulaşılamıyor",
-    "description": "Panel çalışıyor ancak Openship API'sine ulaşamıyor — bu yüzden henüz gösterilecek bir şey yok. Dağıtımlarınız yine de çalışmaya devam eder.",
+    "description": "Panel çalışıyor ancak OpenShip API'sine ulaşamıyor — bu yüzden henüz gösterilecek bir şey yok. Dağıtımlarınız yine de çalışmaya devam eder.",
     "hintStatus": "API'nin çalıştığını doğrulayın: ana makinede `openship status` komutunu çalıştırın.",
     "hintStart": "Çalışmıyor mu? `openship up` ile başlatın.",
     "hintRemote": "Uzak bir sunucu mu yönetiyorsunuz? URL'sini ve API portunun buradan erişilebilir olduğunu doğrulayın.",

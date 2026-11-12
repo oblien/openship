@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} serviço",
       "serviceCountOther": "{count} serviços",
       "searchPlaceholder": "Buscar por nome, imagem ou tag…",
-      "cloudConnectHint": "Conecte o Openship Cloud para navegar pelo catálogo de serviços na nuvem. Você ainda pode adicionar qualquer imagem manualmente.",
+      "cloudConnectHint": "Conecte o OpenShip Cloud para navegar pelo catálogo de serviços na nuvem. Você ainda pode adicionar qualquer imagem manualmente.",
       "noMatchesTitle": "Nenhuma correspondência",
       "noMatchesBody": "Tente uma categoria ou termo de busca diferente - ou escolha Imagem personalizada na barra lateral.",
       "localImages": "Imagens locais",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "Docker local",
       "customEntryName": "Imagem personalizada",
       "customEntryDescription": "Baixe qualquer imagem Docker pública ou privada por tag.",
@@ -134,7 +134,7 @@
         "other": "Outros"
       },
       "cloudConnectTitle": "Precisa de bancos de dados gerenciados ou armazenamento de objetos?",
-      "cloudConnectBody": "Conecte a Openship Cloud para provisionar Postgres sem servidor, Redis e buckets compatíveis com S3 junto a este projeto.",
+      "cloudConnectBody": "Conecte a OpenShip Cloud para provisionar Postgres sem servidor, Redis e buckets compatíveis com S3 junto a este projeto.",
       "cloudConnectButton": "Explorar complementos da Cloud",
       "repositorySource": {
         "catalog": "Catálogo",
@@ -200,7 +200,7 @@
           "reviewFailed": "Não foi possível revisar a configuração compartilhada. Suas alterações não foram salvas."
         },
         "helpTitle": "Como funcionam as variáveis de ambiente",
-        "description": "Salvo no Openship. Ao salvar, as alterações compartilhadas são revisadas quando existe uma origem no projeto. As substituições do serviço prevalecem sobre os valores do Compose e do projeto.",
+        "description": "Salvo no OpenShip. Ao salvar, as alterações compartilhadas são revisadas quando existe uma origem no projeto. As substituições do serviço prevalecem sobre os valores do Compose e do projeto.",
         "sources": {
           "service": "Substituição do serviço",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "Terminal",
       "statusTitle": "Estado do serviço indisponível",
-      "statusHint": "O Openship não conseguiu confirmar o estado atual. O seu serviço pode continuar em execução.",
+      "statusHint": "O OpenShip não conseguiu confirmar o estado atual. O seu serviço pode continuar em execução.",
       "checkingTitle": "A verificar o serviço",
       "checkingHint": "A aguardar uma resposta do servidor. Já pode tentar abrir o terminal.",
       "startingTitle": "A aguardar o serviço",
@@ -449,7 +449,7 @@
       "errorTitle": "Terminal indisponível",
       "errors": {
         "auth": "Não foi possível verificar o seu acesso. Inicie sessão novamente ou verifique as permissões.",
-        "connect": "O Openship não conseguiu aceder à consola do serviço. Tente novamente quando o servidor estiver acessível.",
+        "connect": "O OpenShip não conseguiu aceder à consola do serviço. Tente novamente quando o servidor estiver acessível.",
         "notFound": "Este serviço está indisponível ou não tem acesso.",
         "notDeployed": "Não existe um contentor em execução ao qual se possa ligar. Verifique o estado do serviço e tente novamente.",
         "notSupported": "O ambiente de execução deste serviço não suporta um terminal interativo.",

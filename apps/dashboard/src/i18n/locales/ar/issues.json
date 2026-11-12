@@ -1,6 +1,6 @@
 {
   "title": "المراقبة",
-  "subtitle": "كل ما وجده Openship من خلل في مشاريعك وخوادمك ونطاقاتك.",
+  "subtitle": "كل ما وجده OpenShip من خلل في مشاريعك وخوادمك ونطاقاتك.",
   "tabs": {
     "open": "نظرة عامة",
     "health": "الصحة",
@@ -23,7 +23,7 @@
     "clear": "مسح الفلاتر"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "الخوادم",
     "project": "المشاريع",
     "domain": "النطاقات"
@@ -106,12 +106,12 @@
     "offlineHint": "قد تكون الحالة المعروضة قديمة. أعد الاتصال لتحديثها.",
     "retryStatus": "إعادة جلب الحالة",
     "recheck": "إعادة الفحص",
-    "unknownHealth": "حالة الحاويات غير معروفة حتى يتمكن Openship من الوصول إلى هذا الخادم.",
-    "monitoringHint": "لا يستطيع Openship الوصول إلى الخوادم المتأثرة. حالتها الحالية غير معروفة.",
+    "unknownHealth": "حالة الحاويات غير معروفة حتى يتمكن OpenShip من الوصول إلى هذا الخادم.",
+    "monitoringHint": "لا يستطيع OpenShip الوصول إلى الخوادم المتأثرة. حالتها الحالية غير معروفة.",
     "details": "تفاصيل تقنية",
     "mailTitle": "حالة البريد غير متاحة",
-    "mailHint": "تعذر على Openship التحقق من خادم البريد. قد يكون ما زال يعمل. تحقق من الاتصال وأعد المحاولة.",
-    "apiTitle": "تعذّر الاتصال بـ Openship",
+    "mailHint": "تعذر على OpenShip التحقق من خادم البريد. قد يكون ما زال يعمل. تحقق من الاتصال وأعد المحاولة.",
+    "apiTitle": "تعذّر الاتصال بـ OpenShip",
     "apiHint": "قد تتأخر تحديثات الحالة."
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "انتهت مهلة الطلب. استغرق الخادم وقتاً أطول من المتوقع للاستجابة.",
     "requestCancelled": "تم إلغاء الطلب.",
     "requestFailed": "فشل الطلب.",
-    "networkUnreachable": "تعذر الوصول إلى Openship. تحقق من الاتصال وتوافر الخادم.",
+    "networkUnreachable": "تعذر الوصول إلى OpenShip. تحقق من الاتصال وتوافر الخادم.",
     "hostUnreachable": "المضيف غير قابل للوصول",
     "sshConnectionRefused": "تم رفض اتصال SSH"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "يمكن لمسؤول المثيل تمكين الفحوصات التلقائية.",
       "scheduleEveryMinute": "كل دقيقة",
       "scheduleCustom": "جدول مخصص",
-      "runsWhileOpen": "إبقاء Openship قيد التشغيل",
+      "runsWhileOpen": "إبقاء OpenShip قيد التشغيل",
       "runsInBackground": "يعمل في الخلفية",
       "saving": "جارٍ الحفظ…",
       "disable": "تعطيل المراقبة",

@@ -140,7 +140,7 @@
       "addCustom": "Добавить свое",
       "howToAddApp": "Как добавить приложение",
       "removeCustomApp": "Удалить пользовательское приложение",
-      "needsUpdateDesc": "Обновите инстанс Openship для установки этого приложения.",
+      "needsUpdateDesc": "Обновите инстанс OpenShip для установки этого приложения.",
       "needsUpdateBadge": "Требуется обновление",
       "needsVersionBadge": "Требуется v{version}",
       "removedToast": "Приложение «{name}» удалено.",

@@ -158,7 +158,7 @@
   "domain.dns_provisioned": {
     "label": "DNS records provisioned",
     "action": "provisioned DNS for",
-    "description": "Openship wrote this domain's records at the connected DNS provider. The counts of applied and failed records are in the details.",
+    "description": "OpenShip wrote this domain's records at the connected DNS provider. The counts of applied and failed records are in the details.",
     "actionWithoutResource": "provisioned DNS"
   },
   "domain.cert_uploaded": {
@@ -194,18 +194,18 @@
   "credential.verified": {
     "label": "Credential verified",
     "action": "verified the credential for",
-    "description": "Openship asked the provider whether a stored credential still works.",
+    "description": "OpenShip asked the provider whether a stored credential still works.",
     "actionWithoutResource": "verified the credential"
   },
   "dns_credential.connected": {
     "label": "DNS provider connected",
     "action": "connected the DNS provider",
-    "description": "An API token that lets Openship write this organization's DNS records was stored. The token itself is never recorded."
+    "description": "An API token that lets OpenShip write this organization's DNS records was stored. The token itself is never recorded."
   },
   "dns_credential.disconnected": {
     "label": "DNS provider disconnected",
     "action": "disconnected the DNS provider",
-    "description": "Openship can no longer write DNS records for domains in that provider's zones; records already written are left in place."
+    "description": "OpenShip can no longer write DNS records for domains in that provider's zones; records already written are left in place."
   },
   "domain:write": {
     "label": "Domain action",
@@ -241,7 +241,7 @@
   "server.unreachable": {
     "label": "Server unreachable",
     "action": "reported unreachable",
-    "description": "Openship could not open an SSH connection to this server."
+    "description": "OpenShip could not open an SSH connection to this server."
   },
   "server.reachable": {
     "label": "Server reachable again",
@@ -289,7 +289,7 @@
   "identity.provisioned": {
     "label": "Identity provisioned",
     "action": "provisioned the identity",
-    "description": "A trusted host mapped an external identity to an Openship user."
+    "description": "A trusted host mapped an external identity to an OpenShip user."
   },
   "organization.created": {
     "label": "Organization created",
@@ -549,11 +549,11 @@
   "updates:write": {
     "label": "Update applied",
     "action": "applied an update",
-    "description": "An Openship component was updated or an update scan was triggered."
+    "description": "An OpenShip component was updated or an update scan was triggered."
   },
   "cloud.disconnect": {
     "label": "Cloud disconnected",
-    "action": "disconnected from Openship Cloud"
+    "action": "disconnected from OpenShip Cloud"
   },
   "cloud:write": {
     "label": "Cloud action",

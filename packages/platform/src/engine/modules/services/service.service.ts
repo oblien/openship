@@ -1,6 +1,7 @@
 import { assertServiceRedirects } from "../../lib/service-redirects";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import { isMaterializedAppRow } from "./materialized-app-row";
+import { primaryAppWithInfrastructure, isMultiServiceProject } from "../deployments/compose/project-services";
 export { isMaterializedAppRow } from "./materialized-app-row";
 /**
  * Service business logic - CRUD and compose sync.
@@ -32,6 +33,7 @@ import {
   normalizeServiceLabel,
   normalizeAliasStrict,
   resolveCommandArgv,
+  resolveWorkload,
   safeErrorMessage,
   type ComposeAdvanced,
   type ServiceContainerState,
@@ -283,7 +285,23 @@ function withDrift(svc: Service) {
 export async function listServices(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  return (await repos.service.listByProject(projectId)).map(withDrift);
+  const services = await repos.service.listByProject(projectId);
+  const primary = !env.CLOUD_MODE && !project.workspaceId && !project.clusterId &&
+    !project.releaseSource && resolveWorkload(project.workloadType, project.hasServer) !== "static"
+    ? primaryAppWithInfrastructure(project, services) : null;
+  // Runtime overrides live in env_vars, separately from Compose's environment
+  // map. Never hide an existing override behind the project editor.
+  const hasPrimaryOverrides = primary
+    ? (await repos.project.listEnvVars(projectId, undefined, primary.app.id)).length > 0
+    : false;
+  return services.map((service) => ({
+    ...withDrift(service),
+    // The materializer alone reserves -1. Keep the identity after renaming or
+    // adding overrides; those edits must still use their service-owned config.
+    ...((!isMultiServiceProject(project) || project.framework === "docker") && !project.composePath?.trim() && service.kind === "monorepo" && service.sortOrder === -1
+      ? { applicationMode: primary?.app.id === service.id && !hasPrimaryOverrides ? "project" as const : "service" as const }
+      : {}),
+  }));
 }
 
 export async function getService(ctx: RequestContext, projectId: string, serviceId: string) {

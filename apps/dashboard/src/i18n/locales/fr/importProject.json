@@ -61,7 +61,7 @@
       "title": "Contrôles de santé",
       "subtitle": "Désactivés — le déploiement se termine dès que l'app tourne",
       "subtitleOn": "Activés — le déploiement attend votre app avant la mise en ligne",
-      "description": "Openship n'attend pas votre app après son démarrage : un démarrage lent ne retarde donc jamais un déploiement et ne le fait pas échouer. Une fois en ligne, le port est vérifié malgré tout et signalé sans rien bloquer. N'activez ceci que si vous voulez que le déploiement lui-même refuse de passer au vert.",
+      "description": "OpenShip n'attend pas votre app après son démarrage : un démarrage lent ne retarde donc jamais un déploiement et ne le fait pas échouer. Une fois en ligne, le port est vérifié malgré tout et signalé sans rien bloquer. N'activez ceci que si vous voulez que le déploiement lui-même refuse de passer au vert.",
       "probeLabel": "Attendre que l'app réponde",
       "probeDesc": "Après le démarrage du conteneur, contacter le port de l'app et attendre qu'elle accepte une connexion.",
       "pathLabel": "Chemin HTTP",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "Version du runtime",
     "runtimeVersionDefault": "Par défaut",
-    "runtimeVersionDesc": "Utilise des images de compilation et d’exécution adaptées à la version sélectionnée. Nécessite une compilation Docker générée par Openship.",
+    "runtimeVersionDesc": "Utilise des images de compilation et d’exécution adaptées à la version sélectionnée. Nécessite une compilation Docker générée par OpenShip.",
     "buildImageLabel": "Image de compilation",
     "buildImageDesc": "Image de conteneur de compilation pour les builds cloud ou serveur. Remplacez-la lorsque l'image de base détectée est incorrecte.",
     "productionPathsLabel": "Chemins de production",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "pas transférées d'une recompilation à l'autre",
       "statefulWarnPart2": ". Sauvegardez et restaurez explicitement les données avant de remplacer l’espace de travail.",
       "volumeHint": "Volume nommé ou chemin de l'hôte → chemin du conteneur.",
-      "volumeCloudNote": "Openship Cloud ne prend pas en charge les montages de volumes persistants. Choisissez un serveur pour les charges qui nécessitent des volumes.",
+      "volumeCloudNote": "OpenShip Cloud ne prend pas en charge les montages de volumes persistants. Choisissez un serveur pour les charges qui nécessitent des volumes.",
       "sourcePlaceholder": "Source",
       "containerPathPlaceholder": "Chemin du conteneur",
       "readOnlyMount": "Montage en lecture seule",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Cloud",
+    "targetOpenshipCloud": "OpenShip Cloud",
     "targetServerNamed": "Serveur · {name}",
     "targetServer": "Serveur",
     "targetLocal": "Machine locale",
@@ -379,9 +379,9 @@
       "port": "Port",
       "process": "Processus",
       "unitDescription": "Description de l'unité",
-      "openshipDeployment": "Déploiement Openship",
+      "openshipDeployment": "Déploiement OpenShip",
       "sites": {
-        "lead": "Le proxy existant dessert actuellement {count} site(s). La migration les importe dans Openship avant qu'il ne prenne le contrôle des ports 80/443 :",
+        "lead": "Le proxy existant dessert actuellement {count} site(s). La migration les importe dans OpenShip avant qu'il ne prenne le contrôle des ports 80/443 :",
         "tlsBadge": "TLS",
         "staticLabel": "statique :",
         "warningsTitle": "N'ont pas pu être migrés automatiquement — à rajouter manuellement :"
@@ -531,7 +531,7 @@
     "title": "Certains paramètres de déploiement du dépôt n’ont pas été appliqués",
     "description": "Vérifiez les paramètres ignorés ci-dessous avant le déploiement.",
     "titleWholeFile": "Le openship.json de ce dépôt a été ignoré",
-    "descriptionWholeFile": "Rien n'en a été appliqué. Le déploiement se poursuivra avec les réglages détectés par Openship.",
+    "descriptionWholeFile": "Rien n'en a été appliqué. Le déploiement se poursuivra avec les réglages détectés par OpenShip.",
     "refused": "Refusé",
     "unrecognized": "Non reconnu",
     "hint": "Vérifiez les fichiers de configuration indiqués et mettez à jour les paramètres non pris en charge avant le prochain déploiement."

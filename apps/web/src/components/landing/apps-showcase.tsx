@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { getCopy } from "@/i18n/copy-server";
+import { Link } from "@/i18n/Link";
 import { ArrowRight, Boxes } from "lucide-react";
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { APP_CATEGORY_LABELS } from "@/lib/app-marketplace";
@@ -18,6 +19,8 @@ const FEATURED_IDS = [
 const CATEGORIES = ["backend", "database", "cms", "automation", "analytics", "other"] as const;
 
 export async function AppsShowcase() {
+  const copy = await getCopy();
+
   const apps = await getMarketplaceApps();
   const available = apps.filter((app) => app.available);
   const featured = FEATURED_IDS.flatMap((id) => {
@@ -30,33 +33,36 @@ export async function AppsShowcase() {
       <div className="site-container ha-container">
         <div className="ha-intro">
           <p className="ha-eyebrow">
-            <Boxes className="size-4" aria-hidden="true" /> The app catalog
+            <Boxes className="size-4" aria-hidden="true" /> {copy(" The app catalog")}
           </p>
           <h2 id="home-apps-title" className="ha-title">
-            Your next app.
+            {copy("Your next app.")}
             <br />
-            <span>Already assembled.</span>
+            <span>{copy("Already assembled.")}</span>
           </h2>
           <p className="ha-description">
-            A backend for your next project. A database for your data. The tools your team uses
-            every day. Explore ready-to-deploy apps, then choose where they live.
+            {copy(
+              "A backend for your next project. A database for your data. The tools your team uses every day. Explore ready-to-deploy apps, then choose where they live.",
+            )}
           </p>
           <Link href="/apps" className="th-btn group ha-cta">
-            Browse all apps{" "}
+            {copy("Browse all apps")}{" "}
             <ArrowRight
               className="size-4 transition-transform group-hover:translate-x-1"
               aria-hidden="true"
             />
           </Link>
           <p className="ha-note">
-            {available.length} available templates · Cloud and connected servers
+            {copy("{count} available templates · Cloud and connected servers", {
+              count: available.length,
+            })}
           </p>
-          <div className="ha-categories" aria-label="Browse app categories">
+          <div className="ha-categories" aria-label={copy("Browse app categories")}>
             {CATEGORIES.filter((category) =>
               available.some((app) => app.category === category),
             ).map((category) => (
               <Link key={category} href={`/apps?category=${category}`}>
-                {APP_CATEGORY_LABELS[category]}
+                {copy(APP_CATEGORY_LABELS[category])}
               </Link>
             ))}
           </div>
@@ -72,15 +78,20 @@ export async function AppsShowcase() {
                   name={app.name}
                   src={`/app-logos/${app.id}.svg`}
                 />
+                <h3>
+                  <bdi>{app.name}</bdi>
+                </h3>
+              </div>
+              <p>{copy(app.description)}</p>
+              <div className="ha-card-footer">
+                <span className="ha-card-category">{copy(APP_CATEGORY_LABELS[app.category])}</span>
                 <ArrowRight className="ha-card-arrow size-4" aria-hidden="true" />
               </div>
-              <h3>{app.name}</h3>
-              <p>{app.description}</p>
-              <span className="ha-card-category">{APP_CATEGORY_LABELS[app.category]}</span>
             </Link>
           ))}
           <Link href="/apps" className="ha-catalog-link">
-            Find your next app in the catalog <ArrowRight className="size-4" aria-hidden="true" />
+            {copy("Find your next app in the catalog ")}
+            <ArrowRight className="size-4" aria-hidden="true" />
           </Link>
         </div>
       </div>

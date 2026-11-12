@@ -302,7 +302,7 @@
   "server.unreachable": {
     "label": "服务器无法连接",
     "action": "报告服务器不可达",
-    "description": "Openship 无法与此服务器建立 SSH 连接。"
+    "description": "OpenShip 无法与此服务器建立 SSH 连接。"
   },
   "server.reachable": {
     "label": "服务器恢复连接",
@@ -335,7 +335,7 @@
   "identity.provisioned": {
     "label": "身份已配置",
     "action": "配置了身份",
-    "description": "受信任的主机将外部身份映射到 Openship 用户。"
+    "description": "受信任的主机将外部身份映射到 OpenShip 用户。"
   },
   "organization.created": {
     "label": "组织已创建",
@@ -461,7 +461,7 @@
   "mcp.tool_called": {
     "label": "AI 工具调用",
     "action": "运行了 MCP 工具",
-    "description": "MCP 客户端调用了 Openship 工具。"
+    "description": "MCP 客户端调用了 OpenShip 工具。"
   },
   "admin.bootstrapped": {
     "label": "首个管理员账户已创建",
@@ -568,7 +568,7 @@
   "updates:write": {
     "label": "系统更新",
     "action": "检查或应用了更新",
-    "description": "已启动 Openship 组件更新。"
+    "description": "已启动 OpenShip 组件更新。"
   },
   "cloud.disconnect": {
     "label": "Cloud 已断开",

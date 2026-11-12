@@ -232,12 +232,12 @@
   },
   "cloud": {
     "connectionGate": {
-      "reconnect": "重新连接 Openship Cloud",
-      "deployedOn": "此项目已部署在 Openship Cloud 上",
-      "sessionMissing": "你的 Openship Cloud 会话已丢失。请连接以管理部署、查看日志，并访问 {name} 的运行时控制。",
+      "reconnect": "重新连接 OpenShip Cloud",
+      "deployedOn": "此项目已部署在 OpenShip Cloud 上",
+      "sessionMissing": "你的 OpenShip Cloud 会话已丢失。请连接以管理部署、查看日志，并访问 {name} 的运行时控制。",
       "thisProject": "此项目",
       "connecting": "正在连接……",
-      "connect": "连接到 Openship Cloud",
+      "connect": "连接到 OpenShip Cloud",
       "readOnlyNote": "断开连接期间，你仍可以只读模式浏览此页面。"
     }
   },
@@ -245,7 +245,7 @@
     "githubPermission": {
       "title": "连接到 GitHub",
       "subtitle": "选择仓库访问级别",
-      "intro": "选择 Openship 可以访问哪些仓库。你之后可以在 GitHub 设置中更改此选项。",
+      "intro": "选择 OpenShip 可以访问哪些仓库。你之后可以在 GitHub 设置中更改此选项。",
       "publicTitle": "仅公开仓库",
       "publicDesc": "访问你的公开仓库。非常适合开源项目。",
       "publicItem1": "读取公开仓库数据",
@@ -542,12 +542,12 @@
     "youreOn": "· 你当前使用的是 {version}",
     "rerunInstall": "重新运行安装以更新你的自托管服务器。",
     "updateNow": "立即更新",
-    "downloading": "正在下载 Openship {version}",
-    "installing": "正在安装 — Openship 将重新启动",
+    "downloading": "正在下载 OpenShip {version}",
+    "installing": "正在安装 — OpenShip 将重新启动",
     "updateFailed": "更新失败",
     "retry": "重试",
     "changelog": "更新日志",
-    "updatedTo": "已更新到 Openship {version}",
+    "updatedTo": "已更新到 OpenShip {version}",
     "seeChanges": "查看此版本中的变更。",
     "onLatest": "你已使用最新版本。",
     "whatsNew": "新增内容",

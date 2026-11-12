@@ -169,7 +169,7 @@
     "addMailbox": "Ajouter une boîte aux lettres",
     "addDomain": "Ajouter un domaine",
     "reviewDns": "Examiner les enregistrements DNS",
-    "legacyWebmail": "Déployé par une ancienne version d'Openship — peut être remplacé par l'application webmail, qui se met à jour avec vos versions.",
+    "legacyWebmail": "Déployé par une ancienne version d'OpenShip — peut être remplacé par l'application webmail, qui se met à jour avec vos versions.",
     "upgradeWebmail": "Remplacer le webmail"
   },
   "webmail": {
@@ -363,7 +363,7 @@
     "dnsEmpty": "Aucun enregistrement DNS enregistré pour l'instant. Terminez l'assistant d'installation pour alimenter l'analyse.",
     "reachability": {
       "title": "Ports de messagerie publics",
-      "desc": "Vérifie les écoutes locales puis se connecte depuis le plan de contrôle Openship à l’adresse publique de messagerie.",
+      "desc": "Vérifie les écoutes locales puis se connecte depuis le plan de contrôle OpenShip à l’adresse publique de messagerie.",
       "descFor": "Vérifie les écoutes locales et l’accès externe à {hostname} sur {address}.",
       "remediation": "Le serveur écoute, mais un ou plusieurs ports publics sont indisponibles. Autorisez TCP 25, 465, 587 et 993 dans le pare-feu de l’hôte et celui du fournisseur/groupe de sécurité/NSG.",
       "reachableHint": "Écoute sur l’hôte et accessible depuis le plan de contrôle.",
@@ -644,7 +644,7 @@
     "legacyNote": "Ce serveur utilise l'ancien moteur installé directement sur l'hôte (Postfix/Dovecot via systemd) : il n'y a donc aucun conteneur à inspecter.",
     "start": "Démarrer le moteur",
     "missingTitle": "Aucun moteur de messagerie sur ce serveur",
-    "missingBody": "Openship ne trouve aucun moteur de messagerie ici — ni le conteneur du moteur, ni les unités Postfix/Dovecot. Relancez la configuration de la messagerie pour le réinstaller.",
+    "missingBody": "OpenShip ne trouve aucun moteur de messagerie ici — ni le conteneur du moteur, ni les unités Postfix/Dovecot. Relancez la configuration de la messagerie pour le réinstaller.",
     "rerunSetup": "Relancer la configuration",
     "cardBlocked": "Indisponible tant que le moteur de messagerie n'est pas actif."
   },
@@ -741,7 +741,7 @@
     "renewing": "Renouvellement…",
     "autoRenew": "Renouvellement automatique",
     "autoRenewHint": "Renouveler avant expiration et recharger les services de messagerie.",
-    "desktopHint": "Gardez Openship ouvert pour le renouvellement automatique.",
+    "desktopHint": "Gardez OpenShip ouvert pour le renouvellement automatique.",
     "jobDisabled": "La tâche partagée de renouvellement SSL est désactivée.",
     "manageJob": "Ouvrir la tâche de renouvellement",
     "failed": "Impossible de mettre à jour le certificat de messagerie.",

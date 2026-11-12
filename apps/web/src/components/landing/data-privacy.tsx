@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { useCopy } from "@/i18n/use-copy";
+
+import { Link } from "@/i18n/Link";
 import { ArrowRight } from "lucide-react";
 import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
 
@@ -28,36 +30,41 @@ const COMMITMENTS = [
 }[];
 
 export function DataPrivacy() {
+  const copy = useCopy();
+
   return (
     <section id="data-privacy" className="privacy-section" aria-labelledby="privacy-title">
       <div className="site-container privacy-layout">
         <div className="privacy-intro">
-          <p className="privacy-eyebrow">Our privacy commitment</p>
+          <p className="privacy-eyebrow">{copy("Our privacy commitment")}</p>
           <h2 id="privacy-title" className="privacy-title">
-            Your data.
+            {copy("Your data.")}
             <br />
-            <span>Your business.</span>
+            <span>{copy("Your business.")}</span>
           </h2>
           <p className="privacy-description">
-            We don’t browse your private code, databases, or files. When you need help, support
-            stays focused on the technical issue you ask us to investigate.
+            {copy(
+              "We don’t browse your private code, databases, or files. When you need help, support stays focused on the technical issue you ask us to investigate.",
+            )}
           </p>
           <div className="privacy-links">
             <Link href="/privacy#support-access">
-              Read our privacy policy <ArrowRight className="size-4" aria-hidden="true" />
+              {copy("Read our privacy policy ")}
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
             <Link href="/terms#your-content">
-              Terms of service <ArrowRight className="size-4" aria-hidden="true" />
+              {copy("Terms of service ")}
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
           </div>
         </div>
-        <ul className="privacy-commitments" aria-label="Customer privacy commitments">
+        <ul className="privacy-commitments" aria-label={copy("Customer privacy commitments")}>
           {COMMITMENTS.map((commitment) => (
             <li key={commitment.title} className="privacy-commitment">
               <FeatureIllustration name={commitment.illustration} className="privacy-art" />
               <div>
-                <h3>{commitment.title}</h3>
-                <p>{commitment.description}</p>
+                <h3>{copy(commitment.title)}</h3>
+                <p>{copy(commitment.description)}</p>
               </div>
             </li>
           ))}

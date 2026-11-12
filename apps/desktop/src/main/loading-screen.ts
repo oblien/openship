@@ -5,7 +5,7 @@ import regularFont from "../../assets/fonts/Gellix-Regular.woff2";
 import mediumFont from "../../assets/fonts/Gellix-Medium.woff2";
 
 const loadingStages = {
-  launch: { label: "Launch", message: "Launching Openship" },
+  launch: { label: "Launch", message: "Launching OpenShip" },
   services: { label: "Workspace", message: "Preparing your workspace" },
   dashboard: { label: "Dashboard", message: "Opening your dashboard" },
 };
@@ -30,7 +30,7 @@ export function buildLoadingScreen(options: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; img-src data:">
-  <title>Starting Openship</title>
+  <title>Starting OpenShip</title>
   <style>${themeTokens}</style>
   <style>
     @font-face{font-family:Gellix;src:url("${regularFont}") format("woff2");font-weight:400;font-display:swap}
@@ -108,7 +108,7 @@ export function buildLoadingScreen(options: {
   <main>
     <section class="startup" aria-labelledby="title">
       <div class="copy">
-        <div class="brand"><span class="brand-mark" aria-hidden="true"></span><h1 id="title">Openship</h1></div>
+        <div class="brand"><span class="brand-mark" aria-hidden="true"></span><h1 id="title">OpenShip</h1></div>
         <p class="intro">Deploy anything.<br>Own everything.</p>
         <div class="loading">
           <div class="status" role="status" aria-live="polite" aria-atomic="true"><span class="spinner" aria-hidden="true"></span><span id="stage">${loadingStages.launch.message}</span></div>
@@ -158,7 +158,7 @@ export function buildLoadingScreen(options: {
       </div>
     </section>
   </main>
-  <footer><span>Openship Desktop</span><span class="footer-separator" aria-hidden="true"></span><span id="version"></span></footer>
+  <footer><span>OpenShip Desktop</span><span class="footer-separator" aria-hidden="true"></span><span id="version"></span></footer>
   <script>
     (function () {
       var metadata = ${metadata};

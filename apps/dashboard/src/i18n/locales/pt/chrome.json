@@ -18,7 +18,7 @@
     "switchOrganization": "Alternar organização",
     "current": "Atual",
     "cloudLabel": "Cloud: {email}",
-    "linkedToCloud": "Vinculado ao Openship Cloud como {email}",
+    "linkedToCloud": "Vinculado ao OpenShip Cloud como {email}",
     "backToSetup": "Voltar à configuração",
     "personal": "Pessoal"
   },
@@ -34,7 +34,7 @@
     "newLocation": "Novo local",
     "switchBackPrompt": "Precisa do modo de usuário único de volta nesta máquina?",
     "switchBackAction": "Voltar para usuário único",
-    "cloudTitle": "Esta instância foi movida para o Openship Cloud",
+    "cloudTitle": "Esta instância foi movida para o OpenShip Cloud",
     "cloudBody": "Sua equipe agora colabora na URL abaixo. Esta instância local não contém mais seus projetos, configurações ou implantações — abra o painel do cloud para continuar.",
     "cloudCta": "Abrir painel do cloud",
     "tunneledTitle": "Seu openship agora está acessível pelo túnel",
@@ -65,7 +65,7 @@
   },
   "apiDown": {
     "title": "Não é possível acessar a API",
-    "description": "O painel está funcionando, mas não consegue se comunicar com a API do Openship — portanto, ainda não há nada para mostrar. Seus deploys continuam rodando normalmente.",
+    "description": "O painel está funcionando, mas não consegue se comunicar com a API do OpenShip — portanto, ainda não há nada para mostrar. Seus deploys continuam rodando normalmente.",
     "hintStatus": "Verifique se a API está ativa: execute `openship status` no host.",
     "hintStart": "Não está em execução? Inicie com `openship up`.",
     "hintRemote": "Gerenciando um servidor remoto? Confirme a URL dele e se a porta da API está acessível daqui.",

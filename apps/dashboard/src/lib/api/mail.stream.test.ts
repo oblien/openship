@@ -34,7 +34,7 @@ describe("mailApi.streamSetup — setup never started", () => {
   it("surfaces the preflight's sentence and its code", async () => {
     respond(502, {
       error:
-        "Can't start mail setup: Permission denied (publickey,password). Openship could not run a single command on this server.",
+        "Can't start mail setup: Permission denied (publickey,password). OpenShip could not run a single command on this server.",
       code: "permission_denied",
     });
 

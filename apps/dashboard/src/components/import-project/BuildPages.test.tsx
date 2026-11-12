@@ -268,7 +268,7 @@ describe("build pages", () => {
         "Port 20001 is occupied by openship-clincai-api. Port 20002 is available. Using it keeps the existing service running and saves the new host port for future deployments.",
       actions: [
         { id: "use_port:20002", label: "Use port 20002", variant: "primary" },
-        { id: "free_port", label: "Stop Openship Container & Continue", variant: "danger" },
+        { id: "free_port", label: "Stop OpenShip Container & Continue", variant: "danger" },
         { id: "abort", label: "Cancel Deploy", variant: "secondary" },
       ],
       details: { port: 20001, alternativePort: 20002, containerName: "openship-clincai-api" },
@@ -283,7 +283,7 @@ describe("build pages", () => {
       const buttons = [...dialog.querySelectorAll<HTMLButtonElement>("button")];
       expect(buttons.map((button) => button.textContent)).toEqual([
         "Use port 20002",
-        "Stop Openship Container & Continue",
+        "Stop OpenShip Container & Continue",
         "Cancel Deploy",
       ]);
       expect(document.activeElement).toBe(buttons[0]);

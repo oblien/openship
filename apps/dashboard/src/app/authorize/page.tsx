@@ -42,7 +42,7 @@ function AuthorizePageInner() {
   const { t } = useI18n();
 
   const callback = searchParams.get("callback");
-  const appName = searchParams.get("app") || "Openship Desktop";
+  const appName = searchParams.get("app") || "OpenShip Desktop";
   const machine = searchParams.get("machine");
   const state = searchParams.get("state");
   const codeChallenge = searchParams.get("code_challenge");

@@ -232,12 +232,12 @@
   },
   "cloud": {
     "connectionGate": {
-      "reconnect": "Переподключить Openship Cloud",
-      "deployedOn": "Этот проект развернут в Openship Cloud",
-      "sessionMissing": "Сессия Openship Cloud отсутствует. Подключитесь, чтобы управлять деплоями, просматривать логи и управлять средой выполнения для {name}.",
+      "reconnect": "Переподключить OpenShip Cloud",
+      "deployedOn": "Этот проект развернут в OpenShip Cloud",
+      "sessionMissing": "Сессия OpenShip Cloud отсутствует. Подключитесь, чтобы управлять деплоями, просматривать логи и управлять средой выполнения для {name}.",
       "thisProject": "этот проект",
       "connecting": "Подключение…",
-      "connect": "Подключиться к Openship Cloud",
+      "connect": "Подключиться к OpenShip Cloud",
       "readOnlyNote": "Вы по-прежнему можете просматривать эту страницу в режиме только для чтения, пока не подключитесь."
     }
   },
@@ -245,7 +245,7 @@
     "githubPermission": {
       "title": "Подключение к GitHub",
       "subtitle": "Выберите уровень доступа к репозиториям",
-      "intro": "Выберите, к каким репозиториям у Openship будет доступ. Вы можете изменить это позже в настройках GitHub.",
+      "intro": "Выберите, к каким репозиториям у OpenShip будет доступ. Вы можете изменить это позже в настройках GitHub.",
       "publicTitle": "Только публичные репозитории",
       "publicDesc": "Доступ к вашим публичным репозиториям. Идеально для open source проектов.",
       "publicItem1": "Чтение данных публичных репозиториев",
@@ -542,12 +542,12 @@
     "youreOn": "· установлена {version}",
     "rerunInstall": "Запустите установку заново, чтобы обновить свой self-hosted сервер.",
     "updateNow": "Обновить сейчас",
-    "downloading": "Загрузка Openship {version}",
-    "installing": "Установка — Openship перезапустится",
+    "downloading": "Загрузка OpenShip {version}",
+    "installing": "Установка — OpenShip перезапустится",
     "updateFailed": "Сбой обновления",
     "retry": "Повторить попытку",
     "changelog": "Список изменений",
-    "updatedTo": "Обновлено до Openship {version}",
+    "updatedTo": "Обновлено до OpenShip {version}",
     "seeChanges": "Узнайте, что изменилось в этом релизе.",
     "onLatest": "У вас установлена последняя версия.",
     "whatsNew": "Что нового",

@@ -1,7 +1,7 @@
 {
   "cloudClient": {
     "title": "Emails",
-    "subtitle": "Use your existing mailboxes with Openship Webmail.",
+    "subtitle": "Use your existing mailboxes with OpenShip Webmail.",
     "connectTitle": "Connect your mail server",
     "description": "Connect any IMAP/SMTP server. Your provider keeps your mailboxes and mail delivery.",
     "connectAction": "Connect existing mail server",
@@ -11,8 +11,8 @@
   "cloudComingSoon": {
     "title": "Managed email",
     "badge": "Coming soon",
-    "description": "Managed email on Openship Cloud is coming soon. Cloud server plans are for hosting applications and do not provision a mail server.",
-    "selfHosted": "Self-hosted email is available on your own server through a self-hosted Openship installation."
+    "description": "Managed email on OpenShip Cloud is coming soon. Cloud server plans are for hosting applications and do not provision a mail server.",
+    "selfHosted": "Self-hosted email is available on your own server through a self-hosted OpenShip installation."
   },
   "page": {
     "title": "Email Server",
@@ -37,7 +37,7 @@
   },
   "adopt": {
     "title": "Adopt existing mail server",
-    "intro": "Already set up a mail server with Openship on one of your servers? Pick it and scan — if a mail stack is found, it's re-adopted into the dashboard without reinstalling or touching your data.",
+    "intro": "Already set up a mail server with OpenShip on one of your servers? Pick it and scan — if a mail stack is found, it's re-adopted into the dashboard without reinstalling or touching your data.",
     "scanning": "Scanning…",
     "scan": "Scan server",
     "detected": "Mail server detected",

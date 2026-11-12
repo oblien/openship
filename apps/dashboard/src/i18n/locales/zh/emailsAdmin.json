@@ -169,7 +169,7 @@
     "addMailbox": "添加邮箱",
     "addDomain": "添加域名",
     "reviewDns": "查看 DNS 记录",
-    "legacyWebmail": "由旧版 Openship 部署 — 可以替换为 Web 邮件应用，该应用会随您的版本一同更新。",
+    "legacyWebmail": "由旧版 OpenShip 部署 — 可以替换为 Web 邮件应用，该应用会随您的版本一同更新。",
     "upgradeWebmail": "替换 Web 邮件"
   },
   "webmail": {
@@ -363,7 +363,7 @@
     "dnsEmpty": "尚无 DNS 记录存档。完成安装向导以填充扫描内容。",
     "reachability": {
       "title": "公网邮件端口",
-      "desc": "检查本地监听，然后从 Openship 控制平面连接公网邮件地址。",
+      "desc": "检查本地监听，然后从 OpenShip 控制平面连接公网邮件地址。",
       "descFor": "检查本地监听以及对 {hostname}（{address}）的外部访问。",
       "remediation": "服务器正在监听，但一个或多个公网端口不可用。请在主机防火墙以及云服务商防火墙/安全组/NSG 中同时允许 TCP 25、465、587 和 993。",
       "reachableHint": "主机正在监听，且可从控制平面访问。",
@@ -644,7 +644,7 @@
     "legacyNote": "此服务器使用直接安装在宿主机上的旧版引擎（systemd 的 Postfix/Dovecot），因此没有容器可供查看。",
     "start": "启动引擎",
     "missingTitle": "此服务器上没有邮件引擎",
-    "missingBody": "Openship 在这里找不到任何邮件引擎——既没有引擎容器，也没有 Postfix/Dovecot 服务单元。请重新运行邮件设置以重新安装。",
+    "missingBody": "OpenShip 在这里找不到任何邮件引擎——既没有引擎容器，也没有 Postfix/Dovecot 服务单元。请重新运行邮件设置以重新安装。",
     "rerunSetup": "重新运行邮件设置",
     "cardBlocked": "邮件引擎运行后才可用。"
   },
@@ -741,7 +741,7 @@
     "renewing": "正在续期…",
     "autoRenew": "自动续期",
     "autoRenewHint": "在到期前续期并重新加载邮件服务。",
-    "desktopHint": "自动续期需要保持 Openship 运行。",
+    "desktopHint": "自动续期需要保持 OpenShip 运行。",
     "jobDisabled": "共享 SSL 续期任务已禁用。",
     "manageJob": "打开续期任务",
     "failed": "无法更新邮件证书。",

@@ -61,7 +61,7 @@
       "title": "Health checks",
       "subtitle": "Off — the deploy finishes as soon as your app is running",
       "subtitleOn": "On — the deploy waits for your app before going live",
-      "description": "Openship doesn't wait for your app after it starts, so a slow boot never delays or fails a deploy. Once it's live, the port is checked anyway and reported without blocking anything. Turn these on only if you want the deploy itself to refuse to go green.",
+      "description": "OpenShip doesn't wait for your app after it starts, so a slow boot never delays or fails a deploy. Once it's live, the port is checked anyway and reported without blocking anything. Turn these on only if you want the deploy itself to refuse to go green.",
       "probeLabel": "Wait for the app to answer",
       "probeDesc": "After the container starts, dial the app's port and wait for it to accept a connection.",
       "pathLabel": "HTTP path",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "Runtime version",
     "runtimeVersionDefault": "Default",
-    "runtimeVersionDesc": "Uses matching build and runtime images for the selected version. Requires an Openship-generated Docker build.",
+    "runtimeVersionDesc": "Uses matching build and runtime images for the selected version. Requires an OpenShip-generated Docker build.",
     "buildImageLabel": "Build Image",
     "buildImageDesc": "Builder container image for cloud or server builds. Override it when the detected base image is wrong.",
     "productionPathsLabel": "Production Paths",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "not carried across rebuilds",
       "statefulWarnPart2": ". Back up and restore data explicitly before replacing the workspace.",
       "volumeHint": "Named volume or host path → container path.",
-      "volumeCloudNote": "Persistent volume mounts are not supported on Openship Cloud. Choose a server for workloads that require volumes.",
+      "volumeCloudNote": "Persistent volume mounts are not supported on OpenShip Cloud. Choose a server for workloads that require volumes.",
       "sourcePlaceholder": "Source",
       "containerPathPlaceholder": "Container path",
       "readOnlyMount": "Read-only mount",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Cloud",
+    "targetOpenshipCloud": "OpenShip Cloud",
     "targetServerNamed": "Server · {name}",
     "targetServer": "Server",
     "targetLocal": "Local machine",
@@ -379,9 +379,9 @@
       "port": "Port",
       "process": "Process",
       "unitDescription": "Unit Description",
-      "openshipDeployment": "Openship Deployment",
+      "openshipDeployment": "OpenShip Deployment",
       "sites": {
-        "lead": "{count} site(s) are currently served by the existing proxy. Migrating imports them into Openship before it takes over ports 80/443:",
+        "lead": "{count} site(s) are currently served by the existing proxy. Migrating imports them into OpenShip before it takes over ports 80/443:",
         "tlsBadge": "TLS",
         "staticLabel": "static:",
         "warningsTitle": "Couldn't be migrated automatically — re-add these manually:"
@@ -531,7 +531,7 @@
     "title": "Some repository deployment settings were not applied",
     "description": "Review the skipped settings below before deploying.",
     "titleWholeFile": "This repo's openship.json was ignored",
-    "descriptionWholeFile": "None of it was applied. The deploy will still run, using the settings Openship detected.",
+    "descriptionWholeFile": "None of it was applied. The deploy will still run, using the settings OpenShip detected.",
     "refused": "Refused",
     "unrecognized": "Not recognized",
     "hint": "Check the named configuration files and update any unsupported settings before your next deploy."

@@ -18,7 +18,7 @@
     "switchOrganization": "組織を切り替える",
     "current": "現在",
     "cloudLabel": "クラウド: {email}",
-    "linkedToCloud": "{email} として Openship Cloud に連携済み",
+    "linkedToCloud": "{email} として OpenShip Cloud に連携済み",
     "backToSetup": "セットアップに戻る",
     "personal": "個人"
   },
@@ -34,7 +34,7 @@
     "newLocation": "新しい場所",
     "switchBackPrompt": "このマシンでシングルユーザーモードに戻す必要がありますか？",
     "switchBackAction": "シングルユーザーに戻す",
-    "cloudTitle": "このインスタンスは Openship Cloud に移行しました",
+    "cloudTitle": "このインスタンスは OpenShip Cloud に移行しました",
     "cloudBody": "チームは以下のURLで共同作業できるようになりました。このローカルインスタンスにはプロジェクト、設定、デプロイが保持されなくなりました — 続行するにはクラウドダッシュボードを開いてください。",
     "cloudCta": "クラウドダッシュボードを開く",
     "tunneledTitle": "お使いの openship はトンネル経由でアクセス可能になりました",
@@ -65,7 +65,7 @@
   },
   "apiDown": {
     "title": "API に接続できません",
-    "description": "ダッシュボードは動作していますが、Openship API と通信できないため、まだ表示できるものがありません。デプロイはそのまま稼働し続けます。",
+    "description": "ダッシュボードは動作していますが、OpenShip API と通信できないため、まだ表示できるものがありません。デプロイはそのまま稼働し続けます。",
     "hintStatus": "API が稼働しているか確認します: ホストで `openship status` を実行してください。",
     "hintStart": "起動していませんか？`openship up` で起動してください。",
     "hintRemote": "リモートサーバーを管理していますか？その URL と、API ポートにここから到達できるかを確認してください。",

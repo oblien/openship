@@ -1,27 +1,27 @@
 ---
-title: "How AI Builds Work in Openship"
-description: "A look under the hood at how Openship uses AI to detect frameworks, generate configs, and optimize builds automatically."
+title: "How AI Builds Work in OpenShip"
+description: "A look under the hood at how OpenShip uses AI to detect frameworks, generate configs, and optimize builds automatically."
 date: "2026-03-08"
 category: "Engineering"
-author: "Openship Team"
+author: "OpenShip Team"
 ---
 
 When you run `openship deploy`, a lot happens before your app goes live. Here's how the AI build system works.
 
 ## Step 1: Framework detection
 
-Openship scans your project for signals:
+OpenShip scans your project for signals:
 
 - `package.json` scripts and dependencies
 - Config files (`next.config.js`, `nuxt.config.ts`, `Cargo.toml`, etc.)
 - Dockerfile presence
 - Directory structure patterns
 
-This produces a confidence-scored framework match. If Openship detects Next.js with 95% confidence, it uses the Next.js build pipeline. If there's a Dockerfile, it uses that directly.
+This produces a confidence-scored framework match. If OpenShip detects Next.js with 95% confidence, it uses the Next.js build pipeline. If there's a Dockerfile, it uses that directly.
 
 ## Step 2: Config generation
 
-Based on the detected framework, Openship generates:
+Based on the detected framework, OpenShip generates:
 
 - **Build command** - `npm run build`, `go build`, etc.
 - **Start command** - `npm start`, `./server`, etc.
@@ -40,7 +40,7 @@ The AI layer optimizes the build:
 
 ## Step 4: Health checks
 
-After deployment, Openship verifies:
+After deployment, OpenShip verifies:
 
 - The container starts successfully
 - The health check endpoint responds
@@ -50,4 +50,4 @@ If any check fails, the deployment is rolled back automatically.
 
 ## What's next
 
-We're working on AI-powered diagnostics - when a build fails, Openship will analyze the error and suggest fixes. Stay tuned.
+We're working on AI-powered diagnostics - when a build fails, OpenShip will analyze the error and suggest fixes. Stay tuned.

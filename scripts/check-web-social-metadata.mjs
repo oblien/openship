@@ -15,11 +15,51 @@ const prerender = await readJson(".next/prerender-manifest.json");
 const pageRoutes = Object.entries(appRoutes)
   .filter(([file, route]) => file.endsWith("/page") && !route.startsWith("/_"))
   .map(([, route]) => route);
+const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr", "ru"];
+const translatedSections = new Set([
+  "",
+  "pricing",
+  "features",
+  "apps",
+  "migrate",
+  "referrals",
+  "mail",
+  "download",
+  "about",
+  "trust",
+  "support",
+  "contact",
+  "blog",
+  "changelog",
+  "privacy",
+  "terms",
+]);
+function publicPath(route) {
+  const [, locale, ...rest] = route.split("/");
+  if (!locales.includes(locale)) return route;
+  const path = rest.join("/");
+  if (locale === "en") return `/${path}`;
+  if (!translatedSections.has(rest[0] ?? "")) return null;
+  return route;
+}
 const paths = new Set(pageRoutes.filter((route) => !route.includes("[")));
+for (const route of pageRoutes.filter((route) => route.includes("[locale]"))) {
+  for (const locale of locales) {
+    const example = route.replace("[locale]", locale);
+    if (!example.includes("[")) {
+      const path = publicPath(example);
+      if (path) paths.add(path);
+    }
+  }
+}
 for (const [route, entry] of Object.entries(prerender.routes)) {
-  if (pageRoutes.includes(entry.srcRoute ?? route)) paths.add(route);
+  if (pageRoutes.includes(entry.srcRoute ?? route)) {
+    const path = publicPath(route);
+    if (path) paths.add(path);
+  }
 }
 for (const route of pageRoutes.filter((route) => route.includes("["))) {
+  if (!route.replace("[locale]", "en").includes("[")) continue;
   assert(
     Object.values(prerender.routes).some((entry) => entry.srcRoute === route),
     `No rendered examples for ${route}`,
@@ -43,13 +83,14 @@ for (const stream of [server.stdout, server.stderr]) {
   });
 }
 
-async function request(origin, path) {
+async function request(origin, path, followRedirect = false) {
   const response = await fetch(new URL(path, origin), {
     headers: { "User-Agent": "Twitterbot/1.0" },
-    redirect: "manual",
+    redirect: followRedirect ? "follow" : "manual",
     signal: AbortSignal.timeout(30_000),
   });
   assert.equal(response.status, 200, `${path}: HTTP ${response.status}`);
+  assert.equal(new URL(response.url).origin, origin, `${path}: local response origin`);
   return response;
 }
 
@@ -115,7 +156,20 @@ try {
   await each([...paths].sort(), async (path) => {
     const response = await request(origin, path);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
-    const tags = metaTags(await response.text());
+    const html = await response.text();
+    const tags = metaTags(html);
+    const first = path.split("/")[1];
+    const locale = locales.includes(first) ? first : "en";
+    assert.match(html, new RegExp(`<html[^>]*lang="${locale}"`), `${path}: document language`);
+    if (locale === "ar") assert.match(html, /<html[^>]*dir="rtl"/, `${path}: Arabic direction`);
+    if (locales.includes(first) && translatedSections.has(path.split("/")[2] ?? "")) {
+      assert(html.includes(`href="https://openship.io${path}"`), `${path}: canonical locale URL`);
+      for (const language of [...locales, "x-default"])
+        assert(
+          html.includes(`hrefLang="${language}"`) || html.includes(`hreflang="${language}"`),
+          `${path}: alternate ${language}`,
+        );
+    }
     assert.equal(tags.get("twitter:card"), "summary_large_image", `${path}: Twitter card`);
     for (const key of ["og:image", "twitter:image"]) {
       assert(tags.get(key), `${path}: missing ${key}`);
@@ -141,27 +195,30 @@ try {
       ["twitter:image", "twitter-image"],
     ]) {
       assert(
-        new URL(pages.get(path).get(key)).pathname.startsWith(`${path}/${filename}`),
+        publicPath(new URL(pages.get(path).get(key)).pathname)?.startsWith(`${path}/${filename}`),
         `${path}: ${key} must use its own image`,
       );
     }
   }
   assert.match(
-    new URL(pages.get("/download").get("og:image")).pathname,
+    publicPath(new URL(pages.get("/download").get("og:image")).pathname),
     /^\/download\/opengraph-image/,
   );
   assert.match(
-    new URL(pages.get("/download").get("twitter:image")).pathname,
+    publicPath(new URL(pages.get("/download").get("twitter:image")).pathname),
     /^\/download\/twitter-image/,
   );
   assert.equal(new URL(pages.get("/docs").get("og:image")).pathname, "/docs-og");
   assert.match(pages.get("/referrals").get("og:title"), /OpenShip Referral/);
   for (const key of ["og:image", "twitter:image"]) {
-    assert.match(new URL(pages.get("/referrals").get(key)).pathname, /^\/referrals\/(opengraph|twitter)-image/);
+    assert.match(
+      publicPath(new URL(pages.get("/referrals").get(key)).pathname),
+      /^\/referrals\/(opengraph|twitter)-image/,
+    );
   }
 
   await each(images, async (path) => {
-    const response = await request(origin, path);
+    const response = await request(origin, path, true);
     assert.match(response.headers.get("content-type") ?? "", /image\/png/);
     const png = Buffer.from(await response.arrayBuffer());
     assert(png.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")), "Not a PNG");

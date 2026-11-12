@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 
 type LogsTab = "terminal" | "server";
 
-export const LogsSettings = () => {
+export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: boolean }) => {
   const {
     projectData,
     buildData,
@@ -52,7 +52,7 @@ export const LogsSettings = () => {
     }) !== "static";
   const searchParams = useSearchParams();
   const router = useRouter();
-  const serviceIdFromUrl = searchParams.get("service");
+  const serviceIdFromUrl = applicationOnly ? null : searchParams.get("service");
   const roleFromUrl = searchParams.get("role");
   const roleReplicaFromUrl = Number(searchParams.get("replica") ?? 1);
   const roleDeploymentFromUrl = searchParams.get("deploymentId");
@@ -92,15 +92,15 @@ export const LogsSettings = () => {
   }, [requestedTarget, urlSelectionChanged]);
   // Public (exposed) services lead the target picker — the ones users browse to.
   const services = useMemo(
-    () => sortServicesByPublicFirst(servicesData.services),
-    [servicesData.services],
+    () => applicationOnly ? [] : sortServicesByPublicFirst(servicesData.services),
+    [servicesData.services, applicationOnly],
   );
   const servicesLoading = servicesData.isLoading;
   const servicesLoaded = !servicesData.isLoading;
   const hasServices = services.length > 0;
   // The shared application model distinguishes companion services from a
   // Compose/monorepo app whose primary runtime already has a service row.
-  const hasProjectRuntime = effectiveHasServer && hasSeparateApplication(projectData, services);
+  const hasProjectRuntime = effectiveHasServer && (applicationOnly || hasSeparateApplication(projectData, services));
   // Request logs come from the EDGE, not from a runtime process — so anything
   // served through an edge has them, whether or not it has a container to stream
   // stdout from. That's every project with a domain: cloud (Oblien's edge proxy)
@@ -188,6 +188,7 @@ export const LogsSettings = () => {
   // filter is a real, shareable, refresh-safe query param (null = project
   // runtime → no param). Guarded so we only replace when it actually changed.
   useEffect(() => {
+    if (applicationOnly) return;
     if (servicesLoading || urlSelectionChanged) return;
     if (roleFromUrl && !urlDeepLinkAppliedRef.current) return;
     const role = roleTargets.find((target) => target.value === selectedTarget);
@@ -210,6 +211,7 @@ export const LogsSettings = () => {
     roleTargets,
     roleFromUrl,
     urlSelectionChanged,
+    applicationOnly,
   ]);
 
   const switchTab = useCallback(

@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "Auf eigenem Server bereitstellen",
-    "description": "Verbinde einen Server über SSH, um Projekte auf deiner eigenen Infrastruktur neben Openship Cloud auszuführen.",
+    "description": "Verbinde einen Server über SSH, um Projekte auf deiner eigenen Infrastruktur neben OpenShip Cloud auszuführen.",
     "button": "Server verbinden"
   },
   "filters": {
     "title": "Nach Ziel filtern",
     "subtitle": "Wo Projekte bereitgestellt werden",
     "allProjects": "Alle Projekte",
-    "cloud": "Openship Cloud",
+    "cloud": "OpenShip Cloud",
     "local": "Lokal"
   },
   "card": {
@@ -111,7 +111,7 @@
     "cleanupPending": "Die Löschung hat begonnen. Das Projekt bleibt bis zum Abschluss der Bereinigung nicht verfügbar.",
     "alreadyDeleted": "Projekt bereits gelöscht",
     "forceModalTitle": "Entfernen an der Quelle fehlgeschlagen",
-    "forceModalBody": "Die Runtime war nicht erreichbar (oder schlug weiter fehl), daher wurde dieses Projekt nicht abgebaut. Du kannst es trotzdem aus Openship löschen — der Datensatz verschwindet jetzt, und übrige Ressourcen werden automatisch zurückgeholt, sobald der Server erreichbar ist.",
+    "forceModalBody": "Die Runtime war nicht erreichbar (oder schlug weiter fehl), daher wurde dieses Projekt nicht abgebaut. Du kannst es trotzdem aus OpenShip löschen — der Datensatz verschwindet jetzt, und übrige Ressourcen werden automatisch zurückgeholt, sobald der Server erreichbar ist.",
     "forceModalConfirm": "Aus dem Speicher löschen",
     "forceModalCancel": "Abbrechen",
     "unlinked": "Verknüpfung zu {projects} entfernt – dort neu deployen, um es anzuwenden.",
@@ -202,7 +202,7 @@
     "subtextNoSource": "Verbinde eine Quelle, um dein erstes Deployment einzurichten."
   },
   "overview": {
-    "platformCloud": "Openship Cloud",
+    "platformCloud": "OpenShip Cloud",
     "platformServer": "Selbst gehostet (Server)",
     "platformLocal": "Selbst gehostet (Lokal)",
     "modeStatic": "Statische Website",
@@ -354,7 +354,7 @@
     "failedCreateService": "Dienst konnte nicht erstellt werden",
     "requestFailed": "Anfrage fehlgeschlagen",
     "application": "Anwendung",
-    "applicationHint": "Wird über die Deployments dieses Projekts verwaltet.",
+    "applicationHint": "Umgebung und Bereitstellungen dieser App verwalten.",
     "companionsTitle": "Weitere App oder Dienst hinzufügen"
   },
   "serviceStatus": {
@@ -442,7 +442,7 @@
     "modePublic": "Öffentlich",
     "modePublicDesc": "Verwendet den veröffentlichten host:port. Funktioniert überall; der Datenbank-Port muss offen sein.",
     "envKeyLabel": "Umgebungsvariable",
-    "redeployHint": "Wenn das Ziel bereits bereitgestellt ist, versucht Openship sofort, es neu bereitzustellen. Speichere zuerst andere Umgebungsänderungen.",
+    "redeployHint": "Wenn das Ziel bereits bereitgestellt ist, versucht OpenShip sofort, es neu bereitzustellen. Speichere zuerst andere Umgebungsänderungen.",
     "cancel": "Abbrechen",
     "connect": "Verbinden",
     "connected": "Verbindung gespeichert. Prüfe den Deployment-Status des Ziels.",
@@ -558,7 +558,7 @@
     "watchOffTitle": "Die Container-Zustandsüberwachung ist aus",
     "watchOffBody": "Es werden keine Vorfälle erfasst und keine Benachrichtigungen gesendet – eine leere Liste bedeutet hier also nicht, dass alles in Ordnung ist.",
     "watchOffCta": "Unter Jobs einschalten",
-    "serverDownTitle": "Openship erreicht den Server dieses Projekts nicht",
+    "serverDownTitle": "OpenShip erreicht den Server dieses Projekts nicht",
     "serverDownBody": "Auf dieser Maschine wurde seit {duration} nichts beobachtet, die Vorfälle unten können also veraltet sein.",
     "loadFailed": "Vorfälle konnten nicht geladen werden.",
     "ongoing": "läuft seit {duration}",

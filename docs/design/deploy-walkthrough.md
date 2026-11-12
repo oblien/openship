@@ -7,6 +7,13 @@ light and dark screenshot paths, accessible descriptions and guide links togethe
 the same grid rows as the copy, so the line stays connected as text wraps without
 JavaScript measurements.
 
+Each left-hand step uses `FeatureIllustration` from `@repo/ui/illustrations`
+beside its sentence-case label. Keep the illustration name with the step data:
+Git authentication, actions, deployment destinations, domains and monitoring.
+Reuse the shared marketing palette and size the art at 70 × 56 px on desktop,
+54 × 44 px on phones. The numbered rail remains separate from the artwork and
+aligns with the center of that introductory row.
+
 On desktop, the left column scrolls normally and the right screenshot stays
 sticky. Steps use a compact, bounded viewport-relative height with room at the
 start and end for the larger preview. An `IntersectionObserver` selects the step

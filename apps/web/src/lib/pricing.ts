@@ -1,7 +1,8 @@
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { cache } from "react";
-import { CLOUD_API_URL, pricingUi, resolveStandard } from "@repo/core";
+import { CLOUD_API_URL, pricingUi, resolveStandard, type AppLocale } from "@repo/core";
 import { BillingPlansSchema, parseInput, type BillingPlans } from "@repo/contracts";
+import type { Copy } from "@/i18n/copy";
 
 export const UI = pricingUi("en");
 export const STANDARD = resolveStandard("en");
@@ -19,10 +20,10 @@ export interface CloudPricing {
 /** A single public catalog feeds checkout, the dashboard, and marketing.
  * React cache shares a snapshot between page and JSON-LD in each render.
  * A failed or older API never falls back to unrelated, hardcoded Cloud prices. */
-export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
+export const getCloudPricing = cache(async (locale: AppLocale = "en"): Promise<CloudPricing> => {
   try {
     const response = await fetch(
-      `${CLOUD_API_URL.replace(/\/$/, "")}/api/billing/plans?locale=en`,
+      `${CLOUD_API_URL.replace(/\/$/, "")}/api/billing/plans?locale=${locale}`,
       {
         next: { revalidate: 60 },
         signal: AbortSignal.timeout(10_000),
@@ -72,11 +73,13 @@ export function chooseLabel(name: string): string {
   return UI.ctaChoose.replace(/\{name\}/g, name);
 }
 
-export function cloudPlanSummary(plan: CloudPlan): string {
+export function cloudPlanSummary(plan: CloudPlan, copy: Copy): string {
   const projects = plan.limits.maxProjects;
   return projects == null
-    ? "Shared CPU, RAM and storage for your projects."
-    : `Shared CPU, RAM and storage for up to ${projects.toLocaleString("en")} ${projects === 1 ? "project" : "projects"}.`;
+    ? copy("Shared CPU, RAM and storage for your projects.")
+    : projects === 1
+      ? copy("Shared CPU, RAM and storage for up to one project.")
+      : copy("Shared CPU, RAM and storage for up to {count} projects.", { count: projects });
 }
 
 export function priceParts(plan: CloudPlan, interval: "monthly" | "annual" = "monthly") {

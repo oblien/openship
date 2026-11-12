@@ -380,7 +380,7 @@ export function CredentialForm({
       )}
       <p className="text-xs text-muted-foreground">
         {method === "oauth"
-          ? "Choose the account and projects Openship can access in the provider's authorization window."
+          ? "Choose the account and projects OpenShip can access in the provider's authorization window."
           : copy.verifyNote}
       </p>
       {actionsContainer === undefined

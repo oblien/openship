@@ -21,7 +21,7 @@ export function renderMigrationOgImage(slug?: string) {
   const source = slug ? getMigrationSource(slug) : undefined;
   if (slug && !source) notFound();
   return renderOgImage({
-    eyebrow: "Move to Openship",
+    eyebrow: "Move to OpenShip",
     title: source ? `Move from ${source.name}.` : "Your stack. A new home.",
     subtitle: source
       ? source.summary

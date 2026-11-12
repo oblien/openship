@@ -23,7 +23,7 @@ const FONT_SANS = "'Gellix', 'SF Arabic', system-ui, -apple-system, sans-serif";
 export const metadata: Metadata = {
   // Docs pages set only relative OG/canonical URLs; this resolves them.
   metadataBase: new URL(SITE_URL),
-  title: { default: "Openship Docs", template: "%s – Openship" },
+  title: { default: "OpenShip Docs", template: "%s – OpenShip" },
   robots: { index: true, follow: true },
 };
 
@@ -34,11 +34,7 @@ export const viewport: Viewport = {
 
 export default function DocsRootLayout({ children }: { children: ReactNode }) {
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      style={{ "--font-sans": FONT_SANS } as CSSProperties}
-    >
+    <html lang="en" suppressHydrationWarning style={{ "--font-sans": FONT_SANS } as CSSProperties}>
       <head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
