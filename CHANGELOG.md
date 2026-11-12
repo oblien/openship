@@ -679,6 +679,10 @@ Actions scheduling, and managed infrastructure updates.
   cleanup updates storage measurements without changing the project's configuration
   revision. Real configuration edits still invalidate previously reviewed changes.
 
+- **Preserve project environment secrets** — round trips through API and CLI
+  keep masked values and secrecy flags intact. Reject a stale save under the
+  existing configuration lock so it cannot undo a concurrent credential rotation.
+
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
   guidance, and a dedicated social preview. Label the dashboard affiliate entry
