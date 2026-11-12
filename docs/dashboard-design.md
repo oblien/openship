@@ -997,12 +997,25 @@ the selected destination's validation and transfer review before enabling Migrat
 
 Platform imports share three steps: Connect, Select services, and Review & import. Show
 provider marks through `AppLogo` and service marks through `ServiceIcon`. Reuse the Connections
-form for authorization and tokens, with an explicit access test and retry. Keep service cards
+form for authorization and tokens, with an explicit access test and retry. The provider import
+heading and Change source action belong in one compact `bg-card p-5` sidebar
+throughout setup and review. Use the standard 340px right column across these steps, with
+the provider mark beside the title. Keep setup brief: the token action stays visible, while
+connection access, data-transfer guidance and secondary links sit under Import details.
+Keep the current step's primary action in this sidebar too: connect or save the connection,
+test access, choose services, check the import, then start it. The shared connection form
+owns submission and validation even when its native form buttons appear in the sidebar.
+API token inputs show the
+entered text with autocomplete, capitalization and correction disabled; they retain secret
+storage and never prefill saved token values. Keep service cards
 compact; expand configuration for missing secrets and review blockers. The final review lists
 what will be copied, kept external or started empty, and collects any required source-pause
 acknowledgments. Changing the source, destination or selections invalidates that review.
 Use the shared destination picker and durable migration progress; never add a preview-only
 import path or claim that metadata access verifies a data transfer.
+Stopping an import is a durable request. Keep Stopping visible across refreshes until the
+worker finishes transfer cancellation and recovery. Retain saved projects and copied data;
+never show completion merely because the cancellation request was accepted.
 
 Catalog brand artwork is bundled in both dashboard and website public assets and mapped in
 the shared `AppLogo` renderer. Preserve upstream attribution and keep setup behavior in

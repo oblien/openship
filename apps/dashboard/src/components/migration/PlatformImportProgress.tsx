@@ -17,6 +17,7 @@ export function PlatformImportProgress({
   run,
   progress,
   busy,
+  stopping = false,
   canConfirm,
   onConfirm,
   onStop,
@@ -25,6 +26,7 @@ export function PlatformImportProgress({
   run?: MigrationRun;
   progress: TransferProgress | null;
   busy: boolean;
+  stopping?: boolean;
   canConfirm: boolean;
   onConfirm: () => void;
   onStop: () => void;
@@ -40,12 +42,24 @@ export function PlatformImportProgress({
     );
   const tone = statusTone(run.status);
   const ready = run.status === "awaiting_cutover" || run.status === "succeeded";
+  const stopPending =
+    !importFinished(run.status) && !ready && (stopping || run.cancelRequested === true);
+  const canStop = ["queued", "adopting", "moving_data", "deploying", "verifying"].includes(
+    run.status,
+  );
+  const stopped = run.status === "rolled_back" && run.cancelRequested === true;
   const projects = Object.entries(run.importedProjects ?? {});
   const steps: Array<{ id: string; label: string; status: StepStatus }> = [
     {
       id: "import",
-      label: "Import services and data",
-      status: ready ? "done" : importFinished(run.status) ? "failed" : "active",
+      label: stopped ? "Import stopped" : "Import services and data",
+      status: stopped
+        ? "pending"
+        : ready
+          ? "done"
+          : importFinished(run.status)
+            ? "failed"
+            : "active",
     },
     {
       id: "verify",
@@ -59,7 +73,7 @@ export function PlatformImportProgress({
     },
   ];
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_310px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0 space-y-5">
         <section className="rounded-2xl bg-card p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -67,16 +81,24 @@ export function PlatformImportProgress({
             <span
               className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs ${tone.bg} ${tone.text}`}
             >
-              <Icon name={tone.Icon} className={`size-3.5 ${tone.spin ? "animate-spin" : ""}`} />
-              {t.migration.tab.status[run.status]}
+              <Icon
+                name={stopPending ? "spinner" : tone.Icon}
+                className={`size-3.5 ${tone.spin || stopPending ? "animate-spin" : ""}`}
+              />
+              {stopped ? "Stopped" : stopPending ? "Stopping…" : t.migration.tab.status[run.status]}
             </span>
           </div>
-          {run.errorMessage && (
+          {run.errorMessage && !stopped && (
             <p role="alert" className="mt-4 rounded-xl bg-danger-bg p-4 text-sm text-danger">
               {run.errorMessage}
             </p>
           )}
-          {progress && (
+          {stopPending && (
+            <p role="status" className="mt-4 text-sm text-muted-foreground">
+              Stop requested. Waiting for active transfers and deployment cleanup to finish.
+            </p>
+          )}
+          {progress && !stopPending && (
             <p role="status" className="mt-4 text-sm text-muted-foreground">
               {progress.task} · {formatBytes(progress.movedBytes)} copied
             </p>
@@ -135,6 +157,11 @@ export function PlatformImportProgress({
               another import.
             </p>
           )}
+          {stopped && (
+            <p className="mt-5 text-sm text-muted-foreground">
+              Import stopped. Copied data and saved projects were retained.
+            </p>
+          )}
         </section>
         {run.deploymentId && (
           <DeploymentTerminal
@@ -163,9 +190,9 @@ export function PlatformImportProgress({
             <Icon name="refresh" className="size-4" />
             Refresh status
           </Button>
-          {!importFinished(run.status) && !ready && (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={onStop}>
-              Stop import
+          {(canStop || stopPending) && (
+            <Button size="sm" variant="secondary" disabled={busy || stopPending} onClick={onStop}>
+              {stopPending ? "Stopping…" : "Stop import"}
             </Button>
           )}
         </div>

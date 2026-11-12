@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { normalizeCredentialSelector, type CredentialProvider } from "@repo/core";
 import { Icon } from "@repo/ui/icons";
 import { credentialsApi, type Credential } from "@/lib/api/credentials";
@@ -22,6 +23,7 @@ export function CredentialForm({
   onSaved,
   onBusyChange,
   submitLabel,
+  actionsContainer,
 }: {
   provider: CredentialProvider;
   existing?: Credential;
@@ -31,6 +33,8 @@ export function CredentialForm({
   onBusyChange?: (busy: boolean) => void;
   /** Contextual label; saving always uses the same provider verification. */
   submitLabel?: string;
+  /** Optional external footer; native form ownership keeps submission/validation shared. */
+  actionsContainer?: HTMLElement | null;
 }) {
   const { t } = useI18n();
   const copy = t.settings.credentials;
@@ -199,8 +203,44 @@ export function CredentialForm({
     }
   }
 
+  const cancelButton = (
+    <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
+      {t.settings.common.cancel}
+    </Button>
+  );
+  const submitButton = (
+    <Button type="submit" form={id} disabled={saving}>
+      {saving && <Icon name="spinner" className="size-4 animate-spin" />}
+      {method === "oauth"
+        ? `Connect ${provider.label}`
+        : (submitLabel ?? (existing ? copy.save : copy.connect))}
+    </Button>
+  );
+  const actions = (
+    <div
+      className={
+        actionsContainer === undefined
+          ? "flex flex-wrap items-center justify-end gap-2"
+          : "grid gap-2"
+      }
+    >
+      {actionsContainer === undefined ? (
+        <>
+          {cancelButton}
+          {submitButton}
+        </>
+      ) : (
+        <>
+          {submitButton}
+          {cancelButton}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <form
+      id={id}
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
@@ -278,6 +318,7 @@ export function CredentialForm({
           const fieldLoc = pLoc?.fields?.[field.key];
           const fieldLabel = fieldLoc?.label ?? field.label;
           const fieldHelp = fieldLoc?.help ?? field.help;
+          const inputType = field.inputType ?? (field.type === "secret" ? "password" : "text");
           return (
             <div key={field.key}>
               <label
@@ -302,7 +343,7 @@ export function CredentialForm({
                   id={`${id}-${field.key}`}
                   variant="filled"
                   disabled={saving}
-                  type={field.type === "secret" ? "password" : "text"}
+                  type={inputType}
                   value={values[field.key] ?? ""}
                   required={
                     field.required && !(existing && field.type === "secret" && !selectorChanged)
@@ -315,7 +356,9 @@ export function CredentialForm({
                       ? copy.secretKeptPlaceholder
                       : (field.placeholder ?? "")
                   }
-                  autoComplete={field.type === "secret" ? "new-password" : "off"}
+                  autoComplete={inputType === "password" ? "new-password" : "off"}
+                  autoCapitalize={field.type === "secret" ? "none" : undefined}
+                  autoCorrect={field.type === "secret" ? "off" : undefined}
                   spellCheck={field.type === "secret" ? false : undefined}
                   aria-describedby={field.help ? `${id}-${field.key}-help` : undefined}
                   className={field.type === "secret" ? "font-mono" : undefined}
@@ -340,17 +383,9 @@ export function CredentialForm({
           ? "Choose the account and projects Openship can access in the provider's authorization window."
           : copy.verifyNote}
       </p>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
-          {t.settings.common.cancel}
-        </Button>
-        <Button type="submit" disabled={saving}>
-          {saving && <Icon name="spinner" className="size-4 animate-spin" />}
-          {method === "oauth"
-            ? `Connect ${provider.label}`
-            : (submitLabel ?? (existing ? copy.save : copy.connect))}
-        </Button>
-      </div>
+      {actionsContainer === undefined
+        ? actions
+        : actionsContainer && createPortal(actions, actionsContainer)}
     </form>
   );
 }

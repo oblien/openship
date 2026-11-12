@@ -125,11 +125,16 @@ async function fill(input: HTMLInputElement, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-async function render(provider: "railway" | "vercel" = "railway") {
+async function render(provider: "railway" | "vercel" = "railway", initialRunId?: string) {
   await act(async () =>
     root.render(
       <I18nProvider>
-        <PlatformMigrationWizard provider={provider} initialTargetId="server-a" onBack={() => {}} />
+        <PlatformMigrationWizard
+          provider={provider}
+          initialRunId={initialRunId}
+          initialTargetId="server-a"
+          onBack={() => {}}
+        />
       </I18nProvider>,
     ),
   );
@@ -177,9 +182,76 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("platform import flow", () => {
+  it("keeps an accepted stop visible through stale polls until the worker finishes", async () => {
+    vi.useFakeTimers();
+    let current = {
+      id: "run",
+      status: "moving_data",
+      cancelRequested: false,
+      projectName: "Production",
+      logs: "",
+    };
+    h.getMigration.mockImplementation(async () => ({ run: current }));
+    h.cancel.mockResolvedValue({ success: true });
+    await render("railway", "run");
+    await click("Stop import");
+    expect(h.cancel).toHaveBeenCalledWith("run");
+    expect(button("Stopping…").disabled).toBe(true);
+    expect(host.textContent).toContain("Stop requested");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(button("Stopping…").disabled).toBe(true);
+    expect(h.cancel).toHaveBeenCalledTimes(1);
+    current = { ...current, status: "rolled_back", cancelRequested: true };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(host.textContent).toContain("Copied data and saved projects were retained");
+    expect(host.textContent).not.toContain("Stop requested");
+    expect(
+      [...host.querySelectorAll("button")].some(
+        (item) => item.textContent?.trim() === "Stop import",
+      ),
+    ).toBe(false);
+  });
+
+  it("restores a pending stop from the server when the import is reopened", async () => {
+    h.getMigration.mockResolvedValue({
+      run: {
+        id: "run",
+        status: "deploying",
+        cancelRequested: true,
+        projectName: "Production",
+        logs: "",
+      },
+    });
+    await render("railway", "run");
+    expect(host.textContent).toContain("Stop requested");
+    expect(button("Stopping…").disabled).toBe(true);
+    expect(h.cancel).not.toHaveBeenCalled();
+  });
+
+  it("allows retry when a stop request is rejected", async () => {
+    h.getMigration.mockResolvedValue({
+      run: { id: "run", status: "moving_data", projectName: "Production", logs: "" },
+    });
+    h.cancel
+      .mockRejectedValueOnce(new Error("Stop request unavailable"))
+      .mockResolvedValueOnce({ success: true });
+    await render("railway", "run");
+    await click("Stop import");
+    expect(host.textContent).toContain("Stop request unavailable");
+    expect(button("Stop import").disabled).toBe(false);
+    await click("Stop import");
+    expect(h.cancel).toHaveBeenCalledTimes(2);
+    expect(button("Stopping…").disabled).toBe(true);
+  });
+
   it("accepts OAuth completion only from its own popup and unlocks the next step", async () => {
     h.list.mockResolvedValueOnce({ data: [] });
     h.providers.mockResolvedValue({
@@ -234,7 +306,13 @@ describe("platform import flow", () => {
     h.create.mockResolvedValue({ data: { ...credential, provider: "vercel" } });
     await render("vercel");
     expect(host.textContent).toContain("Connect Vercel");
-    await fill(host.querySelector<HTMLInputElement>('input[type="password"]')!, "test-token");
+    const token = host.querySelector<HTMLInputElement>('input[id$="-apiToken"]')!;
+    expect(token.type).toBe("text");
+    expect(token.autocomplete).toBe("off");
+    expect(button("Test & connect").form).toBe(token.form);
+    await click("Test & connect");
+    expect(h.create).not.toHaveBeenCalled(); // External submit still validates required fields.
+    await fill(token, "test-token");
     await click("Test & connect");
     expect(h.create).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "vercel", values: { apiToken: "test-token" } }),

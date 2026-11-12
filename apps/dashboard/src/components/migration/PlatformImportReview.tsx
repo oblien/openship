@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { PlatformMigrationPlan } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { AppLogo } from "@/components/AppLogo";
@@ -10,6 +11,7 @@ import { InstallStepper } from "@/components/deploy/InstallStepper";
 import { importDataLabel, type ImportChoice } from "./platform-import-model";
 
 export function PlatformImportReview({
+  sidebarHeader,
   plan,
   choices,
   targetName,
@@ -21,6 +23,7 @@ export function PlatformImportReview({
   onEdit,
   onStart,
 }: {
+  sidebarHeader?: ReactNode;
   plan: PlatformMigrationPlan;
   choices: Record<string, ImportChoice>;
   targetName: string;
@@ -34,7 +37,7 @@ export function PlatformImportReview({
 }) {
   const imports = plan.services.filter((s) => choices[s.id]?.data !== "external");
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_310px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-5">
         {plan.warnings.map((warning) => (
           <p key={warning} className="rounded-xl bg-warning-bg p-4 text-sm text-warning">
@@ -145,8 +148,9 @@ export function PlatformImportReview({
             </p>
           ))}
       </div>
-      <aside className="space-y-4 lg:sticky lg:top-6">
-        <section className="space-y-5 rounded-2xl bg-card p-5">
+      <aside className="space-y-5 rounded-2xl bg-card p-5 lg:sticky lg:top-6">
+        {sidebarHeader}
+        <section className="space-y-5">
           <div>
             <h3 className="font-semibold">Review complete</h3>
             <p className="mt-1 text-sm text-muted-foreground">

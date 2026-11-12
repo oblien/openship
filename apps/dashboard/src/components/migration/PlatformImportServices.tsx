@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type {
   PlatformDiscovery,
   PlatformImportService,
@@ -21,6 +21,7 @@ import {
 } from "./platform-import-model";
 
 export function PlatformImportServices({
+  sidebarHeader,
   discovery,
   choices,
   plan,
@@ -32,6 +33,7 @@ export function PlatformImportServices({
   onTargetReady,
   onReview,
 }: {
+  sidebarHeader?: ReactNode;
   discovery: PlatformDiscovery;
   choices: Record<string, ImportChoice>;
   plan?: PlatformMigrationPlan;
@@ -55,7 +57,7 @@ export function PlatformImportServices({
     `${s.name} ${s.image ?? ""} ${s.repository ?? ""}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_310px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-2">
           <div>
@@ -109,8 +111,9 @@ export function PlatformImportServices({
           </p>
         )}
       </div>
-      <aside className="space-y-4 lg:sticky lg:top-6">
-        <div className="space-y-5 rounded-2xl bg-card p-5">
+      <aside className="space-y-5 rounded-2xl bg-card p-5 lg:sticky lg:top-6">
+        {sidebarHeader}
+        <div className="space-y-5">
           <h3 className="font-semibold">Import destination</h3>
           <ServerSelector
             forDeployment

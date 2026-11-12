@@ -40,6 +40,8 @@ export interface CredentialField {
   readonly key: string;
   readonly label: string;
   readonly type: CredentialFieldType;
+  /** Input appearance only; secret fields still use encrypted storage. */
+  readonly inputType?: "text" | "password";
   readonly required?: boolean;
   readonly placeholder?: string;
   /** One line under the input. Keep it about what to paste, not marketing. */
@@ -105,6 +107,7 @@ export const CREDENTIAL_PROVIDERS = [
         key: "apiToken",
         label: "API token",
         type: "secret",
+        inputType: "text",
         required: true,
         help: "Use a workspace token, or a project token for one environment.",
       },
@@ -140,6 +143,7 @@ export const CREDENTIAL_PROVIDERS = [
         key: "apiToken",
         label: "Access token",
         type: "secret",
+        inputType: "text",
         required: true,
         help: "Create a token with access to the projects you want to import.",
       },
@@ -194,6 +198,7 @@ export const CREDENTIAL_PROVIDERS = [
         key: "apiToken",
         label: "API token",
         type: "secret",
+        inputType: "text",
         required: true,
         placeholder: "cfut_…",
         help: "A token with Zone:Read and DNS:Edit on the zones you want Openship to manage. Create it under My Profile → API Tokens.",
@@ -213,6 +218,7 @@ export const CREDENTIAL_PROVIDERS = [
         key: "apiToken",
         label: "API token",
         type: "secret",
+        inputType: "text",
         required: true,
         placeholder: "dop_v1_…",
         help: "A custom-scoped token with domain read, create, update and delete. Create it under API → Tokens.",

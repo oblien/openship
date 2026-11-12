@@ -51,6 +51,7 @@ export const CredentialProviderSchema = Type.Object({
       key: Type.String(),
       label: Type.String(),
       type: Type.Union([Type.Literal("text"), Type.Literal("secret"), Type.Literal("select")]),
+      inputType: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("password")])),
       required: Type.Optional(Type.Boolean()),
       placeholder: Type.Optional(Type.String()),
       help: Type.Optional(Type.String()),

@@ -53,6 +53,7 @@ export function PlatformMigrationWizard({
   const [connectionId, setConnectionId] = useState("");
   const [form, setForm] = useState<"add" | Credential | null>(null);
   const [credentialBusy, setCredentialBusy] = useState(false);
+  const [connectionActions, setConnectionActions] = useState<HTMLDivElement | null>(null);
   const [connectionState, setConnectionState] = useState<ReadState>("loading");
   const [connectionRetry, setConnectionRetry] = useState(0);
   const [accessState, setAccessState] = useState<ReadState>("idle");
@@ -70,6 +71,7 @@ export function PlatformMigrationWizard({
   const [writesPaused, setWritesPaused] = useState(false);
   const [workersPaused, setWorkersPaused] = useState(false);
   const [runId, setRunId] = useState(initialRunId);
+  const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
   const [run, setRun] = useState<MigrationRun>();
   const [confirmation, setConfirmation] = useState("");
   const [progress, setProgress] = useState<TransferProgress | null>(null);
@@ -342,27 +344,37 @@ export function PlatformMigrationWizard({
     }
   };
 
+  const header = (
+    <div className={runId ? "flex flex-wrap items-center justify-between gap-4" : "space-y-3"}>
+      <div className="flex min-w-0 items-center gap-3">
+        <AppLogo slug={provider} className={runId ? "size-8 shrink-0" : "size-10 shrink-0"} />
+        <div className="min-w-0">
+          <h2 className={runId ? "truncate text-xl font-semibold" : "text-lg font-semibold"}>
+            {run ? run.projectName : `Import from ${help.name}`}
+          </h2>
+          {runId && (
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Track your import and finish the move.
+            </p>
+          )}
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={runId ? undefined : "-ms-2 text-xs text-muted-foreground"}
+        disabled={busy}
+        onClick={onBack}
+      >
+        <Icon name="arrow-left" className="size-4" />
+        {runId ? "Back" : "Change source"}
+      </Button>
+    </div>
+  );
+
   return (
     <div className="w-full space-y-6 py-2">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <AppLogo slug={provider} className="size-8 shrink-0" />
-          <div className="min-w-0">
-            <h2 className="truncate text-xl font-semibold">
-              {run ? run.projectName : `Import from ${help.name}`}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {runId
-                ? "Track your import and finish the move."
-                : "Bring your apps and data to Openship."}
-            </p>
-          </div>
-        </div>
-        <Button variant="ghost" size="sm" disabled={busy} onClick={onBack}>
-          <Icon name="arrow-left" className="size-4" />
-          {runId ? "Back" : "Change source"}
-        </Button>
-      </div>
+      {runId && header}
       {!runId && (
         <nav aria-label="Import steps" className="border-b border-border/50 pb-4">
           <ol className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:gap-x-8">
@@ -418,6 +430,7 @@ export function PlatformMigrationWizard({
           run={run}
           progress={progress}
           busy={busy}
+          stopping={stoppingRunId === runId}
           canConfirm={!!confirmation}
           onConfirm={() =>
             void action("Finishing import…", async () => {
@@ -427,7 +440,13 @@ export function PlatformMigrationWizard({
           }
           onStop={() =>
             void action("Stopping import…", async () => {
-              await dockerMigrationApi.cancel(runId);
+              setStoppingRunId(runId);
+              try {
+                await dockerMigrationApi.cancel(runId);
+              } catch (error) {
+                if (alive.current) setStoppingRunId(null);
+                throw error;
+              }
               if (alive.current) setStatusRetry((value) => value + 1);
             })
           }
@@ -435,6 +454,7 @@ export function PlatformMigrationWizard({
         />
       ) : step === "services" && discovery ? (
         <PlatformImportServices
+          sidebarHeader={header}
           discovery={discovery}
           choices={choices}
           plan={plan}
@@ -457,6 +477,7 @@ export function PlatformMigrationWizard({
         />
       ) : step === "review" && plan ? (
         <PlatformImportReview
+          sidebarHeader={header}
           plan={plan}
           choices={choices}
           targetName={targetName}
@@ -469,7 +490,7 @@ export function PlatformMigrationWizard({
           onStart={() => void start()}
         />
       ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <section className="space-y-6 rounded-2xl bg-card p-5 sm:p-6">
             <div>
               <h3 className="font-semibold">
@@ -494,6 +515,7 @@ export function PlatformMigrationWizard({
                 initialName={`${help.name} connection`}
                 submitLabel={typeof form === "string" ? "Test & connect" : "Test & save changes"}
                 onBusyChange={setCredentialBusy}
+                actionsContainer={connectionActions}
                 onCancel={() => setForm(null)}
                 onSaved={(row) => {
                   setConnections((current) => [
@@ -588,15 +610,6 @@ export function PlatformMigrationWizard({
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 ps-6">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy || reading}
-                        onClick={() => void testConnection()}
-                      >
-                        <Icon name="refresh" className="size-3.5" />
-                        Test connection
-                      </Button>
                       {active && (
                         <Button
                           variant="ghost"
@@ -675,26 +688,6 @@ export function PlatformMigrationWizard({
                     another account.
                   </p>
                 )}
-                <div className="flex justify-end">
-                  <Button
-                    disabled={
-                      busy || reading || accessState !== "ready" || !projectId || !environmentId
-                    }
-                    onClick={() => void discover()}
-                  >
-                    {busyLabel ? (
-                      <>
-                        <Icon name="spinner" className="size-4 animate-spin" />
-                        {busyLabel}
-                      </>
-                    ) : (
-                      <>
-                        Choose services
-                        <Icon name="arrow-right" className="size-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
               </>
             )}
             {connectionState === "ready" && !catalog && (
@@ -703,43 +696,92 @@ export function PlatformMigrationWizard({
               </p>
             )}
           </section>
-          <aside className="space-y-6 px-1 py-2">
-            <div>
-              <h3 className="text-sm font-medium">Connection access</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{help.access}</p>
-              <a
-                href={help.tokenUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-2 text-sm font-medium hover:underline"
-              >
+          <aside className="space-y-5 rounded-2xl bg-card p-5 lg:sticky lg:top-6">
+            {header}
+            {connectionState === "ready" &&
+              catalog &&
+              (form ? (
+                <div ref={setConnectionActions} />
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    className="w-full"
+                    disabled={
+                      busy || reading || accessState !== "ready" || !projectId || !environmentId
+                    }
+                    onClick={() => void discover()}
+                  >
+                    {busy && !reading ? (
+                      <Icon name="spinner" className="size-4 animate-spin" />
+                    ) : (
+                      <Icon name="arrow-right" className="size-4" />
+                    )}
+                    Choose services
+                  </Button>
+                  {connectionId && (
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      disabled={busy || reading}
+                      onClick={() => void testConnection()}
+                    >
+                      <Icon
+                        name={busy && reading ? "spinner" : "refresh"}
+                        className={busy && reading ? "size-4 animate-spin" : "size-4"}
+                      />
+                      {busy && reading ? busyLabel : "Test connection"}
+                    </Button>
+                  )}
+                </div>
+              ))}
+            <Button asChild variant="secondary" size="sm" className="w-full justify-between">
+              <a href={help.tokenUrl} target="_blank" rel="noopener noreferrer">
                 Create an API token
                 <Icon name="external-link" className="size-3.5" />
               </a>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium">Moving data</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{help.data}</p>
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-              <Link
-                href="/settings?tab=connections"
-                target="_blank"
-                className="inline-flex items-center gap-1.5 hover:text-foreground"
-              >
-                Manage connections
-                <Icon name="external-link" className="size-3.5" />
-              </Link>
-              <a
-                href={help.docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 hover:text-foreground"
-              >
-                Provider guide
-                <Icon name="external-link" className="size-3.5" />
-              </a>
-            </div>
+            </Button>
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                Import details
+                <Icon
+                  name="chevron-down"
+                  className="size-3.5 transition-transform group-open:rotate-180"
+                />
+              </summary>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <h3 className="text-xs font-medium">Connection access</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    {help.access}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-xs font-medium">Moving data</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    {help.data}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                  <Link
+                    href="/settings?tab=connections"
+                    target="_blank"
+                    className="inline-flex items-center gap-1.5 hover:text-foreground"
+                  >
+                    Manage connections
+                    <Icon name="external-link" className="size-3.5" />
+                  </Link>
+                  <a
+                    href={help.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 hover:text-foreground"
+                  >
+                    Provider guide
+                    <Icon name="external-link" className="size-3.5" />
+                  </a>
+                </div>
+              </div>
+            </details>
           </aside>
         </div>
       )}
