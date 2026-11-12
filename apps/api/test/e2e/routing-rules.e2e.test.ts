@@ -1013,8 +1013,9 @@ http {
         pathPrefix?: string | null;
       }
     >,
+    targetPort = port,
   ): Promise<void> {
-    const response = await ask(port, "/rules", "management.test", {
+    const response = await ask(targetPort, "/rules", "management.test", {
       method: "POST",
       body: JSON.stringify({ host, rules }),
     });
@@ -1072,25 +1073,29 @@ http {
   });
 
   it("still publishes policies while a worker has the previous rules library loaded", async () => {
+    // Earlier route-update tests gracefully reload the shared edge. Their old
+    // and new workers can briefly overlap, so a worker-local library mutation
+    // must use a fresh edge whose single worker is stable across these requests.
+    const legacyPort = await bootAll();
     await pushRules("rules.test", [
       { pathPrefix: null, spec: { access: { methods: ["GET"] } } },
       {
         pathPrefix: "/virtual",
         spec: { response: normalizeEdgeResponse({ body: "new worker response" }) },
       },
-    ]);
-    await ask(port, "/response-legacy-worker", "management.test", { method: "POST" });
+    ], legacyPort);
+    await ask(legacyPort, "/response-legacy-worker", "management.test", { method: "POST" });
     try {
       // A new worker may already have published a response into shared memory.
       // This worker must still enforce its policies and serve ordinary traffic.
-      const ordinary = await ask(port, "/virtual", "rules.test");
+      const ordinary = await ask(legacyPort, "/virtual", "rules.test");
       expect(ordinary.status).toBe(200);
       expect(ordinary.body).not.toBe("new worker response");
-      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
-      await pushRules("rules.test", [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }]);
-      const capability = await ask(port, "/rules/capabilities", "management.test");
+      expect((await ask(legacyPort, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
+      await pushRules("rules.test", [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }], legacyPort);
+      const capability = await ask(legacyPort, "/rules/capabilities", "management.test");
       expect(JSON.parse(capability.body).staticResponses).toBe(false);
-      const response = await ask(port, "/rules", "management.test", {
+      const response = await ask(legacyPort, "/rules", "management.test", {
         method: "POST",
         body: JSON.stringify({
           host: "rules.test",
@@ -1103,9 +1108,9 @@ http {
         }),
       });
       expect(response.status).toBe(409);
-      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
+      expect((await ask(legacyPort, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
     } finally {
-      await ask(port, "/response-legacy-worker", "management.test", { method: "DELETE" });
+      await ask(legacyPort, "/response-legacy-worker", "management.test", { method: "DELETE" });
     }
   });
 
