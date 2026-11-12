@@ -519,7 +519,7 @@
     "accountsTitle": "Comptes, domaines et alias",
     "accountsDesc": "Boîtes aux lettres (avec les hachages de mots de passe), domaines et alias — la base de données vmail.",
     "messageTitle": "Données des messages des boîtes aux lettres",
-    "messageDesc": "Chaque e-mail stocké (les maildirs /var/vmail). Peut être volumineux.",
+    "messageDesc": "Messages, dossiers, file d’attente et quarantaine. La livraison et IMAP sont suspendus pendant la copie.",
     "keysTitle": "Clés DKIM et secrets",
     "keysDesc": "Clés DKIM + configuration + mail-state.json. Maintient le DKIM valide à la restauration — mais l'archive contient alors des clés privées et des secrets.",
     "keysWarning": "La sauvegarde contiendra des hachages de mots de passe, des clés privées DKIM et des secrets en clair. Gardez la destination privée.",

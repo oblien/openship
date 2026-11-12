@@ -14,3 +14,8 @@ export function withBackupRunLock<T>(runId: string, work: () => Promise<T>): Pro
 export function withBackupDestinationLock<T>(destinationId: string, work: () => Promise<T>): Promise<T> {
   return createProvisionLock(`backup-destination:${destinationId}`).run(work);
 }
+
+/** Capture and restore must never independently stop/resume the same mail writers. */
+export function withMailBackupLock<T>(serverId: string, work: () => Promise<T>): Promise<T> {
+  return createProvisionLock(`mail-backup:${serverId}`).run(work);
+}

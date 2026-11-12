@@ -21,6 +21,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
+import { validateMailDomain } from "./mail-domain";
 import type { CommandExecutor, SystemLogCallback, SystemLog } from "@repo/adapters";
 import { checkMailHealth, requiresMailComponent } from "./mail-health.service";
 import {
@@ -750,7 +751,7 @@ export async function stepDkimKeys(
   log(6, "info", "Retrieving DKIM keys...");
   let rawOutput: string;
   try {
-    rawOutput = await exec.exec(`${amavisBin} showkeys 2>&1`);
+    rawOutput = await exec.exec(`${amavisBin} showkeys ${sq(domain)} 2>&1`);
   } catch (err) {
     observeCaughtError(err, "platform/engine/modules/mail/mail.service");
     return { stepId: 6, success: false, message: `Failed to retrieve DKIM keys: ${errMsg(err)}` };
@@ -893,7 +894,10 @@ export async function stepDkimKeys(
 export async function provisionDomainDkim(
   exec: CommandExecutor,
   newDomain: string,
+  options: { reload?: boolean } = {},
 ): Promise<string> {
+  validateMailDomain(newDomain);
+  newDomain = newDomain.trim().toLowerCase();
   // ── Step 1: resolve where amavis lives + which binary it ships ─────────
   const { bin, run, conf, flavor } = await resolveAmavis(exec);
   const { hostFiles, engineExec } = await resolveMailMutationAccess(exec, flavor, [
@@ -921,7 +925,7 @@ export async function provisionDomainDkim(
   }
 
   // ── Step 4: reload amavis so the new key is signed with ──────────────
-  await engineExec.exec(mailUnitActionCommand(flavor, "amavis", "amavis", "restart")).catch((diagnosticFailure) => {
+  if (options.reload !== false) await engineExec.exec(mailUnitActionCommand(flavor, "amavis", "amavis", "restart")).catch((diagnosticFailure) => {
     observeCaughtError(diagnosticFailure, "platform/engine/modules/mail/mail.service");
   });
 

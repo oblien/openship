@@ -1,0 +1,6 @@
+FROM docker:28-dind
+RUN apk add --no-cache openssh-server sudo zstd \
+    && ssh-keygen -A && mkdir -p /root/.ssh && chmod 0700 /root/.ssh \
+    && passwd -d root
+# The test starts sshd after installing an ephemeral public key.
+ENV DOCKER_TLS_CERTDIR=""

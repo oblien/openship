@@ -519,7 +519,7 @@
     "accountsTitle": "Contas, domínios e aliases",
     "accountsDesc": "Caixas de correio (com hashes de senha), domínios e aliases — o banco de dados vmail.",
     "messageTitle": "Dados de mensagens das caixas de correio",
-    "messageDesc": "Cada e-mail armazenado (os maildirs em /var/vmail). Pode ser grande.",
+    "messageDesc": "Mensagens, pastas, fila e quarentena. A entrega e o IMAP ficam pausados durante a cópia.",
     "keysTitle": "Chaves DKIM e segredos",
     "keysDesc": "Chaves DKIM + config + mail-state.json. Mantém o DKIM válido na restauração — mas o arquivo então contém chaves privadas e segredos.",
     "keysWarning": "O backup conterá hashes de senha, chaves privadas DKIM e segredos em texto puro. Mantenha o destino privado.",

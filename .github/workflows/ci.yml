@@ -118,6 +118,7 @@ jobs:
               test/e2e/mail-fail2ban-db.e2e.test.ts
               test/e2e/mail-dovecot-security.e2e.test.ts
               test/e2e/mail-state-upgrade.e2e.test.ts
+              test/e2e/mail-backup-roundtrip.e2e.test.ts
           # Separate API processes and databases exercise both move directions,
           # recovery, authentication and Desktop relays on every PR. No live
           # server, provider account or outbound email is used.

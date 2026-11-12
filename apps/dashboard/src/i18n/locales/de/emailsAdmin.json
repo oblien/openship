@@ -519,7 +519,7 @@
     "accountsTitle": "Konten, Domains & Aliase",
     "accountsDesc": "Postfächer (mit Passwort-Hashes), Domains und Aliase – die vmail-Datenbank.",
     "messageTitle": "Postfach-Nachrichtendaten",
-    "messageDesc": "Jede gespeicherte E-Mail (die /var/vmail-Maildirs). Kann groß sein.",
+    "messageDesc": "Nachrichten, Ordner, Warteschlange und Quarantäne. Zustellung und IMAP pausieren während des Kopierens.",
     "keysTitle": "DKIM-Schlüssel & Geheimnisse",
     "keysDesc": "DKIM-Schlüssel + Konfiguration + mail-state.json. Hält DKIM bei der Wiederherstellung gültig – aber das Archiv enthält dann private Schlüssel und Geheimnisse.",
     "keysWarning": "Die Sicherung enthält Passwort-Hashes, private DKIM-Schlüssel und Geheimnisse im Klartext. Halte das Ziel privat.",

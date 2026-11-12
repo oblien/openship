@@ -1,0 +1,8 @@
+FROM openship-mail-backup-test:1602
+RUN apt-get update && apt-get install -y --no-install-recommends supervisor \
+    && rm -rf /var/lib/apt/lists/*
+# Different IDs prove that restore uses the destination's service users.
+RUN groupmod -g 2101 vmail && usermod -u 2101 -g 2101 vmail \
+    && groupmod -g 2301 amavis && usermod -u 2301 -g 2301 amavis
+COPY apps/api/test/e2e/fixtures/mail-backup/supervisord.conf /etc/supervisor/supervisord.conf
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
