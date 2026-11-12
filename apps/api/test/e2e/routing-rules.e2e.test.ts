@@ -1072,9 +1072,21 @@ http {
   });
 
   it("still publishes policies while a worker has the previous rules library loaded", async () => {
-    await pushRules("rules.test", []);
+    await pushRules("rules.test", [
+      { pathPrefix: null, spec: { access: { methods: ["GET"] } } },
+      {
+        pathPrefix: "/virtual",
+        spec: { response: normalizeEdgeResponse({ body: "new worker response" }) },
+      },
+    ]);
     await ask(port, "/response-legacy-worker", "management.test", { method: "POST" });
     try {
+      // A new worker may already have published a response into shared memory.
+      // This worker must still enforce its policies and serve ordinary traffic.
+      const ordinary = await ask(port, "/virtual", "rules.test");
+      expect(ordinary.status).toBe(200);
+      expect(ordinary.body).not.toBe("new worker response");
+      expect((await ask(port, "/virtual", "rules.test", { method: "POST" })).status).toBe(403);
       await pushRules("rules.test", [{ pathPrefix: null, spec: { access: { methods: ["GET"] } } }]);
       const capability = await ask(port, "/rules/capabilities", "management.test");
       expect(JSON.parse(capability.body).staticResponses).toBe(false);

@@ -146,7 +146,10 @@ if rl then
 end
 
 local response, method
-if response_revision and not lib.reserved_path(uri) then
+-- During a rolling script update this file can be new while require() still
+-- holds the previous worker library. Keep ordinary policy enforcement working.
+if response_revision and lib.static_responses == true and type(lib.response_for) == "function"
+    and not lib.reserved_path(uri) then
     -- Internal SPA/index rewrites must not turn an unrelated request into a
     -- virtual route. Decode the original path only on configured domains.
     local response_uri = ngx.unescape_uri(string.match(ngx.var.request_uri or uri, "^[^?]*"))

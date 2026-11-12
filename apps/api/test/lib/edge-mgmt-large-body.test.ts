@@ -47,7 +47,9 @@ describe("large edge management requests", () => {
     };
     let received = "";
     server = createServer(async (request, response) => {
-      for await (const chunk of request) received += chunk.toString();
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      received = Buffer.concat(chunks).toString("utf8");
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify({ ok: true, count: 4 }));
     });
