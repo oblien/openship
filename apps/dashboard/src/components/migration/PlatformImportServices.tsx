@@ -330,13 +330,13 @@ function ImportServiceCard({
             </div>
           )}
           {service.variables.length > 0 && (
-            <details className="rounded-xl bg-card p-4" open={missing.length > 0 || undefined}>
-              <summary className="cursor-pointer text-sm font-medium">
+            <section aria-labelledby={`${regionId}-environment`}>
+              <h4 id={`${regionId}-environment`} className="text-sm font-medium">
                 Environment{" "}
                 <span className="ms-1 font-normal text-muted-foreground">
                   {service.variables.length} variables
                 </span>
-              </summary>
+              </h4>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 Existing values transfer securely. Fill in missing secrets or override a value for
                 OpenShip.
@@ -388,7 +388,7 @@ function ImportServiceCard({
                   </div>
                 ))}
               </div>
-            </details>
+            </section>
           )}
           {service.domains.length > 0 && (
             <div className="space-y-2 text-xs">

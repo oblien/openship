@@ -69,6 +69,8 @@ website.
 
 - Improve platform imports, including Railway and Vercel setup, source and
   destination review, progress reporting and cancellation.
+- Keep migration environment fields visible while entering missing secrets, with
+  a plain section heading instead of a nested disclosure that collapses during editing.
 - Restore portable instance exports with their server credentials and workspace
   ownership. Normalize restored data for the destination schema and keep the
   instance import and server selection views consistent.

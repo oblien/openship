@@ -342,6 +342,29 @@ describe("platform import flow", () => {
     expect(button("Choose services").disabled).toBe(false);
   });
 
+  it("keeps missing-secret fields visible and focused while typing or clearing a value", async () => {
+    await render();
+    await click("Choose services");
+    const secret = host.querySelector<HTMLInputElement>('input[type="password"]')!;
+    await act(async () => secret.focus());
+    expect(button("Check import").disabled).toBe(true);
+    for (const value of ["f", "fixture-secret", "", "replacement-secret"]) {
+      await fill(secret, value);
+      expect(secret.closest("[hidden], details:not([open])")).toBeNull();
+      expect(document.activeElement).toBe(secret);
+      expect(secret.value).toBe(value);
+      expect(button("Check import").disabled).toBe(!value);
+    }
+    await click("Check import");
+    expect(h.review).toHaveBeenCalledWith(
+      expect.objectContaining({
+        services: expect.arrayContaining([
+          expect.objectContaining({ id: "web", env: { API_TOKEN: "replacement-secret" } }),
+        ]),
+      }),
+    );
+  });
+
   it("requires missing secrets, a separate review, and writer pause before starting exactly once", async () => {
     await render();
     await click("Choose services");

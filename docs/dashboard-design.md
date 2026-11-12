@@ -1040,7 +1040,9 @@ owns submission and validation even when its native form buttons appear in the s
 API token inputs show the
 entered text with autocomplete, capitalization and correction disabled; they retain secret
 storage and never prefill saved token values. Keep service cards
-compact; expand configuration for missing secrets and review blockers. The final review lists
+compact; expand configuration for missing secrets and review blockers. Within configuration,
+show environment fields directly under a heading; do not nest another disclosure or change
+their visibility when a missing value is supplied. The final review lists
 what will be copied, kept external or started empty, and collects any required source-pause
 acknowledgments. Changing the source, destination or selections invalidates that review.
 Use the shared destination picker and durable migration progress; never add a preview-only
