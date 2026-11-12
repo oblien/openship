@@ -92,7 +92,7 @@ vi.mock("@repo/db", () => ({
       listByProject: vi.fn(async () => []),
       remove: vi.fn(async () => undefined),
     },
-    project: { findById: mocks.findProjectById, update: vi.fn(async () => undefined) },
+    project: { findById: mocks.findProjectById, update: vi.fn(async () => undefined), getEnvMap: vi.fn(async () => ({})) },
   },
 }));
 

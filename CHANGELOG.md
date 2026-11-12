@@ -56,6 +56,8 @@ website.
 
 ### Domains
 
+- Configure static HTML, JSON or text responses on a domain through its normal
+  route editor, including maintenance and verification responses without an app container.
 - Avoid rewriting unchanged edge route files and repeating remote reads during a
   registration. Preserve exact file contents and permissions while retaining route
   validation, reloads, certificate activation and transactional rollback.
@@ -110,6 +112,8 @@ website.
 
 ### Dashboard, billing and website
 
+- Keep the shared destination dropdown available with one server or Cloud plan,
+  with Add server in its menu across deployment and migration flows.
 - Refresh deployment state after navigation and browser resume. Unify project
   settings and shared environment controls with the existing service views.
 - Keep plan overview, usage and payments together under Plans & billing, align

@@ -11,7 +11,15 @@ const { listByProject, broadcastServiceStatus } = vi.hoisted(() => ({
   broadcastServiceStatus: vi.fn(),
 }));
 vi.mock("../../../config/env", () => ({ env: { CLOUD_MODE: false } }));
-vi.mock("@repo/db", () => ({ repos: { service: { listByProject } } }));
+vi.mock("@repo/db", () => ({
+  repos: {
+    service: { listByProject },
+    project: { getEnvMap: async () => ({}) },
+  },
+}));
+vi.mock("../../../lib/encryption", () => ({
+  decryptEnvMap: (values: Record<string, string>) => values,
+}));
 vi.mock("../session-manager", () => ({
   broadcastServiceStatus,
   broadcastInstallPhase: vi.fn(),
