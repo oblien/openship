@@ -208,6 +208,7 @@
     "running": "Running",
     "upToDate": "Up to date",
     "notInstalled": "Not installed",
+    "notChecked": "Not checked — scan to detect the installed version.",
     "installEdge": "Install edge",
     "edgeAbsentImpactOne": "{n} project is deployed here with nothing routing traffic to it.",
     "edgeAbsentImpactMany": "{n} projects are deployed here with nothing routing traffic to them."

@@ -33,6 +33,7 @@ import {
   resolveInvitationClaim,
 } from "@repo/platform/engine/lib/invitation-claim";
 import { setSessionCookie } from "../../lib/session-cookie";
+import { resolveActiveOrganizationId } from "../../middleware/active-organization";
 import { env, localDashboardUrl } from "@repo/platform/engine/config/env";
 import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import { alignLoopbackOrigin } from "@repo/core";
@@ -137,9 +138,11 @@ export async function getSession(c: Context) {
   // update may leave a valid cookie for the synthetic user; recover it too.
   const user = await ensureLocalUser();
   if (realSession?.user.id === user.id) return c.json(realSession);
+  const activeOrganizationId = await resolveActiveOrganizationId(user.id, null);
   const session = await mintSession({
     purpose: "local-cookie",
     userId: user.id,
+    activeOrganizationId: activeOrganizationId ?? undefined,
     ipAddress: "127.0.0.1",
     userAgent: "desktop",
   });
@@ -152,6 +155,7 @@ export async function getSession(c: Context) {
       id: session.id,
       userId: user.id,
       token: session.token,
+      activeOrganizationId,
       expiresAt: session.expiresAt.toISOString(),
       createdAt: now,
       updatedAt: now,
@@ -200,9 +204,12 @@ export async function desktopLogin(c: Context) {
   const { mintSession } = await import("../../lib/cloud-auth-proxy");
 
   const user = await ensureLocalUser();
+  if (realSession?.user.id === user.id) return c.redirect(dashboardUrl);
+  const activeOrganizationId = await resolveActiveOrganizationId(user.id, null);
   const session = await mintSession({
     purpose: "local-cookie",
     userId: user.id,
+    activeOrganizationId: activeOrganizationId ?? undefined,
     ipAddress: "127.0.0.1",
     userAgent: "desktop",
   });

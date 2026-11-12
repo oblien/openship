@@ -96,6 +96,7 @@ import {
 import { repos } from "@repo/db";
 import { dockerAvailable, detectEdgeContainer, detectMailEngine } from "@repo/adapters";
 import { reconcileServerEdge } from "@repo/platform/engine/lib/edge-reconcile";
+import { pinnedEdgeImage } from "@repo/platform/engine/lib/edge-image";
 import { reconcileServerMail, repairServerMail } from "@repo/platform/engine/lib/mail-reconcile";
 import { drainBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
@@ -207,6 +208,16 @@ describe("detectServerContainers", () => {
     expect(views.find((v) => v.component === "edge")).toMatchObject({ behind: false, down: false });
   });
 
+  it("recognizes a production edge while the control plane pins a development image", async () => {
+    vi.mocked(pinnedEdgeImage).mockReturnValueOnce("ghcr.io/oblien/openship-edge:0.9.11-dev.fixture");
+    mocked.edge.mockResolvedValue(edgeContainer("ghcr.io/oblien/openship-edge:0.9.11") as never);
+    expect((await detectServerContainers(server)).find(view => view.component === "edge")).toMatchObject({
+      runningVersion: "0.9.11", pinnedVersion: "0.9.11-dev.fixture",
+      behind: true, down: false, containerMissing: false,
+    });
+    expect(mocked.reconcileEdge).not.toHaveBeenCalled();
+  });
+
   it("tracks an installed-but-stopped edge as down, never behind or removed", async () => {
     // exists:true, running:false — the box has an edge, it just isn't up.
     mocked.edge.mockResolvedValue(edgeContainer("ghcr.io/oblien/openship-edge:0.4.0", false) as never);
@@ -221,12 +232,16 @@ describe("detectServerContainers", () => {
     expect(mocked.status.remove).not.toHaveBeenCalledWith("srv_1", "edge");
   });
 
-  it("drops the edge row only when no edge container exists at all", async () => {
+  it("records confirmed absence without overwriting an active swap", async () => {
     mocked.edge.mockResolvedValue(edgeAbsent as never);
 
     const views = await detectServerContainers(server);
     expect(views.find((v) => v.component === "edge")).toBeUndefined();
-    expect(mocked.status.remove).toHaveBeenCalledWith("srv_1", "edge");
+    expect(mocked.status.remove).not.toHaveBeenCalledWith("srv_1", "edge");
+    expect(mocked.status.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ component: "edge", behind: false, detail: { down: true, containerMissing: true } }),
+      { onlyWhenIdle: true },
+    );
   });
 
   it("leaves the edge row untouched when the probe is inconclusive (no removal on a transient failure)", async () => {
@@ -382,6 +397,18 @@ describe("applyAllContainers", () => {
     behind: true,
     latestInProgress: false,
     detail: null,
+  });
+
+  it.each(["edge", "mail"] as const)("leaves missing %s installation to its setup flow", async (component) => {
+    mocked.server.listByOrganization.mockResolvedValue([box("srv_1")] as never);
+    mocked.status.listByOrg.mockResolvedValue([{
+      ...behindEdge("srv_1"), component, behind: false, detail: { down: true, containerMissing: true },
+    }] as never);
+    expect(await applyAllContainers("org_1", ["repair"])).toMatchObject({
+      started: [], skipped: [{ serverId: "srv_1", component, reason: "container_missing" }],
+    });
+    expect(mocked.reconcileEdge).not.toHaveBeenCalled();
+    expect(mocked.repairMail).not.toHaveBeenCalled();
   });
 
   it("requires target authorization before any fleet target is flagged or probed", async () => {
@@ -754,7 +781,7 @@ describe("classifyContainerIssues", () => {
   });
 
   it("flags an ABSENT edge as an issue only when the box hosts projects", () => {
-    const r = classifyContainerIssues([srvA], [], { srv_a: 2 });
+    const r = classifyContainerIssues([srvA], [edgeRow("srv_a", { down: true, containerMissing: true })], { srv_a: 2 });
     expect(r).toMatchObject({ total: 1, edgeMissing: 1, edgeDown: 0 });
     // Absent means there is nothing to start — the fix is the install path.
     expect(r.servers[0]).toEqual({
@@ -766,8 +793,12 @@ describe("classifyContainerIssues", () => {
   });
 
   it("does NOT flag an absent edge on a box with no projects (offer, not alarm)", () => {
-    const r = classifyContainerIssues([srvA], [], {}); // no projectCounts entry
+    const r = classifyContainerIssues([srvA], [edgeRow("srv_a", { down: true, containerMissing: true })], {});
     expect(r).toEqual(CLEAN);
+  });
+
+  it("does not invent an absent edge from an empty imported scan cache", () => {
+    expect(classifyContainerIssues([srvA], [], { srv_a: 2 })).toEqual(CLEAN);
   });
 
   it("does NOT flag a behind (updatable) or healthy edge — that's the updates surface", () => {
@@ -821,6 +852,8 @@ describe("classifyContainerIssues", () => {
     ];
     const rows = [
       edgeRow("srv_a", { down: true }),
+      edgeRow("srv_b", { down: true, containerMissing: true }),
+      edgeRow("srv_c", { down: true, containerMissing: true }),
       edgeRow("srv_d", { down: false }),
       mailRow("srv_d", { down: true }),
     ];

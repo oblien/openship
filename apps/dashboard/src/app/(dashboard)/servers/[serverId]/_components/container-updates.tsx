@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { systemApi, type ServerContainerStatus } from "@/lib/api/system";
-import { ContainerStatusRow, EdgeInstallRow } from "@/components/infra/ContainerStatusRow";
+import { ContainerStatusRow } from "@/components/infra/ContainerStatusRow";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useReattachActiveFix } from "@/hooks/useReattachActiveFix";
 
@@ -40,7 +40,6 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
       setRows(await systemApi.listServerContainers(serverId));
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/[serverId]/_components/container-updates");
-      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -113,10 +112,10 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
     }
   }, [serverId, load]);
 
-  const hasEdge = rows.some((r) => r.component === "edge");
-  // Render once loaded if there's anything to show OR an edge to offer. A bare,
-  // never-scanned box with an edge already present (nothing else) stays hidden.
-  if (loading || (rows.length === 0 && hasEdge)) return null;
+  const edge = rows.find((r) => r.component === "edge");
+  // No cached observation is unverified. Only a confirmed missing-container
+  // observation can offer installation or warn about routing being absent.
+  if (loading) return null;
 
   // Work still to do — a component mid-swap is reported by its own row, so counting
   // it here too would keep announcing an update that is already being applied.
@@ -155,24 +154,19 @@ export function ServerContainerUpdates({ serverId }: { serverId: string }) {
         {rows.map((r) => (
           <ContainerStatusRow key={r.id} serverId={serverId} row={r} onApplied={() => void load()} />
         ))}
-        {!hasEdge && (
-          <>
-            <EdgeInstallRow
-              serverId={serverId}
-              emphasize={edgeRequired}
-              onInstalled={() => void load()}
-            />
-            {/* Says WHY the row is emphasized — the colour alone doesn't tell an
-                operator that live projects are the reason. */}
-            {edgeRequired && (
-              <p className="px-3.5 text-xs text-warning">
-                {interpolate(
-                  projectCount === 1 ? c.edgeAbsentImpactOne : c.edgeAbsentImpactMany,
-                  { n: String(projectCount) },
-                )}
-              </p>
+        {!edge && (
+          <div className="rounded-xl bg-muted/30 px-3.5 py-2.5">
+            <p className="text-sm font-medium text-foreground">{c.componentEdge}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{c.notChecked}</p>
+          </div>
+        )}
+        {edge?.detail?.containerMissing && edgeRequired && (
+          <p className="px-3.5 text-xs text-warning">
+            {interpolate(
+              projectCount === 1 ? c.edgeAbsentImpactOne : c.edgeAbsentImpactMany,
+              { n: String(projectCount) },
             )}
-          </>
+          </p>
         )}
       </div>
     </div>

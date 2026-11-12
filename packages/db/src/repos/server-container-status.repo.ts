@@ -22,13 +22,19 @@ export function createServerContainerStatusRepo(db: Database) {
      * the boot hook, a manual Scan, the dashboard's mount auto-scan — hits this).
      * Only the apply itself, through {@link setInProgress}, owns the flag.
      */
-    async upsert(data: Omit<NewServerContainerStatus, "id">): Promise<void> {
+    async upsert(
+      data: Omit<NewServerContainerStatus, "id">,
+      options: { onlyWhenIdle?: boolean } = {},
+    ): Promise<void> {
       const id = generateId("scs");
       await db
         .insert(serverContainerStatus)
         .values({ id, ...data })
         .onConflictDoUpdate({
           target: [serverContainerStatus.serverId, serverContainerStatus.component],
+          // A missing-container observation during a swap must not replace the
+          // cached running state or its in-progress receipt.
+          setWhere: options.onlyWhenIdle ? eq(serverContainerStatus.latestInProgress, false) : undefined,
           set: {
             organizationId: data.organizationId ?? null,
             runningLabel: data.runningLabel ?? null,

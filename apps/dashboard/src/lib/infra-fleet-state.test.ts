@@ -69,11 +69,23 @@ describe("summarizeInfraFleet", () => {
   });
 
   it("treats an absent edge as an issue only where projects are deployed", () => {
-    expect(summarizeInfraFleet([group("srv_1", [], 2)]).counts).toMatchObject({ attention: 1 });
-    expect(summarizeInfraFleet([group("srv_1", [], 0)]).counts).toMatchObject({
+    const absent = row({ runningLabel: null, detail: { down: true, containerMissing: true } });
+    expect(summarizeInfraFleet([group("srv_1", [absent], 2)]).counts).toMatchObject({ attention: 1 });
+    expect(summarizeInfraFleet([group("srv_1", [absent], 0)]).counts).toMatchObject({
       attention: 0,
       healthy: 1,
     });
+  });
+
+  it("leaves imported servers with no scan results unclassified", () => {
+    const { summaries, counts } = summarizeInfraFleet([group("srv_1", [], 2)]);
+    expect(summaries.size).toBe(0);
+    expect(counts).toMatchObject({ attention: 0, healthy: 0, updates: 0 });
+  });
+
+  it("does not infer routing health from a mail-only observation", () => {
+    const state = summarizeInfraFleet([group("srv_1", [row({ component: "mail" })], 2)]);
+    expect(state.counts).toMatchObject({ attention: 0, healthy: 0, updates: 0 });
   });
 });
 
@@ -137,7 +149,7 @@ describe("work already underway", () => {
 });
 
 it("does not mark an edge-free private server unhealthy while keeping its project count", () => {
-  const privateServer = group("srv_private", [], 3);
+  const privateServer = group("srv_private", [row({ detail: { down: true, containerMissing: true } })], 3);
   privateServer.server.edgeRequired = false;
   expect(summarizeInfraFleet([privateServer]).counts).toMatchObject({ attention: 0, healthy: 1 });
   privateServer.server.edgeRequired = true;

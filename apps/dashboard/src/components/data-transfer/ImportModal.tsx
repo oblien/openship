@@ -4,6 +4,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { Button } from "@/components/ui/button";
 import {
   dataTransferApi,
   type ImportMode,
@@ -11,7 +13,7 @@ import {
   type ImportResult,
   type ImportSelection,
 } from "@/lib/api/data-transfer";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { getApiErrorMessage, setActiveOrganizationId } from "@/lib/api/client";
 import { formatBytes } from "@/lib/formatBytes";
 import {
   ALL_HISTORY,
@@ -40,6 +42,7 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
   const [error, setError] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
   const importLock = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const currentKey = JSON.stringify({ selection, mode });
   const reviewed = !!preview && reviewedKey === currentKey;
   const hasSelection = selection.scope === "instance" || !!selection.projectIds?.length;
@@ -130,6 +133,9 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
         reportProgress,
         selection,
       );
+      // The replaced database owns its workspace identities. Drop the browser's
+      // previous selection so reload resolves an imported membership normally.
+      if (imported.mode === "wipe") setActiveOrganizationId(null);
       setResult(imported);
       setPassphrase("");
     } catch (error) {
@@ -143,7 +149,8 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
   };
   const close = () => {
     if (busy) return;
-    if (result) window.location.reload();
+    if (result?.mode === "wipe") window.location.assign("/select-organization");
+    else if (result) window.location.reload();
     else onClose();
   };
 
@@ -193,30 +200,37 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
               ]}
             />
             <button type="button" className={transferButtonClass} onClick={close}>
-              {result.mode === "wipe" ? "Reload and sign in" : "Done"}
+              {result.mode === "wipe" ? "Continue to restored workspaces" : "Done"}
             </button>
           </div>
         ) : (
           <>
-            <label className="block space-y-2 text-sm font-medium text-foreground">
-              1. Choose an export file
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">1. Choose an export file</p>
               <input
+                ref={fileInputRef}
                 type="file"
+                aria-label="Export file"
                 accept=".json,application/json"
                 disabled={busy}
-                className={transferInputClass}
+                className="hidden"
                 onChange={(event) => {
                   const chosen = event.target.files?.[0];
+                  event.target.value = "";
                   if (chosen) void inspect(chosen);
                 }}
               />
-            </label>
-            {file && (
-              <p className="text-xs text-muted-foreground">
-                {file.name} · {formatBytes(file.size)}
-                {progress && busy ? ` · Uploaded ${progress.done}/${progress.total} parts` : ""}
-              </p>
-            )}
+              <div className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/40 p-3">
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => fileInputRef.current?.click()}>
+                  <UiIcon name="upload" className="size-4" />
+                  {file ? "Change file" : "Choose file"}
+                </Button>
+                <p className="min-w-0 flex-1 break-all text-xs text-muted-foreground">
+                  {file ? `${file.name} · ${formatBytes(file.size)}` : "OpenShip export · JSON · Up to 500 MB"}
+                  {progress && busy ? ` · Uploaded ${progress.done}/${progress.total} parts` : ""}
+                </p>
+              </div>
+            </div>
             {busy && (
               <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
                 <UiIcon name="spinner" className="size-4 animate-spin" />
@@ -231,13 +245,21 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
               <>
                 <label className="block space-y-2 text-sm font-medium text-foreground">
                   2. Choose what to import
-                  <select
+                  <CustomSelect<ImportSelection["scope"]>
                     aria-label="Import scope"
                     value={selection.scope}
                     disabled={busy}
-                    className={transferInputClass}
-                    onChange={(event) => {
-                      const scope = event.target.value as ImportSelection["scope"];
+                    variant="filled"
+                    triggerClassName="bg-muted/60 hover:bg-muted"
+                    options={[
+                      ...(preview.projects.length || archiveScope === "projects"
+                        ? [{ value: "projects" as const, label: "Selected projects into the current workspace" }]
+                        : []),
+                      ...(archiveScope === "instance"
+                        ? [{ value: "instance" as const, label: "Entire instance, including accounts and settings" }]
+                        : []),
+                    ]}
+                    onChange={(scope) => {
                       setSelection({
                         scope,
                         conflictPolicy: "skip",
@@ -251,16 +273,7 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                       });
                       setMode(scope === "instance" ? "wipe" : "merge");
                     }}
-                  >
-                    <option value="projects" disabled={!preview.projects.length}>
-                      Selected projects into the current workspace
-                    </option>
-                    {archiveScope === "instance" && (
-                      <option value="instance">
-                        Entire instance, including accounts and settings
-                      </option>
-                    )}
-                  </select>
+                  />
                 </label>
                 {selection.scope === "projects" ? (
                   <div className="space-y-4">
@@ -272,20 +285,20 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                     />
                     <label className="block space-y-1 text-xs font-medium text-foreground">
                       When a project already exists
-                      <select
+                      <CustomSelect<"skip" | "overwrite">
                         aria-label="Project conflict policy"
                         value={selection.conflictPolicy ?? "skip"}
                         disabled={busy}
-                        className={transferInputClass}
-                        onChange={(event) =>
-                          patch({ conflictPolicy: event.target.value as "skip" | "overwrite" })
+                        variant="filled"
+                        triggerClassName="bg-muted/60 hover:bg-muted"
+                        options={[
+                          { value: "skip", label: "Keep destination project and skip its imported records" },
+                          { value: "overwrite", label: "Overwrite matching project records" },
+                        ]}
+                        onChange={(conflictPolicy) =>
+                          patch({ conflictPolicy })
                         }
-                      >
-                        <option value="skip">
-                          Keep destination project and skip its imported records
-                        </option>
-                        <option value="overwrite">Overwrite matching project records</option>
-                      </select>
+                      />
                       <span className="block pt-1 font-normal text-muted-foreground">
                         Overwrite replaces the selected projects with the exported records,
                         including removing destination-only records in the selected categories.
@@ -315,26 +328,27 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                                 <span>
                                   {project.name} · {project.environmentName}
                                 </span>
-                                <select
+                                <CustomSelect<"default" | "skip" | "overwrite">
                                   aria-label={`Conflict action for ${project.name} ${project.environmentName}`}
                                   disabled={busy}
-                                  className="rounded-md border border-border bg-background p-2 text-foreground"
+                                  className="w-40 shrink-0"
+                                  variant="filled"
+                                  triggerClassName="bg-muted/60 hover:bg-muted"
                                   value={selection.projectActions?.[project.id] ?? "default"}
-                                  onChange={(event) => {
+                                  options={[
+                                    { value: "default", label: "Use default" },
+                                    { value: "skip", label: "Skip" },
+                                    { value: "overwrite", label: "Overwrite" },
+                                  ]}
+                                  onChange={(action) => {
                                     const actions = { ...selection.projectActions };
-                                    if (event.target.value === "default")
+                                    if (action === "default")
                                       delete actions[project.id];
                                     else
-                                      actions[project.id] = event.target.value as
-                                        | "skip"
-                                        | "overwrite";
+                                      actions[project.id] = action;
                                     patch({ projectActions: actions });
                                   }}
-                                >
-                                  <option value="default">Use default</option>
-                                  <option value="skip">Skip</option>
-                                  <option value="overwrite">Overwrite</option>
-                                </select>
+                                />
                               </label>
                             ))}
                         </div>
@@ -409,32 +423,31 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                               {server.name}
                               {server.host ? ` · ${server.host}:${server.port}` : ""}
                             </span>
-                            <select
+                            <CustomSelect
                               aria-label={`Destination server for ${server.name}`}
-                              className={transferInputClass}
+                              variant="filled"
+                              triggerClassName="bg-muted/60 hover:bg-muted"
                               disabled={busy}
                               value={selection.serverMappings?.[server.id] ?? ""}
-                              onChange={(event) => {
-                                const serverMappings = { ...selection.serverMappings };
-                                if (event.target.value)
-                                  serverMappings[server.id] = event.target.value;
-                                else delete serverMappings[server.id];
-                                patch({ serverMappings });
-                              }}
-                            >
-                              <option value="">
-                                {server.action === "create"
+                              options={[
+                                { value: "", label: server.action === "create"
                                   ? "Import the included server connection"
                                   : server.action === "reuse"
                                     ? `Reuse ${preview.availableServers.find((target) => target.id === server.targetId)?.name ?? "matching server"}`
-                                    : "Choose a destination server"}
-                              </option>
-                              {preview.availableServers.map((target) => (
-                                <option key={target.id} value={target.id}>
-                                  {target.name} · {target.isLocal ? "This host" : target.host}
-                                </option>
-                              ))}
-                            </select>
+                                    : "Choose a destination server" },
+                                ...preview.availableServers.map((target) => ({
+                                  value: target.id,
+                                  label: `${target.name} · ${target.isLocal ? "This host" : target.host}`,
+                                })),
+                              ]}
+                              onChange={(targetId) => {
+                                const serverMappings = { ...selection.serverMappings };
+                                if (targetId)
+                                  serverMappings[server.id] = targetId;
+                                else delete serverMappings[server.id];
+                                patch({ serverMappings });
+                              }}
+                            />
                           </label>
                         ))}
                       </div>
@@ -443,18 +456,18 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                 ) : (
                   <label className="block space-y-1 text-xs font-medium text-foreground">
                     Instance import mode
-                    <select
+                    <CustomSelect
                       aria-label="Instance import mode"
                       disabled={busy}
                       value={mode}
-                      onChange={(event) => setMode(event.target.value as ImportMode)}
-                      className={transferInputClass}
-                    >
-                      <option value="merge">
-                        Add new records; stop if project records conflict
-                      </option>
-                      <option value="wipe">Replace the entire destination instance</option>
-                    </select>
+                      onChange={setMode}
+                      variant="filled"
+                      triggerClassName="bg-muted/60 hover:bg-muted"
+                      options={[
+                        { value: "merge", label: "Add new records; stop if project records conflict" },
+                        { value: "wipe", label: "Replace the entire destination instance" },
+                      ]}
+                    />
                     {mode === "wipe" && (
                       <span className="block pt-2 text-danger">
                         This replaces every destination project, account, session, server, and
