@@ -33,7 +33,7 @@ export const HOST_CHANNEL_UNAFFECTED =
 /** Everything that genuinely stops working. Verified against the call sites, not guessed. */
 export const HOST_CHANNEL_BLOCKED: readonly string[] = [
   "the host terminal, host system info and host port scans",
-  "taking over :80/:443 from a proxy Openship didn't start",
+  "taking over :80/:443 from a proxy OpenShip didn't start",
   "installing or updating the mail engine",
   "deploying a catalog app that needs a generated config file on the host (Supabase's kong.yml, say)",
 ];

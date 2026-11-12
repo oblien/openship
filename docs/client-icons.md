@@ -165,6 +165,8 @@ Charts, progress geometry, topology edges, decorative illustrations, and the
 Openship wordmark remain vectors. Dynamic application/framework/provider logos,
 favicons, flags, and user artwork retain their existing content sources. The
 separate marketing site and `apps/email/client` are outside this pass.
+The marketing language switcher reuses the catalog's `languages` icon, with the
+same original PNG bundled in `apps/web/public/icons` and the shared mask renderer.
 
 ## Asset provenance
 

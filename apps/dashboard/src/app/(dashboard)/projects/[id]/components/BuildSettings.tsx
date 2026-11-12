@@ -1,29 +1,16 @@
+"use client";
+
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { getRuntimeVersionPolicy, isServicesFramework, normalizeRepoPath } from "@repo/core";
-import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { workloadOf } from "@/context/deployment/types";
-import { useI18n } from "@/components/i18n-provider";
-import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
-import { EnvVarsEditor } from "./EnvVarsEditor";
-import { StorageSettings } from "./StorageSettings";
-import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
-import { ResourceSettings } from "./ResourceSettings";
-import { CommandEnvironmentNotice } from "@/components/import-project/CommandEnvironmentNotice";
-import { RuntimeSourceUpdate } from "@/components/updates/RuntimeSourceUpdate";
 import Link from "next/link";
+import { isServicesFramework } from "@repo/core";
+import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useI18n } from "@/components/i18n-provider";
+import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
+import { RuntimeSourceUpdate } from "@/components/updates/RuntimeSourceUpdate";
 import { projectApplication } from "@/lib/project-application";
-
-/**
- * Configuration cards within project Settings. Build settings link to the deploy wizard; project
- * environment, resources and storage use their existing focused editors.
- * Shared project environment remains available for every workload type.
- *
- * Visual shell (SectionCard + ICON_TONES) mirrors the sibling settings tabs
- * (GitSettings / BackupSettings / DomainSettings) so the tab fills the same
- * column width and reads as part of the same design system.
- */
+import { EnvVarsEditor } from "./EnvVarsEditor";
+import { ResourceSettings } from "./ResourceSettings";
 
 const ICON_TONES = {
   primary: "bg-primary/10 text-primary",
@@ -71,84 +58,29 @@ function SectionCard({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value?: React.ReactNode; mono?: boolean }) {
-  const empty = value === undefined || value === null || value === "";
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-      <span className="shrink-0 text-[12px] text-muted-foreground">{label}</span>
-      <span
-        className={`min-w-0 break-all text-end text-[13px] font-medium text-foreground ${mono ? "font-mono tabular-nums" : ""}`}
-      >
-        {empty ? <span className="text-muted-foreground/40">—</span> : value}
-      </span>
-    </div>
-  );
-}
-
-export const BuildSettings = ({ scope = "project" }: { scope?: "project" | "application" }) => {
-  const { buildData, projectData, servicesData, id, updateBuild, refreshEnvironment } =
-    useProjectSettings();
+/** Project-owned settings stay here regardless of the number of workloads. */
+export const BuildSettings = () => {
+  const { buildData, projectData, servicesData, id } = useProjectSettings();
   const { t } = useI18n();
-  const router = useRouter();
+  const application = projectApplication(projectData, servicesData.services);
+  const hasRepo = Boolean(projectData.gitOwner && projectData.gitRepo);
+  const composeSource =
+    Boolean(projectData.composePath) || isServicesFramework(projectData.framework);
 
-  const isWebmail = projectData?.framework === "webmail";
-  const services = servicesData.services;
-  const application = projectApplication(projectData, services);
-  // SERVICE-FIRST = the project itself is a set of services (a compose-stack
-  // project) or a monorepo of sub-apps — its config genuinely lives per-service.
-  // A single/static APP that merely had a sidecar service ADDED is NOT
-  // service-first: it keeps its own primary-app Configuration below. Keyed on
-  // the project's framework, never on "a service row exists" (which conflates
-  // the two — the whole point of this fix).
-  const isServiceFirst =
-    (application?.mode !== "project" && services.some((service) => service.kind === "monorepo")) ||
-    isServicesFramework(projectData?.framework);
-
-  // Edit = the deploy wizard, rehydrated from this project. The single place
-  // config is editable; this tab never mutates it.
-  const hasRepo = Boolean(projectData?.gitOwner && projectData?.gitRepo);
-  const editSlug = hasRepo
-    ? encodeRepoSlug(projectData!.gitOwner!, projectData!.gitRepo!)
-    : projectData?.localPath
-      ? encodeLocalSlug(projectData.localPath)
-      : null;
-  const openWizard = () => {
-    // mode=config → the wizard SAVES config (no deploy); see Sidebar handleSave.
-    if (editSlug) router.push(`/deploy/${editSlug}?projectId=${id}&mode=config`);
-  };
-
-  const EditButton = () =>
-    editSlug ? (
-      <button
-        type="button"
-        onClick={openWizard}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
-      >
-        <UiIcon name="edit" className="size-3.5" />
-        {t.projectSettings.build.edit}
-      </button>
-    ) : null;
-
-  // ── Webmail: fully managed, nothing to show or edit. ──────────────────
-  if (isWebmail) {
+  if (projectData.framework === "webmail") {
     return (
-      <div className="space-y-5">
-        <SectionCard
-          icon={"inbox"}
-          iconTone="muted"
-          title={t.projectSettings.build.webmail.title}
-          description={t.projectSettings.build.webmail.description}
-        />
-      </div>
+      <SectionCard
+        icon="inbox"
+        iconTone="muted"
+        title={t.projectSettings.build.webmail.title}
+        description={t.projectSettings.build.webmail.description}
+      />
     );
   }
 
-  // ── Service-first project: config lives per-service in the Services tab.
-  //    (A single/static app with an added sidecar service falls through to the
-  //    single-app config below — it is NOT service-first.) ──
-  if (scope === "project" && application) {
-    return (
-      <div className="space-y-5">
+  return (
+    <div className="space-y-5">
+      {application && (
         <SectionCard
           icon="window"
           iconTone="orange"
@@ -164,211 +96,32 @@ export const BuildSettings = ({ scope = "project" }: { scope?: "project" | "appl
             </Link>
           }
         />
-        <ProjectEnvironmentSettings />
-        <BuildCacheMigration key={id} projectId={id} />
-        {services.some((service) => !service.applicationMode) && <ResourceSettings />}
-      </div>
-    );
-  }
-  if (isServiceFirst && scope === "project") {
-    return (
-      <div className="space-y-5">
-        {hasRepo && (
-          <RuntimeSourceUpdate
-            projectId={id}
-            initialPath={buildData.composePath || "docker-compose.yml"}
-          />
-        )}
-        <ProjectEnvironmentSettings />
-        <BuildCacheMigration key={id} projectId={id} />
-        <ResourceSettings />
-      </div>
-    );
-  }
-
-  // ── Single-app: read-only configuration summary. ──────────────────────
-  // A static site has no runtime process to isolate — the edge serves its files
-  // from the shared static volume. Its `runtimeMode` is still "docker" because it
-  // BUILT in a Docker sandbox, so reporting "Sandboxed (container)" here mislabels a
-  // build detail as a runtime one and contradicts the Start command row's "Static
-  // (no server)". Say plainly there is no runtime instead.
-  // A worker shares hasServer=false with a static site but DOES run a process
-  // (sandboxed like a web app), so classify via the resolved workload — only a
-  // static site has "no runtime" (#538).
-  const workload = workloadOf(buildData);
-  const runtimeModeLabel =
-    workload === "static"
-      ? projectData?.deployTarget === "cloud"
-        ? t.projectSettings.cloudStaticHosting[projectData.cloudStaticHosting ?? "pages"]
-        : t.projectSettings.build.runtime.modeStatic
-      : projectData?.runtimeMode === "docker"
-        ? t.projectSettings.build.runtime.modeSandboxed
-        : projectData?.runtimeMode === "bare"
-          ? t.projectSettings.build.runtime.modeDirect
-          : t.projectSettings.build.runtime.modeDefault;
-
-  return (
-    <div className="space-y-5">
-      <CommandEnvironmentNotice
-        commands={buildData}
-        projectId={id}
-        onMigrated={async (commands) => {
-          updateBuild(commands);
-          await refreshEnvironment();
-        }}
-      />
-      <SectionCard
-        icon={"cpu"}
-        iconTone="orange"
-        title={t.projectSettings.build.runtime.title}
-        description={t.projectSettings.build.runtime.description}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {hasRepo &&
-              (projectData?.buildKind === "dockerfile" || projectData?.framework === "docker") && (
-                <RuntimeSourceUpdate
-                  projectId={id}
-                  initialPath={
-                    normalizeRepoPath(
-                      [buildData.rootDirectory, "Dockerfile"].filter(Boolean).join("/"),
-                    ) || "Dockerfile"
-                  }
-                />
-              )}
-            <EditButton />
-          </div>
-        }
-      >
-        <div className="overflow-hidden rounded-xl border border-border/40 divide-y divide-border/30">
-          <Row label={t.projectSettings.build.runtime.framework} value={projectData?.framework} />
-          <Row
-            label={t.projectSettings.build.runtime.packageManager}
-            value={projectData?.packageManager}
-          />
-          <Row label={t.projectSettings.build.runtime.runtimeIsolation} value={runtimeModeLabel} />
-          {/* Resources moved to the editable ResourceSettings card below — one
-              source, and it covers self-hosted (where limits are now a real
-              choice) instead of being cloud-only and read-only. */}
-          <Row
-            label={t.projectSettings.build.runtime.runtimePort}
-            value={buildData.productionPort}
-            mono
-          />
-          <Row
-            label={t.projectSettings.build.runtime.installCommand}
-            value={buildData.installCommand}
-            mono
-          />
-          <Row
-            label={t.projectSettings.build.runtime.buildCommand}
-            value={
-              buildData.hasBuild
-                ? buildData.buildCommand
-                : t.projectSettings.build.runtime.noBuildStep
-            }
-            mono={buildData.hasBuild}
-          />
-          {getRuntimeVersionPolicy(projectData?.framework) && (
-            <Row
-              label={t.importProject.buildSettings.runtimeVersionLabel}
-              value={
-                projectData?.runtimeVersion ??
-                getRuntimeVersionPolicy(projectData?.framework)!.defaultVersion
-              }
-              mono
-            />
-          )}
-          {projectData?.runtimeImage && (
-            <Row
-              label={t.importProject.buildSettings.runtimeImageLabel}
-              value={projectData.runtimeImage}
-              mono
-            />
-          )}
-          <Row
-            label={t.projectSettings.build.runtime.outputDirectory}
-            value={buildData.outputDirectory}
-            mono
-          />
-          <Row
-            label={t.projectSettings.build.runtime.rootDirectory}
-            value={buildData.rootDirectory || "."}
-            mono
-          />
-          {/* Only when pinned — a blank row would be noise for the vast majority
-              of projects, whose compose file (if any) sits at the root. */}
-          {buildData.composePath && (
-            <Row
-              label={t.projectSettings.build.runtime.composePath}
-              value={buildData.composePath}
-              mono
-            />
-          )}
-          <Row
-            label={t.projectSettings.build.runtime.startCommand}
-            value={
-              workload !== "static"
-                ? buildData.startCommand
-                : t.projectSettings.build.runtime.staticNoServer
-            }
-            mono={workload !== "static"}
-          />
-        </div>
-      </SectionCard>
-
-      {scope === "project" && <ProjectEnvironmentSettings />}
-      {scope === "project" && <BuildCacheMigration key={id} projectId={id} />}
-
-      {/* Project-wide limits also apply to companion services on a static site. */}
-      {(workload !== "static" || services.length > 0) &&
-        (scope === "project" || !services.some((service) => !service.applicationMode)) && (
-          <ResourceSettings />
-        )}
-
-      {/* Storage — persistent paths + object storage. Editable in place (see the
-          component's own note on why it doesn't route through the wizard). Only
-          meaningful for a project with a running container. */}
-      {scope === "project" && workload !== "static" && <StorageSettings />}
+      )}
+      {hasRepo && composeSource && (
+        <RuntimeSourceUpdate
+          projectId={id}
+          initialPath={buildData.composePath || "docker-compose.yml"}
+        />
+      )}
+      <ProjectEnvironmentSettings />
+      <BuildCacheMigration key={id} projectId={id} />
+      <ResourceSettings />
     </div>
   );
 };
 
-/** Shared project inputs remain editable for single apps, Compose and monorepos. */
+/** One shared editor, accessible here and through workload shortcuts. */
 export function ProjectEnvironmentSettings() {
-  const { id, projectData, servicesData } = useProjectSettings();
+  const { id } = useProjectSettings();
   const { t } = useI18n();
   const [envOpen, setEnvOpen] = useState(false);
-  const application = projectApplication(projectData, servicesData.services);
-  const shared = servicesData.services.some((service) => !service.applicationMode);
-  if (application && !shared) {
-    return (
+  return (
+    <>
       <SectionCard
         icon="key"
         iconTone="violet"
-        title={t.projectDetail.services.detail.tabs.env}
+        title={t.projectSettings.build.env.title}
         description={t.projectSettings.build.env.description}
-        actions={
-          <Link
-            href={`/projects/${id}/services/application/env`}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:underline underline-offset-4"
-          >
-            {t.projectSettings.build.env.edit}
-            <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
-          </Link>
-        }
-      />
-    );
-  }
-  return (
-    <>
-      {/* The same project environment panel also opens from Apps & Services. */}
-      <SectionCard
-        icon={"key"}
-        iconTone="violet"
-        title={shared ? t.projectSettings.build.env.sharedTitle : t.projectSettings.build.env.title}
-        description={
-          shared ? t.projectSettings.envVars.sharedHint : t.projectSettings.build.env.description
-        }
         actions={
           <button
             type="button"
@@ -380,7 +133,6 @@ export function ProjectEnvironmentSettings() {
           </button>
         }
       />
-
       <EnvVarsEditor key={id} projectId={id} isOpen={envOpen} onClose={() => setEnvOpen(false)} />
     </>
   );

@@ -24,8 +24,8 @@ vi.mock("@/hooks/useSystemPrepareModal", () => ({ useEdgeModal: () => mocks.edge
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: mocks.invalidate }));
 vi.mock("@/hooks/useLocalhostForward", () => ({ useLocalhostForward: () => ({ canForward: false }) }));
 vi.mock("../RoutingUnsyncedCallout", () => ({ RoutingUnsyncedCallout: () => null }));
-vi.mock("../RoutingConfigCard", () => ({ RoutingConfigCard: () => null }));
-vi.mock("../RouteRules", () => ({ RouteRules: () => null }));
+vi.mock("../RoutingConfigCard", () => ({ RoutingConfigCard: () => <section aria-label="Project routing policy" /> }));
+vi.mock("../RouteRules", () => ({ RouteRules: () => <section aria-label="Project route rules" /> }));
 vi.mock("@/components/ingress/DomainIngressSettings", () => ({ DomainIngressMenu: () => null, IngressDestinationNotice: () => null }));
 vi.mock("@/lib/api", async (original) => {
   const actual = await original<typeof import("@/lib/api")>();
@@ -100,9 +100,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-async function render(scope: { serviceId: string; port?: number; add?: boolean } | null = { serviceId: service.id }) {
+async function render(scope: { serviceId: string; port?: number; add?: boolean } | null = { serviceId: service.id }, applicationScope = false) {
   await act(async () => root.render(<I18nProvider><ModalProvider>
-    <DomainSettings serviceScope={scope ?? undefined} onRoutesChanged={mocks.changed} />
+    <DomainSettings applicationScope={applicationScope} serviceScope={scope ?? undefined} onRoutesChanged={mocks.changed} />
   </ModalProvider></I18nProvider>));
 }
 function button(label: string) {
@@ -482,4 +482,29 @@ it("edits an existing service domain into a redirect without changing its siblin
   expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([
     primary, { ...secondary, redirectTo: primary.customDomain, redirectStatus: 301 },
   ]);
+});
+
+
+describe("application domain ownership", () => {
+  it.each([false, true])("keeps project routing policy outside the app with backing service=%s", async (backing) => {
+    context.projectData.framework = "nextjs";
+    context.projectData.deployTarget = "server";
+    context.projectData.publicEndpoints = [primary];
+    context.servicesData.services = backing ? [service, other] : [other];
+    if (!backing) context.domainsData.domains = context.domainsData.domains.map(row => row.serviceId === service.id ? { ...row, serviceId: undefined } : row);
+    await render(backing ? { serviceId: service.id } : null, true);
+    expect(host.textContent).toContain("app.example.com");
+    expect(host.textContent).not.toContain("other.example.com");
+    expect(host.querySelector('[aria-label="Project routing policy"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Project route rules"]')).toBeNull();
+  });
+
+  it("keeps project routing policy and route rules in project Domains", async () => {
+    context.projectData.deployTarget = "server";
+    await render(null);
+    expect(host.querySelectorAll('[aria-label="Project routing policy"]')).toHaveLength(1);
+    expect(host.querySelectorAll('[aria-label="Project route rules"]')).toHaveLength(1);
+    expect(host.textContent).toContain("other.example.com");
+    expect(host.textContent).toContain("app.example.com");
+  });
 });

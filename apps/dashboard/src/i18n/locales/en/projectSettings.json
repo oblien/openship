@@ -532,7 +532,7 @@
     },
     "runtime": {
       "title": "Runtime configuration",
-      "description": "Read-only. Edit through the deploy wizard so each change ships as a new version.",
+      "description": "Save configuration here. Changes take effect on the next deployment.",
       "framework": "Framework",
       "packageManager": "Package manager",
       "runtimeIsolation": "Runtime isolation",
@@ -548,7 +548,11 @@
       "modeSandboxed": "Sandboxed (container)",
       "modeDirect": "Direct (host process)",
       "modeDefault": "Default (resolved at deploy)",
-      "modeStatic": "None — served as static files"
+      "modeStatic": "None — served as static files",
+      "saved": "Configuration saved. Deploy to apply your changes.",
+      "saveFailed": "Could not save configuration. Your changes are still here.",
+      "projectSettingsHint": "Shared environment and resource limits are managed in project Settings.",
+      "invalidPort": "Enter a port between 1 and 65535."
     },
     "storage": {
       "title": "Persistent storage",
@@ -590,7 +594,7 @@
     "env": {
       "title": "Project environment",
       "sharedTitle": "Shared project environment",
-      "description": "Used during builds and at runtime. Secrets stay masked.",
+      "description": "Shared defaults for image builds and runtime. Service values take precedence. Secrets stay masked.",
       "edit": "Edit"
     }
   },

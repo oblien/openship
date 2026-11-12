@@ -482,7 +482,7 @@
     },
     "runtime": {
       "title": "Configuración de tiempo de ejecución",
-      "description": "Solo lectura. Edítalo mediante el asistente de despliegue para que cada cambio se publique como una nueva versión.",
+      "description": "Guarda la configuración aquí. Los cambios se aplicarán en el próximo despliegue.",
       "framework": "Framework",
       "packageManager": "Gestor de paquetes",
       "runtimeIsolation": "Aislamiento del tiempo de ejecución",
@@ -498,7 +498,11 @@
       "modeSandboxed": "En sandbox (contenedor)",
       "modeDirect": "Directo (proceso del host)",
       "modeDefault": "Predeterminado (resuelto en el despliegue)",
-      "modeStatic": "Ninguno: se sirve como archivos estáticos"
+      "modeStatic": "Ninguno: se sirve como archivos estáticos",
+      "saved": "Configuración guardada. Despliega para aplicar los cambios.",
+      "saveFailed": "No se pudo guardar la configuración. Tus cambios siguen en el formulario.",
+      "projectSettingsHint": "El entorno compartido y los límites de recursos se gestionan en los ajustes del proyecto.",
+      "invalidPort": "Introduce un puerto entre 1 y 65535."
     },
     "storage": {
       "title": "Almacenamiento persistente",
@@ -540,7 +544,7 @@
     "env": {
       "title": "Entorno del proyecto",
       "sharedTitle": "Entorno compartido del proyecto",
-      "description": "Se usa durante la compilación y la ejecución. Los secretos permanecen ocultos.",
+      "description": "Valores predeterminados compartidos para compilar imágenes y ejecutar servicios. Los valores del servicio tienen prioridad. Los secretos permanecen ocultos.",
       "edit": "Editar"
     }
   },

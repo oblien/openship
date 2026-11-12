@@ -21,6 +21,9 @@ export const project = {
   packageManager: "bun",
   buildCommand: "bun run build",
   startCommand: "bun run start",
+  publicEndpoints: [
+    { id: "domain", domainType: "custom", customDomain: "website.example.com", port: 3000 },
+  ],
   domains: [
     {
       id: "domain",
@@ -72,6 +75,9 @@ const primary = {
   exposed: true,
   exposedPort: "3000",
   domain: "website.example.com",
+  domainType: "custom",
+  customDomain: "website.example.com",
+  publicEndpoints: [{ port: 3000, domainType: "custom", customDomain: "website.example.com" }],
   rootDirectory: ".",
 };
 export const postgres = {
@@ -122,6 +128,7 @@ function merge(rows, input) {
   ];
 }
 export const requests = [];
+const initialProject = structuredClone(project);
 const initialEnv = structuredClone(env),
   initialServiceEnv = structuredClone(serviceEnv);
 const server = createServer(async (req, res) => {
@@ -173,6 +180,7 @@ const server = createServer(async (req, res) => {
   if (path === "/api/preview/scenario") {
     if (method === "POST") {
       if (input.reset) {
+        Object.assign(project, structuredClone(initialProject));
         env = structuredClone(initialEnv);
         serviceEnv = structuredClone(initialServiceEnv);
         writes = [];
@@ -186,6 +194,9 @@ const server = createServer(async (req, res) => {
       project.deployTarget = input.kind === "cloud" ? "cloud" : "server";
       if (input.kind === "static")
         services = services.filter((s) => s.id !== "materialized-primary");
+      project.domains[0].serviceId = services.some((s) => s.id === primary.id)
+        ? primary.id
+        : undefined;
     }
     body = { project, services, writes };
   } else if (path.endsWith("/get-session")) body = null;
@@ -193,7 +204,25 @@ const server = createServer(async (req, res) => {
     body = { selfHosted: true, deployMode: "server", authMode: "none", isServerHost: true };
   else if (path.endsWith("/health")) body = { status: "ok" };
   else if (path.endsWith("/info")) body = { success: true, data: { project, environments: [] } };
-  else if (path.endsWith("/services/containers"))
+  else if (path.endsWith("/options") && method === "POST") {
+    const topLevel = new Set([
+      "buildImage",
+      "runtimeVersion",
+      "runtimeImage",
+      "framework",
+      "packageManager",
+      "runtimeMode",
+    ]);
+    for (const [key, value] of Object.entries(input)) {
+      if (topLevel.has(key)) project[key] = value;
+      else project.options[key] = value;
+    }
+    if (input.productionPort) project.port = input.productionPort;
+    const { options, ...savedProject } = project;
+    // Match setOptions' flat Project response (getInfo adds the nested options view).
+    body = { success: true, data: { ...savedProject, ...options, port: project.port } };
+    writes.push({ path, input });
+  } else if (path.endsWith("/services/containers"))
     body = {
       success: true,
       containers: services.map((s) => ({
@@ -215,6 +244,7 @@ const server = createServer(async (req, res) => {
       kind: input.kind || "compose",
     };
     services = [primary, ...services.filter((s) => s.id !== primary.id), service];
+    project.domains[0].serviceId = primary.id;
     body = { success: true, service };
     writes.push({ path, input });
   } else if (path.includes("/services/") && /\/(start|restart|apply-environment)$/.test(path)) {
