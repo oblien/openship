@@ -24,6 +24,7 @@
 import { observedAllSettled, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import crypto from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { AppError } from "@repo/core";
 import { encrypt } from "../../lib/encryption";
 import { requireOrganizationAdmin } from "../../lib/organization-authorization";
@@ -362,6 +363,9 @@ interface MoveResult {
 
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000; // 20 min for the target deploy
 const VERIFY_POLL_MS = 5000;
+const CANCELLABLE_MIGRATION_STATUSES = new Set([
+  "queued", "adopting", "moving_data", "deploying", "verifying",
+]);
 // Every status a deploy can SETTLE on. `action_required` is a settled failure
 // (blocked on something the operator must clear), so it belongs here — omitting
 // it would leave waitForDeployment polling for the full VERIFY_TIMEOUT_MS.
@@ -763,25 +767,34 @@ class MigrationOrchestratorImpl {
       );
     } catch (error) {
       const run = await repos.dockerMigrationRun.findById(id);
+      const cancelled =
+        run?.recovery.cancelRequested === true || this.cancelByRun.get(id)?.cancelled === true;
       // Raw export/SSH stderr may contain source credentials or database data.
       // Only our own reviewed errors are suitable for a client-visible log.
-      const message =
-        error instanceof AppError &&
-        (/^(IMPORT_|CONNECTION_|RAILWAY_)/.test(error.code ?? "") ||
-          error.code === "BACKUP_SERVICE_NOT_READY")
+      const message = cancelled
+        ? "Stopping import at your request. Copied data will be retained."
+        : error instanceof AppError &&
+            (/^(IMPORT_|CONNECTION_|RAILWAY_)/.test(error.code ?? "") ||
+              error.code === "BACKUP_SERVICE_NOT_READY")
           ? error.message
           : "The import could not complete. Review the destination deployment and the connection's data-export access. Source data was retained.";
-      errorDiagnostics.warn(
-        "platform/engine/modules/migration/migration.orchestrator",
-        `Provider import ${id} failed`,
-        new AppError(message, 502, "IMPORT_FAILED"),
-      );
+      if (!cancelled) {
+        errorDiagnostics.warn(
+          "platform/engine/modules/migration/migration.orchestrator",
+          `Provider import ${id} failed`,
+          new AppError(message, 502, "IMPORT_FAILED"),
+        );
+      }
       log(message);
       await this.stopTargetDeployment(run?.deploymentId);
       await pauseFailedPlatformImport(id);
-      // A failed import is explicit and retains copied data. It cannot resume a
+      // Stopped and failed imports retain copied data. Neither can resume a
       // partially restored database or silently overwrite operator changes.
-      await this.transition(id, "failed", { errorMessage: message.slice(0, 4096) });
+      await this.transition(id, cancelled ? "rolled_back" : "failed", {
+        errorMessage: cancelled
+          ? "Import stopped. Copied data and saved projects were retained."
+          : message.slice(0, 4096),
+      });
     } finally {
       try {
         await revokeRailwayImportKey(id);
@@ -1931,7 +1944,9 @@ class MigrationOrchestratorImpl {
       if (runId) await this.throwIfCancelled(runId); // a cancel during verify breaks out
       const dep = await repos.deployment.findById(deploymentId);
       if (dep && TERMINAL_DEPLOY.has(dep.status)) return dep;
-      await new Promise((r) => setTimeout(r, VERIFY_POLL_MS));
+      await delay(VERIFY_POLL_MS, undefined, {
+        signal: runId ? this.cancelByRun.get(runId)?.abort?.signal : undefined,
+      });
     }
     return null;
   }
@@ -2103,8 +2118,7 @@ class MigrationOrchestratorImpl {
     if (!run || run.organizationId !== organizationId) {
       return { ok: false, status: 404, error: "Migration not found" };
     }
-    const CANCELLABLE = ["queued", "adopting", "moving_data", "deploying", "verifying"];
-    if (!CANCELLABLE.includes(run.status)) {
+    if (!CANCELLABLE_MIGRATION_STATUSES.has(run.status)) {
       return {
         ok: false,
         status: 409,
@@ -2120,6 +2134,13 @@ class MigrationOrchestratorImpl {
     }
     this.prompts.reject(id, "Migration cancelled");
     await this.killTransfer(run.sourceServerId, run.targetServerId, run.organizationId, reg?.runTag ?? run.recovery?.transferRunTag ?? undefined);
+    if (run.mode === "provider_import") {
+      // A lost worker cannot observe the flag. Reuse recovery under the exact
+      // execution lock; a live worker keeps ownership and unwinds itself.
+      void this.recoverInterruptedMigrations({ id, organizationId }).catch(error => {
+        errorDiagnostics.warn("platform/engine/modules/migration/migration.orchestrator", `Stop recovery remains pending for ${id}`, error);
+      });
+    }
     return { ok: true };
   }
 
@@ -2766,13 +2787,20 @@ class MigrationOrchestratorImpl {
   }
 
   /** Recovery is safe on any replica: acquire the run's advisory lock without
-   * waiting, then re-read its state. Recent claims get time to start their worker. */
-  async recoverInterruptedMigrations(): Promise<void> {
-    for (const candidate of await repos.dockerMigrationRun.listInFlight()) {
-      if (Date.now() - new Date(candidate.lastEventAt).getTime() < 30_000) continue;
+   * waiting, then re-read its state. Recent claims get time to start their worker,
+   * unless an explicit stop lets recovery fence that worker before it starts. */
+  async recoverInterruptedMigrations(requestedStop?: { id: string; organizationId: string }): Promise<void> {
+    const requested = requestedStop ? await repos.dockerMigrationRun.findById(requestedStop.id) : undefined;
+    const candidates = requestedStop ? (requested ? [requested] : []) : await repos.dockerMigrationRun.listInFlight();
+    for (const candidate of candidates) {
+      if (!requestedStop && Date.now() - new Date(candidate.lastEventAt).getTime() < 30_000) continue;
       await tryWithProvisionLock(`migration:run:${candidate.id}`, async () => {
         const run = await repos.dockerMigrationRun.findById(candidate.id);
         if (!run) return;
+        if (requestedStop && (
+          run.organizationId !== requestedStop.organizationId || run.mode !== "provider_import" ||
+          !run.recovery.cancelRequested || !CANCELLABLE_MIGRATION_STATUSES.has(run.status)
+        )) return;
         try {
           const parked = [
             "awaiting_cutover",
@@ -2786,9 +2814,11 @@ class MigrationOrchestratorImpl {
             await pauseFailedPlatformImport(run.id);
             await revokeRailwayImportKey(run.id);
             if (!parked)
-              await this.transition(run.id, "failed", {
+              await this.transition(run.id, run.recovery.cancelRequested ? "rolled_back" : "failed", {
                 errorMessage:
-                  "The import was interrupted. Source data and copied destination data were retained. Review the imported projects before starting another import.",
+                  run.recovery.cancelRequested
+                    ? "Import stopped. Copied data and saved projects were retained."
+                    : "The import was interrupted. Source data and copied destination data were retained. Review the imported projects before starting another import.",
               });
             await repos.dockerMigrationRun.acknowledgeExecutionFinished(run.id);
             return;

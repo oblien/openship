@@ -250,6 +250,8 @@ export interface MigrationRun {
   confirmationToken?: string | null;
   pendingPrompt?: PromptPayload | null;
   status: MigrationStatus;
+  /** A stop was requested; execution/recovery may still be finishing. */
+  cancelRequested?: boolean;
   /**
    * How the run was started. The first two come from a SCAN (adopt someone else's stack);
    * the `project_*` pair from a project this instance already owns — a move relocates it, a

@@ -789,8 +789,9 @@ export async function getMigration(c: Context) {
 }
 
 /** Mask serviceEnv inside a migration run's inputSnapshot (see #336). */
-function maskMigrationRunEnv<T extends { inputSnapshot?: unknown; recovery?: unknown }>(run: T): Omit<T, "recovery"> {
-  const { recovery: _recovery, ...publicRun } = run;
+function maskMigrationRunEnv<T extends { inputSnapshot?: unknown; recovery?: unknown }>(run: T): Omit<T, "recovery"> & { cancelRequested: boolean } {
+  const { recovery, ...rest } = run;
+  const publicRun = { ...rest, cancelRequested: (recovery as { cancelRequested?: boolean } | undefined)?.cancelRequested === true };
   const snap = run.inputSnapshot as { serviceEnv?: Record<string, Record<string, string>> } | null;
   if (!snap?.serviceEnv) {
     const imported = (

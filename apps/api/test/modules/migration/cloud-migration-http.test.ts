@@ -64,6 +64,21 @@ async function runFixture() {
   return { owner, auth, source, target, project, run: run! };
 }
 
+it("returns the durable stop request without exposing private recovery data", async () => {
+  const { auth, run } = await runFixture();
+  await repos.dockerMigrationRun.updateRecovery(run.id, { transferRunTag: "" });
+  await repos.dockerMigrationRun.transition(run.id, "moving_data");
+  const stopped = await request("POST", `/migrations/${run.id}/cancel`, auth, {});
+  expect(stopped.status).toBe(200);
+  const detail = await request("GET", `/migrations/${run.id}`, auth);
+  expect(detail.status).toBe(200);
+  expect(detail.body.run.cancelRequested).toBe(true);
+  expect(detail.body.run.status).toBe("moving_data");
+  expect(detail.body.run).not.toHaveProperty("recovery");
+  expect(JSON.stringify(detail.body)).not.toContain("fixture-runtime-secret");
+  expect(network.connect).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   network.exec.mockResolvedValue("");
