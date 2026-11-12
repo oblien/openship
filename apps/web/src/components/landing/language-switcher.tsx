@@ -4,6 +4,7 @@ import { useLocale } from "next-intl";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { APP_LOCALES, type AppLocale } from "@repo/core/locale";
+import { Icon } from "@repo/ui/icons";
 import { isLocalizedPath, languageNames, localizedHref, withoutLocale } from "@/i18n/routing";
 import { useCopy } from "@/i18n/use-copy";
 
@@ -67,9 +68,10 @@ export function LanguageSwitcher({ dark = false }: { dark?: boolean }) {
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-9 min-w-11 items-center justify-center gap-1 rounded-full px-2 text-xs font-medium transition-colors hover:bg-[var(--th-sf-04)] focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="flex h-9 min-w-11 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-medium transition-colors hover:bg-[var(--th-sf-04)] focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{ color: dark ? "rgba(255,255,255,.75)" : "var(--th-text-secondary)" }}
       >
+        <Icon name="languages" size={16} className="shrink-0" />
         <span lang={locale}>{languageNames[locale].short}</span>
         <svg
           className="size-3"

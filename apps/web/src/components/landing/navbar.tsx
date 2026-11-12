@@ -148,13 +148,11 @@ export function Navbar() {
   const [stars, setStars] = useState<number | null>(null);
   const githubLabel =
     stars === null
-      ? copy("Stars")
-      : copy("{count} stars", {
-          count: new Intl.NumberFormat(locale, {
-            notation: "compact",
-            maximumFractionDigits: 1,
-          }).format(stars),
-        });
+      ? null
+      : new Intl.NumberFormat(locale, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }).format(stars);
   const githubDescription =
     stars === null
       ? copy("Star OpenShip on GitHub")
@@ -269,15 +267,18 @@ export function Navbar() {
             <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
               <path d={GITHUB_PATH} />
             </svg>
-            {copy(githubLabel)}
+            {githubLabel}
           </a>
+          <LanguageSwitcher dark={dark} />
         </nav>
 
         {/* ── Download link + Cloud destination ── */}
         <div
           className={`relative flex items-center justify-end gap-3 ${mobileOpen ? "z-50" : "z-10"}`}
         >
-          <LanguageSwitcher dark={dark && !mobileOpen} />
+          <div className="xl:hidden">
+            <LanguageSwitcher dark={dark && !mobileOpen} />
+          </div>
           <Link
             href="/download"
             className="hidden rounded-full px-5 py-2 text-[14px] font-medium transition-colors sm:inline-block"
@@ -371,7 +372,7 @@ export function Navbar() {
               <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d={GITHUB_PATH} />
               </svg>
-              {copy(githubLabel)}
+              {githubLabel}
             </a>
 
             <div className="my-3 h-px bg-[var(--th-divider)]" />

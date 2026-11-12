@@ -23,10 +23,22 @@ html[lang="ar"] :where(h1, h2, h3, h4, p, span, a, button, li, dt, dd, strong, l
 html[lang="ar"] :where(h1, h2, h3, h4) {
   line-height: 1.4;
 }
+html[lang="ar"] .landing-hero {
+  padding-block: 112px 56px;
+}
+html[lang="ar"] .hero-content {
+  max-width: 1000px;
+}
 html[lang="ar"] .hero-title > span {
-  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  font-size: clamp(2rem, 4.5vw, 3.75rem);
   line-height: 1.4;
   font-weight: 400;
+  text-wrap: balance;
+}
+html[lang="ar"] .landing-hero .hero-description {
+  max-width: 680px;
+  font-size: clamp(1rem, 1.2vw, 1.125rem);
+  line-height: 1.9;
 }
 html[lang="ar"] .cmp-cell {
   line-height: 1.8;

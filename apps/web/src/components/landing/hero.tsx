@@ -29,7 +29,7 @@ export async function Hero() {
   const cloudHref = cloudPlanHref();
 
   return (
-    <section className="hero-section relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden">
+    <section className="landing-hero hero-section relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden">
       {/* ═══════════════ Background layers ═══════════════ */}
       <div className="hero-grain absolute inset-0" aria-hidden="true" />
       <div className="hero-grid absolute inset-0" aria-hidden="true" />
@@ -42,7 +42,7 @@ export async function Hero() {
       </div>
 
       {/* ═══════════════ Content ═══════════════ */}
-      <div className="relative z-20 mx-auto w-full max-w-[860px] px-6 text-center">
+      <div className="hero-content relative z-20 mx-auto w-full max-w-[860px] px-6 text-center">
         <Link href="/pricing" className="hero-cloud-price animate-fade-in-up">
           <span>OpenShip Cloud</span>
           {from && (
