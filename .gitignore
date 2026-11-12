@@ -65,3 +65,6 @@ pnpm-debug.log*
 .react-router
 .wrangler
 next-env.d.ts
+
+# Local review screenshots and generated previews (not product assets)
+/artifacts/
