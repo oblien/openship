@@ -20,7 +20,6 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
-import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
 import { systemApi } from "@/lib/api/system";
 
@@ -119,13 +118,6 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
 
 export function SettingsSidebar() {
   const router = useRouter();
-  // The dashboard layout seeds AuthContext with the server-validated user.
-  // Reading Better Auth's client store directly here made the first render
-  // depend on whether its session request won the race with hydration: SSR
-  // omitted the email while a fast client cache included it, producing React
-  // hydration error #418. The seeded context is identical on both sides and
-  // still reconciles to the live session after mount.
-  const { user } = useAuth();
   const { t } = useI18n();
   const { tabs, activeTab } = useSettingsTabs();
   const infraIssues = useInfraIssuesCount();
@@ -136,51 +128,36 @@ export function SettingsSidebar() {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="bg-card rounded-2xl border border-border/50 p-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
-            <UiIcon name="settings" className="size-4 text-foreground" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground truncate">{t.settings.sidebar.title}</p>
-            {user?.email && (
-              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-            )}
-          </div>
-        </div>
+    <nav aria-label={t.settings.sidebar.title} className="rounded-2xl bg-card p-3">
+      <div className="space-y-1">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => handleTabChange(tab.id)}
+              aria-current={isActive ? "page" : undefined}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors ${
+                isActive
+                  ? "bg-foreground/[0.07] text-foreground"
+                  : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+              }`}
+            >
+              <UiIcon name={Icon} className="size-[17px] shrink-0" />
+              {tab.label}
+              {tab.id === "infrastructure" && infraIssues > 0 && (
+                <span
+                  className="ms-auto size-1.5 rounded-full bg-warning-solid"
+                  aria-label="Infrastructure needs attention"
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
-
-      <div className="bg-card rounded-2xl border border-border/50 p-3">
-        <div className="space-y-1">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors ${
-                  isActive
-                    ? "bg-foreground/[0.07] text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                }`}
-              >
-                <UiIcon name={Icon} className="size-[17px] shrink-0" />
-                {tab.label}
-                {tab.id === "infrastructure" && infraIssues > 0 && (
-                  <span
-                    className="ms-auto size-1.5 rounded-full bg-warning-solid"
-                    aria-label="Infrastructure needs attention"
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    </nav>
   );
 }
 

@@ -157,6 +157,7 @@
     "running": "运行中",
     "upToDate": "最新",
     "notInstalled": "未安装",
+    "notChecked": "尚未检查 — 扫描以检测已安装的版本。",
     "installEdge": "安装边缘",
     "edgeAbsentImpactOne": "这台服务器上有 {n} 个项目，但没有任何组件为其转发流量。",
     "edgeAbsentImpactMany": "这台服务器上有 {n} 个项目，但没有任何组件为其转发流量。"

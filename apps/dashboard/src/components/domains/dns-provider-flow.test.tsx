@@ -135,6 +135,13 @@ function button(label: string) {
 async function click(label: string) {
   await act(async () => button(label).click());
 }
+function fieldInput(label: string, scope: ParentNode = document) {
+  const field = [...scope.querySelectorAll("label")].find(
+    (element) => element.textContent?.trim() === label,
+  );
+  if (!field) return null;
+  return document.getElementById(field.htmlFor) as HTMLInputElement | null;
+}
 async function fill(input: HTMLInputElement, value: string) {
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -155,7 +162,7 @@ async function render(persisted = true) {
 }
 async function connect() {
   await click("Connect a DNS provider");
-  const token = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  const token = fieldInput("API token")!;
   expect(token).not.toBeNull();
   await fill(token, "token-for-tests-only");
 }
@@ -249,7 +256,7 @@ describe("in-context DNS connection", () => {
       selector: null,
       values: { apiToken: "token-for-tests-only" },
     });
-    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(fieldInput("API token")).toBeNull();
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(draft.value).toBe("Draft survives DNS setup");
     expect(buttons("Auto-configure DNS")).toHaveLength(2);
@@ -302,7 +309,7 @@ describe("in-context DNS connection", () => {
       await render();
       await click("Connect a DNS provider");
       expect(document.body.textContent).toContain("An owner or admin must connect");
-      expect(document.querySelector('input[type="password"]')).toBeNull();
+      expect(fieldInput("API token")).toBeNull();
       expect(h.credentials).not.toHaveBeenCalled();
       expect(h.create).not.toHaveBeenCalled();
     },
@@ -322,7 +329,7 @@ describe("in-context DNS connection", () => {
     );
     expect(document.querySelector('[role="listbox"]')).toBeNull();
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2);
-    expect(document.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe(
+    expect(fieldInput("API token")!.value).toBe(
       "token-for-tests-only",
     );
   });
@@ -337,7 +344,7 @@ describe("in-context DNS connection", () => {
     await connect();
     await click("Add connection");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("DNS:Edit is required");
-    expect(document.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
+    expect(fieldInput("API token")?.value).toBe(
       "token-for-tests-only",
     );
     expect(h.deploy).not.toHaveBeenCalled();
@@ -354,7 +361,7 @@ describe("in-context DNS connection", () => {
     }));
     await render();
     await click("Reconnect provider");
-    const token = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+    const token = fieldInput("API token")!;
     expect(token.value).toBe("");
     await fill(token, "replacement-test-token");
     await click("Save changes");
@@ -405,7 +412,7 @@ describe("in-context DNS connection", () => {
       document.querySelector('a[href="https://cloud.digitalocean.com/account/api/tokens"]'),
     ).not.toBeNull();
     await fill(
-      document.querySelector<HTMLInputElement>('input[type="password"]')!,
+      fieldInput("API token")!,
       "replacement-test-token",
     );
     await click("Save changes");
@@ -462,7 +469,7 @@ describe("in-context DNS connection", () => {
       document.querySelector('a[href="https://cloud.digitalocean.com/account/api/tokens"]'),
     ).not.toBeNull();
     await fill(
-      document.querySelector<HTMLInputElement>('input[type="password"]')!,
+      fieldInput("API token")!,
       "replacement-test-token",
     );
     await click("Save changes");
@@ -551,8 +558,8 @@ describe("shared credential form secret handling", () => {
         </I18nProvider>,
       ),
     );
-    expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe("");
-    await fill(host.querySelector<HTMLInputElement>('input:not([type="password"])')!, "New label");
+    expect(fieldInput("API token", host)!.value).toBe("");
+    await fill(fieldInput("Label", host)!, "New label");
     await click("Save changes");
     expect(h.update).toHaveBeenCalledExactlyOnceWith(saved.id, {
       name: "New label",

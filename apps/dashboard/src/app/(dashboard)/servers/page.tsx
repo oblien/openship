@@ -24,6 +24,7 @@ import type { CloudWorkspaceSummary, ClusterCapabilities } from "@repo/contracts
 import { privateNetworksApi } from "@/lib/api/private-networks";
 import { ServerClustersPanel } from "@/components/servers/clusters/ServerClustersPanel";
 import { useServerClustersOverview } from "@/hooks/useServerClustersOverview";
+import { ServerEmptyState } from "@/components/servers/ServerEmptyState";
 import { ServerDeletionModal } from "@/components/servers/ServerDeletionModal";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
@@ -495,7 +496,7 @@ function ServerInventoryPage() {
       {activeTab === "servers" &&
         (!loading && error && servers.length === 0 ? null : !loading && servers.length === 0 ? (
           // Empty state stands alone (no Quick Info card) and centers.
-          <EmptyState
+          <ServerEmptyState
             managed={false}
             onAdd={() => router.push("/servers/new")}
             onAddThisMachine={canAddThisMachine ? () => void addThisMachine() : undefined}
@@ -756,92 +757,5 @@ function ServerInventoryPage() {
         />
       )}
     </PageContainer>
-  );
-}
-
-/** No-servers illustration + primer. Unchanged from the original list view,
- *  now scoped to the Servers tab. */
-function EmptyState({
-  onAdd,
-  onAddThisMachine,
-  managed = false,
-}: {
-  onAdd: () => void;
-  managed?: boolean;
-  /** Present only on a server-host with host control on — offers registering the
-   *  box OpenShip runs on right from the empty state (#527). */
-  onAddThisMachine?: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="py-16 text-center">
-      <div className="relative mx-auto w-64 h-44 mb-8">
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 260 180" fill="none">
-          {/* Stacked server card */}
-          <rect x="58" y="52" width="116" height="88" rx="14" fill="var(--th-sf-04)" />
-          <rect x="48" y="42" width="116" height="88" rx="14" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-          <rect x="38" y="32" width="116" height="88" rx="14" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-          {/* Rack units — one online (single success accent), the rest idle */}
-          <rect x="52" y="46" width="74" height="16" rx="4" fill="var(--th-on-05)" stroke="var(--th-on-10)" strokeWidth="0.8" />
-          <rect x="58" y="52" width="38" height="4" rx="2" fill="var(--th-on-12)" />
-          <circle cx="138" cy="54" r="3" fill="#22c55e" fillOpacity="0.7" />
-          <rect x="52" y="68" width="74" height="16" rx="4" fill="var(--th-on-04)" stroke="var(--th-on-08)" strokeWidth="0.8" />
-          <rect x="58" y="74" width="38" height="4" rx="2" fill="var(--th-on-10)" />
-          <circle cx="138" cy="76" r="3" fill="var(--th-on-16)" />
-          <rect x="52" y="90" width="74" height="16" rx="4" fill="var(--th-on-04)" stroke="var(--th-on-08)" strokeWidth="0.8" />
-          <rect x="58" y="96" width="38" height="4" rx="2" fill="var(--th-on-08)" />
-          <circle cx="138" cy="98" r="3" fill="var(--th-on-12)" />
-          {/* Dashed connector → add node */}
-          <path d="M154 86 Q 176 84 188 86" stroke="var(--th-on-16)" strokeWidth="1.5" strokeDasharray="3 3" fill="none" />
-          {/* Add-server node */}
-          <circle cx="210" cy="86" r="22" fill="var(--th-on-05)" />
-          <circle cx="210" cy="86" r="16" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="2" strokeDasharray="4 3" />
-          <path d="M210 78v16M202 86h16" stroke="var(--th-on-40)" strokeWidth="2" strokeLinecap="round" />
-          {/* Decorative dots + sparkles */}
-          <circle cx="26" cy="58" r="4" fill="var(--th-on-10)" />
-          <circle cx="34" cy="146" r="6" fill="var(--th-on-06)" />
-          <circle cx="238" cy="40" r="3.5" fill="var(--th-on-12)" />
-          <circle cx="248" cy="132" r="4.5" fill="var(--th-on-06)" />
-          <path d="M22 104l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-16)" />
-          <path d="M228 150l1.6-3.2 1.6 3.2-3.2-1.6 3.2 0-3.2 1.6z" fill="var(--th-on-12)" />
-        </svg>
-      </div>
-
-      <h3 className="text-2xl font-medium text-foreground/80 mb-2" style={{ letterSpacing: "-0.2px" }}>
-        {managed ? t.billing.workspaces.empty : t.servers.list.emptyTitle}
-      </h3>
-      <p className="text-sm text-muted-foreground/70 max-w-sm mx-auto mb-8 leading-relaxed">
-        {managed ? t.billing.workspaces.defaultHint : t.servers.list.emptyDescription}
-      </p>
-
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-        <button
-          onClick={onAdd}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
-        >
-          <UiIcon name="plus" className="size-4" />
-          {managed ? t.billing.onboarding.choosePlan : t.servers.list.addFirstServer}
-        </button>
-        {onAddThisMachine && (
-          <button
-            onClick={onAddThisMachine}
-            className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-          >
-            <UiIcon name="hard-drive" className="size-4" />
-            {t.servers.list.addThisMachine}
-          </button>
-        )}
-        <a
-          href={managed ? "https://openship.io/docs/guides/cloud-workspaces" : "https://openship.io/docs/guides/custom-servers"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
-        >
-          <UiIcon name="book" className="size-4" />
-          {t.servers.list.seeDocs}
-          <UiIcon name="external-link" className="size-3.5 opacity-60" />
-        </a>
-      </div>
-    </div>
   );
 }

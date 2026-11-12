@@ -147,7 +147,11 @@ describe("Cloudflare setup UI", () => {
     await act(async () => document.getElementById(l.htmlFor)!.click());
     await flush();
     await click("Add credential");
-    expect(host.querySelector('input[type="password"]')).not.toBeNull();
+    const tokenLabel = [...host.querySelectorAll("label")].find(
+      (element) => element.textContent?.trim() === "API token",
+    );
+    expect(tokenLabel).toBeDefined();
+    expect(document.getElementById(tokenLabel!.htmlFor)).toBeInstanceOf(HTMLInputElement);
     expect(host.textContent).toContain("Cloudflare Tunnel Edit");
     expect(h.connect).not.toHaveBeenCalled();
   });

@@ -155,11 +155,11 @@ export default function AppsPage() {
           </div>
 
           {(catalogLoading || suggestions.length > 0) && (
-            <section className="mx-auto mt-10 max-w-2xl" aria-labelledby="popular-apps">
+            <section className="mx-auto mt-10 max-w-4xl" aria-labelledby="popular-apps">
               <h2 id="popular-apps" className="mb-4 text-sm font-medium text-muted-foreground">{copy.popular}</h2>
-              <div className="grid grid-cols-1 gap-3 @xl/apps-page:grid-cols-2" aria-busy={catalogLoading}>
+              <div className="grid auto-rows-fr grid-cols-1 gap-3 @xl/apps-page:grid-cols-2 @4xl/apps-page:grid-cols-3" aria-busy={catalogLoading}>
                 {catalogLoading ? <CatalogSkeleton /> : suggestions.map(app => <CatalogShortcut key={app.id} app={app} />)}
-                <Link href="/apps/new" className="group flex items-center gap-3 rounded-xl bg-muted/40 p-4 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Link href="/apps/new" className="group flex min-w-0 items-center gap-3 rounded-xl bg-muted/40 p-4 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
                     <Icon name="plus" className="size-5 text-muted-foreground" />
                   </div>

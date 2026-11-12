@@ -157,6 +157,7 @@
     "running": "Çalışıyor",
     "upToDate": "Güncel",
     "notInstalled": "Kurulu değil",
+    "notChecked": "Henüz kontrol edilmedi — yüklü sürümü algılamak için tarama başlatın.",
     "installEdge": "Edge kur",
     "edgeAbsentImpactOne": "Bu sunucuda {n} proje dağıtılmış durumda ama trafiği yönlendiren bir şey yok.",
     "edgeAbsentImpactMany": "Bu sunucuda {n} proje dağıtılmış durumda ama trafiği yönlendiren bir şey yok."

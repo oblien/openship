@@ -85,8 +85,9 @@ original palette; dim and dark keep their existing treatment. Adjust these share
 palettes rather than adding opacity to whole illustrations or page-specific colors.
 Use 56–64 px artwork
 beside plan names and 80 px for onboarding and empty states, without an extra icon
-tile. Use the shared calendar for Jobs, snapshots for Backups, server racks for Clusters,
-and the connected shield for Private networks. Projects, deployments, Actions, monitoring,
+tile. Use the shared calendar for Jobs, snapshots for Backups, server racks for Servers and Clusters,
+the connected shield for Private networks, and `deploy-anywhere` for the disconnected
+Openship Cloud card. Projects, deployments, Actions, monitoring,
 and repository/folder import use the same compact artwork and palette. Keep metrics,
 progress rings, navigation, controls and provider logos as utility icons or their original
 artwork. Monitoring uses the chart for an empty incident
@@ -413,6 +414,20 @@ use their installed tools and physical CPU.
 
 ## Layout and density
 
+Settings uses one navigation card without a separate account/Settings identity card.
+Connections is the provider workspace; legacy Credentials and DNS URLs still open it.
+Show provider logos, a short description and Add in compact rows, with the shared
+credential editor expanding inline. Omit repeated "none added" messages and outlined
+cards around each provider. Saved accounts retain their status and management actions.
+Connections uses the standard `SettingsSection` key icon tile to match other Settings headers;
+provider rows keep their original logos and controls.
+
+Backups with no destinations uses one illustrated setup prompt and Add Destination
+action. Omit the zero-value summary and a confirmed-empty history panel. Continue
+loading history through the existing reader: retained runs and read errors stay
+visible even after the last destination is removed. Configured destinations keep
+their storage summary, history, verification and restore actions.
+
 Project navigation groups metrics, runtime/request logs and available Health views
 under **Monitoring & Logs**. Runtime-health attention on project cards opens the existing
 Health view and clears from the same incident state when a workload recovers;
@@ -672,6 +687,8 @@ check retryable before starting the move.
   app illustration and a link to the full catalog alongside it. The illustration's icons
   link to available catalog apps; keep their targets stable and do not repeat them in a
   second suggestion list. Its empty state shows connected app logos and popular install shortcuts.
+  Center popular shortcuts in a wider group with equal-height cards, including Explore all apps.
+  Use three columns in wide page containers, two at medium widths and one on mobile.
   Keep Home's project list and the sidebar counts separate too.
 - Cloud's New Project choices are Apps, GitHub, Git URL and Import existing project.
   Folder import and the Browse Templates shortcut are available only on self-hosted instances.
@@ -1282,20 +1299,31 @@ Collapse preserves unsent choices and text. Multiple requests
 share this panel, with separate drafts and retry identities; both live and message-mode
 questions use the existing response path. Show submission failures inside the panel and
 remove resolved questions when the conversation refreshes.
-Before the assistant is enabled, introduce **AI Agents** with a compact 30–36px
-heading, a short description and native provider marks. Group the host picker,
-single **Enable AI Agents** action and brief access guidance in one setup card.
-Pair it with a contained interactive preview of **Deploy**, **Investigate** and **Automate**;
-keep its example tabs, conversation and outcome on one surface. Avoid oversized
-marketing headlines and full-height vertical centering. Switch to two columns based
-on the available content width, so the same layout works beside the dashboard sidebar.
-Each explicitly labelled example shows a short request, three connected actions and an
-outcome. Reuse the character avatars and existing theme surfaces; keep accents to the
-avatars, native provider marks and a small outcome icon. No oversized illustration,
-feature-card grid, repeated onboarding steps or inactive automation toolbar.
+Before the assistant is enabled, use the normal `PageContainer` width and padding,
+a 24px page heading with subtitle, and 24px spacing below the header. Do not add
+another width cap or independent scrolling region inside the page. Match Projects
+and Servers with a 340px action sidebar, a 24px column gap and the 60rem container
+breakpoint. The left column has a standard centered empty-state card: 80px `ai-mcp`
+artwork, a 20px heading and a short description. Keep the **Deploy**, **Investigate**
+and **Automate** examples in a soft section below it. The right column has one
+**Build with your agent** card using standard `p-5` padding and a 16px heading, with
+native provider marks, a short explanation, the host picker, **Enable Agents** and
+brief access guidance. Codex and Claude Code use the native connection flow; Grok
+uses a custom API. Put the Antigravity and external-client **Settings → MCP** link
+below the setup card, as unboxed supporting text within the same sidebar.
+These marks do not advertise additional native runtimes. Reuse the shared icon
+renderer, with locally bundled Grok and Antigravity assets. Use shared
+`Tabs` for their local selection and keyboard behavior. Each example pairs compact
+`illustration-color` artwork and a short request with three connected actions and an
+outcome. Reuse `push-to-deploy`, `logs-monitoring` and `jobs-triggers`; keep outcome
+icons neutral so the examples do not resemble live health status. Avoid oversized
+marketing headlines, simulated chat bubbles and full-height vertical centering.
+Switch the introduction and example content to columns based on their own available
+width, so the layout also works beside the dashboard sidebar. No feature-card grid,
+repeated onboarding steps or inactive automation toolbar.
 Switching examples is local presentation only; it must not enable anything, start a
 conversation or execute a task. Tabs support arrow keys, Home and End, with visible focus.
-On small screens show the headline, setup action and native provider marks before the
+On small screens show the headline, native provider marks and setup action before the
 preview. Keep the host picker beside setup; if no eligible host exists, link to server
 setup. Mention the online host requirement in the automation example. Preserve the
 shared permission review, grant submission and native connection flow. Preparing access

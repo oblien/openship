@@ -157,6 +157,7 @@
     "running": "Em execução",
     "upToDate": "Atualizado",
     "notInstalled": "Não instalado",
+    "notChecked": "Não verificado — execute uma verificação para detectar a versão instalada.",
     "installEdge": "Instalar edge",
     "edgeAbsentImpactOne": "{n} projeto está implantado aqui e nada encaminha tráfego para ele.",
     "edgeAbsentImpactMany": "{n} projetos estão implantados aqui e nada encaminha tráfego para eles."

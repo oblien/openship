@@ -55,7 +55,7 @@ import { InfrastructureTab } from "./_components/InfrastructureTab";
 import { TeamTab } from "./_components/TeamTab";
 import { NotificationsTab } from "./_components/NotificationsTab";
 import { EmailSettings } from "./_components/EmailSettings";
-import { Credentials } from "./_components/Credentials";
+import { Connections } from "./_components/Connections";
 import { DataTransferTab } from "./_components/DataTransferTab";
 import { InstanceLocation } from "@/components/instance/InstanceLocation";
 import {
@@ -176,8 +176,8 @@ function SettingsPageInner() {
             </>
           )}
 
-          {/* Tokens is INBOUND only — somebody authenticating TO Openship. The clone PAT
-              moved to Credentials, which is everything pointing the other way. */}
+          {/* API tokens authenticate callers to Openship. Provider connections live
+              in Connections; clone credentials stay with Git sources. */}
           {activeTab === "tokens" && <PersonalAccessTokens />}
 
           {activeTab === "mcp" && <McpConnection />}
@@ -207,7 +207,7 @@ function SettingsPageInner() {
             </>
           )}
 
-          {activeTab === "connections" && <Credentials />}
+          {activeTab === "connections" && <Connections />}
 
           {activeTab === "cloud" && selfHosted && <CloudConnection />}
 

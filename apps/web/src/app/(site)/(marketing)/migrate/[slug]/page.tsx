@@ -1,4 +1,5 @@
-import type { Metadata, ResolvingMetadata } from "next";
+import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight } from "lucide-react";
@@ -9,12 +10,7 @@ import { Navbar, Footer } from "@/components/landing";
 import { MarketingIntro } from "@/components/marketing/marketing-intro";
 import { MarketingSection } from "@/components/marketing/marketing-section";
 import { MarketingCta } from "@/components/marketing/marketing-cta";
-import { inheritSocialImages } from "@/lib/social-metadata";
-import {
-  MIGRATION_SOURCES,
-  PLATFORM_MIGRATION_GUIDE,
-  getMigrationSource,
-} from "@/lib/migration-sources";
+import { MIGRATION_SOURCES, getMigrationSource } from "@/lib/migration-sources";
 import { MigrationFaq } from "../_components/migration-faq";
 import { MigrationSteps } from "../_components/migration-steps";
 import "../migrate.css";
@@ -27,24 +23,18 @@ export function generateStaticParams() {
   return MIGRATION_SOURCES.map(({ slug }) => ({ slug }));
 }
 
-export async function generateMetadata(
-  { params }: Props,
-  parent: ResolvingMetadata,
-): Promise<Metadata> {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const source = getMigrationSource((await params).slug);
   if (!source) notFound();
   const title = `Migrate from ${source.name} to Openship`;
   const url = `/migrate/${source.slug}`;
-  return inheritSocialImages(
-    {
-      title: { absolute: title },
-      description: source.description,
-      alternates: { canonical: url },
-      openGraph: { title, description: source.description, url, type: "website" },
-      twitter: { card: "summary_large_image", title, description: source.description },
-    },
-    parent,
-  );
+  return {
+    title: { absolute: title },
+    description: source.description,
+    alternates: { canonical: url },
+    openGraph: { title, description: source.description, url, type: "website" },
+    twitter: { card: "summary_large_image", title, description: source.description },
+  };
 }
 
 export default async function MigrationSourcePage({ params }: Props) {
@@ -57,13 +47,25 @@ export default async function MigrationSourcePage({ params }: Props) {
         <MarketingIntro
           eyebrow={
             <span className="mg-provider-label">
-              <AppLogo slug={source.logo} className="size-6" invertOnDark={false} />
-              Migrate from {source.name}
+              <span className="mg-provider-logos" aria-hidden="true">
+                {source.logos.map((logo) => (
+                  <AppLogo
+                    key={logo}
+                    slug={logo}
+                    src={`/provider-logos/${logo}.svg`}
+                    className="size-6"
+                    invertOnDark={false}
+                  />
+                ))}
+              </span>
+              <span className="mg-provider-caption">
+                Migrate from <span>{source.name}</span>
+              </span>
             </span>
           }
           title={
             <>
-              Your {source.name} project.
+              {source.headline}
               <br />
               <span>A new home.</span>
             </>
@@ -77,11 +79,21 @@ export default async function MigrationSourcePage({ params }: Props) {
             >
               Start your import <ArrowRight size={16} aria-hidden="true" />
             </a>
-            <Link href={PLATFORM_MIGRATION_GUIDE} className="marketing-text-link">
+            <Link href={source.guide} className="marketing-text-link">
               Read the guide <ArrowRight size={16} aria-hidden="true" />
             </Link>
           </div>
         </MarketingIntro>
+        {source.screenshot && (
+          <figure className="site-container mg-screenshot">
+            <Image
+              src={source.screenshot.image}
+              alt={source.screenshot.alt}
+              sizes="(max-width: 1280px) 100vw, 1280px"
+            />
+            <figcaption>{source.screenshot.caption}</figcaption>
+          </figure>
+        )}
         <div className="site-container marketing-content">
           <MarketingSection
             id="what-moves"

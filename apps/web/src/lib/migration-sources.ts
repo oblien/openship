@@ -1,13 +1,19 @@
 import type { FeatureIllustrationName } from "@repo/ui/illustrations";
+import type { StaticImageData } from "next/image";
+import railwayReview from "../../public/migrations/railway-review.webp";
+import vercelReview from "../../public/migrations/vercel-review.webp";
 
 export const PLATFORM_MIGRATION_GUIDE = "/docs/guides/migrate-from-railway-vercel";
 
 type MigrationSource = {
   slug: string;
   name: string;
-  logo: string;
+  logos: string[];
+  headline: string;
+  guide: string;
   summary: string;
   description: string;
+  screenshot?: { image: StaticImageData; alt: string; caption: string };
   highlights: { illustration: FeatureIllustrationName; title: string; description: string }[];
   steps: { title: string; description: string }[];
   dataTitle: string;
@@ -15,15 +21,23 @@ type MigrationSource = {
   questions: { q: string; a: string }[];
 };
 
-/** Public overviews of the import flow documented in the platform migration guide. */
+/** Public guides reuse the platform-import or existing Docker migration flow. */
 export const MIGRATION_SOURCES: MigrationSource[] = [
   {
     slug: "from-railway",
     name: "Railway",
-    logo: "railway",
+    logos: ["railway"],
+    headline: "Your Railway project.",
+    guide: PLATFORM_MIGRATION_GUIDE,
     summary: "Bring your project environment, connected services and persistent data together.",
     description:
       "Move your Railway project to Openship Cloud or your own infrastructure. Review its services, copy persistent volumes, and verify the new deployment before switching your domains.",
+    screenshot: {
+      image: railwayReview,
+      alt: "Railway import review showing a Storefront app, PostgreSQL and Redis, with a downtime acknowledgment before importing.",
+      caption:
+        "Review services, persistent data and the destination before starting. Sample project shown.",
+    },
     highlights: [
       {
         illustration: "compose-multi-service",
@@ -100,10 +114,17 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
   {
     slug: "from-vercel",
     name: "Vercel",
-    logo: "vercel",
+    logos: ["vercel"],
+    headline: "Your Vercel project.",
+    guide: PLATFORM_MIGRATION_GUIDE,
     summary: "Bring your application source, environment settings and connected PostgreSQL.",
     description:
       "Bring your Vercel application to Openship Cloud or your own infrastructure. Import its GitHub source and settings, review its dependencies, and choose where its data lives.",
+    screenshot: {
+      image: vercelReview,
+      alt: "Vercel import review showing Storefront source and a PostgreSQL database selected for copying, with source writes requiring a pause.",
+      caption: "Check the app and your PostgreSQL choice before moving data. Sample project shown.",
+    },
     highlights: [
       {
         illustration: "push-to-deploy",
@@ -174,6 +195,88 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       {
         q: "Where will the imported application run?",
         a: "Choose an eligible managed Cloud destination or a connected server in Desktop or self-hosted Openship. The normal destination permissions and capacity checks apply. Imported projects keep the usual deployment logs, domains and runtime controls; automatic deployment on Git push stays off until you enable it.",
+      },
+    ],
+  },
+  {
+    slug: "from-coolify-dokploy",
+    name: "Coolify / Dokploy",
+    logos: ["coolify", "dokploy"],
+    headline: "Your existing Docker stack.",
+    guide: "/docs/guides/migrate-from-coolify-dokploy-dokku",
+    summary: "Use the Server or Docker import to bring your running apps, volumes and routes.",
+    description:
+      "Move workloads running on Coolify or Dokploy through Openship’s existing Server or Docker import. Connect the source server, scan its containers, and review services, data and domains before changing anything.",
+    highlights: [
+      {
+        illustration: "compose-multi-service",
+        title: "The containers already running",
+        description:
+          "Discover your existing Docker services and their current images. Reuse workloads on the same server, or review a move to another eligible destination.",
+      },
+      {
+        illustration: "persistent-storage",
+        title: "Volumes and application files",
+        description:
+          "Review each service’s storage. Reuse data in place or copy supported volumes and app-data mounts, with a maintenance window for a consistent transfer.",
+      },
+      {
+        illustration: "secrets-credentials",
+        title: "Configuration you can inspect",
+        description:
+          "Review detected environment settings, ports and service connections before import. Keep application images and data formats compatible.",
+      },
+      {
+        illustration: "domains-ssl",
+        title: "A separate routing decision",
+        description:
+          "Inspect discovered domains and proxy notices. Review any edge takeover before confirming it, and verify the destination before retiring the old workloads.",
+      },
+    ],
+    steps: [
+      {
+        title: "Choose Server or Docker",
+        description:
+          "Open New project → Import existing project → Server or Docker. Both platforms use this shared Docker discovery flow; no separate platform token is needed.",
+      },
+      {
+        title: "Connect the source server",
+        description:
+          "Choose a connected server in Desktop or self-hosted Openship, or add an external migration source over SSH in Cloud. Leave its applications and proxy running for discovery.",
+      },
+      {
+        title: "Review services and storage",
+        description:
+          "Scan the source and select the application workloads. Review images, variables, volumes and domains, then choose an eligible destination and the data strategy.",
+      },
+      {
+        title: "Verify before cutover",
+        description:
+          "Check application health, stored data and routing at the destination. Confirm the appropriate cutover only after verification; retire the old platform separately.",
+      },
+    ],
+    dataTitle: "Keep the data strategy explicit",
+    data: [
+      "Coolify and Dokploy migrations use the same Docker import as an existing server. On the same server, reuse in place can keep the current application containers and volumes. A copy or cross-server move stops the source workloads while supported persistent data transfers.",
+      "Cross-server moves can transfer locally built Docker images through the shared image-save and image-load pipeline. Review destination disk space and keep compatible application versions and data formats: migration does not upgrade databases or reproduce every setting of the old control plane.",
+      "Discovery leaves the existing proxy running and reports routes that need review. Edge takeover and source retirement are explicit decisions. Keep backups and verify application data, HTTPS and background jobs before completing the move.",
+    ],
+    questions: [
+      {
+        q: "Is there a separate Coolify or Dokploy connector?",
+        a: "No. Select Server or Docker in Import existing project. Openship discovers Docker workloads on the source server through its existing connection and uses the shared migration review, destination picker and transfer pipeline.",
+      },
+      {
+        q: "What access do I need?",
+        a: "Connect the source server over SSH with the permissions needed to inspect Docker and perform the reviewed migration. Openship also checks your access to the source and destination. You do not need a Coolify or Dokploy API token.",
+      },
+      {
+        q: "Will everything move without changes?",
+        a: "Review the scan and its notices before importing. Unsupported mounts, proxy-specific routing and services managed outside Docker can need preparation. Select application workloads rather than the old platform’s control plane or proxy. Both registry images and transferable locally built Docker images use the shared migration pipeline.",
+      },
+      {
+        q: "Will Openship delete my old platform?",
+        a: "Importing does not uninstall Coolify or Dokploy. Review any explicit source cutover or edge takeover before confirming it. Verify the migrated application and backups, then retire the old control plane and resources yourself.",
       },
     ],
   },

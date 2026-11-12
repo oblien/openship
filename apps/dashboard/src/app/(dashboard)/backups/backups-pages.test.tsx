@@ -22,7 +22,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useParams: mocks.params }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.toast }) }));
 vi.mock("@/components/backup/CreateDestinationModal", () => ({
-  CreateDestinationModal: () => null,
+  CreateDestinationModal: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div role="dialog" aria-label="Add backup destination" /> : null,
 }));
 vi.mock("@/components/backup/BackupRunCard", () => ({
   BackupRunCard: ({ runId }: { runId: string }) => <div data-run={runId} />,
@@ -219,6 +220,45 @@ it("does not turn a failed list request into an empty destination list and recov
   await click(baseDictionary.chrome.apiDown.retry);
   expect(tableRows()).toHaveLength(2);
   expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("offers one first-destination action without empty history or zero totals", async () => {
+  mocks.list.mockResolvedValue({ data: [] });
+  records = [];
+  await render();
+  expect(host.textContent).toContain(m.emptyTitle);
+  expect(stat(m.summaryStored)).toBeUndefined();
+  expect(host.querySelector(`section[aria-label="${b.recent.title}"]`)).toBeNull();
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (item) => item.textContent?.trim() === m.addDestination,
+    ),
+  ).toHaveLength(1);
+  await click(m.addDestination);
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("keeps retained backup history accessible when no destinations remain", async () => {
+  mocks.list.mockResolvedValue({ data: [] });
+  await render();
+  expect(host.textContent).toContain(m.emptyTitle);
+  expect(tableRows()).toHaveLength(2);
+  await click(b.recent.restore);
+  expect(mocks.getRun).toHaveBeenCalledOnce();
+});
+
+it("keeps history failures retryable beside first-destination setup", async () => {
+  mocks.list.mockResolvedValue({ data: [] });
+  mocks.history.mockRejectedValueOnce(
+    new ApiError(503, "Unavailable", { error: "History is unavailable" }),
+  );
+  records = [];
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("History is unavailable");
+  await click(baseDictionary.chrome.apiDown.retry);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.querySelector(`section[aria-label="${b.recent.title}"]`)).toBeNull();
+  expect(host.textContent).toContain(m.emptyTitle);
 });
 
 it("reports failed detail refreshes without replacing existing data or claiming the destination disappeared", async () => {

@@ -1,0 +1,7 @@
+import OgImage from "./opengraph-image";
+import { OG_SIZE } from "@/lib/og-image";
+
+export const alt = "Migrate from Railway, Vercel, Coolify or Dokploy to Openship";
+export const size = OG_SIZE;
+export const contentType = "image/png";
+export default OgImage;

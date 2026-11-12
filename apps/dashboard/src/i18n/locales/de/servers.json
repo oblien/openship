@@ -157,6 +157,7 @@
     "running": "Läuft",
     "upToDate": "Aktuell",
     "notInstalled": "Nicht installiert",
+    "notChecked": "Noch nicht geprüft — Scan starten, um die installierte Version zu erkennen.",
     "installEdge": "Edge installieren",
     "edgeAbsentImpactOne": "{n} Projekt läuft auf diesem Server, aber nichts leitet Traffic dorthin.",
     "edgeAbsentImpactMany": "{n} Projekte laufen auf diesem Server, aber nichts leitet Traffic dorthin."
