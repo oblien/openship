@@ -136,7 +136,6 @@ export function PlatformImportServices({
             onSelect={(server) => onTarget(server?.id ?? "", server?.name ?? "")}
             onReadyChange={onTargetReady}
             disabled={busy}
-            label="Plan or server"
             useSavedDefault={false}
           />
           <dl className="space-y-3 text-sm">

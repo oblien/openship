@@ -1056,6 +1056,9 @@ what will be copied, kept external or started empty, and collects any required s
 acknowledgments. Changing the source, destination or selections invalidates that review.
 Use the shared destination picker and durable migration progress; never add a preview-only
 import path or claim that metadata access verifies a data transfer.
+The shared destination picker stays a dropdown even with one available server or plan.
+Keep Add server in its menu so selection and acquisition use the same control across
+deployment, migration and setup forms. Explicit read-only bindings remain summaries.
 Stopping an import is a durable request. Keep Stopping visible across refreshes until the
 worker finishes transfer cancellation and recovery. Retain saved projects and copied data;
 never show completion merely because the cancellation request was accepted.
