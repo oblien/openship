@@ -140,7 +140,7 @@
       "addCustom": "添加自定义",
       "howToAddApp": "如何添加应用",
       "removeCustomApp": "删除自定义应用",
-      "needsUpdateDesc": "更新您的 Openship 实例以安装此应用。",
+      "needsUpdateDesc": "更新您的 OpenShip 实例以安装此应用。",
       "needsUpdateBadge": "需要更新",
       "needsVersionBadge": "需要 v{version}",
       "removedToast": "已删除 \"{name}\"。",

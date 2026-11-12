@@ -61,7 +61,7 @@
       "title": "ヘルスチェック",
       "subtitle": "オフ — アプリが起動した時点でデプロイは完了します",
       "subtitleOn": "オン — 公開前にアプリの応答を待ちます",
-      "description": "Openship は起動後のアプリを待たないため、起動が遅くてもデプロイが遅れたり失敗したりすることはありません。公開後にポートは別途確認され、何もブロックせずに報告されます。デプロイ自体を失敗させたい場合にのみ有効にしてください。",
+      "description": "OpenShip は起動後のアプリを待たないため、起動が遅くてもデプロイが遅れたり失敗したりすることはありません。公開後にポートは別途確認され、何もブロックせずに報告されます。デプロイ自体を失敗させたい場合にのみ有効にしてください。",
       "probeLabel": "アプリの応答を待つ",
       "probeDesc": "コンテナの起動後にアプリのポートへ接続し、接続が受け付けられるまで待ちます。",
       "pathLabel": "HTTP パス",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "ランタイムバージョン",
     "runtimeVersionDefault": "デフォルト",
-    "runtimeVersionDesc": "選択したバージョンに対応するビルドと実行イメージを使用します。Openship が生成する Docker ビルドが必要です。",
+    "runtimeVersionDesc": "選択したバージョンに対応するビルドと実行イメージを使用します。OpenShip が生成する Docker ビルドが必要です。",
     "buildImageLabel": "ビルドイメージ",
     "buildImageDesc": "クラウドまたはサーバービルド用のビルダーコンテナイメージ。検出されたベースイメージが正しくない場合は上書きしてください。",
     "productionPathsLabel": "本番パス",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "リビルド間では引き継がれません",
       "statefulWarnPart2": "。ワークスペースを置き換える前に、データのバックアップと復元を明示的に行ってください。",
       "volumeHint": "名前付きボリュームまたはホストパス → コンテナパス。",
-      "volumeCloudNote": "Openship Cloud は永続ボリュームのマウントに対応していません。ボリュームが必要なワークロードにはサーバーを選択してください。",
+      "volumeCloudNote": "OpenShip Cloud は永続ボリュームのマウントに対応していません。ボリュームが必要なワークロードにはサーバーを選択してください。",
       "sourcePlaceholder": "ソース",
       "containerPathPlaceholder": "コンテナパス",
       "readOnlyMount": "読み取り専用マウント",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Cloud",
+    "targetOpenshipCloud": "OpenShip Cloud",
     "targetServerNamed": "サーバー · {name}",
     "targetServer": "サーバー",
     "targetLocal": "ローカルマシン",
@@ -379,9 +379,9 @@
       "port": "ポート",
       "process": "プロセス",
       "unitDescription": "ユニットの説明",
-      "openshipDeployment": "Openship デプロイ",
+      "openshipDeployment": "OpenShip デプロイ",
       "sites": {
-        "lead": "既存のプロキシは現在 {count} 件のサイトを配信しています。移行すると、ポート 80/443 を引き継ぐ前にそれらを Openship にインポートします：",
+        "lead": "既存のプロキシは現在 {count} 件のサイトを配信しています。移行すると、ポート 80/443 を引き継ぐ前にそれらを OpenShip にインポートします：",
         "tlsBadge": "TLS",
         "staticLabel": "静的:",
         "warningsTitle": "自動的に移行できませんでした — 手動で再追加してください："
@@ -531,7 +531,7 @@
     "title": "リポジトリの一部のデプロイ設定が適用されませんでした",
     "description": "デプロイ前に、以下のスキップされた設定を確認してください。",
     "titleWholeFile": "このリポジトリの openship.json は無視されました",
-    "descriptionWholeFile": "内容は一切適用されていません。デプロイは Openship が検出した設定で続行します。",
+    "descriptionWholeFile": "内容は一切適用されていません。デプロイは OpenShip が検出した設定で続行します。",
     "refused": "拒否",
     "unrecognized": "未認識",
     "hint": "次のデプロイ前に、指定された設定ファイルを確認し、未対応の設定を更新してください。"

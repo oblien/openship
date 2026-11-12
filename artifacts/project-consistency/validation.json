@@ -1,0 +1,14 @@
+{
+  "dashboard_tests": {
+    "passed": 167,
+    "files": 11
+  },
+  "api_tests": {
+    "passed": 66,
+    "files": 3
+  },
+  "dashboard_typecheck": "passed",
+  "api_typecheck": "passed",
+  "browser": "passed; real Add form, saved env, stable route, separate save/apply, masked secrets, themes, mobile and Arabic",
+  "preview": "sample data only; no real deployment executed"
+}

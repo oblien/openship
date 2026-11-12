@@ -169,7 +169,7 @@
     "addMailbox": "Adicionar uma caixa de correio",
     "addDomain": "Adicionar um domínio",
     "reviewDns": "Revisar registros DNS",
-    "legacyWebmail": "Implantado por uma versão mais antiga do Openship — pode ser substituído pelo aplicativo de webmail, que se atualiza com seus lançamentos.",
+    "legacyWebmail": "Implantado por uma versão mais antiga do OpenShip — pode ser substituído pelo aplicativo de webmail, que se atualiza com seus lançamentos.",
     "upgradeWebmail": "Substituir webmail"
   },
   "webmail": {
@@ -363,7 +363,7 @@
     "dnsEmpty": "Nenhum registro DNS em arquivo ainda. Conclua o assistente de instalação para preencher a varredura.",
     "reachability": {
       "title": "Portas públicas de e-mail",
-      "desc": "Verifica os listeners locais e depois conecta do plano de controle do Openship ao endereço público de e-mail.",
+      "desc": "Verifica os listeners locais e depois conecta do plano de controle do OpenShip ao endereço público de e-mail.",
       "descFor": "Verifica os listeners locais e o acesso externo a {hostname} em {address}.",
       "remediation": "O servidor está escutando, mas uma ou mais portas públicas estão indisponíveis. Permita TCP 25, 465, 587 e 993 no firewall do host e no firewall/grupo de segurança/NSG do provedor.",
       "reachableHint": "Escutando no host e acessível pelo plano de controle.",
@@ -644,7 +644,7 @@
     "legacyNote": "Este servidor usa o motor antigo instalado diretamente no host (Postfix/Dovecot com systemd), portanto não há contêiner para inspecionar.",
     "start": "Iniciar o motor",
     "missingTitle": "Nenhum motor de e-mail neste servidor",
-    "missingBody": "O Openship não encontra nenhum motor de e-mail aqui — nem o contêiner do motor nem as unidades do Postfix/Dovecot. Execute a configuração de e-mail novamente para reinstalá-lo.",
+    "missingBody": "O OpenShip não encontra nenhum motor de e-mail aqui — nem o contêiner do motor nem as unidades do Postfix/Dovecot. Execute a configuração de e-mail novamente para reinstalá-lo.",
     "rerunSetup": "Executar a configuração novamente",
     "cardBlocked": "Indisponível até o motor de e-mail estar em execução."
   },
@@ -741,7 +741,7 @@
     "renewing": "Renovando…",
     "autoRenew": "Renovação automática",
     "autoRenewHint": "Renovar antes de expirar e recarregar os serviços de e-mail.",
-    "desktopHint": "Mantenha o Openship aberto para renovar automaticamente.",
+    "desktopHint": "Mantenha o OpenShip aberto para renovar automaticamente.",
     "jobDisabled": "A tarefa compartilhada de renovação SSL está desativada.",
     "manageJob": "Abrir tarefa de renovação",
     "failed": "Não foi possível atualizar o certificado de e-mail.",

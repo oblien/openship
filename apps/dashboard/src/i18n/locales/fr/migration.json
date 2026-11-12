@@ -6,13 +6,13 @@
       "warnings": "Consulter les {count} remarques de détection"
     },
     "title": "Migrer un déploiement Docker",
-    "intro": "Inspectez Docker sur ce serveur et adoptez ses conteneurs comme projet Openship. L'inspection est en lecture seule — rien ne change sur le serveur tant que vous ne déployez pas.",
+    "intro": "Inspectez Docker sur ce serveur et adoptez ses conteneurs comme projet OpenShip. L'inspection est en lecture seule — rien ne change sur le serveur tant que vous ne déployez pas.",
     "selectServer": "Sélectionner un serveur",
     "scan": "Scanner le serveur",
     "scanning": "Analyse…",
     "flatDocker": "Liste à plat",
-    "flatDockerHint": "Ignorer les libellés Openship — adopter tout (y compris les conteneurs gérés par Openship) comme du Docker brut.",
-    "flatDockerShort": "Adopte aussi les conteneurs gérés par Openship.",
+    "flatDockerHint": "Ignorer les libellés OpenShip — adopter tout (y compris les conteneurs gérés par OpenShip) comme du Docker brut.",
+    "flatDockerShort": "Adopte aussi les conteneurs gérés par OpenShip.",
     "rescan": "Re-scanner",
     "cancel": "Annuler",
     "close": "Fermer",
@@ -113,7 +113,7 @@
   "run": {
     "title": "Migration de votre stack",
     "queued": "En file d'attente…",
-    "adopting": "Création du projet Openship…",
+    "adopting": "Création du projet OpenShip…",
     "moving_data": "Transfert des données de volume vers la cible…",
     "deploying": "Déploiement sur le serveur cible…",
     "verifying": "Vérification du nouveau déploiement…",
@@ -172,14 +172,14 @@
     "reused": "réutilisé sur place",
     "volumeReuse": "Reprendre",
     "volumeCopy": "Copier",
-    "volumeCopyHint": "Reprendre réutilise le volume existant sur place. Copier le duplique dans un nouveau volume Openship et laisse l'original intact (utilise de l'espace disque supplémentaire).",
+    "volumeCopyHint": "Reprendre réutilise le volume existant sur place. Copier le duplique dans un nouveau volume OpenShip et laisse l'original intact (utilise de l'espace disque supplémentaire).",
     "bind": "chemin hôte",
     "nVolumes": "{n} volumes",
     "nEnv": "{n} variables d'env",
     "envFromImage": "{n} variables viennent de l'image",
     "envFromImageHint": "Non importées comme configuration — l'image les fournit à l'exécution. Importez-les pour figer les valeurs avant de reconstruire depuis les sources.",
     "envFromImageImport": "Importer quand même",
-    "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés.",
+    "alreadyManaged": "{count} conteneur(s) déjà géré(s) par OpenShip ont été ignorés.",
     "chooseProject": "Choisir les éléments à importer",
     "chooseHint": "Sélectionnez un projet Compose ou des services individuels.",
     "topology": "Topologie",
@@ -194,12 +194,12 @@
     "clearSelection": "Effacer la sélection",
     "selectionKeyboard": "Appuyez sur Entrée ou Espace pour sélectionner un service.",
     "expandProject": "Services de {name}",
-    "proxyExcluded": "Proxy inverse ({ports}) — non importé ; le point d'entrée Openship le remplace.",
-    "edgePortReserved": "Ports {ports} réservés pour le point d'entrée Openship ; non publiés."
+    "proxyExcluded": "Proxy inverse ({ports}) — non importé ; le point d'entrée OpenShip le remplace.",
+    "edgePortReserved": "Ports {ports} réservés pour le point d'entrée OpenShip ; non publiés."
   },
   "reimport": {
-    "title": "Projets Openship détectés",
-    "intro": "Ces projets Openship s'exécutent sur ce serveur mais sont absents de cette instance (base de données réinitialisée, ou serveur provenant d'une autre instance Openship). Ré-importez-les pour les récupérer — l'identifiant d'origine est conservé pour que les conteneurs actifs se rattachent.",
+    "title": "Projets OpenShip détectés",
+    "intro": "Ces projets OpenShip s'exécutent sur ce serveur mais sont absents de cette instance (base de données réinitialisée, ou serveur provenant d'une autre instance OpenShip). Ré-importez-les pour les récupérer — l'identifiant d'origine est conservé pour que les conteneurs actifs se rattachent.",
     "services": "{n} service(s)",
     "lastSeen": "Dernier déploiement {when}",
     "fullRestore": "Restauration complète",
@@ -213,7 +213,7 @@
     "failed": "Échec de la ré-importation",
     "review": "Récupérer le projet",
     "reviewNamed": "Récupérer {name}",
-    "groupLabel": "Projet Openship",
+    "groupLabel": "Projet OpenShip",
     "recoverHint": "Restaurez ses paramètres et rattachez les conteneurs en cours d’exécution.",
     "configuration": "Configuration",
     "snapshot": "Instantané enregistré",
@@ -225,7 +225,7 @@
   "adoptFailed": "Impossible de créer le projet",
   "entry": {
     "cardTitle": "Services existants",
-    "cardDesc": "Migrez un déploiement Docker ou Compose en cours vers Openship.",
+    "cardDesc": "Migrez un déploiement Docker ou Compose en cours vers OpenShip.",
     "action": "Migrer Docker",
     "tab": "Importer un projet existant",
     "comingSoon": "La migration Docker arrive bientôt"
@@ -241,7 +241,7 @@
   "tab": {
     "new": "Nouvelle migration",
     "empty": "Aucune migration pour l'instant",
-    "emptyDesc": "Déplacez une pile Docker ou Compose en cours d'exécution depuis ce serveur vers Openship, ou importez-en une depuis un autre serveur.",
+    "emptyDesc": "Déplacez une pile Docker ou Compose en cours d'exécution depuis ce serveur vers OpenShip, ou importez-en une depuis un autre serveur.",
     "close": "Fermer",
     "sessionLog": "Journal de session",
     "noLogs": "Aucune sortie de journal pour l'instant.",
@@ -293,7 +293,7 @@
     "disconnect": "Déconnecter la source",
     "empty": "Connectez le serveur depuis lequel vous souhaitez importer.",
     "hint": "Uniquement pour les migrations. Supprimez la connexion une fois terminé.",
-    "importHint": "Copiez les applications et les données vers un serveur Openship géré. La source est conservée jusqu’à la confirmation du basculement."
+    "importHint": "Copiez les applications et les données vers un serveur OpenShip géré. La source est conservée jusqu’à la confirmation du basculement."
   },
   "review": {
     "progress": "Progression de l’import",

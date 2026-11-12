@@ -2,6 +2,8 @@ import { SITE_URL, buildUrlset, xmlResponse, type SitemapEntry } from "@/lib/sit
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { FEATURES } from "@/lib/features";
 import { MIGRATION_SOURCES } from "@/lib/migration-sources";
+import { APP_LOCALES } from "@repo/core";
+import { isLocalizedPath, languageAlternates, localizedHref } from "@/i18n/routing";
 
 export const dynamic = "force-static";
 export const revalidate = 3600;
@@ -44,5 +46,14 @@ export async function GET() {
       priority: 0.75,
     })),
   );
-  return xmlResponse(buildUrlset(entries));
+  const localized = entries.flatMap((entry) => {
+    const pathname = new URL(entry.loc).pathname;
+    if (!isLocalizedPath(pathname)) return [entry];
+    return APP_LOCALES.map((locale) => ({
+      ...entry,
+      loc: SITE_URL + localizedHref(pathname, locale),
+      alternates: languageAlternates(pathname),
+    }));
+  });
+  return xmlResponse(buildUrlset(localized));
 }

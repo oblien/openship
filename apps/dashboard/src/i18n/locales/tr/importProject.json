@@ -61,7 +61,7 @@
       "title": "Sağlık kontrolleri",
       "subtitle": "Kapalı — uygulama çalışmaya başlar başlamaz dağıtım tamamlanır",
       "subtitleOn": "Açık — dağıtım yayına almadan önce uygulamanı bekler",
-      "description": "Openship uygulamanı başlattıktan sonra beklemez; bu yüzden yavaş bir açılış bir dağıtımı asla geciktirmez veya başarısız kılmaz. Yayına girdikten sonra port yine de kontrol edilir ve hiçbir şeyi engellemeden bildirilir. Bunları yalnızca dağıtımın kendisinin yeşile geçmeyi reddetmesini istiyorsan aç.",
+      "description": "OpenShip uygulamanı başlattıktan sonra beklemez; bu yüzden yavaş bir açılış bir dağıtımı asla geciktirmez veya başarısız kılmaz. Yayına girdikten sonra port yine de kontrol edilir ve hiçbir şeyi engellemeden bildirilir. Bunları yalnızca dağıtımın kendisinin yeşile geçmeyi reddetmesini istiyorsan aç.",
       "probeLabel": "Uygulamanın yanıt vermesini bekle",
       "probeDesc": "Konteyner başladıktan sonra uygulamanın portuna bağlanıp bağlantıyı kabul etmesini bekle.",
       "pathLabel": "HTTP yolu",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "Çalışma zamanı sürümü",
     "runtimeVersionDefault": "Varsayılan",
-    "runtimeVersionDesc": "Seçilen sürüme uygun derleme ve çalışma imajlarını kullanır. Openship tarafından oluşturulan bir Docker derlemesi gerektirir.",
+    "runtimeVersionDesc": "Seçilen sürüme uygun derleme ve çalışma imajlarını kullanır. OpenShip tarafından oluşturulan bir Docker derlemesi gerektirir.",
     "buildImageLabel": "Derleme İmajı",
     "buildImageDesc": "Bulut veya sunucu derlemeleri için derleyici konteyner imajı. Tespit edilen taban imajı yanlışsa değiştirin.",
     "productionPathsLabel": "Canlı ortam yolları",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "yeniden derlemelerde korunmaz",
       "statefulWarnPart2": ". Çalışma alanını değiştirmeden önce verileri açıkça yedekleyin ve geri yükleyin.",
       "volumeHint": "Adlandırılmış disk birimi veya sunucu yolu → konteyner yolu.",
-      "volumeCloudNote": "Openship Cloud kalıcı birim bağlamalarını desteklemez. Birim gerektiren iş yükleri için bir sunucu seçin.",
+      "volumeCloudNote": "OpenShip Cloud kalıcı birim bağlamalarını desteklemez. Birim gerektiren iş yükleri için bir sunucu seçin.",
       "sourcePlaceholder": "Kaynak",
       "containerPathPlaceholder": "Konteyner yolu",
       "readOnlyMount": "Salt okunur bağlama",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Bulut",
+    "targetOpenshipCloud": "OpenShip Bulut",
     "targetServerNamed": "Sunucu · {name}",
     "targetServer": "Sunucu",
     "targetLocal": "Yerel bilgisayar",
@@ -379,9 +379,9 @@
       "port": "Port",
       "process": "Süreç",
       "unitDescription": "Birim Açıklaması",
-      "openshipDeployment": "Openship Dağıtımı",
+      "openshipDeployment": "OpenShip Dağıtımı",
       "sites": {
-        "lead": "{count} site şu anda mevcut proxy tarafından sunuluyor. Openship, 80/443 portlarını devralmadan önce bu siteleri içe aktarır:",
+        "lead": "{count} site şu anda mevcut proxy tarafından sunuluyor. OpenShip, 80/443 portlarını devralmadan önce bu siteleri içe aktarır:",
         "tlsBadge": "TLS",
         "staticLabel": "statik:",
         "warningsTitle": "Otomatik aktarılamadı — bunları manuel olarak tekrar ekleyin:"
@@ -531,7 +531,7 @@
     "title": "Bazı depo dağıtım ayarları uygulanmadı",
     "description": "Dağıtımdan önce aşağıdaki atlanan ayarları inceleyin.",
     "titleWholeFile": "Bu deponun openship.json dosyası yok sayıldı",
-    "descriptionWholeFile": "Dosyanın hiçbir kısmı uygulanmadı. Dağıtım, Openship'in algıladığı ayarlarla devam edecek.",
+    "descriptionWholeFile": "Dosyanın hiçbir kısmı uygulanmadı. Dağıtım, OpenShip'in algıladığı ayarlarla devam edecek.",
     "refused": "Reddedildi",
     "unrecognized": "Tanınmadı",
     "hint": "Sonraki dağıtımdan önce belirtilen yapılandırma dosyalarını kontrol edin ve desteklenmeyen ayarları güncelleyin."

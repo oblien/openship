@@ -5,7 +5,7 @@ export async function GET() {
     const response = await fetch("https://api.github.com/repos/oblien/openship", {
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "Openship",
+        "User-Agent": "OpenShip",
       },
       next: { revalidate: 3600 },
       signal: AbortSignal.timeout(5_000),

@@ -232,12 +232,12 @@
   },
   "cloud": {
     "connectionGate": {
-      "reconnect": "Openship Cloud erneut verbinden",
-      "deployedOn": "Dieses Projekt ist auf Openship Cloud bereitgestellt",
-      "sessionMissing": "Deine Openship Cloud-Sitzung fehlt. Verbinde dich, um Deployments zu verwalten, Logs anzusehen und auf Laufzeit-Steuerungen für {name} zuzugreifen.",
+      "reconnect": "OpenShip Cloud erneut verbinden",
+      "deployedOn": "Dieses Projekt ist auf OpenShip Cloud bereitgestellt",
+      "sessionMissing": "Deine OpenShip Cloud-Sitzung fehlt. Verbinde dich, um Deployments zu verwalten, Logs anzusehen und auf Laufzeit-Steuerungen für {name} zuzugreifen.",
       "thisProject": "dieses Projekt",
       "connecting": "Wird verbunden…",
-      "connect": "Mit Openship Cloud verbinden",
+      "connect": "Mit OpenShip Cloud verbinden",
       "readOnlyNote": "Du kannst diese Seite weiterhin im schreibgeschützten Modus durchsuchen, während du getrennt bist."
     }
   },
@@ -245,7 +245,7 @@
     "githubPermission": {
       "title": "Mit GitHub verbinden",
       "subtitle": "Wähle die Zugriffsebene für Repositories",
-      "intro": "Wähle aus, auf welche Repositories Openship zugreifen kann. Du kannst dies später in deinen GitHub-Einstellungen ändern.",
+      "intro": "Wähle aus, auf welche Repositories OpenShip zugreifen kann. Du kannst dies später in deinen GitHub-Einstellungen ändern.",
       "publicTitle": "Nur öffentliche Repositories",
       "publicDesc": "Zugriff auf deine öffentlichen Repositories. Perfekt für Open-Source-Projekte.",
       "publicItem1": "Öffentliche Repository-Daten lesen",
@@ -542,12 +542,12 @@
     "youreOn": "· du nutzt {version}",
     "rerunInstall": "Führe deine Installation erneut aus, um deinen selbstgehosteten Server zu aktualisieren.",
     "updateNow": "Jetzt aktualisieren",
-    "downloading": "Openship {version} wird heruntergeladen",
-    "installing": "Wird installiert — Openship wird neu gestartet",
+    "downloading": "OpenShip {version} wird heruntergeladen",
+    "installing": "Wird installiert — OpenShip wird neu gestartet",
     "updateFailed": "Update fehlgeschlagen",
     "retry": "Erneut versuchen",
     "changelog": "Changelog",
-    "updatedTo": "Auf Openship {version} aktualisiert",
+    "updatedTo": "Auf OpenShip {version} aktualisiert",
     "seeChanges": "Sieh, was sich in diesem Release geändert hat.",
     "onLatest": "Du nutzt die neueste Version.",
     "whatsNew": "Neuigkeiten",

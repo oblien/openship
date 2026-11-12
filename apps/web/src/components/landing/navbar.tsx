@@ -1,10 +1,14 @@
 "use client";
+import { useCopy } from "@/i18n/use-copy";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { Link } from "@/i18n/Link";
 import { usePathname } from "next/navigation";
 import { CLOUD_DASHBOARD_URL } from "@repo/core";
 import { reportCaughtError } from "@repo/core/diagnostics";
+import { withoutLocale } from "@/i18n/routing";
+import { LanguageSwitcher } from "./language-switcher";
+import { useLocale } from "next-intl";
 
 type NavLink = { label: string; href: string; hint?: string };
 type NavGroup = { label: string; items: NavLink[] };
@@ -28,7 +32,7 @@ const NAV: NavEntry[] = [
     items: [
       { label: "Blog", href: "/blog", hint: "Guides and product news" },
       { label: "Changelog", href: "/changelog", hint: "What shipped, release by release" },
-      { label: "Support", href: "/support", hint: "Talk to the Openship team" },
+      { label: "Support", href: "/support", hint: "Talk to the OpenShip team" },
     ],
   },
 ];
@@ -71,7 +75,9 @@ function NavDropdown({
   onOpen: () => void;
   onClose: () => void;
 }) {
-  const pathname = usePathname();
+  const copy = useCopy();
+
+  const pathname = withoutLocale(usePathname());
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const active = group.items.some((i) => pathname === i.href || pathname?.startsWith(i.href + "/"));
   const canHover = () => window.matchMedia("(hover: hover)").matches;
@@ -101,11 +107,11 @@ function NavDropdown({
         }`}
         style={{ color: dark ? "rgba(255,255,255,.55)" : "var(--th-text-secondary)" }}
       >
-        {group.label}
+        {copy(group.label)}
         <Chevron open={open} />
       </button>
       <div
-        className={`absolute left-[-8px] top-[calc(100%+14px)] grid min-w-[290px] gap-0.5 rounded-[18px] border border-[var(--th-bd-default)] bg-[var(--th-bg-page)] p-2 shadow-[0_12px_32px_rgba(0,0,0,.10),0_2px_6px_rgba(0,0,0,.04)] transition-all duration-150 before:absolute before:inset-x-0 before:-top-3.5 before:h-3.5 ${
+        className={`absolute start-[-8px] top-[calc(100%+14px)] grid min-w-[290px] gap-0.5 rounded-[18px] border border-[var(--th-bd-default)] bg-[var(--th-bg-page)] p-2 shadow-[0_12px_32px_rgba(0,0,0,.10),0_2px_6px_rgba(0,0,0,.04)] transition-all duration-150 before:absolute before:inset-x-0 before:-top-3.5 before:h-3.5 ${
           open ? "visible translate-y-0 opacity-100" : "invisible -translate-y-1 opacity-0"
         }`}
       >
@@ -117,11 +123,11 @@ function NavDropdown({
             className="rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--th-sf-04)]"
           >
             <span className="block text-[14px] font-semibold text-[var(--th-text-title)]">
-              {item.label}
+              {copy(item.label)}
             </span>
             {item.hint && (
               <span className="block text-[12.5px] text-[var(--th-text-secondary)]">
-                {item.hint}
+                {copy(item.hint)}
               </span>
             )}
           </Link>
@@ -132,19 +138,27 @@ function NavDropdown({
 }
 
 export function Navbar() {
-  const pathname = usePathname();
+  const copy = useCopy();
+  const locale = useLocale();
+
+  const pathname = withoutLocale(usePathname());
   const [dark, setDark] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [stars, setStars] = useState<number | null>(null);
   const githubLabel =
     stars === null
-      ? "Stars"
-      : `${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(stars).toLowerCase()} stars`;
+      ? copy("Stars")
+      : copy("{count} stars", {
+          count: new Intl.NumberFormat(locale, {
+            notation: "compact",
+            maximumFractionDigits: 1,
+          }).format(stars),
+        });
   const githubDescription =
     stars === null
-      ? "Star Openship on GitHub"
-      : `Openship on GitHub — ${stars.toLocaleString("en-US")} stars`;
+      ? copy("Star OpenShip on GitHub")
+      : copy("OpenShip on GitHub — {count} stars", { count: stars.toLocaleString(locale) });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -202,13 +216,13 @@ export function Navbar() {
               transition: "color .3s",
             }}
           >
-            Openship
+            OpenShip
           </span>
         </Link>
 
         {/* ── Center pill nav (same shape; links grouped into two dropdowns) ── */}
         <nav
-          aria-label="Main navigation"
+          aria-label={copy("Main navigation")}
           className="hidden items-center gap-0.5 rounded-full px-1.5 py-1.5 backdrop-blur-xl xl:flex"
           style={{
             background: dark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
@@ -239,7 +253,7 @@ export function Navbar() {
                 className="nav-pill-item rounded-full px-3 py-2 text-[14px] font-medium transition-all aria-[current=page]:bg-[var(--th-sf-04)]"
                 style={{ color: linkColor }}
               >
-                {entry.label}
+                {copy(entry.label)}
               </Link>
             ),
           )}
@@ -247,15 +261,15 @@ export function Navbar() {
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={githubDescription}
-            title={githubDescription}
+            aria-label={copy(githubDescription)}
+            title={copy(githubDescription)}
             className="nav-pill-item flex items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-medium transition-all"
             style={{ color: linkColor }}
           >
             <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
               <path d={GITHUB_PATH} />
             </svg>
-            {githubLabel}
+            {copy(githubLabel)}
           </a>
         </nav>
 
@@ -263,12 +277,13 @@ export function Navbar() {
         <div
           className={`relative flex items-center justify-end gap-3 ${mobileOpen ? "z-50" : "z-10"}`}
         >
+          <LanguageSwitcher dark={dark && !mobileOpen} />
           <Link
             href="/download"
             className="hidden rounded-full px-5 py-2 text-[14px] font-medium transition-colors sm:inline-block"
             style={{ color: linkColor }}
           >
-            Download
+            {copy("Download")}
           </Link>
           <a
             href={CLOUD_HREF}
@@ -278,7 +293,7 @@ export function Navbar() {
               color: dark ? "#000" : "var(--th-btn-text)",
             }}
           >
-            Open Cloud
+            {copy("Open Cloud")}
           </a>
 
           {/* ── Hamburger (mobile only) ──────────────────────── */}
@@ -288,7 +303,7 @@ export function Navbar() {
             style={{
               background: dark && !mobileOpen ? "rgba(255,255,255,.10)" : "var(--th-sf-04)",
             }}
-            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+            aria-label={mobileOpen ? copy("Close menu") : copy("Open menu")}
             aria-expanded={mobileOpen}
           >
             <svg
@@ -315,12 +330,12 @@ export function Navbar() {
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
-          <nav className="absolute right-0 top-0 flex h-full w-[280px] flex-col gap-1 overflow-y-auto bg-[var(--th-bg-page)] px-6 pb-8 pt-24 shadow-2xl">
+          <nav className="absolute end-0 top-0 flex h-full w-[280px] flex-col gap-1 overflow-y-auto bg-[var(--th-bg-page)] px-6 pb-8 pt-24 shadow-2xl">
             {NAV.map((entry) =>
               isGroup(entry) ? (
                 <div key={entry.label} className="mt-2">
                   <p className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--th-text-muted)]">
-                    {entry.label}
+                    {copy(entry.label)}
                   </p>
                   {entry.items.map((item) => (
                     <Link
@@ -329,7 +344,7 @@ export function Navbar() {
                       onClick={() => setMobileOpen(false)}
                       className="block rounded-xl px-4 py-3 text-[15px] font-medium th-text-body transition-colors hover:bg-[var(--th-sf-04)]"
                     >
-                      {item.label}
+                      {copy(item.label)}
                     </Link>
                   ))}
                 </div>
@@ -340,7 +355,7 @@ export function Navbar() {
                   onClick={() => setMobileOpen(false)}
                   className="rounded-xl px-4 py-3 text-[15px] font-medium th-text-body transition-colors hover:bg-[var(--th-sf-04)]"
                 >
-                  {entry.label}
+                  {copy(entry.label)}
                 </Link>
               ),
             )}
@@ -348,15 +363,15 @@ export function Navbar() {
               href={GITHUB_URL}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={githubDescription}
-              title={githubDescription}
+              aria-label={copy(githubDescription)}
+              title={copy(githubDescription)}
               onClick={() => setMobileOpen(false)}
               className="flex items-center gap-2 rounded-xl px-4 py-3 text-[15px] font-medium th-text-body transition-colors hover:bg-[var(--th-sf-04)]"
             >
               <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d={GITHUB_PATH} />
               </svg>
-              {githubLabel}
+              {copy(githubLabel)}
             </a>
 
             <div className="my-3 h-px bg-[var(--th-divider)]" />
@@ -366,14 +381,14 @@ export function Navbar() {
               onClick={() => setMobileOpen(false)}
               className="rounded-xl px-4 py-3 text-[15px] font-medium th-text-secondary transition-colors hover:bg-[var(--th-sf-04)]"
             >
-              Download
+              {copy("Download")}
             </Link>
             <a
               href={CLOUD_HREF}
               onClick={() => setMobileOpen(false)}
               className="mt-1 rounded-xl bg-[var(--th-btn-bg)] px-4 py-3 text-center text-[15px] font-medium text-[var(--th-btn-text)]"
             >
-              Open Cloud
+              {copy("Open Cloud")}
             </a>
           </nav>
         </div>

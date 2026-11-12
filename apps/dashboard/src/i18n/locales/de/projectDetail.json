@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} Dienst",
       "serviceCountOther": "{count} Dienste",
       "searchPlaceholder": "Nach Name, Image oder Tag suchen…",
-      "cloudConnectHint": "Verbinden Sie Openship Cloud, um den Cloud-Dienstkatalog zu durchsuchen. Sie können weiterhin jedes Image manuell hinzufügen.",
+      "cloudConnectHint": "Verbinden Sie OpenShip Cloud, um den Cloud-Dienstkatalog zu durchsuchen. Sie können weiterhin jedes Image manuell hinzufügen.",
       "noMatchesTitle": "Keine Treffer",
       "noMatchesBody": "Versuchen Sie eine andere Kategorie oder einen anderen Suchbegriff - oder wählen Sie Benutzerdefiniertes Image aus der Leiste.",
       "localImages": "Lokale Images",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "Lokales Docker",
       "customEntryName": "Benutzerdefiniertes Image",
       "customEntryDescription": "Beliebiges öffentliches oder privates Docker-Image per Tag beziehen.",
@@ -134,7 +134,7 @@
         "other": "Sonstiges"
       },
       "cloudConnectTitle": "Benötigen Sie verwaltete Datenbanken oder Objektspeicher?",
-      "cloudConnectBody": "Verbinden Sie Openship Cloud, um serverlose Postgres-, Redis- und S3-kompatible Buckets neben diesem Projekt bereitzustellen.",
+      "cloudConnectBody": "Verbinden Sie OpenShip Cloud, um serverlose Postgres-, Redis- und S3-kompatible Buckets neben diesem Projekt bereitzustellen.",
       "cloudConnectButton": "Cloud-Add-ons entdecken",
       "repositorySource": {
         "catalog": "Katalog",
@@ -200,7 +200,7 @@
           "reviewFailed": "Gemeinsame Konfiguration konnte nicht geprüft werden. Ihre Änderungen wurden nicht gespeichert."
         },
         "helpTitle": "So funktionieren Umgebungsvariablen",
-        "description": "In Openship gespeichert. Beim Speichern werden gemeinsame Änderungen geprüft, wenn eine Projektquelle vorhanden ist. Dienstüberschreibungen haben Vorrang vor Compose- und Projektwerten.",
+        "description": "In OpenShip gespeichert. Beim Speichern werden gemeinsame Änderungen geprüft, wenn eine Projektquelle vorhanden ist. Dienstüberschreibungen haben Vorrang vor Compose- und Projektwerten.",
         "sources": {
           "service": "Dienstspezifische Überschreibung",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "Terminal",
       "statusTitle": "Dienststatus nicht verfügbar",
-      "statusHint": "Openship konnte den aktuellen Status nicht bestätigen. Dein Dienst läuft möglicherweise noch.",
+      "statusHint": "OpenShip konnte den aktuellen Status nicht bestätigen. Dein Dienst läuft möglicherweise noch.",
       "checkingTitle": "Dienst wird geprüft",
       "checkingHint": "Warten auf eine Antwort des Servers. Du kannst schon versuchen, das Terminal zu öffnen.",
       "startingTitle": "Warten auf den Dienst",
@@ -449,7 +449,7 @@
       "errorTitle": "Terminal nicht verfügbar",
       "errors": {
         "auth": "Dein Zugriff konnte nicht bestätigt werden. Melde dich erneut an oder prüfe deine Berechtigungen.",
-        "connect": "Openship konnte die Shell des Dienstes nicht erreichen. Versuche es erneut, sobald der Server wieder erreichbar ist.",
+        "connect": "OpenShip konnte die Shell des Dienstes nicht erreichen. Versuche es erneut, sobald der Server wieder erreichbar ist.",
         "notFound": "Dieser Dienst ist nicht verfügbar oder du hast keinen Zugriff.",
         "notDeployed": "Es läuft kein Container, mit dem du dich verbinden kannst. Prüfe den Dienststatus und versuche es erneut.",
         "notSupported": "Die Laufzeitumgebung dieses Dienstes unterstützt kein interaktives Terminal.",

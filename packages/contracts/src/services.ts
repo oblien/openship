@@ -33,6 +33,8 @@ const nullableNumber = Type.Union([Type.Number(), Type.Null()]);
 export const ServiceSchema = Type.Object({
   id: Type.String(),
   projectId: Type.String(),
+  /** Stable primary-app identity; mode preserves service overrides when present. */
+  applicationMode: Type.Optional(Type.Union([Type.Literal("project"), Type.Literal("service")])),
   kind: Type.String(),
   name: Type.String(),
   image: nullableString,

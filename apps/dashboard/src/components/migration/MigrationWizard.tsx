@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ComponentProps } from "react";
 import { Icon } from "@repo/ui/icons";
+import type { MigrationSourceKind } from "@repo/core";
 import { AppLogo } from "@/components/AppLogo";
 import { useSession } from "@/lib/auth-client";
 import { getApiBaseUrl, getApiErrorMessage } from "@/lib/api/client";
@@ -11,9 +12,16 @@ import { Button } from "@/components/ui/button";
 import { ServerMigrationWizard } from "./ServerMigrationWizard";
 import { PlatformMigrationWizard } from "./PlatformMigrationWizard";
 
-type Props = ComponentProps<typeof ServerMigrationWizard>;
-type Source = "server" | "railway" | "vercel";
-const sources: Array<{ id: Source; name: string; description: string; detail: string }> = [
+type Props = ComponentProps<typeof ServerMigrationWizard> & {
+  source?: MigrationSourceKind | null;
+  onSourceChange?: (source: MigrationSourceKind | null) => void;
+};
+const sources: Array<{
+  id: MigrationSourceKind;
+  name: string;
+  description: string;
+  detail: string;
+}> = [
   {
     id: "server",
     name: "Server or Docker",
@@ -46,9 +54,18 @@ export function MigrationWizard(props: Props) {
 }
 
 function ScopedMigrationWizard(props: Props) {
-  const [source, setSource] = useState<Source | null>(
+  const [localSource, setLocalSource] = useState<MigrationSourceKind | null>(
     props.origin === "project" && !props.initialRunId ? "server" : null,
   );
+  // Existing runs and project moves resolve their own source. Only the Library
+  // uses a controlled source so links and browser history track the selection.
+  const controlled =
+    !props.initialRunId && props.origin !== "project" && props.source !== undefined;
+  const source = controlled ? props.source : localSource;
+  const selectSource = (next: MigrationSourceKind | null) => {
+    if (controlled) props.onSourceChange?.(next);
+    else setLocalSource(next);
+  };
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const visible = props.variant === "tab" || props.isOpen;
@@ -61,8 +78,8 @@ function ScopedMigrationWizard(props: Props) {
         if (cancelled) return;
         const provider = run.inputSnapshot?.provider;
         if (run.mode === "provider_import" && (provider === "railway" || provider === "vercel"))
-          setSource(provider);
-        else setSource("server");
+          setLocalSource(provider);
+        else setLocalSource("server");
       })
       .catch((error) => {
         if (!cancelled) setError(getApiErrorMessage(error, "The migration could not be loaded."));
@@ -77,13 +94,14 @@ function ScopedMigrationWizard(props: Props) {
       <ServerMigrationWizard
         {...props}
         onBack={
-          props.initialRunId || props.origin === "project" ? props.onBack : () => setSource(null)
+          props.initialRunId || props.origin === "project" ? props.onBack : () => selectSource(null)
         }
       />
     );
-  const back = props.initialRunId ? (props.onBack ?? props.onClose) : () => setSource(null);
+  const back = props.initialRunId ? (props.onBack ?? props.onClose) : () => selectSource(null);
   const content = source ? (
     <PlatformMigrationWizard
+      key={source}
       provider={source}
       onBack={back}
       initialRunId={props.initialRunId}
@@ -125,7 +143,7 @@ function ScopedMigrationWizard(props: Props) {
           <button
             type="button"
             key={item.id}
-            onClick={() => setSource(item.id)}
+            onClick={() => selectSource(item.id)}
             className="group flex h-full flex-col rounded-2xl bg-card p-6 text-start transition-colors hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
           >
             <div className="flex w-full items-center gap-3">

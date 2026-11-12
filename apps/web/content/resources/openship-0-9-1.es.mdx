@@ -1,0 +1,35 @@
+---
+title: "OpenShip 0.9.1: explora aplicaciones, controla tiempos de ejecución, recupera tu flujo de trabajo"
+description: "Un catálogo de aplicaciones públicas, una configuración de tiempo de ejecución más clara y correcciones para guardar flujos de trabajo, conexiones en la nube, correo web y preparación de imágenes de implementación."
+date: "2026-10-13"
+category: "Product"
+author: "OpenShip Team"
+---
+
+OpenShip 0.9.1 mejora los pasos relacionados con una implementación: elegir una aplicación, configurar su tiempo de ejecución, volver a una configuración guardada y preparar la próxima versión.
+
+## Explora antes de instalar
+
+El [catálogo público de aplicaciones](/apps) te permite explorar backends, bases de datos, herramientas de publicación y automatización sin tener que abrir primero el panel. Busque o filtre por categoría, luego abra una aplicación para ver sus características, servicios incluidos y requisitos.
+
+La instalación continúa a través del flujo de configuración existente. Los enlaces de aplicaciones y planes conservan su destino mediante el inicio de sesión y la verificación, y las configuraciones de instalación confirmadas pueden reanudarse después del pago.
+
+## Configuración de tiempo de ejecución más deliberada
+
+Las compilaciones PHP generadas admiten PHP 8.3 y 8.4 a través de la configuración de la versión del tiempo de ejecución. Docker compilaciones de origen también exponen una anulación de imagen de producción avanzada. Las recetas verifican las capacidades y la compatibilidad del tiempo de ejecución antes de la activación, y las reversiones de imágenes retenidas preservan la configuración del tiempo de ejecución original.
+
+El manual Docker vuelve a implementar etiquetas de registro mutables de actualización mientras conserva las compilaciones locales y los artefactos de reversión fijados. Las imágenes de reemplazo se preparan antes de la activación del servicio. Una preparación fallida deja los contenedores actuales en ejecución; la transición posterior a múltiples servicios sigue siendo secuencial.
+
+## Recuperar sin recrear todo
+
+Los enlaces del servidor Saved Cloud tienen acciones de reconexión más claras y orientación para discrepancias de cuentas y fallas temporales. Una aplicación de correo web existente también se puede volver a conectar cuando su registro de correo pierde el enlace del proyecto, reutilizando su proyecto y su almacenamiento persistente.
+
+La migración ahora conserva los dominios que enrutan solo rutas seleccionadas. Las rutas exactas y de prefijo permanecen adjuntas a sus servicios y las solicitudes no coincidentes permanecen inigualables.
+
+## Mejoras en el flujo de trabajo y el lenguaje
+
+Los flujos de trabajo de acciones independientes pueden guardar YAML personalizado válido con orientación más clara para nombres, ejecutores, validación o configuraciones de acceso faltantes. Las instancias de escritorio conectadas y autohospedadas reenvían el flujo de trabajo de la nube y las operaciones del ejecutor a la instancia de la nube propietaria.
+
+El ruso se une a los idiomas del panel y el correo web recibe actualizaciones en vivo en la bandeja de entrada a través de su flujo de eventos.
+
+Lea el [registro de cambios completo](/changelog), explore el [directorio de funciones](/features) o siga la [guía de actualización](/docs/guides/updating) para su instalación.

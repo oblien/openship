@@ -28,7 +28,7 @@ export function instanceProgress(state: InstanceStatus): string {
   if (state.handoff.status === "complete") return "Connected to the active instance";
   if (state.role === "quiescing") return "Waiting for current operations to finish";
   if (state.handoff.provisioning && state.role === "active")
-    return "Preparing Openship on your server";
+    return "Preparing OpenShip on your server";
   return {
     offered: "Waiting for the other instance",
     frozen: "Transferring your instance",
@@ -111,7 +111,7 @@ export function InstanceProgress({
         {instanceProgress(state)}
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Your apps stay on their servers. Openship pauses new operations while control moves.
+        Your apps stay on their servers. OpenShip pauses new operations while control moves.
       </p>
       {(error || h?.error) && (
         <p role="alert" className="whitespace-pre-line text-sm text-destructive">

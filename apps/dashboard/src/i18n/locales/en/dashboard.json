@@ -140,7 +140,7 @@
       "addCustom": "Add custom",
       "howToAddApp": "How to add an app",
       "removeCustomApp": "Remove custom app",
-      "needsUpdateDesc": "Update your Openship instance to install this app.",
+      "needsUpdateDesc": "Update your OpenShip instance to install this app.",
       "needsUpdateBadge": "Needs update",
       "needsVersionBadge": "Needs v{version}",
       "removedToast": "Removed \"{name}\".",

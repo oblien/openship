@@ -331,7 +331,7 @@ export function ManagementPlan({
         <div className="space-y-3 rounded-xl bg-muted/50 p-4">
           <p className="text-sm">
             End management after the paid period? Your apps and data keep running on your servers.
-            Openship will no longer manage them after your allowance ends.
+            OpenShip will no longer manage them after your allowance ends.
           </p>
           <Button
             disabled={action.busy}
@@ -427,7 +427,7 @@ export function ManagementPlan({
       )}
       <div className={showingDetails ? "sr-only" : "space-y-1"}>
         <h2 id={`${supportChoiceId}-title`} className="text-base font-medium text-foreground">
-          Openship Manage
+          OpenShip Manage
         </h2>
         <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
           {copy.description}

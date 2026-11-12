@@ -104,8 +104,8 @@
   },
   "page": {
     "title": "Ayarlar",
-    "subtitle": "Tercihlerinizi, ekibinizi ve Openship kurulumunuzu yönetin",
-    "cloudConnectedToast": "Openship Bulut'a bağlandı"
+    "subtitle": "Tercihlerinizi, ekibinizi ve OpenShip kurulumunuzu yönetin",
+    "cloudConnectedToast": "OpenShip Bulut'a bağlandı"
   },
   "sidebar": {
     "title": "Ayarlar",
@@ -128,7 +128,7 @@
   "email": {
     "title": "E-posta (SMTP)",
     "description": "Bu kurulumun e-posta gönderirken kullandığı SMTP servisi",
-    "intro": "Şifre sıfırlamaları, e-posta doğrulaması, ekip davetleri ve bildirimler için kullanılır. İstediğiniz sağlayıcıdan SMTP kimlik bilgilerini (sunucu adresi, port, kullanıcı adı, şifre) yapıştırın — Amazon SES, Gmail, Mailgun veya kurumsal bir aktarıcı. Sunucu kurmaya gerek yoktur; Openship doğrudan bağlanır. Girdiğiniz şifre, şifrelenerek saklanır ve bir daha gösterilmez.",
+    "intro": "Şifre sıfırlamaları, e-posta doğrulaması, ekip davetleri ve bildirimler için kullanılır. İstediğiniz sağlayıcıdan SMTP kimlik bilgilerini (sunucu adresi, port, kullanıcı adı, şifre) yapıştırın — Amazon SES, Gmail, Mailgun veya kurumsal bir aktarıcı. Sunucu kurmaya gerek yoktur; OpenShip doğrudan bağlanır. Girdiğiniz şifre, şifrelenerek saklanır ve bir daha gösterilmez.",
     "loading": "Yükleniyor…",
     "configuredBadge": "Yapılandırıldı",
     "notConfigured": "Henüz kurulmadı — aşağıda SMTP kimlik bilgilerini girene kadar şifre sıfırlamaları, davetler ve e-posta bildirimleri kapalı kalır.",
@@ -142,7 +142,7 @@
     "passwordPlaceholder": "SMTP şifresi veya uygulama anahtarı",
     "passwordKeepPlaceholder": "•••••••• (mevcut olanı korumak için boş bırakın)",
     "fromLabel": "Gönderen adresi (From)",
-    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromPlaceholder": "OpenShip <no-reply@example.com>",
     "fromHint": "İsteğe bağlı. Varsayılan olarak kullanıcı adı kullanılır.",
     "fromHintRequired": "Gerekli — kullanıcı adınız bir e-posta adresi değil, bu yüzden alıcılar gerçek bir Gönderen adresine ihtiyaç duyar.",
     "fromRequired": "Bir Gönderen adresi girin — bu sağlayıcının kullanıcı adı bir e-posta adresi değil, bu yüzden gönderen olamaz.",
@@ -171,7 +171,7 @@
     "noInstallations": "Bağlandı · Henüz kurulum yok",
     "connectedOne": "Bağlandı · 1 kurulum",
     "connectedMany": "Bağlandı · {count} kurulum",
-    "requiresCloud": "Openship Bulut gerektirir — Uygulama openship.io adresine aittir",
+    "requiresCloud": "OpenShip Bulut gerektirir — Uygulama openship.io adresine aittir",
     "connectPrompt": "Depoları dağıtmak için GitHub hesabınızı bağlayın",
     "checkingConnection": "Bağlantı kontrol ediliyor…",
     "addAccount": "Hesap ekle",
@@ -179,10 +179,10 @@
     "manageOnGithub": "GitHub'da Yönet",
     "disconnect": "Bağlantıyı Kes",
     "disconnectTitle": "{label} Bağlantısını Kes",
-    "disconnectAppLabel": "Openship GitHub Uygulaması",
-    "disconnectAppBody": "Bu işlem Openship OAuth hesap satırını kaldırır. GitHub Uygulaması kurulumu, siz GitHub üzerinden kaldırana kadar kalır.",
-    "cloudExplainer": "Openship GitHub Uygulaması openship.io adresine aittir. Özel depoları klonlamaya yönelik kapsamlandırılmış kurulum jetonlarını kullanmak için Openship kurulumunuzu Openship Bulut'a bağlayın (hem yerel hem de uzak dağıtımlarda çalışır).",
-    "connectCloud": "Openship Bulut'a Bağlan",
+    "disconnectAppLabel": "OpenShip GitHub Uygulaması",
+    "disconnectAppBody": "Bu işlem OpenShip OAuth hesap satırını kaldırır. GitHub Uygulaması kurulumu, siz GitHub üzerinden kaldırana kadar kalır.",
+    "cloudExplainer": "OpenShip GitHub Uygulaması openship.io adresine aittir. Özel depoları klonlamaya yönelik kapsamlandırılmış kurulum jetonlarını kullanmak için OpenShip kurulumunuzu OpenShip Bulut'a bağlayın (hem yerel hem de uzak dağıtımlarda çalışır).",
+    "connectCloud": "OpenShip Bulut'a Bağlan",
     "noCloudTitle": "Bulut olmadan özel depoları klonlayın",
     "useSshPerServer": "Sunucu başına SSH anahtarı",
     "usePat": "Erişim jetonu",
@@ -201,8 +201,8 @@
       "usedForDeploys": "Dağıtımlar için kullanılır",
       "usedForDeploysTitle": "Bulut bağlantısı yok — gh CLI şu an her şey için birincil kaynaktır",
       "activeWarnStrong": "gh CLI aktif kaynaktır.",
-      "activeWarnRest": "Uzak sunuculara yapılan dağıtımlar reddedilecektir — uzak hedeflere dağıtım yapmak için sunucu bazlı SSH anahtarı ekleyin, Openship Uygulamasını bağlayın veya proje bazlı jeton belirleyin.",
-      "primaryNotePrefix": "Uzak dağıtımlar her sunucunun kendi GitHub kimlik doğrulamasını (SSH anahtarı veya jeton) veya bulut için Openship Uygulamasını kullanır. gh CLI yalnızca",
+      "activeWarnRest": "Uzak sunuculara yapılan dağıtımlar reddedilecektir — uzak hedeflere dağıtım yapmak için sunucu bazlı SSH anahtarı ekleyin, OpenShip Uygulamasını bağlayın veya proje bazlı jeton belirleyin.",
+      "primaryNotePrefix": "Uzak dağıtımlar her sunucunun kendi GitHub kimlik doğrulamasını (SSH anahtarı veya jeton) veya bulut için OpenShip Uygulamasını kullanır. gh CLI yalnızca",
       "primaryNoteStrong": "yerel derlemeleri",
       "primaryNoteSuffix": "Uygulama kurulumlarınız dışındaki depolara karşı kapsar.",
       "optionalPrefix": "İsteğe bağlı. Uygulama kurulumlarınız dışındaki depoların yerel derleme klonlarını etkinleştirmek için bu makinede",
@@ -218,7 +218,7 @@
       "forwardOnNote": "İletme açık — gh CLI uzak sunucu klonlamalarını da doğrular. Kimliğiniz klonlama başına SSH üzerinden tünellenir; sunucuda hiçbir şey saklanmaz.",
       "forwardOffHint": "Şimdilik yalnızca yerel derlemeler. Uzak sunucu dağıtımları için de gh CLI kullanmak üzere \"Git kimliğimi derleme sunucularına ilet\" seçeneğini açın.",
       "manageForward": "İletmeyi yönet",
-      "disconnectBody": "Openship bu kimlik bilgisini bu örnekten kaldıracak ve klonlamalar için kullanmayı durduracaktır. Siz GitHub'da iptal edene kadar orada geçerli kalır. İstediğiniz zaman yeniden bağlanabilirsiniz.",
+      "disconnectBody": "OpenShip bu kimlik bilgisini bu örnekten kaldıracak ve klonlamalar için kullanmayı durduracaktır. Siz GitHub'da iptal edene kadar orada geçerli kalır. İstediğiniz zaman yeniden bağlanabilirsiniz.",
       "recheck": "Tekrar kontrol et"
     },
     "replaceToken": "GitHub belirtecini değiştir",
@@ -226,7 +226,7 @@
     "tokenEditorDescription": "Depoları görüntülemek ve bu kurulumda derleme yapmak için GitHub kişisel erişim belirteci kullanın.",
     "methodTokenDesc": "Depoları görüntülemek ve yerel derlemeler için GitHub belirteci kullanın.",
     "activeVia": "{method} ile bağlandı",
-    "pickMethod": "Openship'in depolarınıza nasıl erişeceğini seçin.",
+    "pickMethod": "OpenShip'in depolarınıza nasıl erişeceğini seçin.",
     "methodDevice": "GitHub ile giriş",
     "methodApp": "GitHub Uygulaması",
     "methodAppDesc": "Yerel ve uzak dağıtımlar için kapsamlı, kısa ömürlü yükleme belirteçleri.",
@@ -246,11 +246,11 @@
     "methodHostCli": "Bu ana makinedeki gh CLI",
     "manageTokensOnGithub": "GitHub'da belirteçleri yönet",
     "manageAccessOnGithub": "GitHub'da erişimi yönet",
-    "disconnectScopeNote": "Bağlantıyı kesmek bu kimlik bilgisini Openship'ten kaldırır ve klonlamalar için kullanımını durdurur. Siz orada iptal edene kadar GitHub'da geçerli kalır.",
+    "disconnectScopeNote": "Bağlantıyı kesmek bu kimlik bilgisini OpenShip'ten kaldırır ve klonlamalar için kullanımını durdurur. Siz orada iptal edene kadar GitHub'da geçerli kalır.",
     "credentialRejected": "GitHub saklanan {method} yöntemini reddetti.",
     "credentialRejectedImpact": "İptal edildi, süresi doldu veya gerekli bir kapsamı kaybetti. Bununla klonlanan dağıtımlar, siz aşağıdan yeniden bağlanana kadar başarısız olmaya devam edecektir.",
     "credentialUnreachable": "Saklanan {method} yöntemini kontrol etmek için GitHub'a ulaşılamadı.",
-    "credentialUnreachableImpact": "Bu genellikle geçersiz bir kimlik bilgisinden ziyade bir ağ sorunudur — Openship bunu kullanmaya devam eder. GitHub erişilemez durumdaysa yeniden bağlanmak yardımcı olmaz.",
+    "credentialUnreachableImpact": "Bu genellikle geçersiz bir kimlik bilgisinden ziyade bir ağ sorunudur — OpenShip bunu kullanmaya devam eder. GitHub erişilemez durumdaysa yeniden bağlanmak yardımcı olmaz.",
     "credentialCheckedAt": "Son kontrol: {time}"
   },
   "deployDefaults": {
@@ -267,13 +267,13 @@
         "desc": "Yapılandırılmış bir SSH sunucusu"
       },
       "cloud": {
-        "label": "Openship Bulut",
+        "label": "OpenShip Bulut",
         "desc": "Yönetilen bulut altyapısı"
       }
     },
     "labelFor": {
       "yourServer": "sunucunuz",
-      "cloud": "Openship Bulut"
+      "cloud": "OpenShip Bulut"
     },
     "toast": {
       "pickServer": "Önce bir sunucu seçin",
@@ -309,10 +309,10 @@
   "githubSources": {
     "title": "Kendi sunucunuzdaki GitHub Uygulamaları",
     "description": "Şifreli uygulama kimlik bilgileri, doğrudan webhook'lar ve kısa ömürlü kurulum belirteçleriyle bu örneğin GitHub bağlantısını yönetin.",
-    "publicUrlRequired": "Önce bu Openship örneği için herkese açık bir HTTPS adresi yapılandırın. GitHub kurulum geri çağrısına ve webhook'a erişebilmelidir.",
+    "publicUrlRequired": "Önce bu OpenShip örneği için herkese açık bir HTTPS adresi yapılandırın. GitHub kurulum geri çağrısına ve webhook'a erişebilmelidir.",
     "createWithGithub": "GitHub ile oluştur",
     "registerExisting": "Mevcut uygulamayı kaydet",
-    "manifestHelp": "Openship en az yetkili uygulama bildirimini GitHub'a gönderir. GitHub uygulamayı oluşturur, kimlik bilgilerini bir kez döndürür ve depo kurulumunu açar.",
+    "manifestHelp": "OpenShip en az yetkili uygulama bildirimini GitHub'a gönderir. GitHub uygulamayı oluşturur, kimlik bilgilerini bir kez döndürür ve depo kurulumunu açar.",
     "nameLabel": "Kaynak adı",
     "namePlaceholder": "Acme GitHub kaynağı",
     "continueOnGithub": "GitHub'da devam et",
@@ -330,9 +330,9 @@
     "makeDefault": "Varsayılan yap",
     "manage": "GitHub'da yönet",
     "delete": "Sil",
-    "confirmDelete": "{name} Openship'ten silinsin mi? Yerel kimlik bilgileri ve kurulum bağları kaldırılır; uygulama siz GitHub'dan kaldırana kadar orada kurulu kalır.",
+    "confirmDelete": "{name} OpenShip'ten silinsin mi? Yerel kimlik bilgileri ve kurulum bağları kaldırılır; uygulama siz GitHub'dan kaldırana kadar orada kurulu kalır.",
     "editHelp": "Kayıtlı şifreli değerleri korumak için gizli alanları boş bırakın.",
-    "manualHelp": "Mevcut bir GitHub Uygulamasının kimlik bilgilerini girin. Openship hiçbir şey kaydetmeden önce özel anahtarı doğrular.",
+    "manualHelp": "Mevcut bir GitHub Uygulamasının kimlik bilgilerini girin. OpenShip hiçbir şey kaydetmeden önce özel anahtarı doğrular.",
     "appIdLabel": "Uygulama kimliği",
     "clientIdLabel": "İstemci kimliği",
     "clientSecretLabel": "İstemci sırrı",
@@ -448,11 +448,11 @@
   },
   "mcp": {
     "title": "MCP",
-    "description": "Model Context Protocol üzerinden yapay zeka ajanlarınızı Openship API'nize bağlayın.",
+    "description": "Model Context Protocol üzerinden yapay zeka ajanlarınızı OpenShip API'nize bağlayın.",
     "loading": "Yükleniyor…",
     "connectAnother": "Başka bir istemci bağlayın",
     "bannerStrong": "Aşağıdaki uç noktayı MCP istemcinize yapıştırın",
-    "bannerRest": "(Claude, Cursor, …) — erişimi onaylayıp istemcinin hangi kaynaklara ulaşabileceğini seçtiğiniz bir tarayıcı penceresi açar. Kopyalanacak jeton yoktur. Openship, standartlara uygun bir OAuth 2.1 MCP sunucusudur.",
+    "bannerRest": "(Claude, Cursor, …) — erişimi onaylayıp istemcinin hangi kaynaklara ulaşabileceğini seçtiğiniz bir tarayıcı penceresi açar. Kopyalanacak jeton yoktur. OpenShip, standartlara uygun bir OAuth 2.1 MCP sunucusudur.",
     "addToClient": "İstemcinize ekleyin",
     "install": "Kur",
     "endpoint": "Uç nokta",
@@ -502,13 +502,13 @@
     "heading": "Ekip",
     "reachability": {
       "description": "Ekip arkadaşlarının bu çalışma alanına ulaşabilmesi için herkese açık bir URL gerekir.",
-      "notInstalledTitle": "Openship'e herkese açık bir adres verin",
-      "notInstalledBody": "Openship henüz herkese açık bir URL ile kurulmadı. Ekip arkadaşlarının ulaşabilmesi için herkese açık bir adresle dağıtın (örn. `openship up --public-url …`), ardından buraya bir alan adı ekleyin.",
-      "noDomainTitle": "Openship'e bir alan adı ekleyin",
-      "noDomainBody": "Ekip arkadaşlarının bu çalışma alanına ulaşabilmesi için Openship uygulamasına bir alan adı ekleyin — davetler canlıya geçtiğinde otomatik açılır.",
+      "notInstalledTitle": "OpenShip'e herkese açık bir adres verin",
+      "notInstalledBody": "OpenShip henüz herkese açık bir URL ile kurulmadı. Ekip arkadaşlarının ulaşabilmesi için herkese açık bir adresle dağıtın (örn. `openship up --public-url …`), ardından buraya bir alan adı ekleyin.",
+      "noDomainTitle": "OpenShip'e bir alan adı ekleyin",
+      "noDomainBody": "Ekip arkadaşlarının bu çalışma alanına ulaşabilmesi için OpenShip uygulamasına bir alan adı ekleyin — davetler canlıya geçtiğinde otomatik açılır.",
       "addDomain": "Bir alan adı ekle",
       "pendingTitle": "Alan adı kurulumunuzu tamamlayın",
-      "pendingBody": "Openship alan adınız doğrulama bekliyor (DNS / SSL). Canlıya geçtiğinde davetler açılır.",
+      "pendingBody": "OpenShip alan adınız doğrulama bekliyor (DNS / SSL). Canlıya geçtiğinde davetler açılır.",
       "viewDomain": "Alan adını görüntüle"
     },
     "descPersonal": "Kişisel çalışma alanınıza erişimi olan kişiler.",
@@ -618,15 +618,15 @@
     "grantsMany": "{count} yetki",
     "sendVia": "Şununla gönder:",
     "yourMailServer": "E-posta sisteminiz",
-    "openshipCloud": "Openship Bulut",
+    "openshipCloud": "OpenShip Bulut",
     "mailReady": "Hazır",
     "mailNotSetUp": "Kurulmadı",
     "cloudReady": "Bağlandı",
     "cloudNotReady": "Bağlı değil",
     "noMailSystem": "Kurulu bir e-posta sistemi yok, bu nedenle davet iletilemeyecektir.",
     "setUpEmail": "E-postayı kur →",
-    "cloudNotConnected": "Openship Bulut bağlı değil, bu nedenle daveti gönderemez.",
-    "connectCloud": "Openship Bulut'a Bağlan →",
+    "cloudNotConnected": "OpenShip Bulut bağlı değil, bu nedenle daveti gönderemez.",
+    "connectCloud": "OpenShip Bulut'a Bağlan →",
     "pickerTitle": "Başlangıç kaynak erişimi",
     "pickerDesc": "Kısıtlı üyeler erişim olmadan başlar. Davet kabul edildiğinde hangi kaynakların kilidinin açılacağını seçin — daha sonra üyenin satırından daha fazla yetki verebilirsiniz.",
     "sendInvite": "Davet gönder",
@@ -654,7 +654,7 @@
   "teamWorkspace": {
     "title": "Ekibinizi davet edin",
     "description": "Bu çalışma alanını ekip arkadaşlarınızın ulaşabileceği bir yere taşıyın.",
-    "body": "Bu çalışma alanı yalnızca bu bilgisayarda bulunur, bu nedenle ekip arkadaşlarınız ulaşamaz ve davetler kapalıdır. İnsanları davet etmeye başlamak için paylaşılan bir konuma taşıyın — kendi sunucunuza, Openship Bulut'a veya bir tünel bağlantısına.",
+    "body": "Bu çalışma alanı yalnızca bu bilgisayarda bulunur, bu nedenle ekip arkadaşlarınız ulaşamaz ve davetler kapalıdır. İnsanları davet etmeye başlamak için paylaşılan bir konuma taşıyın — kendi sunucunuza, OpenShip Bulut'a veya bir tünel bağlantısına.",
     "currentMode": "Mevcut mod",
     "singleUserLocal": "Tek kullanıcı (yerel)",
     "migrate": "Taşı",
@@ -663,7 +663,7 @@
   },
   "cloud": {
     "checking": "Kontrol ediliyor…",
-    "fallbackName": "Openship Bulut",
+    "fallbackName": "OpenShip Bulut",
     "connectedAccount": "Bağlı bulut hesabı",
     "connected": "Bağlandı",
     "disconnect": "Bağlantıyı Kes",
@@ -672,14 +672,14 @@
     "unlockDesktop": "Bulut dağıtımlarının, yönetilen SSL'in ve küresel CDN'in kilidini açın.",
     "deployLocal": "Yerel kurulumunuzdan doğrudan buluta dağıtım yapın.",
     "waitingSignIn": "Giriş yapılması bekleniyor…",
-    "connectButton": "Openship Bulut'a Bağlan",
-    "confirmDisconnect": "Openship Bulut bağlantısı kesilsin mi? Tekrar bağlanana kadar bulut dağıtımları çalışmayacaktır.",
+    "connectButton": "OpenShip Bulut'a Bağlan",
+    "confirmDisconnect": "OpenShip Bulut bağlantısı kesilsin mi? Tekrar bağlanana kadar bulut dağıtımları çalışmayacaktır.",
     "toast": {
-      "disconnected": "Openship Bulut bağlantısı kesildi",
+      "disconnected": "OpenShip Bulut bağlantısı kesildi",
       "disconnectFailed": "Bağlantı kesilemedi"
     },
     "pitch": {
-      "title": "Openship Cloud ekleyin",
+      "title": "OpenShip Cloud ekleyin",
       "body": "Her proje otomatik SSL ile ücretsiz bir .{domain} etki alanı alır — DNS yok, sertifika yok. Kendi sunucularınız tam olarak şu anki gibi çalışmaya devam eder.",
       "perkDomain": "Her projede ücretsiz .{domain} etki alanı + otomatik SSL",
       "perkDeploy": "Yönetilen buluta dağıtın veya kendi sunucularınızda kalın",
@@ -689,15 +689,15 @@
       "viewPricing": "Fiyatlandırmayı görüntüle"
     },
     "connectModal": {
-      "title": "Openship Cloud Bağla",
-      "requiresConnection": "{feature} için Openship Cloud bağlantısı gerekir. Erişimi açmak için hesabınızı bağlayın:",
+      "title": "OpenShip Cloud Bağla",
+      "requiresConnection": "{feature} için OpenShip Cloud bağlantısı gerekir. Erişimi açmak için hesabınızı bağlayın:",
       "features": {
         "deployments": "Bulut dağıtımları",
         "infra": "Yönetilen altyapı",
         "ssl": "Otomatik SSL ve alan adları",
         "cdn": "Küresel CDN"
       },
-      "connect": "Openship Cloud Bağlan",
+      "connect": "OpenShip Cloud Bağlan",
       "waitingSignIn": "Giriş bekleniyor…",
       "maybeLater": "Belki daha sonra"
     }
@@ -707,7 +707,7 @@
       "title": "Örnek konumu",
       "thisDesktop": "Bu bilgisayar",
       "thisServer": "Bu sunucu",
-      "desktopHint": "Mevcut örneğin verilerini kullanmak için bağlanın veya Openship’i çevrimiçi tutmak için bir sunucuya taşıyın.",
+      "desktopHint": "Mevcut örneğin verilerini kullanmak için bağlanın veya OpenShip’i çevrimiçi tutmak için bir sunucuya taşıyın.",
       "serverHint": "Görevler, webhook’lar ve ekip erişimi buradan yönetilir.",
       "remoteHint": "Uzak örneğin canlı verilerini kullanıyorsunuz.",
       "retiredHint": "Bu sunucu artık projeleri yönetmiyor. Yeniden kullanmak için buraya bir örnek taşıyın.",
@@ -722,7 +722,7 @@
       "receiveInstance": "Buraya bir örnek taşı",
       "disconnect": "Yerel örneğe dön",
       "moreOptions": "Diğer örnek seçenekleri",
-      "memberTitle": "Openship’i Desktop’tan kullanın",
+      "memberTitle": "OpenShip’i Desktop’tan kullanın",
       "memberHint": "Desktop’ı buradaki erişim yetkilerinizle bağlayın.",
       "loading": "Örnek yükleniyor…",
       "sendHint": "Bir taşıma kodu oluşturun, ardından Desktop’ın Örnek ayarlarındaki diğer seçeneklerden {action} seçeneğini seçin. Desktop devri tamamlayana kadar yönetim burada kalır.",
@@ -735,9 +735,9 @@
       "pairHint": "Diğer Desktop uygulamanızdan bu kurulumun güncel verilerini mevcut yetkilerinizle kullanın. Veriler taşınmaz.",
       "pairOwnDevice": "Bu kod sizin hesabınızla oturum açar. Başka birini davet etmek için Ekip bölümünü kullanın.",
       "teamAccessTitle": "Ekip davetlerini etkinleştir",
-      "teamAccessHint": "Ekip davetleri erişilebilir bir kurulum gerektirir. Openship’e herkese açık bir adres verin veya sürekli açık bir sunucuya taşıyın.",
+      "teamAccessHint": "Ekip davetleri erişilebilir bir kurulum gerektirir. OpenShip’e herkese açık bir adres verin veya sürekli açık bir sunucuya taşıyın.",
       "adminRequired": "Bunu ayarlaması için kurulum yöneticinize başvurun.",
-      "webhookAccessHint": "GitHub, dağıtım olaylarını göndermek için erişilebilir bir Openship API’sine ihtiyaç duyar. Bu kurulumu sürekli açık bir sunucuya taşıyın veya API’sine herkese açık bir adres verin."
+      "webhookAccessHint": "GitHub, dağıtım olaylarını göndermek için erişilebilir bir OpenShip API’sine ihtiyaç duyar. Bu kurulumu sürekli açık bir sunucuya taşıyın veya API’sine herkese açık bir adres verin."
     },
     "transfer": {
       "installOnServer": "Yeni kurulum",
@@ -764,7 +764,7 @@
     "descCloud": "Bulut",
     "descSelfHosted": "Self-hosted",
     "typeDesktop": "Masaüstü",
-    "typeCloud": "Openship Bulut",
+    "typeCloud": "OpenShip Bulut",
     "typeSelfHosted": "Self-Hosted",
     "deployMode": "Dağıtım modu: {mode}",
     "authNone": "Doğrulamasız (Zero Auth)",
@@ -793,7 +793,7 @@
       "invitationHint": "Bağlantı sırasında yerel örneğiniz duraklatılır. Hiçbir veri taşınmaz."
     },
     "recovery": {
-      "title": "Openship örneğiniz",
+      "title": "OpenShip örneğiniz",
       "subtitle": "Projelerinizi yönetmeye devam etmek için taşımayı tamamlayın veya yeniden bağlanın.",
       "checkConnection": "Bağlantıyı kontrol et",
       "signInRemote": "Uzak örneğe giriş yap"
@@ -801,7 +801,7 @@
   },
   "upgradeAuth": {
     "title": "Bir şifre ekleyin",
-    "description": "Openship’e erişimi korumak için e-posta ve parola belirleyin. Projeleriniz ve geçmişiniz korunur.",
+    "description": "OpenShip’e erişimi korumak için e-posta ve parola belirleyin. Projeleriniz ve geçmişiniz korunur.",
     "close": "Kapat",
     "name": "Ad",
     "namePlaceholder": "Ahmet Yılmaz",
@@ -1073,7 +1073,7 @@
       },
       "security.advisory": {
         "label": "Güvenlik duyuruları",
-        "description": "Bir güvenlik duyurusu Openship veya dağıtılmış bir hizmeti etkiliyor. Nedeni ve mevcut güncellemeyi içerir."
+        "description": "Bir güvenlik duyurusu OpenShip veya dağıtılmış bir hizmeti etkiliyor. Nedeni ve mevcut güncellemeyi içerir."
       }
     }
   },
@@ -1331,9 +1331,9 @@
   },
   "updates": {
     "title": "Güncellemeler",
-    "description": "Openship'in yeni sürümleri nasıl kontrol ettiği ve uyguladığı",
+    "description": "OpenShip'in yeni sürümleri nasıl kontrol ettiği ve uyguladığı",
     "checking": "Güncellemeler kontrol ediliyor…",
-    "available": "Openship {version} sürümü mevcut",
+    "available": "OpenShip {version} sürümü mevcut",
     "upToDate": "En son sürümdesiniz",
     "current": "Mevcut: {version}",
     "rerunToUpdate": " · güncellemek için kurulumunuzu tekrar çalıştırın",
@@ -1346,12 +1346,12 @@
     "viewChangelog": "Değişiklik günlüğünü ve sürümleri görüntüle",
     "securityTitle": "Güncelleme kontrolleri nasıl çalışır?",
     "securityDescription": "Kurulumunuzla neyin iletişim kurduğuna dair tam şeffaflık",
-    "security1": "Openship güncellemeleri ve güvenlik duyurularını kontrol eder",
+    "security1": "OpenShip güncellemeleri ve güvenlik duyurularını kontrol eder",
     "securityOnlyGithub": "yalnızca açık kaynak deponun genel GitHub yayınlarından",
     "security2": "açık kaynak deposunun (",
     "security3": "). Yalnızca bu verileri",
     "securityPulls": "çeker (pull)",
-    "security4": "— hiçbir üçüncü taraf servisi ve Openship tarafından işletilen hiçbir sunucu kurulumunuza güncelleme veya sinyal gönderemez (push). Duyurular her sürüme sabitlenmiştir, böylece yayınlanmamış değişiklikler size asla ulaşmaz. Kritik güvenlik duyuruları her zaman bir kez gösterilir; diğer her şey yukarıdaki ayara uyar."
+    "security4": "— hiçbir üçüncü taraf servisi ve OpenShip tarafından işletilen hiçbir sunucu kurulumunuza güncelleme veya sinyal gönderemez (push). Duyurular her sürüme sabitlenmiştir, böylece yayınlanmamış değişiklikler size asla ulaşmaz. Kritik güvenlik duyuruları her zaman bir kez gösterilir; diğer her şey yukarıdaki ayara uyar."
   },
   "infrastructure": {
     "title": "Platform bileşenleri",
@@ -1404,7 +1404,7 @@
     "import": {
       "title": "Verileri içe aktar",
       "description": "Dışa aktarılan bir dosyayı bu kuruluma geri yükleyin.",
-      "intro": "Başka bir Openship kurulumundan dışa aktarılan bir dosyayı yükleyin. Gizli verileri de geri yüklemek için dışa aktarılırken kullanılan parolayı girin.",
+      "intro": "Başka bir OpenShip kurulumundan dışa aktarılan bir dosyayı yükleyin. Gizli verileri de geri yüklemek için dışa aktarılırken kullanılan parolayı girin.",
       "importFromFile": "Dosyadan içe aktar…",
       "modalTitle": "Kurulum verilerini içe aktar",
       "modalSubtitle": "Dışa aktarılan bir anlık görüntüyü geri yükleyin.",
@@ -1422,7 +1422,7 @@
       "importing": "İçe aktarılıyor…",
       "import": "İçe aktar",
       "confirmWipe": "Bu kurulumdaki TÜM veriler içe aktarılan anlık görüntüyle değiştirilsin mi? Bu işlem geri alınamaz ve oturumunuz kapatılır.",
-      "notExport": "Bu bir Openship dışa aktarma dosyasına benzemiyor.",
+      "notExport": "Bu bir OpenShip dışa aktarma dosyasına benzemiyor.",
       "cantRead": "Bu dosya okunamadı — geçerli bir dışa aktarma dosyası mı?",
       "importFailed": "İçe aktarma başarısız oldu.",
       "rowsRestored": "{count} satır geri yüklendi",
@@ -1431,7 +1431,7 @@
     },
     "backupTitle": "Yedekleme ve kurtarma",
     "backupDesc": "Bir dosya dışa aktarın veya mevcut bir yedekten geri yükleyin.",
-    "backupWarning": "Arşiv dosyaları Openship veritabanını ve kimlik bilgilerini içerir. Docker birim içerikleri sunucularında kalır; hizmet verileri için proje yedeklerini kullanın.",
+    "backupWarning": "Arşiv dosyaları OpenShip veritabanını ve kimlik bilgilerini içerir. Docker birim içerikleri sunucularında kalır; hizmet verileri için proje yedeklerini kullanın.",
     "exportInstanceTitle": "Örneği veya projeleri dışa aktar",
     "exportInstanceDesc": "Ortamları ve bağımlılıklarıyla birlikte tam bir örneği veya seçilen projeleri seçin.",
     "exportProjectTitle": "Projeyi dışa aktar",
@@ -1464,25 +1464,25 @@
     "recordsSelected": "{count} kayıt seçildi.",
     "recordsAcrossEnvsSelected": "{envs} ortamda {count} kayıt seçildi.",
     "selectAtLeastOne": "En az bir proje veya ortam seçin.",
-    "cloudNotice": "Hedef çalışma alanı aynı Openship Cloud hesabına bağlanana kadar Cloud projeleri çalışmayacaktır."
+    "cloudNotice": "Hedef çalışma alanı aynı OpenShip Cloud hesabına bağlanana kadar Cloud projeleri çalışmayacaktır."
   },
   "migrate": {
     "chooseTitle": "Çok kullanıcılı moda geçin",
     "serverTitle": "Sunucunuza taşıyın",
-    "cloudTitle": "Openship Bulut'a taşıyın",
+    "cloudTitle": "OpenShip Bulut'a taşıyın",
     "tunnelTitle": "Tünel ile dışa açın",
     "completeTitle": "Taşıma tamamlandı",
     "back": "Geri",
     "chooseIntro": "Bu kurulum şu anda tek kullanıcılıdır. Ekip arkadaşlarınızın kuruluma nasıl erişeceğini seçin.",
     "cards": {
       "serverTitle": "Sunucunuza taşıyın",
-      "serverBody": "Openship'i sahip olduğunuz bir VPS'e SSH ile dağıtın. Veriler oraya taşınır. Zaten altyapısı olan ekipler için en iyisidir.",
+      "serverBody": "OpenShip'i sahip olduğunuz bir VPS'e SSH ile dağıtın. Veriler oraya taşınır. Zaten altyapısı olan ekipler için en iyisidir.",
       "serverMeta": "Harici bağımlılık yok",
-      "cloudTitle": "Openship Bulut'a taşıyın",
+      "cloudTitle": "OpenShip Bulut'a taşıyın",
       "cloudBody": "Verilerinizi api.openship.io adresine aktarın. Her şeyi biz barındırıyoruz. Sıfır altyapı isteyen ekipler için en iyisidir.",
       "cloudMetaConnected": "Bulut hesabı bağlandı",
       "metaRequiresCloud": "Bulut hesabı gerektirir",
-      "cloudWarn": "Önce Openship Bulut'a bağlanın.",
+      "cloudWarn": "Önce OpenShip Bulut'a bağlanın.",
       "tunnelTitle": "Yerelde tutun, tünel ile dışa açın",
       "tunnelBody": "Verileriniz bu bilgisayarda kalır. Ekip arkadaşlarınızın genel internet üzerinden size ulaşabilmesi için bir Oblien edge tüneli sağlıyoruz — bilgisayarınızın çevrimiçi olması gerekir.",
       "tunnelMetaConnected": "Oblien tüneli",
@@ -1502,7 +1502,7 @@
       "customHostPlaceholder": "ekip.acme.com",
       "preflight": "Ön kontrol",
       "sshReachable": "SSH erişilebilir",
-      "releaseAvailable": "Openship sürümü mevcut",
+      "releaseAvailable": "OpenShip sürümü mevcut",
       "domainReady": "Alan adı hazır",
       "runPreflight": "Ön kontrolü çalıştır",
       "recheck": "Tekrar kontrol et",
@@ -1530,7 +1530,7 @@
     },
     "tunnel": {
       "connectFirstTitle": "Önce bulut hesabınızı bağlayın",
-      "connectFirstBody": "Tüneller Openship Bulut üzerinden sağlanır. Ayarlar → Bulut sekmesini açın ve giriş yapın, ardından buraya dönün.",
+      "connectFirstBody": "Tüneller OpenShip Bulut üzerinden sağlanır. Ayarlar → Bulut sekmesini açın ve giriş yapın, ardından buraya dönün.",
       "headsUp": "Dikkat edin",
       "bullet1": "Verileriniz bu bilgisayarda kalır. Hiçbir şey taşınmaz.",
       "bullet2": "Ekip arkadaşlarınız size yalnızca bu bilgisayar çevrimiçi olduğunda ulaşabilir.",
@@ -1568,7 +1568,7 @@
     "heading": "Tek kullanıcılı moda geri dönün",
     "intro": "Bu kurulumu {mode} modundan çıkarıp bu bilgisayarda yeniden tek kullanıcılı moda alın.",
     "modeServer": "sunucunuz",
-    "modeCloud": "Openship Bulut",
+    "modeCloud": "OpenShip Bulut",
     "modeTunnel": "tünel",
     "current": "Mevcut",
     "noUrl": "(kayıtlı URL yok)",
@@ -1611,7 +1611,7 @@
   },
   "credentials": {
     "title": "Bağlantılar",
-    "description": "Openship'in sizin adınıza kullandığı belirteçler ve oturum bilgileri — özel imaj çekme, DNS kaydı yazma. Şifreli saklanır ve kaydedildikten sonra bir daha gösterilmez.",
+    "description": "OpenShip'in sizin adınıza kullandığı belirteçler ve oturum bilgileri — özel imaj çekme, DNS kaydı yazma. Şifreli saklanır ve kaydedildikten sonra bir daha gösterilmez.",
     "noProviders": "Bu örnekte kullanılabilir sağlayıcı yok.",
     "noneForProvider": "Henüz eklenmedi.",
     "add": "Ekle",
@@ -1626,7 +1626,7 @@
     "namePlaceholder": "örn. GHCR salt okunur",
     "secretKeptPlaceholder": "•••••••• (kayıtlı — korumak için boş bırakın)",
     "selectPlaceholder": "Seçin…",
-    "verifyNote": "Openship, kaydetmeden önce kimlik bilgisini sağlayıcıyla denetler.",
+    "verifyNote": "OpenShip, kaydetmeden önce kimlik bilgisini sağlayıcıyla denetler.",
     "confirmDelete": "\"{name}\" silinsin mi? Buna dayanan her şey çalışmayı bırakır.",
     "toast": {
       "loadFailed": "Kimlik bilgileri yüklenemedi",
@@ -1658,17 +1658,17 @@
       },
       "cloudflare": {
         "label": "Cloudflare",
-        "summary": "Openship'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını otomatik oluşturmasına izin verin.",
+        "summary": "OpenShip'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını otomatik oluşturmasına izin verin.",
         "fields": {
           "apiToken": {
             "label": "API belirteci",
-            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç. My Profile → API Tokens altında oluşturun."
+            "help": "OpenShip tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç. My Profile → API Tokens altında oluşturun."
           }
         }
       },
       "digitalocean": {
         "label": "DigitalOcean",
-        "summary": "Openship'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını DigitalOcean DNS'e yazmasına izin verin.",
+        "summary": "OpenShip'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını DigitalOcean DNS'e yazmasına izin verin.",
         "fields": {
           "apiToken": {
             "label": "API belirteci",
@@ -1760,21 +1760,21 @@
     "description": "Bu örneğin kendini ne olarak sunduğu. Bu, buradaki herkes için varsayılandır — her kullanıcı Ayarlar → Genel bölümünden kendi görünümünü seçebilir.",
     "platformLabel": "Tam platform",
     "platformDesc": "Projeler, uygulamalar, dağıtımlar, sunucular — bu kurulumun yapabileceği her şey.",
-    "mailLabel": "Openship Mail",
-    "mailDesc": "Örneği Openship Mail olarak markalar ve kenar çubuğunu posta kontrol paneli yapar.",
+    "mailLabel": "OpenShip Mail",
+    "mailDesc": "Örneği OpenShip Mail olarak markalar ve kenar çubuğunu posta kontrol paneli yapar.",
     "savedOverridden": "Kaydedildi. Kendi görünümünüz değişmedi — Ayarlar → Genel bölümünden seçmiştiniz.",
     "errorToast": "Ürün modu değiştirilemedi.",
     "envNote": "Bu örnek, ortamdan OPENSHIP_PRODUCT=mail ayarını takip eder. Buradan bir mod seçmek bunu geçersiz kılar."
   },
   "edgeOrphans": {
     "title": "İzlenmeyen edge rotaları",
-    "description": "Bu makinenin hala sunduğu ancak Openship'in kaydı bulunmayan ana makine adları",
+    "description": "Bu makinenin hala sunduğu ancak OpenShip'in kaydı bulunmayan ana makine adları",
     "scan": "Tara",
     "scanning": "Taranıyor…",
     "allClear": "Edge tarafından sunulan tüm ana makine adları hesaplanmıştır.",
     "comparedTo": "{count} izlenen ana makine adıyla karşılaştırıldı.",
     "unavailable": "Edge kontrol edilemedi",
-    "explain": "Bir projeyi \"Yalnızca Openship'ten kaldır\" seçeneğiyle kaldırmak, rotasını kasıtlı olarak çalışır durumda bırakır. Artık bir uygulama rotası, kapsayıcısı gittikten sonra 502 döndürür, ancak kalan STATİK rota eski dosyaları 200 ile sunmaya devam eder — o zamandan beri başka bir projeye verilmiş bir ana makine adında bile.",
+    "explain": "Bir projeyi \"Yalnızca OpenShip'ten kaldır\" seçeneğiyle kaldırmak, rotasını kasıtlı olarak çalışır durumda bırakır. Artık bir uygulama rotası, kapsayıcısı gittikten sonra 502 döndürür, ancak kalan STATİK rota eski dosyaları 200 ile sunmaya devam eder — o zamandan beri başka bir projeye verilmiş bir ana makine adında bile.",
     "kindStatic": "Statik dosyalar",
     "kindProxy": "Uygulama rotası",
     "staticWarning": "Hala dosyaları sunuyor. Bugün gelen isteklere yanıt veriyor.",

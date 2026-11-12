@@ -85,6 +85,27 @@ it.each(["monthly", "annual"] as const)("keeps a referral and %s plan through si
   expect(new URL(destination, "https://app.openship.io").searchParams.get("ref")).toBe("AF-PARTNER");
 });
 
+describe("migration post-auth return", () => {
+  it.each(["/library/migrate", "/library/migrate?from=railway", "/library/migrate?from=vercel", "/library/migrate?from=server"])(
+    "preserves %s through the existing auth continuation", (destination) => {
+      let href = authContinuationHref("/login", destination);
+      for (const route of ["/register", "/two-factor", "/select-organization"] as const) {
+        href = buildAuthPageHref(route, new URL(href, "https://app.openship.io").searchParams);
+        expect(getPostAuthRedirect(new URL(href, "https://app.openship.io").searchParams)).toBe(destination);
+      }
+      href = emailVerificationHref("user@example.test", new URL(href, "https://app.openship.io").searchParams);
+      expect(getPostAuthRedirect(new URL(href, "https://app.openship.io").searchParams)).toBe(destination);
+      expect(new URL(authContinuationHref("/login", href.replace("/verify-email", "/select-organization")), "https://app.openship.io").searchParams.get("returnTo")).toBe(destination);
+    },
+  );
+
+  it.each(["https://evil.test/library/migrate", "//evil.test/library/migrate", "/library/migrate/../../settings", "/library/migrate\\evil.test", "/library/migrate%2fextra", "/library/migrate-extra", "/library/other"])(
+    "does not widen the redirect allowlist to %s", (input) => {
+      expect(validateReturnTo(input)).toBeNull();
+    },
+  );
+});
+
 describe("invitation post-auth return", () => {
   const params = (returnTo: string) => new URLSearchParams({ returnTo });
 

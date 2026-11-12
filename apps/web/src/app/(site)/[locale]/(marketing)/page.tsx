@@ -1,0 +1,76 @@
+import {
+  Navbar,
+  Hero,
+  Dashboard,
+  HowItWorks,
+  DeploymentModels,
+  CompletePlatform,
+  AppsShowcase,
+  MailServer,
+  Comparison,
+  DataPrivacy,
+  OpenSource,
+  FinalCta,
+  Footer,
+} from "@/components/landing";
+import { FEATURES } from "@/lib/features";
+import { localizedMetadata } from "@/i18n/metadata";
+
+export async function generateMetadata() {
+  return localizedMetadata({ alternates: { canonical: "/" } });
+}
+
+const SITE_URL = "https://openship.io";
+
+const softwareLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "OpenShip",
+  applicationCategory: "DeveloperApplication",
+  applicationSubCategory: "Deployment Platform",
+  operatingSystem: "macOS, Windows, Linux, Web",
+  url: SITE_URL,
+  downloadUrl: `${SITE_URL}/download`,
+  softwareVersion: "latest",
+  publisher: {
+    "@type": "Organization",
+    name: "OpenShip",
+    url: SITE_URL,
+  },
+  description:
+    "Open source, self-hostable deployment platform with AI-powered builds, free SSL, instant rollbacks, unlimited domains, and CLI/MCP support.",
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+    availability: "https://schema.org/InStock",
+  },
+  featureList: FEATURES.map((feature) => feature.title),
+};
+
+export default function HomePage() {
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareLd) }}
+      />
+      <Navbar />
+      <main>
+        <Hero />
+        <Dashboard />
+        <CompletePlatform />
+        <HowItWorks />
+        <DeploymentModels />
+        <AppsShowcase />
+        <MailServer />
+        <Comparison />
+        <DataPrivacy />
+        <OpenSource />
+        <FinalCta />
+      </main>
+      <Footer />
+    </>
+  );
+}

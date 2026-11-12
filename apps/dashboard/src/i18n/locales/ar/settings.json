@@ -105,7 +105,7 @@
   "page": {
     "title": "الإعدادات",
     "subtitle": "إدارة تفضيلاتك وفريقك وتهيئة النسخة",
-    "cloudConnectedToast": "تم الاتصال بـ Openship Cloud"
+    "cloudConnectedToast": "تم الاتصال بـ OpenShip Cloud"
   },
   "sidebar": {
     "title": "الإعدادات",
@@ -132,7 +132,7 @@
     "noInstallations": "متصل · لا توجد عمليات تثبيت بعد",
     "connectedOne": "متصل · تثبيت واحد",
     "connectedMany": "متصل · {count} عمليات تثبيت",
-    "requiresCloud": "يتطلب Openship Cloud — التطبيق مملوك لـ openship.io",
+    "requiresCloud": "يتطلب OpenShip Cloud — التطبيق مملوك لـ openship.io",
     "connectPrompt": "اربط حساب GitHub الخاص بك لنشر المستودعات",
     "checkingConnection": "جارٍ التحقق من الاتصال…",
     "addAccount": "إضافة حساب",
@@ -140,10 +140,10 @@
     "manageOnGithub": "الإدارة على GitHub",
     "disconnect": "قطع الاتصال",
     "disconnectTitle": "قطع الاتصال بـ {label}",
-    "disconnectAppLabel": "تطبيق Openship على GitHub",
-    "disconnectAppBody": "يؤدي هذا إلى إزالة صف حساب OAuth الخاص بـ Openship. يبقى تثبيت تطبيق GitHub حتى تقوم بإلغاء تثبيته على GitHub.",
-    "cloudExplainer": "تطبيق Openship على GitHub مملوك لـ openship.io. اربط نسختك بـ Openship Cloud لاستخدام رموز تثبيت محدّدة النطاق لاستنساخ المستودعات الخاصة (يعمل مع عمليات النشر المحلية والبعيدة معًا).",
-    "connectCloud": "الاتصال بـ Openship Cloud",
+    "disconnectAppLabel": "تطبيق OpenShip على GitHub",
+    "disconnectAppBody": "يؤدي هذا إلى إزالة صف حساب OAuth الخاص بـ OpenShip. يبقى تثبيت تطبيق GitHub حتى تقوم بإلغاء تثبيته على GitHub.",
+    "cloudExplainer": "تطبيق OpenShip على GitHub مملوك لـ openship.io. اربط نسختك بـ OpenShip Cloud لاستخدام رموز تثبيت محدّدة النطاق لاستنساخ المستودعات الخاصة (يعمل مع عمليات النشر المحلية والبعيدة معًا).",
+    "connectCloud": "الاتصال بـ OpenShip Cloud",
     "noCloudTitle": "استنساخ المستودعات الخاصة بدون السحابة",
     "useSshPerServer": "مفتاح SSH لكل خادم",
     "usePat": "رمز الوصول",
@@ -162,8 +162,8 @@
       "usedForDeploys": "يُستخدم لعمليات النشر",
       "usedForDeploysTitle": "لا يوجد اتصال سحابي — gh CLI هو المصدر الأساسي لكل شيء حاليًا",
       "activeWarnStrong": "gh CLI هو المصدر النشط.",
-      "activeWarnRest": "ستُرفض عمليات النشر إلى الخوادم البعيدة — اربط تطبيق Openship أو عيّن رمز استنساخ خاصًا بالمشروع للنشر إلى الأهداف البعيدة.",
-      "primaryNotePrefix": "تطبيق Openship هو المصدر الأساسي. يتدخل gh CLI في",
+      "activeWarnRest": "ستُرفض عمليات النشر إلى الخوادم البعيدة — اربط تطبيق OpenShip أو عيّن رمز استنساخ خاصًا بالمشروع للنشر إلى الأهداف البعيدة.",
+      "primaryNotePrefix": "تطبيق OpenShip هو المصدر الأساسي. يتدخل gh CLI في",
       "primaryNoteStrong": "عمليات البناء المحلية",
       "primaryNoteSuffix": "للمستودعات خارج عمليات تثبيت تطبيقك.",
       "optionalPrefix": "اختياري. شغّل",
@@ -179,7 +179,7 @@
       "forwardOnNote": "إعادة التوجيه مفعلة — يقوم gh CLI أيضاً بمصادقة استنساخ الخادم البعيد. يتم نفق هويتك عبر SSH لكل عملية استنساخ؛ ولا يتم تخزين أي شيء على الخادم.",
       "forwardOffHint": "عمليات البناء المحلية فقط في الوقت الحالي. قم بتشغيل \"إعادة توجيه هوية git الخاصة بي إلى خوادم البناء\" لاستخدام gh CLI لعمليات نشر الخادم البعيد أيضاً.",
       "manageForward": "إدارة إعادة التوجيه",
-      "disconnectBody": "سيقوم Openship بإزالة بيانات الاعتماد هذه من هذا المثيل والتوقف عن استخدامها لعمليات الاستنساخ. تظل صالحة في GitHub حتى تقوم بإلغائها هناك. يمكنك إعادة الاتصال في أي وقت.",
+      "disconnectBody": "سيقوم OpenShip بإزالة بيانات الاعتماد هذه من هذا المثيل والتوقف عن استخدامها لعمليات الاستنساخ. تظل صالحة في GitHub حتى تقوم بإلغائها هناك. يمكنك إعادة الاتصال في أي وقت.",
       "recheck": "تحقق مرة أخرى"
     },
     "replaceToken": "استبدال رمز GitHub",
@@ -187,7 +187,7 @@
     "tokenEditorDescription": "استخدم رمز وصول شخصي من GitHub لتصفح المستودعات والبناء على هذا المثيل.",
     "methodTokenDesc": "استخدم رمز GitHub لتصفح المستودعات والبناء محليًا.",
     "activeVia": "متصل عبر {method}",
-    "pickMethod": "اختر كيف يصل Openship إلى مستودعاتك.",
+    "pickMethod": "اختر كيف يصل OpenShip إلى مستودعاتك.",
     "methodDevice": "تسجيل الدخول عبر GitHub",
     "methodApp": "تطبيق GitHub",
     "methodAppDesc": "رموز تثبيت محددة النطاق وقصيرة الأجل لعمليات النشر المحلية والبعيدة.",
@@ -207,11 +207,11 @@
     "methodHostCli": "gh CLI على هذا المضيف",
     "manageTokensOnGithub": "إدارة الرموز على GitHub",
     "manageAccessOnGithub": "إدارة الوصول على GitHub",
-    "disconnectScopeNote": "يؤدي قطع الاتصال إلى إزالة بيانات الاعتماد هذه من Openship والتوقف عن استخدامها لعمليات الاستنساخ. تظل صالحة في GitHub حتى تقوم بإلغائها هناك.",
+    "disconnectScopeNote": "يؤدي قطع الاتصال إلى إزالة بيانات الاعتماد هذه من OpenShip والتوقف عن استخدامها لعمليات الاستنساخ. تظل صالحة في GitHub حتى تقوم بإلغائها هناك.",
     "credentialRejected": "رفض GitHub الـ {method} المخزن.",
     "credentialRejectedImpact": "تم إلغاؤه أو انتهت صلاحيته أو فقد نطاقاً مطلوباً. ستستمر عمليات النشر التي تستنسخ باستخدامه في الفشل حتى تعيد الاتصال أدناه.",
     "credentialUnreachable": "تعذر الوصول إلى GitHub للتحقق من الـ {method} المخزن.",
-    "credentialUnreachableImpact": "عادةً ما تكون هذه مشكلة في الشبكة وليست بيانات اعتماد غير صالحة — يستمر Openship في استخدامها. لن تساعد إعادة الاتصال إذا كان GitHub غير متاح.",
+    "credentialUnreachableImpact": "عادةً ما تكون هذه مشكلة في الشبكة وليست بيانات اعتماد غير صالحة — يستمر OpenShip في استخدامها. لن تساعد إعادة الاتصال إذا كان GitHub غير متاح.",
     "credentialCheckedAt": "آخر فحص: {time}"
   },
   "deployDefaults": {
@@ -228,13 +228,13 @@
         "desc": "خادم SSH مهيّأ"
       },
       "cloud": {
-        "label": "Openship Cloud",
+        "label": "OpenShip Cloud",
         "desc": "بنية تحتية سحابية مُدارة"
       }
     },
     "labelFor": {
       "yourServer": "خادمك",
-      "cloud": "Openship Cloud"
+      "cloud": "OpenShip Cloud"
     },
     "toast": {
       "pickServer": "اختر خادمًا أولًا",
@@ -270,10 +270,10 @@
   "githubSources": {
     "title": "تطبيقات GitHub ذاتية الاستضافة",
     "description": "أدِر اتصال GitHub على هذا المثيل باستخدام بيانات تطبيق مشفّرة وخطافات ويب مباشرة ورموز تثبيت قصيرة العمر.",
-    "publicUrlRequired": "اضبط أولاً عنوان HTTPS عامًا لمثيل Openship كي يتمكن GitHub من الوصول إلى رد الإعداد وخطاف الويب.",
+    "publicUrlRequired": "اضبط أولاً عنوان HTTPS عامًا لمثيل OpenShip كي يتمكن GitHub من الوصول إلى رد الإعداد وخطاف الويب.",
     "createWithGithub": "إنشاء عبر GitHub",
     "registerExisting": "تسجيل تطبيق موجود",
-    "manifestHelp": "سيرسل Openship بيان تطبيق بأقل الصلاحيات إلى GitHub، ثم يحفظ بيانات الاعتماد التي ينشئها ويفتح تثبيت المستودعات.",
+    "manifestHelp": "سيرسل OpenShip بيان تطبيق بأقل الصلاحيات إلى GitHub، ثم يحفظ بيانات الاعتماد التي ينشئها ويفتح تثبيت المستودعات.",
     "nameLabel": "اسم المصدر",
     "namePlaceholder": "GitHub لشركة Acme",
     "continueOnGithub": "المتابعة على GitHub",
@@ -291,9 +291,9 @@
     "makeDefault": "تعيين افتراضي",
     "manage": "الإدارة على GitHub",
     "delete": "حذف",
-    "confirmDelete": "هل تريد حذف {name} من Openship؟ ستُحذف بياناته المحلية وارتباطات التثبيت، لكن التطبيق سيبقى مثبّتًا على GitHub حتى تزيله هناك.",
+    "confirmDelete": "هل تريد حذف {name} من OpenShip؟ ستُحذف بياناته المحلية وارتباطات التثبيت، لكن التطبيق سيبقى مثبّتًا على GitHub حتى تزيله هناك.",
     "editHelp": "اترك حقول الأسرار فارغة للاحتفاظ بالقيم المشفّرة المخزنة.",
-    "manualHelp": "أدخل بيانات تطبيق GitHub موجود. يتحقق Openship من المفتاح الخاص قبل تخزين أي شيء.",
+    "manualHelp": "أدخل بيانات تطبيق GitHub موجود. يتحقق OpenShip من المفتاح الخاص قبل تخزين أي شيء.",
     "appIdLabel": "معرّف التطبيق",
     "clientIdLabel": "معرّف العميل",
     "clientSecretLabel": "سر العميل",
@@ -409,11 +409,11 @@
   },
   "mcp": {
     "title": "MCP",
-    "description": "اربط وكلاء الذكاء الاصطناعي بواجهة Openship API عبر بروتوكول Model Context Protocol.",
+    "description": "اربط وكلاء الذكاء الاصطناعي بواجهة OpenShip API عبر بروتوكول Model Context Protocol.",
     "loading": "جارٍ التحميل…",
     "connectAnother": "ربط عميل آخر",
     "bannerStrong": "الصق نقطة النهاية أدناه في عميل MCP الخاص بك",
-    "bannerRest": "(Claude، Cursor، …) — تفتح نافذة متصفّح توافق فيها على الوصول وتختار ما يمكن للعميل الوصول إليه. لا يوجد رمز لنسخه. Openship خادم MCP متوافق مع معيار OAuth 2.1.",
+    "bannerRest": "(Claude، Cursor، …) — تفتح نافذة متصفّح توافق فيها على الوصول وتختار ما يمكن للعميل الوصول إليه. لا يوجد رمز لنسخه. OpenShip خادم MCP متوافق مع معيار OAuth 2.1.",
     "addToClient": "الإضافة إلى عميلك",
     "install": "تثبيت",
     "endpoint": "نقطة النهاية",
@@ -552,13 +552,13 @@
     },
     "reachability": {
       "description": "يحتاج زملاء الفريق إلى عنوان URL عام للوصول إلى مساحة العمل هذه.",
-      "notInstalledTitle": "امنح Openship عنواناً عاماً",
-      "notInstalledBody": "لم يتم إعداد Openship بعنوان URL عام بعد. قم بنشره بعنوان عام (مثل `openship up --public-url …`)، ثم أضف نطاقاً هنا حتى يتمكن زملاء الفريق من الوصول إليه.",
-      "noDomainTitle": "أضف نطاقاً إلى Openship",
-      "noDomainBody": "أضف نطاقاً إلى تطبيق Openship حتى يتمكن أعضاء الفريق من الوصول إلى مساحة العمل هذه — يتم تشغيل الدعوات تلقائياً بمجرد تشغيلها.",
+      "notInstalledTitle": "امنح OpenShip عنواناً عاماً",
+      "notInstalledBody": "لم يتم إعداد OpenShip بعنوان URL عام بعد. قم بنشره بعنوان عام (مثل `openship up --public-url …`)، ثم أضف نطاقاً هنا حتى يتمكن زملاء الفريق من الوصول إليه.",
+      "noDomainTitle": "أضف نطاقاً إلى OpenShip",
+      "noDomainBody": "أضف نطاقاً إلى تطبيق OpenShip حتى يتمكن أعضاء الفريق من الوصول إلى مساحة العمل هذه — يتم تشغيل الدعوات تلقائياً بمجرد تشغيلها.",
       "addDomain": "إضافة نطاق",
       "pendingTitle": "إنهاء إعداد النطاق",
-      "pendingBody": "نطاق Openship الخاص بك في انتظار التحقق (DNS / SSL). يتم تشغيل الدعوات بمجرد تشغيله.",
+      "pendingBody": "نطاق OpenShip الخاص بك في انتظار التحقق (DNS / SSL). يتم تشغيل الدعوات بمجرد تشغيله.",
       "viewDomain": "عرض النطاق"
     }
   },
@@ -579,7 +579,7 @@
     "grantsMany": "{count} منح",
     "sendVia": "الإرسال عبر",
     "yourMailServer": "خادم بريدك",
-    "openshipCloud": "Openship Cloud",
+    "openshipCloud": "OpenShip Cloud",
     "pickerTitle": "وصول الموارد الأولي",
     "pickerDesc": "يبدأ الأعضاء المقيّدون بلا وصول. اختر ما تتيحه هذه الدعوة بمجرد قبولها — يمكنك منح المزيد لاحقًا من صف العضو.",
     "sendInvite": "إرسال الدعوة",
@@ -609,13 +609,13 @@
     "cloudNotReady": "غير متصل",
     "noMailSystem": "لم يتم إعداد نظام بريد إلكتروني، لذلك لن يتم تسليم الدعوة.",
     "setUpEmail": "إعداد البريد الإلكتروني ←",
-    "cloudNotConnected": "Openship Cloud غير متصل، لذا لا يمكنه إرسال الدعوة.",
-    "connectCloud": "ربط Openship Cloud ←"
+    "cloudNotConnected": "OpenShip Cloud غير متصل، لذا لا يمكنه إرسال الدعوة.",
+    "connectCloud": "ربط OpenShip Cloud ←"
   },
   "teamWorkspace": {
     "title": "مساحة عمل الفريق",
     "description": "انقل هذه النسخة إلى وضع تعدّد المستخدمين.",
-    "body": "هذه النسخة حاليًا أحادية المستخدم — يمكنك أنت فقط تسجيل الدخول. عندما تكون مستعدًا لإضافة زملاء، رحّل النشر إلى موقع مشترك: خادمك الخاص، أو Openship Cloud، أو اعرض هذا الجهاز عبر نفق.",
+    "body": "هذه النسخة حاليًا أحادية المستخدم — يمكنك أنت فقط تسجيل الدخول. عندما تكون مستعدًا لإضافة زملاء، رحّل النشر إلى موقع مشترك: خادمك الخاص، أو OpenShip Cloud، أو اعرض هذا الجهاز عبر نفق.",
     "currentMode": "الوضع الحالي",
     "singleUserLocal": "أحادي المستخدم (محلي)",
     "migrate": "ترحيل",
@@ -624,7 +624,7 @@
   },
   "cloud": {
     "checking": "جارٍ التحقق…",
-    "fallbackName": "Openship Cloud",
+    "fallbackName": "OpenShip Cloud",
     "connectedAccount": "حساب سحابي متصل",
     "connected": "متصل",
     "disconnect": "قطع الاتصال",
@@ -633,14 +633,14 @@
     "unlockDesktop": "أطلق العنان لعمليات النشر السحابية وشهادات SSL المُدارة وشبكة CDN العالمية.",
     "deployLocal": "انشر إلى السحابة مباشرةً من نسختك المحلية.",
     "waitingSignIn": "في انتظار تسجيل الدخول…",
-    "connectButton": "الاتصال بـ Openship Cloud",
-    "confirmDisconnect": "قطع الاتصال بـ Openship Cloud؟ ستتوقف عمليات النشر السحابية عن العمل حتى تعيد الاتصال.",
+    "connectButton": "الاتصال بـ OpenShip Cloud",
+    "confirmDisconnect": "قطع الاتصال بـ OpenShip Cloud؟ ستتوقف عمليات النشر السحابية عن العمل حتى تعيد الاتصال.",
     "toast": {
-      "disconnected": "تم قطع الاتصال بـ Openship Cloud",
+      "disconnected": "تم قطع الاتصال بـ OpenShip Cloud",
       "disconnectFailed": "تعذّر قطع الاتصال"
     },
     "pitch": {
-      "title": "إضافة Openship Cloud",
+      "title": "إضافة OpenShip Cloud",
       "body": "يحصل كل مشروع على نطاق .{domain} مجاني مع SSL تلقائي — بدون DNS، وبدون شهادات. تستمر خوادمك الخاصة في العمل تماماً كما هي الآن.",
       "perkDomain": "نطاق .{domain} مجاني + SSL تلقائي في كل مشروع",
       "perkDeploy": "النشر على سحابة مدارة، أو البقاء على خوادمك الخاصة",
@@ -650,15 +650,15 @@
       "viewPricing": "عرض الأسعار"
     },
     "connectModal": {
-      "title": "ربط Openship Cloud",
-      "requiresConnection": "تتطلب {feature} الاتصال بـ Openship Cloud. اربط حسابك للوصول إلى:",
+      "title": "ربط OpenShip Cloud",
+      "requiresConnection": "تتطلب {feature} الاتصال بـ OpenShip Cloud. اربط حسابك للوصول إلى:",
       "features": {
         "deployments": "عمليات النشر السحابية",
         "infra": "بنية تحتية مدارة",
         "ssl": "شهادات SSL ونطاقات تلقائية",
         "cdn": "شبكة توصيل محتوى عالمية"
       },
-      "connect": "الاتصال بـ Openship Cloud",
+      "connect": "الاتصال بـ OpenShip Cloud",
       "waitingSignIn": "في انتظار تسجيل الدخول…",
       "maybeLater": "ربما لاحقاً"
     }
@@ -668,7 +668,7 @@
       "title": "موقع المثيل",
       "thisDesktop": "هذا الكمبيوتر",
       "thisServer": "هذا الخادم",
-      "desktopHint": "اتصل لاستخدام بيانات نسخة موجودة، أو انقل Openship إلى خادم ليبقى متاحاً.",
+      "desktopHint": "اتصل لاستخدام بيانات نسخة موجودة، أو انقل OpenShip إلى خادم ليبقى متاحاً.",
       "serverHint": "تُدار المهام والويب هوك ووصول الفريق من هنا.",
       "remoteHint": "أنت تستخدم البيانات المباشرة للمثيل البعيد.",
       "retiredHint": "لم يعد هذا الخادم يدير المشاريع. انقل مثيلًا إليه لاستخدامه مجددًا.",
@@ -683,7 +683,7 @@
       "receiveInstance": "نقل مثيل إلى هنا",
       "disconnect": "العودة إلى المثيل المحلي",
       "moreOptions": "خيارات المثيل الأخرى",
-      "memberTitle": "استخدم Openship من Desktop",
+      "memberTitle": "استخدم OpenShip من Desktop",
       "memberHint": "اربط تطبيق Desktop بنفس صلاحيات الوصول المتاحة لك هنا.",
       "loading": "جارٍ تحميل المثيل…",
       "sendHint": "أنشئ رمز نقل، ثم اختر «{action}» من الخيارات الأخرى في إعدادات المثيل في Desktop. تبقى الإدارة هنا حتى يُكمل Desktop النقل.",
@@ -696,9 +696,9 @@
       "pairHint": "استخدم تطبيق سطح المكتب على جهازك الآخر مع البيانات الحالية لهذه النسخة وصلاحياتك الحالية. لن تُنقل أي بيانات.",
       "pairOwnDevice": "يسجّل هذا الرمز الدخول بحسابك. استخدم الفريق لدعوة شخص آخر.",
       "teamAccessTitle": "تفعيل دعوات الفريق",
-      "teamAccessHint": "تحتاج دعوات الفريق إلى نسخة يمكن الوصول إليها. أضف عنوانًا عامًا إلى Openship أو انقله إلى خادم يعمل باستمرار.",
+      "teamAccessHint": "تحتاج دعوات الفريق إلى نسخة يمكن الوصول إليها. أضف عنوانًا عامًا إلى OpenShip أو انقله إلى خادم يعمل باستمرار.",
       "adminRequired": "اطلب من مسؤول النسخة إعداد ذلك.",
-      "webhookAccessHint": "يحتاج GitHub إلى واجهة Openship API يمكن الوصول إليها لإرسال أحداث النشر. انقل هذه النسخة إلى خادم يعمل باستمرار أو أضف عنوانًا عامًا لواجهة API."
+      "webhookAccessHint": "يحتاج GitHub إلى واجهة OpenShip API يمكن الوصول إليها لإرسال أحداث النشر. انقل هذه النسخة إلى خادم يعمل باستمرار أو أضف عنوانًا عامًا لواجهة API."
     },
     "transfer": {
       "installOnServer": "تثبيت جديد",
@@ -725,7 +725,7 @@
     "descCloud": "السحابة",
     "descSelfHosted": "مُستضاف ذاتيًا",
     "typeDesktop": "سطح المكتب",
-    "typeCloud": "Openship Cloud",
+    "typeCloud": "OpenShip Cloud",
     "typeSelfHosted": "مُستضاف ذاتيًا",
     "deployMode": "وضع النشر: {mode}",
     "authNone": "بلا مصادقة",
@@ -754,7 +754,7 @@
       "invitationHint": "تتوقف نسختك المحلية مؤقتًا أثناء الاتصال. لا يتم نقل أي بيانات."
     },
     "recovery": {
-      "title": "نسخة Openship الخاصة بك",
+      "title": "نسخة OpenShip الخاصة بك",
       "subtitle": "أكمل النقل أو أعد الاتصال لمواصلة إدارة مشاريعك.",
       "checkConnection": "التحقق من الاتصال",
       "signInRemote": "تسجيل الدخول إلى النسخة البعيدة"
@@ -762,7 +762,7 @@
   },
   "upgradeAuth": {
     "title": "إضافة كلمة مرور",
-    "description": "عيّن بريدًا إلكترونيًا وكلمة مرور لحماية الوصول إلى Openship. ستبقى مشاريعك وسجلاتك كما هي.",
+    "description": "عيّن بريدًا إلكترونيًا وكلمة مرور لحماية الوصول إلى OpenShip. ستبقى مشاريعك وسجلاتك كما هي.",
     "close": "إغلاق",
     "name": "الاسم",
     "namePlaceholder": "Jane Doe",
@@ -1034,7 +1034,7 @@
       },
       "security.advisory": {
         "label": "تنبيهات الأمان",
-        "description": "تنبيه أمني منشور يؤثر على Openship أو خدمة منشورة، مع السبب والتحديث المتاح."
+        "description": "تنبيه أمني منشور يؤثر على OpenShip أو خدمة منشورة، مع السبب والتحديث المتاح."
       }
     }
   },
@@ -1292,9 +1292,9 @@
   },
   "updates": {
     "title": "التحديثات",
-    "description": "كيف يتحقق Openship من الإصدارات الجديدة ويطبّقها",
+    "description": "كيف يتحقق OpenShip من الإصدارات الجديدة ويطبّقها",
     "checking": "جارٍ التحقق من التحديثات…",
-    "available": "الإصدار {version} من Openship متاح",
+    "available": "الإصدار {version} من OpenShip متاح",
     "upToDate": "أنت على أحدث إصدار",
     "current": "الحالي: {version}",
     "rerunToUpdate": " · أعِد تشغيل التثبيت للتحديث",
@@ -1307,12 +1307,12 @@
     "viewChangelog": "عرض سجل التغييرات والإصدارات",
     "securityTitle": "كيف تعمل عمليات التحقق من التحديثات",
     "securityDescription": "شفافية كاملة حول ما يتواصل مع نسختك",
-    "security1": "يتحقق Openship من التحديثات والتنبيهات الأمنية",
+    "security1": "يتحقق OpenShip من التحديثات والتنبيهات الأمنية",
     "securityOnlyGithub": "من إصدارات GitHub العامة فقط",
     "security2": "للمستودع مفتوح المصدر (",
     "security3": "). وهو لا",
     "securityPulls": "يسحب",
-    "security4": "هذه البيانات إلا سحبًا — لا يمكن لأي خدمة خارجية ولا لأي خادم تُشغّله Openship دفع تحديثات أو إشارات إلى نسختك. تُثبَّت التنبيهات مع كل إصدار، لذا لا تصلك التغييرات غير المُصدَرة أبدًا. تُعرض التنبيهات الأمنية الحرجة دائمًا مرة واحدة؛ وما عدا ذلك يخضع للخيار أعلاه."
+    "security4": "هذه البيانات إلا سحبًا — لا يمكن لأي خدمة خارجية ولا لأي خادم تُشغّله OpenShip دفع تحديثات أو إشارات إلى نسختك. تُثبَّت التنبيهات مع كل إصدار، لذا لا تصلك التغييرات غير المُصدَرة أبدًا. تُعرض التنبيهات الأمنية الحرجة دائمًا مرة واحدة؛ وما عدا ذلك يخضع للخيار أعلاه."
   },
   "infrastructure": {
     "title": "مكوّنات المنصّة",
@@ -1365,7 +1365,7 @@
     "import": {
       "title": "استيراد البيانات",
       "description": "استعِد ملفًا مُصدَّرًا إلى هذه النسخة.",
-      "intro": "حمّل ملفًا مُصدَّرًا من نسخة Openship أخرى. أدخل عبارة المرور المستخدمة عند تصديره لاستعادة الأسرار أيضًا.",
+      "intro": "حمّل ملفًا مُصدَّرًا من نسخة OpenShip أخرى. أدخل عبارة المرور المستخدمة عند تصديره لاستعادة الأسرار أيضًا.",
       "importFromFile": "استيراد من ملف…",
       "modalTitle": "استيراد بيانات النسخة",
       "modalSubtitle": "استعِد لقطة مُصدَّرة.",
@@ -1383,7 +1383,7 @@
       "importing": "جارٍ الاستيراد…",
       "import": "استيراد",
       "confirmWipe": "استبدال جميع البيانات على هذه النسخة باللقطة المستوردة؟ لا يمكن التراجع عن هذا، وسيتم تسجيل خروجك.",
-      "notExport": "لا يبدو هذا كملف تصدير من Openship.",
+      "notExport": "لا يبدو هذا كملف تصدير من OpenShip.",
       "cantRead": "تعذّرت قراءة هذا الملف — هل هو تصدير صالح؟",
       "importFailed": "فشل الاستيراد.",
       "rowsRestored": "تمت استعادة {count} صفوف",
@@ -1392,7 +1392,7 @@
     },
     "backupTitle": "النسخ الاحتياطي والاسترداد",
     "backupDesc": "تصدير ملف أو استعادة نسخة احتياطية موجودة.",
-    "backupWarning": "تتضمن ملفات الأرشيف قاعدة بيانات Openship وبيانات الاعتماد. تظل محتويات وحدات تخزين Docker على خوادمها؛ استخدم النسخ الاحتياطية للمشروع لبيانات الخدمة.",
+    "backupWarning": "تتضمن ملفات الأرشيف قاعدة بيانات OpenShip وبيانات الاعتماد. تظل محتويات وحدات تخزين Docker على خوادمها؛ استخدم النسخ الاحتياطية للمشروع لبيانات الخدمة.",
     "exportInstanceTitle": "تصدير المثيل أو المشاريع",
     "exportInstanceDesc": "اختر مثيلًا كاملاً أو مشاريع محددة مع بيئاتها وتبعياتها.",
     "exportProjectTitle": "تصدير المشروع",
@@ -1425,12 +1425,12 @@
     "recordsSelected": "تم تحديد {count} سجل.",
     "recordsAcrossEnvsSelected": "تم تحديد {count} سجل عبر {envs} بيئات.",
     "selectAtLeastOne": "حدد مشروعًا أو بيئة واحدة على الأقل.",
-    "cloudNotice": "لن تعمل مشاريع Cloud حتى يتم ربط مساحة العمل الوجهة بنفس حساب Openship Cloud."
+    "cloudNotice": "لن تعمل مشاريع Cloud حتى يتم ربط مساحة العمل الوجهة بنفس حساب OpenShip Cloud."
   },
   "migrate": {
     "chooseTitle": "الانتقال إلى وضع تعدّد المستخدمين",
     "serverTitle": "الترحيل إلى خادمك",
-    "cloudTitle": "الترحيل إلى Openship Cloud",
+    "cloudTitle": "الترحيل إلى OpenShip Cloud",
     "tunnelTitle": "العرض عبر نفق",
     "completeTitle": "اكتمل الترحيل",
     "back": "رجوع",
@@ -1439,11 +1439,11 @@
       "serverTitle": "الترحيل إلى خادمك",
       "serverBody": "انشر openship عبر SSH على خادم افتراضي خاص تملكه. تنتقل البيانات إلى هناك. الأفضل للفرق التي تمتلك بنية تحتية بالفعل.",
       "serverMeta": "بلا اعتماد خارجي",
-      "cloudTitle": "الترحيل إلى Openship Cloud",
+      "cloudTitle": "الترحيل إلى OpenShip Cloud",
       "cloudBody": "ادفع بياناتك إلى api.openship.io. نستضيف كل شيء. الأفضل للفرق التي تريد بنية تحتية معدومة.",
       "cloudMetaConnected": "الحساب السحابي متصل",
       "metaRequiresCloud": "يتطلب حسابًا سحابيًا",
-      "cloudWarn": "اتصل بـ Openship Cloud أولًا.",
+      "cloudWarn": "اتصل بـ OpenShip Cloud أولًا.",
       "tunnelTitle": "الإبقاء محليًا والعرض عبر نفق",
       "tunnelBody": "تبقى بياناتك على هذا الجهاز. نوفّر نفق Oblien الطرفي ليتمكن زملاؤك من الوصول إليك عبر الإنترنت العام — يجب أن يكون جهازك متصلًا.",
       "tunnelMetaConnected": "نفق عبر Oblien",
@@ -1463,7 +1463,7 @@
       "customHostPlaceholder": "team.acme.com",
       "preflight": "الفحص المسبق",
       "sshReachable": "‏SSH قابل للوصول",
-      "releaseAvailable": "إصدار Openship متاح",
+      "releaseAvailable": "إصدار OpenShip متاح",
       "domainReady": "النطاق جاهز",
       "runPreflight": "تشغيل الفحص المسبق",
       "recheck": "إعادة التحقق",
@@ -1491,7 +1491,7 @@
     },
     "tunnel": {
       "connectFirstTitle": "اتصل بحسابك السحابي أولًا",
-      "connectFirstBody": "تُوفَّر الأنفاق عبر Openship Cloud. افتح الإعدادات → السحابة وسجّل الدخول، ثم عُد إلى هنا.",
+      "connectFirstBody": "تُوفَّر الأنفاق عبر OpenShip Cloud. افتح الإعدادات → السحابة وسجّل الدخول، ثم عُد إلى هنا.",
       "headsUp": "تنبيه",
       "bullet1": "تبقى بياناتك على هذا الجهاز. لا شيء ينتقل.",
       "bullet2": "يمكن لزملائك الوصول إليك فقط عندما يكون هذا الجهاز متصلًا.",
@@ -1529,7 +1529,7 @@
     "heading": "العودة إلى أحادي المستخدم",
     "intro": "أخرِج هذه النسخة من {mode} وأعِدها إلى الوضع الفردي على هذا الجهاز.",
     "modeServer": "خادمك",
-    "modeCloud": "Openship Cloud",
+    "modeCloud": "OpenShip Cloud",
     "modeTunnel": "النفق",
     "current": "الحالي",
     "noUrl": "(لم يُسجَّل عنوان URL)",
@@ -1572,7 +1572,7 @@
   },
   "credentials": {
     "title": "الاتصالات",
-    "description": "الرموز وبيانات الدخول التي يستخدمها Openship بالنيابة عنك — سحب الصور الخاصة، وكتابة سجلات DNS. تُخزَّن مشفّرة ولا تُعرض مرة أخرى بعد الحفظ.",
+    "description": "الرموز وبيانات الدخول التي يستخدمها OpenShip بالنيابة عنك — سحب الصور الخاصة، وكتابة سجلات DNS. تُخزَّن مشفّرة ولا تُعرض مرة أخرى بعد الحفظ.",
     "noProviders": "لا يوجد مزوّدو بيانات اعتماد متاحون في هذا المثيل.",
     "noneForProvider": "لم تُضف أي بيانات بعد.",
     "add": "إضافة",
@@ -1587,7 +1587,7 @@
     "namePlaceholder": "مثال: GHCR للقراءة فقط",
     "secretKeptPlaceholder": "•••••••• (محفوظ — اتركه فارغًا للإبقاء عليه)",
     "selectPlaceholder": "اختر…",
-    "verifyNote": "يتحقق Openship من بيانات الاعتماد مع المزوّد قبل حفظها.",
+    "verifyNote": "يتحقق OpenShip من بيانات الاعتماد مع المزوّد قبل حفظها.",
     "confirmDelete": "حذف \"{name}\"؟ سيتوقف كل ما يعتمد عليها عن العمل.",
     "toast": {
       "loadFailed": "تعذّر تحميل بيانات الاعتماد",
@@ -1619,17 +1619,17 @@
       },
       "cloudflare": {
         "label": "Cloudflare",
-        "summary": "دع Openship يكتب سجلات DNS التي يحتاجها النطاق المخصص بدلاً من لصقها يدوياً.",
+        "summary": "دع OpenShip يكتب سجلات DNS التي يحتاجها النطاق المخصص بدلاً من لصقها يدوياً.",
         "fields": {
           "apiToken": {
             "label": "رمز API",
-            "help": "رمز وصول مع صلاحيات Zone:Read و DNS:Edit على النطاقات التي تريد إدارتها بواسطة Openship. أنشئه من My Profile → API Tokens."
+            "help": "رمز وصول مع صلاحيات Zone:Read و DNS:Edit على النطاقات التي تريد إدارتها بواسطة OpenShip. أنشئه من My Profile → API Tokens."
           }
         }
       },
       "digitalocean": {
         "label": "DigitalOcean",
-        "summary": "دع Openship يكتب سجلات DNS التي يحتاجها النطاق المخصص على DigitalOcean DNS.",
+        "summary": "دع OpenShip يكتب سجلات DNS التي يحتاجها النطاق المخصص على DigitalOcean DNS.",
         "fields": {
           "apiToken": {
             "label": "رمز API",
@@ -1721,8 +1721,8 @@
     "description": "ما يقدم هذا المثيل نفسه كـ. هذا هو الإعداد الافتراضي للجميع هنا — لا يزال بإمكان كل مستخدم اختيار عرضه الخاص تحت الإعدادات ← عام.",
     "platformLabel": "منصة كاملة",
     "platformDesc": "المشاريع والتطبيقات وعمليات النشر والخوادم — كل ما يمكن لهذا التثبيت القيام به.",
-    "mailLabel": "Openship Mail",
-    "mailDesc": "يعيّن العلامة التجارية للمثيل كـ Openship Mail ويجعل الشريط الجانبي لوحة التحكم في البريد.",
+    "mailLabel": "OpenShip Mail",
+    "mailDesc": "يعيّن العلامة التجارية للمثيل كـ OpenShip Mail ويجعل الشريط الجانبي لوحة التحكم في البريد.",
     "savedOverridden": "تم الحفظ. لم يتغير عرضك الشخصي — لقد اخترته في الإعدادات ← عام.",
     "errorToast": "تعذر تغيير وضع المنتج.",
     "envNote": "يتبع هذا المثيل OPENSHIP_PRODUCT=mail من البيئة. يؤدي اختيار وضع هنا إلى تجاوزه."
@@ -1730,7 +1730,7 @@
   "email": {
     "title": "البريد الإلكتروني (SMTP)",
     "description": "خدمة SMTP التي يرسل هذا المثيل البريد من خلالها",
-    "intro": "تُستخدم لإعادة تعيين كلمة المرور والتحقق من البريد الإلكتروني ودعوات الفريق والإشعارات. ما عليك سوى لصق بيانات اعتماد SMTP من أي مزود — Amazon SES أو Gmail أو Mailgun أو مرحل الشركة — المضيف والمنفذ واسم المستخدم وكلمة المرور. لا يوجد خادم لإعداده؛ يتصل Openship به مباشرة. يتم تشفير كلمة المرور ولا تظهر مرة أخرى أبداً.",
+    "intro": "تُستخدم لإعادة تعيين كلمة المرور والتحقق من البريد الإلكتروني ودعوات الفريق والإشعارات. ما عليك سوى لصق بيانات اعتماد SMTP من أي مزود — Amazon SES أو Gmail أو Mailgun أو مرحل الشركة — المضيف والمنفذ واسم المستخدم وكلمة المرور. لا يوجد خادم لإعداده؛ يتصل OpenShip به مباشرة. يتم تشفير كلمة المرور ولا تظهر مرة أخرى أبداً.",
     "loading": "جارٍ التحميل…",
     "configuredBadge": "مكوّن",
     "notConfigured": "لم يتم الإعداد بعد — تظل عمليات إعادة تعيين كلمة المرور والدعوات وإشعارات البريد الإلكتروني متوقفة حتى تدخل بيانات اعتماد SMTP أدناه.",
@@ -1744,7 +1744,7 @@
     "passwordPlaceholder": "كلمة مرور SMTP أو مفتاح التطبيق",
     "passwordKeepPlaceholder": "•••••••• (اتركه فارغاً للاحتفاظ بالحالية)",
     "fromLabel": "عنوان المرسل (From)",
-    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromPlaceholder": "OpenShip <no-reply@example.com>",
     "fromHint": "اختياري. الإعداد الافتراضي هو اسم المستخدم.",
     "fromHintRequired": "مطلوب — اسم المستخدم الخاص بك ليس بريداً إلكترونياً، لذا يحتاج المستلمون إلى عنوان مرسل حقيقي.",
     "fromRequired": "أدخل عنوان المرسل — اسم المستخدم لهذا المزود ليس بريداً إلكترونياً، لذا لا يمكن أن يكون هو المرسل.",
@@ -1768,13 +1768,13 @@
   },
   "edgeOrphans": {
     "title": "مسارات الـ edge غير المتعقبة",
-    "description": "أسماء المضيفين التي لا يزال هذا الجهاز يخدمها ولكن ليس لدى Openship سجل لها",
+    "description": "أسماء المضيفين التي لا يزال هذا الجهاز يخدمها ولكن ليس لدى OpenShip سجل لها",
     "scan": "فحص",
     "scanning": "جارٍ الفحص…",
     "allClear": "تم احتساب كل اسم مضيف يخدمه الـ edge.",
     "comparedTo": "تمت المقارنة مع {count} أسماء مضيفين متعقبة.",
     "unavailable": "تعذر التحقق من الـ edge",
-    "explain": "إزالة مشروع باستخدام \"إزالة من Openship فقط\" يترك مساره قيد التشغيل عن قصد. يُرجع مسار التطبيق المتبقي رمز 502 بمجرد اختفاء حاويته، لكن المسار الثابت المتبقي يستمر في تقديم الملفات القديمة برمز 200 — حتى على اسم مضيف تم منحه منذ ذلك الحين لمشروع آخر.",
+    "explain": "إزالة مشروع باستخدام \"إزالة من OpenShip فقط\" يترك مساره قيد التشغيل عن قصد. يُرجع مسار التطبيق المتبقي رمز 502 بمجرد اختفاء حاويته، لكن المسار الثابت المتبقي يستمر في تقديم الملفات القديمة برمز 200 — حتى على اسم مضيف تم منحه منذ ذلك الحين لمشروع آخر.",
     "kindStatic": "ملفات ثابتة",
     "kindProxy": "مسار التطبيق",
     "staticWarning": "لا يزال يخدم الملفات. يجيب على الطلبات اليوم.",

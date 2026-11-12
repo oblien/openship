@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "Ready to ship?",
     "plansAndBilling": "Plans & billing",
     "description": "Managed builds and hosting, with room to grow.",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "Capacity & usage",
-    "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from Openship Cloud.",
+    "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from OpenShip Cloud.",
     "routes": "Free routes",
     "runningServices": "Running services",
     "projects": "Projects",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "Connect to Openship Cloud to manage billing",
-      "description": "Your local instance isn't connected to Openship Cloud yet. Connect to view subscription state, usage, invoices, and top-ups.",
-      "connect": "Connect to Openship Cloud",
+      "title": "Connect to OpenShip Cloud to manage billing",
+      "description": "Your local instance isn't connected to OpenShip Cloud yet. Connect to view subscription state, usage, invoices, and top-ups.",
+      "connect": "Connect to OpenShip Cloud",
       "connecting": "Waiting for sign in…"
     },
     "sessionExpired": {
-      "title": "Your Openship Cloud session expired",
-      "description": "You're still linked, but the session token Openship Cloud issued is no longer valid. Reconnect to refresh it — no need to disconnect first.",
-      "reconnect": "Reconnect to Openship Cloud",
+      "title": "Your OpenShip Cloud session expired",
+      "description": "You're still linked, but the session token OpenShip Cloud issued is no longer valid. Reconnect to refresh it — no need to disconnect first.",
+      "reconnect": "Reconnect to OpenShip Cloud",
       "connecting": "Waiting for sign in…"
     },
     "unreachable": {
-      "title": "Couldn't reach Openship Cloud billing",
+      "title": "Couldn't reach OpenShip Cloud billing",
       "description": "Your cloud session may have expired or the cloud is temporarily unavailable. Try again, or reconnect from Settings → Cloud.",
       "tryAgain": "Try again",
       "reconnect": "Reconnect"
     },
     "notEnabled": {
       "title": "Cloud purchases are not available yet",
-      "description": "Openship has not enabled subscriptions and credit purchases yet. Please try again later."
+      "description": "OpenShip has not enabled subscriptions and credit purchases yet. Please try again later."
     },
     "notConfigured": {
       "title": "Cloud billing setup is incomplete",
-      "description": "Openship needs to finish setting up billing. Please contact Openship support."
+      "description": "OpenShip needs to finish setting up billing. Please contact OpenShip support."
     },
     "forbidden": {
       "title": "You don't have access to billing",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "Couldn't load billing",
-      "description": "Billing is temporarily unavailable. Try again. If the problem continues, contact Openship support."
+      "description": "Billing is temporarily unavailable. Try again. If the problem continues, contact OpenShip support."
     }
   },
   "plansRoute": {
@@ -409,7 +409,7 @@
     "planRequired": "Requires a plan",
     "savedCredits": "Saved usage balance",
     "savedCreditsHint": "Your prepaid usage stays in this workspace. Choose a plan to use it for Cloud deployments.",
-    "offerTitle": "Launch on Openship Cloud",
+    "offerTitle": "Launch on OpenShip Cloud",
     "offerLabel": "Start deploying",
     "offerDescription": "Managed resources for your projects.",
     "startingWith": "Start with {name}",
@@ -450,7 +450,7 @@
     "diskHint": "Data read from and written to app disks. This is disk activity, not stored disk size.",
     "transfer": "App data transfer",
     "transferHint": "Inbound and outbound data from your compute workloads. Edge delivery is shown separately.",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge bandwidth",
     "bandwidthHint": "Incoming and outgoing traffic across your workspace’s edge routes. This monthly allowance is separate from compute. Routes pause at the limit until reset or upgrade.",
     "requests": "Edge requests",
@@ -578,7 +578,7 @@
     "serverPlanReady": "Your plan is active. Return to setup to deploy.",
     "returnToSetup": "Back to setup",
     "singular": "Cloud space",
-    "description": "Choose capacity and deploy. Openship handles setup, routing and maintenance.",
+    "description": "Choose capacity and deploy. OpenShip handles setup, routing and maintenance.",
     "loading": "Loading Cloud spaces…",
     "choose": "Choose a destination",
     "chooseBilling": "Choose a Cloud space to view its billing.",
@@ -595,14 +595,14 @@
     "empty": "Ready to deploy",
     "defaultName": "Production",
     "defaultHint": "Choose a plan and deploy. Setup is automatic.",
-    "noneAvailable": "Choose a plan to deploy on Openship Cloud.",
+    "noneAvailable": "Choose a plan to deploy on OpenShip Cloud.",
     "manage": "Manage Cloud space",
     "subscriptionHint": "Each Cloud space has its own subscription.",
     "placementHint": "Projects share these resources. Deleting one leaves the others in place.",
     "create": "Add Cloud space",
     "mode": "Project isolation",
     "createHint": "Choose a plan next. Billing starts after checkout; setup is automatic.",
-    "cloudOnly": "Openship Cloud manages setup, routing and HTTPS for you.",
+    "cloudOnly": "OpenShip Cloud manages setup, routing and HTTPS for you.",
     "projectCount": "{count} projects",
     "noProjects": "No projects here yet.",
     "liveUsage": "Live usage",
@@ -671,7 +671,7 @@
     "plan": "Plan",
     "actions": "Actions",
     "changePlan": "Change plan",
-    "managedBy": "Managed by Openship Cloud",
+    "managedBy": "Managed by OpenShip Cloud",
     "network": {
       "title": "Networking",
       "description": "Managed connectivity settings.",
@@ -811,7 +811,7 @@
     "priority": "Priority",
     "email": "Email support",
     "prioritySupport": "Priority support",
-    "description": "Deploy and update apps, monitor their health, and back up your data. Your servers, managed from Openship.",
+    "description": "Deploy and update apps, monitor their health, and back up your data. Your servers, managed from OpenShip.",
     "basicDescription": "For everyday apps and personal projects.",
     "priorityDescription": "For production apps that need priority support.",
     "serversIncluded": "{count} connected servers",
@@ -848,9 +848,9 @@
   },
   "managementDetail": {
     "servers": "Servers on this plan",
-    "description": "Servers covered by your Openship Manage plan.",
+    "description": "Servers covered by your OpenShip Manage plan.",
     "empty": "No servers connected yet",
-    "emptyHint": "Connect a server you already own to deploy apps and manage it from Openship.",
+    "emptyHint": "Connect a server you already own to deploy apps and manage it from OpenShip.",
     "addServer": "Add server",
     "addSlots": "Add server slots",
     "additionalServers": "Additional servers",

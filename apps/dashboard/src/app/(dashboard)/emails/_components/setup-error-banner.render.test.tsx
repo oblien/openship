@@ -33,7 +33,7 @@ describe("SetupErrorBanner", () => {
       render({
         title: "Setup couldn't start",
         message:
-          "Can't start mail setup: Permission denied (publickey,password). Openship could not run a single command on this server.",
+          "Can't start mail setup: Permission denied (publickey,password). OpenShip could not run a single command on this server.",
       }),
     );
     expect(out).toContain("Setup couldn't start");

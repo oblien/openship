@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { useCopy } from "@/i18n/use-copy";
+
+import { Link } from "@/i18n/Link";
 import { ArrowRight } from "lucide-react";
 import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
 import { FEATURES } from "@/lib/features";
@@ -31,6 +33,8 @@ const GROUPS = (
 }));
 
 export function CompletePlatform() {
+  const copy = useCopy();
+
   return (
     <section id="features" className="cp-outer" aria-labelledby="platform-title">
       <DarkSection>
@@ -38,17 +42,18 @@ export function CompletePlatform() {
           <header className="cp-head">
             <div>
               <h2 id="platform-title" className="cp-title">
-                Apps, data, and automation.
+                {copy("Apps, data, and automation.")}
                 <br />
-                <span>Run it all from Openship.</span>
+                <span>{copy("Run it all from OpenShip.")}</span>
               </h2>
               <p className="cp-sub">
-                Deploy code, run services, and manage the infrastructure behind them. Use Openship
-                Cloud or connect your own servers.
+                {copy(
+                  "Deploy code, run services, and manage the infrastructure behind them. Use OpenShip Cloud or connect your own servers.",
+                )}
               </p>
             </div>
             <Link href="/features" className="cp-all-link">
-              Explore all {FEATURES.length} features{" "}
+              {copy("Explore all {count} features", { count: FEATURES.length })}{" "}
               <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
           </header>
@@ -57,15 +62,15 @@ export function CompletePlatform() {
             {GROUPS.map((group) => (
               <div key={group.title} className="cp-group">
                 <div className="cp-group-intro">
-                  <h3>{group.title}</h3>
-                  <p>{group.description}</p>
+                  <h3>{copy(group.title)}</h3>
+                  <p>{copy(group.description)}</p>
                 </div>
                 <div className="cp-grid">
                   {group.features.map((feature) => (
                     <Link key={feature.slug} href={`/features/${feature.slug}`} className="cp-item">
                       <FeatureIllustration name={feature.slug} className="cp-item-art" />
-                      <h4>{feature.title}</h4>
-                      <p>{feature.tagline}</p>
+                      <h4>{copy(feature.title)}</h4>
+                      <p>{copy(feature.tagline)}</p>
                       <ArrowRight className="cp-item-arrow" aria-hidden="true" />
                     </Link>
                   ))}
@@ -75,8 +80,8 @@ export function CompletePlatform() {
           </div>
 
           <div className="cp-interfaces">
-            <span>Your workflow, your interface.</span>
-            <Link href="/features/dashboard-cli-desktop">Dashboard, desktop & CLI</Link>
+            <span>{copy("Your workflow, your interface.")}</span>
+            <Link href="/features/dashboard-cli-desktop">{copy("Dashboard, desktop & CLI")}</Link>
             <Link href="/features/api-sdk">API & SDK</Link>
             <Link href="/features/ai-mcp">AI & MCP</Link>
           </div>

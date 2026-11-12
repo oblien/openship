@@ -102,7 +102,7 @@ describe("getNavSections (the platform rail)", () => {
   });
 });
 
-describe("getMailNavSections (the Openship Mail rail)", () => {
+describe("getMailNavSections (the OpenShip Mail rail)", () => {
   it("ends with Support when connected to Cloud, including during mail setup", () => {
     for (const loaded of [false, true]) {
       const connected = mailAt({ supportAvailable: true, loaded });

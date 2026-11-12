@@ -2,14 +2,25 @@
 
 import { serviceRepositorySource } from "./services/repository-source";
 
-import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import {
+  observedAllSettled,
+  reportCaughtError as observeCaughtError,
+} from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { serviceKind, serviceCanStartWithoutBuild, servicesApi, sortServicesByPublicFirst, type Service, type ServiceContainer, type ServiceInput } from "@/lib/api/services";
+import {
+  serviceKind,
+  serviceCanStartWithoutBuild,
+  servicesApi,
+  sortServicesByPublicFirst,
+  type Service,
+  type ServiceContainer,
+  type ServiceInput,
+} from "@/lib/api/services";
 import { getServiceStatus } from "@/components/services/ServiceStatusBadge";
 import { Button } from "@/components/ui/button";
 import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
@@ -24,10 +35,17 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { AddServiceModal } from "./services/AddServiceModal";
 import { LinkedAppsCard } from "./services/LinkedAppsCard";
 import { ServiceListItem } from "./services/ServiceListItem";
-import { hasSeparateApplication } from "@/lib/project-application";
+import {
+  hasSeparateApplication,
+  projectApplication,
+  applicationServiceRoute,
+} from "@/lib/project-application";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { canConfigureRuntimeRoles } from "@/lib/runtime-roles";
 import { RuntimeRoleConfigurationControl } from "@/components/services/RuntimeRoleConfiguration";
 import { RuntimeRolesCard } from "@/components/services/RuntimeRoles";
-import { ProjectApplicationCard } from "./services/ProjectApplicationCard";
+import { ProjectApplicationListItem } from "./services/ProjectApplicationListItem";
+import { ProjectApplicationPanel } from "./services/ProjectApplicationPanel";
 
 /** Render a drift diff value (arrays → csv, objects → keys, scalars → string). */
 const fmtDriftVal = (v: unknown): string => {
@@ -74,7 +92,8 @@ export const ServicesTab = () => {
   // the full-tab skeleton on every action and tab switch (#666) — rows render
   // fine while their runtime status is checked separately.
   const loading =
-    servicesData.isLoading || (containersLoading && services.length === 0);
+    servicesData.isLoading ||
+    (containersLoading && services.length === 0 && !hasSeparateApplication(projectData, services));
   const projectSlugBase = projectData.slug || projectData.name || "project";
   const selectedId = slug?.[1] ?? null;
   const hasProjectId = Boolean(id && id !== "undefined");
@@ -98,10 +117,10 @@ export const ServicesTab = () => {
       // surfaces as a bare runtime error overlay instead of this component's
       // error state. The container read is also the one that can time out
       // (it reflects live runtime state), so it must not take the tab down.
-      const [, containersResult] = await observedAllSettled([
-        refreshServices(),
-        servicesApi.containers(id),
-      ], "dashboard/app/(dashboard)/projects/[id]/components/ServicesTab");
+      const [, containersResult] = await observedAllSettled(
+        [refreshServices(), servicesApi.containers(id)],
+        "dashboard/app/(dashboard)/projects/[id]/components/ServicesTab",
+      );
       if (request !== runtimeRequest.current) return;
       if (containersResult.status === "rejected") throw containersResult.reason;
       const ctRes = containersResult.value;
@@ -121,9 +140,11 @@ export const ServicesTab = () => {
         projectId: id,
         // Keep identity/port details, but never present a stale health reading
         // as current after a failed request.
-        containers: previous.projectId === id
-          ? previous.containers?.map((container) => ({ ...container, status: "unknown" })) ?? null
-          : null,
+        containers:
+          previous.projectId === id
+            ? (previous.containers?.map((container) => ({ ...container, status: "unknown" })) ??
+              null)
+            : null,
         loading: false,
         error: !isAbortError(e) && e instanceof Error ? e.message : t.projects.services.failedLoad,
       }));
@@ -139,7 +160,35 @@ export const ServicesTab = () => {
 
   const containerFor = (serviceId: string) => containers?.find((c) => c.serviceId === serviceId);
 
-  const selectedService = services.find((s) => s.id === selectedId);
+  const application =
+    servicesData.error && services.length === 0 ? null : projectApplication(projectData, services);
+  const hasApplication = application?.mode === "project";
+  const selectedApplication =
+    !!application && (selectedId === "application" || selectedId === application.service?.id);
+  const selectedService =
+    selectedApplication && application?.mode === "service"
+      ? application.service
+      : services.find((s) => s.id === selectedId);
+  const listedServices = hasApplication
+    ? services.filter((s) => s.id !== application?.service?.id)
+    : services;
+  const entryCount = listedServices.length + (hasApplication ? 1 : 0);
+  const choices = [
+    ...(hasApplication
+      ? [
+          {
+            id: application?.service?.id ?? "application",
+            name: projectData.name,
+            icon: <UiIcon name="window" className="size-4" />,
+          },
+        ]
+      : []),
+    ...listedServices.map((s) => ({
+      id: s.id,
+      name: s.name,
+      icon: <ServiceIcon service={s} className="size-4" />,
+    })),
+  ];
 
   // Null for a service with no route — it is reachable on its port, and linking
   // to a derived `<project>-<service>` host sent people to a name nobody created.
@@ -158,7 +207,7 @@ export const ServicesTab = () => {
   const handleCreateService = async (data: ServiceInput) => {
     if (!hasProjectId) return;
 
-    const result = await servicesApi.create(id, data).catch(error => {
+    const result = await servicesApi.create(id, data).catch((error) => {
       showCloudPricing(error);
       throw error;
     });
@@ -181,14 +230,22 @@ export const ServicesTab = () => {
     if (!shouldLaunch) {
       // Nothing to launch against yet — keep the row and land on its detail so
       // the user can deploy/start it when ready.
-      showToast(interpolate(t.projects.services.toastSavedDeploy, { name: data.name }), "success", t.projects.services.toastServiceTitle);
+      showToast(
+        interpolate(t.projects.services.toastSavedDeploy, { name: data.name }),
+        "success",
+        t.projects.services.toastServiceTitle,
+      );
       router.push(`/projects/${id}/services/${newServiceId}`);
       return;
     }
 
     // Start this service on the project's selected server. Keep its saved
     // configuration on failure so the user can inspect and retry the operation.
-    showToast(interpolate(t.projects.services.toastAddedDeploying, { name: data.name }), "success", t.projects.services.toastServiceTitle);
+    showToast(
+      interpolate(t.projects.services.toastAddedDeploying, { name: data.name }),
+      "success",
+      t.projects.services.toastServiceTitle,
+    );
     const showStartFailure = async (message: string) => {
       await fetchData();
       showToast(message, "error", data.name);
@@ -201,17 +258,26 @@ export const ServicesTab = () => {
           await showStartFailure(res?.error || t.projects.services.toastDeployFailed);
           return;
         }
-        showToast(interpolate(t.projects.services.toastStarting, { name: data.name }), "success", t.projects.services.toastServiceTitle);
+        showToast(
+          interpolate(t.projects.services.toastStarting, { name: data.name }),
+          "success",
+          t.projects.services.toastServiceTitle,
+        );
         await fetchData();
         router.push(`/projects/${id}/services/${newServiceId}`);
       })
       .catch(async (err) => {
-        if (showCloudPricing(err, async () => {
-          const result = await servicesApi.start(id, newServiceId);
-          if (result?.success === false) throw new Error(t.projects.services.toastDeployFailed);
+        if (
+          showCloudPricing(err, async () => {
+            const result = await servicesApi.start(id, newServiceId);
+            if (result?.success === false) throw new Error(t.projects.services.toastDeployFailed);
+            await fetchData();
+            router.push(`/projects/${id}/services/${newServiceId}`);
+          })
+        ) {
           await fetchData();
-          router.push(`/projects/${id}/services/${newServiceId}`);
-        })) { await fetchData(); return; }
+          return;
+        }
         await showStartFailure(getApiErrorMessage(err, t.projects.services.toastDeployFailed));
       });
   };
@@ -236,7 +302,11 @@ export const ServicesTab = () => {
         await fetchData();
       } catch (e) {
         observeCaughtError(e, "dashboard/app/(dashboard)/projects/[id]/components/ServicesTab");
-        showToast(e instanceof Error ? e.message : t.projects.services.failedResolveDrift, "error", name);
+        showToast(
+          e instanceof Error ? e.message : t.projects.services.failedResolveDrift,
+          "error",
+          name,
+        );
       } finally {
         setDriftBusy(null);
       }
@@ -245,7 +315,12 @@ export const ServicesTab = () => {
   );
 
   const driftedServices = services.filter((s) => s.drift && s.drift.changes.length > 0);
-  const hasApplication = !servicesData.error && hasSeparateApplication(projectData, services);
+
+  // Application variables are control-plane data. Keep them reachable even if
+  // the live container listing is slow or unavailable (including bare runtimes).
+  if (selectedApplication && hasApplication && !servicesData.isLoading) {
+    return <ProjectApplicationPanel key={id} choices={choices} onRefresh={fetchData} />;
+  }
 
   /* ── Loading state ─────────────────────────────────────────────── */
   if (loading) {
@@ -255,7 +330,10 @@ export const ServicesTab = () => {
           <div className="h-4 w-32 rounded bg-muted" />
           <div className="h-8 w-24 rounded-lg bg-muted" />
         </div>
-        <div className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/40" aria-hidden="true">
+        <div
+          className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/40"
+          aria-hidden="true"
+        >
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex items-center gap-3 px-4 py-3.5">
               <div className="size-10 shrink-0 rounded-xl bg-muted" />
@@ -277,34 +355,37 @@ export const ServicesTab = () => {
   // working list on a transient 5xx was the same complaint as the skeleton
   // flash (#666).
   const failure = error || servicesData.error;
-  if (failure && services.length === 0) {
+  if (failure && entryCount === 0) {
     return (
-      <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
-        <UiIcon name="alert-circle" className="size-8 text-danger mx-auto mb-3" />
-        <p className="text-sm font-medium text-foreground mb-1">{t.projects.services.failedLoad}</p>
-        <p className="text-xs text-muted-foreground mb-4">{error || servicesData.error}</p>
-        <button
-          onClick={fetchData}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-        >
-          <UiIcon name="refresh" className="size-3.5" />
-          {t.projects.services.retry}
-        </button>
+      <div className="space-y-5">
+        <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
+          <UiIcon name="alert-circle" className="size-8 text-danger mx-auto mb-3" />
+          <p className="text-sm font-medium text-foreground mb-1">
+            {t.projects.services.failedLoad}
+          </p>
+          <p className="text-xs text-muted-foreground mb-4">{error || servicesData.error}</p>
+          <button
+            onClick={fetchData}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
+          >
+            <UiIcon name="refresh" className="size-3.5" />
+            {t.projects.services.retry}
+          </button>
+        </div>
       </div>
     );
   }
 
   /* ── Empty state ───────────────────────────────────────────────── */
-  if (services.length === 0) {
+  if (entryCount === 0) {
     return (
       <div className="space-y-5">
-        {hasApplication && <ProjectApplicationCard />}
-        <div className={`bg-card rounded-2xl text-center ${hasApplication ? "p-5" : "px-6 pb-10"}`}>
+        <div className="bg-card rounded-2xl px-6 pb-10 text-center">
           {/* SVG illustration - central app card linked to three service
               nodes (database, cache, queue). Uses the same `th-*` token
               palette as the deployments empty state so the visual language
               stays consistent across the app. */}
-          {!hasApplication && <div className="relative mx-auto w-72 h-44">
+          <div className="relative mx-auto w-72 h-44">
             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 288 180" fill="none">
               {/* Decorative dots scattered behind */}
               <circle cx="22" cy="46" r="4" fill="var(--th-on-10)" />
@@ -358,17 +439,60 @@ export const ServicesTab = () => {
 
               {/* Service node: Database (left) - stacked cylinders */}
               <g transform="translate(34, 50)">
-                <ellipse cx="26" cy="6" rx="20" ry="5" fill="var(--th-sf-04)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-                <path d="M6 6 L6 22 Q 6 27 26 27 Q 46 27 46 22 L 46 6" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-                <ellipse cx="26" cy="6" rx="20" ry="5" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-                <ellipse cx="26" cy="22" rx="20" ry="5" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                <ellipse
+                  cx="26"
+                  cy="6"
+                  rx="20"
+                  ry="5"
+                  fill="var(--th-sf-04)"
+                  stroke="var(--th-bd-subtle)"
+                  strokeWidth="1"
+                />
+                <path
+                  d="M6 6 L6 22 Q 6 27 26 27 Q 46 27 46 22 L 46 6"
+                  fill="var(--th-sf-03)"
+                  stroke="var(--th-bd-subtle)"
+                  strokeWidth="1"
+                />
+                <ellipse
+                  cx="26"
+                  cy="6"
+                  rx="20"
+                  ry="5"
+                  fill="var(--th-card-bg)"
+                  stroke="var(--th-bd-default)"
+                  strokeWidth="1"
+                />
+                <ellipse
+                  cx="26"
+                  cy="22"
+                  rx="20"
+                  ry="5"
+                  fill="var(--th-card-bg)"
+                  stroke="var(--th-bd-default)"
+                  strokeWidth="1"
+                />
                 <line x1="6" y1="6" x2="6" y2="22" stroke="var(--th-bd-default)" strokeWidth="1" />
-                <line x1="46" y1="6" x2="46" y2="22" stroke="var(--th-bd-default)" strokeWidth="1" />
+                <line
+                  x1="46"
+                  y1="6"
+                  x2="46"
+                  y2="22"
+                  stroke="var(--th-bd-default)"
+                  strokeWidth="1"
+                />
               </g>
 
               {/* Service node: Cache (bottom) - lightning bolt in chip */}
               <g transform="translate(124, 124)">
-                <rect width="40" height="32" rx="8" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                <rect
+                  width="40"
+                  height="32"
+                  rx="8"
+                  fill="var(--th-card-bg)"
+                  stroke="var(--th-bd-default)"
+                  strokeWidth="1"
+                />
                 <path
                   d="M22 8 L 14 18 L 19 18 L 17 24 L 25 14 L 20 14 L 22 8 Z"
                   fill="var(--th-on-30)"
@@ -379,18 +503,45 @@ export const ServicesTab = () => {
 
               {/* Service node: Queue/Container (right) - stacked rounded rects */}
               <g transform="translate(202, 50)">
-                <rect x="6" y="14" width="40" height="18" rx="4" fill="var(--th-sf-04)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-                <rect x="3" y="7" width="40" height="18" rx="4" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-                <rect x="0" y="0" width="40" height="18" rx="4" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                <rect
+                  x="6"
+                  y="14"
+                  width="40"
+                  height="18"
+                  rx="4"
+                  fill="var(--th-sf-04)"
+                  stroke="var(--th-bd-subtle)"
+                  strokeWidth="1"
+                />
+                <rect
+                  x="3"
+                  y="7"
+                  width="40"
+                  height="18"
+                  rx="4"
+                  fill="var(--th-sf-03)"
+                  stroke="var(--th-bd-subtle)"
+                  strokeWidth="1"
+                />
+                <rect
+                  x="0"
+                  y="0"
+                  width="40"
+                  height="18"
+                  rx="4"
+                  fill="var(--th-card-bg)"
+                  stroke="var(--th-bd-default)"
+                  strokeWidth="1"
+                />
                 <circle cx="6" cy="9" r="1.5" fill="var(--th-on-30)" />
                 <rect x="12" y="7.5" width="22" height="3" rx="1.5" fill="var(--th-on-12)" />
                 <rect x="12" y="12.5" width="14" height="2.5" rx="1.25" fill="var(--th-on-08)" />
               </g>
             </svg>
-          </div>}
+          </div>
 
           <h3 className="text-lg font-medium text-foreground/80 mb-2">
-            {hasApplication ? t.projects.services.companionsTitle : t.projects.services.emptyTitle}
+            {t.projects.services.emptyTitle}
           </h3>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
             {t.projects.services.emptyDescription}
@@ -430,7 +581,10 @@ export const ServicesTab = () => {
     );
   }
 
-  const statusUnavailable = services.some((service) => getServiceStatus(service, containerFor(service.id), containersLoading) === "unknown");
+  const statusUnavailable = services.some(
+    (service) =>
+      getServiceStatus(service, containerFor(service.id), containersLoading) === "unknown",
+  );
   const errorNotice = (failure || statusUnavailable) && (
     <ConnectionNotice
       title={t.projectDetail.services.connection.statusTitle}
@@ -466,6 +620,7 @@ export const ServicesTab = () => {
           deployTarget={projectData?.deployTarget}
           serverId={(projectData as { serverId?: string | null })?.serverId}
           siblingServices={servicesData.services}
+          workloadChoices={choices}
         />
       </div>
     );
@@ -473,18 +628,19 @@ export const ServicesTab = () => {
 
   return (
     <div className="space-y-5">
-      {hasApplication && <ProjectApplicationCard />}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-foreground">
           {interpolate(
-            services.length === 1 ? t.projects.services.countOne : t.projects.services.countOther,
-            { count: String(services.length) },
+            entryCount === 1 ? t.projects.services.countOne : t.projects.services.countOther,
+            { count: String(entryCount) },
           )}
         </h2>
         <div className="flex flex-wrap items-center gap-1.5">
-          {!hasApplication && projectData.activeDeploymentId && projectData.runtimeMode === "docker" &&
-            projectData.deployTarget !== "cloud" && !projectData.clusterId && (
-            <RuntimeRoleConfigurationControl projectId={id} deploymentId={projectData.activeDeploymentId} />
+          {projectData.activeDeploymentId && canConfigureRuntimeRoles(projectData) && (
+            <RuntimeRoleConfigurationControl
+              projectId={id}
+              deploymentId={projectData.activeDeploymentId}
+            />
           )}
           <Button asChild variant="ghost" size="sm">
             <Link href={`/projects/${id}/topology`}>
@@ -511,7 +667,7 @@ export const ServicesTab = () => {
         </div>
       </div>
 
-      {!hasApplication && <RuntimeRolesCard projectId={id} deploymentId={projectData.activeDeploymentId} />}
+      <RuntimeRolesCard projectId={id} deploymentId={projectData.activeDeploymentId} />
 
       {/* Upstream compose drift — edited services whose repo values changed */}
       {driftedServices.length > 0 && (
@@ -561,13 +717,9 @@ export const ServicesTab = () => {
                         {ch.field}
                       </span>
                       <span className="min-w-0 flex-1 break-all font-mono">
-                        <span className="text-danger/80 line-through">
-                          {fmtDriftVal(ch.from)}
-                        </span>
+                        <span className="text-danger/80 line-through">{fmtDriftVal(ch.from)}</span>
                         <span className="mx-1.5 text-muted-foreground">→</span>
-                        <span className="text-success">
-                          {fmtDriftVal(ch.to)}
-                        </span>
+                        <span className="text-success">{fmtDriftVal(ch.to)}</span>
                       </span>
                     </div>
                   ))}
@@ -582,12 +734,13 @@ export const ServicesTab = () => {
 
       <div className="@container/services-list">
         <ul className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/40 @lg/services-list:grid-cols-[minmax(0,1fr)_5rem_auto] @2xl/services-list:gap-x-5">
-          {services.map((service) => (
+          {hasApplication && <ProjectApplicationListItem />}
+          {listedServices.map((service) => (
             <ServiceListItem
               key={service.id}
               service={service}
               status={getServiceStatus(service, containerFor(service.id), containersLoading)}
-              href={`/projects/${id}/services/${service.id}`}
+              href={`/projects/${id}/services/${applicationServiceRoute(service)}`}
               resolvedUrl={resolveServiceUrl(service)}
             />
           ))}

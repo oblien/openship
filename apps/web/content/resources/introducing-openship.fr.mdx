@@ -1,0 +1,44 @@
+---
+title: "Présentation de OpenShip : Déployez n'importe quoi, possédez tout"
+description: "Nous lançons OpenShip : une plate-forme de déploiement open source et auto-hébergable. Voici pourquoi nous l'avons construit et ce qu'il peut faire."
+date: "2026-03-01"
+category: "Announcement"
+author: "OpenShip Team"
+---
+
+Aujourd'hui, nous proposons OpenShip en open source : une plate-forme de déploiement que vous pouvez exécuter sur vos propres serveurs.
+
+## Pourquoi nous avons construit ça
+
+Les plates-formes cloud telles que Vercel et Netlify sont idéales pour démarrer. Mais à mesure que votre application grandit, la facture évolue également. CPU mesuré, prix par siège, plafonds de bande passante : tout cela s'additionne rapidement. Et lorsque vous souhaitez partir, vous réalisez que votre infrastructure est verrouillée dans leurs systèmes propriétaires.
+
+Nous voulions quelque chose de différent :
+
+- **Auto-hébergé d'abord** - Exécuté sur n'importe quel serveur Linux. Un VPS à 20 $/mois gère ce qui coûte plus de 200 $ sur les plateformes gérées.
+- **Open source** - Sous licence Apache-2.0. Pas de boîtes noires, pas de dépendance vis-à-vis d’un fournisseur.
+- **Assisté par l'IA** - La détection du framework, l'optimisation de la construction et la configuration sont gérées automatiquement.
+
+## Ce que vous pouvez déployer
+
+OpenShip prend en charge n'importe quelle pile qui s'exécute dans un conteneur :
+
+- **Frameworks frontend** - Next.js, Nuxt, SvelteKit, Astro, Remix
+- **Backend** - Node.js, Python, Go, Rust, Ruby, PHP
+- **Bases de données** - Postgres, MySQL, Redis, MongoDB
+- **Full-stack** - Applications multiservices avec réseau partagé
+
+## Commencer
+
+```bash
+curl -fsSL https://get.openship.io | sh
+cd your-project
+openship deploy
+```
+
+Trois commandes. C'est ça.
+
+## Quelle est la prochaine étape
+
+Explorez le [répertoire de fonctionnalités](/features) pour connaître le déploiement actuel, les actions, la mise en réseau, les sauvegardes, la migration et les capacités de l'équipe. La [documentation](/docs) explique la configuration et la disponibilité, et le [changelog](/changelog) suit les versions livrées.
+
+Mettez-nous en vedette sur [GitHub](https://github.com/oblien/openship) et rejoignez la communauté.

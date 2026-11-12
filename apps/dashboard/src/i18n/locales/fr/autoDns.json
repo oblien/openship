@@ -19,7 +19,7 @@
   "actionAdopt": "Rediriger",
   "actionInSync": "En place",
   "actionConflict": "Conflit",
-  "conflictNote": "Non géré par Openship — supprimez-le ou configurez cet enregistrement manuellement.",
+  "conflictNote": "Non géré par OpenShip — supprimez-le ou configurez cet enregistrement manuellement.",
   "outcomeApplied": "Appliqué",
   "outcomeSkipped": "Ignoré",
   "outcomeFailed": "Échec",

@@ -1,12 +1,7 @@
 import { docsSource } from "@/lib/source";
 import { SITE_URL } from "@/lib/sitemap-builder";
 import { getMDXComponents } from "@/mdx-components";
-import {
-  DocsPage,
-  DocsBody,
-  DocsTitle,
-  DocsDescription,
-} from "fumadocs-ui/page";
+import { DocsPage, DocsBody, DocsTitle, DocsDescription } from "fumadocs-ui/page";
 import { notFound } from "next/navigation";
 import type { ComponentType } from "react";
 import type { MDXComponents } from "mdx/types";
@@ -53,7 +48,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!page) notFound();
 
   const data = page.data as DocData;
-  const title = `${data.title} – Openship Docs`;
+  const title = `${data.title} – OpenShip Docs`;
   const description = data.description;
 
   // Per-page social card. Served by /docs-og (a route handler, since an image
@@ -72,7 +67,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title,
       description,
       url: page.url,
-      siteName: "Openship",
+      siteName: "OpenShip",
       type: "article",
       images: [ogImage],
     },

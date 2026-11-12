@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { useCopy } from "@/i18n/use-copy";
+
+import { Link } from "@/i18n/Link";
 import { ArrowUpRight } from "lucide-react";
 import { APP_CATEGORY_LABELS, type MarketplaceApp } from "@/lib/app-marketplace";
 import { MarketplaceLogo } from "./marketplace-logo";
@@ -23,17 +25,21 @@ export function MarketplaceAppLink({
   app: MarketplaceApp;
   heading?: "h2" | "h3";
 }) {
+  const copy = useCopy();
+
   return (
     <Link href={`/apps/${app.id}`} className="marketing-link marketplace-app-link">
       <MarketplaceLogo id={app.id} logo={app.logo} name={app.name} />
       <div className="marketing-link-copy">
-        <Heading>{app.name}</Heading>
-        <p className="line-clamp-3">{app.description}</p>
+        <Heading>
+          <bdi>{app.name}</bdi>
+        </Heading>
+        <p className="line-clamp-3">{copy(app.description)}</p>
         <span className="marketplace-app-meta">
-          {APP_CATEGORY_LABELS[app.category]}
-          {!app.available && <span className="marketplace-badge">Coming soon</span>}
+          {copy(APP_CATEGORY_LABELS[app.category])}
+          {!app.available && <span className="marketplace-badge">{copy("Coming soon")}</span>}
           {app.available && app.experimental && (
-            <span className="marketplace-badge">Experimental</span>
+            <span className="marketplace-badge">{copy("Experimental")}</span>
           )}
         </span>
         <AppHostingNote app={app} />

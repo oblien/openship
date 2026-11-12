@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "Bereit zum Start?",
     "plansAndBilling": "Tarife und Abrechnung",
     "description": "Verwaltete Builds und Hosting, mit Platz zum Wachsen.",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "Kapazität & Nutzung",
-    "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",
+    "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus OpenShip Cloud synchronisiert.",
     "routes": "Kostenlose Routen",
     "runningServices": "Laufende Dienste",
     "projects": "Projekte",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "Mit Openship Cloud verbinden, um die Abrechnung zu verwalten",
-      "description": "Deine lokale Instanz ist noch nicht mit Openship Cloud verbunden. Verbinde dich, um Abonnementstatus, Nutzung, Rechnungen und Aufladungen einzusehen.",
-      "connect": "Mit Openship Cloud verbinden",
+      "title": "Mit OpenShip Cloud verbinden, um die Abrechnung zu verwalten",
+      "description": "Deine lokale Instanz ist noch nicht mit OpenShip Cloud verbunden. Verbinde dich, um Abonnementstatus, Nutzung, Rechnungen und Aufladungen einzusehen.",
+      "connect": "Mit OpenShip Cloud verbinden",
       "connecting": "Warten auf Anmeldung…"
     },
     "sessionExpired": {
-      "title": "Deine Openship-Cloud-Sitzung ist abgelaufen",
-      "description": "Du bist weiterhin verknüpft, aber das von Openship Cloud ausgestellte Sitzungstoken ist nicht mehr gültig. Verbinde dich erneut, um es zu aktualisieren – du musst die Verbindung nicht zuerst trennen.",
-      "reconnect": "Erneut mit Openship Cloud verbinden",
+      "title": "Deine OpenShip-Cloud-Sitzung ist abgelaufen",
+      "description": "Du bist weiterhin verknüpft, aber das von OpenShip Cloud ausgestellte Sitzungstoken ist nicht mehr gültig. Verbinde dich erneut, um es zu aktualisieren – du musst die Verbindung nicht zuerst trennen.",
+      "reconnect": "Erneut mit OpenShip Cloud verbinden",
       "connecting": "Warten auf Anmeldung…"
     },
     "unreachable": {
-      "title": "Openship-Cloud-Abrechnung konnte nicht erreicht werden",
+      "title": "OpenShip-Cloud-Abrechnung konnte nicht erreicht werden",
       "description": "Möglicherweise ist deine Cloud-Sitzung abgelaufen oder die Cloud ist vorübergehend nicht verfügbar. Versuche es erneut oder verbinde dich neu über Einstellungen → Cloud.",
       "tryAgain": "Erneut versuchen",
       "reconnect": "Erneut verbinden"
     },
     "notEnabled": {
       "title": "Cloud-Käufe sind noch nicht verfügbar",
-      "description": "Openship hat Abonnements und Guthabenkäufe noch nicht freigeschaltet. Bitte versuche es später erneut."
+      "description": "OpenShip hat Abonnements und Guthabenkäufe noch nicht freigeschaltet. Bitte versuche es später erneut."
     },
     "notConfigured": {
       "title": "Die Cloud-Abrechnung ist noch nicht vollständig eingerichtet",
-      "description": "Openship muss die Einrichtung der Abrechnung abschließen. Bitte kontaktiere den Openship-Support."
+      "description": "OpenShip muss die Einrichtung der Abrechnung abschließen. Bitte kontaktiere den OpenShip-Support."
     },
     "forbidden": {
       "title": "Du hast keinen Zugriff auf die Abrechnung",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "Die Abrechnung konnte nicht geladen werden",
-      "description": "Die Abrechnung ist vorübergehend nicht verfügbar. Versuche es erneut. Wenn das Problem weiterhin besteht, kontaktiere den Openship-Support."
+      "description": "Die Abrechnung ist vorübergehend nicht verfügbar. Versuche es erneut. Wenn das Problem weiterhin besteht, kontaktiere den OpenShip-Support."
     }
   },
   "plansRoute": {
@@ -409,7 +409,7 @@
     "planRequired": "Tarif erforderlich",
     "savedCredits": "Gespeichertes Nutzungsguthaben",
     "savedCreditsHint": "Deine vorausbezahlte Nutzung bleibt in diesem Arbeitsbereich. Wähle einen Tarif, um sie für Cloud-Bereitstellungen zu verwenden.",
-    "offerTitle": "Starte auf Openship Cloud",
+    "offerTitle": "Starte auf OpenShip Cloud",
     "offerLabel": "Jetzt bereitstellen",
     "offerDescription": "Verwaltete Ressourcen für deine Projekte.",
     "startingWith": "Starte mit {name}",
@@ -450,7 +450,7 @@
     "diskHint": "Gelesene und geschriebene App-Daten, nicht der belegte Speicherplatz.",
     "transfer": "App-Datentransfer",
     "transferHint": "Ein- und ausgehende Daten deiner Anwendungen. Edge-Traffic wird separat angezeigt.",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge-Datentransfer",
     "bandwidthHint": "Ein- und ausgehender Traffic aller Edge-Routen deines Arbeitsbereichs. Das monatliche Kontingent ist vom Rechenkontingent getrennt. Am Limit pausieren Routen bis zum Reset oder Upgrade.",
     "requests": "Edge-Anfragen",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "Cloud-Bereiche",
     "singular": "Cloud-Bereich",
-    "description": "Plan wählen und deployen. Openship verwaltet den Server; deine Projekte teilen CPU, Arbeitsspeicher und Speicherplatz.",
+    "description": "Plan wählen und deployen. OpenShip verwaltet den Server; deine Projekte teilen CPU, Arbeitsspeicher und Speicherplatz.",
     "loading": "Cloud-Bereiche werden geladen…",
     "choose": "Server auswählen",
     "chooseBilling": "Wähle einen Cloud-Bereich für die Abrechnung.",
@@ -559,7 +559,7 @@
     "create": "Cloud-Bereich hinzufügen",
     "mode": "Projektisolierung",
     "createHint": "Das Erstellen eines Server ist kostenlos. Wähle anschließend einen Plan; die Abrechnung beginnt nach dem Checkout.",
-    "cloudOnly": "Verwaltete Server sind in Openship Cloud verfügbar. Verwalten Sie selbst gehostete Infrastruktur unter Server.",
+    "cloudOnly": "Verwaltete Server sind in OpenShip Cloud verfügbar. Verwalten Sie selbst gehostete Infrastruktur unter Server.",
     "projectCount": "{count} Projekte",
     "noProjects": "Noch keine Projekte in diesem Server.",
     "liveUsage": "Aktuelle Nutzung",
@@ -616,7 +616,7 @@
     "plan": "Server-Plan",
     "actions": "Server-Aktionen",
     "changePlan": "Plan ändern",
-    "managedBy": "Verwaltet von Openship Cloud",
+    "managedBy": "Verwaltet von OpenShip Cloud",
     "network": {
       "title": "Netzwerk",
       "description": "Provider-Einstellungen für diesen verwalteten Server.",
@@ -811,7 +811,7 @@
     "priority": "Priority",
     "email": "E-Mail-Support",
     "prioritySupport": "Priorisierter Support",
-    "description": "Apps bereitstellen und aktualisieren, ihren Zustand überwachen und Daten sichern. Ihre Server, verwaltet über Openship.",
+    "description": "Apps bereitstellen und aktualisieren, ihren Zustand überwachen und Daten sichern. Ihre Server, verwaltet über OpenShip.",
     "basicDescription": "Für alltägliche Apps und persönliche Projekte.",
     "priorityDescription": "Für produktive Apps, die bevorzugten Support benötigen.",
     "serversIncluded": "{count} verbundene Server",
@@ -848,9 +848,9 @@
   },
   "managementDetail": {
     "servers": "Server in diesem Tarif",
-    "description": "Server, die von deinem Openship Manage-Tarif abgedeckt werden.",
+    "description": "Server, die von deinem OpenShip Manage-Tarif abgedeckt werden.",
     "empty": "Noch keine Server verbunden",
-    "emptyHint": "Verbinde einen eigenen Server, um Apps bereitzustellen und ihn mit Openship zu verwalten.",
+    "emptyHint": "Verbinde einen eigenen Server, um Apps bereitzustellen und ihn mit OpenShip zu verwalten.",
     "addServer": "Server hinzufügen",
     "addSlots": "Serverplätze hinzufügen",
     "additionalServers": "Zusätzliche Server",

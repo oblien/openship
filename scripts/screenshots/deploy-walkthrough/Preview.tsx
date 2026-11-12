@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useI18n } from "@/components/i18n-provider";
 import { Icon } from "@repo/ui/icons";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { DeploymentContext } from "@/context/DeploymentContext";
-import {
-  DEFAULT_CONFIG,
-  INITIAL_STATE,
-  type DeploymentContextType,
-} from "@/context/deployment/types";
+import { deployment } from "./fixture";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
 import type { GitHubAccount, GitHubRepo } from "@/context/GitHubContext";
 import { DeploymentHeader } from "@/components/import-project/DeploymentHeader";
@@ -25,84 +22,6 @@ import type { ProjectUsage } from "@/hooks/useProjectUsageStream";
 // Only the capture script mounts this fixture, in a temporary development route.
 // Product components are unchanged. All names, logs and usage below are sample data.
 const noop = () => {};
-const unavailable = async (): Promise<never> => {
-  throw new Error("Screenshot fixture is read-only");
-};
-const config: DeploymentContextType["config"] = {
-  ...DEFAULT_CONFIG,
-  projectId: "preview-storefront",
-  projectName: "Storefront",
-  owner: "acme",
-  repo: "storefront",
-  branch: "main",
-  framework: "nextjs",
-  deployTarget: "server",
-  serverId: "preview-production",
-  serverName: "Production",
-  buildStrategy: "local",
-  publicEndpoints: [
-    {
-      id: "public",
-      domainType: "custom",
-      domain: "storefront",
-      customDomain: "shop.example.com",
-      port: "3000",
-      targetPath: "",
-    },
-  ],
-  options: {
-    ...DEFAULT_CONFIG.options,
-    installCommand: "npm ci",
-    buildCommand: "npm run build",
-    startCommand: "npm run start",
-    productionPort: "3000",
-  },
-};
-
-function deployment(ready: boolean): DeploymentContextType {
-  return {
-    config,
-    isRescanning: false,
-    state: {
-      ...INITIAL_STATE,
-      deploymentId: "dpl_7f4c2a",
-      projectId: config.projectId!,
-      currentStepIndex: ready ? 4 : 3,
-      deploymentSuccess: ready,
-      isDeploying: !ready,
-      buildDurationMs: 84_000,
-    },
-    terminalRef: { current: null },
-    canStreamContainer: { current: false },
-    updateConfig: noop,
-    updateOptions: noop,
-    initializeFromRepo: unavailable,
-    initializeFromLocal: unavailable,
-    initializeFromUpload: unavailable,
-    initializeFromProject: unavailable,
-    rescanWithComposePath: unavailable,
-    rescanWithBranch: unavailable,
-    startDeployment: unavailable,
-    connectToBuild: unavailable,
-    loadBuildSession: unavailable,
-    stopDeployment: unavailable,
-    redeploy: unavailable,
-    respondToPrompt: unavailable,
-    resolvePortCheck: noop,
-    maybeOpenCredentialModal: () => false,
-    reset: noop,
-    onTerminalReady: noop,
-    _setContainerFailed: noop,
-    steps: [
-      { label: "Prepare", icon: "server" },
-      { label: "Clone", icon: "git-branch" },
-      { label: "Install", icon: "download" },
-      { label: "Build", icon: "wrench" },
-      { label: "Deploy", icon: "rocket" },
-    ],
-    deploymentStatus: ready ? "ready" : "building",
-  };
-}
 
 // Small, original avatars keep the sample accounts recognizable and captures
 // deterministic, without fetching real people's photos or organization data.
@@ -188,6 +107,7 @@ const logs = [
 ].join("\r\n");
 
 export default function Preview() {
+  const { t } = useI18n();
   const [view, setView] = useState("connect");
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -200,7 +120,18 @@ export default function Preview() {
   if (!ready) return null;
   return (
     <PlatformProvider selfHosted deployMode="desktop" hostDomain="opsh.io">
-      <DeploymentContext.Provider value={deployment(view === "ship")}>
+      <DeploymentContext.Provider
+        value={{
+          ...deployment(view === "ship"),
+          steps: [
+            { label: t.deploy.targetStep.build.actionPrepare, icon: "server" },
+            { label: t.projectSettings.advanced.transfer.clone, icon: "git-branch" },
+            { label: t.deploy.buildSummary.install, icon: "download" },
+            { label: t.importProject.buildSettings.build, icon: "wrench" },
+            { label: t.deploy.sidebar.deploy, icon: "rocket" },
+          ],
+        }}
+      >
         <div
           data-walkthrough-capture={view}
           className="bg-background text-foreground"
@@ -208,10 +139,8 @@ export default function Preview() {
         >
           {view === "connect" && (
             <>
-              <h1 className="mb-2 text-2xl font-medium">Import a repository</h1>
-              <p className="mb-7 text-sm text-muted-foreground">
-                Choose the code you want to deploy.
-              </p>
+              <h1 className="mb-2 text-2xl font-medium">{t.library.page.title}</h1>
+              <p className="mb-7 text-sm text-muted-foreground">{t.library.page.subtitle}</p>
               <RepositoryList
                 repos={repos}
                 accounts={accounts}
@@ -232,7 +161,7 @@ export default function Preview() {
                 <DeploymentStepper />
               </div>
               {view === "build" ? (
-                <DeploymentLogsPanel title="Build logs">
+                <DeploymentLogsPanel title={t.importProject.deploymentProcessing.buildTerminal}>
                   <LogSnapshotTerminal logs={logs} emptyLabel="" />
                 </DeploymentLogsPanel>
               ) : (
@@ -242,12 +171,14 @@ export default function Preview() {
           )}
           {view === "route" && (
             <>
-              <h1 className="mb-2 text-2xl font-medium">Domains</h1>
+              <h1 className="mb-2 text-2xl font-medium">{t.dashboard.pages.domains.title}</h1>
               <p className="mb-7 text-sm text-muted-foreground">Storefront · Production</p>
               <div className="rounded-2xl bg-card p-5">
                 <div className="mb-4 flex items-center gap-3">
                   <Icon name="globe" className="size-5" />
-                  <h2 className="text-lg font-medium">Public domain</h2>
+                  <h2 className="text-lg font-medium">
+                    {t.importProject.composeServices.domain.publicDomain}
+                  </h2>
                 </div>
                 <RoutingSettingsCard
                   projectName="Storefront"
@@ -272,7 +203,9 @@ export default function Preview() {
           {view === "operate" && (
             <>
               <h1 className="mb-2 text-2xl font-medium">Storefront</h1>
-              <p className="mb-7 text-sm text-muted-foreground">Resource usage · Production</p>
+              <p className="mb-7 text-sm text-muted-foreground">
+                {t.projects.monitoring.resourcesTitle} · Production
+              </p>
               <div className="rounded-2xl bg-card p-5">
                 <ResourceCards usage={usage} isConnected error={null} onReconnect={noop} />
               </div>

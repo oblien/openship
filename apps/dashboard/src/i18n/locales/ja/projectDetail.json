@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} 件のサービス",
       "serviceCountOther": "{count} 件のサービス",
       "searchPlaceholder": "名前、イメージ、またはタグで検索…",
-      "cloudConnectHint": "Openship Cloud を接続すると、クラウドサービスのカタログを参照できます。イメージは手動でも追加できます。",
+      "cloudConnectHint": "OpenShip Cloud を接続すると、クラウドサービスのカタログを参照できます。イメージは手動でも追加できます。",
       "noMatchesTitle": "一致するものがありません",
       "noMatchesBody": "別のカテゴリや検索語をお試しください。またはサイドバーから「カスタムイメージ」を選択してください。",
       "localImages": "ローカルイメージ",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "ローカル Docker",
       "customEntryName": "カスタムイメージ",
       "customEntryDescription": "任意の公開または非公開の Docker イメージをタグで取得します。",
@@ -134,7 +134,7 @@
         "other": "その他"
       },
       "cloudConnectTitle": "マネージドデータベースまたはオブジェクトストレージが必要ですか？",
-      "cloudConnectBody": "Openship Cloud に接続して、このプロジェクトと一緒にサーバーレス Postgres、Redis、S3 互換バケットをプロビジョニングします。",
+      "cloudConnectBody": "OpenShip Cloud に接続して、このプロジェクトと一緒にサーバーレス Postgres、Redis、S3 互換バケットをプロビジョニングします。",
       "cloudConnectButton": "Cloud アドオンを見る",
       "repositorySource": {
         "catalog": "カタログ",
@@ -200,7 +200,7 @@
           "reviewFailed": "共有設定を確認できませんでした。変更は保存されていません。"
         },
         "helpTitle": "環境変数の仕組み",
-        "description": "Openship に保存されます。プロジェクトの共有元がある場合、保存時に共有する変更を確認します。サービスの上書き値は Compose とプロジェクトの値より優先されます。",
+        "description": "OpenShip に保存されます。プロジェクトの共有元がある場合、保存時に共有する変更を確認します。サービスの上書き値は Compose とプロジェクトの値より優先されます。",
         "sources": {
           "service": "サービスの上書き設定",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "ターミナル",
       "statusTitle": "サービスの状態を確認できません",
-      "statusHint": "Openship は現在の状態を確認できませんでした。サービスは稼働している可能性があります。",
+      "statusHint": "OpenShip は現在の状態を確認できませんでした。サービスは稼働している可能性があります。",
       "checkingTitle": "サービスを確認中",
       "checkingHint": "サーバーの応答を待っています。今すぐターミナルへの接続を試すこともできます。",
       "startingTitle": "サービスを待機中",
@@ -449,7 +449,7 @@
       "errorTitle": "ターミナルを利用できません",
       "errors": {
         "auth": "アクセス権を確認できませんでした。再度ログインするか、権限を確認してください。",
-        "connect": "Openship はサービスのシェルに接続できませんでした。サーバーへの接続が回復してから再試行してください。",
+        "connect": "OpenShip はサービスのシェルに接続できませんでした。サーバーへの接続が回復してから再試行してください。",
         "notFound": "このサービスは利用できないか、アクセス権がありません。",
         "notDeployed": "接続できる稼働中のコンテナがありません。サービスの状態を確認して再試行してください。",
         "notSupported": "このサービスのランタイムは対話型ターミナルに対応していません。",

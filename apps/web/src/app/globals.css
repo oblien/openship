@@ -10,6 +10,43 @@
   --color-panelLight: #FFFFFF;
 }
 
+/* Keep code, installation commands and product screenshots in their native order. */
+html[dir="rtl"] pre,
+html[dir="rtl"] code,
+html[dir="rtl"] .hero-ticker,
+html[dir="rtl"] .dashboard-stack {
+  direction: ltr;
+}
+html[lang="ar"] :where(h1, h2, h3, h4, p, span, a, button, li, dt, dd, strong, label) {
+  letter-spacing: normal;
+}
+html[lang="ar"] :where(h1, h2, h3, h4) {
+  line-height: 1.4;
+}
+html[lang="ar"] .hero-title > span {
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  line-height: 1.4;
+  font-weight: 400;
+}
+html[lang="ar"] .cmp-cell {
+  line-height: 1.8;
+}
+html[lang="ar"] .cmp-cell--win {
+  font-weight: 400;
+}
+html[lang="ar"] .cmp-title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 400;
+}
+html[lang="ar"] .hero-headline-second {
+  font-style: normal;
+}
+html[dir="rtl"] .lucide-arrow-right,
+html[dir="rtl"] .lucide-arrow-left,
+html[dir="rtl"] .lucide-arrow-up-right {
+  transform: scaleX(-1);
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;

@@ -232,12 +232,12 @@
   },
   "cloud": {
     "connectionGate": {
-      "reconnect": "Se reconnecter à Openship Cloud",
-      "deployedOn": "Ce projet est déployé sur Openship Cloud",
-      "sessionMissing": "Votre session Openship Cloud est manquante. Connectez-vous pour gérer les déploiements, consulter les journaux et accéder aux contrôles d'exécution de {name}.",
+      "reconnect": "Se reconnecter à OpenShip Cloud",
+      "deployedOn": "Ce projet est déployé sur OpenShip Cloud",
+      "sessionMissing": "Votre session OpenShip Cloud est manquante. Connectez-vous pour gérer les déploiements, consulter les journaux et accéder aux contrôles d'exécution de {name}.",
       "thisProject": "ce projet",
       "connecting": "Connexion…",
-      "connect": "Se connecter à Openship Cloud",
+      "connect": "Se connecter à OpenShip Cloud",
       "readOnlyNote": "Vous pouvez toujours parcourir cette page en lecture seule lorsque vous êtes déconnecté."
     }
   },
@@ -245,7 +245,7 @@
     "githubPermission": {
       "title": "Se connecter à GitHub",
       "subtitle": "Choisissez le niveau d'accès aux dépôts",
-      "intro": "Sélectionnez les dépôts auxquels Openship peut accéder. Vous pourrez modifier ce choix ultérieurement dans vos paramètres GitHub.",
+      "intro": "Sélectionnez les dépôts auxquels OpenShip peut accéder. Vous pourrez modifier ce choix ultérieurement dans vos paramètres GitHub.",
       "publicTitle": "Dépôts publics uniquement",
       "publicDesc": "Accès à vos dépôts publics. Parfait pour les projets open source.",
       "publicItem1": "Lire les données des dépôts publics",
@@ -542,12 +542,12 @@
     "youreOn": "· vous utilisez la {version}",
     "rerunInstall": "Relancez votre installation pour mettre à jour votre serveur auto-hébergé.",
     "updateNow": "Mettre à jour maintenant",
-    "downloading": "Téléchargement d’Openship {version}",
-    "installing": "Installation — Openship va redémarrer",
+    "downloading": "Téléchargement d’OpenShip {version}",
+    "installing": "Installation — OpenShip va redémarrer",
     "updateFailed": "Échec de la mise à jour",
     "retry": "Réessayer",
     "changelog": "Journal des modifications",
-    "updatedTo": "Mis à jour vers Openship {version}",
+    "updatedTo": "Mis à jour vers OpenShip {version}",
     "seeChanges": "Découvrez les nouveautés de cette version.",
     "onLatest": "Vous utilisez la dernière version.",
     "whatsNew": "Nouveautés",

@@ -25,7 +25,7 @@
     "installing": "正在安装…",
     "advanced": "高级部署选项",
     "nameLabel": "名称",
-    "nameHint": "此应用在 Openship 中的显示名称。",
+    "nameHint": "此应用在 OpenShip 中的显示名称。",
     "domainTitle": "部署位置",
     "domainFree": "免费子域名",
     "domainFreeHint": "{domain} 上的免费子域名",
@@ -73,8 +73,8 @@
     "routePortLabel": "仅端口（无域名）",
     "routePortDesc": "通过主机地址和端口访问 — 无需域名或 Cloud。",
     "routeFreeLabel": "免费子域名",
-    "routeFreeDesc": "{domain} 上的免费子域名，由 Openship Cloud 路由。",
-    "routeFreeNeedsCloud": "连接 Openship Cloud 以使用免费子域名。",
+    "routeFreeDesc": "{domain} 上的免费子域名，由 OpenShip Cloud 路由。",
+    "routeFreeNeedsCloud": "连接 OpenShip Cloud 以使用免费子域名。",
     "routeCustomLabel": "您自己的域名",
     "routeCustomDesc": "将您拥有的域名指向此应用。",
     "routeDomainLabel": "域名",
@@ -257,7 +257,7 @@
     },
     "statusActive": "已激活",
     "statusDisabled": "已禁用",
-    "hostedCloud": "Openship Cloud",
+    "hostedCloud": "OpenShip Cloud",
     "hostedServer": "服务器",
     "hostedLocal": "本地",
     "projectStatus": {
@@ -278,7 +278,7 @@
       "currentServer": "当前服务器",
       "migrate": "迁移",
       "noOtherServers": "请先添加第二台服务器作为迁移目标。",
-      "cloudLater": "服务器之间迁移。暂不支持与 Openship Cloud 之间的迁移。",
+      "cloudLater": "服务器之间迁移。暂不支持与 OpenShip Cloud 之间的迁移。",
       "startFailed": "无法开始迁移",
       "confirmTitle": "将 {project} 迁移到 {server}",
       "confirmSubtitle": "在你开始迁移前，不会有任何更改。",
@@ -326,7 +326,7 @@
       "anotherServer": "另一台服务器",
       "targetLocal": "本地机器",
       "targetServer": "自托管服务器",
-      "targetCloud": "Openship Cloud"
+      "targetCloud": "OpenShip Cloud"
     },
     "danger": {
       "title": "危险操作区",
@@ -538,8 +538,9 @@
       "appliesOnDeploy": "将在下次部署时生效。"
     },
     "env": {
-      "title": "项目环境（构建和共享运行时）",
-      "description": "用于镜像构建和共享运行时输入。运行时优先使用 Compose 值和服务级覆盖值。密钥保持隐藏。",
+      "title": "项目环境变量",
+      "sharedTitle": "项目共享环境变量",
+      "description": "在构建和运行时使用。密钥保持隐藏。",
       "edit": "编辑"
     }
   },
@@ -583,7 +584,14 @@
     "rebuildTitle": "重新构建并部署",
     "rebuildText": "已保存。请重新构建应用以应用这些环境变量。",
     "applyTitle": "无需重新构建即可应用",
-    "applyButton": "应用（仅重启，不重新构建）"
+    "applyButton": "应用（仅重启，不重新构建）",
+    "reload": "重新加载已保存的值",
+    "buildHint": "重新构建并部署以应用构建时使用的值。",
+    "runtimeHint": "应用操作会使用已保存的运行时变量重启，无需重新构建。要应用构建时的值，请重新构建。",
+    "sharedHint": "这些变量与此项目的服务共享。应用更改可能会重启受影响的服务。",
+    "firstDeployHint": "已保存的变量将在首次部署时使用。",
+    "applyProject": "应用到项目",
+    "updateStarted": "环境更新已开始。请在部署页面查看进度。"
   },
   "gitInfo": {
     "autoDeploy": "自动部署"
@@ -607,13 +615,13 @@
     },
     "appBanner": {
       "title": "尚未安装 GitHub App",
-      "description": "在你的账户或组织上安装 Openship GitHub App，以便为云端项目启用自动部署和由 webhook 触发的部署。",
+      "description": "在你的账户或组织上安装 OpenShip GitHub App，以便为云端项目启用自动部署和由 webhook 触发的部署。",
       "install": "安装 GitHub App"
     },
     "webhookBanner": {
       "summary": "需要公共端点",
       "title": "启用自动部署",
-      "description": "自动部署需要一个直接的 webhook 端点。请将此 Openship API 暴露在公网 URL 上，或配置一个已验证的 webhook 域名以进行直接投递。"
+      "description": "自动部署需要一个直接的 webhook 端点。请将此 OpenShip API 暴露在公网 URL 上，或配置一个已验证的 webhook 域名以进行直接投递。"
     },
     "source": {
       "title": "源仓库",
@@ -654,7 +662,7 @@
       "active": "活跃",
       "inactive": "未活跃",
       "descDirect": "事件通过 {domain} 直接投递",
-      "descActive": "仓库事件正在到达 Openship",
+      "descActive": "仓库事件正在到达 OpenShip",
       "descInactive": "Webhook 尚未配置或未响应"
     },
     "rollbackStrategy": {
@@ -863,10 +871,10 @@
     "linkedTitleOther": "{count} 个项目连接到此应用",
     "linkedNote": "它们会继续运行，数据不受影响 — 只会失去此连接。重新部署即可生效。",
     "linkedNoteRecordOnly": "它们会继续运行，但关联会随记录一起删除 — 之后重新导入此应用也不会恢复。",
-    "recordOnlyLabel": "仅从 Openship 中移除",
-    "recordOnlyDesc": "在服务器上保持应用及其数据运行 — 仅删除 Openship 中的记录。稍后您可以重新导入。",
+    "recordOnlyLabel": "仅从 OpenShip 中移除",
+    "recordOnlyDesc": "在服务器上保持应用及其数据运行 — 仅删除 OpenShip 中的记录。稍后您可以重新导入。",
     "recordOnlyReversible": "可逆 — 应用保留在您的服务器上。",
-    "recordOnlyNote": "服务器上的内容均未受到影响 — 应用继续携带数据运行。仅移除了 Openship 的记录，稍后可重新导入。",
+    "recordOnlyNote": "服务器上的内容均未受到影响 — 应用继续携带数据运行。仅移除了 OpenShip 的记录，稍后可重新导入。",
     "confirmRecordOnly": "移除记录"
   },
   "routing": {
@@ -954,7 +962,7 @@
       "servesPathHint": "发送到此域名的请求将从构建产物中的该路径提供服务。",
       "servesPathRedeploy": "新路径将在下次部署时生效。",
       "externalIngress": "外部 ingress 与 TLS",
-      "externalIngressDesc": "TLS 在您的反向代理（Cloudflare Tunnel、Nginx Proxy Manager 或负载均衡器）处终止。域名无需指向此服务器，Openship 也不会颁发证书。",
+      "externalIngressDesc": "TLS 在您的反向代理（Cloudflare Tunnel、Nginx Proxy Manager 或负载均衡器）处终止。域名无需指向此服务器，OpenShip 也不会颁发证书。",
       "noWww": "该域名已存在于此项目中。"
     },
     "dns": {
@@ -1082,8 +1090,8 @@
         "deployment": "此路由正在等待部署。请部署项目以应用路由。",
         "disabled": "此项目或服务已禁用。请先启用，再检查路由。",
         "removing": "正在删除此域名，未安排验证。",
-        "manual_certificate": "此域名使用手动上传的证书。请上传有效的替代证书后重新检查。Openship 不会自动续期此证书。",
-        "managed_certificate": "TLS 由外部代理或 Openship Cloud 管理。请检查相应提供方的配置。",
+        "manual_certificate": "此域名使用手动上传的证书。请上传有效的替代证书后重新检查。OpenShip 不会自动续期此证书。",
+        "managed_certificate": "TLS 由外部代理或 OpenShip Cloud 管理。请检查相应提供方的配置。",
         "route_missing": "已配置的路由尚未应用。请重试路由操作以应用配置。目前没有安排路由自动重试。",
         "manual_dns": "此证书使用手动 TXT 验证。请打开 HTTPS 设置以确认新的 TXT 记录，或选择已连接的 DNS 提供商以自动续期。",
         "managed_owner": "此主机名及其证书由所属服务管理。请检查该服务的域名设置。"
@@ -1109,7 +1117,7 @@
       "automatic": "提供商自动验证",
       "manual": "手动 TXT",
       "automaticHint": "在设置 → 凭据中连接 DNS 提供商，即可创建证书验证记录并自动续期 HTTPS。",
-      "manualHint": "请在 DNS 提供商处添加临时 TXT 记录。每次续期都需要新的 TXT 记录；Openship 会显示何时需要续期。",
+      "manualHint": "请在 DNS 提供商处添加临时 TXT 记录。每次续期都需要新的 TXT 记录；OpenShip 会显示何时需要续期。",
       "routing": "1. 将域名指向此服务器",
       "certificate": "2. 启用 HTTPS",
       "startAutomatic": "自动启用 HTTPS",
@@ -1218,7 +1226,7 @@
     "updating": "正在更新…",
     "updateFailed": "更新失败",
     "toastTitle": "来源",
-    "cliManaged": "这是 Openship 控制平面 — 它会自动更新。在主机上运行 \"openship update\" 即可升级；此处无需任何更改。"
+    "cliManaged": "这是 OpenShip 控制平面 — 它会自动更新。在主机上运行 \"openship update\" 即可升级；此处无需任何更改。"
   },
   "routeRules": {
     "title": "路由规则",
@@ -1337,7 +1345,7 @@
     "reviewResources": "查看受影响的资源 ({count})",
     "openRuns": "打开服务器运行记录",
     "lastRun": "上次检查",
-    "appOpen": "在 Openship 打开时运行。",
+    "appOpen": "在 OpenShip 打开时运行。",
     "scanStates": {
       "pending": "待处理",
       "running": "运行中",
@@ -1348,7 +1356,7 @@
     "reviewReboot": "审核重启",
     "applyReboot": "安排重启",
     "rebooting": "已安排重启，等待内核验证",
-    "rebootInterruption": "服务器将在一分钟后重启，中断其所有工作负载。主机重新连接后，Openship 将验证正在运行的内核。"
+    "rebootInterruption": "服务器将在一分钟后重启，中断其所有工作负载。主机重新连接后，OpenShip 将验证正在运行的内核。"
   },
   "sourceImageUpdate": {
     "github_access_required": "请在 GitHub 连接中为此仓库授予 Contents 和 Pull requests 的读写权限。更新后的应用权限可能需要所有者批准。",

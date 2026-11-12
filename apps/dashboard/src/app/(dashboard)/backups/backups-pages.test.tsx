@@ -64,7 +64,7 @@ const row = (id: string, serviceName: string, bytes: number): BackupDestinationR
   destinationId: "storage",
   destinationName: "Production backups",
   projectId: "project",
-  projectName: "Openship",
+  projectName: "OpenShip",
   serviceId: serviceName,
   serviceName,
   mailServerId: null,

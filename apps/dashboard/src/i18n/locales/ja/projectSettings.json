@@ -25,7 +25,7 @@
     "installing": "インストール中…",
     "advanced": "高度なデプロイオプション",
     "nameLabel": "名前",
-    "nameHint": "Openship でのこのアプリの表示名。",
+    "nameHint": "OpenShip でのこのアプリの表示名。",
     "domainTitle": "公開先",
     "domainFree": "無料のサブドメイン",
     "domainFreeHint": "{domain} 上の無料サブドメイン",
@@ -73,8 +73,8 @@
     "routePortLabel": "ポートのみ（ドメインなし）",
     "routePortDesc": "ホストのアドレスとポートでアクセス可能 — ドメインや Cloud は不要です。",
     "routeFreeLabel": "無料のサブドメイン",
-    "routeFreeDesc": "{domain} 上の無料サブドメイン（Openship Cloud 経由でルーティング）。",
-    "routeFreeNeedsCloud": "無料サブドメインを使用するには Openship Cloud を接続してください。",
+    "routeFreeDesc": "{domain} 上の無料サブドメイン（OpenShip Cloud 経由でルーティング）。",
+    "routeFreeNeedsCloud": "無料サブドメインを使用するには OpenShip Cloud を接続してください。",
     "routeCustomLabel": "独自のドメイン",
     "routeCustomDesc": "所有しているドメインをこのアプリに向けます。",
     "routeDomainLabel": "ドメイン",
@@ -257,7 +257,7 @@
     },
     "statusActive": "有効",
     "statusDisabled": "無効",
-    "hostedCloud": "Openship Cloud",
+    "hostedCloud": "OpenShip Cloud",
     "hostedServer": "サーバー",
     "hostedLocal": "ローカル",
     "projectStatus": {
@@ -278,7 +278,7 @@
       "currentServer": "現在のサーバー",
       "migrate": "移行",
       "noOtherServers": "移動先にするため、2 台目のサーバーを追加してください。",
-      "cloudLater": "サーバー間の移行です。Openship Cloud との相互移行はまだ対応していません。",
+      "cloudLater": "サーバー間の移行です。OpenShip Cloud との相互移行はまだ対応していません。",
       "startFailed": "移行を開始できませんでした",
       "confirmTitle": "{project} を {server} へ移動",
       "confirmSubtitle": "移動を開始するまで、何も変更されません。",
@@ -326,7 +326,7 @@
       "anotherServer": "別のサーバー",
       "targetLocal": "ローカルマシン",
       "targetServer": "セルフホストサーバー",
-      "targetCloud": "Openship Cloud"
+      "targetCloud": "OpenShip Cloud"
     },
     "danger": {
       "title": "危険な操作",
@@ -538,8 +538,9 @@
       "appliesOnDeploy": "次回のデプロイで適用されます。"
     },
     "env": {
-      "title": "プロジェクト環境（ビルドと共有ランタイム）",
-      "description": "イメージのビルドと共有ランタイムの入力に使用します。実行時は Compose の値とサービス固有の値が優先されます。シークレットはマスクされます。",
+      "title": "プロジェクトの環境変数",
+      "sharedTitle": "プロジェクト共通の環境変数",
+      "description": "ビルド時と実行時に使用します。シークレットは非表示のままです。",
       "edit": "編集"
     }
   },
@@ -583,7 +584,14 @@
     "rebuildTitle": "再ビルドして再デプロイ",
     "rebuildText": "保存しました。環境変数を適用するには、アプリを再ビルドしてください。",
     "applyTitle": "再ビルドなしで適用",
-    "applyButton": "適用（再起動のみ、再ビルドなし）"
+    "applyButton": "適用（再起動のみ、再ビルドなし）",
+    "reload": "保存済みの値を再読み込み",
+    "buildHint": "ビルド時に使う値を適用するには、再ビルドして再デプロイしてください。",
+    "runtimeHint": "適用すると、保存済みの実行時変数を使用して再ビルドせずに再起動します。ビルド時の値を適用するには再ビルドしてください。",
+    "sharedHint": "これらの変数はプロジェクトのサービスと共有されます。適用すると、影響を受けるサービスが再起動する場合があります。",
+    "firstDeployHint": "保存した変数は初回デプロイ時に使用されます。",
+    "applyProject": "プロジェクトに適用",
+    "updateStarted": "環境の更新を開始しました。「デプロイ」で進行状況を確認できます。"
   },
   "gitInfo": {
     "autoDeploy": "自動デプロイ"
@@ -607,13 +615,13 @@
     },
     "appBanner": {
       "title": "GitHub App がインストールされていません",
-      "description": "アカウントまたは組織に Openship GitHub App をインストールして、クラウドプロジェクトの自動デプロイと webhook でトリガーされるデプロイを有効にします。",
+      "description": "アカウントまたは組織に OpenShip GitHub App をインストールして、クラウドプロジェクトの自動デプロイと webhook でトリガーされるデプロイを有効にします。",
       "install": "GitHub App をインストール"
     },
     "webhookBanner": {
       "summary": "公開エンドポイントが必要です",
       "title": "自動デプロイを有効にする",
-      "description": "自動デプロイには直接の webhook エンドポイントが必要です。この Openship API を公開 URL で公開するか、直接配信用の検証済み webhook ドメインを設定してください。"
+      "description": "自動デプロイには直接の webhook エンドポイントが必要です。この OpenShip API を公開 URL で公開するか、直接配信用の検証済み webhook ドメインを設定してください。"
     },
     "source": {
       "title": "ソースリポジトリ",
@@ -654,7 +662,7 @@
       "active": "アクティブ",
       "inactive": "非アクティブ",
       "descDirect": "イベントは {domain} 経由で直接配信されます",
-      "descActive": "リポジトリのイベントが Openship に届いています",
+      "descActive": "リポジトリのイベントが OpenShip に届いています",
       "descInactive": "Webhook が設定されていないか、応答していません"
     },
     "rollbackStrategy": {
@@ -863,10 +871,10 @@
     "linkedTitleOther": "{count} 件のプロジェクトがこのアプリに接続しています",
     "linkedNote": "データはそのままで動作を続けます。失うのはこの接続だけです。反映するには再デプロイしてください。",
     "linkedNoteRecordOnly": "動作は続きますが、リンクはレコードとともに失われます。後でこのアプリを再インポートしても復元されません。",
-    "recordOnlyLabel": "Openship からのみ削除",
-    "recordOnlyDesc": "アプリとそのデータをサーバー上で実行したまま維持し、Openship のレコードのみを削除します。後で再インポートできます。",
+    "recordOnlyLabel": "OpenShip からのみ削除",
+    "recordOnlyDesc": "アプリとそのデータをサーバー上で実行したまま維持し、OpenShip のレコードのみを削除します。後で再インポートできます。",
     "recordOnlyReversible": "元に戻せます — アプリはサーバー上に残ります。",
-    "recordOnlyNote": "サーバー上のものは一切変更されません — アプリはデータとともに実行を続けます。Openship のレコードのみが削除され、後で再インポートできます。",
+    "recordOnlyNote": "サーバー上のものは一切変更されません — アプリはデータとともに実行を続けます。OpenShip のレコードのみが削除され、後で再インポートできます。",
     "confirmRecordOnly": "レコードを削除"
   },
   "routing": {
@@ -954,7 +962,7 @@
       "servesPathHint": "このドメインへのリクエストは、ビルド出力内のこのパスから提供されます。",
       "servesPathRedeploy": "新しいパスは次回のデプロイ時に有効になります。",
       "externalIngress": "外部 ingress と TLS",
-      "externalIngressDesc": "TLS はリバースプロキシ（Cloudflare Tunnel、Nginx Proxy Manager、ロードバランサーなど）で終端します。ドメインがこのサーバーを指している必要はなく、Openship は証明書を発行しません。",
+      "externalIngressDesc": "TLS はリバースプロキシ（Cloudflare Tunnel、Nginx Proxy Manager、ロードバランサーなど）で終端します。ドメインがこのサーバーを指している必要はなく、OpenShip は証明書を発行しません。",
       "noWww": "そのドメインは既にこのプロジェクトに存在します。"
     },
     "dns": {
@@ -1082,8 +1090,8 @@
         "deployment": "このルートはデプロイを待っています。プロジェクトをデプロイして適用してください。",
         "disabled": "このプロジェクトまたはサービスは無効です。ルートを確認する前に有効にしてください。",
         "removing": "このドメインは削除中です。検証は予定されていません。",
-        "manual_certificate": "このドメインはアップロードされた証明書を使用しています。有効な証明書をアップロードして再確認してください。Openship は自動更新しません。",
-        "managed_certificate": "TLS は外部プロキシまたは Openship Cloud が管理しています。そのプロバイダーの設定を確認してください。",
+        "manual_certificate": "このドメインはアップロードされた証明書を使用しています。有効な証明書をアップロードして再確認してください。OpenShip は自動更新しません。",
+        "managed_certificate": "TLS は外部プロキシまたは OpenShip Cloud が管理しています。そのプロバイダーの設定を確認してください。",
         "route_missing": "設定されたルートはまだ適用されていません。ルーティングを再試行して適用してください。ルーティングの自動再試行は予定されていません。",
         "manual_dns": "この証明書は手動の TXT 検証を使用しています。HTTPS 設定を開いて新しい TXT レコードを確認するか、接続済みの DNS プロバイダーを選んで自動更新を有効にしてください。",
         "managed_owner": "このホスト名と証明書は所有サービスによって管理されています。そのサービスのドメイン設定を確認してください。"
@@ -1109,7 +1117,7 @@
       "automatic": "自動（プロバイダー）",
       "manual": "手動 TXT",
       "automaticHint": "設定 → 認証情報 で DNS プロバイダーを接続すると、証明書の検証レコードを作成し、HTTPS を自動更新できます。",
-      "manualHint": "DNS プロバイダーで一時的な TXT レコードを追加してください。更新のたびに新しい TXT レコードが必要です。更新時期は Openship に表示されます。",
+      "manualHint": "DNS プロバイダーで一時的な TXT レコードを追加してください。更新のたびに新しい TXT レコードが必要です。更新時期は OpenShip に表示されます。",
       "routing": "1. ドメインをこのサーバーに向ける",
       "certificate": "2. HTTPS を有効にする",
       "startAutomatic": "HTTPS を自動で有効にする",
@@ -1218,7 +1226,7 @@
     "updating": "アップデート中…",
     "updateFailed": "アップデートに失敗しました",
     "toastTitle": "ソース",
-    "cliManaged": "これは Openship のコントロールプレーンです — 自動で更新されます。アップグレードするにはホスト上で \"openship update\" を実行してください。ここで変更する必要はありません。"
+    "cliManaged": "これは OpenShip のコントロールプレーンです — 自動で更新されます。アップグレードするにはホスト上で \"openship update\" を実行してください。ここで変更する必要はありません。"
   },
   "routeRules": {
     "title": "ルーティングルール",
@@ -1337,7 +1345,7 @@
     "reviewResources": "影響を受けるリソースを確認 ({count})",
     "openRuns": "サーバーの実行履歴を開く",
     "lastRun": "最終検査",
-    "appOpen": "Openship の起動中に実行されます。",
+    "appOpen": "OpenShip の起動中に実行されます。",
     "scanStates": {
       "pending": "待機中",
       "running": "実行中",
@@ -1348,7 +1356,7 @@
     "reviewReboot": "再起動を確認",
     "applyReboot": "再起動を予約",
     "rebooting": "再起動を予約済み。カーネルの確認待ち",
-    "rebootInterruption": "1分後にサーバーを再起動し、すべてのワークロードを中断します。ホストの再接続後、Openship が実行中のカーネルを確認します。"
+    "rebootInterruption": "1分後にサーバーを再起動し、すべてのワークロードを中断します。ホストの再接続後、OpenShip が実行中のカーネルを確認します。"
   },
   "sourceImageUpdate": {
     "github_access_required": "GitHub 接続で、このリポジトリの Contents と Pull requests に読み取り・書き込み権限を付与してください。更新された App 権限には所有者の承認が必要な場合があります。",

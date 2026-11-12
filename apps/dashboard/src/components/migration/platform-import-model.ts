@@ -26,7 +26,7 @@ export const PLATFORM_IMPORT_HELP = {
     tokenUrl: "https://railway.com/account/tokens",
     docsUrl: "https://docs.railway.com/integrations/api",
     access: "Use a workspace token and its workspace ID, or a project token for one environment.",
-    data: "Openship pauses the project and copies its persistent volumes together. Allow downtime and keep Railway deployments paused until cutover.",
+    data: "OpenShip pauses the project and copies its persistent volumes together. Allow downtime and keep Railway deployments paused until cutover.",
   },
   vercel: {
     name: "Vercel",

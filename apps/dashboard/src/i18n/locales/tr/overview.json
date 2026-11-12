@@ -77,7 +77,7 @@
   },
   "welcome": {
     "title": "İlk projenizi başlatın",
-    "subtitle": "Bir depoyu bağlayın veya bir şablondan başlayın — Openship dakikalar içinde derler, dağıtır ve canlı URL sunar.",
+    "subtitle": "Bir depoyu bağlayın veya bir şablondan başlayın — OpenShip dakikalar içinde derler, dağıtır ve canlı URL sunar.",
     "createProject": "Proje oluştur",
     "importGithub": "GitHub'dan içe aktar",
     "tipPrefix": "İpucu: İstediğiniz yere hızlıca geçmek için",

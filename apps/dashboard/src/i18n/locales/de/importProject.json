@@ -61,7 +61,7 @@
       "title": "Health-Checks",
       "subtitle": "Aus — das Deployment ist fertig, sobald die App läuft",
       "subtitleOn": "Ein — das Deployment wartet erst auf die App",
-      "description": "Openship wartet nach dem Start nicht auf deine App, ein langsamer Start verzögert oder bricht also nie ein Deployment ab. Sobald es live ist, wird der Port trotzdem geprüft und gemeldet, ohne etwas zu blockieren. Aktiviere das nur, wenn das Deployment selbst fehlschlagen soll.",
+      "description": "OpenShip wartet nach dem Start nicht auf deine App, ein langsamer Start verzögert oder bricht also nie ein Deployment ab. Sobald es live ist, wird der Port trotzdem geprüft und gemeldet, ohne etwas zu blockieren. Aktiviere das nur, wenn das Deployment selbst fehlschlagen soll.",
       "probeLabel": "Auf Antwort der App warten",
       "probeDesc": "Nach dem Start des Containers den Port der App ansprechen und auf eine Verbindung warten.",
       "pathLabel": "HTTP-Pfad",
@@ -77,7 +77,7 @@
     },
     "runtimeVersionLabel": "Runtime-Version",
     "runtimeVersionDefault": "Standard",
-    "runtimeVersionDesc": "Verwendet passende Build- und Runtime-Images für die gewählte Version. Erfordert einen von Openship generierten Docker-Build.",
+    "runtimeVersionDesc": "Verwendet passende Build- und Runtime-Images für die gewählte Version. Erfordert einen von OpenShip generierten Docker-Build.",
     "buildImageLabel": "Build-Image",
     "buildImageDesc": "Builder-Container-Image für Cloud- oder Server-Builds. Überschreibe es, wenn das erkannte Basis-Image falsch ist.",
     "productionPathsLabel": "Produktionspfade",
@@ -242,7 +242,7 @@
       "statefulWarnBold": "nicht über Rebuilds hinweg übernommen",
       "statefulWarnPart2": ". Sichere und stelle die Daten ausdrücklich wieder her, bevor du den Workspace ersetzt.",
       "volumeHint": "Benanntes Volume oder Host-Pfad → Container-Pfad.",
-      "volumeCloudNote": "Persistente Volume-Mounts werden in Openship Cloud nicht unterstützt. Wähle einen Server für Workloads, die Volumes benötigen.",
+      "volumeCloudNote": "Persistente Volume-Mounts werden in OpenShip Cloud nicht unterstützt. Wähle einen Server für Workloads, die Volumes benötigen.",
       "sourcePlaceholder": "Quelle",
       "containerPathPlaceholder": "Container-Pfad",
       "readOnlyMount": "Schreibgeschützter Mount",
@@ -367,7 +367,7 @@
     }
   },
   "deploymentProcessing": {
-    "targetOpenshipCloud": "Openship Cloud",
+    "targetOpenshipCloud": "OpenShip Cloud",
     "targetServerNamed": "Server · {name}",
     "targetServer": "Server",
     "targetLocal": "Lokaler Rechner",
@@ -379,9 +379,9 @@
       "port": "Port",
       "process": "Prozess",
       "unitDescription": "Unit-Beschreibung",
-      "openshipDeployment": "Openship-Bereitstellung",
+      "openshipDeployment": "OpenShip-Bereitstellung",
       "sites": {
-        "lead": "Der vorhandene Proxy bedient derzeit {count} Site(s). Beim Migrieren werden sie in Openship importiert, bevor es die Ports 80/443 übernimmt:",
+        "lead": "Der vorhandene Proxy bedient derzeit {count} Site(s). Beim Migrieren werden sie in OpenShip importiert, bevor es die Ports 80/443 übernimmt:",
         "tlsBadge": "TLS",
         "staticLabel": "statisch:",
         "warningsTitle": "Konnten nicht automatisch migriert werden — bitte manuell erneut hinzufügen:"
@@ -531,7 +531,7 @@
     "title": "Einige Deployment-Einstellungen wurden nicht angewendet",
     "description": "Prüfe die unten aufgeführten übersprungenen Einstellungen vor dem Deployment.",
     "titleWholeFile": "Die openship.json dieses Repos wurde ignoriert",
-    "descriptionWholeFile": "Nichts davon wurde angewendet. Das Deployment läuft weiter, mit den von Openship erkannten Einstellungen.",
+    "descriptionWholeFile": "Nichts davon wurde angewendet. Das Deployment läuft weiter, mit den von OpenShip erkannten Einstellungen.",
     "refused": "Abgelehnt",
     "unrecognized": "Nicht erkannt",
     "hint": "Prüfe die genannten Konfigurationsdateien und aktualisiere nicht unterstützte Einstellungen vor dem nächsten Deployment."

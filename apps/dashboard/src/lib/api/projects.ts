@@ -393,7 +393,7 @@ export const projectsApi = {
       wipeVolumes?: boolean;
       force?: boolean;
       forceOrphan?: boolean;
-      /** Record-only: drop the Openship row, keep the server workload (self-hosted). */
+      /** Record-only: drop the OpenShip row, keep the server workload (self-hosted). */
       recordOnly?: boolean;
     } = {},
   ) => {
@@ -597,7 +597,7 @@ export const projectsApi = {
       upserts: Array<{ key: string; value: string; isSecret?: boolean }>;
       deletes: string[];
     },
-  ) => api.patch<{ upserted: number; deleted: number }>(endpoints.projects.env(id), body),
+  ) => api.patch<{ upserted: number; deleted: number; warnings?: string[] }>(endpoints.projects.env(id), body),
 
   /** Get environment variables (secret values returned masked) */
   getEnv: (id: string | number) =>

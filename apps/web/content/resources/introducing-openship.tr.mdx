@@ -1,0 +1,44 @@
+---
+title: "OpenShip ile Tanışın: Her Şeyi Dağıtın, Her Şeye Sahip Olun"
+description: "Açık kaynaklı, kendi kendine barındırılabilen bir dağıtım platformu olan OpenShip'ı kullanıma sunuyoruz. İşte onu neden inşa ettiğimiz ve neler yapabileceği."
+date: "2026-03-01"
+category: "Announcement"
+author: "OpenShip Team"
+---
+
+Bugün, kendi sunucularınızda çalıştırabileceğiniz bir dağıtım platformu olan OpenShip ürününü açık kaynak olarak kullanıyoruz.
+
+## Bunu neden geliştirdik
+
+Vercel ve Netlify gibi bulut platformları başlangıç için idealdir. Ancak uygulamanız büyüdükçe fatura da büyür. Ölçülen CPU, bilgisayar başına fiyatlandırma, bant genişliği sınırları; hızlı bir şekilde artıyor. Ve ayrılmak istediğinizde altyapınızın onların özel sistemlerine kilitlendiğini fark edersiniz.
+
+Farklı bir şey istedik:
+
+- **Önce kendi kendine barındırılan** - Herhangi bir Linux sunucuda çalıştırın. Aylık 20 ABD doları tutarında bir VPS, yönetilen platformlarda 200 ABD dolarının üzerindeki maliyeti karşılar.
+- **Açık kaynak** - Apache-2.0 lisanslı. Kara kutu yok, satıcıya bağlılık yok.
+- **Yapay zeka destekli** - Çerçeve algılama, derleme optimizasyonu ve yapılandırma otomatik olarak gerçekleştirilir.
+
+## Neleri dağıtabilirsiniz?
+
+OpenShip, bir kapsayıcıda çalışan tüm yığınları destekler:
+
+- **Ön uç çerçeveleri** - Next.js, Nuxt, SvelteKit, Astro, Remix
+- **Arka uç** - Node.js, Python, Go, Rust, Ruby, PHP
+- **Veritabanları** - Postgres, MySQL, Redis, MongoDB
+- **Tam yığın** - Paylaşılan ağ bağlantısına sahip çoklu hizmet uygulamaları
+
+## Başlarken
+
+```bash
+curl -fsSL https://get.openship.io | sh
+cd your-project
+openship deploy
+```
+
+Üç komut. İşte bu.
+
+## Sırada ne var
+
+Mevcut dağıtım, Eylemler, ağ iletişimi, yedeklemeler, geçiş ve ekip yetenekleri için [özellik dizinini](/features) keşfedin. [Belgeler](/docs), kurulumu ve kullanılabilirliği açıklıyor ve [changelog](/changelog), gönderilen sürümleri izliyor.
+
+[GitHub](https://github.com/oblien/openship) tarihinde bize yıldız verin ve topluluğa katılın.

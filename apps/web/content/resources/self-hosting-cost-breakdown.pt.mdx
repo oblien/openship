@@ -1,0 +1,57 @@
+---
+title: "Auto-hospedagem versus plataformas gerenciadas: a análise real dos custos"
+description: "Comparamos o custo real de execução de um aplicativo de produção Next.js em Vercel, AWS e uma configuração auto-hospedada OpenShip. Os números podem surpreendê-lo."
+date: "2026-03-05"
+category: "Guide"
+author: "OpenShip Team"
+---
+
+"Basta usar Vercel" é um bom conselho - até que sua fatura chegue. Executamos o mesmo aplicativo Next.js em três configurações e rastreamos todos os custos por 30 dias.
+
+## O aplicativo de teste
+
+Um aplicativo de produção Next.js 15 com:
+- ~50 rotas, ISR habilitado
+- banco de dados Postgres
+- Redis para armazenamento em cache
+- ~100 mil visitantes mensais
+- ~500 GB de largura de banda/mês
+
+## Os resultados
+
+| | Vercel Profissional | AWS (ECS + RDS) | OpenShip (auto-hospedado) |
+|---|---|---|---|
+| Calcular | $ 150/mês | $ 85/mês | $ 24/mês |
+| Banco de dados | $ 50/mês (néon) | $ 45/mês | Incluído |
+| Largura de banda | $ 120/mês | $ 45/mês | Incluído |
+| SSL/Domínios | Incluído | US$ 1/mês | Incluído |
+| **Total** | **$320/mês** | **$176/mês** | **$24/mês** |
+
+A configuração auto-hospedada OpenShip é executada em um único Hetzner VPS (CPX31: 4 vCPU, 8 GB de RAM, SSD de 160 GB).
+
+## As compensações
+
+As plataformas gerenciadas oferecem zero operações. Você envia o código e ele é implantado. Esse é o valor real.
+
+Mas OpenShip diminui significativamente a lacuna:
+- **AI lida com configuração** - Detecção de build, Dockergeração de arquivo e SSL são automáticos.
+- **Implantações com um comando** - `openship deploy` é igualmente rápida.
+- **Monitoramento integrado** - Logs, métricas e alertas prontos para uso.
+
+A desvantagem restante é a manutenção do servidor – atualizações do sistema operacional, espaço em disco, monitoramento do tempo de atividade. Para a maioria das equipes, isso significa algumas horas por mês.
+
+## Quando auto-hospedar
+
+A auto-hospedagem faz sentido quando:
+- Sua fatura mensal excede aproximadamente US$ 100 em plataformas gerenciadas
+- Você precisa de soberania ou conformidade de dados
+- Você deseja preços previsíveis e fixos
+- Você está implantando vários aplicativos (o custo permanece o mesmo)
+
+## Experimente
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+Seu servidor, seus dados, sua conta.

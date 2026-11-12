@@ -60,7 +60,7 @@ export function PlatformImportReview({
                 <p className="truncate text-sm font-medium">
                   {targetName || "Selected destination"}
                 </p>
-                <p className="text-xs text-muted-foreground">Openship</p>
+                <p className="text-xs text-muted-foreground">OpenShip</p>
               </div>
             </div>
           </div>
@@ -104,7 +104,7 @@ export function PlatformImportReview({
               <h3 className="font-semibold">Before you start</h3>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                 {plan.sourceControl === "railway-project"
-                  ? "Openship will stop the Railway project, copy its persistent volumes, and verify the destination. Source workloads stay stopped until cutover. Keep other deployments paused during the move."
+                  ? "OpenShip will stop the Railway project, copy its persistent volumes, and verify the destination. Source workloads stay stopped until cutover. Keep other deployments paused during the move."
                   : "Pause the source workloads that write data or process jobs. Keep them paused until you finish cutover."}
               </p>
             </div>

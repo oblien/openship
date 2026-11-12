@@ -1,0 +1,35 @@
+---
+title: "OpenShip 0.9.1 : explorez les applications, contrôlez les environnements d'exécution, récupérez votre flux de travail"
+description: "Un catalogue d'applications public, une configuration d'exécution plus claire et des correctifs pour les sauvegardes de flux de travail, les connexions cloud, la messagerie Web et la préparation des images de déploiement."
+date: "2026-10-13"
+category: "Product"
+author: "OpenShip Team"
+---
+
+OpenShip 0.9.1 améliore les étapes d'un déploiement : choisir une application, configurer son environnement d'exécution, revenir à une configuration enregistrée et préparer la prochaine version.
+
+## Explore before you install
+
+Le [catalogue d'applications public](/apps) vous permet de parcourir les backends, les bases de données, les outils de publication et l'automatisation sans ouvrir le tableau de bord au préalable. Recherchez ou filtrez par catégorie, puis ouvrez une application pour voir ses fonctionnalités, les services inclus et les exigences.
+
+L'installation se poursuit via le flux de configuration existant. App and plan links retain their destination through sign-in and verification, and confirmed installation settings can resume after checkout.
+
+## More deliberate runtime configuration
+
+Les versions PHP générées prennent en charge PHP 8.3 et 8.4 via le paramètre de version d'exécution. Les builds sources de Docker exposent également un remplacement avancé de l'image de production. Les recettes vérifient les capacités d'exécution et la compatibilité avant l'activation, et les restaurations d'images conservées préservent la configuration d'exécution d'origine.
+
+Le redéploiement manuel Docker actualise les balises de registre mutables tout en préservant les versions locales et les artefacts de restauration épinglés. Les images de remplacement sont préparées avant l'activation du service. Un échec de préparation laisse les conteneurs actuels fonctionner ; the later multi-service cutover remains sequential.
+
+## Recover without recreating everything
+
+Les liens de serveur Cloud enregistrés comportent des actions de reconnexion plus claires et des conseils en cas d'incompatibilités de comptes et de pannes temporaires. Une application de messagerie Web existante peut également être reconnectée lorsque son enregistrement de messagerie perd le lien du projet, réutilisant ainsi son projet et son stockage persistant.
+
+La migration conserve désormais les domaines qui acheminent uniquement les chemins sélectionnés. Les routes exactes et les préfixes restent attachés à leurs services, et les demandes sans correspondance restent sans correspondance.
+
+## Workflow and language improvements
+
+Les workflows d'actions autonomes peuvent enregistrer un YAML personnalisé valide avec des instructions plus claires pour les noms, les coureurs, la validation ou les paramètres d'accès manquants. Connected desktop and self-hosted instances forward Cloud workflow and runner operations to the owning Cloud instance.
+
+Le russe rejoint les langues du tableau de bord et la messagerie Web reçoit des mises à jour en direct de la boîte de réception via son flux d'événements.
+
+Lisez le [journal complet des modifications](/changelog), explorez le [répertoire des fonctionnalités](/features) ou suivez le [guide de mise à jour](/docs/guides/updating) pour votre installation.

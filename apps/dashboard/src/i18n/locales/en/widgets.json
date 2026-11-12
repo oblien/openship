@@ -232,12 +232,12 @@
   },
   "cloud": {
     "connectionGate": {
-      "reconnect": "Reconnect Openship Cloud",
-      "deployedOn": "This project is deployed on Openship Cloud",
-      "sessionMissing": "Your Openship Cloud session is missing. Connect to manage deployments, view logs, and access runtime controls for {name}.",
+      "reconnect": "Reconnect OpenShip Cloud",
+      "deployedOn": "This project is deployed on OpenShip Cloud",
+      "sessionMissing": "Your OpenShip Cloud session is missing. Connect to manage deployments, view logs, and access runtime controls for {name}.",
       "thisProject": "this project",
       "connecting": "Connecting…",
-      "connect": "Connect to Openship Cloud",
+      "connect": "Connect to OpenShip Cloud",
       "readOnlyNote": "You can still browse this page in read-only mode while disconnected."
     }
   },
@@ -245,7 +245,7 @@
     "githubPermission": {
       "title": "Connect to GitHub",
       "subtitle": "Choose repository access level",
-      "intro": "Select which repositories Openship can access. You can change this later in your GitHub settings.",
+      "intro": "Select which repositories OpenShip can access. You can change this later in your GitHub settings.",
       "publicTitle": "Public repositories only",
       "publicDesc": "Access to your public repositories. Perfect for open source projects.",
       "publicItem1": "Read public repository data",
@@ -542,12 +542,12 @@
     "youreOn": "· you're on {version}",
     "rerunInstall": "Re-run your install to update your self-hosted server.",
     "updateNow": "Update now",
-    "downloading": "Downloading Openship {version}",
-    "installing": "Installing — Openship will restart",
+    "downloading": "Downloading OpenShip {version}",
+    "installing": "Installing — OpenShip will restart",
     "updateFailed": "Update failed",
     "retry": "Retry",
     "changelog": "Changelog",
-    "updatedTo": "Updated to Openship {version}",
+    "updatedTo": "Updated to OpenShip {version}",
     "seeChanges": "See what changed in this release.",
     "onLatest": "You're on the latest version.",
     "whatsNew": "What's new",

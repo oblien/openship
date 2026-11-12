@@ -169,7 +169,7 @@
     "addMailbox": "Postfach hinzufügen",
     "addDomain": "Domain hinzufügen",
     "reviewDns": "DNS-Einträge prüfen",
-    "legacyWebmail": "Von einer älteren Openship-Version bereitgestellt — kann durch die Webmail-App ersetzt werden, die mit Ihren Releases aktualisiert wird.",
+    "legacyWebmail": "Von einer älteren OpenShip-Version bereitgestellt — kann durch die Webmail-App ersetzt werden, die mit Ihren Releases aktualisiert wird.",
     "upgradeWebmail": "Webmail ersetzen"
   },
   "webmail": {
@@ -363,7 +363,7 @@
     "dnsEmpty": "Noch keine DNS-Einträge hinterlegt. Schließe den Installationsassistenten ab, um den Scan zu befüllen.",
     "reachability": {
       "title": "Öffentliche Mail-Ports",
-      "desc": "Prüft lokale Listener und verbindet sich danach von der Openship-Steuerung mit der öffentlichen Mail-Adresse.",
+      "desc": "Prüft lokale Listener und verbindet sich danach von der OpenShip-Steuerung mit der öffentlichen Mail-Adresse.",
       "descFor": "Prüft lokale Listener und externen Zugriff auf {hostname} unter {address}.",
       "remediation": "Der Server lauscht, aber mindestens ein öffentlicher Port ist nicht erreichbar. Erlaube TCP 25, 465, 587 und 993 sowohl in der Host-Firewall als auch in der Provider-Firewall/Sicherheitsgruppe/NSG.",
       "reachableHint": "Lauscht auf dem Host und ist von der Steuerung erreichbar.",
@@ -644,7 +644,7 @@
     "legacyNote": "Dieser Server nutzt die alte, direkt auf dem Host installierte Engine (systemd Postfix/Dovecot) – es gibt also keinen Container zum Prüfen.",
     "start": "Engine starten",
     "missingTitle": "Keine Mail-Engine auf diesem Server",
-    "missingBody": "Openship findet hier keine Mail-Engine – weder den Engine-Container noch die Postfix-/Dovecot-Units. Führe das Mail-Setup erneut aus, um sie neu zu installieren.",
+    "missingBody": "OpenShip findet hier keine Mail-Engine – weder den Engine-Container noch die Postfix-/Dovecot-Units. Führe das Mail-Setup erneut aus, um sie neu zu installieren.",
     "rerunSetup": "Mail-Setup erneut ausführen",
     "cardBlocked": "Nicht verfügbar, bis die Mail-Engine läuft."
   },
@@ -741,7 +741,7 @@
     "renewing": "Wird erneuert…",
     "autoRenew": "Automatische Erneuerung",
     "autoRenewHint": "Vor Ablauf erneuern und die Mail-Dienste neu laden.",
-    "desktopHint": "Openship muss für die automatische Erneuerung geöffnet bleiben.",
+    "desktopHint": "OpenShip muss für die automatische Erneuerung geöffnet bleiben.",
     "jobDisabled": "Der gemeinsame SSL-Erneuerungsauftrag ist deaktiviert.",
     "manageJob": "Erneuerungsauftrag öffnen",
     "failed": "Das Mail-Zertifikat konnte nicht aktualisiert werden.",

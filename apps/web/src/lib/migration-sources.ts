@@ -1,5 +1,6 @@
 import type { FeatureIllustrationName } from "@repo/ui/illustrations";
 import type { StaticImageData } from "next/image";
+import type { MigrationSourceKind } from "@repo/core";
 import railwayReview from "../../public/migrations/railway-review.webp";
 import vercelReview from "../../public/migrations/vercel-review.webp";
 
@@ -7,6 +8,7 @@ export const PLATFORM_MIGRATION_GUIDE = "/docs/guides/migrate-from-railway-verce
 
 type MigrationSource = {
   slug: string;
+  importSource: MigrationSourceKind;
   name: string;
   logos: string[];
   headline: string;
@@ -25,13 +27,14 @@ type MigrationSource = {
 export const MIGRATION_SOURCES: MigrationSource[] = [
   {
     slug: "from-railway",
+    importSource: "railway",
     name: "Railway",
     logos: ["railway"],
     headline: "Your Railway project.",
     guide: PLATFORM_MIGRATION_GUIDE,
     summary: "Bring your project environment, connected services and persistent data together.",
     description:
-      "Move your Railway project to Openship Cloud or your own infrastructure. Review its services, copy persistent volumes, and verify the new deployment before switching your domains.",
+      "Move your Railway project to OpenShip Cloud or your own infrastructure. Review its services, copy persistent volumes, and verify the new deployment before switching your domains.",
     screenshot: {
       image: railwayReview,
       alt: "Railway import review showing a Storefront app, PostgreSQL and Redis, with a downtime acknowledgment before importing.",
@@ -43,7 +46,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
         illustration: "compose-multi-service",
         title: "Your services, together",
         description:
-          "Import the complete selected project environment. Each service becomes an Openship project, using its GitHub source or portable registry image.",
+          "Import the complete selected project environment. Each service becomes an OpenShip project, using its GitHub source or portable registry image.",
       },
       {
         illustration: "persistent-storage",
@@ -55,7 +58,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
         illustration: "private-networking",
         title: "Connections between services",
         description:
-          "Railway private addresses become Openship project connections. Credentials, database names and connection options stay with them.",
+          "Railway private addresses become OpenShip project connections. Credentials, database names and connection options stay with them.",
       },
       {
         illustration: "secrets-credentials",
@@ -78,7 +81,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       {
         title: "Pause, copy and deploy",
         description:
-          "Allow a maintenance window and pause external automation. Openship stops the source environment and copies all selected volumes before starting destination services.",
+          "Allow a maintenance window and pause external automation. OpenShip stops the source environment and copies all selected volumes before starting destination services.",
       },
       {
         title: "Verify, then move traffic",
@@ -95,7 +98,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
     questions: [
       {
         q: "Do I need an API token?",
-        a: "Choose an existing Railway connection or authorize your account when OAuth is configured on your Openship installation. API tokens are also supported. The connection needs access to the project and permission to stop and deploy services, update configuration, register a temporary SSH key and read storage. A read-only token cannot move persistent data.",
+        a: "Choose an existing Railway connection or authorize your account when OAuth is configured on your OpenShip installation. API tokens are also supported. The connection needs access to the project and permission to stop and deploy services, update configuration, register a temporary SSH key and read storage. A read-only token cannot move persistent data.",
       },
       {
         q: "Can every Railway project move unchanged?",
@@ -103,23 +106,24 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       },
       {
         q: "Will my application be offline?",
-        a: "Plan downtime for the selected Railway environment while its volumes copy and the destination starts. Pause external jobs and deployment automation as well. Transfer time depends on your data and connection. Openship does not switch public DNS or remove your source resources automatically.",
+        a: "Plan downtime for the selected Railway environment while its volumes copy and the destination starts. Pause external jobs and deployment automation as well. Transfer time depends on your data and connection. OpenShip does not switch public DNS or remove your source resources automatically.",
       },
       {
         q: "Can I move to Cloud or my own server?",
-        a: "Yes. The import uses Openship’s normal destination picker and its access, subscription and capacity checks. Choose managed capacity in Openship Cloud, or a connected server in your Desktop or self-hosted installation. A linked Cloud account also makes its eligible managed destinations available there.",
+        a: "Yes. The import uses OpenShip’s normal destination picker and its access, subscription and capacity checks. Choose managed capacity in OpenShip Cloud, or a connected server in your Desktop or self-hosted installation. A linked Cloud account also makes its eligible managed destinations available there.",
       },
     ],
   },
   {
     slug: "from-vercel",
+    importSource: "vercel",
     name: "Vercel",
     logos: ["vercel"],
     headline: "Your Vercel project.",
     guide: PLATFORM_MIGRATION_GUIDE,
     summary: "Bring your application source, environment settings and connected PostgreSQL.",
     description:
-      "Bring your Vercel application to Openship Cloud or your own infrastructure. Import its GitHub source and settings, review its dependencies, and choose where its data lives.",
+      "Bring your Vercel application to OpenShip Cloud or your own infrastructure. Import its GitHub source and settings, review its dependencies, and choose where its data lives.",
     screenshot: {
       image: vercelReview,
       alt: "Vercel import review showing Storefront source and a PostgreSQL database selected for copying, with source writes requiring a pause.",
@@ -165,7 +169,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       {
         title: "Check and import",
         description:
-          "Use Check import to resolve blockers before starting. Openship uses its normal build and deployment flow. Pause database writers before any PostgreSQL copy.",
+          "Use Check import to resolve blockers before starting. OpenShip uses its normal build and deployment flow. Pause database writers before any PostgreSQL copy.",
       },
       {
         title: "Test before switching",
@@ -175,18 +179,18 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
     ],
     dataTitle: "Choose what happens to your database",
     data: [
-      "An application import does not have to move its database. You can keep a reachable external PostgreSQL connection and manage the application in Openship.",
+      "An application import does not have to move its database. You can keep a reachable external PostgreSQL connection and manage the application in OpenShip.",
       "To copy PostgreSQL, supply its major version and a direct public connection URL with TLS and export permissions. Pause external writers yourself and keep them paused through cutover. The logical copy includes the configured database, not other databases or server-wide roles.",
       "Vercel Blob, Edge Config, provider-specific functions and other external storage need separate handling. Review those dependencies before moving: importing source and settings does not recreate the Vercel platform or copy a Vercel filesystem.",
     ],
     questions: [
       {
         q: "How do I connect my Vercel account?",
-        a: "Use a saved connection, authorize your account when OAuth is configured on your Openship installation, or add an API token. Team-scoped tokens need the team ID. Test the connection before choosing a project. Private GitHub repositories also need GitHub access in Openship.",
+        a: "Use a saved connection, authorize your account when OAuth is configured on your OpenShip installation, or add an API token. Team-scoped tokens need the team ID. Test the connection before choosing a project. Private GitHub repositories also need GitHub access in OpenShip.",
       },
       {
         q: "Will my app work without changes?",
-        a: "Applications with supported build settings can use the normal Openship deployment flow. Review any dependence on Vercel-specific functions, APIs or storage first. Non-GitHub sources and unsupported configuration need changes before import; missing secrets must be supplied again.",
+        a: "Applications with supported build settings can use the normal OpenShip deployment flow. Review any dependence on Vercel-specific functions, APIs or storage first. Non-GitHub sources and unsupported configuration need changes before import; missing secrets must be supplied again.",
       },
       {
         q: "Does the import move my production traffic?",
@@ -194,19 +198,20 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       },
       {
         q: "Where will the imported application run?",
-        a: "Choose an eligible managed Cloud destination or a connected server in Desktop or self-hosted Openship. The normal destination permissions and capacity checks apply. Imported projects keep the usual deployment logs, domains and runtime controls; automatic deployment on Git push stays off until you enable it.",
+        a: "Choose an eligible managed Cloud destination or a connected server in Desktop or self-hosted OpenShip. The normal destination permissions and capacity checks apply. Imported projects keep the usual deployment logs, domains and runtime controls; automatic deployment on Git push stays off until you enable it.",
       },
     ],
   },
   {
     slug: "from-coolify-dokploy",
+    importSource: "server",
     name: "Coolify / Dokploy",
     logos: ["coolify", "dokploy"],
     headline: "Your existing Docker stack.",
     guide: "/docs/guides/migrate-from-coolify-dokploy-dokku",
     summary: "Use the Server or Docker import to bring your running apps, volumes and routes.",
     description:
-      "Move workloads running on Coolify or Dokploy through Openship’s existing Server or Docker import. Connect the source server, scan its containers, and review services, data and domains before changing anything.",
+      "Move workloads running on Coolify or Dokploy through OpenShip’s existing Server or Docker import. Connect the source server, scan its containers, and review services, data and domains before changing anything.",
     highlights: [
       {
         illustration: "compose-multi-service",
@@ -242,7 +247,7 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
       {
         title: "Connect the source server",
         description:
-          "Choose a connected server in Desktop or self-hosted Openship, or add an external migration source over SSH in Cloud. Leave its applications and proxy running for discovery.",
+          "Choose a connected server in Desktop or self-hosted OpenShip, or add an external migration source over SSH in Cloud. Leave its applications and proxy running for discovery.",
       },
       {
         title: "Review services and storage",
@@ -264,18 +269,18 @@ export const MIGRATION_SOURCES: MigrationSource[] = [
     questions: [
       {
         q: "Is there a separate Coolify or Dokploy connector?",
-        a: "No. Select Server or Docker in Import existing project. Openship discovers Docker workloads on the source server through its existing connection and uses the shared migration review, destination picker and transfer pipeline.",
+        a: "No. Select Server or Docker in Import existing project. OpenShip discovers Docker workloads on the source server through its existing connection and uses the shared migration review, destination picker and transfer pipeline.",
       },
       {
         q: "What access do I need?",
-        a: "Connect the source server over SSH with the permissions needed to inspect Docker and perform the reviewed migration. Openship also checks your access to the source and destination. You do not need a Coolify or Dokploy API token.",
+        a: "Connect the source server over SSH with the permissions needed to inspect Docker and perform the reviewed migration. OpenShip also checks your access to the source and destination. You do not need a Coolify or Dokploy API token.",
       },
       {
         q: "Will everything move without changes?",
         a: "Review the scan and its notices before importing. Unsupported mounts, proxy-specific routing and services managed outside Docker can need preparation. Select application workloads rather than the old platform’s control plane or proxy. Both registry images and transferable locally built Docker images use the shared migration pipeline.",
       },
       {
-        q: "Will Openship delete my old platform?",
+        q: "Will OpenShip delete my old platform?",
         a: "Importing does not uninstall Coolify or Dokploy. Review any explicit source cutover or edge takeover before confirming it. Verify the migrated application and backups, then retire the old control plane and resources yourself.",
       },
     ],

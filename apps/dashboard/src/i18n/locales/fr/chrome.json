@@ -18,7 +18,7 @@
     "switchOrganization": "Changer d'organisation",
     "current": "Actuel",
     "cloudLabel": "Cloud : {email}",
-    "linkedToCloud": "Lié à Openship Cloud en tant que {email}",
+    "linkedToCloud": "Lié à OpenShip Cloud en tant que {email}",
     "backToSetup": "Retour à la configuration",
     "personal": "Personnel"
   },
@@ -34,7 +34,7 @@
     "newLocation": "Nouvel emplacement",
     "switchBackPrompt": "Besoin de repasser en mode mono-utilisateur sur cette machine ?",
     "switchBackAction": "Revenir au mode mono-utilisateur",
-    "cloudTitle": "Cette instance a été déplacée vers Openship Cloud",
+    "cloudTitle": "Cette instance a été déplacée vers OpenShip Cloud",
     "cloudBody": "Votre équipe collabore désormais à l'URL ci-dessous. Cette instance locale ne contient plus vos projets, paramètres ou déploiements — ouvrez le tableau de bord cloud pour continuer.",
     "cloudCta": "Ouvrir le tableau de bord cloud",
     "tunneledTitle": "Votre openship est désormais accessible via le tunnel",
@@ -65,7 +65,7 @@
   },
   "apiDown": {
     "title": "Impossible de joindre l'API",
-    "description": "Le tableau de bord fonctionne, mais il ne parvient pas à joindre l'API Openship — il n'y a donc rien à afficher pour l'instant. Vos déploiements continuent de tourner malgré tout.",
+    "description": "Le tableau de bord fonctionne, mais il ne parvient pas à joindre l'API OpenShip — il n'y a donc rien à afficher pour l'instant. Vos déploiements continuent de tourner malgré tout.",
     "hintStatus": "Vérifiez que l'API est active : exécutez `openship status` sur l'hôte.",
     "hintStart": "Il ne tourne pas ? Démarrez-le avec `openship up`.",
     "hintRemote": "Vous gérez une machine distante ? Vérifiez son URL et que le port de l'API est joignable depuis ici.",

@@ -140,7 +140,7 @@
       "addCustom": "カスタムを追加",
       "howToAddApp": "アプリを追加する方法",
       "removeCustomApp": "カスタムアプリを削除",
-      "needsUpdateDesc": "このアプリをインストールするにはOpenshipインスタンスを更新してください。",
+      "needsUpdateDesc": "このアプリをインストールするにはOpenShipインスタンスを更新してください。",
       "needsUpdateBadge": "要更新",
       "needsVersionBadge": "v{version} が必要",
       "removedToast": "「{name}」を削除しました。",

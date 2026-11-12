@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} 个服务",
       "serviceCountOther": "{count} 个服务",
       "searchPlaceholder": "按名称、镜像或标签搜索……",
-      "cloudConnectHint": "连接 Openship Cloud 以浏览云服务目录。您仍可手动添加任意镜像。",
+      "cloudConnectHint": "连接 OpenShip Cloud 以浏览云服务目录。您仍可手动添加任意镜像。",
       "noMatchesTitle": "无匹配项",
       "noMatchesBody": "请尝试其他类别或搜索词，或从侧栏选择“自定义镜像”。",
       "localImages": "本地镜像",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "本地 Docker",
       "customEntryName": "自定义镜像",
       "customEntryDescription": "按标签拉取任意公共或私有 Docker 镜像。",
@@ -134,7 +134,7 @@
         "other": "其他"
       },
       "cloudConnectTitle": "需要托管数据库或对象存储吗？",
-      "cloudConnectBody": "连接 Openship Cloud，在此项目旁配置无服务器 Postgres、Redis 和兼容 S3 的存储桶。",
+      "cloudConnectBody": "连接 OpenShip Cloud，在此项目旁配置无服务器 Postgres、Redis 和兼容 S3 的存储桶。",
       "cloudConnectButton": "浏览 Cloud 附加组件",
       "repositorySource": {
         "catalog": "目录",
@@ -200,7 +200,7 @@
           "reviewFailed": "无法检查共享配置。您的更改尚未保存。"
         },
         "helpTitle": "环境变量的工作方式",
-        "description": "保存在 Openship 中。存在项目共享来源时，保存会让您检查共享更改。服务覆盖值优先于 Compose 和项目值。",
+        "description": "保存在 OpenShip 中。存在项目共享来源时，保存会让您检查共享更改。服务覆盖值优先于 Compose 和项目值。",
         "sources": {
           "service": "服务覆盖值",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "终端",
       "statusTitle": "无法获取服务状态",
-      "statusHint": "Openship 无法确认当前状态。您的服务可能仍在运行。",
+      "statusHint": "OpenShip 无法确认当前状态。您的服务可能仍在运行。",
       "checkingTitle": "正在检查服务",
       "checkingHint": "正在等待服务器响应。您也可以立即尝试打开终端。",
       "startingTitle": "正在等待服务",
@@ -449,7 +449,7 @@
       "errorTitle": "终端不可用",
       "errors": {
         "auth": "无法验证您的访问权限。请重新登录或检查权限。",
-        "connect": "Openship 无法连接到服务的 Shell。请在服务器恢复连接后重试。",
+        "connect": "OpenShip 无法连接到服务的 Shell。请在服务器恢复连接后重试。",
         "notFound": "此服务不可用，或您没有访问权限。",
         "notDeployed": "没有可连接的运行中容器。请检查服务状态后重试。",
         "notSupported": "此服务的运行环境不支持交互式终端。",

@@ -25,7 +25,7 @@
     "installing": "Instalando…",
     "advanced": "Opciones avanzadas de despliegue",
     "nameLabel": "Nombre",
-    "nameHint": "Cómo aparece esta aplicación en Openship.",
+    "nameHint": "Cómo aparece esta aplicación en OpenShip.",
     "domainTitle": "¿Dónde debería ubicarse?",
     "domainFree": "Subdominio gratuito",
     "domainFreeHint": "Un subdominio gratuito en {domain}",
@@ -73,8 +73,8 @@
     "routePortLabel": "Solo puerto (sin dominio)",
     "routePortDesc": "Accesible en la dirección del host y puerto — no requiere dominio ni Cloud.",
     "routeFreeLabel": "Subdominio gratuito",
-    "routeFreeDesc": "Un subdominio gratuito en {domain}, enrutado por Openship Cloud.",
-    "routeFreeNeedsCloud": "Conecta Openship Cloud para usar un subdominio gratuito.",
+    "routeFreeDesc": "Un subdominio gratuito en {domain}, enrutado por OpenShip Cloud.",
+    "routeFreeNeedsCloud": "Conecta OpenShip Cloud para usar un subdominio gratuito.",
     "routeCustomLabel": "Tu propio dominio",
     "routeCustomDesc": "Apunta un dominio de tu propiedad a esta app.",
     "routeDomainLabel": "Dominio",
@@ -257,7 +257,7 @@
     },
     "statusActive": "Activo",
     "statusDisabled": "Deshabilitado",
-    "hostedCloud": "Openship Cloud",
+    "hostedCloud": "OpenShip Cloud",
     "hostedServer": "Servidor",
     "hostedLocal": "Local",
     "projectStatus": {
@@ -278,7 +278,7 @@
       "currentServer": "Servidor actual",
       "migrate": "Migrar",
       "noOtherServers": "Añade un segundo servidor para mover este proyecto allí.",
-      "cloudLater": "De servidor a servidor. Mover hacia o desde Openship Cloud aún no es posible.",
+      "cloudLater": "De servidor a servidor. Mover hacia o desde OpenShip Cloud aún no es posible.",
       "startFailed": "No se pudo iniciar la migración",
       "confirmTitle": "Mover {project} a {server}",
       "confirmSubtitle": "Nada cambia hasta que inicies el movimiento.",
@@ -326,7 +326,7 @@
       "anotherServer": "Otro servidor",
       "targetLocal": "Máquina local",
       "targetServer": "Servidor autoalojado",
-      "targetCloud": "Openship Cloud"
+      "targetCloud": "OpenShip Cloud"
     },
     "danger": {
       "title": "Zona de peligro",
@@ -538,8 +538,9 @@
       "appliesOnDeploy": "Se aplica en el próximo despliegue."
     },
     "env": {
-      "title": "Entorno del proyecto (compilación y ejecución compartida)",
-      "description": "Se usa para compilar imágenes y como entrada compartida en ejecución. Los valores de Compose y del servicio tienen prioridad en ejecución. Los secretos permanecen ocultos.",
+      "title": "Entorno del proyecto",
+      "sharedTitle": "Entorno compartido del proyecto",
+      "description": "Se usa durante la compilación y la ejecución. Los secretos permanecen ocultos.",
       "edit": "Editar"
     }
   },
@@ -583,7 +584,14 @@
     "rebuildTitle": "Reconstruir y volver a desplegar",
     "rebuildText": "Guardado. Reconstruye la aplicación para aplicar estas variables de entorno.",
     "applyTitle": "Aplicar sin recompilar",
-    "applyButton": "Aplicar (reiniciar sin recompilar)"
+    "applyButton": "Aplicar (reiniciar sin recompilar)",
+    "reload": "Volver a cargar valores guardados",
+    "buildHint": "Vuelve a compilar y desplegar para aplicar los valores usados durante la compilación.",
+    "runtimeHint": "Aplicar usa los valores de ejecución guardados y reinicia sin recompilar. Vuelve a compilar para aplicar valores de compilación.",
+    "sharedHint": "Estas variables se comparten con los servicios del proyecto. Aplicarlas puede reiniciar los servicios afectados.",
+    "firstDeployHint": "Las variables guardadas se usarán en el primer despliegue.",
+    "applyProject": "Aplicar al proyecto",
+    "updateStarted": "Actualización del entorno iniciada. Sigue su progreso en Despliegues."
   },
   "gitInfo": {
     "autoDeploy": "Despliegue automático"
@@ -607,13 +615,13 @@
     },
     "appBanner": {
       "title": "La app de GitHub no está instalada",
-      "description": "Instala la app de GitHub de Openship en tu cuenta u organización para habilitar el despliegue automático y los despliegues activados por webhook para proyectos en la nube.",
+      "description": "Instala la app de GitHub de OpenShip en tu cuenta u organización para habilitar el despliegue automático y los despliegues activados por webhook para proyectos en la nube.",
       "install": "Instalar app de GitHub"
     },
     "webhookBanner": {
       "summary": "Se requiere un endpoint público",
       "title": "Habilitar despliegue automático",
-      "description": "El despliegue automático necesita un endpoint de webhook directo. Expón esta API de Openship en una URL pública o configura un dominio de webhook verificado para la entrega directa."
+      "description": "El despliegue automático necesita un endpoint de webhook directo. Expón esta API de OpenShip en una URL pública o configura un dominio de webhook verificado para la entrega directa."
     },
     "source": {
       "title": "Repositorio de origen",
@@ -654,7 +662,7 @@
       "active": "Activo",
       "inactive": "Inactivo",
       "descDirect": "Los eventos se entregan directamente vía {domain}",
-      "descActive": "Los eventos del repositorio están llegando a Openship",
+      "descActive": "Los eventos del repositorio están llegando a OpenShip",
       "descInactive": "El webhook no se ha configurado o no responde"
     },
     "rollbackStrategy": {
@@ -863,10 +871,10 @@
     "linkedTitleOther": "{count} proyectos están conectados a esta app",
     "linkedNote": "Siguen funcionando con sus datos intactos: solo pierden esta conexión. Vuelve a desplegarlos para aplicarlo.",
     "linkedNoteRecordOnly": "Siguen funcionando, pero el vínculo se va con el registro: reimportar esta app más tarde no lo restaura.",
-    "recordOnlyLabel": "Eliminar solo de Openship",
-    "recordOnlyDesc": "Mantiene la app y sus datos ejecutándose en tu servidor — solo se elimina el registro de Openship. Puedes volver a importarla más tarde.",
+    "recordOnlyLabel": "Eliminar solo de OpenShip",
+    "recordOnlyDesc": "Mantiene la app y sus datos ejecutándose en tu servidor — solo se elimina el registro de OpenShip. Puedes volver a importarla más tarde.",
     "recordOnlyReversible": "Reversible — la aplicación permanece en tu servidor.",
-    "recordOnlyNote": "No se modifica nada en el servidor — la app sigue funcionando con sus datos. Solo se elimina el registro de Openship y puede volver a importarse más tarde.",
+    "recordOnlyNote": "No se modifica nada en el servidor — la app sigue funcionando con sus datos. Solo se elimina el registro de OpenShip y puede volver a importarse más tarde.",
     "confirmRecordOnly": "Eliminar registro"
   },
   "routing": {
@@ -954,7 +962,7 @@
       "servesPathHint": "Las peticiones a este dominio se sirven desde esta ruta en la salida de compilación.",
       "servesPathRedeploy": "Las nuevas rutas tendrán efecto en tu próximo despliegue.",
       "externalIngress": "Ingress y TLS externo",
-      "externalIngressDesc": "TLS termina en tu proxy inverso (Cloudflare Tunnel, Nginx Proxy Manager o balanceador de carga). El dominio no necesita apuntar a este servidor y Openship no emitirá un certificado.",
+      "externalIngressDesc": "TLS termina en tu proxy inverso (Cloudflare Tunnel, Nginx Proxy Manager o balanceador de carga). El dominio no necesita apuntar a este servidor y OpenShip no emitirá un certificado.",
       "noWww": "Ese dominio ya está en este proyecto."
     },
     "dns": {
@@ -1082,8 +1090,8 @@
         "deployment": "Esta ruta espera un despliegue. Despliega el proyecto para aplicarla.",
         "disabled": "Este proyecto o servicio está desactivado. Actívalo antes de comprobar la ruta.",
         "removing": "Este dominio se está eliminando. No hay ninguna verificación programada.",
-        "manual_certificate": "Este dominio usa un certificado subido manualmente. Sube un reemplazo válido y compruébalo. Openship no lo renueva automáticamente.",
-        "managed_certificate": "TLS lo gestiona tu proxy externo u Openship Cloud. Revisa la configuración de ese proveedor.",
+        "manual_certificate": "Este dominio usa un certificado subido manualmente. Sube un reemplazo válido y compruébalo. OpenShip no lo renueva automáticamente.",
+        "managed_certificate": "TLS lo gestiona tu proxy externo u OpenShip Cloud. Revisa la configuración de ese proveedor.",
         "route_missing": "Esta ruta configurada aún no se ha aplicado. Reintenta el enrutamiento para aplicarla. No hay reintentos automáticos de enrutamiento programados.",
         "manual_dns": "Este certificado usa verificación TXT manual. Abre la configuración de HTTPS para confirmar un nuevo registro TXT o elige un proveedor DNS conectado para la renovación automática.",
         "managed_owner": "El servicio propietario administra este nombre de host y su certificado. Revisa la configuración del dominio de ese servicio."
@@ -1109,7 +1117,7 @@
       "automatic": "Proveedor automático",
       "manual": "TXT manual",
       "automaticHint": "Conecta un proveedor DNS en Ajustes → Credenciales para crear las verificaciones del certificado y renovar HTTPS automáticamente.",
-      "manualHint": "Añade un registro TXT temporal en tu proveedor DNS. Cada renovación necesita un registro TXT nuevo; Openship mostrará cuándo debes renovar.",
+      "manualHint": "Añade un registro TXT temporal en tu proveedor DNS. Cada renovación necesita un registro TXT nuevo; OpenShip mostrará cuándo debes renovar.",
       "routing": "1. Apunta el dominio a este servidor",
       "certificate": "2. Habilita HTTPS",
       "startAutomatic": "Habilitar HTTPS automáticamente",
@@ -1218,7 +1226,7 @@
     "updating": "Actualizando…",
     "updateFailed": "Error al actualizar",
     "toastTitle": "Origen",
-    "cliManaged": "Este es el panel de control de Openship — se actualiza a sí mismo. Ejecuta \"openship update\" en el host para actualizarlo; no hay nada que cambiar aquí."
+    "cliManaged": "Este es el panel de control de OpenShip — se actualiza a sí mismo. Ejecuta \"openship update\" en el host para actualizarlo; no hay nada que cambiar aquí."
   },
   "routeRules": {
     "title": "Reglas de ruta",
@@ -1337,7 +1345,7 @@
     "reviewResources": "Revisar recursos afectados ({count})",
     "openRuns": "Abrir ejecuciones del servidor",
     "lastRun": "Última revisión",
-    "appOpen": "Se ejecuta mientras Openship está abierto.",
+    "appOpen": "Se ejecuta mientras OpenShip está abierto.",
     "scanStates": {
       "pending": "Pendiente",
       "running": "En ejecución",
@@ -1348,7 +1356,7 @@
     "reviewReboot": "Revisar reinicio",
     "applyReboot": "Programar reinicio",
     "rebooting": "Reinicio programado; pendiente de verificar el kernel",
-    "rebootInterruption": "El servidor se reiniciará en un minuto e interrumpirá todas sus cargas. Openship verificará el kernel en ejecución cuando el host vuelva a conectarse."
+    "rebootInterruption": "El servidor se reiniciará en un minuto e interrumpirá todas sus cargas. OpenShip verificará el kernel en ejecución cuando el host vuelva a conectarse."
   },
   "sourceImageUpdate": {
     "github_access_required": "Concede acceso de lectura y escritura a Contenidos y Pull requests para este repositorio en tu conexión de GitHub. Un propietario puede tener que aprobar los permisos actualizados de la aplicación.",

@@ -1,4 +1,7 @@
-import Link from "next/link";
+import { getLocale } from "next-intl/server";
+
+import { getCopy } from "@/i18n/copy-server";
+import { Link } from "@/i18n/Link";
 import { ArrowRight } from "lucide-react";
 import { cloudPlanHref } from "@/lib/cloud-links";
 import { cloudFrom, getCloudPricing } from "@/lib/pricing";
@@ -12,14 +15,16 @@ const STACKS = [
   { name: "Docker", icon: "https://cdn.simpleicons.org/docker/2496ED" },
   { name: "Postgres", icon: "https://cdn.simpleicons.org/postgresql/4169E1" },
   { name: "Redis", icon: "https://cdn.simpleicons.org/redis/FF4438" },
-  { name: "Rails", icon: "https://cdn.simpleicons.org/rubyonrails/D30001" },
+  { name: "Ruby on Rails", icon: "https://cdn.simpleicons.org/rubyonrails/D30001" },
   { name: "Laravel", icon: "https://cdn.simpleicons.org/laravel/FF2D20" },
   { name: "Django", icon: "https://cdn.simpleicons.org/django/092E20" },
   { name: "Bun", icon: "https://cdn.simpleicons.org/bun/000000" },
 ];
 
 export async function Hero() {
-  const pricing = await getCloudPricing();
+  const copy = await getCopy();
+
+  const pricing = await getCloudPricing(await getLocale());
   const from = cloudFrom(pricing);
   const cloudHref = cloudPlanHref();
 
@@ -39,35 +44,44 @@ export async function Hero() {
       {/* ═══════════════ Content ═══════════════ */}
       <div className="relative z-20 mx-auto w-full max-w-[860px] px-6 text-center">
         <Link href="/pricing" className="hero-cloud-price animate-fade-in-up">
-          <span>Openship Cloud</span>
-          {from && <strong>From {from}/month</strong>}
+          <span>OpenShip Cloud</span>
+          {from && (
+            <strong>
+              {copy.rich("From <price>{amount}</price>/month", {
+                amount: from,
+                price: (amount) => <bdi dir="ltr">{amount}</bdi>,
+              })}
+            </strong>
+          )}
           <ArrowRight className="size-4" aria-hidden="true" />
         </Link>
 
         {/* Headline */}
-        <h1 className="animate-fade-in-up animate-delay-100">
+        <h1 className="hero-title animate-fade-in-up animate-delay-100">
           <span className="block text-[clamp(2.5rem,5.5vw,4.25rem)] font-medium leading-[1.08] tracking-[-0.02em] th-text-heading">
-            Deploy anything.
+            {copy("Deploy anything.")}
           </span>
           <span className="hero-headline-second block text-[clamp(2.5rem,5.5vw,4.25rem)] font-light italic leading-[1.08] tracking-[-0.015em]">
-            Own everything.
+            {copy("Own everything.")}
           </span>
         </h1>
 
-        <p className="animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[520px] text-[16px] leading-[1.65] th-text-body">
-          Run your apps, databases, and workflows from one place. Start on Openship Cloud or connect
-          your own servers.
+        <p className="hero-description animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[520px] text-[16px] leading-[1.65] th-text-body">
+          {copy(
+            "Run your apps, databases, and workflows from one place. Start on OpenShip Cloud or connect your own servers.",
+          )}
         </p>
 
         <div className="hero-actions animate-fade-in-up animate-delay-300">
           <a href={cloudHref} className="th-btn rounded-full px-7 py-3 text-[15px]">
-            Start on Cloud <ArrowRight className="size-4" aria-hidden="true" />
+            {copy("Start on Cloud ")}
+            <ArrowRight className="size-4" aria-hidden="true" />
           </a>
           <Link
             href="/docs/getting-started/quickstart"
             className="th-btn-ghost rounded-full px-7 py-3 text-[15px]"
           >
-            Self-host for free
+            {copy("Self-host for free")}
           </Link>
         </div>
       </div>
@@ -75,12 +89,16 @@ export async function Hero() {
       {/* ═══════════════ Stack ticker ═══════════════ */}
       <div className="animate-fade-in-up animate-delay-500 relative z-10 mt-16 w-full max-w-[820px] px-6">
         <p className="mb-6 text-center text-[13px] font-medium uppercase tracking-[0.1em] th-text-muted">
-          Designed for your favorite stack
+          {copy("Designed for your favorite stack")}
         </p>
         <div className="hero-ticker-mask overflow-hidden">
-          <div className="hero-ticker flex w-max items-center gap-12">
+          <div className="hero-ticker flex w-max items-center">
             {[0, 1].map((i) => (
-              <div key={i} className="flex shrink-0 items-center gap-12">
+              <div
+                key={i}
+                className="flex shrink-0 items-center gap-12 pe-12"
+                aria-hidden={i === 1}
+              >
                 {STACKS.map((s) => (
                   <div
                     key={`${i}-${s.name}`}
@@ -90,7 +108,7 @@ export async function Hero() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={s.icon}
-                      alt={s.name}
+                      alt=""
                       className="h-[26px] w-[26px] object-contain"
                       loading="lazy"
                     />

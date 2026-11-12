@@ -1,6 +1,6 @@
 {
   "title": "İzleme",
-  "subtitle": "Openship'in projelerinde, sunucularında ve alan adlarında bulduğu her sorun.",
+  "subtitle": "OpenShip'in projelerinde, sunucularında ve alan adlarında bulduğu her sorun.",
   "tabs": {
     "open": "Genel bakış",
     "health": "Sağlık",
@@ -23,7 +23,7 @@
     "clear": "Filtreleri temizle"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "Sunucular",
     "project": "Projeler",
     "domain": "Alan adları"
@@ -106,12 +106,12 @@
     "offlineHint": "Görüntülenen durum güncel olmayabilir. Yenilemek için tekrar bağlanın.",
     "retryStatus": "Durumu yeniden al",
     "recheck": "Yeniden kontrol et",
-    "unknownHealth": "Openship bu sunucuya ulaşana kadar konteynerlerin durumu bilinmiyor.",
-    "monitoringHint": "Openship etkilenen sunuculara erişemiyor. Güncel sağlık durumları bilinmiyor.",
+    "unknownHealth": "OpenShip bu sunucuya ulaşana kadar konteynerlerin durumu bilinmiyor.",
+    "monitoringHint": "OpenShip etkilenen sunuculara erişemiyor. Güncel sağlık durumları bilinmiyor.",
     "details": "Teknik ayrıntılar",
     "mailTitle": "Posta durumu alınamıyor",
-    "mailHint": "Openship bu posta sunucusunu kontrol edemedi. Sunucu hâlâ çalışıyor olabilir. Bağlantıyı kontrol edip yeniden deneyin.",
-    "apiTitle": "Openship’e ulaşılamıyor",
+    "mailHint": "OpenShip bu posta sunucusunu kontrol edemedi. Sunucu hâlâ çalışıyor olabilir. Bağlantıyı kontrol edip yeniden deneyin.",
+    "apiTitle": "OpenShip’e ulaşılamıyor",
     "apiHint": "Durum güncellemeleri gecikebilir."
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "İstek zaman aşımına uğradı. Sunucunun yanıt vermesi çok uzun sürdü.",
     "requestCancelled": "İstek iptal edildi.",
     "requestFailed": "İstek başarısız oldu.",
-    "networkUnreachable": "Openship'e ulaşılamıyor. Bağlantınızı ve sunucu durumunu kontrol edin.",
+    "networkUnreachable": "OpenShip'e ulaşılamıyor. Bağlantınızı ve sunucu durumunu kontrol edin.",
     "hostUnreachable": "Ana makineye ulaşılamıyor",
     "sshConnectionRefused": "SSH bağlantısı reddedildi"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "Bir örnek yöneticisi otomatik kontrolleri etkinleştirebilir.",
       "scheduleEveryMinute": "Her dakika",
       "scheduleCustom": "Özel zamanlama",
-      "runsWhileOpen": "Openship'i çalışır durumda tutun",
+      "runsWhileOpen": "OpenShip'i çalışır durumda tutun",
       "runsInBackground": "Arka planda çalışır",
       "saving": "Kaydediliyor…",
       "disable": "İzlemeyi devre dışı bırak",

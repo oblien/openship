@@ -1,0 +1,53 @@
+---
+title: "Cómo funcionan las compilaciones de IA en OpenShip"
+description: "Una mirada profunda a cómo OpenShip usa IA para detectar marcos, generar configuraciones y optimizar compilaciones automáticamente."
+date: "2026-03-08"
+category: "Engineering"
+author: "OpenShip Team"
+---
+
+Cuando ejecutas `openship deploy`, suceden muchas cosas antes de que tu aplicación entre en funcionamiento. Así es como funciona el sistema de construcción de IA.
+
+## Paso 1: Detección del marco
+
+OpenShip escanea tu proyecto en busca de señales:
+
+- `package.json` scripts y dependencias
+- Archivos de configuración (`next.config.js`, `nuxt.config.ts`, `Cargo.toml`, etc.)
+- Dockerpresencia de archivo
+- Patrones de estructura de directorios.
+
+Esto produce una coincidencia del marco de confianza. Si OpenShip detecta Next.js con un 95 % de confianza, utiliza la canalización de compilación Next.js. Si hay un archivo Docker, lo usa directamente.
+
+## Paso 2: Generación de configuración
+
+Según el marco detectado, OpenShip genera:
+
+- **Comando de compilación** - `npm run build`, `go build`, etc.
+- **Iniciar comando** - `npm start`, `./server`, etc.
+- **Mapeo de puertos** - Detecta en qué puerto escucha tu aplicación
+- **Variables de entorno** - Sugiere las variables necesarias según las convenciones del marco
+
+Puedes anular cualquiera de estos en `openship.json`.
+
+## Paso 3: optimización de compilación
+
+La capa de IA optimiza la construcción:
+
+- **Almacenamiento en caché de capas**: las capas de dependencia se almacenan en caché por separado del código fuente.
+- **Compilaciones de varias etapas** - Las imágenes de producción excluyen las dependencias de desarrollo
+- **Compilaciones paralelas** - Los proyectos multiservicio se crean simultáneamente
+
+## Paso 4: controles de salud
+
+Después de la implementación, OpenShip verifica:
+
+- El contenedor se inicia exitosamente.
+- El punto final de control de salud responde
+- SSL está aprovisionado y es válido
+
+Si alguna comprobación falla, la implementación se revierte automáticamente.
+
+## ¿Qué sigue?
+
+Estamos trabajando en diagnósticos basados en IA: cuando falla una compilación, OpenShip analizará el error y sugerirá soluciones. Manténganse al tanto.

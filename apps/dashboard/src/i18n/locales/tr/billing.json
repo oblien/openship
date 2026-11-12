@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "Yayına hazır mısınız?",
     "plansAndBilling": "Planlar ve faturalandırma",
     "description": "Büyümeye alan tanıyan, yönetilen derlemeler ve barındırma.",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "Kapasite ve Kullanım",
-    "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",
+    "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler OpenShip Cloud'dan senkronize edilir.",
     "routes": "Ücretsiz rotalar",
     "runningServices": "Çalışan hizmetler",
     "projects": "Projeler",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "Faturalandırmayı yönetmek için Openship Bulut'a bağlanın",
-      "description": "Yerel Openship kurulumunuz henüz Openship Bulut'a bağlı değil. Abonelik durumunu, kullanımı, faturaları ve kredi yüklemelerini görüntülemek için bağlanın.",
-      "connect": "Openship Bulut'a Bağlan",
+      "title": "Faturalandırmayı yönetmek için OpenShip Bulut'a bağlanın",
+      "description": "Yerel OpenShip kurulumunuz henüz OpenShip Bulut'a bağlı değil. Abonelik durumunu, kullanımı, faturaları ve kredi yüklemelerini görüntülemek için bağlanın.",
+      "connect": "OpenShip Bulut'a Bağlan",
       "connecting": "Giriş yapılması bekleniyor…"
     },
     "sessionExpired": {
-      "title": "Openship Bulut oturumunuzun süresi doldu",
-      "description": "Hâlâ bağlısınız ancak Openship Bulut tarafından sağlanan oturum jetonu artık geçerli değil. Yenilemek için yeniden bağlanın — önce bağlantıyı kesmeniz gerekmez.",
-      "reconnect": "Openship Bulut'a Tekrar Bağlan",
+      "title": "OpenShip Bulut oturumunuzun süresi doldu",
+      "description": "Hâlâ bağlısınız ancak OpenShip Bulut tarafından sağlanan oturum jetonu artık geçerli değil. Yenilemek için yeniden bağlanın — önce bağlantıyı kesmeniz gerekmez.",
+      "reconnect": "OpenShip Bulut'a Tekrar Bağlan",
       "connecting": "Giriş yapılması bekleniyor…"
     },
     "unreachable": {
-      "title": "Openship Bulut faturalandırma servisine ulaşılamadı",
+      "title": "OpenShip Bulut faturalandırma servisine ulaşılamadı",
       "description": "Bulut oturumunuzun süresi dolmuş olabilir veya bulut servisi geçici olarak kullanılamıyor olabilir. Tekrar deneyin ya da Ayarlar → Bulut bölümünden tekrar bağlanın.",
       "tryAgain": "Tekrar dene",
       "reconnect": "Tekrar Bağlan"
     },
     "notEnabled": {
       "title": "Cloud satın alımları henüz kullanılamıyor",
-      "description": "Openship abonelikleri ve kredi satın alımlarını henüz etkinleştirmedi. Lütfen daha sonra tekrar deneyin."
+      "description": "OpenShip abonelikleri ve kredi satın alımlarını henüz etkinleştirmedi. Lütfen daha sonra tekrar deneyin."
     },
     "notConfigured": {
       "title": "Cloud faturalandırma kurulumu tamamlanmadı",
-      "description": "Openship’in faturalandırma kurulumunu tamamlaması gerekiyor. Lütfen Openship desteğiyle iletişime geçin."
+      "description": "OpenShip’in faturalandırma kurulumunu tamamlaması gerekiyor. Lütfen OpenShip desteğiyle iletişime geçin."
     },
     "forbidden": {
       "title": "Faturalandırmaya erişiminiz yok",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "Faturalandırma yüklenemedi",
-      "description": "Faturalandırma geçici olarak kullanılamıyor. Tekrar deneyin. Sorun devam ederse Openship desteğiyle iletişime geçin."
+      "description": "Faturalandırma geçici olarak kullanılamıyor. Tekrar deneyin. Sorun devam ederse OpenShip desteğiyle iletişime geçin."
     }
   },
   "plansRoute": {
@@ -409,7 +409,7 @@
     "planRequired": "Plan gerekli",
     "savedCredits": "Saklanan kullanım bakiyesi",
     "savedCreditsHint": "Ön ödemeli kullanımınız bu çalışma alanında kalır. Cloud dağıtımlarında kullanmak için bir plan seçin.",
-    "offerTitle": "Openship Cloud üzerinde yayına çıkın",
+    "offerTitle": "OpenShip Cloud üzerinde yayına çıkın",
     "offerLabel": "Dağıtıma başlayın",
     "offerDescription": "Projeleriniz için yönetilen kaynaklar.",
     "startingWith": "{name} ile başlayın",
@@ -450,7 +450,7 @@
     "diskHint": "Uygulama disklerinden okunan ve yazılan veriler. Depolama alanı değildir.",
     "transfer": "Uygulama veri aktarımı",
     "transferHint": "Uygulamalarınızın gelen ve giden verileri. Edge trafiği ayrı gösterilir.",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge veri aktarımı",
     "bandwidthHint": "Çalışma alanınızın Edge rotalarındaki gelen ve giden trafik. Aylık kota işlem kotasından ayrıdır. Sınırda rotalar yenilenme veya yükseltmeye kadar duraklatılır.",
     "requests": "Edge istekleri",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "Bulut alanları",
     "singular": "Bulut alanı",
-    "description": "Bir plan seçin ve dağıtın. Sunucuyu Openship yönetir; projeleriniz CPU, bellek ve depolamayı paylaşır.",
+    "description": "Bir plan seçin ve dağıtın. Sunucuyu OpenShip yönetir; projeleriniz CPU, bellek ve depolamayı paylaşır.",
     "loading": "Bulut alanları yükleniyor…",
     "choose": "Sunucu seçin",
     "chooseBilling": "Faturalandırmasını görmek için bir bulut alanı seçin.",
@@ -559,7 +559,7 @@
     "create": "Bulut alanı ekle",
     "mode": "Proje yalıtımı",
     "createHint": "Sunucu oluşturmak ücretsizdir. Sonraki adımda planını seçin; faturalandırma ödeme tamamlandıktan sonra başlar.",
-    "cloudOnly": "Yönetilen sunucular Openship Cloud'da kullanılabilir. Kendi altyapınızı yönetmek için Sunucular'ı kullanın.",
+    "cloudOnly": "Yönetilen sunucular OpenShip Cloud'da kullanılabilir. Kendi altyapınızı yönetmek için Sunucular'ı kullanın.",
     "projectCount": "{count} proje",
     "noProjects": "Bu sunucunda henüz proje yok.",
     "liveUsage": "Anlık kullanım",
@@ -616,7 +616,7 @@
     "plan": "Sunucu planı",
     "actions": "Sunucu işlemleri",
     "changePlan": "Planı değiştir",
-    "managedBy": "Openship Cloud tarafından yönetilir",
+    "managedBy": "OpenShip Cloud tarafından yönetilir",
     "network": {
       "title": "Ağ",
       "description": "Bu yönetilen sunucunun sağlayıcı ayarları.",
@@ -811,7 +811,7 @@
     "priority": "Öncelikli",
     "email": "E-posta desteği",
     "prioritySupport": "Öncelikli destek",
-    "description": "Uygulamaları dağıtın ve güncelleyin, sağlıklarını izleyin ve verilerinizi yedekleyin. Sunucularınızı Openship üzerinden yönetin.",
+    "description": "Uygulamaları dağıtın ve güncelleyin, sağlıklarını izleyin ve verilerinizi yedekleyin. Sunucularınızı OpenShip üzerinden yönetin.",
     "basicDescription": "Günlük uygulamalar ve kişisel projeler için.",
     "priorityDescription": "Öncelikli desteğe ihtiyaç duyan üretim uygulamaları için.",
     "serversIncluded": "{count} bağlı sunucu",
@@ -848,9 +848,9 @@
   },
   "managementDetail": {
     "servers": "Bu plandaki sunucular",
-    "description": "Openship Manage planınızın kapsadığı sunucular.",
+    "description": "OpenShip Manage planınızın kapsadığı sunucular.",
     "empty": "Henüz bağlı sunucu yok",
-    "emptyHint": "Uygulama dağıtmak ve Openship üzerinden yönetmek için kendi sunucunuzu bağlayın.",
+    "emptyHint": "Uygulama dağıtmak ve OpenShip üzerinden yönetmek için kendi sunucunuzu bağlayın.",
     "addServer": "Sunucu ekle",
     "addSlots": "Sunucu kapasitesi ekle",
     "additionalServers": "Ek sunucular",

@@ -555,7 +555,7 @@ describe("GitHub redirect completion", () => {
 
     expect(connectButton().disabled).toBe(false);
     expect(h.showToast).toHaveBeenCalledWith(
-      expect.stringContaining("already linked to a different Openship user"),
+      expect.stringContaining("already linked to a different OpenShip user"),
       "error",
       "GitHub",
     );

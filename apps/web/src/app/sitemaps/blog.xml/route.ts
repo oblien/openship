@@ -1,3 +1,5 @@
+import { languageAlternates, localizedHref, withoutLocale } from "@/i18n/routing";
+import type { AppLocale } from "@repo/core/locale";
 import { blogSource } from "@/lib/source";
 import { SITE_URL, buildUrlset, xmlResponse, type SitemapEntry } from "@/lib/sitemap-builder";
 
@@ -9,7 +11,8 @@ export function GET() {
   const entries: SitemapEntry[] = blogSource.getPages().map((page) => {
     const data = page.data as { date?: string };
     return {
-      loc: `${SITE_URL}${page.url}`,
+      loc: `${SITE_URL}${localizedHref(page.url, page.locale as AppLocale)}`,
+      alternates: languageAlternates(withoutLocale(page.url)),
       lastmod: data.date ? new Date(data.date) : now,
       changefreq: "monthly",
       priority: 0.7,

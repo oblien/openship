@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "Deploy to your own server",
-    "description": "Connect a server over SSH to run projects on your own infrastructure alongside Openship Cloud.",
+    "description": "Connect a server over SSH to run projects on your own infrastructure alongside OpenShip Cloud.",
     "button": "Connect a server"
   },
   "filters": {
     "title": "Filter by target",
     "subtitle": "Choose a deployment destination",
     "allProjects": "All projects",
-    "cloud": "Openship Cloud",
+    "cloud": "OpenShip Cloud",
     "local": "Local"
   },
   "card": {
@@ -111,7 +111,7 @@
     "cleanupPending": "Deletion has started. The project stays unavailable until cleanup finishes.",
     "alreadyDeleted": "Project already deleted",
     "forceModalTitle": "Couldn't remove it from the source",
-    "forceModalBody": "The runtime couldn't be reached (or kept failing), so this project wasn't torn down. You can delete it from Openship anyway — the record is removed now and any leftover resources are reclaimed automatically once the server is reachable.",
+    "forceModalBody": "The runtime couldn't be reached (or kept failing), so this project wasn't torn down. You can delete it from OpenShip anyway — the record is removed now and any leftover resources are reclaimed automatically once the server is reachable.",
     "forceModalConfirm": "Delete from storage",
     "forceModalCancel": "Cancel",
     "unlinked": "Unlinked from {projects} — redeploy them to apply.",
@@ -133,7 +133,7 @@
     "modePublic": "Public",
     "modePublicDesc": "Use the published host:port. Works anywhere; needs the database port open.",
     "envKeyLabel": "Environment variable",
-    "redeployHint": "If the target is already deployed, Openship tries to redeploy it right away. Save other environment changes first.",
+    "redeployHint": "If the target is already deployed, OpenShip tries to redeploy it right away. Save other environment changes first.",
     "cancel": "Cancel",
     "connect": "Connect",
     "connected": "Connection saved. Check the target's deployment status.",
@@ -261,7 +261,7 @@
     "delete": "Delete"
   },
   "overview": {
-    "platformCloud": "Openship Cloud",
+    "platformCloud": "OpenShip Cloud",
     "platformServer": "Self-hosted (Server)",
     "platformLocal": "Self-hosted (Local)",
     "modeStatic": "Static Site",
@@ -384,7 +384,7 @@
   },
   "services": {
     "application": "Application",
-    "applicationHint": "Managed through this project’s deployments.",
+    "applicationHint": "Manage this app’s environment and deployments.",
     "companionsTitle": "Add another app or service",
     "failedLoad": "Failed to load services",
     "retry": "Retry",
@@ -558,7 +558,7 @@
     "watchOffTitle": "The container health watch is off",
     "watchOffBody": "No incidents are being recorded and no alerts will be sent, so an empty list here doesn't mean everything is healthy.",
     "watchOffCta": "Turn it on in Jobs",
-    "serverDownTitle": "Openship can't reach this project's server",
+    "serverDownTitle": "OpenShip can't reach this project's server",
     "serverDownBody": "Nothing on this machine has been observed for {duration}, so the incidents below may be out of date.",
     "loadFailed": "Couldn't load incidents.",
     "ongoing": "ongoing for {duration}",

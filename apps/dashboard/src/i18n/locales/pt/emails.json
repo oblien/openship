@@ -1,7 +1,7 @@
 {
   "cloudClient": {
     "title": "E-mails",
-    "subtitle": "Use suas caixas de correio existentes com o Openship Webmail.",
+    "subtitle": "Use suas caixas de correio existentes com o OpenShip Webmail.",
     "connectTitle": "Conecte seu servidor de e-mail",
     "description": "Conecte qualquer servidor IMAP/SMTP. Suas caixas de correio e a entrega das mensagens continuam com seu provedor.",
     "connectAction": "Conectar servidor existente",
@@ -11,8 +11,8 @@
   "cloudComingSoon": {
     "title": "Email gerido",
     "badge": "Em breve",
-    "description": "O email gerido no Openship Cloud estará disponível em breve. Os planos de servidores Cloud alojam aplicações e não criam um servidor de email.",
-    "selfHosted": "Pode alojar email no seu próprio servidor com uma instalação autoalojada do Openship."
+    "description": "O email gerido no OpenShip Cloud estará disponível em breve. Os planos de servidores Cloud alojam aplicações e não criam um servidor de email.",
+    "selfHosted": "Pode alojar email no seu próprio servidor com uma instalação autoalojada do OpenShip."
   },
   "page": {
     "title": "Servidor de Email",
@@ -37,7 +37,7 @@
   },
   "adopt": {
     "title": "Adotar servidor de email existente",
-    "intro": "Já configurou um servidor de email com o Openship num dos seus servidores? Selecione-o e faça a análise — se for encontrada uma stack de email, esta é readotada no painel sem reinstalar nem tocar nos seus dados.",
+    "intro": "Já configurou um servidor de email com o OpenShip num dos seus servidores? Selecione-o e faça a análise — se for encontrada uma stack de email, esta é readotada no painel sem reinstalar nem tocar nos seus dados.",
     "scanning": "A analisar…",
     "scan": "Analisar servidor",
     "detected": "Servidor de email detetado",

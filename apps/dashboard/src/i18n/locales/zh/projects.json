@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "部署到你自己的服务器",
-    "description": "通过 SSH 连接一台服务器，在你自己的基础设施上运行项目，与 Openship Cloud 并行使用。",
+    "description": "通过 SSH 连接一台服务器，在你自己的基础设施上运行项目，与 OpenShip Cloud 并行使用。",
     "button": "连接服务器"
   },
   "filters": {
     "title": "按目标筛选",
     "subtitle": "项目部署的位置",
     "allProjects": "全部项目",
-    "cloud": "Openship Cloud",
+    "cloud": "OpenShip Cloud",
     "local": "本地"
   },
   "card": {
@@ -111,7 +111,7 @@
     "cleanupPending": "删除已开始。清理完成前，项目将保持不可用。",
     "alreadyDeleted": "项目已删除",
     "forceModalTitle": "无法从源端移除",
-    "forceModalBody": "无法连接到运行时（或持续失败），因此该项目未被拆除。你仍然可以将它从 Openship 中删除——记录会立即移除，服务器恢复可访问后会自动回收残留资源。",
+    "forceModalBody": "无法连接到运行时（或持续失败），因此该项目未被拆除。你仍然可以将它从 OpenShip 中删除——记录会立即移除，服务器恢复可访问后会自动回收残留资源。",
     "forceModalConfirm": "从存储中删除",
     "forceModalCancel": "取消",
     "unlinked": "已解除与 {projects} 的关联 — 重新部署以生效。",
@@ -202,7 +202,7 @@
     "subtextNoSource": "连接源代码以配置首次部署。"
   },
   "overview": {
-    "platformCloud": "Openship Cloud",
+    "platformCloud": "OpenShip Cloud",
     "platformServer": "自托管（服务器）",
     "platformLocal": "自托管（本地）",
     "modeStatic": "静态站点",
@@ -354,7 +354,7 @@
     "failedCreateService": "创建服务失败",
     "requestFailed": "请求失败",
     "application": "应用程序",
-    "applicationHint": "通过此项目的部署进行管理。",
+    "applicationHint": "管理此应用的环境变量和部署。",
     "companionsTitle": "添加其他应用或服务"
   },
   "serviceStatus": {
@@ -442,7 +442,7 @@
     "modePublic": "公开",
     "modePublicDesc": "使用已发布的 host:port。可在任何地方使用；需要开放数据库端口。",
     "envKeyLabel": "环境变量",
-    "redeployHint": "如果目标已部署，Openship 会立即尝试重新部署。请先保存其他环境更改。",
+    "redeployHint": "如果目标已部署，OpenShip 会立即尝试重新部署。请先保存其他环境更改。",
     "cancel": "取消",
     "connect": "连接",
     "connected": "连接已保存。请检查目标的部署状态。",
@@ -558,7 +558,7 @@
     "watchOffTitle": "容器健康监控已关闭",
     "watchOffBody": "不会记录任何故障，也不会发送任何告警，因此此处为空并不代表一切正常。",
     "watchOffCta": "在任务中开启",
-    "serverDownTitle": "Openship 无法连接到该项目的服务器",
+    "serverDownTitle": "OpenShip 无法连接到该项目的服务器",
     "serverDownBody": "已有 {duration} 未能观测这台机器，下面的故障记录可能已过期。",
     "loadFailed": "无法加载故障记录。",
     "ongoing": "已持续 {duration}",

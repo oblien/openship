@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import LibraryPage from "./page";
+import { LibraryContent } from "./LibraryContent";
 import { decodeSlug } from "@/utils/repoSlug";
 
 const h = vi.hoisted(() => ({
@@ -16,8 +16,13 @@ const h = vi.hoisted(() => ({
   appAvailable: true,
   requiresCloud: false,
   cloudConnected: true,
+  href: "/library",
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: h.push }),
+  usePathname: () => new URL(h.href, "https://app.test").pathname,
+  useSearchParams: () => new URL(h.href, "https://app.test").searchParams,
+}));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({
     data: { user: { id: "user" }, session: { activeOrganizationId: "org" } },
@@ -74,6 +79,14 @@ vi.mock("./components/LibrarySidebar", () => ({ LibrarySidebar: () => null }));
 vi.mock("./components/LocalProjects", () => ({ LocalProjects: () => null }));
 vi.mock("./components/FolderUpload", () => ({ FolderUpload: () => null }));
 vi.mock("@/components/apps/AppCatalog", () => ({ AppCatalog: () => <div>App catalog</div> }));
+vi.mock("@/components/migration/PlatformMigrationWizard", () => ({
+  PlatformMigrationWizard: ({ provider, onBack }: { provider: string; onBack: () => void }) => (
+    <section aria-label={`${provider} import`}>
+      <input aria-label="Connection name" />
+      <button onClick={onBack}>Choose another source</button>
+    </section>
+  ),
+}));
 vi.mock("@/components/migration/ServerMigrationWizard", () => ({
   ServerMigrationWizard: ({ variant, onClose }: { variant: string; onClose: () => void }) => (
     <section aria-label="Migration" data-variant={variant}>
@@ -95,6 +108,13 @@ beforeEach(() => {
     appAvailable: true,
     requiresCloud: false,
     cloudConnected: true,
+    href: "/library",
+  });
+  h.push.mockImplementation((href: string) => {
+    if (href.split("?")[0] === "/library" || href.split("?")[0] === "/library/migrate") {
+      h.href = href;
+      root.render(<LibraryContent />);
+    }
   });
   localStorage.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -107,7 +127,7 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-const render = () => act(async () => root.render(<LibraryPage />));
+const render = () => act(async () => root.render(<LibraryContent />));
 function button(label: string) {
   const result = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
     (node) => (node.getAttribute("aria-label") ?? node.textContent?.trim()) === label,
@@ -225,20 +245,73 @@ describe("New Project source actions", () => {
     h.selfHosted = true;
     await render();
     await click("Import existing project");
+    expect(h.href).toBe("/library/migrate");
     expect(container.textContent).toContain("Where are you moving from?");
     const serverSource = Array.from(container.querySelectorAll("button")).find((node) =>
       node.textContent?.includes("Server or Docker"),
     );
     expect(serverSource).toBeDefined();
     await act(async () => serverSource!.click());
+    expect(h.href).toBe("/library/migrate?from=server");
     const wizard = container.querySelector('[aria-label="Migration"]');
     expect(wizard?.getAttribute("data-variant")).toBe("tab");
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     await click("Apps");
+    expect(h.href).toBe("/library");
     await click("Import existing project");
+    expect(h.href).toBe("/library/migrate?from=server");
     expect(container.querySelector('[aria-label="Migration"]')).toBe(wizard);
     await click("Close migration");
+    expect(h.href).toBe("/library");
     expect(container.querySelector('[aria-label="Migration"]')).toBeNull();
     expect(button("GitHub").getAttribute("aria-pressed")).toBe("true");
   });
+
+  it.each(["railway", "vercel"])("opens a direct %s link without GitHub setup", async (provider) => {
+    h.connected = false;
+    h.loading = true;
+    h.href = `/library/migrate?from=${provider}`;
+    await render();
+    expect(button("Import existing project").getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(`[aria-label="${provider} import"]`)).not.toBeNull();
+    expect(h.connect).not.toHaveBeenCalled();
+    const draft = container.querySelector<HTMLInputElement>('[aria-label="Connection name"]')!;
+    draft.value = "My connection";
+    await click("Apps");
+    await click("Import existing project");
+    expect(container.querySelector('[aria-label="Connection name"]')).toBe(draft);
+    expect(draft.value).toBe("My connection");
+    await click("Choose another source");
+    expect(h.href).toBe("/library/migrate");
+    expect(container.textContent).toContain("Where are you moving from?");
+  });
+
+  it("follows browser source navigation and resets provider-specific drafts", async () => {
+    h.href = "/library/migrate?from=railway";
+    await render();
+    const railwayDraft = container.querySelector<HTMLInputElement>('[aria-label="Connection name"]')!;
+    railwayDraft.value = "Railway connection";
+    h.href = "/library/migrate?from=vercel";
+    await render();
+    expect(container.querySelector('[aria-label="railway import"]')).toBeNull();
+    expect(container.querySelector('[aria-label="vercel import"]')).not.toBeNull();
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Connection name"]')!.value).toBe("");
+    h.href = "/library/migrate?from=railway";
+    await render();
+    expect(container.querySelector('[aria-label="railway import"]')).not.toBeNull();
+    h.href = "/library/migrate";
+    await render();
+    expect(container.textContent).toContain("Where are you moving from?");
+  });
+
+  it.each(["", "?from=unknown", "?from=https%3A%2F%2Fevil.test", "?from=Railway"])(
+    "shows the source chooser for an absent or unsupported hint (%s)", async (query) => {
+      h.href = `/library/migrate${query}`;
+      await render();
+      expect(container.textContent).toContain("Where are you moving from?");
+      expect(container.querySelector('[aria-label="Migration"]')).toBeNull();
+      expect(container.querySelector('[aria-label="railway import"]')).toBeNull();
+      expect(h.push).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "公開の準備はできましたか？",
     "plansAndBilling": "プランと請求",
     "description": "ビルドとホスティングの管理を任せて、成長に集中。",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "容量と使用状況",
-    "subtitle": "プランに含まれる容量と使用量です。ライブの数値は Openship Cloud から同期されます。",
+    "subtitle": "プランに含まれる容量と使用量です。ライブの数値は OpenShip Cloud から同期されます。",
     "routes": "無料ルート",
     "runningServices": "稼働中のサービス",
     "projects": "プロジェクト",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "請求を管理するにはOpenship Cloudに接続してください",
-      "description": "ローカルインスタンスはまだOpenship Cloudに接続されていません。接続すると、サブスクリプションの状態、使用量、請求書、追加購入を確認できます。",
-      "connect": "Openship Cloudに接続",
+      "title": "請求を管理するにはOpenShip Cloudに接続してください",
+      "description": "ローカルインスタンスはまだOpenShip Cloudに接続されていません。接続すると、サブスクリプションの状態、使用量、請求書、追加購入を確認できます。",
+      "connect": "OpenShip Cloudに接続",
       "connecting": "サインインを待機しています…"
     },
     "sessionExpired": {
-      "title": "Openship Cloudのセッションが期限切れになりました",
-      "description": "リンクは維持されていますが、Openship Cloudが発行したセッショントークンは無効になりました。再接続して更新してください。先に切断する必要はありません。",
-      "reconnect": "Openship Cloudに再接続",
+      "title": "OpenShip Cloudのセッションが期限切れになりました",
+      "description": "リンクは維持されていますが、OpenShip Cloudが発行したセッショントークンは無効になりました。再接続して更新してください。先に切断する必要はありません。",
+      "reconnect": "OpenShip Cloudに再接続",
       "connecting": "サインインを待機しています…"
     },
     "unreachable": {
-      "title": "Openship Cloudの請求に接続できませんでした",
+      "title": "OpenShip Cloudの請求に接続できませんでした",
       "description": "クラウドセッションの期限が切れているか、クラウドが一時的に利用できない可能性があります。もう一度お試しいただくか、設定 → クラウドから再接続してください。",
       "tryAgain": "もう一度試す",
       "reconnect": "再接続"
     },
     "notEnabled": {
       "title": "Cloud の購入はまだ利用できません",
-      "description": "Openship ではサブスクリプションとクレジットの購入がまだ有効になっていません。しばらくしてからもう一度お試しください。"
+      "description": "OpenShip ではサブスクリプションとクレジットの購入がまだ有効になっていません。しばらくしてからもう一度お試しください。"
     },
     "notConfigured": {
       "title": "Cloud の請求設定が完了していません",
-      "description": "Openship 側で請求の設定を完了する必要があります。Openship サポートにお問い合わせください。"
+      "description": "OpenShip 側で請求の設定を完了する必要があります。OpenShip サポートにお問い合わせください。"
     },
     "forbidden": {
       "title": "請求情報へのアクセス権がありません",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "請求情報を読み込めませんでした",
-      "description": "請求機能は一時的に利用できません。もう一度お試しください。問題が続く場合は Openship サポートにお問い合わせください。"
+      "description": "請求機能は一時的に利用できません。もう一度お試しください。問題が続く場合は OpenShip サポートにお問い合わせください。"
     }
   },
   "plansRoute": {
@@ -409,7 +409,7 @@
     "planRequired": "プランが必要です",
     "savedCredits": "保存された利用残高",
     "savedCreditsHint": "前払いの利用残高はこのワークスペースに保持されます。Cloudデプロイで使うにはプランを選択してください。",
-    "offerTitle": "Openship Cloud で公開",
+    "offerTitle": "OpenShip Cloud で公開",
     "offerLabel": "デプロイを始める",
     "offerDescription": "プロジェクト向けのマネージドリソース。",
     "startingWith": "{name} で始める",
@@ -450,7 +450,7 @@
     "diskHint": "アプリのディスクへの読み書き量です。保存容量ではありません。",
     "transfer": "アプリのデータ転送",
     "transferHint": "アプリの受信・送信データです。Edgeの配信量は別に表示します。",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge転送量",
     "bandwidthHint": "ワークスペースのEdgeルートの受信・送信トラフィックです。月間枠はコンピュートとは別です。上限に達すると更新またはアップグレードまでルートが停止します。",
     "requests": "Edgeリクエスト",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "クラウドスペース",
     "singular": "クラウドスペース",
-    "description": "プランを選んでデプロイするだけ。サーバーは Openship が管理し、プロジェクトは CPU、メモリ、ストレージを共有します。",
+    "description": "プランを選んでデプロイするだけ。サーバーは OpenShip が管理し、プロジェクトは CPU、メモリ、ストレージを共有します。",
     "loading": "クラウドスペースを読み込み中…",
     "choose": "サーバーを選択",
     "chooseBilling": "請求を表示するクラウドスペースを選択してください。",
@@ -559,7 +559,7 @@
     "create": "クラウドスペースを追加",
     "mode": "プロジェクトの分離",
     "createHint": "サーバーの作成は無料です。次にプランを選択してください。課金は購入手続きの完了後に始まります。",
-    "cloudOnly": "管理サーバーは Openship Cloud で利用できます。セルフホストのインフラは「サーバー」で管理してください。",
+    "cloudOnly": "管理サーバーは OpenShip Cloud で利用できます。セルフホストのインフラは「サーバー」で管理してください。",
     "projectCount": "{count} 件のプロジェクト",
     "noProjects": "このサーバーにはまだプロジェクトがありません。",
     "liveUsage": "現在の使用量",
@@ -616,7 +616,7 @@
     "plan": "サーバーのプラン",
     "actions": "サーバーの操作",
     "changePlan": "プランを変更",
-    "managedBy": "Openship Cloud が管理",
+    "managedBy": "OpenShip Cloud が管理",
     "network": {
       "title": "ネットワーク",
       "description": "このマネージドサーバーのプロバイダー設定です。",
@@ -811,7 +811,7 @@
     "priority": "優先",
     "email": "メールサポート",
     "prioritySupport": "優先サポート",
-    "description": "アプリのデプロイと更新、稼働状況の監視、データのバックアップ。Openshipからお使いのサーバーを管理できます。",
+    "description": "アプリのデプロイと更新、稼働状況の監視、データのバックアップ。OpenShipからお使いのサーバーを管理できます。",
     "basicDescription": "日常的なアプリや個人プロジェクト向け。",
     "priorityDescription": "優先サポートが必要な本番アプリ向け。",
     "serversIncluded": "接続サーバー {count} 台",
@@ -848,9 +848,9 @@
   },
   "managementDetail": {
     "servers": "このプランのサーバー",
-    "description": "Openship Manageプランの対象となるサーバー。",
+    "description": "OpenShip Manageプランの対象となるサーバー。",
     "empty": "サーバーはまだ接続されていません",
-    "emptyHint": "所有するサーバーを接続して、アプリのデプロイと管理をOpenshipで行えます。",
+    "emptyHint": "所有するサーバーを接続して、アプリのデプロイと管理をOpenShipで行えます。",
     "addServer": "サーバーを追加",
     "addSlots": "サーバー枠を追加",
     "additionalServers": "追加サーバー数",

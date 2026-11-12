@@ -12,10 +12,10 @@
     "language": "اللغة"
   },
   "choose": {
-    "title": "مرحبًا بك في Openship",
-    "subtitle": "اختر الطريقة التي تريد بها تشغيل Openship. كلا الخيارين يمنحك جميع الميزات — ويمكنك التبديل في أي وقت.",
+    "title": "مرحبًا بك في OpenShip",
+    "subtitle": "اختر الطريقة التي تريد بها تشغيل OpenShip. كلا الخيارين يمنحك جميع الميزات — ويمكنك التبديل في أي وقت.",
     "cloud": {
-      "name": "Openship Cloud",
+      "name": "OpenShip Cloud",
       "desc": "نحن نتولى البنية التحتية والتحديثات والنسخ الاحتياطي. ما عليك سوى تسجيل الدخول والبدء بالنشر.",
       "perk1": "لا حاجة إلى خادم",
       "perk2": "يتضمن باقة مجانية",
@@ -25,7 +25,7 @@
     "or": "أو",
     "selfhost": {
       "name": "الاستضافة الذاتية",
-      "desc": "شغّل Openship على أجهزتك الخاصة. اتصل بخادم بعيد أو استخدم هذا الجهاز.",
+      "desc": "شغّل OpenShip على أجهزتك الخاصة. اتصل بخادم بعيد أو استخدم هذا الجهاز.",
       "perk1": "ملكية كاملة للبيانات",
       "perk2": "خادم بعيد أو جهاز Mac هذا",
       "perk3": "نحن نتولى الباقي",
@@ -35,13 +35,13 @@
     "skip": "تخطي الآن"
   },
   "selfhost": {
-    "title": "أين ينبغي تشغيل Openship؟",
-    "subtitleLine1": "اختر المكان الذي تريد تثبيت منصة Openship فيه.",
+    "title": "أين ينبغي تشغيل OpenShip؟",
+    "subtitleLine1": "اختر المكان الذي تريد تثبيت منصة OpenShip فيه.",
     "subtitleLine2": "كلا الخيارين يمنحك التحكم الكامل وملكية البيانات.",
     "local": {
       "title": "هذا الجهاز",
       "badge": "تجريبي",
-      "desc": "ثبّت Openship هنا مباشرة — دون SSH أو أي إعداد بعيد",
+      "desc": "ثبّت OpenShip هنا مباشرة — دون SSH أو أي إعداد بعيد",
       "comingSoon": "التثبيت المحلي قادم قريباً.",
       "comingSoonDesc": "في الوقت الحالي، يمكنك الاستضافة الذاتية على أي خادم Linux مثبت عليه Docker."
     },
@@ -61,7 +61,7 @@
     "methodPassword": "كلمة المرور",
     "methodKey": "مفتاح SSH",
     "methodAgent": "الوكيل",
-    "agentHint": "يتصل باستخدام وكيل SSH على هذا الجهاز — مثل VSCode، دون الحاجة إلى كلمة مرور أو مفتاح. يجب أن يمتلك المضيف الذي يشغّل Openship وصولاً إلى هذا الخادم مسبقًا (مفتاح محمَّل في ssh-agent الخاص به).",
+    "agentHint": "يتصل باستخدام وكيل SSH على هذا الجهاز — مثل VSCode، دون الحاجة إلى كلمة مرور أو مفتاح. يجب أن يمتلك المضيف الذي يشغّل OpenShip وصولاً إلى هذا الخادم مسبقًا (مفتاح محمَّل في ssh-agent الخاص به).",
     "passwordLabel": "كلمة المرور",
     "passwordPlaceholder": "كلمة مرور الخادم",
     "keyPathLabel": "مسار المفتاح",
@@ -85,7 +85,7 @@
     "subtitle": "يحتاج خادمك إلى وسيلة للوصول إليه من الإنترنت لأجل webhooks وشهادات SSL والوصول العام.",
     "providers": {
       "edge": {
-        "title": "Openship Edge",
+        "title": "OpenShip Edge",
         "desc": "دون أي إعداد. شهادات SSL تلقائية وتوافر عالٍ وحماية من هجمات DDoS — كل ذلك مدمج.",
         "badge": "موصى به"
       },
@@ -102,7 +102,7 @@
     "ngrokTokenLabel": "رمز مصادقة ngrok",
     "cloudflarePlaceholder": "الصق رمز النفق الخاص بك",
     "ngrokPlaceholder": "الصق رمز مصادقة ngrok الخاص بك",
-    "edgeHint": "يتطلب Openship Edge حساب Openship. ستقوم بتسجيل الدخول للمتابعة.",
+    "edgeHint": "يتطلب OpenShip Edge حساب OpenShip. ستقوم بتسجيل الدخول للمتابعة.",
     "signInContinue": "تسجيل الدخول والمتابعة"
   },
   "preferences": {
@@ -129,15 +129,15 @@
     "connecting": "جارٍ الاتصال…",
     "verifying": "جارٍ التحقق من خادمك",
     "retry": "إعادة المحاولة",
-    "openingCloud": "جارٍ فتح Openship Cloud…",
+    "openingCloud": "جارٍ فتح OpenShip Cloud…",
     "waitingAuth": "بانتظار اكتمال المصادقة",
     "couldNotStartAuthTitle": "تعذّر بدء مصادقة السحابة",
     "authFailedTitle": "فشلت مصادقة السحابة",
     "couldNotStartAuthMsg": "تعذّر بدء تدفق مصادقة سطح المكتب.",
     "authFailedMsg": "يرجى المحاولة مرة أخرى وإكمال تسجيل الدخول في متصفحك.",
     "completingSignIn": "جارٍ إكمال تسجيل الدخول…",
-    "returningToOpenship": "العودة إلى Openship",
-    "redirectingCloud": "جارٍ إعادة التوجيه إلى Openship Cloud…",
+    "returningToOpenship": "العودة إلى OpenShip",
+    "redirectingCloud": "جارٍ إعادة التوجيه إلى OpenShip Cloud…",
     "newTabSignIn": "ستُكمل تسجيل الدخول في علامة تبويب جديدة",
     "couldNotSaveTitle": "تعذّر حفظ الإعداد",
     "couldNotSaveMsg": "لم تستجب واجهة برمجة التطبيقات. تأكد من تشغيل الخدمات.",

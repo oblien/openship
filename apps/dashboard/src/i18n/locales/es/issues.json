@@ -1,6 +1,6 @@
 {
   "title": "Monitoreo",
-  "subtitle": "Todo lo que Openship encontró mal en tus proyectos, servidores y dominios.",
+  "subtitle": "Todo lo que OpenShip encontró mal en tus proyectos, servidores y dominios.",
   "tabs": {
     "open": "Resumen",
     "health": "Salud",
@@ -23,7 +23,7 @@
     "clear": "Borrar filtros"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "Servidores",
     "project": "Proyectos",
     "domain": "Dominios"
@@ -106,12 +106,12 @@
     "offlineHint": "El estado mostrado puede estar desactualizado. Vuelve a conectarte para actualizarlo.",
     "retryStatus": "Reintentar estado",
     "recheck": "Comprobar de nuevo",
-    "unknownHealth": "El estado de los contenedores es desconocido hasta que Openship pueda acceder a este servidor.",
-    "monitoringHint": "Openship no puede acceder a los servidores afectados. Se desconoce su estado actual.",
+    "unknownHealth": "El estado de los contenedores es desconocido hasta que OpenShip pueda acceder a este servidor.",
+    "monitoringHint": "OpenShip no puede acceder a los servidores afectados. Se desconoce su estado actual.",
     "details": "Detalles técnicos",
     "mailTitle": "Estado del correo no disponible",
-    "mailHint": "Openship no pudo comprobar este servidor de correo. Puede que siga funcionando. Comprueba la conexión y vuelve a intentarlo.",
-    "apiTitle": "No se puede conectar con Openship",
+    "mailHint": "OpenShip no pudo comprobar este servidor de correo. Puede que siga funcionando. Comprueba la conexión y vuelve a intentarlo.",
+    "apiTitle": "No se puede conectar con OpenShip",
     "apiHint": "Las actualizaciones de estado pueden retrasarse."
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "Tiempo de espera agotado. El servidor tardó demasiado en responder.",
     "requestCancelled": "Solicitud cancelada.",
     "requestFailed": "La solicitud falló.",
-    "networkUnreachable": "No se puede conectar con Openship. Comprueba la conexión y la disponibilidad del servidor.",
+    "networkUnreachable": "No se puede conectar con OpenShip. Comprueba la conexión y la disponibilidad del servidor.",
     "hostUnreachable": "Host no accesible",
     "sshConnectionRefused": "Conexión SSH rechazada"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "Un administrador de la instancia puede habilitar las comprobaciones automáticas.",
       "scheduleEveryMinute": "Cada minuto",
       "scheduleCustom": "Horario personalizado",
-      "runsWhileOpen": "Mantener Openship en ejecución",
+      "runsWhileOpen": "Mantener OpenShip en ejecución",
       "runsInBackground": "Se ejecuta en segundo plano",
       "saving": "Guardando…",
       "disable": "Desactivar monitoreo",

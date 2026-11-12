@@ -1,0 +1,58 @@
+.preview {
+  min-width: 0;
+  margin: 0;
+}
+
+.canvas {
+  padding: clamp(12px, 2.4vw, 36px);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--th-accent-purple) 9%, var(--th-card-bg));
+}
+
+.stack {
+  position: relative;
+  isolation: isolate;
+  padding-block-start: 17%;
+}
+
+.stack img {
+  display: block;
+  height: auto;
+  border-radius: clamp(6px, 1vw, 12px);
+}
+
+.admin {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  z-index: 0;
+  width: 88%;
+  transform: rotate(3deg);
+  box-shadow: 0 2px 12px rgb(24 18 45 / 8%);
+}
+
+:global([dir="rtl"]) .admin {
+  transform: rotate(-3deg);
+}
+
+.client {
+  position: relative;
+  z-index: 1;
+  width: 92%;
+  box-shadow: 0 12px 32px rgb(24 18 45 / 14%);
+}
+
+.preview figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 24px;
+  padding: 16px 4px 0;
+  color: var(--th-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.preview figcaption span:first-child {
+  color: var(--th-text-body);
+}

@@ -1,8 +1,19 @@
+import { useCopy } from "@/i18n/use-copy";
+import { useLocale } from "next-intl";
+import {
+  DEPLOY_SCREEN_SIZE,
+  WALKTHROUGH_SCREEN_SIZE,
+  localizedScreenshot,
+} from "@/lib/marketing-screenshots";
+
 /**
  * Hero showcase - center dashboard screenshot flanked by two
  * companion shots tilted behind it. Sits directly under the hero.
  */
 export function Dashboard() {
+  const copy = useCopy();
+  const locale = useLocale();
+
   return (
     <section className="dashboard-showcase">
       <div className="site-container">
@@ -10,7 +21,8 @@ export function Dashboard() {
           {/* eslint-disable @next/next/no-img-element */}
           <div className="dashboard-stack__back dashboard-stack__back--left" aria-hidden="true">
             <img
-              src="/mail-list.png"
+              src={localizedScreenshot("/walkthrough/operate.jpg", locale)}
+              {...WALKTHROUGH_SCREEN_SIZE}
               alt=""
               loading="lazy"
               decoding="async"
@@ -18,7 +30,8 @@ export function Dashboard() {
           </div>
           <div className="dashboard-stack__back dashboard-stack__back--right" aria-hidden="true">
             <img
-              src="/email-preview.png"
+              src={localizedScreenshot("/walkthrough/build.jpg", locale)}
+              {...WALKTHROUGH_SCREEN_SIZE}
               alt=""
               loading="lazy"
               decoding="async"
@@ -26,12 +39,11 @@ export function Dashboard() {
           </div>
           <div className="dashboard-stack__center">
             <img
-              src="/screen.png"
-              alt="Openship dashboard"
+              src={localizedScreenshot("/screen.png", locale)}
+              alt={copy("OpenShip dashboard")}
               loading="lazy"
               decoding="async"
-              width="2880"
-              height="1800"
+              {...DEPLOY_SCREEN_SIZE}
             />
           </div>
           {/* eslint-enable @next/next/no-img-element */}

@@ -227,7 +227,7 @@ it("adds slots without a plan picker and confirms the exact quoted price only on
     return state;
   });
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Openship Manage");
+  expect(host.querySelector("h1")?.textContent).toBe("OpenShip Manage");
   expect(host.querySelector('a[href="/servers/external"]')?.textContent).toContain(
     "Production server",
   );
@@ -270,7 +270,7 @@ it("adds slots without a plan picker and confirms the exact quoted price only on
 it("keeps an empty paid plan on its detail page and offers the normal server connection form", async () => {
   activateManagement(0);
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Openship Manage");
+  expect(host.querySelector("h1")?.textContent).toBe("OpenShip Manage");
   expect(host.textContent).toContain(baseDictionary.billing.managementDetail.empty);
   expect(host.textContent).toContain("0 / 2");
   expect(host.querySelector('a[href="/servers/new"]')?.textContent).toContain(
@@ -417,7 +417,7 @@ it("keeps the Manage payment controls in its own payments tab", async () => {
 it("shows an unfinished Manage purchase as a named pending plan with recovery actions", async () => {
   state.pendingCheckout = true;
   await render();
-  expect(host.querySelector("h1")?.textContent).toBe("Openship Manage");
+  expect(host.querySelector("h1")?.textContent).toBe("OpenShip Manage");
   expect(host.textContent).toContain(baseDictionary.billing.hub.paymentRequired);
   expect(button("Resume checkout")).toBeDefined();
   expect(host.querySelector('[role="radiogroup"]')).toBeNull();

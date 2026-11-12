@@ -23,14 +23,14 @@
   },
   "serverCta": {
     "title": "Déployez sur votre propre serveur",
-    "description": "Connectez un serveur via SSH pour exécuter des projets sur votre propre infrastructure, aux côtés d'Openship Cloud.",
+    "description": "Connectez un serveur via SSH pour exécuter des projets sur votre propre infrastructure, aux côtés d'OpenShip Cloud.",
     "button": "Connecter un serveur"
   },
   "filters": {
     "title": "Filtrer par cible",
     "subtitle": "Où les projets sont déployés",
     "allProjects": "Tous les projets",
-    "cloud": "Openship Cloud",
+    "cloud": "OpenShip Cloud",
     "local": "Local"
   },
   "card": {
@@ -111,7 +111,7 @@
     "cleanupPending": "La suppression a commencé. Le projet reste indisponible jusqu’à la fin du nettoyage.",
     "alreadyDeleted": "Projet déjà supprimé",
     "forceModalTitle": "Suppression impossible à la source",
-    "forceModalBody": "Le runtime était injoignable (ou a continué d'échouer), donc ce projet n'a pas été démonté. Vous pouvez tout de même le supprimer d'Openship — l'enregistrement part maintenant et les ressources restantes sont récupérées automatiquement dès que le serveur est joignable.",
+    "forceModalBody": "Le runtime était injoignable (ou a continué d'échouer), donc ce projet n'a pas été démonté. Vous pouvez tout de même le supprimer d'OpenShip — l'enregistrement part maintenant et les ressources restantes sont récupérées automatiquement dès que le serveur est joignable.",
     "forceModalConfirm": "Supprimer du stockage",
     "forceModalCancel": "Annuler",
     "unlinked": "Dissocié de {projects} — redéployez-les pour appliquer.",
@@ -202,7 +202,7 @@
     "subtextNoSource": "Connectez une source pour configurer votre premier déploiement."
   },
   "overview": {
-    "platformCloud": "Openship Cloud",
+    "platformCloud": "OpenShip Cloud",
     "platformServer": "Auto-hébergé (Serveur)",
     "platformLocal": "Auto-hébergé (Local)",
     "modeStatic": "Site statique",
@@ -354,7 +354,7 @@
     "failedCreateService": "Échec de la création du service",
     "requestFailed": "Échec de la requête",
     "application": "Application",
-    "applicationHint": "Gérée via les déploiements de ce projet.",
+    "applicationHint": "Gérez l’environnement et les déploiements de cette application.",
     "companionsTitle": "Ajouter une autre application ou un service"
   },
   "serviceStatus": {
@@ -442,7 +442,7 @@
     "modePublic": "Public",
     "modePublicDesc": "Utilise le host:port publié. Fonctionne partout ; nécessite l'ouverture du port de la base de données.",
     "envKeyLabel": "Variable d'environnement",
-    "redeployHint": "Si la cible est déjà déployée, Openship tente de la redéployer immédiatement. Enregistrez d’abord les autres modifications d’environnement.",
+    "redeployHint": "Si la cible est déjà déployée, OpenShip tente de la redéployer immédiatement. Enregistrez d’abord les autres modifications d’environnement.",
     "cancel": "Annuler",
     "connect": "Connecter",
     "connected": "Connexion enregistrée. Vérifiez le statut du déploiement de la cible.",
@@ -558,7 +558,7 @@
     "watchOffTitle": "La surveillance de santé des conteneurs est désactivée",
     "watchOffBody": "Aucun incident n'est enregistré et aucune alerte n'est envoyée : une liste vide ici ne signifie donc pas que tout va bien.",
     "watchOffCta": "L'activer dans Tâches",
-    "serverDownTitle": "Openship ne parvient pas à joindre le serveur de ce projet",
+    "serverDownTitle": "OpenShip ne parvient pas à joindre le serveur de ce projet",
     "serverDownBody": "Rien n'a été observé sur cette machine depuis {duration}, les incidents ci-dessous peuvent donc être obsolètes.",
     "loadFailed": "Impossible de charger les incidents.",
     "ongoing": "en cours depuis {duration}",
