@@ -15,6 +15,7 @@ export async function discoverPublicInstanceApi(baseUrl: string): Promise<string
     const health = await response.json() as { status?: string; sdk?: { protocol?: number } };
     return health?.status === "ok" && health.sdk?.protocol === SDK_CAPABILITIES.protocol ? candidate : null;
   } catch {
+    // diagnostics-ignore: Optional credential-free discovery; keep the original login failure when this probe cannot identify an API.
     return null;
   }
 }
