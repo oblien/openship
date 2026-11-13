@@ -755,7 +755,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
           verifiedDomains: response.verified_domains,
           installationInstalled: response.installation_installed,
           installUrl: response.install_url,
-          defaultRollbackStrategy: response.default_rollback_strategy,
+          defaultRollbackStrategy:
+            response.default_rollback_strategy === "snapshot" ? "snapshot" : "git",
         });
       } else {
         // "No repository connected" is the NORMAL state for upload/local
