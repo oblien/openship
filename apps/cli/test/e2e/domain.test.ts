@@ -86,9 +86,9 @@ describe("openship domain add", () => {
         : { status: 201, json: ADDED });
     const { err, code } = await runCommand(domainCommand, ["add", "app.example.com", "-p", "prj1"]);
     expect(code).toBe(0);
-    expect(fetchStub.calls[0].method).toBe("POST");
-    expect(fetchStub.calls[0].url).toBe(`${API}/domains`);
-    expect(fetchStub.calls[0].body).toEqual({ projectId: "prj1", hostname: "app.example.com", isPrimary: false });
+    const creation = fetchStub.calls.find(call => call.method === "POST")!;
+    expect(creation.url).toBe(`${API}/domains`);
+    expect(creation.body).toEqual({ projectId: "prj1", hostname: "app.example.com", isPrimary: false });
     expect(err).toContain("openship domain verify d9"); // next-step hint names the new id
   });
 
@@ -99,7 +99,7 @@ describe("openship domain add", () => {
         ? { json: { data: projectInfo.project } }
         : { status: 201, json: ADDED });
     await runCommand(domainCommand, ["add", "app.example.com", "-p", "prj1", "--primary"]);
-    expect(fetchStub.calls[0].body).toMatchObject({ isPrimary: true });
+    expect(fetchStub.calls.find(call => call.method === "POST")!.body).toMatchObject({ isPrimary: true });
   });
 
   it("emits the domain and its DNS records as JSON in json mode", async () => {
