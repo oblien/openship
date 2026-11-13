@@ -4,6 +4,13 @@ All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## Unreleased
+
+### CLI
+
+- Run the container-to-host connectivity probe with Node.js, matching the API image,
+  so `openship up` and `openship doctor` can diagnose the host channel without Bun.
+
 ## 0.9.12
 
 **Critical update** for build-secret protection, database upgrade repairs and
