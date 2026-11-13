@@ -217,9 +217,9 @@ is built from that route's method and path. So `get_projects` is `GET /api/proje
 exact set your token can use.
 
 Not every route is a tool: a route becomes one only when it **opts in**, so the set is a curated slice of the
-API rather than the whole surface. Each exposed tool also carries two hints a client can surface —
-`readOnlyHint` (the tool only reads) and `destructiveHint` (it deletes or tears something down) — so an agent
-UI can flag a destructive call before it runs.
+API rather than the whole surface. Each exposed tool also carries explicit `readOnlyHint`,
+`destructiveHint`, and `openWorldHint` values. These tell a client whether the tool only reads,
+may perform destructive changes, and may interact with systems outside Openship.
 
 | Tool name (examples) | REST route | Reference |
 |---|---|---|
