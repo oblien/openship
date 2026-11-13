@@ -11,7 +11,7 @@ import { IllustratedLink } from "@/components/marketing/illustrated-link";
 import { CLOUD_SLA } from "@/lib/cloud-service";
 import {
   UI,
-  cloudFrom,
+  startingCloudPlan,
   priceParts,
   getCloudPricing,
   cloudPlanSummary,
@@ -61,6 +61,7 @@ function PlanCard({
   cta,
   popular,
   support,
+  benefits = [],
   children,
 }: {
   name: string;
@@ -72,6 +73,7 @@ function PlanCard({
   cta: string;
   popular?: boolean;
   support: string;
+  benefits?: string[];
   children: ReactNode;
 }) {
   const copy = useCopy();
@@ -97,10 +99,14 @@ function PlanCard({
         {copy(cta)} <ArrowRight className="size-4" aria-hidden="true" />
       </a>
       <div className="pp-plan-details">{children}</div>
-      <p className="pp-plan-support">
-        <Check className="size-4" aria-hidden="true" />
-        {copy(support)}
-      </p>
+      <ul className="pp-plan-support">
+        {[...benefits, support].map((benefit) => (
+          <li key={benefit}>
+            <Check className="size-4" aria-hidden="true" />
+            {copy(benefit)}
+          </li>
+        ))}
+      </ul>
     </article>
   );
 }
@@ -210,6 +216,15 @@ async function CloudPlans({
               cta={copy("Choose {name}", { name: plan.name })}
               popular={plan.popular}
               support={supportLabels[plan.support] ?? "See support options"}
+              benefits={
+                pricing.management?.includedWithCloud
+                  ? [
+                      copy("Free management for {count} servers", {
+                        count: pricing.management.includedServers,
+                      }),
+                    ]
+                  : []
+              }
             >
               <PlanResources plan={plan} />
             </PlanCard>
@@ -376,7 +391,10 @@ export default async function PricingPage() {
   const copy = await getCopy();
 
   const pricing = await getCloudPricing(await getLocale());
-  const from = cloudFrom(pricing);
+  const startingPlan = startingCloudPlan(pricing);
+  const startingInterval =
+    pricing.annual.enabled && startingPlan?.price.annual != null ? "annual" : "monthly";
+  const from = startingPlan ? priceParts(startingPlan, startingInterval).amount : null;
   return (
     <>
       <Navbar />
@@ -388,10 +406,21 @@ export default async function PricingPage() {
               <br />
               <span>
                 {from
-                  ? copy("From {value0}/month.", { value0: String(from) })
+                  ? copy.rich("From <price>{amount}</price>/month", {
+                      amount: from,
+                      price: (amount) => <bdi dir="ltr">{amount}</bdi>,
+                    })
                   : copy("Choose your capacity.")}
               </span>
             </h1>
+            {startingInterval === "annual" && startingPlan?.price.annual != null && (
+              <p className="pp-hero-billing">
+                {copy.rich("<price>{amount}</price> billed yearly", {
+                  amount: money(startingPlan.price.annual),
+                  price: (amount) => <bdi dir="ltr">{amount}</bdi>,
+                })}
+              </p>
+            )}
           </div>
         </section>
         <section
@@ -400,6 +429,15 @@ export default async function PricingPage() {
           aria-label={copy("Plans and hosting options")}
         >
           <div className="site-container">
+            <CloudBilling
+              monthly={<CloudPlans pricing={pricing} interval="monthly" />}
+              annual={
+                pricing.available && pricing.annual.enabled ? (
+                  <CloudPlans pricing={pricing} interval="annual" />
+                ) : undefined
+              }
+              monthsFree={pricing.annual.monthsFree}
+            />
             <div
               className="pp-cloud-benefits"
               role="group"
@@ -422,15 +460,6 @@ export default async function PricingPage() {
                 description={copy("Email us or open Support in your app’s sidebar.")}
               />
             </div>
-            <CloudBilling
-              monthly={<CloudPlans pricing={pricing} interval="monthly" />}
-              annual={
-                pricing.available && pricing.annual.enabled ? (
-                  <CloudPlans pricing={pricing} interval="annual" />
-                ) : undefined
-              }
-              monthsFree={pricing.annual.monthsFree}
-            />
             {pricing.customTiers.map((plan) => (
               <div className="pp-enterprise" key={plan.id}>
                 <p>
