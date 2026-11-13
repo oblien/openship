@@ -202,6 +202,13 @@
     "pageOf": "Página {page} de {total}",
     "range": "Despliegues {from}–{to} de {total}"
   },
+  "containerConflict": {
+    "title": "Resolver contenedores duplicados",
+    "description": "Revisa los contenedores y sus volúmenes montados en el servidor de destino. Conserva el contenedor correcto y sus datos, elimina solo un duplicado que hayas confirmado que no se usa y vuelve a desplegar. Si tienes dudas sobre cuál conservar, contacta con soporte con esta referencia de despliegue.",
+    "containers": "Contenedores coincidentes",
+    "reviewServer": "Revisar servidor",
+    "reference": "Referencia del despliegue"
+  },
   "resourceGuidance": {
     "label": "Orientación sobre recursos del despliegue",
     "reviewCapacity": "Revisar capacidad",

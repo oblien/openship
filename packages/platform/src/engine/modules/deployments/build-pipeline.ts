@@ -34,6 +34,7 @@ import { recordRuntimeImageReceipts, runtimeImageTrackingRef } from "../../lib/r
 import {
   BUILD_ENV_VARS,
   AppError,
+  DeployError,
   safeErrorMessage,
   sanitizeProxySettings,
   normalizeServiceLabel,
@@ -1757,9 +1758,17 @@ async function executeBuildAndDeploy(
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
     const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery, project.workspaceId);
-    await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
-      ? { errorCode: capacityError.code, errorDetails: capacityError.details }
-      : deploymentResourceFailure({ project, message, cause: err }));
+    await reportPipelineError(
+      ctx, capacityError?.message ?? message, logger,
+      capacityError
+        ? { errorCode: capacityError.code, errorDetails: capacityError.details }
+        : deploymentResourceFailure({
+            project, message, cause: err,
+            meta: err instanceof DeployError
+              ? { errorCode: err.code, errorDetails: err.details }
+              : undefined,
+          }),
+    );
   } finally {
     await finishBuildCancellation?.();
     // The deploy is over either way — release the loopback bridges it opened.

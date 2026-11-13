@@ -202,6 +202,13 @@
     "pageOf": "Page {page} sur {total}",
     "range": "Déploiements {from}–{to} sur {total}"
   },
+  "containerConflict": {
+    "title": "Résoudre les conteneurs en double",
+    "description": "Inspectez les conteneurs et leurs volumes montés sur le serveur cible. Conservez le conteneur prévu et ses données, supprimez uniquement un doublon dont vous avez confirmé qu’il est inutilisé, puis redéployez. En cas de doute, contactez le support avec cette référence de déploiement.",
+    "containers": "Conteneurs correspondants",
+    "reviewServer": "Examiner le serveur",
+    "reference": "Référence du déploiement"
+  },
   "resourceGuidance": {
     "label": "Conseils sur les ressources du déploiement",
     "reviewCapacity": "Examiner la capacité",

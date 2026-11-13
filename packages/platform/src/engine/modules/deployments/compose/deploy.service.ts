@@ -1421,8 +1421,18 @@ async function deployComposeServicesCore(
         continue;
       }
       if ((match?.duplicates.length ?? 0) > 0) {
-        throw new Error(
-          `Deployment preflight found more than one container matching active service "${row.serviceName ?? row.serviceId}" (${[liveSummary.names[0] ?? liveSummary.id.slice(0, 12), ...match!.duplicates].join(", ")}), so no service activation was started. Remove or reconcile the duplicate container before redeploying.`,
+        const containerNames = [liveSummary.names[0] ?? liveSummary.id.slice(0, 12), ...match!.duplicates];
+        throw new DeployError(
+          `Deployment preflight found more than one container matching active service "${row.serviceName ?? row.serviceId}" (${containerNames.join(", ")}), so no service activation was started. Inspect the containers and their mounts on the target server. Keep the intended container and its data, remove only a confirmed unused duplicate, then redeploy. If ownership is unclear, contact support with deployment ${dep.id}.`,
+          "SERVICE_CONTAINER_CONFLICT",
+          {
+            projectId: project.id,
+            serviceId: row.serviceId,
+            serviceName: row.serviceName ?? row.serviceId,
+            containerNames,
+            serverId: opts?.serverId ?? null,
+            workspaceId: project.workspaceId ?? null,
+          },
         );
       }
 

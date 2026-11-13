@@ -1599,7 +1599,8 @@ describe("compose deploy — host channel unavailable", () => {
     expect(base.deployServiceWorkload).not.toHaveBeenCalled();
   });
 
-  it("refuses ambiguous duplicate containers before repairing or activating anything", async () => {
+  it.each([null, "server-original"])("refuses ambiguous duplicate containers on %s before repairing or activating anything", async (serverId) => {
+    h.previousDeployment.meta = { serverId };
     const base = startingRuntime();
     const liveContainer = (id: string, name: string) => ({
       id,
@@ -1665,11 +1666,18 @@ describe("compose deploy — host channel unavailable", () => {
         {
           executor: {} as CommandExecutor,
           hostPortTarget: localHostPortTarget,
+          serverId: serverId ?? undefined,
         },
       ),
-    ).rejects.toThrow(
-      /more than one container matching active service "api".*no service activation/i,
-    );
+    ).rejects.toMatchObject({
+      code: "SERVICE_CONTAINER_CONFLICT",
+      message: expect.stringMatching(/more than one container matching active service "api".*no service activation/i),
+      details: {
+        projectId: "p1", serviceId: "svc-api", serviceName: "api",
+        containerNames: ["openship-app-api-a", "openship-app-api-b"],
+        serverId, workspaceId: null,
+      },
+    });
 
     expect(h.updateServiceDeployment).not.toHaveBeenCalled();
     expect(h.allocateAndReservePinnedHostPort).not.toHaveBeenCalled();
