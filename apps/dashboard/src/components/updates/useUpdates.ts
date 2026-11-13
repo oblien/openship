@@ -304,10 +304,8 @@ function runtimeNotices(overview: SecurityOverview, scope: string): RuntimeAdvis
   return [...notices.values()];
 }
 
-// The SaaS advisory source: operator-pushed platform notices from our own API
-// (partial outage, maintenance, upgrade advisories), returned in the SAME
-// manifest shape as the GitHub advisory feed so the shared banner renders both
-// identically. Same-origin on the SaaS; never throws (offline → no notices).
+// Operator announcements for Desktop and self-hosted instances. Managed Cloud's
+// update banner uses verified workload-security notices, so it skips this feed.
 async function fetchNotices(): Promise<AdvisoryManifest> {
   try {
     const res = await fetch(`${getRestApiBaseUrl()}/notices`, {
@@ -426,7 +424,7 @@ export function useUpdates(): UseUpdates {
     const [prefs, remote, notices] = await Promise.all([
       getPrefs(),
       fetchRemote(requestKey),
-      fetchNotices(),
+      mode === "cloud" ? Promise.resolve({ advisories: [] }) : fetchNotices(),
     ]);
     if (!isCurrent()) return;
     setCurrentVersion(current);

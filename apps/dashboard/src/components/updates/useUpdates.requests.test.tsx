@@ -64,6 +64,7 @@ async function mount() {
   );
 }
 const releaseRequests = () => fetcher.mock.calls.filter(([url]) => String(url).includes("github"));
+const noticeRequests = () => fetcher.mock.calls.filter(([url]) => String(url).endsWith("/notices"));
 
 beforeEach(async () => {
   vi.resetModules();
@@ -154,17 +155,17 @@ describe("advisory dismissal within an app session", () => {
     expect(state[0].state?.advisories).toEqual([critical, next]);
   });
 
-  it("also shares dismissal for operator notices in the cloud dashboard", async () => {
+  it("also shares dismissal for verified security notices in the cloud dashboard", async () => {
     delete window.desktop;
     deployment.selfHosted = false;
-    // Every consumer receives its own readable response body.
-    fetcher.mockImplementation(
-      async () => new Response(JSON.stringify({ advisories: [critical] })),
-    );
+    feed.overview = affectedOverview;
     await mount();
     expect(check).toHaveBeenCalledOnce();
-    expect(state[0].state?.advisories).toEqual([critical]);
-    await act(async () => state[0].dismissAdvisory(critical.id));
+    expect(state[0].state?.advisories).toEqual([
+      expect.objectContaining({ title: "Affected runtime", severity: "critical" }),
+    ]);
+    const noticeId = state[0].state!.advisories[0].id;
+    await act(async () => state[0].dismissAdvisory(noticeId));
     await act(async () => state[1].reload());
     expect(state[0].state?.advisories).toEqual([]);
     expect(state[1].state?.advisories).toEqual([]);
@@ -192,7 +193,7 @@ afterEach(async () => {
 });
 
 describe("release check requests (#661)", () => {
-  it("keeps legacy release broadcasts out of a new Cloud session while retaining service and workload notices", async () => {
+  it.each([false, true])("only loads verified security for a new Cloud session (affected=%s)", async (affected) => {
     delete window.desktop;
     deployment.selfHosted = false;
     const release = {
@@ -200,13 +201,27 @@ describe("release check requests (#661)", () => {
       title: "OpenShip 0.9.0 is released", target: { type: "platform" },
       action: { kind: "open-url", label: "View release notes", url: "https://github.com/oblien/openship/releases/tag/v0.9.0" },
     };
-    const workload = { ...release, id: "workload-update", target: { type: "project", id: "affected-project" } };
-    fetcher.mockImplementation(async () => new Response(JSON.stringify({ advisories: [release, critical, workload] })));
+    check.mockResolvedValue({ ...snapshot, manifest: { advisories: [release] } });
+    fetcher.mockImplementation(async () => new Response(JSON.stringify({ advisories: [release, critical] })));
+    if (affected) feed.overview = affectedOverview;
     await mount();
-    expect(state[0].state?.advisories.map((notice) => notice.id)).toEqual([critical.id, workload.id]);
+    expect(noticeRequests()).toHaveLength(0);
+    expect(state[0].state?.advisories).toEqual(affected
+      ? [expect.objectContaining({ title: "Affected runtime", severity: "critical" })]
+      : []);
     expect(state[0].state?.updateAvailable).toBe(false);
     expect(state[0].latest).toBeNull();
     expect(localStorage.length).toBe(0);
+  });
+
+  it.each(["desktop", "selfhosted"])("keeps release and operator announcements for %s", async (mode) => {
+    if (mode === "selfhosted") delete window.desktop;
+    const release = { ...critical, id: "release-notice", severity: "recommended" as const };
+    check.mockResolvedValue({ ...snapshot, manifest: { advisories: [release] } });
+    fetcher.mockImplementation(async () => new Response(JSON.stringify({ advisories: [critical] })));
+    await mount();
+    expect(noticeRequests().length).toBeGreaterThan(0);
+    expect(state[0].state?.advisories.map((notice) => notice.id)).toEqual([critical.id, release.id]);
   });
 
   it.each(["desktop", "selfhosted", "cloud"])(

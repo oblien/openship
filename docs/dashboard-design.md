@@ -174,9 +174,9 @@ The banner settings menu can hide runtime security banners, including critical o
 for the current browser/account/workspace. Settings → Notifications restores them.
 Keep this visibility choice separate from security checks, notification delivery and
 per-project automatic-refresh consent. Operator maintenance notices stay independent.
-Managed Cloud hides installation releases and upgrade prompts, including legacy operator
-notices linking to OpenShip releases or downloads. Maintenance, outages and affected
-workload security notices remain available to Cloud customers.
+Managed Cloud's global update banner shows only verified workload-security notices.
+It skips installation releases, upgrade prompts and the operator-announcements feed;
+Desktop and self-hosted instances retain those feeds.
 When the signed advisory has no patched release in the observed runtime's major,
 show the required version-change guidance and open the existing saved deployment
 configuration. Do not offer another image refresh as a fix or silently upgrade a major.
