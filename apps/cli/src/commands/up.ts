@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
-import { installAndStart } from "../lib/service";
+import { installAndStart, serviceHeldPorts } from "../lib/service";
 import {
   composeUp,
   composePrefetch,
@@ -688,9 +688,13 @@ export async function startService(
 
   // No permanent port: switch off any occupied default / flag / remembered port
   // BEFORE writing the service unit, so the chosen ports are baked into its args.
+  // A re-run finds our own running service on its ports. installAndStart replaces
+  // that instance, so they're reclaimable rather than busy; otherwise every re-run
+  // waited out waitPortFree and then moved the install to new ports (#1570).
   const resolved = await resolvePorts({
     api: opts.port ? Number(opts.port) : undefined,
     dashboard: opts.dashboardPort ? Number(opts.dashboardPort) : undefined,
+    reclaimable: await serviceHeldPorts(),
   });
   const port = String(resolved.api);
   const dashPort = String(resolved.dashboard);
