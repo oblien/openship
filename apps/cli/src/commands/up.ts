@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
-import { installAndStart } from "../lib/service";
+import { installAndStart, serviceStatus } from "../lib/service";
 import {
   composeUp,
   composePrefetch,
@@ -28,7 +28,7 @@ import {
   sourceBuildDir,
 } from "../lib/compose";
 import { planMethod, planUp, renderUpPlan } from "../lib/up-plan";
-import { portMoveNotice, readInstanceUrl, resolvePorts } from "../lib/ports";
+import { portMoveNotice, readInstanceUrl, readStoredPorts, resolvePorts } from "../lib/ports";
 import { prepareFromSource, type FromSourceRun } from "../lib/from-source";
 import {
   markStoppedProxyImported,
@@ -673,6 +673,17 @@ async function runFromSource(opts: UpOpts): Promise<void> {
 }
 
 /**
+ * Ports held by our own running service: the pair in ports.json, which is what
+ * the service was started with. Only while it's running, since a stopped service
+ * holds nothing. The bare counterpart of composeHeldPorts.
+ */
+function serviceHeldPorts(): number[] {
+  if (!serviceStatus().running) return [];
+  const { api, dashboard } = readStoredPorts();
+  return [api, dashboard].filter((p): p is number => typeof p === "number");
+}
+
+/**
  * Default `openship up`: install + start Openship as a persistent service that
  * auto-restarts on crash and starts on boot, running until `openship stop`.
  */
@@ -688,9 +699,13 @@ export async function startService(
 
   // No permanent port: switch off any occupied default / flag / remembered port
   // BEFORE writing the service unit, so the chosen ports are baked into its args.
+  // A re-run finds our own running service on its ports. installAndStart replaces
+  // that instance, so they're reclaimable rather than busy; otherwise every re-run
+  // waited out waitPortFree and then moved the install to new ports (#1570).
   const resolved = await resolvePorts({
     api: opts.port ? Number(opts.port) : undefined,
     dashboard: opts.dashboardPort ? Number(opts.dashboardPort) : undefined,
+    reclaimable: serviceHeldPorts(),
   });
   const port = String(resolved.api);
   const dashPort = String(resolved.dashboard);
