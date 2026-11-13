@@ -207,6 +207,8 @@ beforeEach(() => {
   (upCommand as any).setOptionValue?.("edge", undefined);
   (upCommand as any).setOptionValue?.("compose", undefined);
   (upCommand as any).setOptionValue?.("resetSecrets", undefined);
+  for (const key of ["managedEdge", "publicUrl", "trustProxy", "nonInteractive", "yes", "adminEmail", "adminPassword", "domainKind", "hostname"])
+    upCommand.setOptionValue(key, undefined);
   con = captureConsole();
 });
 
@@ -218,6 +220,68 @@ afterEach(() => {
 });
 
 describe("openship up --compose (edge chain)", () => {
+  it("gives a usable first-admin instruction after an ordinary install", async () => {
+    const result = await runCommand(upCommand, ["--compose"]);
+    expect(result.code).toBe(0);
+    expect(con.text()).toContain("Create first admin");
+    expect(con.text()).not.toContain("register the first account");
+  });
+
+  it("refuses incomplete non-interactive setup before changing the stack", async () => {
+    const result = await runCommand(upCommand, ["--compose", "--non-interactive"]);
+    expect(result.code).toBe(1);
+    expect(h.prefetchCalls).toBe(0);
+    expect(h.composeUpCalls).toBe(0);
+    expect(con.text()).toContain("--admin-email");
+  });
+
+  it("requires an HTTPS hostname before starting managed-edge installation", async () => {
+    const result = await runCommand(upCommand, ["--compose", "--managed-edge", "--public-url", "http://ops.example.com"]);
+    expect(result.code).toBe(1);
+    expect(h.composeUpCalls).toBe(0);
+    expect(con.text()).toContain("https://");
+  });
+
+  it("honors managed-edge in Compose without changing admin credentials", async () => {
+    fetchStub = stubFetch(request => {
+      expect(request.url).toContain("/api/system/self-register");
+      expect(request.body).toMatchObject({ domainType: "custom", hostname: "ops.example.com", dashPort: 3001 });
+      return { json: { url: "https://ops.example.com" } };
+    });
+    const result = await runCommand(upCommand, ["--compose", "--managed-edge", "--public-url", "https://ops.example.com"]);
+    expect(result.code, result.err).toBe(0);
+    expect(fetchStub.calls).toHaveLength(1);
+    expect(fetchStub.calls[0]!.headers["x-internal-token"]).toBe("tok");
+  });
+
+  it("provisions the requested managed domain during headless Compose setup", async () => {
+    fetchStub = stubFetch(request => {
+      if (request.url.endsWith("/api/health")) return { json: { status: "ok" } };
+      if (request.url.endsWith("/api/system/bootstrap-admin")) return { json: { success: true } };
+      expect(request.url).toContain("/api/system/self-register");
+      expect(request.body).toMatchObject({ domainType: "custom", hostname: "ops.example.com" });
+      return { json: { url: "https://ops.example.com" } };
+    });
+    const result = await runCommand(upCommand, ["--compose", "--managed-edge", "--public-url", "https://ops.example.com",
+      "--non-interactive", "--admin-email", "owner@example.com", "--admin-password", "strong-initial-password"]);
+    expect(result.code, con.text()).toBe(0);
+    expect(fetchStub.calls.map(call => new URL(call.url).pathname)).toEqual([
+      "/api/health", "/api/system/bootstrap-admin", "/api/system/self-register",
+    ]);
+  });
+
+  it("does not report managed-edge success when registration fails", async () => {
+    fetchStub = stubFetch(request => {
+      if (request.url.endsWith("/api/health")) return { json: { status: "ok" } };
+      if (request.url.endsWith("/api/system/bootstrap-admin")) return { json: { success: true } };
+      return { status: 503, json: { error: "Edge unavailable" } };
+    });
+    const result = await runCommand(upCommand, ["--compose", "--managed-edge", "--public-url", "https://ops.example.com",
+      "--non-interactive", "--admin-email", "owner@example.com", "--admin-password", "strong-initial-password"]);
+    expect(result.code).toBe(1);
+    expect(con.text()).toContain("Managed domain registration did not complete");
+    expect(con.text()).not.toContain("✓ Openship provisioned");
+  });
   it("exits before the edge preflight when docker/compose is missing", async () => {
     h.hasDocker = false;
     const r = await runCommand(upCommand, ["--compose"]);

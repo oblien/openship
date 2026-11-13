@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   posts: [] as Array<{ path: string; body: Record<string, unknown> }>,
+  bootstrap: vi.fn(async () => ({ ok: true, message: "created" })),
 }));
 
 vi.mock("../../src/lib/loopback-api", () => ({
@@ -22,13 +23,13 @@ vi.mock("../../src/lib/loopback-api", () => ({
     return { ok: true, data: { url: "https://ops.example.com" } };
   },
   waitHealthy: async () => true,
-  bootstrapAdmin: async () => ({ ok: true, message: "created" }),
+  bootstrapAdmin: h.bootstrap,
   // The provision-stream reader goes through this; unreachable here (the stubbed
   // self-register returns no sessionId), but the module imports it.
   internalFetch: async () => ({ kind: "unreachable", detail: "not stubbed" }),
 }));
 
-import { headlessProvision } from "../../src/lib/instance-provision";
+import { headlessProvision, provisionInstanceDomain } from "../../src/lib/instance-provision";
 
 const inputs = {
   admin: { email: "a@b.com", name: "a", password: "supersecret" },
@@ -39,9 +40,16 @@ const selfRegister = () => h.posts.find((p) => p.path === "/api/system/self-regi
 
 beforeEach(() => {
   h.posts = [];
+  h.bootstrap.mockClear();
 });
 
 describe("headlessProvision — self-app custom domain", () => {
+  it("can register a managed domain without creating or resetting an existing admin", async () => {
+    const result = await provisionInstanceDomain({ port: "4000", dashPort: "3001", domain: inputs.domain });
+    expect(result.domainRegistered).toBe(true);
+    expect(h.bootstrap).not.toHaveBeenCalled();
+    expect(h.posts.map(post => post.path)).toEqual(["/api/system/self-register"]);
+  });
   it("requests the custom domain on COMPOSE (container edge issues the cert)", async () => {
     const res = await headlessProvision({ port: "4000", dashPort: "3001", inputs, method: "compose" });
 
