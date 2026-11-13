@@ -5,7 +5,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { organizationInviteEmail, resetPasswordOtpEmail } from "@repo/platform/engine/lib/email-templates";
+import {
+  existingAccountEmail,
+  organizationInviteEmail,
+  resetPasswordOtpEmail,
+} from "@repo/platform/engine/lib/email-templates";
 
 describe("email-templates — HTML injection is neutralized", () => {
   it("escapes attacker-controlled org name and inviter name in the invite HTML", () => {
@@ -63,5 +67,16 @@ describe("email-templates — HTML injection is neutralized", () => {
     // And the whole point of the code flow: nothing clickable.
     expect(email.html).not.toContain("<a href");
     expect(email.text).not.toContain("http");
+  });
+  it("escapes existing-account recovery mail and uses the configured dashboard origin", () => {
+    const email = existingAccountEmail(
+      { name: '<img src=x onerror="alert(1)">', email: "customer@example.test" },
+      "https://dashboard.example.test",
+    );
+    expect(email.html).not.toContain("<img src=x");
+    expect(email.html).toContain("&lt;img src=x");
+    expect(email.html).toContain('href="https://dashboard.example.test/login"');
+    expect(email.html).toContain('href="https://dashboard.example.test/forgot-password"');
+    expect(email.text).toContain("did not create another account or change your password");
   });
 });
