@@ -1,6 +1,7 @@
 /** Retained notice presentation and persistence, independent of HTTP. */
 import { repos } from "@repo/db";
-import { AppError, type AdvisorySeverity, type AdvisoryTarget } from "@repo/core";
+import { AppError, isPlatformReleaseAdvisory, type AdvisorySeverity, type AdvisoryTarget } from "@repo/core";
+import { env, runtimeTargetId } from "../../config/env";
 import type { Static } from "@sinclair/typebox";
 import type { CreateNoticeInput, NoticeAdvisorySchema } from "@repo/contracts";
 
@@ -49,7 +50,15 @@ function toAdvisory(n: {
 
 export async function list() {
   const notices = await repos.notice.listActive();
-  return { advisories: notices.map(toAdvisory) };
+  const advisories = notices.map(toAdvisory);
+  // Filter at the source so already-installed Cloud clients also stop receiving
+  // legacy installation-release broadcasts. Operator history remains intact.
+  return {
+    advisories:
+      env.CLOUD_MODE || runtimeTargetId === "cloud-saas"
+        ? advisories.filter((notice) => !isPlatformReleaseAdvisory(notice))
+        : advisories,
+  };
 }
 
 export async function listAll() { return repos.notice.list(); }

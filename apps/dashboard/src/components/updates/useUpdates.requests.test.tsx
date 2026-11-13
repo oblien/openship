@@ -192,6 +192,23 @@ afterEach(async () => {
 });
 
 describe("release check requests (#661)", () => {
+  it("keeps legacy release broadcasts out of a new Cloud session while retaining service and workload notices", async () => {
+    delete window.desktop;
+    deployment.selfHosted = false;
+    const release = {
+      ...critical, id: "legacy-release", severity: "recommended", announce: false, affects: "*",
+      title: "OpenShip 0.9.0 is released", target: { type: "platform" },
+      action: { kind: "open-url", label: "View release notes", url: "https://github.com/oblien/openship/releases/tag/v0.9.0" },
+    };
+    const workload = { ...release, id: "workload-update", target: { type: "project", id: "affected-project" } };
+    fetcher.mockImplementation(async () => new Response(JSON.stringify({ advisories: [release, critical, workload] })));
+    await mount();
+    expect(state[0].state?.advisories.map((notice) => notice.id)).toEqual([critical.id, workload.id]);
+    expect(state[0].state?.updateAvailable).toBe(false);
+    expect(state[0].latest).toBeNull();
+    expect(localStorage.length).toBe(0);
+  });
+
   it.each(["desktop", "selfhosted", "cloud"])(
     "scopes signed control-plane advisories correctly in %s",
     async (mode) => {

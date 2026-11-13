@@ -5,12 +5,33 @@
 
 import { reportCaughtError as observeCaughtError } from "../diagnostics/reporter";
 import type { Advisory, AdvisoryManifest, AdvisoryMode, AdvisorySeverity, LatestRelease, UpdateState } from "./types";
-import { ADVISORY_MODES } from "./types";
+import { ADVISORY_MODES, GITHUB_REPO } from "./types";
 import { changelogUrl } from "./changelog";
 import { compareSemver, satisfiesRange } from "./semver";
 
 const SEVERITY_RANK: Record<AdvisorySeverity, number> = { critical: 0, recommended: 1, info: 2 };
 const VALID_SEVERITY = new Set<AdvisorySeverity>(["critical", "recommended", "info"]);
+
+/** Installation releases belong to operators, not managed Cloud customers.
+ * Older operator notices have no audience metadata; their canonical release
+ * link still identifies them without relying on titles, severity or notice IDs. */
+export function isPlatformReleaseAdvisory(advisory: Advisory): boolean {
+  if (advisory.target && advisory.target.type !== "platform") return false;
+  if (advisory.action?.kind === "update") return true;
+  if (advisory.action?.kind !== "open-url" || !advisory.action.url) return false;
+  try {
+    const url = new URL(advisory.action.url);
+    const release = new URL(`https://github.com/${GITHUB_REPO}/releases`);
+    const changelog = new URL(changelogUrl());
+    const within = (path: string) => url.pathname === path || url.pathname.startsWith(`${path}/`);
+    return (
+      (url.origin === release.origin && within(release.pathname)) ||
+      (url.origin === changelog.origin && (within(changelog.pathname) || within("/download")))
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Parse + validate an UNTRUSTED manifest (fetched from GitHub raw). Malformed
@@ -94,6 +115,8 @@ export function parseManifest(raw: unknown): AdvisoryManifest {
  * is optional so a caller that genuinely doesn't know it still gets
  * version-matching behaviour; pass it wherever it's known (it always is in the
  * dashboard and the desktop app) so a desktop-only notice never lands on a VPS.
+ * Managed Cloud also excludes installation-release prompts regardless of legacy
+ * audience metadata; its software is updated by the operator.
  */
 export function matchAdvisories(
   currentVersion: string,
@@ -102,6 +125,7 @@ export function matchAdvisories(
 ): Advisory[] {
   return manifest.advisories
     .filter((a) => {
+      if (mode === "cloud" && isPlatformReleaseAdvisory(a)) return false;
       // No `modes` = every mode (legacy default). With `modes`, an unknown
       // caller mode can't be matched, so the advisory is skipped rather than
       // shown to the wrong audience.

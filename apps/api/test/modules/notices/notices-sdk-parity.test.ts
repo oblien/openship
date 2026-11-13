@@ -16,9 +16,29 @@ const app = new Hono().onError(handleApiError)
 const fetcher = ((url, init) => app.request(url as string, init)) as typeof fetch;
 const remote = new OpenshipClient({ baseUrl: "http://openship.test", fetch: fetcher });
 const operator = new OpenshipOperatorClient({ baseUrl: "http://openship.test", internalToken: env.INTERNAL_TOKEN!, fetch: fetcher });
-afterEach(async () => { await db.delete(schema.systemNotice); });
+const originalCloudMode = env.CLOUD_MODE;
+afterEach(async () => {
+  env.CLOUD_MODE = originalCloudMode;
+  await db.delete(schema.systemNotice);
+});
 
 describe("shared public notices and explicit operator administration", () => {
+  it.each([true, false])("filters legacy installation releases only on managed Cloud (Cloud=%s)", async (cloud) => {
+    env.CLOUD_MODE = cloud;
+    const release = await operator.notices.create({
+      title: "OpenShip 0.9.0 is released", message: "Read the release notes and downloads.", severity: "recommended", targetType: "platform",
+      actionLabel: "View release notes", actionUrl: "https://github.com/oblien/openship/releases/tag/v0.9.0",
+    });
+    const maintenance = await operator.notices.create({ title: "Planned maintenance", message: "Deployments may pause.", severity: "critical", actionLabel: "Service status", actionUrl: "https://status.openship.io" });
+    const workload = await operator.notices.create({ title: "Update an affected app", message: "Review its runtime.", targetType: "app", targetId: "affected-app", actionLabel: "Release notes", actionUrl: "https://github.com/oblien/openship/releases/tag/v0.9.0" });
+    const { advisories } = await remote.notices.list();
+    const ids = advisories.map((notice) => notice.id);
+    expect(ids).toContain(maintenance.id);
+    expect(ids).toContain(workload.id);
+    expect(ids.includes(release.id)).toBe(!cloud);
+    expect((await operator.notices.listAll()).find((notice) => notice.id === release.id)?.active).toBe(true);
+  });
+
   it("preserves advisory presentation and canonical persisted timestamps across both interfaces", async () => {
     const actor = await seedOwner();
     const ship = createShip({ platform: getPlatformKernel(), identity: { resolve: async () => ({ user: (await repos.user.findById(actor.userId))!, sessionId: "notices" }) } });

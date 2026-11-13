@@ -30,6 +30,10 @@ curl "$OPENSHIP_URL/api/notices"
 The response contains active `advisories`, including a title, message, severity, and optional action or
 target. Scheduled start and end times determine when a notice appears.
 
+Managed Cloud excludes OpenShip installation-release and download notices from this feed.
+Publish installation upgrades through the release advisory feed for Desktop and self-hosted
+operators; use public notices for customer-facing maintenance, outages and workload notices.
+
 ## Publish a notice
 
 The SDK example uses a configured `operator`, available to trusted installation code. The REST example
