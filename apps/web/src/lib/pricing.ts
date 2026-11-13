@@ -85,23 +85,24 @@ export function cloudPlanSummary(plan: CloudPlan, copy: Copy): string {
 export function priceParts(plan: CloudPlan, interval: "monthly" | "annual" = "monthly") {
   const price = plan.price[interval];
   return {
-    amount:
-      price === null
-        ? UI.custom
-        : price === 0
-          ? UI.free
-          : money(interval === "annual" ? price / 12 : price),
-    per: price !== null && price > 0 ? UI.perMonth : null,
+    amount: price === null ? UI.custom : price === 0 ? UI.free : money(price),
+    per: price !== null && price > 0 ? (interval === "annual" ? UI.perYear : UI.perMonth) : null,
   };
 }
 export function cloudFrom(pricing: CloudPricing): string | null {
   const plan = startingCloudPlan(pricing);
   return plan ? money(plan.price.monthly) : null;
 }
-export function startingCloudPlan(pricing: CloudPricing): PricedPlan | null {
+export function startingCloudPlan(
+  pricing: CloudPricing,
+  interval: "monthly" | "annual" = "monthly",
+): PricedPlan | null {
   if (!pricing.available) return null;
   return pricing.tiers.reduce<PricedPlan | null>(
-    (lowest, plan) => (!lowest || plan.price.monthly < lowest.price.monthly ? plan : lowest),
+    (lowest, plan) =>
+      plan.price[interval] != null && (!lowest || plan.price[interval]! < lowest.price[interval]!)
+        ? plan
+        : lowest,
     null,
   );
 }

@@ -101,8 +101,9 @@ function PlanPicker({
     Boolean(workspaceId ?? billingWorkspaceId) ||
     (currentPlan === "free" && !subscription && !complimentary);
   const { payload, loading, error, retry } = useCloudPlans();
-  // Preserve the website choice. Older links without an interval advertised monthly billing.
-  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? (autoCheckout ? "monthly" : "annual"));
+  // Preserve an explicit website choice; new purchases start with monthly billing.
+  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? "monthly");
+  const annualSavings = payload && payload.annual.monthsFree > 0 ? payload.ui.monthsFree : undefined;
   const interval =
     subscription && subscription.status !== "canceled" ? subscription.interval : !complimentary && payload?.annual.enabled ? purchaseInterval : "monthly";
   const hasPlan = !needsCloudPlan({ tier: currentPlan, subscription, complimentary });
@@ -427,6 +428,7 @@ function PlanPicker({
               <CustomPlanConfigurator
                 key={`${selectedWorkspaceId}:${currentOffer?.offerReference ?? currentPlan}`}
                 interval={interval}
+                annualSavings={annualSavings}
                 catalog={payload.custom}
                 plans={payload.plans}
                 ui={payload.ui}
@@ -455,6 +457,7 @@ function PlanPicker({
                 purchasesDisabled={!selectable || changes.busy || purchaseDisabled || managing || (canPurchase && !referral.ready)}
                 selectionLabel={canModify ? t.billing.planChange.review : undefined}
                 interval={interval}
+                annualSavings={annualSavings}
                 workspaceScoped={workspaceScoped}
               />
             ) : (

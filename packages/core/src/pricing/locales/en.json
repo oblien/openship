@@ -76,7 +76,7 @@
   },
   "ui": {
     "perMonth": "/mo",
-    "perYear": "/yr",
+    "perYear": "/year",
     "custom": "Custom",
     "free": "Free",
     "unlimited": "Unlimited",

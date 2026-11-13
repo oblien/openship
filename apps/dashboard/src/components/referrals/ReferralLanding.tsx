@@ -22,7 +22,7 @@ export function ReferralLanding({ code }: { code: string }) {
     copy = t.referrals;
   const router = useRouter();
   const catalog = useCloudPlans();
-  const [selectedInterval, setInterval] = useState<"monthly" | "annual">("annual");
+  const [selectedInterval, setInterval] = useState<"monthly" | "annual">("monthly");
   const [state, setState] = useState<{ offer?: ReferralPublicOffer; error?: string }>({});
   const load = useCallback(async () => {
     try {
@@ -140,6 +140,7 @@ export function ReferralLanding({ code }: { code: string }) {
             ui={catalog.payload.ui}
             currentPlan={null}
             interval={interval}
+            annualSavings={catalog.payload.annual.monthsFree > 0 ? catalog.payload.ui.monthsFree : undefined}
             referralOffer={state.offer}
             workspaceScoped
             onSelectPlan={(planId) => {

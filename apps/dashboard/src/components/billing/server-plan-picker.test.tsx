@@ -230,16 +230,18 @@ describe("referral checkout handoff", () => {
       : ordinary(path, options));
     await render(<ManagedServerPurchase initialReferralCode={code} />);
     const card = (name: string) => host.querySelector(`article[aria-label="${name}"]`)!;
-    expect(card("Hobby").textContent).toContain("$9");
-    expect(card("Hobby").querySelector("s")?.textContent).toBe("$10");
+    expect(card("Hobby").querySelector("s")).toBeNull();
+    await click("Yearly");
+    expect(card("Hobby").querySelector(".text-2xl")?.textContent).toBe("$108");
+    expect(card("Hobby").querySelector("s")?.textContent).toBe("$120");
     expect(card("Starter").querySelector("s")).toBeNull();
     await click("Monthly");
     expect(card("Hobby").querySelector("s")).toBeNull();
     await click("Yearly");
-    expect(card("Hobby").querySelector("s")?.textContent).toBe("$10");
+    expect(card("Hobby").querySelector("s")?.textContent).toBe("$120");
     await click(baseDictionary.referrals.remove);
     expect(card("Hobby").querySelector("s")).toBeNull();
-    expect(card("Hobby").textContent).toContain("$10");
+    expect(card("Hobby").querySelector(".text-2xl")?.textContent).toBe("$120");
     expect(h.post).not.toHaveBeenCalled();
   });
 
@@ -283,15 +285,20 @@ describe("annual Cloud purchases", () => {
     expect(h.post).not.toHaveBeenCalled();
   });
 
-  it("shows monthly equivalents with the upfront annual charge and submits yearly checkout", async () => {
+  it("defaults to monthly, shows full yearly prices with savings, and submits the selected interval", async () => {
     await render(purchase());
-    expect(buttons(copy.pricing.annual)[0]?.getAttribute("aria-pressed")).toBe("true");
-    expect(host.querySelector("article .text-2xl")?.textContent).toBe("$10");
-    await click(copy.pricing.monthly);
+    expect(buttons(copy.pricing.monthly)[0]?.getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector("article .text-2xl")?.textContent).toBe("$12");
     await click(copy.pricing.annual);
-    expect(host.querySelector("article")?.textContent).toContain("$10");
-    expect(host.querySelector("article")?.textContent).toContain("$120 billed yearly");
+    expect(host.querySelector("article .text-2xl")?.textContent).toBe("$120");
+    expect(host.querySelector("article")?.textContent).toContain(pricingUi("en").perYear);
+    expect(host.querySelector("article")?.textContent).toContain("2 months free");
+    expect(host.querySelector("article")?.textContent).not.toContain(pricingUi("en").perMonth);
+    expect(host.querySelector("article")?.textContent).not.toContain("$120 billed yearly");
+    await click(copy.pricing.monthly);
+    expect(host.querySelector("article .text-2xl")?.textContent).toBe("$12");
+    expect(host.querySelector("article")?.textContent).not.toContain("2 months free");
+    await click(copy.pricing.annual);
     await click("Choose Hobby");
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
       planTierId: "hobby", interval: "annual", workspaceId: "cws-production",
@@ -304,7 +311,12 @@ describe("annual Cloud purchases", () => {
     expect(host.querySelector('form button[type="submit"]')?.hasAttribute("disabled")).toBe(true);
     expect(h.post).not.toHaveBeenCalled();
     await flushQuote();
-    expect(host.querySelector("aside")?.textContent).toContain("$1188 billed yearly");
+    expect(host.querySelector("aside .text-3xl")?.textContent).toBe("$1188");
+    expect(host.querySelector("aside")?.textContent).toContain(copy.custom.yearlyTotal);
+    expect(host.querySelector("aside")?.textContent).toContain(pricingUi("en").perYear);
+    expect(host.querySelector("aside")?.textContent).toContain("2 months free");
+    expect(host.querySelector("aside")?.textContent).toContain("Yearly extras: $60/vCPU");
+    expect(host.querySelector("aside")?.textContent).not.toContain("Monthly");
     await act(async () => host.querySelector<HTMLFormElement>("form")!.requestSubmit());
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
       interval: "annual", custom: expect.objectContaining({ quoteReference: "quote-annual" }),

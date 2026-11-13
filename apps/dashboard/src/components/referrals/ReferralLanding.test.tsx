@@ -74,10 +74,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the live Cloud cards, defaults to annual and continues the selected plan with its referral", async () => {
+it("shows the live Cloud cards, defaults to monthly and continues the selected plan with its referral", async () => {
   await render();
   expect(titles()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
-  expect(button("Yearly").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Monthly").getAttribute("aria-pressed")).toBe("true");
   expect(host.textContent).toContain("Save 5% for 12 months");
   expect(h.push).not.toHaveBeenCalled();
   await click("Choose Hobby");
@@ -85,23 +85,23 @@ it("shows the live Cloud cards, defaults to annual and continues the selected pl
   expect(Object.fromEntries(target().searchParams)).toEqual({
     newServer: "1",
     plan: "hobby",
-    interval: "annual",
+    interval: "monthly",
     startCheckout: "1",
     ref: code,
   });
   expect(validateReturnTo(`${target().pathname}${target().search}`)).not.toBeNull();
 });
 
-it("preserves monthly selection and keeps generic sign-in browse-only", async () => {
+it("preserves yearly selection and keeps generic sign-in browse-only", async () => {
   await render();
   const signIn = host.querySelector<HTMLAnchorElement>('a[href^="/login?"]')!;
   const destination = new URL(signIn.href).searchParams.get("returnTo")!;
   expect(validateReturnTo(destination)).toBe(destination);
   expect(destination).toBe(`/billing/plans?newServer=1&ref=${code}`);
-  await click("Monthly");
+  await click("Yearly");
   expect(h.push).not.toHaveBeenCalled();
   await click("Choose Starter");
-  expect(target().searchParams.get("interval")).toBe("monthly");
+  expect(target().searchParams.get("interval")).toBe("annual");
   expect(target().searchParams.get("ref")).toBe(code);
 });
 
@@ -186,18 +186,19 @@ it("limits public cards to the selected plan and billing combinations and choose
 
 
 it.each([
-  ["annual", 1000, 12000, 1000, "$9", "$10", "$108 billed yearly"],
+  ["annual", 1000, 12000, 1000, "$108", "$120", "Billed yearly"],
   ["monthly", 1200, 12000, 1000, "$10.80", "$12", "billed monthly"],
   ["monthly", 1231, 12000, 500, "$11.69", "$12.31", "billed monthly"],
-  ["annual", 1000, 12000, 0, "$10", null, "$120 billed yearly"],
+  ["annual", 1000, 12000, 0, "$120", null, "Billed yearly"],
   ["monthly", 1200, 12000, 10000, "Free", "$12", "billed monthly"],
 ] as const)("shows %s referral prices for %i/%i cents at %i basis points", async (interval, monthly, annual, discountBps, price, original, billing) => {
   h.offer.mockResolvedValue({ ...offer, discountBps });
   catalog([{ ...plans[0]!, price: { monthly, annual }, listPrice: { monthly }, effectivePrice: { monthly } }]);
   await render();
-  if (interval === "monthly") await click("Monthly");
+  if (interval === "annual") await click("Yearly");
   const card = host.querySelector('article[aria-label="Hobby"]')!;
-  expect(card.textContent).toContain(price);
+  expect(card.querySelector(".text-2xl")?.textContent).toBe(price);
+  if (price !== "Free") expect(card.textContent).toContain(interval === "annual" ? pricingUi("en").perYear : pricingUi("en").perMonth);
   expect(card.querySelector("s")?.textContent ?? null).toBe(original);
   expect(card.textContent).toContain(billing);
   if (discountBps) expect(card.textContent).toContain(`Save ${discountBps / 100}% for 12 months`);
