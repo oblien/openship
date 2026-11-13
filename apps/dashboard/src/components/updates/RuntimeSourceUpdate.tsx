@@ -122,27 +122,20 @@ function SourceEditor({
     setBusy(true);
     projectsApi
       .getGit(projectId)
-      .then(
-        async (git: {
-          gitProvider?: string;
-          gitOwner?: string;
-          gitRepo?: string;
-          gitBranch?: string;
-        }) => {
-          if (!current(request)) return;
-          if (git.gitProvider !== "github" || !git.gitOwner || !git.gitRepo || !git.gitBranch) {
-            setError(copy.noRepository);
-            return;
-          }
-          setRepo({ owner: git.gitOwner, repo: git.gitRepo, branch: git.gitBranch });
-          const { data } = await updatesApi.runtimeSource(projectId, {
-            path: initialPath,
-            format: /\.ya?ml$/i.test(initialPath) ? "compose" : "dockerfile",
-            ...(serviceId && { serviceId }),
-          });
-          if (current(request)) acceptSource(data);
-        },
-      )
+      .then(async (git) => {
+        if (!current(request)) return;
+        if (!git.success || git.provider !== "github" || !git.owner || !git.repo || !git.branch) {
+          setError(copy.noRepository);
+          return;
+        }
+        setRepo({ owner: git.owner, repo: git.repo, branch: git.branch });
+        const { data } = await updatesApi.runtimeSource(projectId, {
+          path: initialPath,
+          format: /\.ya?ml$/i.test(initialPath) ? "compose" : "dockerfile",
+          ...(serviceId && { serviceId }),
+        });
+        if (current(request)) acceptSource(data);
+      })
       .catch((error) => {
         // diagnostics-ignore: showError reports through getApiErrorMessage and displays recovery.
         if (current(request)) showError(error);

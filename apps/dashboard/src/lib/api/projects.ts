@@ -613,7 +613,10 @@ export const projectsApi = {
     }>(endpoints.projects.env(id)),
 
   /** Get git settings */
-  getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
+  getGit: (id: string | number) =>
+    api.get<Awaited<ReturnType<ProjectControlOperations["getGitInfo"]>>>(
+      endpoints.projects.git(id),
+    ),
 
   /** Link a GitHub repo to an existing project + register webhook */
   linkRepo: (
