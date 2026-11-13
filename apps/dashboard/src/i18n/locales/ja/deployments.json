@@ -202,6 +202,13 @@
     "pageOf": "{page} / {total} ページ",
     "range": "全 {total} 件中 {from}–{to} 件"
   },
+  "containerConflict": {
+    "title": "重複するコンテナを確認",
+    "description": "対象サーバーでコンテナとマウントを確認してください。使用するコンテナとそのデータを保持し、未使用と確認できた重複コンテナのみを削除してから再デプロイしてください。判断できない場合は、このデプロイ参照番号を添えてサポートにお問い合わせください。",
+    "containers": "一致するコンテナ",
+    "reviewServer": "サーバーを確認",
+    "reference": "デプロイ参照番号"
+  },
   "resourceGuidance": {
     "label": "デプロイのリソースガイド",
     "reviewCapacity": "容量を確認",

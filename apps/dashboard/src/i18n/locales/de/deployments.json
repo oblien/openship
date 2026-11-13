@@ -202,6 +202,13 @@
     "pageOf": "Seite {page} von {total}",
     "range": "Bereitstellungen {from}–{to} von {total}"
   },
+  "containerConflict": {
+    "title": "Doppelte Container prüfen",
+    "description": "Prüfe die Container und ihre eingebundenen Datenträger auf dem Zielserver. Behalte den vorgesehenen Container und seine Daten. Entferne nur ein nachweislich ungenutztes Duplikat und stelle dann erneut bereit. Bei Unsicherheit kontaktiere den Support mit dieser Bereitstellungsreferenz.",
+    "containers": "Übereinstimmende Container",
+    "reviewServer": "Server prüfen",
+    "reference": "Bereitstellungsreferenz"
+  },
   "resourceGuidance": {
     "label": "Ressourcenhinweise zur Bereitstellung",
     "reviewCapacity": "Kapazität prüfen",
