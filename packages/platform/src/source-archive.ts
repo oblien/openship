@@ -62,6 +62,8 @@ export async function extractSourceArchive(archive: string, destination: string)
     await pipeline(createReadStream(archive), createGunzip(), sourceByteLimit(MAX_SOURCE_BYTES + MAX_SOURCE_ENTRIES * 1024 + 16 * 1024 * 1024), parser);
   } catch (error) {
     if (validationError) throw validationError;
+    if ((error as { code?: string }).code === "Z_BUF_ERROR")
+      throw new ValidationError("Source archive is incomplete or truncated. Retry the upload (maximum 300MB).");
     if (/^(?:TAR_|Z_)/.test(String((error as { code?: string }).code))) throw new ValidationError("Invalid source archive");
     throw error;
   }
