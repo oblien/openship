@@ -21,13 +21,14 @@ const HOME = vi.hoisted(() => {
 
 const svc = vi.hoisted(() => ({
   running: false,
+  heldPorts: [] as number[],
   installed: [] as Array<{ port: string; dashboardPort: string }>,
 }));
 
 // Only the service manager is faked. The port resolver and ports.json stay real.
 vi.mock("../../src/lib/service", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/lib/service")>()),
-  serviceStatus: () => ({ kind: "launchd", installed: true, running: svc.running }),
+  serviceHeldPorts: async () => (svc.running ? svc.heldPorts : []),
   installAndStart: (flags: { port: string; dashboardPort: string }) => {
     svc.installed.push(flags);
     return { kind: "launchd", detail: "test" };
@@ -35,6 +36,7 @@ vi.mock("../../src/lib/service", async (importOriginal) => ({
 }));
 
 const { startService } = await import("../../src/commands/up");
+const { planUp } = await import("../../src/lib/up-plan");
 const { getFreePort, isPortFree } = await import("../../src/lib/ports");
 
 const PORTS_FILE = join(HOME, "ports.json");
@@ -71,6 +73,7 @@ beforeEach(() => {
   mkdirSync(HOME, { recursive: true });
   rmSync(PORTS_FILE, { force: true });
   svc.running = false;
+  svc.heldPorts = [];
   svc.installed = [];
 });
 
@@ -89,6 +92,7 @@ describe("startService on a re-run", () => {
     await hold(api);
     await hold(dashboard);
     svc.running = true;
+    svc.heldPorts = [api, dashboard];
 
     const r = await startService({}, { quiet: true });
 
@@ -109,5 +113,41 @@ describe("startService on a re-run", () => {
 
     expect(r.port).not.toBe(String(api));
     expect(r.dashPort).toBe(String(dashboard));
+  }, 30_000);
+
+  it("moves off an unrelated dashboard listener when the running service owns only the API", async () => {
+    const { api, dashboard } = await freePorts();
+    writeFileSync(PORTS_FILE, JSON.stringify({ api, dashboard }));
+    await hold(api);
+    await hold(dashboard);
+    svc.running = true;
+    svc.heldPorts = [api];
+    const r = await startService({}, { quiet: true });
+    expect(r.port).toBe(String(api));
+    expect(r.dashPort).not.toBe(String(dashboard));
+  }, 30_000);
+
+  it("uses the same owned ports for a dry-run and an actual service rerun", async () => {
+    const { api, dashboard } = await freePorts();
+    writeFileSync(PORTS_FILE, JSON.stringify({ api, dashboard }));
+    await hold(api);
+    await hold(dashboard);
+    svc.running = true;
+    svc.heldPorts = [api, dashboard];
+    const plan = await planUp({ bare: true });
+    const r = await startService({}, { quiet: true });
+    expect(plan.ports.api).toBe(Number(r.port));
+    expect(plan.ports.dashboard).toBe(Number(r.dashPort));
+  }, 30_000);
+
+  it("does not reclaim service ports for an attached foreground preview", async () => {
+    const { api, dashboard } = await freePorts();
+    writeFileSync(PORTS_FILE, JSON.stringify({ api, dashboard }));
+    await hold(api);
+    svc.running = true;
+    svc.heldPorts = [api];
+    const plan = await planUp({ bare: true, foreground: true });
+    expect(plan.ports.api).not.toBe(api);
+    expect(plan.ports.dashboard).toBe(dashboard);
   }, 30_000);
 });

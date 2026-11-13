@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
-import { installAndStart, serviceStatus } from "../lib/service";
+import { installAndStart, serviceHeldPorts } from "../lib/service";
 import {
   composeUp,
   composePrefetch,
@@ -28,7 +28,7 @@ import {
   sourceBuildDir,
 } from "../lib/compose";
 import { planMethod, planUp, renderUpPlan } from "../lib/up-plan";
-import { portMoveNotice, readInstanceUrl, readStoredPorts, resolvePorts } from "../lib/ports";
+import { portMoveNotice, readInstanceUrl, resolvePorts } from "../lib/ports";
 import { prepareFromSource, type FromSourceRun } from "../lib/from-source";
 import {
   markStoppedProxyImported,
@@ -673,17 +673,6 @@ async function runFromSource(opts: UpOpts): Promise<void> {
 }
 
 /**
- * Ports held by our own running service: the pair in ports.json, which is what
- * the service was started with. Only while it's running, since a stopped service
- * holds nothing. The bare counterpart of composeHeldPorts.
- */
-function serviceHeldPorts(): number[] {
-  if (!serviceStatus().running) return [];
-  const { api, dashboard } = readStoredPorts();
-  return [api, dashboard].filter((p): p is number => typeof p === "number");
-}
-
-/**
  * Default `openship up`: install + start Openship as a persistent service that
  * auto-restarts on crash and starts on boot, running until `openship stop`.
  */
@@ -705,7 +694,7 @@ export async function startService(
   const resolved = await resolvePorts({
     api: opts.port ? Number(opts.port) : undefined,
     dashboard: opts.dashboardPort ? Number(opts.dashboardPort) : undefined,
-    reclaimable: serviceHeldPorts(),
+    reclaimable: await serviceHeldPorts(),
   });
   const port = String(resolved.api);
   const dashPort = String(resolved.dashboard);
