@@ -1,0 +1,156 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "id": "serpbear",
+  "name": "SerpBear",
+  "description": "Track your keyword rankings in Google and get notified when they move, with an API and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "serpbear",
+  "category": "analytics",
+  "repository": "https://github.com/towfiqi/serpbear",
+  "tags": ["seo", "rank-tracking", "keywords", "search"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "serpbear",
+      "image": "towfiqi/serpbear:3.1.2",
+      "exposed": true,
+      "ports": ["8221:3000"],
+      "exposedPort": 3000,
+      "routes": [{ "port": 3000 }],
+      "restart": "unless-stopped",
+      "volumes": ["serpbear_data:/app/data"],
+      "environment": {
+        "SESSION_DURATION": "24",
+        "NEXT_PUBLIC_APP_URL": "{{publicUrl:serpbear}}"
+      },
+      "secretEnv": ["PASSWORD", "SECRET", "APIKEY"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"],
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 5,
+        "startPeriod": "30s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "USER_NAME",
+      "service": "serpbear",
+      "label": "Admin username",
+      "default": "admin"
+    },
+    {
+      "key": "PASSWORD",
+      "service": "serpbear",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "SECRET",
+      "service": "serpbear",
+      "label": "Session signing secret",
+      "help": "Auto-generated. Signs sign-in sessions; changing it signs everyone out.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "APIKEY",
+      "service": "serpbear",
+      "label": "API key",
+      "help": "Auto-generated. Lets scripts and other tools call SerpBear's API; treat it like a password.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "USER_NAME",
+          "service": "serpbear",
+          "label": "Admin username",
+          "type": "text",
+          "default": "admin",
+          "required": true,
+          "installStep": true,
+          "help": "Used for the administrator login. SerpBear has a single account, set from these values."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "endpoints": [
+    {
+      "service": "serpbear",
+      "port": 3000,
+      "label": "SerpBear",
+      "kind": "http",
+      "defaultMode": "domain"
+    }
+  ],
+  "connection": {
+    "title": "Sign in to SerpBear",
+    "description": "Sign in with the username and generated password below. SerpBear has one account, set from these values on every start.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "SerpBear",
+        "source": "publicUrl:serpbear",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "env:serpbear:USER_NAME",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:serpbear:PASSWORD",
+        "secret": true,
+        "width": "half"
+      },
+      {
+        "id": "apikey",
+        "label": "API key",
+        "source": "env:serpbear:APIKEY",
+        "secret": true,
+        "help": "Send it as an Authorization: Bearer header to call the API."
+      }
+    ],
+    "firstLogin": {
+      "note": "SerpBear reads its single account from these values each time it starts, so changing the password means changing it in this app's settings and redeploying. To see rankings you also add a scraping provider in SerpBear's own settings after signing in."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Keyword rank tracking",
+        "description": "Follow where your pages rank for the keywords you care about."
+      },
+      {
+        "title": "Notifications and API",
+        "description": "Get emailed about ranking changes and read the data through an API."
+      },
+      {
+        "title": "Persistent storage",
+        "description": "Keywords and history stay on a project-scoped volume across deployments."
+      }
+    ]
+  }
+}
