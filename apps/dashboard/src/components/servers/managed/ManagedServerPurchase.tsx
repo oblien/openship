@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
@@ -106,9 +107,11 @@ function Purchase({
     const storageKey = `openship:cloud-purchase:${scope}`;
     let key = checkoutIntent;
     if (!key) {
-      try { key = sessionStorage.getItem(storageKey) ?? undefined; } catch {}
+      try { key = sessionStorage.getItem(storageKey) ?? undefined; }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
       if (!isCloudPurchaseIntent(key)) key = randomUUID();
-      try { sessionStorage.setItem(storageKey, key); } catch {}
+      try { sessionStorage.setItem(storageKey, key); }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
     }
     const create = (idempotencyKey: string) => {
       if (!mounted.current || owner.current !== scope) throw new Error("Purchase scope changed");
@@ -119,13 +122,15 @@ function Purchase({
     catch (error) {
       if (checkoutIntent || getApiErrorCode(error) !== "CLOUD_WORKSPACE_PURCHASE_REMOVED") throw error;
       key = randomUUID();
-      try { sessionStorage.setItem(storageKey, key); } catch {}
+      try { sessionStorage.setItem(storageKey, key); }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
       server = await create(key);
     }
     if (!checkoutIntent && (server.planTierId !== "free" || server.resources)) {
       // The last purchase completed. This explicit Add space is a new purchase.
       key = randomUUID();
-      try { sessionStorage.setItem(storageKey, key); } catch {}
+      try { sessionStorage.setItem(storageKey, key); }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
       server = await create(key);
     }
     created.current = server;

@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError } from "@repo/core/diagnostics";
 import {
   createContext,
   useCallback,
@@ -115,7 +116,9 @@ function PendingCheckoutsState({
         if (mounted.current && revision.current === request) setManagementPending(Boolean(
           state.pendingCheckout || state.change?.paymentUrl || subscriptionNeedsPayment(state.subscription?.status),
         ));
-      }).catch(() => {});
+      }).catch(error => {
+        reportCaughtError(error, "dashboard/components/billing/PendingCheckoutsContext");
+      });
     }
     try {
       const result = await billingApi.listCheckouts(workspaceId);

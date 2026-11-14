@@ -2,7 +2,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { navigateToCheckout } from "./checkout-navigation";
 
-afterEach(() => vi.restoreAllMocks());
+const diagnostics = vi.hoisted(() => ({ report: vi.fn() }));
+vi.mock("@repo/core/diagnostics", () => ({ reportCaughtError: diagnostics.report }));
+
+afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 it.each(["javascript:alert(1)", "data:text/html,checkout", "http://checkout.example.test", ""])(
   "refuses an invalid payment destination before opening a tab: %s", value => {
@@ -23,8 +26,12 @@ it("opens only the final URL without an opener or referrer, preserving the proje
 });
 
 it("retains the validated fallback URL if the browser throws when refusing a popup", () => {
-  vi.spyOn(window, "open").mockImplementation(() => { throw new Error("Popups refused"); });
+  vi.spyOn(window, "open").mockImplementation(() => { throw new Error("Popups refused: https://checkout.example.test/private-session"); });
   expect(navigateToCheckout("https://checkout.example.test/session", true)).toBe("https://checkout.example.test/session");
+  expect(diagnostics.report).toHaveBeenCalledExactlyOnceWith(expect.any(Error), "dashboard/lib/checkout-navigation");
+  const reported = diagnostics.report.mock.calls[0][0] as Error;
+  expect(reported.message).toBe("Browser refused to open hosted checkout");
+  expect(reported.message).not.toContain("private-session");
 });
 
 it("uses the existing tab when there is no project draft to preserve", () => {
