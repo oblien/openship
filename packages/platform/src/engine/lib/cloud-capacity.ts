@@ -14,7 +14,7 @@ const workspaceResources = z.object({
 
 /** One ownership/shape check for both previews and deployment admission. */
 export async function readCloudWorkspaceAllocation(workspaceId: string, namespace: string) {
-  const workspace = await getOblienClient().workspaces.get(workspaceId);
+  const workspace = await getOblienClient().vms.get(workspaceId);
   if (workspace.id !== workspaceId || workspace.namespace !== namespace) {
     throw new AppError("Cloud workspace ownership changed", 409, "CLOUD_NAMESPACE_MISMATCH");
   }

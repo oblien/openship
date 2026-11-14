@@ -1,5 +1,5 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { createPlatform, type CloudInfraProvider } from "@repo/adapters";
+import { createPlatform, oblienApiBaseUrl, type CloudInfraProvider } from "@repo/adapters";
 import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
 import { env } from "../config/env";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
@@ -99,7 +99,7 @@ export async function runCloudPreflight(
     await assertCloudCanSpend(organizationId, opts.workspaceId);
     const cloudPlatform = await createPlatform({
       target: "cloud", cloudToken: token.token, cloudNamespace: token.namespace,
-      cloudApiUrl: env.OBLIEN_API_URL,
+      cloudApiUrl: oblienApiBaseUrl(env.OBLIEN_API_URL).toString(),
     });
     cloud = cloudPlatform.routing as CloudInfraProvider;
   } catch (err) {

@@ -115,7 +115,7 @@ export interface CloudClient {
   };
   pages: {
     create(input: {
-      workspace_id: string;
+      vm_id: string;
       path: string;
       name: string;
       slug: string;

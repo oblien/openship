@@ -15,7 +15,7 @@ async function createRuntime(kind: "Docker" | "Cloud", workspaceStatus = "runnin
       ? await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" })
       : await CloudDockerRuntime.forWorkspace(
           {
-            workspaces: {
+            vms: {
               get: async () => ({
                 id: "workspace-a",
                 namespace: "namespace-a",

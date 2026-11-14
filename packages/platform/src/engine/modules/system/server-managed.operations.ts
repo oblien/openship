@@ -75,8 +75,8 @@ async function runtimeCredential(connection: ManagedConnection) {
   }
   if (
     !result.token ||
-    claims.type !== "workspace" ||
-    claims.workspace_id !== connection.binding.workspaceId ||
+    claims.type !== "vm" ||
+    claims.vm_id !== connection.binding.workspaceId ||
     typeof claims.token !== "string" ||
     claims.token.length < 16 ||
     typeof claims.exp !== "number" ||
@@ -267,7 +267,7 @@ const controls: ResourceServices<typeof ManagedServerResourceSchemas> = {
       if ((await runtimeStatus(connection)).enabled !== true) {
         const result = await connection.workspace.apiAccess.enable();
         requireProviderSuccess(result);
-        connection.client.workspaces.invalidateRuntime(connection.binding.workspaceId!);
+        connection.client.vms.invalidateRuntime(connection.binding.workspaceId!);
         auditManagedControl(ctx, id, "runtime.enable");
       }
       const after = await runtimeStatus(connection);
@@ -299,7 +299,7 @@ const controls: ResourceServices<typeof ManagedServerResourceSchemas> = {
       try {
         requireProviderSuccess(await connection.workspace.apiAccess.rotateToken());
       } finally {
-        connection.client.workspaces.invalidateRuntime(connection.binding.workspaceId!);
+        connection.client.vms.invalidateRuntime(connection.binding.workspaceId!);
       }
       const after = await runtimeCredential(connection);
       if (after.revision === before.revision)

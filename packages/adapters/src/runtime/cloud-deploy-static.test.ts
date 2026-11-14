@@ -6,7 +6,7 @@ beforeEach(() => { h = managedRoutingFixture(); });
 describe("shared static releases on managed ingress", () => {
   it.each([".", "dist"])("normalizes %s under its owned release and exports only the project route tree", async output => {
     await h.infra.registerRoute({ domain: "site.opsh.io", staticRoot: `${h.scope.staticReleaseRoot}/release-a/${output}`, tls: true });
-    expect(h.pages.create).toHaveBeenCalledWith(expect.objectContaining({ workspace_id: h.workspaceId, path: `${h.paths.routes}/site` }));
+    expect(h.pages.create).toHaveBeenCalledWith(expect.objectContaining({ vm_id: h.workspaceId, path: `${h.paths.routes}/site` }));
     expect(h.scope.resolveUrl).not.toHaveBeenCalled();
     expect(h.routes.set).toHaveBeenCalledOnce();
   });
@@ -33,7 +33,7 @@ describe("shared static releases on managed ingress", () => {
     h.routes.set.mockRejectedValueOnce(new Error("route table unavailable"));
     await expect(h.infra.registerRoute({ domain: "site.opsh.io", staticRoot: `${h.scope.staticReleaseRoot}/release-b`, tls: true })).rejects.toThrow("route table unavailable");
     expect(h.pages.deploy).toHaveBeenCalledTimes(2);
-    expect(h.pages.deploy).toHaveBeenLastCalledWith("site", { workspace_id: h.workspaceId, path: `${h.paths.routes}/site` });
+    expect(h.pages.deploy).toHaveBeenLastCalledWith("site", { vm_id: h.workspaceId, path: `${h.paths.routes}/site` });
   });
 });
 
@@ -48,7 +48,7 @@ it("switches a live proxy hostname to exported files and back without claiming a
   });
   expect(h.records.get("site")).toBe(page);
   expect(h.pages.deploy).toHaveBeenCalledWith("site", {
-    workspace_id: h.workspaceId,
+    vm_id: h.workspaceId,
     path: `${h.paths.routes}/site`,
   });
   expect(JSON.stringify(h.routes.set.mock.lastCall)).toContain('"static"');

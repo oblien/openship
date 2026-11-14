@@ -1,4 +1,5 @@
 import { savedOffer as subscriptionOffer, savedMetadata as subscriptionMetadata } from "../../helpers/saved-cloud-offer";
+import { providerBillingFixture } from "../../helpers/oblien-vm-billing";
 import capacityCatalog from "../../fixtures/oblien-capacity-catalog.json";
 import { monthlyCloudBilling } from "../../helpers/monthly-cloud-offer";
 import managedTransfer from "../../fixtures/oblien-managed-transfer.json";
@@ -60,7 +61,7 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
     }),
   }),
   getOblienClient: () => ({
-    workspaces: { getQuota: provider.quota, get: provider.workspace },
+    vms: { getQuota: provider.quota, get: provider.workspace },
     namespaces: {
       ensure: provider.namespaces,
       get: provider.resourceRead,
@@ -192,8 +193,8 @@ describe("billing through the same SDK and HTTP application operations", () => {
     // Exercise the actual SDK/validator before the shared application operation;
     // a mock entitlement alone missed the provider's newly included transfer.
     const billing = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret",
-      fetch: (async url => Response.json(new URL(String(url)).pathname === "/billing/balance"
-        ? monthly.balance : monthly.entitlement)) as typeof fetch });
+      fetch: (async url => Response.json(providerBillingFixture(new URL(String(url)).pathname === "/v1/billing/balance"
+        ? monthly.balance : monthly.entitlement))) as typeof fetch });
     provider.subscriptions.set(selected.namespace!, monthly.subscription);
     provider.entitlement.mockImplementation(async namespace => namespace === selected.namespace
       ? billing.getEntitlement(namespace) : { success: true, namespace, tierId: null, status: "credit_exhausted",
@@ -267,13 +268,13 @@ describe("billing through the same SDK and HTTP application operations", () => {
       data: {
         slug,
         effective_resource_limits: {
-          max_workspaces: 12,
+          max_vms: 12,
           max_total_vcpus: 8,
           max_total_ram_mb: 16384,
           max_total_disk_gb: 256,
         },
         allocated_resource_usage: {
-          workspaces: 0,
+          vms: 0,
           vcpus: 0,
           ram_mb: 0,
           disk_gb: 0,

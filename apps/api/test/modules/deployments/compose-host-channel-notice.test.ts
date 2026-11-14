@@ -250,7 +250,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
   const configurations: Array<Record<string, any>> = [];
   const publishRoute = vi.fn(async () => undefined);
   const pullImage = vi.fn(async () => undefined);
-  const resolveRoutingTarget = vi.fn(async (id: string, port: number) => ({ workspace: "shared-vm",
+  const resolveRoutingTarget = vi.fn(async (id: string, port: number) => ({ vm: "shared-vm",
     port: id === "web-container" ? (port === 8080 ? 30001 : 30002) : 30003 }));
   const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
     name: "docker", workspaceId: "shared-vm", projectId: "p1", unsupportedComposeKeys: new Set(),
@@ -314,8 +314,8 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     serviceId: "svc-api", allocatedResources: { containerId: "api-container", cpuCores: 2, memoryMb: 2048 },
   }));
   expect(publishRoute).toHaveBeenCalledWith("app.opsh.io", 30001, false, expect.objectContaining({ routes: [
-    { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30003 } },
-    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30001 } },
+    { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", vm: "shared-vm", port: 30003 } },
+    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: "shared-vm", port: 30001 } },
   ] }));
 });
 

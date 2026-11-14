@@ -1753,10 +1753,13 @@ describe("composeUp — the host channel is provisioned out loud (#509)", () => 
     seedHostKey();
     h.channelAuth = () => ({ status: 0, stdout: "openship-sudo=refused\n", stderr: "" });
 
-    await composeUp({});
+    // Select a non-root session explicitly: the test runner may itself be root,
+    // whose SSH login already has privilege and needs no sudo warning.
+    await composeUp({ hostSshUser: "ops" });
 
     // A working channel, so it IS written — just one with no route to root.
     expect(writtenEnv().OPENSHIP_HOST_SSH_HOST).toBe("host.docker.internal");
+    expect(writtenEnv().OPENSHIP_HOST_SSH_USER).toBe("ops");
     expect(warned.join("\n")).toContain("no route to it");
   });
 

@@ -294,7 +294,7 @@ describe("oblienWebhook — dispatch", () => {
 
 describe("durable quota alert receipt", () => {
   it("returns 503 without a checkpoint when notification storage fails, then retries the same event", async () => {
-    const body = JSON.stringify({ id: "evt-critical", event: "credits.depleted", data: { namespace: "os-abc", service: "workspace_vm" } });
+    const body = JSON.stringify({ id: "evt-critical", event: "credits.depleted", data: { namespace: "os-abc", service: "vm_compute" } });
     h.enqueue.mockRejectedValueOnce(new Error("database unavailable"));
     expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-critical"))) as unknown as JsonResult).status).toBe(503);
     expect(h.processed.size).toBe(0);
@@ -305,7 +305,7 @@ describe("durable quota alert receipt", () => {
     expect(h.processed.size).toBe(1);
   });
   it("leaves the event retryable when exhaustion activity cannot be recorded", async () => {
-    const body = JSON.stringify({ id: "evt-activity", event: "credits.depleted", data: { namespace: "os-abc", service: "workspace_vm" } });
+    const body = JSON.stringify({ id: "evt-activity", event: "credits.depleted", data: { namespace: "os-abc", service: "vm_compute" } });
     h.auditRecord.mockRejectedValueOnce(new Error("activity storage unavailable"));
     expect(((await oblienWebhook(makeCtx(body, sign(body), "evt-activity"))) as unknown as JsonResult).status).toBe(503);
     expect(h.processed.size).toBe(0);

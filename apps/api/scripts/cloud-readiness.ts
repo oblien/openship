@@ -1,4 +1,5 @@
 /** Read-only release checks. Does not create tokens, checkouts, or resources. */
+import { oblienApiBaseUrl, oblienApiUrl } from "@repo/adapters";
 import { runtimeTarget } from "@repo/core";
 import { assertOblienEntitlementMatchesSubscription, OblienBillingApi } from "@repo/platform/engine/lib/oblien-billing-api";
 import { OBLIEN_WEBHOOK_EVENTS, oblienWebhookUrl } from "@repo/platform/engine/lib/oblien-webhook-config";
@@ -7,13 +8,13 @@ const results: Array<{ check: string; ok: boolean; skipped?: boolean; detail?: s
 const record = (check: string, ok: boolean, detail?: string) => results.push({ check, ok, ...(detail ? { detail } : {}) });
 const clientId = process.env.OBLIEN_CLIENT_ID;
 const clientSecret = process.env.OBLIEN_CLIENT_SECRET;
-const apiBase = process.env.OBLIEN_API_URL ?? "https://api.oblien.com";
+const apiBase = oblienApiBaseUrl(process.env.OBLIEN_API_URL);
 record("Cloud mode", process.env.CLOUD_MODE === "true");
 record("Oblien credentials configured", Boolean(clientId && clientSecret));
 record("Webhook secret configured", Boolean(process.env.OBLIEN_WEBHOOK_SECRET));
 record("Subscription purchases enabled", process.env.BILLING_ENABLED === "true");
 
-const billing = new OblienBillingApi({ clientId, clientSecret, baseUrl: apiBase });
+const billing = new OblienBillingApi({ clientId, clientSecret, baseUrl: apiBase.toString() });
 const checks = await Promise.allSettled([
   (async () => {
     await billing.assertResellerSupport();
@@ -35,13 +36,13 @@ const checks = await Promise.allSettled([
   (async () => {
     const callback = oblienWebhookUrl(process.env.OBLIEN_WEBHOOK_URL, runtimeTarget.api);
     if (!clientId || !clientSecret) throw new Error("Oblien credentials are missing");
-    const response = await fetch(`${apiBase.replace(/\/+$/, "")}/webhooks`, {
+    const response = await fetch(oblienApiUrl(apiBase, "/webhooks"), {
       headers: { "X-Client-ID": clientId, "X-Client-Secret": clientSecret },
       redirect: "error", signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) throw new Error(`Webhook registry HTTP ${response.status}`);
     const body = await response.json() as { success: boolean; webhooks?: Array<{ url: string; active: boolean; namespace?: string | null; events: string[]; secret?: string | null }> };
-    const webhook = body.success && body.webhooks?.find((item) => item.url === callback && !item.namespace && item.active);
+    const webhook = body.success ? body.webhooks?.find((item) => item.url === callback && !item.namespace && item.active) : undefined;
     const missing = OBLIEN_WEBHOOK_EVENTS.filter((event) => !webhook || !webhook.events.includes(event));
     const maskedSecret = typeof webhook?.secret === "string" && /^[*•＊…]+$/u.test(webhook.secret);
     const matchingSecret = Boolean(webhook?.secret && webhook.secret === process.env.OBLIEN_WEBHOOK_SECRET);
@@ -56,7 +57,7 @@ const checks = await Promise.allSettled([
   })(),
   (async () => {
     if (!clientId || !clientSecret) throw new Error("Oblien credentials are missing");
-    const response = await fetch(`${apiBase.replace(/\/+$/, "")}/namespaces?limit=1`, {
+    const response = await fetch(oblienApiUrl(apiBase, "/namespaces?limit=1"), {
       headers: { "X-Client-ID": clientId, "X-Client-Secret": clientSecret },
       redirect: "error", signal: AbortSignal.timeout(15_000),
     });

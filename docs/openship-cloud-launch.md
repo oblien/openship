@@ -582,7 +582,6 @@ assuming the `.env.saas` filename indicates production provider credentials.
    ```dotenv
    CLOUD_MODE=true
    OPENSHIP_TARGET=cloud-saas
-   OBLIEN_API_URL=https://api.oblien.com
    OBLIEN_CLIENT_ID=<server-only key>
    OBLIEN_CLIENT_SECRET=<server-only secret>
    OBLIEN_WEBHOOK_SECRET=<shared signing secret>
@@ -805,3 +804,39 @@ and database migration `0153_durable_credit_alerts` before rolling out the API a
 
 [Namespace credit alerts](namespace-credit-alerts.md) is the reference for delivery guarantees,
 provider requirements, organization isolation, and verification.
+
+## Oblien SDK 3 and versioned API activation
+
+Cloud uses the native VM contract from Oblien SDK 3.0.2. The SDK owns its default
+control-plane base URL and API version; leave `OBLIEN_API_URL` unset. If an
+operator needs a proxy, the override must be the complete API mount including
+its version. Remove a previously configured unversioned provider origin during
+the coordinated cutover.
+
+The custom checkout browser page remains `https://api.oblien.com/billing/pay`.
+Only its control-plane creation/status requests use `/v1`; do not rewrite the
+returned payment URL or apply the API mount to Runtime/CDN URLs.
+
+Activate the matching Oblien `/v1` API and migrated database before deploying
+this integration. Older SDK routes are not probed and failed writes are not
+replayed. OpenShip's organization/workspace records, managed-server IDs, paid
+offer snapshots and customer metadata retain their existing identities. The
+provider boundary maps those saved workspace counts to native VM capacity.
+
+The matching runtime gateway is `https://vm.oblien.com`; remove or update any
+old `OBLIEN_RUNTIME_URL` override. Runtime credentials must carry `type: "vm"`
+and the selected `vm_id`. Namespace/account tokens are never runtime credentials.
+
+This cutover also requires a Desktop/self-hosted release containing SDK 3 for
+installations that use Cloud servers. Those clients execute provider requests
+directly using scoped tokens; redeploying the hosted API alone cannot upgrade
+their SDK 2 transport. Coordinate that client rollout with the provider cutover,
+and obtain fresh credentials. Existing VM IDs, disks, and project data must be
+preserved. Self-hosted local/SSH-only deployments do not use this provider API.
+
+Before reopening customer operations, run `bun run --cwd apps/api cloud:check`
+with the deployed Cloud environment and both explicit staging verification
+scripts (`verify-cloud-docker.ts` and `verify-cloud-isolation.ts`) against the
+matching API/gateway. Verify an existing VM in addition to disposable creation,
+exec/files, routing, namespace isolation and cleanup. Local HTTP fixtures and
+unit tests do not establish that the provider deployment has been activated.

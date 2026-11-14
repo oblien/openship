@@ -3,7 +3,7 @@ import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import { z } from "zod";
 import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
-import { Oblien } from "@repo/adapters";
+import { Oblien, oblienApiBaseUrl, oblienApiUrl, toOblienVmOffer, toOblienVmPolicy, cloudBillingContract } from "@repo/adapters";
 import { isDeepStrictEqual } from "node:util";
 import { computeBillingModeSchema, oblienCapacityCatalogSchema, oblienCapacityPoolSchema, oblienNamespaceCapacitySchema } from "./oblien-capacity";
 
@@ -197,7 +197,7 @@ export type OblienPlanChangeQuote = z.infer<typeof oblienPlanChangeQuoteSchema>;
 export type OblienPlanChange = z.infer<typeof oblienPlanChangeSchema>;
 
 const policySchema = z.object({
-  success: z.literal(true), service: z.literal("workspace_vm"),
+  success: z.literal(true), service: z.literal("vm_compute"),
   quotaLimit: allowance, overdraft: amount.nonnegative(),
   onOverdraftAction: z.enum(["stop_workspaces", "block"]), suspendThreshold: allowance,
 });
@@ -314,11 +314,7 @@ export class OblienBillingApi {
     clientId?: string; clientSecret?: string; baseUrl?: string;
     fetch?: typeof fetch; timeoutMs?: number;
   } = {}) {
-    const url = new URL(options.baseUrl ?? "https://api.oblien.com");
-    if (url.username || url.password || url.search || url.hash ||
-      (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) {
-      throw new Error("Oblien API URL must use HTTPS (HTTP is allowed for localhost tests)");
-    }
+    const url = oblienApiBaseUrl(options.baseUrl);
     this.baseUrl = url.toString().replace(/\/+$/, "");
     this.fetcher = options.fetch ?? fetch;
     // The SDK has no client-wide fetch/timeout option. Replace this transport
@@ -336,7 +332,7 @@ export class OblienBillingApi {
   private async requestBilling<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
     const meteredPricing = method === "GET" && path === "/pricing/calculator";
     if (!path.startsWith("/billing/") && !meteredPricing) throw new Error("Billing transport only accepts billing routes");
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = oblienApiUrl(oblienApiBaseUrl(this.baseUrl), path);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
@@ -466,7 +462,7 @@ export class OblienBillingApi {
           ...(Object.keys(diagnostic).length ? { details: diagnostic } : {}),
         });
     }
-    return payload as T;
+    return cloudBillingContract(payload) as T;
   }
 
   private async validate<T>(response: Promise<unknown>, schema: z.ZodType<T>, slug?: string): Promise<T> {
@@ -612,7 +608,7 @@ export class OblienBillingApi {
 
   /** Mode A only: the complimentary-plan service owns these explicit grants. */
   setPolicy(slug: string, input: Pick<OblienBillingPolicy, "quotaLimit" | "overdraft" | "suspendThreshold" | "onOverdraftAction">) {
-    return this.validate(this.billing.setPolicy(slug, input), policySchema.extend({ namespace }), slug);
+    return this.validate(this.billing.setPolicy(slug, toOblienVmPolicy(input)), policySchema.extend({ namespace }), slug);
   }
 
   resetQuota(slug: string, periodEnd: string) {
@@ -641,9 +637,10 @@ export class OblienBillingApi {
 
   async previewPlanChange(slug: string, input: OblienPlanChangeInput) {
     const request = oblienPlanChangeInputSchema.parse(input);
+    const offer = toOblienVmOffer(request.offer);
     const result = await this.validate(request.offer.billingMode === "service"
-      ? this.request({ method: "POST", path: "/billing/subscription/changes/preview", body: { namespace: slug, ...request } })
-      : this.billing.previewPlanChange(slug, { ...request, offer: { ...request.offer, billingMode: request.offer.billingMode } }), z.object({
+      ? this.request({ method: "POST", path: "/billing/subscription/changes/preview", body: { namespace: slug, ...request, offer } })
+      : this.billing.previewPlanChange(slug, { ...request, offer: { ...offer, billingMode: request.offer.billingMode } }), z.object({
       success: z.literal(true), namespace, quote: oblienPlanChangeQuoteSchema,
     }), slug);
     if (result.quote.namespace !== slug || result.quote.billingInterval !== input.billingInterval)
@@ -691,9 +688,10 @@ export class OblienBillingApi {
     // and this saved namespace offer before creating the Stripe session.
     const parsed = oblienCheckoutInputSchema.parse(input);
     const request = { ...parsed, allowPromotionCodes: parsed.offer?.unitAmount !== 0 };
+    const offer = request.offer ? toOblienVmOffer(request.offer) : undefined;
     const result = await this.validate((request.offer?.billingMode === "service" || (request.kind === "subscription" && !!request.affiliateBuyer))
-      ? this.request({ method: "POST", path: "/billing/checkout", body: request })
-      : this.billing.checkout({ ...request, offer: request.offer ? { ...request.offer, billingMode: request.offer.billingMode === "monthly" ? "monthly" : request.offer.billingMode === "payg" ? "payg" : undefined } : undefined }), checkoutSchema);
+      ? this.request({ method: "POST", path: "/billing/checkout", body: { ...request, offer } })
+      : this.billing.checkout({ ...request, offer: offer ? { ...offer, billingMode: request.offer?.billingMode === "monthly" ? "monthly" : request.offer?.billingMode === "payg" ? "payg" : undefined } : undefined }), checkoutSchema);
     this.validateCheckoutUrl(result.url);
     return result;
   }
@@ -702,6 +700,7 @@ export class OblienBillingApi {
     const url = new URL(value);
     if (url.hostname === "api.oblien.com") {
       this.validateHostedUrl(value, "api.oblien.com");
+      // This is the hosted browser page, not a versioned control-plane endpoint.
       if (url.pathname === "/billing/pay" && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
       throw new AppError("Cloud billing returned an invalid hosted URL", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
     }

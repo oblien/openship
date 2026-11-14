@@ -25,7 +25,7 @@ export async function managedConnection(ctx: ExecutionContext, id: string) {
   return {
     ...connection,
     workspaceId,
-    workspace: connection.client.workspace(connection.binding.workspaceId!),
+    workspace: connection.client.vm(connection.binding.workspaceId!),
   };
 }
 export type ManagedConnection = Awaited<ReturnType<typeof managedConnection>>;

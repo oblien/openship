@@ -268,8 +268,8 @@ export async function openCloudActionWorker(
   let workspace;
   try {
     workspace = job.providerWorkspaceId
-      ? await client.workspaces.get(job.providerWorkspaceId)
-      : await client.workspaces.create(workspaceInput(job, runner));
+      ? await client.vms.get(job.providerWorkspaceId)
+      : await client.vms.create(workspaceInput(job, runner));
   } catch (error) {
     if (job.providerWorkspaceId && isMissing(error))
       throw new AppError(
@@ -318,7 +318,7 @@ export async function openCloudActionWorker(
   }
   if (workspace.ready === false || !["active", "running"].includes(status)) return null;
   const executor = new CloudWorkspaceExecutor(
-    options => client.workspace(workspace.id).runtime(options),
+    options => client.vm(workspace.id).runtime(options),
     workspace.id,
   );
   try {
@@ -333,7 +333,7 @@ export async function openCloudActionWorker(
     // The authenticated Runtime API gateway needs host ingress. Enabling the
     // API adds its port but does not enable that firewall path. Restrict this
     // disposable VM to the API port; do not expose SSH or workflow services.
-    await client.workspaces.network.update(workspace.id, {
+    await client.vms.network.update(workspace.id, {
       public_access: true,
       ingress_ports: [9990],
     });
@@ -386,8 +386,8 @@ export async function removeCloudActionWorker(
     // An uncertain create is resolved with its ORIGINAL key and config. No new
     // key, image, resources or paid purchase is introduced by cleanup retries.
     const workspace = job.providerWorkspaceId
-      ? await client.workspaces.get(job.providerWorkspaceId)
-      : await client.workspaces.create(workspaceInput(job, runner));
+      ? await client.vms.get(job.providerWorkspaceId)
+      : await client.vms.create(workspaceInput(job, runner));
     assertWorkspace(workspace, job, runner);
     if (!job.providerWorkspaceId) {
       const saved = await update({
@@ -396,9 +396,9 @@ export async function removeCloudActionWorker(
       if (!saved) throw new Error("Actions lease changed before worker cleanup");
       job = saved;
     }
-    await client.workspaces.delete(workspace.id);
+    await client.vms.delete(workspace.id);
     try {
-      await client.workspaces.get(workspace.id);
+      await client.vms.get(workspace.id);
       // Deletion is asynchronous. Keep the scheduler slot and poll on the
       // next tick without replacing the workflow result with a cleanup error.
       return false;

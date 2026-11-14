@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { OblienBillingApi, oblienOfferSchema, assertOblienEntitlementMatchesSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 import { BillingOperationSchemas } from "@repo/contracts";
 import { Value } from "@sinclair/typebox/value";
+import { providerBillingFixture } from "../../../test/helpers/oblien-vm-billing";
 import capacityCatalog from "../../../test/fixtures/oblien-capacity-catalog.json";
 import { monthlyCloudBilling, unpaidMonthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
 
@@ -25,7 +26,7 @@ const subscription = { success: true, namespace: "os-one", subscription: {
   cancelAtPeriodEnd: true, canceledAt: "2026-09-15T00:00:00Z",
 } };
 function setup(body: unknown, status = 200) {
-  const fetcher = vi.fn(async (_url: Parameters<typeof fetch>[0], _init?: RequestInit) => Response.json(body, { status }));
+  const fetcher = vi.fn(async (_url: Parameters<typeof fetch>[0], _init?: RequestInit) => Response.json(providerBillingFixture(body), { status }));
   const api = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret", fetch: fetcher as unknown as typeof fetch });
   return { api, fetcher };
 }
@@ -47,7 +48,7 @@ describe("Oblien billing SDK and transport contract", () => {
     await api.createCheckout({ namespace: "os-one", kind: "subscription", billingInterval: "yearly",
       offer: { ...monthlyCloudBilling().subscription.offer!, unitAmount: 12000 }, metadata,
       affiliateBuyer, affiliateCode: "AF-0123456789", successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "referral-transport" });
-    expect(fetcher).toHaveBeenCalledExactlyOnceWith("https://api.oblien.com/billing/checkout", expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith("https://api.oblien.com/v1/billing/checkout", expect.objectContaining({
       method: "POST", redirect: "error", signal: expect.any(AbortSignal),
       headers: expect.objectContaining({ "X-Client-ID": "test-id", "X-Client-Secret": "test-secret" }),
     }));
@@ -59,7 +60,7 @@ describe("Oblien billing SDK and transport contract", () => {
     const live = { success: true, credits_per_dollar: 100, rate_card_id: "live", rates: { cpu_per_min: 1.5, memory_per_gb_min: 0.2, disk_per_gb: 0, network_per_gb: 0.15 } };
     const { api, fetcher } = setup({ ...live, compute_rate_cards: [{ chargeEnabled: false, cpu_per_min: 0.001 }] });
     expect(await api.getMeteredPricing()).toEqual(live);
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/pricing/calculator", expect.objectContaining({ method: "GET", redirect: "error", headers: { Accept: "application/json" } }));
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/pricing/calculator", expect.objectContaining({ method: "GET", redirect: "error", headers: { Accept: "application/json" } }));
   });
   it.each([
     { credits_per_dollar: 50, rate_card_id: "new", rates: { cpu_per_min: 1, memory_per_gb_min: 1, disk_per_gb: 0, network_per_gb: 0 } },
@@ -74,14 +75,14 @@ describe("Oblien billing SDK and transport contract", () => {
     const { api, fetcher } = setup({ success: true, namespace: "os-one", pendingCheckout, wallet: { balance: 12000 } });
     expect(await api.getPendingCapacityCheckout("os-one")).toEqual({ success: true, namespace: "os-one",
       pendingCheckout: { ...pendingCheckout, quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" } } });
-    expect(fetcher.mock.calls[0]![0]).toBe("https://api.oblien.com/billing/capacity?namespace=os-one");
+    expect(fetcher.mock.calls[0]![0]).toBe("https://api.oblien.com/v1/billing/capacity?namespace=os-one");
     await expect(api.getPendingCapacityCheckout("os-other")).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
   });
   it("cancels a capacity payment with the saved provider quote and retry identity", async () => {
     const { api, fetcher } = setup({ success: true, namespace: "os-one", pendingCheckout: null });
     const input = { quoteId: "quote_pending", idempotencyKey: "cancel-once" };
     await expect(api.cancelCapacityCheckout("os-one", input)).resolves.toMatchObject({ pendingCheckout: null });
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/capacity/change/cancel", expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/capacity/change/cancel", expect.objectContaining({
       method: "POST",
     }));
     expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toEqual({ namespace: "os-one", ...input });
@@ -101,7 +102,7 @@ describe("Oblien billing SDK and transport contract", () => {
       (await api.cancelCheckout("os-one", checkout.id, { idempotencyKey: "cancel-once" })).checkout,
     ).toEqual(checkout);
     expect(fetcher).toHaveBeenCalledWith(
-      "https://api.oblien.com/billing/checkout/bco_original/cancel",
+      "https://api.oblien.com/v1/billing/checkout/bco_original/cancel",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ namespace: "os-one", idempotencyKey: "cancel-once" }),
@@ -123,7 +124,7 @@ describe("Oblien billing SDK and transport contract", () => {
   it.each([
     { quote: { id: "quote_pending", namespace: "os-other", paymentSource: "stripe" }, checkoutId: "cs_requested", url: null },
     { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" }, checkoutId: "cs_requested", url: "https://evil.example/pay" },
-    { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" }, checkoutId: "cs_requested", url: "https://api.oblien.com/not-a-payment#secret" },
+    { quote: { id: "quote_pending", namespace: "os-one", paymentSource: "stripe" }, checkoutId: "cs_requested", url: "https://api.oblien.com/v1/not-a-payment#secret" },
   ])("rejects foreign capacity scope and untrusted resume URLs", async pendingCheckout => {
     await expect(setup({ success: true, namespace: "os-one", pendingCheckout }).api.getPendingCapacityCheckout("os-one")).rejects.toThrow();
   });
@@ -135,16 +136,16 @@ describe("Oblien billing SDK and transport contract", () => {
   });
   it("scopes complimentary policy writes to the requested namespace and validates the response", async () => {
     const policy = { quotaLimit: 3000, overdraft: 60, suspendThreshold: 60, onOverdraftAction: "stop_workspaces" as const };
-    const result = { success: true, namespace: "os-one", service: "workspace_vm", ...policy };
+    const result = { success: true, namespace: "os-one", service: "vm_compute", ...policy };
     const { api, fetcher } = setup(result);
     expect(await api.setPolicy("os-one", policy)).toEqual(result);
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/policy/os-one", expect.objectContaining({ method: "PUT", body: JSON.stringify(policy) }));
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/policy/os-one", expect.objectContaining({ method: "PUT", body: JSON.stringify(providerBillingFixture(policy)) }));
     await expect(api.setPolicy("os-two", policy)).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
   });
   it("keeps the same provider reset key on retry and rejects an unscoped reset response", async () => {
     const { api, fetcher } = setup({ success: true, namespace: "os-one", applied: false });
     expect(await api.resetQuota("os-one", "2026-10-25T14:00:00.000Z")).toMatchObject({ applied: false });
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/policy/os-one/reset", expect.objectContaining({ method: "POST", body: JSON.stringify({ periodEnd: "2026-10-25T14:00:00.000Z" }) }));
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/policy/os-one/reset", expect.objectContaining({ method: "POST", body: JSON.stringify({ periodEnd: "2026-10-25T14:00:00.000Z" }) }));
     await expect(setup({ success: true, applied: true }).api.resetQuota("os-one", "2026-10-25T14:00:00.000Z"))
       .rejects.toMatchObject({ code: "OBLIEN_BILLING_INVALID_RESPONSE" });
   });
@@ -215,7 +216,7 @@ describe("Oblien billing SDK and transport contract", () => {
     expect(state.checkout).not.toHaveProperty("walletCredits");
     expect(state.checkout).not.toHaveProperty("paymentId");
     expect(fetcher.mock.calls[0]![0]).toBe(
-      "https://api.oblien.com/billing/checkout/cs_requested?namespace=os-one",
+      "https://api.oblien.com/v1/billing/checkout/cs_requested?namespace=os-one",
     );
     await expect(api.getCheckout("os-other", "cs_requested")).rejects.toMatchObject({
       code: "OBLIEN_BILLING_NAMESPACE_MISMATCH",
@@ -251,7 +252,7 @@ describe("Oblien billing SDK and transport contract", () => {
   it("authenticates server requests and validates the returned customer namespace", async () => {
     const { api, fetcher } = setup(entitlement);
     expect((await api.getEntitlement("os-one")).quota.used).toBe(-50);
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/entitlement?namespace=os-one", expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/entitlement?namespace=os-one", expect.objectContaining({
       headers: expect.objectContaining({ "X-Client-ID": "test-id", "X-Client-Secret": "test-secret" }), redirect: "error",
     }));
     await expect(api.getEntitlement("os-two")).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
@@ -275,22 +276,24 @@ describe("Oblien billing SDK and transport contract", () => {
       idempotencyKey: "checkout-123",
     };
     await api.createCheckout(input);
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/checkout", expect.objectContaining({ method: "POST" }));
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/checkout", expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ ...input, allowPromotionCodes: true });
   });
-  it("accepts the exact Oblien promotion checkout and preserves its opaque ID", async () => {
+  it("keeps the hosted payment page unversioned while sending checkout requests to /v1", async () => {
     const checkoutId = "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee";
     const url = `https://api.oblien.com/billing/pay#${"a".repeat(43)}`;
-    const { api } = setup({ success: true, url, checkoutId });
+    const { api, fetcher } = setup({ success: true, url, checkoutId });
     await expect(api.createCheckout({ namespace: "os-one", kind: "topup", offer, metadata,
       successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "promotion-checkout" }))
       .resolves.toMatchObject({ url, checkoutId });
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/checkout", expect.objectContaining({ method: "POST" }));
   });
   it.each([
     "http://api.oblien.com/billing/pay", "https://api.oblien.com.evil.example/billing/pay",
-    "https://api.oblien.com/billing/pay?return=https://evil.example", "https://api.oblien.com/other",
+    "https://api.oblien.com/billing/pay?return=https://evil.example", "https://api.oblien.com/v1/other",
     "https://api.oblien.com/billing/pay", "https://user@api.oblien.com/billing/pay",
     "https://api.oblien.com:8443/billing/pay", "https://api.oblien.com/billing/pay/",
+    "https://api.oblien.com/v1/billing/pay",
   ])("rejects an invalid promotion checkout URL: %s", async (value) => {
     const url = value + (value === "https://api.oblien.com/billing/pay" ? "#short" : `#${"a".repeat(43)}`);
     await expect(setup({ success: true, url, checkoutId: "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee" }).api.createCheckout({
@@ -553,7 +556,7 @@ describe("Oblien billing SDK and transport contract", () => {
     const { api, fetcher } = setup({ success: true, namespace: "os-one", url: "https://billing.stripe.com/p/session/test" });
     const input = { namespace: "os-one", returnUrl: "https://app.openship.io/billing/overview" };
     expect((await api.createPortal(input)).url).toBe("https://billing.stripe.com/p/session/test");
-    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/portal", expect.objectContaining({ method: "POST", body: JSON.stringify(input), redirect: "error", signal: expect.any(AbortSignal) }));
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/portal", expect.objectContaining({ method: "POST", body: JSON.stringify(input), redirect: "error", signal: expect.any(AbortSignal) }));
     await expect(api.createPortal({ ...input, namespace: "os-two" })).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
   });
   it("rejects a legacy owner portal even when its hosted URL is otherwise valid", async () => {
@@ -572,7 +575,7 @@ describe("Oblien billing SDK and transport contract", () => {
   ] as const)("uses the SDK %s method and checks the response namespace", async (method, verb, path) => {
     const { api, fetcher } = setup(subscription);
     expect(await api[method]("os-one")).toEqual(subscription);
-    expect(fetcher).toHaveBeenCalledWith(`https://api.oblien.com${path}`, expect.objectContaining({
+    expect(fetcher).toHaveBeenCalledWith(`https://api.oblien.com/v1${path}`, expect.objectContaining({
       method: verb, ...(verb === "POST" ? { body: JSON.stringify({ namespace: "os-one" }) } : {}),
     }));
     await expect(api[method]("os-two")).rejects.toMatchObject({ code: "OBLIEN_BILLING_NAMESPACE_MISMATCH" });
@@ -612,7 +615,7 @@ describe("Oblien monthly capacity contract", () => {
     const catalog = await api.assertMonthlyCapacitySupport();
     expect(catalog.tariff.usage).toEqual({ activeVcpuHourCents: 3, reservedGiBHourCents: 0.8, retainedGiBMonthCents: 5, monthHours: 720 });
     const [url, request] = fetcher.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.oblien.com/billing/capacity/catalog");
+    expect(String(url)).toBe("https://api.oblien.com/v1/billing/capacity/catalog");
     expect(request?.headers).not.toHaveProperty("X-Client-Secret");
     expect(request?.headers).not.toHaveProperty("X-Client-ID");
   });
@@ -692,9 +695,9 @@ describe("Oblien monthly capacity contract", () => {
       offer: subscription.offer!, metadata: subscription.metadata!, idempotencyKey: "saved-monthly-order",
       successUrl: "https://app.openship.io/billing/overview", cancelUrl: "https://app.openship.io/billing/plans" });
     const [url, request] = fetcher.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.oblien.com/billing/checkout");
+    expect(String(url)).toBe("https://api.oblien.com/v1/billing/checkout");
     const sent = JSON.parse(String(request?.body));
-    expect(sent.offer).toMatchObject({ unitAmount, credits: 0, billingMode: "monthly", capacity: { vcpus: 4, memoryMb: 16384, diskGb: 128, workspaces: 1 } });
+    expect(sent.offer).toMatchObject({ unitAmount, credits: 0, billingMode: "monthly", capacity: { vcpus: 4, memoryMb: 16384, diskGb: 128, vms: 1 } });
     expect(sent.offer).not.toHaveProperty("policy");
     expect(sent.idempotencyKey).toBe("saved-monthly-order");
     expect(sent.allowPromotionCodes).toBe(unitAmount > 0);
@@ -763,18 +766,18 @@ describe("Oblien subscription changes", () => {
   it("delegates all four methods to the official SDK and preserves provider cents and fractional credits", async () => {
     const preview = setup({ success: true, namespace: "os-one", quote });
     expect((await preview.api.previewPlanChange("os-one", input)).quote).toEqual(quote);
-    expect(preview.fetcher).toHaveBeenCalledWith("https://api.oblien.com/billing/subscription/changes/preview",
+    expect(preview.fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/subscription/changes/preview",
       expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(String(preview.fetcher.mock.calls[0]![1]!.body))).toEqual({ namespace: "os-one", ...input });
     const accept = setup({ success: true, namespace: "os-one", change }, 202);
     expect((await accept.api.changePlan("os-one", { quoteId: quote.id, idempotencyKey: "confirm-request" })).change.status).toBe("payment_pending");
-    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/billing/subscription/changes",
+    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/v1/billing/subscription/changes",
       expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(String(accept.fetcher.mock.calls.at(-1)![1]!.body))).toEqual({ namespace: "os-one", quoteId: quote.id, idempotencyKey: "confirm-request" });
     await accept.api.getPlanChange("os-one", change.id);
-    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/billing/subscription/changes/change_one?namespace=os-one", expect.objectContaining({ method: "GET" }));
+    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/v1/billing/subscription/changes/change_one?namespace=os-one", expect.objectContaining({ method: "GET" }));
     await accept.api.cancelPlanChange("os-one", change.id, "cancel-request");
-    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/billing/subscription/changes/change_one/cancel",
+    expect(accept.fetcher).toHaveBeenLastCalledWith("https://api.oblien.com/v1/billing/subscription/changes/change_one/cancel",
       expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(String(accept.fetcher.mock.calls.at(-1)![1]!.body))).toEqual({ namespace: "os-one", idempotencyKey: "cancel-request" });
   });

@@ -15,7 +15,7 @@ let provider: CloudInfraProvider;
 beforeEach(() => {
   vi.mocked(probePublicTlsCertificate).mockReset().mockImplementation(async domain => ({ domain, verified: true, expiresAt: expiry, issuer: "Let's Encrypt", reason: "issued" }));
   page = { slug: "route-one", domain: "opsh.io", url: `https://${hostname}`, custom_domain: hostname,
-    namespace: "ns-one", source_workspace_id: "ws-one", exported_path: "/opt/openship/cloud-docker/routes/route-one" };
+    namespace: "ns-one", source_vm_id: "ws-one", exported_path: "/opt/openship/cloud-docker/routes/route-one" };
   routes = vi.fn(async () => ({ data: [{ hostname, namespace: "ns-one", owner_type: "page", owner_id: "route-one", is_custom: 1 }] }));
   pages = {
     list: vi.fn(async () => ({ pages: [page] })), get: vi.fn(async () => ({ page })),

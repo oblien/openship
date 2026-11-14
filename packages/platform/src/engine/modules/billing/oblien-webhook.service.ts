@@ -39,8 +39,8 @@ interface OblienUsageBucket {
 
 interface OblienWebhookData {
   namespace?: string;
-  workspace_id?: string;
-  workspace_name?: string;
+  vm_id?: string;
+  vm_name?: string;
   service?: string;
   /** credits.usage */
   balance?: number;

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import { BillingComputeSchema } from "@repo/contracts";
+import { providerBillingFixture } from "../../../test/helpers/oblien-vm-billing";
 import { OblienBillingApi, assertOblienEntitlementMatchesSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 import { monthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
 import transfer from "../../../test/fixtures/oblien-managed-transfer.json";
 
-// SDK 2.10's live response shape, with synthetic counters and no customer data.
+// Native provider transfer counters with synthetic data.
 const unlimited = { ...transfer, unlimited: true, includedBytes: null,
   includedAvailableBytes: null, availableBytes: null };
 async function readTransfer(network: unknown, covered = true) {
@@ -14,7 +15,7 @@ async function readTransfer(network: unknown, covered = true) {
     ...entitlement.capacity, computeCovered: covered, network,
   } };
   const api = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret",
-    fetch: (async () => Response.json(payload)) as typeof fetch });
+    fetch: (async () => Response.json(providerBillingFixture(payload))) as typeof fetch });
   const result = await api.getEntitlement("os-one");
   assertOblienEntitlementMatchesSubscription(result, subscription);
   return result.capacity!;

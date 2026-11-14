@@ -789,7 +789,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     };
   }
   override async listAllContainers() {
-    const workspace = await this.client.workspaces.get(this.workspaceId);
+    const workspace = await this.client.vms.get(this.workspaceId);
     assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     assertCloudWorkspaceRunning(workspace);
     const containers = await super.listAllContainers();
@@ -802,7 +802,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       throw new Error("A Docker workspace is not a service container");
     let workspace;
     try {
-      workspace = await this.client.workspaces.get(this.workspaceId);
+      workspace = await this.client.vms.get(this.workspaceId);
     } catch (error) {
       if (notFound(error)) return { containerId, status: "missing" };
       throw error;
@@ -841,7 +841,7 @@ export class CloudDockerRuntime extends DockerRuntime {
   override async stop(containerId: string) {
     if (containerId === this.workspaceId)
       throw new Error("A Docker workspace is not a service container");
-    const workspace = await this.client.workspaces.get(this.workspaceId);
+    const workspace = await this.client.vms.get(this.workspaceId);
     assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     if (!isDockerWorkspaceRunning(workspace)) return;
     return super.stop(containerId);

@@ -704,7 +704,7 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
                 const namespace = row.namespace;
                 if (!namespace || namespace !== binding.namespace)
                   throw new Error("Cloud workspace namespace changed");
-                const ws = client.workspace(binding.workspaceId);
+                const ws = client.vm(binding.workspaceId);
                 try {
                   const current = await ws.get();
                   if (current.namespace !== namespace)
