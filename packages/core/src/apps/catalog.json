@@ -11056,6 +11056,241 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "id": "fider",
+      "name": "Fider",
+      "description": "A feedback board where your users suggest, vote on, and discuss ideas, with a private PostgreSQL database.",
+      "kind": "template",
+      "logo": "fider",
+      "category": "other",
+      "repository": "https://github.com/getfider/fider",
+      "tags": [
+        "feedback",
+        "roadmap",
+        "voting",
+        "community"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "fider-db",
+          "image": "postgres:16-alpine",
+          "restart": "unless-stopped",
+          "environment": {
+            "POSTGRES_USER": "fider",
+            "POSTGRES_DB": "fider"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "fider_db_data:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U fider -d fider"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          }
+        },
+        {
+          "name": "fider",
+          "image": "getfider/fider:v0.38.2",
+          "ports": [
+            "8222:3000"
+          ],
+          "exposed": true,
+          "exposedPort": 3000,
+          "routes": [
+            {
+              "port": 3000
+            }
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "fider-db"
+          ],
+          "environment": {
+            "BASE_URL": "{{publicUrl:fider}}",
+            "HOST_MODE": "single",
+            "EMAIL_SMTP_PORT": "587",
+            "DATABASE_URL": "postgres://fider:{{config:DB_PASSWORD}}@fider-db:5432/fider?sslmode=disable"
+          },
+          "secretEnv": [
+            "DATABASE_URL",
+            "JWT_SECRET",
+            "EMAIL_SMTP_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "./fider ping"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 10,
+            "startPeriod": "30s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "fider-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "fider-db"
+        },
+        {
+          "key": "DB_PASSWORD",
+          "service": "fider",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "fider-db"
+        },
+        {
+          "key": "JWT_SECRET",
+          "service": "fider",
+          "label": "Session signing secret",
+          "help": "Auto-generated. Signs sign-in sessions; changing it signs everyone out.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "email",
+          "label": "Outgoing email",
+          "description": "Fider has no passwords: people sign in with a link sent by email, so it will not start without an SMTP server.",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "EMAIL_SMTP_HOST",
+              "service": "fider",
+              "label": "SMTP host",
+              "type": "text",
+              "required": true,
+              "installStep": true,
+              "requiresRedeploy": true,
+              "placeholder": "smtp.example.com"
+            },
+            {
+              "key": "EMAIL_SMTP_PORT",
+              "service": "fider",
+              "label": "SMTP port",
+              "type": "number",
+              "default": "587",
+              "required": true,
+              "installStep": true,
+              "requiresRedeploy": true,
+              "integer": true,
+              "min": 1,
+              "max": 65535
+            },
+            {
+              "key": "EMAIL_SMTP_USERNAME",
+              "service": "fider",
+              "label": "SMTP username",
+              "type": "text",
+              "installStep": true,
+              "requiresRedeploy": true,
+              "help": "Leave empty for a relay that needs no login."
+            },
+            {
+              "key": "EMAIL_SMTP_PASSWORD",
+              "service": "fider",
+              "label": "SMTP password",
+              "type": "password",
+              "secret": true,
+              "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "EMAIL_NOREPLY",
+              "service": "fider",
+              "label": "From address",
+              "type": "text",
+              "required": true,
+              "installStep": true,
+              "requiresRedeploy": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "placeholder": "noreply@example.com",
+              "help": "The sender shown on sign-in and notification emails.",
+              "fullWidth": true
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "fider",
+          "port": 3000,
+          "label": "Fider",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "fider-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "connection": {
+        "title": "Set up Fider",
+        "description": "Fider has no username or password. Open the site, enter your name and email, and follow the link it sends you to finish.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Fider",
+            "source": "publicUrl:fider",
+            "kind": "url",
+            "recommended": true,
+            "help": "The email you enter on first visit becomes the administrator."
+          }
+        ],
+        "firstLogin": {
+          "note": "Do this right after the deploy: until the first site is created, anyone who opens this URL can claim the administrator account. The sign-in email goes through the SMTP server you configured, so check it is reachable if no email arrives."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Feedback and voting",
+            "description": "Collect ideas from your users and let them vote on what matters."
+          },
+          {
+            "title": "Private database",
+            "description": "Posts and votes live in a dedicated, project-scoped Postgres instance."
+          },
+          {
+            "title": "Passwordless sign-in",
+            "description": "People sign in with an emailed link, so there are no passwords to manage."
+          }
+        ]
+      }
     }
   ]
 }
