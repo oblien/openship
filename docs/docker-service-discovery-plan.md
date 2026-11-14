@@ -194,8 +194,25 @@ Docker/Podman compatibility work below is required before declaring full runtime
   with an undisposed runtime. The sweep queue's cleanup observes both
   outcomes (then(onFulfilled, onRejected), never a discarded run.finally), so
   a failing pass rejects only through the caller's catch — no unhandled
-  rejection. Tests: sweep 18, watch 15.
-  Remaining: API operations/UI (steps 3/6), live Podman canary (7/8).
+  rejection. Tests: sweep 18, watch 15. API operations LANDED:
+  `packages/platform/src/discovery.ts` kernel operations (configure with
+  server-access checks — status read, rescan/suppress write, configure/forget
+  admin) over `@api/discovery` routes (`GET/PUT
+  /api/discovery/servers/:id/discovery`, `/rescan`, service
+  suppress/unsuppress/forget). Rescan enters the SAME serialized per-server
+  queue with fresh inventory. Suppress schedules outright route retirement
+  (withdrawalPending on applied history; unsuppress reverts a pending one);
+  disable schedules retirement for every applied binding — the reconciler's
+  withdrawal stage is the one stage that runs for disabled servers, removing
+  outright (never 503-retained) — and the sweep iterates SWEEPABLE servers
+  (enabled ∪ owing-withdrawals) with watchers renewed for enabled only.
+  Forget retires the route synchronously BEFORE deleting the binding (edge
+  down = retryable error, binding intact); the domain row and certificate
+  material survive. Tests: repo 45 (suppress/unsuppress/withdrawal
+  scheduling, sweepable servers), reconciler 19 (disabled-server full
+  retirement), operations 8 (authorization strength, TLS join, disable
+  scheduling, rescan shape validation, forget ordering + retryable failure).
+  Remaining: server UI, live Podman canary (7/8).
 - **Review acceptance check.** After `markInvalid()` clears `containerId`, a
   repeated scan must continue matching the rejected declaration by stable identity
   and retain `observationStatus='invalid'`. Add a regression that repeats the scan;
