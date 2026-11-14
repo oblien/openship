@@ -3,11 +3,11 @@ description: Build and verify the pinned execution bridge for installed Openship
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v6
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version: "1.26.9"
         cache-dependency-path: packages/actions-runner/go.sum
-    - uses: actions/cache@v6
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: packages/actions-runner/dist
         key: ${{ runner.os }}-${{ runner.arch }}-actions-runner-${{ hashFiles('packages/actions-runner/*.go', 'packages/actions-runner/*.mjs', 'packages/actions-runner/go.mod', 'packages/actions-runner/go.sum', 'packages/actions-runner/NOTICE') }}

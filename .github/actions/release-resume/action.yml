@@ -24,7 +24,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: oven-sh/setup-bun@v2
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       with:
         bun-version-file: .bun-version
     - id: check
@@ -39,7 +39,7 @@ runs:
       run: |
         bun test scripts/release-resume.test.ts
         bun scripts/release-resume.ts
-    - uses: actions/download-artifact@v8
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
       if: steps.check.outputs.reused == 'true' && inputs.artifact != ''
       with:
         artifact-ids: ${{ steps.check.outputs.artifact-id }}
@@ -47,7 +47,7 @@ runs:
         github-token: ${{ github.token }}
         path: ${{ runner.temp }}/openship-resume-artifact
         merge-multiple: true
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       if: steps.check.outputs.reused == 'true' && inputs.artifact != ''
       with:
         name: ${{ inputs.artifact }}

@@ -59,7 +59,7 @@ jobs:
     outputs:
       publish: ${{ steps.check.outputs.publish }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 2
           ref: main
@@ -101,7 +101,7 @@ jobs:
         image: [api, dashboard, edge]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # The rollback tag names the built commit — needs the real SHA.
           fetch-depth: 0
@@ -145,10 +145,10 @@ jobs:
       # apps/. amd64 only — the VPS is x86_64; add a platform axis before
       # pointing an arm box at this registry.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: apps/${{ matrix.image }}/Dockerfile

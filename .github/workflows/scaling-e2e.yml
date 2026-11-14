@@ -26,7 +26,7 @@ jobs:
         # no journey input and always require all three checks.
         journey: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.journey && inputs.journey != 'all' && format('["{0}"]', inputs.journey) || '["application","storage","databases"]') }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Reuse a verified successful job
@@ -38,11 +38,11 @@ jobs:
           workflow: .github/workflows/scaling-e2e.yml
           job-id: scaling
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         if: steps.resume.outputs.reused != 'true'
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.resume.outputs.reused != 'true'
         with:
           path: ~/.bun/install/cache
@@ -97,7 +97,7 @@ jobs:
           bun run --cwd apps/api test:e2e 2>&1 | tee "$RUNNER_TEMP/openship-scaling/output.log"
       - name: Save diagnostics
         if: steps.resume.outputs.reused != 'true' && (always())
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: scaling-e2e-${{ matrix.journey }}-diagnostics
           path: ${{ runner.temp }}/openship-scaling

@@ -12,7 +12,7 @@ runs:
   steps:
     - name: Setup Bun for worker verification
       if: inputs.image == 'buildkit'
-      uses: oven-sh/setup-bun@v2
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       with:
         bun-version-file: .bun-version
     - name: Verify the worker release version
@@ -20,17 +20,17 @@ runs:
       shell: bash
       run: bun scripts/verify-buildkit-release.ts --version-only
     - name: Download digests
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
       with:
         pattern: digests-${{ inputs.image }}-*
         path: /tmp/digests
         merge-multiple: true
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
     - name: Log in to GHCR
-      uses: docker/login-action@v3
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
@@ -40,7 +40,7 @@ runs:
     # Manual dispatch → the input tag (or short SHA), and NEVER :latest.
     - name: Docker meta
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
       with:
         images: ghcr.io/${{ github.repository_owner }}/openship-${{ inputs.image }}
         tags: |

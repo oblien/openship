@@ -71,7 +71,7 @@ jobs:
       upstream: ${{ steps.fetch.outputs.upstream }}
     steps:
       - name: Checkout fork main
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # merge needs history; rr-cache lives in .git
 
@@ -81,7 +81,7 @@ jobs:
       # below covers it) — it must never fail the sync itself.
       - name: Restore rerere memory
         continue-on-error: true
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .git/rr-cache
           key: rr-cache-${{ github.run_id }}
@@ -95,7 +95,7 @@ jobs:
         run: echo "BUN_VERSION=$(cat .bun-version)" >> "$GITHUB_ENV"
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "${{ env.BUN_VERSION }}"
 
@@ -272,7 +272,7 @@ jobs:
       - name: Save rerere memory
         continue-on-error: true
         if: steps.decide.outputs.merged == 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .git/rr-cache
           key: rr-cache-${{ github.run_id }}

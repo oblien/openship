@@ -77,7 +77,7 @@ jobs:
             dockerfile: packages/adapters/Dockerfile.buildkit
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -93,11 +93,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: steps.resume.outputs.reused != 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
         if: steps.resume.outputs.reused != 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -106,14 +106,14 @@ jobs:
       - name: Image labels
         if: steps.resume.outputs.reused != 'true'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
 
       - name: Build and push by digest
         if: steps.resume.outputs.reused != 'true'
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -171,7 +171,7 @@ jobs:
 
       - name: Upload digest
         if: steps.resume.outputs.reused != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: digests-${{ matrix.image }}-${{ matrix.platform }}
           path: /tmp/digests/*
@@ -199,17 +199,17 @@ jobs:
       - name: Checkout
         # Tags, and all of them: the test resolves which release to upgrade FROM by
         # walking `git tag`. A shallow clone has none, and it fails rather than guess.
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: .bun-version
 
       - name: Cache bun install
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
@@ -220,7 +220,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -230,7 +230,7 @@ jobs:
       # one empty file NAMED for the digest (see "Export digest" above).
       - name: Resolve the new control-plane image digests
         id: newimage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: digests-*-amd64
           path: /tmp/update-digests
@@ -288,10 +288,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -300,7 +300,7 @@ jobs:
       # This runner is amd64. The artifact holds one empty file NAMED for the digest
       # (see "Export digest" in build-images).
       - name: Resolve the new dashboard image digest
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: digests-dashboard-amd64
           path: /tmp/dashboard-digest
@@ -332,7 +332,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/publish-image
         with:
           image: buildkit
@@ -356,7 +356,7 @@ jobs:
       matrix:
         image: [api, dashboard, edge, mail, webmail, cluster-tasks]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/publish-image
         with:
           image: ${{ matrix.image }}
