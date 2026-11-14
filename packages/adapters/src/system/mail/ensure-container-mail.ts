@@ -342,6 +342,24 @@ async function readEnvFileValue(
   return null;
 }
 
+/** GH-1768: an engine update carries the host's ignore-ip list across; nothing else moves. */
+async function carryIgnoreIp(executor: CommandExecutor, onLog: SystemLogCallback): Promise<void> {
+  const key = "OPENSHIP_MAIL_F2B_IGNOREIP", wanted = process.env[key]?.trim();
+  const profile = await resolveEnvironment(executor).catch(() => null);
+  const host = profile?.canSudo ? elevatedExecutor(executor) : executor;
+  const body = await host.readFile(ENGINE_ENV_FILE).catch(() => "");
+  const records: Record<string, string> = {};
+  for (const line of body.split("\n")) {
+    const eq = line.indexOf("=");
+    if (eq > 0) records[line.slice(0, eq).trim()] = line.slice(eq + 1);
+  }
+  if (!body || records[key] === wanted) return;
+  wanted ? (records[key] = wanted) : delete records[key];
+  await writeEnvFile(host, ENGINE_ENV_FILE, records).catch((failure: unknown) =>
+    onLog(log(`Could not carry ${key} across the update: ${safeErrorMessage(failure)}`, "warn")),
+  );
+}
+
 /**
  * The superuser password an ALREADY-INITIALISED cluster is holding, or null if this is a
  * first install.
@@ -656,6 +674,8 @@ export async function ensureContainerMail(
     // dies on the client-side `--env-file` open, `swapManagedImage` rolls back through the
     // same callback and dies identically, and a perfectly healthy engine gets reported as
     // `mailDown` with nothing in the log pointing at permissions.
+    // Rewrite that record before the hand-over below, as root where the file is still root-owned.
+    await carryIgnoreIp(executor, onLog);
     await handOverEnvFile(executor, ENGINE_ENV_FILE, onLog);
 
     const start = makeMailStart(executor, container, opts);

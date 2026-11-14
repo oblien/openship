@@ -401,7 +401,8 @@ describe("ensureContainerMail swap", () => {
       if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
       return "";
     });
-    const executor = { exec, streamExec, writeFile: vi.fn(async () => {}) } as never;
+    const readFile = vi.fn(async () => "FIRST_DOMAIN=mail.example.com\n");
+    const executor = { exec, streamExec, writeFile: vi.fn(async () => {}), readFile } as never;
 
     await ensureContainerMail(executor, {
       domain: "example.com",
@@ -413,6 +414,110 @@ describe("ensureContainerMail swap", () => {
     // Swapped in place — a new engine `docker run`, and no pull (tag already present).
     expect(cmds.some((c) => c.includes("docker run") && c.includes("--network host"))).toBe(true);
     expect(cmds.some((c) => c.startsWith("docker pull"))).toBe(false);
+  });
+});
+
+/**
+ * GH-1768: the swap relaunches the engine against the `engine.env` a PREVIOUS install wrote,
+ * so `OPENSHIP_MAIL_F2B_IGNOREIP` — which the API reads out of its own environment, not out
+ * of the install — has to be carried onto that file. Left alone, a version bump quietly
+ * reinstates the default exemption list and the operator's own IPs start getting banned.
+ */
+function swapBox(engineEnv: string) {
+  const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
+  const writeFile = vi.fn(async (_path: string, _content: string) => {});
+  const readFile = vi.fn(async (path: string) => {
+    if (path.endsWith("engine.env")) return engineEnv;
+    throw new Error("ENOENT");
+  });
+  const exec = vi.fn(async (cmd: string) => {
+    if (cmd.includes("{{json .Mounts}}"))
+      return `${"a".repeat(64)}\ttrue\t${JSON.stringify(
+        MAIL_CONTAINER_MOUNTS.map((m) => ({
+          Type: "bind",
+          Source: m.host,
+          Destination: m.container,
+        })),
+      )}`;
+    if (cmd.includes(STATE_PROBE)) return stateLine("ghcr.io/x/openship-mail:old");
+    if (cmd.includes("docker image inspect")) return "sha256:present\n";
+    if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
+    return "";
+  });
+  return {
+    executor: { exec, streamExec, writeFile, readFile } as never,
+    engineEnvWrites: () => writeFile.mock.calls.filter(([path]) => String(path).endsWith("engine.env")),
+  };
+}
+
+describe("ensureContainerMail carries the ignore-ip list across an update (GH-1768)", () => {
+  const KEY = "OPENSHIP_MAIL_F2B_IGNOREIP";
+  const ENV_BODY = "FIRST_DOMAIN=mail.example.com\nOPENSHIP_MAIL_DB_PORT=5433\n";
+
+  it("rewrites that one record before the swap and keeps every other record", async () => {
+    const previous = process.env[KEY];
+    process.env[KEY] = "203.0.113.5 198.51.100.0/24";
+    try {
+      const box = swapBox(`${ENV_BODY}${KEY}=192.0.2.9\n`);
+      await ensureContainerMail(box.executor, {
+        domain: "mail.example.com",
+        secrets: {},
+        onLog: () => {},
+      }).catch(() => {});
+
+      const writes = box.engineEnvWrites();
+      expect(writes).toHaveLength(1);
+      const [, body] = writes[0] as [string, string];
+      expect(body).toContain(`${KEY}=203.0.113.5 198.51.100.0/24\n`);
+      expect(body).not.toContain("192.0.2.9");
+      // Install state survives: this is a refresh of one record, not a rewrite of the file.
+      expect(body).toContain("FIRST_DOMAIN=mail.example.com\n");
+      expect(body).toContain("OPENSHIP_MAIL_DB_PORT=5433\n");
+    } finally {
+      if (previous === undefined) delete process.env[KEY];
+      else process.env[KEY] = previous;
+    }
+  });
+
+  it("drops the record when the API no longer sets it", async () => {
+    const previous = process.env[KEY];
+    delete process.env[KEY];
+    try {
+      const box = swapBox(`${ENV_BODY}${KEY}=192.0.2.9\n`);
+      await ensureContainerMail(box.executor, {
+        domain: "mail.example.com",
+        secrets: {},
+        onLog: () => {},
+      }).catch(() => {});
+
+      const writes = box.engineEnvWrites();
+      expect(writes).toHaveLength(1);
+      const [, body] = writes[0] as [string, string];
+      expect(body).not.toContain(KEY);
+      expect(body).toContain("FIRST_DOMAIN=mail.example.com\n");
+    } finally {
+      if (previous === undefined) delete process.env[KEY];
+      else process.env[KEY] = previous;
+    }
+  });
+
+  it("does not touch the file when the answer already matches it", async () => {
+    const previous = process.env[KEY];
+    delete process.env[KEY];
+    try {
+      const box = swapBox(ENV_BODY);
+      await ensureContainerMail(box.executor, {
+        domain: "mail.example.com",
+        secrets: {},
+        onLog: () => {},
+      }).catch(() => {});
+
+      // Nothing to change means nothing to write — the swap must not rewrite secret env-files.
+      expect(box.engineEnvWrites()).toHaveLength(0);
+    } finally {
+      if (previous === undefined) delete process.env[KEY];
+      else process.env[KEY] = previous;
+    }
   });
 });
 
