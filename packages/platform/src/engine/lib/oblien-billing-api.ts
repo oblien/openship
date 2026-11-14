@@ -332,7 +332,7 @@ export class OblienBillingApi {
   private async requestBilling<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
     const meteredPricing = method === "GET" && path === "/pricing/calculator";
     if (!path.startsWith("/billing/") && !meteredPricing) throw new Error("Billing transport only accepts billing routes");
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = oblienApiUrl(oblienApiBaseUrl(this.baseUrl), path);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }

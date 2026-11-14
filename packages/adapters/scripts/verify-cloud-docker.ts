@@ -147,7 +147,7 @@ try {
     (await client.vms.get(workspaceId)).mode === "permanent",
   );
   await client
-    .workspace(workspaceId)
+    .vm(workspaceId)
     .lifecycle.makeTemporary({ ttl: "20m", ttl_action: "remove", remove_on_exit: false });
   const pageMethods = [
     "list",

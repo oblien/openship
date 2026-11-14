@@ -64,6 +64,10 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
       res.end(JSON.stringify({ success: true, vm: { id: "vm-a", namespace: "tenant-a" } }));
       return;
     }
+    if (req.url === "/proxy/v1/vms/vm-a/workloads/process-a") {
+      res.end(JSON.stringify({ success: true, workload: { id: "process-a", status: "running" } }));
+      return;
+    }
     if (req.url === "/proxy/v1/pages") {
       res.end(JSON.stringify({ success: true, page: { slug: "site", source_vm_id: "vm-a" } }));
       return;
@@ -85,6 +89,10 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
     });
     expect((await client.vms.list()).vms[0]?.id).toBe("vm-a");
     expect((await client.vm("vm-a").get()).namespace).toBe("tenant-a");
+    expect(await client.vm("vm-a").workloads.get("process-a")).toMatchObject({
+      id: "process-a",
+      status: "running",
+    });
     await client.pages.create({ vm_id: "vm-a", name: "Site", slug: "site", path: "/dist" });
     await client.routes.set("site.example", {
       routes: [{ match: { path: "/" }, action: { kind: "proxy", vm: "vm-a", port: 3000 } }],
@@ -110,6 +118,19 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
     );
   }
 });
+
+it.each([undefined, null, [], { status: "running" }])(
+  "rejects an invalid native workload record: %j",
+  async (workload) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ success: true, workload })),
+    );
+    await expect(
+      new Oblien({ token: "fixture" }).vm("vm-a").workloads.get("process-a"),
+    ).rejects.toMatchObject({ code: "OBLIEN_WORKLOAD_INVALID" });
+  },
+);
 
 it("preserves paid limits, zero and unlimited counts while leaving customer metadata opaque", () => {
   const metadata = {

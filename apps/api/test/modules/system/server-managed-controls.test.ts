@@ -72,11 +72,11 @@ let workloads: Map<string, any>;
 let vm: any;
 let handle: any;
 
-const jwt = (id = vmId, type = "workspace") =>
+const jwt = (id = vmId, type = "vm") =>
   `e30.${Buffer.from(
     JSON.stringify({
       type,
-      workspace_id: id,
+      vm_id: id,
       token: runtimeToken,
       exp: Math.floor(Date.now() / 1000) + 3600,
     }),
@@ -402,7 +402,7 @@ describe("managed server controls through real HTTP, policy and SQL ownership", 
     ).toBe(400);
     expect(handle.ssh.setPassword).not.toHaveBeenCalled();
   });
-  it("reveals only a workspace gateway token and fences repeat rotations", async () => {
+  it("reveals only a VM gateway token and fences repeat rotations", async () => {
     const revealed = await request("managed/runtime-api/credential", "POST", { confirm: true });
     expect(revealed.status, JSON.stringify(revealed.body)).toBe(200);
     expect(revealed.body.endpoint).toBe("https://runtime.example.test");
@@ -419,6 +419,13 @@ describe("managed server controls through real HTTP, policy and SQL ownership", 
     expect(
       (await request("managed/runtime-api/credential", "POST", { confirm: true })).status,
     ).toBe(502);
+  });
+  it.each(["workspace", "namespace", "account"])("rejects %s credentials even with the selected VM ID", async (type) => {
+    handle.apiAccess.getToken.mockResolvedValue({ token: jwt(vmId, type) });
+    const result = await request("managed/runtime-api/credential", "POST", { confirm: true });
+    expect(result.status).toBe(502);
+    expect(result.body.code).toBe("MANAGED_CREDENTIAL_UNAVAILABLE");
+    expect(JSON.stringify(result.body)).not.toContain(runtimeToken);
   });
   it("keeps the original network response for clients that do not request diagnostics", async () => {
     const legacy = { internetAccess: true, ingressPorts: [80, 9990] };

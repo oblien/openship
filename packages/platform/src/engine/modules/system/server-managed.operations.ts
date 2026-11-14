@@ -75,8 +75,8 @@ async function runtimeCredential(connection: ManagedConnection) {
   }
   if (
     !result.token ||
-    claims.type !== "workspace" ||
-    claims.workspace_id !== connection.binding.workspaceId ||
+    claims.type !== "vm" ||
+    claims.vm_id !== connection.binding.workspaceId ||
     typeof claims.token !== "string" ||
     claims.token.length < 16 ||
     typeof claims.exp !== "number" ||

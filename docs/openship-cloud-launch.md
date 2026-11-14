@@ -818,3 +818,21 @@ this integration. Older SDK routes are not probed and failed writes are not
 replayed. OpenShip's organization/workspace records, managed-server IDs, paid
 offer snapshots and customer metadata retain their existing identities. The
 provider boundary maps those saved workspace counts to native VM capacity.
+
+The matching runtime gateway is `https://vm.oblien.com`; remove or update any
+old `OBLIEN_RUNTIME_URL` override. Runtime credentials must carry `type: "vm"`
+and the selected `vm_id`. Namespace/account tokens are never runtime credentials.
+
+This cutover also requires a Desktop/self-hosted release containing SDK 3 for
+installations that use Cloud servers. Those clients execute provider requests
+directly using scoped tokens; redeploying the hosted API alone cannot upgrade
+their SDK 2 transport. Coordinate that client rollout with the provider cutover,
+and obtain fresh credentials. Existing VM IDs, disks, and project data must be
+preserved. Self-hosted local/SSH-only deployments do not use this provider API.
+
+Before reopening customer operations, run `bun run --cwd apps/api cloud:check`
+with the deployed Cloud environment and both explicit staging verification
+scripts (`verify-cloud-docker.ts` and `verify-cloud-isolation.ts`) against the
+matching API/gateway. Verify an existing VM in addition to disposable creation,
+exec/files, routing, namespace isolation and cleanup. Local HTTP fixtures and
+unit tests do not establish that the provider deployment has been activated.

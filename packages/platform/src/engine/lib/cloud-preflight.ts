@@ -1,6 +1,5 @@
-import { oblienApiBaseUrl } from "@repo/adapters";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { createPlatform, type CloudInfraProvider } from "@repo/adapters";
+import { createPlatform, oblienApiBaseUrl, type CloudInfraProvider } from "@repo/adapters";
 import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
 import { env } from "../config/env";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";

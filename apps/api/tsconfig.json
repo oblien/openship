@@ -15,6 +15,6 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "scripts/cloud-readiness.ts"],
   "exclude": ["node_modules", "dist"]
 }

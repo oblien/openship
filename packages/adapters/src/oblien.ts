@@ -323,13 +323,12 @@ export class Oblien extends OblienSdk {
     // Validate the native record before process control and resize recovery.
     const getWorkload = this.vms.workloads.get.bind(this.vms.workloads);
     this.vms.workloads.get = async (workspaceId, workloadId) => {
-      const response = await getWorkload(workspaceId, workloadId);
-      const workload = response;
+      const workload = await getWorkload(workspaceId, workloadId);
       if (!workload || typeof workload !== "object" || Array.isArray(workload) ||
           !("id" in workload) || typeof workload.id !== "string") {
         throw new OblienError("Oblien returned an invalid application process record", 502, "OBLIEN_WORKLOAD_INVALID");
       }
-      return workload as typeof response;
+      return workload;
     };
   }
 }

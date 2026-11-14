@@ -176,7 +176,7 @@ try {
     finally { await executor.dispose(); }
     pages.set(namespace, namespace);
     await save();
-    await admin.pages.create({ slug: namespace, namespace, vm_id: workspace.id, path, domain: "preview.oblien.com" });
+    await admin.pages.create({ name: namespace, slug: namespace, namespace, vm_id: workspace.id, path, domain: "preview.oblien.com" });
   }
   const visibleA = (await clientA.vms.list()).vms;
   const visibleB = (await clientB.vms.list()).vms;
@@ -297,7 +297,7 @@ try {
     try {
       const current = await admin.namespaces.get(id);
       if (current.data.slug !== namespace || !namespace.startsWith(`${tag}-`)) throw new Error("Test namespace identity changed");
-      await admin.namespaces.delete(id, { deleteWorkspaces: true });
+      await admin.namespaces.delete(id, { deleteVms: true });
       namespaceIds.delete(namespace);
     } catch (error) {
       if ((error as { status?: number }).status === 404) namespaceIds.delete(namespace);
