@@ -165,10 +165,10 @@ describe("reconcileServerDiscovery", () => {
     reset();
   });
 
-  it("does nothing when discovery is disabled", async () => {
+  it("a disabled server with NOTHING queued has no work (applies stay gated)", async () => {
     state.settings = { enabled: false };
     const summary = await reconcileServerDiscovery(SERVER(), "org_1", { edge: edge() });
-    expect(summary.ok).toBe(false);
+    expect(summary.ok).toBe(true); // withdrawals ran (none due); applies stayed gated
     expect(summary.applied).toEqual([]);
   });
 
@@ -303,6 +303,22 @@ describe("reconcileServerDiscovery", () => {
       expect.objectContaining({ domain: "app.example.com", unavailable: true }),
     );
     expect(summary.retained).toEqual(["id:my-app"]);
+  });
+
+  it("a DISABLED server still retires scheduled routes — outright, never 503-retained", async () => {
+    // Disable schedules retirement for every applied binding; the withdrawal
+    // stage is the one stage that runs for disabled servers, and with
+    // discovery off no vhost is retained at all.
+    state.settings = { enabled: false };
+    state.dueWithdrawal = [binding({ applyState: "pending", appliedGeneration: 2, withdrawalPending: true })];
+    const target = edge();
+    const summary = await reconcileServerDiscovery(SERVER(), "org_1", { edge: target });
+    expect(target.routing.removeRoute).toHaveBeenCalledWith("app.example.com");
+    expect(target.routing.registerRoute).not.toHaveBeenCalled(); // no retention write
+    expect(summary.withdrawals).toEqual(["id:my-app"]);
+    expect(summary.retained).toEqual([]);
+    // The applies loop never ran.
+    expect(state.applied).toEqual([]);
   });
 
   it("processes withdrawals first and clears the retirement flag", async () => {

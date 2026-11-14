@@ -10,7 +10,7 @@ const state = {
 
 const discoveryRepo = {
   getSettings: vi.fn(async (serverId: string) => state.settingsByServer[serverId] ?? null),
-  listEnabledServerIds: vi.fn(async () => state.enabled),
+  listSweepableServerIds: vi.fn(async () => state.enabled),
 };
 
 const serverRepo = {
@@ -150,8 +150,9 @@ describe("sweepDiscovery", () => {
     expect(summary.servers).toBe(1);
     expect(summary.failed).toEqual(["srv_1"]);
     expect(scan).not.toHaveBeenCalled();
-    // The watcher renewal still runs (with the enabled ids, not the swept ones).
-    expect(renew).toHaveBeenCalledWith(["srv_1"]);
+    // The watcher renewal still runs — but a tenant-less server never arms a
+    // watcher, so the enabled list is empty.
+    expect(renew).toHaveBeenCalledWith([]);
   });
 
   it("keeps other servers sweeping when one throws", async () => {
@@ -169,8 +170,8 @@ describe("sweepDiscovery", () => {
     void summary;
   });
 
-  it("survives listEnabledServerIds failing", async () => {
-    discoveryRepo.listEnabledServerIds.mockRejectedValueOnce(new Error("db down"));
+  it("survives listSweepableServerIds failing", async () => {
+    discoveryRepo.listSweepableServerIds.mockRejectedValueOnce(new Error("db down"));
     const summary = await sweepDiscovery();
     expect(summary.servers).toBe(0);
     expect(summary.failed).toEqual([]);

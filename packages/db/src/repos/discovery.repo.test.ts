@@ -308,6 +308,50 @@ describe("binding observations", () => {
     expect((await repo.dueForApply(SERVER)).map((r) => r.serviceKey)).toEqual(["id:my-app"]);
   });
 
+  it("suppress schedules retirement for applied bindings and unsuppress reverts a pending one", async () => {
+    await repo.observe(SERVER, observation());
+    await repo.markApplied(SERVER, "id:my-app", 1);
+    expect(await repo.dueForWithdrawal(SERVER)).toHaveLength(0);
+
+    // Opt-out with application history: route retirement is scheduled.
+    const suppressed = await repo.suppress(SERVER, "id:my-app");
+    expect(suppressed?.suppressed).toBe(true);
+    expect(suppressed?.withdrawalPending).toBe(true);
+    expect((await repo.dueForWithdrawal(SERVER)).map((r) => r.serviceKey)).toEqual(["id:my-app"]);
+
+    // Change of heart BEFORE retirement ran: the withdrawal is withdrawn too,
+    // or the reconciler would remove a route the operator decided to keep.
+    const reverted = await repo.unsuppress(SERVER, "id:my-app");
+    expect(reverted?.suppressed).toBe(false);
+    expect(reverted?.withdrawalPending).toBe(false);
+    expect(await repo.dueForWithdrawal(SERVER)).toHaveLength(0);
+
+    // Opt-out WITHOUT history: no route exists, nothing to retire.
+    await repo.observe(SERVER, observation({ serviceKey: "id:fresh", hostname: "fresh.example.com" }));
+    const fresh = await repo.suppress(SERVER, "id:fresh");
+    expect(fresh?.withdrawalPending).toBe(false);
+    expect(await repo.dueForWithdrawal(SERVER)).toHaveLength(0);
+  });
+
+  it("disable schedules retirement for every applied binding and the server stays sweepable", async () => {
+    await repo.observe(SERVER, observation());
+    await repo.observe(SERVER, observation({ serviceKey: "id:second", hostname: "second.example.com", containerId: "ctr_2", ipAddress: "172.20.0.6" }));
+    await repo.markApplied(SERVER, "id:my-app", 1);
+    await repo.markApplied(SERVER, "id:second", 1);
+    await repo.configure(SERVER, { enabled: true });
+
+    // Enabled servers are sweepable.
+    expect((await repo.listSweepableServerIds()).map((r) => r.serverId)).toContain(SERVER);
+
+    const scheduled = await repo.scheduleWithdrawalForAll(SERVER);
+    expect(scheduled.map((r) => r.serviceKey).sort()).toEqual(["id:my-app", "id:second"]);
+
+    // A disabled server owing withdrawals is STILL sweepable (reconcile must
+    // run to retire the routes) — while a merely disabled server is not.
+    await repo.configure(SERVER, { enabled: false });
+    expect((await repo.listSweepableServerIds()).map((r) => r.serverId)).toContain(SERVER);
+  });
+
   it("retention-relevant state survives the real observe→apply→stop→markMissing flow", async () => {
     // The full lifecycle the reconciler decides on, through the REAL repo:
     // discover (observe) → apply (markApplied records durable history) →
