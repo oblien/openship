@@ -45,15 +45,13 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
     }
     res.setHeader("Content-Type", "application/json");
     if (req.url === "/proxy/v1/vms" && req.method === "POST") {
-      res
-        .writeHead(422)
-        .end(
-          JSON.stringify({
-            success: false,
-            code: "CREATE_FAILED",
-            details: { vm_id: "vm-failed" },
-          }),
-        );
+      res.writeHead(422).end(
+        JSON.stringify({
+          success: false,
+          code: "CREATE_FAILED",
+          details: { vm_id: "vm-failed" },
+        }),
+      );
       return;
     }
     if (req.url === "/proxy/v1/vms") {
