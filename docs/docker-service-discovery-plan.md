@@ -212,6 +212,17 @@ Docker/Podman compatibility work below is required before declaring full runtime
   scheduling, sweepable servers), reconciler 19 (disabled-server full
   retirement), operations 8 (authorization strength, TLS join, disable
   scheduling, rescan shape validation, forget ordering + retryable failure).
+  Follow-up hardening: FORGET runs the whole retire+delete sequence INSIDE
+  the server sweep queue (runInServerQueue — the queue generalized for
+  operator mutations), so an in-flight reconcile can never recreate a route
+  between removal and row deletion; DISABLE is ATOMIC (repo
+  disableAndScheduleWithdrawals commits the settings flip and withdrawal
+  scheduling in one transaction — a crash between them would strand live
+  routes on a server no sweep selects); UNSUPPRESS cancels only
+  SUPPRESSION-specific retirement — withdrawals owed to server disable or
+  observed loss survive the change of heart (row-locked reason check).
+  Tests: repo 45, reconciler 19, operations 9, sweep 20 (queue serialization
+  with operator mutations + rejection-safe cleanup).
   Remaining: server UI, live Podman canary (7/8).
 - **Review acceptance check.** After `markInvalid()` clears `containerId`, a
   repeated scan must continue matching the rejected declaration by stable identity
