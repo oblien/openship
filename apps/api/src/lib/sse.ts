@@ -41,7 +41,12 @@ import { SYSTEM } from "@repo/core";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 
 const controllerStreams = new Set<SSEStreamingApi>();
+let accepting = true;
+export function resumeControllerStreams(): void {
+  accepting = true;
+}
 export function closeControllerStreams(): void {
+  accepting = false;
   for (const stream of controllerStreams) stream.abort();
 }
 
@@ -182,6 +187,16 @@ export function streamSSE(
   c: Context,
   cb: (stream: SSEStreamingApi) => Promise<void>,
 ) {
+  // An admitted request can finish its permission/metadata read after the HTTP
+  // fence closed existing streams. Do not give the drain a new live subscriber.
+  if (!accepting) {
+    c.header("Retry-After", "5");
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      code: "INSTANCE_CONTROLLER_INACTIVE",
+      error: "Your instance is moving. Reconnect after the handoff.",
+    }, 503);
+  }
   const context = currentErrorContext();
   // Disable reverse-proxy response buffering. nginx/OpenResty buffer proxied
   // responses by default, which holds SSE events back until the buffer fills —

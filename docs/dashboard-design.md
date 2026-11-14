@@ -509,6 +509,8 @@ Instance relocation has one entry in **Settings → Instance → Instance locati
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
 and recovery in the same card; do not add another direct-transfer or Team migration wizard.
+During server preparation, View deployment opens the saved build view. Hide that action
+while the source is fenced for transfer, when ordinary deployment reads are unavailable.
 Keep **Connect to an existing instance** and **Move to a server** visible on Desktop.
 A connected Desktop shows **Reconnect** and **Move back to Desktop**. An active server
 shows **Connect a Desktop**, **Move to another server**, and **Move to Desktop**.

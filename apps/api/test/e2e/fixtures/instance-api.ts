@@ -135,7 +135,7 @@ export async function startApi(input: {
 }
 
 export async function stopApi(api: RunningApi): Promise<void> {
-  if (api.child.exitCode === null) {
+  if (api.child.exitCode === null && api.child.signalCode === null) {
     api.child.kill("SIGTERM");
     const exited = new Promise<boolean>((resolve) => api.child.once("exit", () => resolve(true)));
     if (!(await Promise.race([exited, delay(15_000).then(() => false)]))) {

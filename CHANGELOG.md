@@ -23,6 +23,12 @@ Runtime security notices use the signed feed published from `security-advisories
 - Run the container-to-host connectivity probe with Node.js, matching the API image,
   so `openship up` and `openship doctor` can diagnose the host channel without Bun.
 
+### Instance relocation
+
+- Fence event-stream admission while moving the controller so a late subscriber cannot
+  keep the source draining indefinitely. Restore stream access when the controller resumes,
+  and link server preparation to its build view while deployment reads remain available.
+
 ## 0.9.12
 
 **Critical update** for build-secret protection, database upgrade repairs and
