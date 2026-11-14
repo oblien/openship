@@ -3,10 +3,11 @@ name: Fork upstream sync
 # ─────────────────────────────────────────────────────────────────────────────
 # The fork's worker: keep a thin patch layer on top of pristine upstream.
 #
-#   daily (or manual):  fetch oblien/openship main → merge into fork main →
-#                       guard our patches + run their tests → push → build &
-#                       push images to our registry (fork-images.yml) and
-#                       publish the CLI as a GitHub release (fork-cli.yml).
+#   weekly (or manual): fetch oblien/openship main → merge into a sync branch
+#                       → guard our patches + run their tests → open a PR.
+#                       Merging that PR in the UI is what ships: the resulting
+#                       `push` to main builds + pushes images (fork-images.yml)
+#                       and publishes the CLI release (fork-cli.yml).
 #
 # Conflict handling ("make fixes and keep our stuff"):
 #   • rerere is ON and its memory (.git/rr-cache) is cached across runs — the
@@ -26,10 +27,12 @@ name: Fork upstream sync
 #   • Actions must be enabled on the fork for `schedule:` to fire (Actions tab
 #     → enable). GitHub also disables cron workflows after 60 days without
 #     repo activity — the sync pushes themselves reset that clock.
-#   • The merge is pushed with GITHUB_TOKEN, which by design does NOT retrigger
-#     `push:` workflows — that is why the image build is chained here via
-#     workflow_call instead of relying on fork-images.yml's push trigger
-#     (which stays for hand-pushed commits).
+#   • main is PR-only (ruleset `require-pr-on-default`), so this worker no
+#     longer pushes main directly. It pushes a `fork-sync/upstream-<sha>`
+#     branch and opens a PR; the UI merge is a real push event by a human, so
+#     fork-images.yml and fork-cli.yml fire on their own `push: branches:
+#     [main]` triggers. Do NOT chain them here with workflow_call — they would
+#     build from the unmerged branch.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -262,7 +265,7 @@ jobs:
             src/infra/edge-baked-conf.test.ts \
             src/system/docker-check.test.ts
 
-      # ── Publish: push the merge, then chain the image build ───────────────
+      # ── Publish: hand the merge over as a pull request ────────────────────
       # Save rr-cache AFTER a successful merge too — a rerere resolution only
       # gets memorized when the merge that recorded it completes. Best-effort
       # (see the restore step above).
@@ -274,20 +277,43 @@ jobs:
           path: .git/rr-cache
           key: rr-cache-${{ github.run_id }}
 
-      - name: Push merge to fork main
+      - name: Push the sync branch
         if: steps.decide.outputs.merged == 'true'
-        run: git push origin main
+        id: pushbranch
+        run: |
+          set -eu
+          branch="fork-sync/upstream-${{ steps.fetch.outputs.upstream }}"
+          # Force is safe: the branch is owned by this worker and rebuilt each
+          # run. Only this branch is ever force-pushed; main is PR-only.
+          git push origin "HEAD:refs/heads/$branch" --force
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
-  images:
-    name: Build + push fork images
-    needs: sync
-    if: needs.sync.outputs.merged == 'true'
-    uses: ./.github/workflows/fork-images.yml
-    secrets: inherit
+      - name: Open (or update) the sync pull request
+        if: steps.decide.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.pushbranch.outputs.branch }}
+          UPSTREAM: ${{ steps.fetch.outputs.upstream }}
+        run: |
+          set -eu
+          # REST, not `gh pr create`: the GraphQL mutations gh wraps are refused
+          # for the Actions installation token — same reason the issue steps
+          # above use `gh api`.
+          body="$(printf '%s\n' \
+            "Automated merge of [\`oblien/openship@${UPSTREAM}\`](https://github.com/oblien/openship/commit/${UPSTREAM}) into \`main\`." \
+            "" \
+            "Patch guard, type-check and the patched tests all passed before this branch was pushed." \
+            "" \
+            "**Merging this is what ships it** — \`fork-images\` and \`fork-cli\` run on the resulting push to \`main\`.")"
+          existing="$(gh api "repos/$REPO/pulls?state=open&head=$REPO:$BRANCH" --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh api --method POST "repos/$REPO/pulls/$existing/comments" -F body="$body" >/dev/null
+            echo "updated the open sync PR (#$existing)"
+          else
+            gh api --method POST "repos/$REPO/pulls" \
+              -f title="chore(fork): sync upstream ${UPSTREAM}" \
+              -f head="$BRANCH" -f base=main -F body="$body" >/dev/null
+            echo "opened a sync PR for $BRANCH"
+          fi
 
-  cli:
-    name: Build + publish fork CLI
-    needs: sync
-    if: needs.sync.outputs.merged == 'true'
-    uses: ./.github/workflows/fork-cli.yml
-    secrets: inherit
