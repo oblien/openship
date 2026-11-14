@@ -50,6 +50,7 @@ import { createSystemOperations, type PlatformSystemOperations, type SystemDepen
 import { createAppOperations, type PlatformAppOperations, type AppDependencies } from "./apps";
 import { createBackupDestinationOperations, type PlatformBackupDestinationOperations, type BackupDestinationDependencies } from "./backup-destinations";
 import { createBackupOperations, type PlatformBackupOperations, type BackupDependencies } from "./backups";
+import { createDiscoveryOperations, type PlatformDiscoveryOperations } from "./discovery";
 
 import { createJobOperations, type PlatformJobOperations, type JobDependencies } from "./jobs";
 
@@ -92,6 +93,7 @@ export interface PlatformKernel {
   readonly apps: PlatformAppOperations;
   readonly backupDestinations: PlatformBackupDestinationOperations;
   readonly backups: PlatformBackupOperations;
+  readonly discovery: PlatformDiscoveryOperations;
   readonly billing: PlatformBillingOperations;
   readonly affiliates: PlatformAffiliateOperations;
   readonly notices: PlatformNoticeOperations;
@@ -125,6 +127,7 @@ export function createPlatform(deps: DeploymentDependencies & { projects?: Proje
     apps: createAppOperations(deps.authorization, deps.apps),
     backupDestinations: createBackupDestinationOperations(deps.authorization, deps.backupDestinations),
     backups: createBackupOperations(deps.authorization, deps.backups),
+    discovery: createDiscoveryOperations(deps.authorization),
     billing: createBillingOperations(deps.authorization, deps.billing),
     affiliates: createAffiliateOperations(deps.authorization, deps.affiliates),
     notices: createNoticeOperations(deps.authorization, deps.notices),

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { discoveryBinding as binding, discoverySettings as settings, domain } from "../schema";
 import type { DiscoveryDeclaration } from "@repo/core";
@@ -89,6 +89,25 @@ export function createDiscoveryRepo(db: Database) {
         .select({ serverId: settings.serverId })
         .from(settings)
         .where(eq(settings.enabled, true));
+    },
+
+    /**
+     * Servers needing a sweep: every enabled server, PLUS disabled servers that
+     * still owe route withdrawals (disable scheduled retirement — the sweep
+     * must run reconcile for them even though scan/apply/repair stay gated).
+     */
+    async listSweepableServerIds() {
+      const enabled = await db
+        .select({ serverId: settings.serverId })
+        .from(settings)
+        .where(eq(settings.enabled, true));
+      const owing = await db
+        .selectDistinct({ serverId: binding.serverId })
+        .from(binding)
+        .where(eq(binding.withdrawalPending, true));
+      const seen = new Set(enabled.map((r) => r.serverId));
+      for (const row of owing) seen.add(row.serverId);
+      return [...seen].map((serverId) => ({ serverId }));
     },
 
     // ── Bindings ────────────────────────────────────────────────────────
@@ -541,22 +560,73 @@ export function createDiscoveryRepo(db: Database) {
     },
 
     /** The operator declined this declaration; the scanner keeps observing it. */
+    /**
+     * Operator opt-out: the scanner keeps observing (status visibility) but no
+     * route is reconciled for this binding, and a LIVE route is retired.
+     * Retirement is scheduled here (withdrawalPending when application history
+     * proves a route exists) and consumed by the reconciler's withdrawal loop,
+     * which removes outright for suppressed owners — full retirement, never
+     * 503-retention (explicit control, docs: "Manual disable/forget explicitly
+     * controls route retirement").
+     */
     async suppress(serverId: string, serviceKey: string) {
+      return db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(binding)
+          .where(and(eq(binding.serverId, serverId), eq(binding.serviceKey, serviceKey)))
+          .for("update");
+        if (!existing) return undefined;
+        const hasAppliedRoute = existing.applyState === "applied" || existing.appliedGeneration > 0;
+        const [row] = await tx
+          .update(binding)
+          .set({
+            suppressed: true,
+            suppressedAt: new Date(),
+            ...(hasAppliedRoute ? { withdrawalPending: true } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(binding.id, existing.id))
+          .returning();
+        return row;
+      });
+    },
+
+    /**
+     * Revert an opt-out that has NOT retired its route yet: clear the pending
+     * withdrawal so the reconciler doesn't remove a route the operator decided
+     * to keep after all. (A withdrawal that already ran cleared the flag via
+     * markWithdrawn; the next scan re-applies from scratch.)
+     */
+    async unsuppress(serverId: string, serviceKey: string) {
       const [row] = await db
         .update(binding)
-        .set({ suppressed: true, suppressedAt: new Date(), updatedAt: new Date() })
+        .set({ suppressed: false, suppressedAt: null, withdrawalPending: false, updatedAt: new Date() })
         .where(and(eq(binding.serverId, serverId), eq(binding.serviceKey, serviceKey)))
         .returning();
       return row;
     },
 
-    async unsuppress(serverId: string, serviceKey: string) {
-      const [row] = await db
+    /**
+     * Disable mode's route policy (docs: "Disable mode cancels watchers,
+     * withdraws discovery-owned application routes"): schedule retirement for
+     * EVERY binding with application history. The reconciler consumes these
+     * even while discovery is disabled (withdrawals are the one stage that
+     * runs for disabled servers) and removes outright — with discovery off,
+     * no vhost is retained at all.
+     */
+    async scheduleWithdrawalForAll(serverId: string) {
+      const rows = await db
         .update(binding)
-        .set({ suppressed: false, suppressedAt: null, updatedAt: new Date() })
-        .where(and(eq(binding.serverId, serverId), eq(binding.serviceKey, serviceKey)))
+        .set({ withdrawalPending: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(binding.serverId, serverId),
+            or(eq(binding.applyState, "applied"), gt(binding.appliedGeneration, 0)),
+          ),
+        )
         .returning();
-      return row;
+      return rows;
     },
 
     /**

@@ -52,6 +52,7 @@ import { AffiliateOperationSchemas } from "@repo/contracts";
 import type { PlatformAffiliateOperations } from "./affiliates";
 import type { PlatformBillingOperations } from "./billing";
 import type { PlatformBackupOperations } from "./backups";
+import type { PlatformDiscoveryOperations } from "./discovery";
 import { BackupProjectSchemas, BackupPolicySchemas, BackupRunSchemas, BackupRestoreSchemas } from "@repo/contracts";
 import { BackupDestinationCollectionSchemas, BackupDestinationResourceSchemas } from "@repo/contracts";
 import { AppCollectionSchemas, AppResourceSchemas } from "@repo/contracts";
@@ -307,6 +308,14 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     openRunStream: (ctx, id, settings = {}) => openStreamValues<DeploymentEvent>("backups.run", ctx, [id], settings.signal),
     openRestoreStream: (ctx, id, settings = {}) => openStreamValues<DeploymentEvent>("backups.restore", ctx, [id], settings.signal),
   };
+  const discovery: PlatformDiscoveryOperations = {
+    configure: (ctx, id, input) => call("discovery.configure", ctx, id, input),
+    status: (ctx, id) => call("discovery.status", ctx, id),
+    rescan: (ctx, id) => call("discovery.rescan", ctx, id),
+    suppress: (ctx, id, input) => call("discovery.suppress", ctx, id, input),
+    unsuppress: (ctx, id, input) => call("discovery.unsuppress", ctx, id, input),
+    forget: (ctx, id, input) => call("discovery.forget", ctx, id, input),
+  };
   return Object.freeze({
     instanceId: options.instanceId, operator,
     resolveScope: (...args) => call("scope", ...args),
@@ -319,6 +328,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     credentials: Object.freeze(credentials),
     servers: Object.freeze(servers),
     backups: Object.freeze(backups),
+    discovery: Object.freeze(discovery),
     affiliates: Object.freeze(Object.fromEntries(Object.keys(AffiliateOperationSchemas).map(name => [name, (...args: unknown[]) => call(`affiliates.${name}`, ...args)]))) as PlatformAffiliateOperations,
     billing: Object.freeze(Object.fromEntries(Object.keys({ ...BillingPublicSchemas, ...BillingOperationSchemas }).map(name => [name, (...args: unknown[]) => call(`billing.${name}`, ...args)]))) as PlatformBillingOperations,
     notices: Object.freeze(Object.fromEntries(Object.keys({ ...NoticeCollectionSchemas }).map(name => [name, (...args: unknown[]) => call(`notices.${name}`, ...args)]))) as PlatformNoticeOperations,

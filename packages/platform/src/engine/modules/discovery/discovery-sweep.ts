@@ -150,18 +150,21 @@ async function runServerSweep(
 }
 
 /**
- * One sweep across every enabled server. `fresh` (startup inventory) forces
- * fresh inventory on every server; the recurring cron body calls without it.
+ * One sweep across every sweepable server: enabled ones, PLUS disabled
+ * servers still owing route withdrawals (disable scheduled retirement —
+ * reconcile must run for them; scan/apply/repair self-gate on `enabled`).
+ * `fresh` (startup inventory) forces fresh inventory on every server; the
+ * recurring cron body calls without it.
  */
 export async function sweepDiscovery(options?: { fresh?: boolean }): Promise<DiscoverySweepSummary> {
   const summary: DiscoverySweepSummary = { servers: 0, failed: [], details: [] };
   let enabled: Array<{ serverId: string }>;
   try {
-    enabled = await repos.discovery.listEnabledServerIds();
+    enabled = await repos.discovery.listSweepableServerIds();
   } catch (error) {
     errorDiagnostics.warn(
       "platform/engine/modules/discovery/discovery-sweep",
-      `[discovery-sweep] could not list enabled servers: ${safeErrorMessage(error)}`,
+      `[discovery-sweep] could not list sweepable servers: ${safeErrorMessage(error)}`,
     );
     return summary;
   }
@@ -188,9 +191,16 @@ export async function sweepDiscovery(options?: { fresh?: boolean }): Promise<Dis
     }
   }
 
-  // Watcher lease renewal rides the sweep (see discovery-watch): enabled
-  // servers keep their lifecycle-event subscriptions, everything else expires.
-  await renewDiscoveryWatchers(enabled.map((s) => s.serverId)).catch((error) => {
+  // Watcher lease renewal rides the sweep (see discovery-watch): ENABLED
+  // servers keep their lifecycle-event subscriptions — a disabled server's
+  // watcher lease expires itself (disable "cancels watchers"). Owing-only
+  // disabled servers never arm.
+  const enabledIds: string[] = [];
+  for (const detail of summary.details) {
+    const settings = await repos.discovery.getSettings(detail.serverId).catch(() => null);
+    if (settings?.enabled) enabledIds.push(detail.serverId);
+  }
+  await renewDiscoveryWatchers(enabledIds).catch((error) => {
     errorDiagnostics.warn(
       "platform/engine/modules/discovery/discovery-sweep",
       `[discovery-sweep] watcher renewal failed: ${safeErrorMessage(error)}`,

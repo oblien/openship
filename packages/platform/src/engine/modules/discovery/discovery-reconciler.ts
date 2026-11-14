@@ -123,6 +123,32 @@ function discoveryClaimOwner(binding: DiscoveryBinding): string {
 }
 
 /**
+ * Retire one binding's route NOW (synchronous forget path): remove the vhost
+ * and release this owner's published-port claims. Used by the server discovery
+ * API's forget operation — the binding row is deleted by the caller AFTER this
+ * succeeds, so a failed removal (edge down) leaves the binding intact for a
+ * retry rather than stranding a route with no record.
+ */
+export async function retireBindingRoute(
+  serverId: string,
+  organizationId: string,
+  binding: Pick<DiscoveryBinding, "hostname" | "id" | "serviceKey">,
+  options?: { edge?: DiscoveryEdgeTarget },
+): Promise<void> {
+  const edge = options?.edge ?? (await resolveDiscoveryEdgeTarget(serverId, organizationId));
+  const owned = !options?.edge;
+  try {
+    if (!edge.routing?.removeRoute) {
+      throw new Error("server edge has no routing provider; is the Edge installed?");
+    }
+    await edge.routing.removeRoute(binding.hostname);
+    await convergeDiscoveryClaims(edge, binding as DiscoveryBinding, []);
+  } finally {
+    if (owned) await edge.dispose();
+  }
+}
+
+/**
  * Does THIS binding keep its hostname as an unavailable vhost (503 + TLS) when
  * its backend disappears — or does its route retire outright?
  *
@@ -230,7 +256,16 @@ export async function reconcileServerDiscovery(
   };
 
   const settings = await repos.discovery.getSettings(serverId);
-  if (!settings?.enabled) return summary;
+  // WITHDRAWALS run even when discovery is DISABLED: disable schedules route
+  // retirement for every applied binding, and retiring those routes is the
+  // one stage that must still run (docs: "Disable mode ... withdraws
+  // discovery-owned application routes"). Scans, applies, and repair stay
+  // gated on `enabled` (the sweep's other stages self-gate the same way).
+  if (!settings) return summary;
+  const enabled = settings.enabled === true;
+  // With discovery off, no vhost is retained at all: disable withdraws
+  // routes outright (explicit control at the server level).
+  const retainUnavailable = enabled;
 
   const edge = options?.edge ?? (await resolveDiscoveryEdgeTarget(serverId, organizationId));
   const owned = !options?.edge;
@@ -248,7 +283,7 @@ export async function reconcileServerDiscovery(
     // dropping the vhost — the certificate lifecycle continues.
     for (const binding of await repos.discovery.dueForWithdrawal(serverId)) {
       try {
-        if (shouldRetainUnavailableVhost(binding)) {
+        if (retainUnavailable && shouldRetainUnavailableVhost(binding)) {
           await repos.domain.ensureServerDomain({
             serverId,
             hostname: binding.hostname,
@@ -270,7 +305,8 @@ export async function reconcileServerDiscovery(
       }
     }
 
-    // ── Due applies ────────────────────────────────────────────────────────
+    // ── Due applies (only while discovery is enabled) ─────────────────────
+    if (!enabled) return { ...summary, ok: true };
     for (let binding of await repos.discovery.dueForApply(serverId)) {
       try {
         if (binding.observationStatus !== "observed" || !binding.containerRunning) {
@@ -283,7 +319,7 @@ export async function reconcileServerDiscovery(
           // bindings as applyState "pending" — the history record, not the
           // apply state, is what proves a vhost exists.)
           await convergeDiscoveryClaims(edge, binding, []);
-          if (shouldRetainUnavailableVhost(binding)) {
+          if (retainUnavailable && shouldRetainUnavailableVhost(binding)) {
             await repos.domain.ensureServerDomain({
               serverId,
               hostname: binding.hostname,
