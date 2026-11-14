@@ -7,18 +7,20 @@ import type { PlanTierId } from "@repo/core";
 import type { BillingPlans, CustomSubscriptionSelection } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { api, ApiError, getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
-import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
+import { navigateToCheckout } from "@/lib/checkout-navigation";
+import { invalidatePayments } from "@/lib/billing-events";
 import { endpoints } from "@/lib/api/endpoints";
 import { randomUUID } from "@/lib/random-uuid";
 import { checkoutFailureKind, type CheckoutFailure } from "@/lib/checkout-failure";
-import { useSession } from "@/lib/auth-client";
-import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { useResourceScope } from "@/hooks/use-scoped-resource";
 import type { ApiPlan, ApiPricingUi } from "./PricingCards";
 
 interface PlansPayload extends Omit<BillingPlans, "ui" | "plans"> {
   ui: ApiPricingUi;
   plans: ApiPlan[];
 }
+
+export type PreparedCheckoutWorkspace = string | { workspaceId: string; checkoutPending: true };
 
 /** Both the recommendation and comparison use the same live checkout catalog. */
 export function useCloudPlans() {
@@ -47,7 +49,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   workspaceId?: string;
   preserveProject?: boolean;
   onCheckoutStarted?: (checkoutUrl: string) => void;
-  prepareWorkspace?: () => Promise<string>;
+  prepareWorkspace?: () => Promise<PreparedCheckoutWorkspace>;
   onWorkspaceRemoved?: (workspaceId: string) => void;
   idempotencyKey?: string;
   referralCode?: string;
@@ -55,9 +57,8 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
 }) {
   const { t } = useI18n();
   const { workspaceId: billingWorkspaceId, organizationId } = useBillingScope();
-  const { data: session } = useSession();
-  const cloudKey = useCloudResourceKey();
-  const ownerKey = `${cloudKey}:${session?.user.id}:${organizationId ?? session?.session?.activeOrganizationId}`;
+  const scope = useResourceScope();
+  const ownerKey = `${scope}:${organizationId ?? ""}`;
   const workspaceId = selectedWorkspaceId ?? billingWorkspaceId ?? undefined;
   const [subscribing, setSubscribing] = useState<PlanTierId | "custom" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,11 +79,10 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   useEffect(() => { attempts.current.clear(); }, [idempotencyKey]);
 
   async function startCheckout(planTierId: PlanTierId, interval: "monthly" | "annual", custom?: CustomSubscriptionSelection) {
-    if (!enabled || busy.current || planTierId === "free" || planTierId === "enterprise") return;
+    if (!enabled || busy.current || checkoutUrl || planTierId === "free" || planTierId === "enterprise") return;
     busy.current = true;
     const version = generation.current;
-    // Open within the user's click, preserving unfinished project configuration.
-    const navigation = beginCheckoutNavigation(preserveProject);
+    let checkoutStarted = false;
     setSubscribing(custom ? "custom" : planTierId);
     setError(null);
     setCheckoutUrl(null);
@@ -91,8 +91,13 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     let targetWorkspaceId = workspaceId;
     let requestId: string | undefined;
     try {
-      targetWorkspaceId = prepareWorkspace ? await prepareWorkspace() : workspaceId;
-      if (version !== generation.current) { navigation.close(); return; }
+      const prepared = prepareWorkspace ? await prepareWorkspace() : workspaceId;
+      targetWorkspaceId = typeof prepared === "object" ? prepared.workspaceId : prepared;
+      if (version !== generation.current) return;
+      if (typeof prepared === "object" && prepared.checkoutPending) {
+        setPending({ workspaceId: prepared.workspaceId });
+        return;
+      }
       if (prepareWorkspace && !targetWorkspaceId) throw new Error(t.billing.plansRoute.checkoutError);
       const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}:${referralCode ?? ""}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt,
@@ -102,14 +107,14 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
         planTierId, interval, workspaceId: targetWorkspaceId, custom, idempotencyKey: requestId,
         ...(referralCode ? { referralCode } : {}),
       });
-      if (version !== generation.current) { navigation.close(); return; }
-      const url = navigation.navigate(res.data.checkoutUrl);
+      if (version !== generation.current) return;
+      const url = navigateToCheckout(res.data.checkoutUrl, preserveProject);
       if (preserveProject) {
+        checkoutStarted = true;
         setCheckoutUrl(url);
         onCheckoutStarted?.(url);
       }
     } catch (err) {
-      navigation.close();
       if (version !== generation.current) return;
       const kind = checkoutFailureKind(err);
       if (getApiErrorCode(err) === "CLOUD_WORKSPACE_CHECKOUT_PENDING") setPending({ workspaceId: targetWorkspaceId });
@@ -120,8 +125,9 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
       }
     } finally {
       if (version === generation.current) {
-        busy.current = false;
+        busy.current = checkoutStarted;
         setSubscribing(null);
+        invalidatePayments();
       }
     }
   }
@@ -129,7 +135,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     recovery: {
       isOpen: pending !== null, workspaceId: pending?.workspaceId, preserveProject,
       onClose: () => setPending(null),
-      onCleared: () => { attempts.current.clear(); setError(null); onCheckoutSettled?.(); },
+      onCleared: () => { busy.current = false; attempts.current.clear(); setCheckoutUrl(null); setError(null); onCheckoutSettled?.(); },
       onCheckoutStarted: (url: string) => { setCheckoutUrl(url); onCheckoutStarted?.(url); },
       onServerRemoved: (id: string) => {
         attempts.current.clear(); setCheckoutUrl(null); onWorkspaceRemoved?.(id);

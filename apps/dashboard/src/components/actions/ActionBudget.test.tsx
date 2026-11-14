@@ -15,8 +15,6 @@ const h = vi.hoisted(() => ({
   checkout: vi.fn(),
   resume: vi.fn(),
   navigate: vi.fn(),
-  begin: vi.fn(),
-  closeTab: vi.fn(),
   closeDialog: vi.fn(),
 }));
 vi.mock("@/lib/api/billing", () => ({
@@ -28,10 +26,7 @@ vi.mock("@/lib/api/billing", () => ({
   },
 }));
 vi.mock("@/lib/checkout-navigation", () => ({
-  beginCheckoutNavigation: (preserve: boolean) => {
-    h.begin(preserve);
-    return { navigate: h.navigate, close: h.closeTab };
-  },
+  navigateToCheckout: (url: string, preserve: boolean) => h.navigate(url, preserve),
 }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(h.query) }));
 vi.mock("@/lib/auth-client", () => ({
@@ -105,25 +100,24 @@ describe("Actions funding UI", () => {
     h.navigate.mockImplementation((url: string) => url);
     await render(true);
     await act(async () => button("Add $5").click());
-    expect(h.begin).toHaveBeenCalledWith(true);
-    expect(h.begin.mock.invocationCallOrder[0]).toBeLessThan(h.checkout.mock.invocationCallOrder[0]!);
+    expect(h.navigate).toHaveBeenCalledWith(expect.any(String), true);
     expect(document.querySelector('a[href="https://checkout.stripe.com/saved"]')?.getAttribute("target")).toBe("_blank");
     expect(h.closeDialog).not.toHaveBeenCalled();
     await act(async () => button("Back to workflow").click());
     expect(h.closeDialog).toHaveBeenCalledOnce();
   });
 
-  it("closes an unused payment tab on failure and does not expose an invalid payment link", async () => {
+  it("does not navigate on failure or expose an invalid payment link", async () => {
     h.budget.mockResolvedValue({ ...initial(), purchasesAvailable: true });
     h.checkout.mockRejectedValueOnce(new Error("Provider unavailable"));
     await render(true);
     await act(async () => button("Add $5").click());
-    expect(h.closeTab).toHaveBeenCalledOnce();
+    expect(h.navigate).not.toHaveBeenCalled();
     h.checkout.mockResolvedValue({ checkoutUrl: "javascript:invalid" });
     h.navigate.mockImplementationOnce(() => { throw new Error("Invalid checkout URL"); });
     await act(async () => button("Add $5").click());
     expect(document.querySelector('a[href="javascript:invalid"]')).toBeNull();
-    expect(h.closeTab).toHaveBeenCalledTimes(2);
+    expect(h.navigate).toHaveBeenCalledExactlyOnceWith("javascript:invalid", true);
   });
 
   it("shows live VM estimates and one usage balance without a separate transfer allowance", async () => {
@@ -223,7 +217,7 @@ describe("Actions funding UI", () => {
     await act(async () => button("Add $5").click());
     await act(async () => button("Add $5").click());
     expect(h.checkout.mock.calls[0]).toEqual(h.checkout.mock.calls[1]);
-    expect(h.navigate).toHaveBeenCalledWith("https://checkout.stripe.com/saved");
+    expect(h.navigate).toHaveBeenCalledWith("https://checkout.stripe.com/saved", false);
   });
 
   it("distinguishes a funded but paused budget from a balance that needs topping up", async () => {

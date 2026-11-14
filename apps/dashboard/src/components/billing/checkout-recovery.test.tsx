@@ -69,12 +69,6 @@ const ready = {
 const expired = { status: "expired", checkoutId: "cs_pending", checkoutUrl: null };
 let root: Root;
 let host: HTMLDivElement;
-let popup: {
-  opener: object | null;
-  closed: boolean;
-  location: { href: string };
-  close: ReturnType<typeof vi.fn>;
-};
 const recovery = () => (
   <CheckoutRecoveryDialog
     isOpen
@@ -116,8 +110,7 @@ beforeEach(() => {
   h.get.mockImplementation(async () => ({ data: { items: [structuredClone(item)] } }));
   h.post.mockResolvedValue({ data: ready });
   h.remove.mockResolvedValue({ ...server, state: "deleting" });
-  popup = { opener: {}, closed: false, location: { href: "about:blank" }, close: vi.fn() };
-  vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  vi.spyOn(window, "open").mockReturnValue(null);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -157,8 +150,7 @@ describe("unfinished checkout recovery", () => {
       workspaceId: server.id,
       id: item.id,
     });
-    expect(popup.location.href).toBe(ready.checkoutUrl);
-    expect(popup.opener).toBeNull();
+    expect(window.open).toHaveBeenCalledExactlyOnceWith(ready.checkoutUrl, "_blank", "noopener,noreferrer");
     expect(h.started).toHaveBeenCalledExactlyOnceWith(ready.checkoutUrl);
     expect(dialog()?.querySelector('a[target="_blank"]')?.getAttribute("href")).toBe(
       ready.checkoutUrl,
@@ -374,7 +366,7 @@ describe("unfinished checkout recovery", () => {
     expect(h.get).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["local", "cloud"])("ignores earlier payment results after switching the %s account and closes its reserved tab", async (account) => {
+  it.each(["local", "cloud"])("ignores earlier payment results after switching the %s account without opening checkout", async (account) => {
     let finish!: (value: unknown) => void;
     h.post.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -392,8 +384,7 @@ describe("unfinished checkout recovery", () => {
     h.get.mockResolvedValueOnce({ data: { items: [] } });
     await render();
     await act(async () => finish({ data: ready }));
-    expect(popup.location.href).toBe("about:blank");
-    expect(popup.close).toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
     expect(h.started).not.toHaveBeenCalled();
     expect(dialog()?.textContent).not.toContain(item.name);
   });
@@ -420,5 +411,16 @@ describe("unfinished checkout recovery", () => {
     await click(copy.confirmCancel);
     expect(host.querySelector("output")?.textContent).toBe("0");
     expect(dialog()?.textContent).toContain(copy.canceled);
+  });
+
+  it("does not reuse the organization's payment data in a foreign billing scope", async () => {
+    function Count({ id }: { id: string }) { return <output id={id}>{usePendingCheckouts()?.count}</output>; }
+    await render(<PendingCheckoutsProvider>
+      <Count id="current" />
+      <BillingWorkspaceProvider organizationId="org-other"><PendingCheckoutsProvider><Count id="foreign" /></PendingCheckoutsProvider></BillingWorkspaceProvider>
+    </PendingCheckoutsProvider>);
+    expect(host.querySelector("#current")?.textContent).toBe("1");
+    expect(host.querySelector("#foreign")?.textContent).toBe("0");
+    expect(h.get).toHaveBeenCalledOnce();
   });
 });

@@ -14,13 +14,19 @@ import { useResourceScope } from "@/hooks/use-scoped-resource";
 import { useSession } from "@/lib/auth-client";
 import { billingApi } from "@/lib/api/billing";
 import { getApiErrorMessage } from "@/lib/api/client";
+import { managementApi } from "@/lib/api/management";
+import { subscriptionNeedsPayment } from "@/lib/billing-presentation";
+import { usePlatform } from "@/context/PlatformContext";
+import { useCloud } from "@/context/CloudContext";
 import { useI18n } from "@/components/i18n-provider";
 import { useBillingScope } from "./BillingWorkspaceContext";
+import { PAYMENTS_CHANGED } from "@/lib/billing-events";
 
 type PendingCheckouts = {
   workspaceId?: string;
   items: BillingPendingCheckout[];
   count: number;
+  attentionCount: number;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -30,29 +36,43 @@ type PendingCheckouts = {
 const PendingCheckoutsContext = createContext<PendingCheckouts | null>(null);
 export const usePendingCheckouts = () => useContext(PendingCheckoutsContext);
 
+/** One organization-wide payment read supplies the rail and billing hub. */
+export function DashboardPaymentsProvider({ children }: { children: ReactNode }) {
+  const { selfHosted, deployMode } = usePlatform();
+  const { connected } = useCloud();
+  return <PendingCheckoutsProvider enabled={(!selfHosted && deployMode !== "desktop") || connected} includeManagement>
+    {children}
+  </PendingCheckoutsProvider>;
+}
+
 /** Share one read between billing navigation and recovery; never share customer data across scopes. */
 export function PendingCheckoutsProvider({
   children,
   workspaceId,
   enabled = true,
+  includeManagement = false,
 }: {
   children: ReactNode;
   workspaceId?: string;
   enabled?: boolean;
+  includeManagement?: boolean;
 }) {
   const scope = useResourceScope();
   const { data: session, isPending } = useSession();
   const { organizationId } = useBillingScope();
+  const parent = usePendingCheckouts();
   const allowed =
     enabled &&
     !isPending &&
     (!organizationId || organizationId === session?.session.activeOrganizationId);
+  if (parent && parent.workspaceId === workspaceId && allowed && !includeManagement) return children;
   return (
     <PendingCheckoutsState
       key={`${scope}:${organizationId ?? ""}:${workspaceId ?? "all"}:${allowed}`}
       workspaceId={workspaceId}
       enabled={allowed}
       waiting={enabled && isPending}
+      includeManagement={includeManagement}
     >
       {children}
     </PendingCheckoutsState>
@@ -64,11 +84,13 @@ function PendingCheckoutsState({
   workspaceId,
   enabled,
   waiting,
+  includeManagement,
 }: {
   children: ReactNode;
   workspaceId?: string;
   enabled: boolean;
   waiting?: boolean;
+  includeManagement: boolean;
 }) {
   const { t } = useI18n();
   const parent = usePendingCheckouts();
@@ -77,6 +99,7 @@ function PendingCheckoutsState({
   const [closed, setClosed] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  const [managementPending, setManagementPending] = useState(false);
   const mounted = useRef(false);
   const revision = useRef(0);
   const refreshing = useRef(false);
@@ -86,6 +109,14 @@ function PendingCheckoutsState({
     refreshing.current = true;
     setLoading(true);
     setError(null);
+    if (includeManagement) {
+      // Keep compute recovery usable if this account cannot read Manage billing.
+      void managementApi.get().then(state => {
+        if (mounted.current && revision.current === request) setManagementPending(Boolean(
+          state.pendingCheckout || state.change?.paymentUrl || subscriptionNeedsPayment(state.subscription?.status),
+        ));
+      }).catch(() => {});
+    }
     try {
       const result = await billingApi.listCheckouts(workspaceId);
       if (!mounted.current || revision.current !== request) return;
@@ -102,7 +133,7 @@ function PendingCheckoutsState({
         setLoading(false);
       }
     }
-  }, [enabled, workspaceId, t.billing.pendingPayments.loadError]);
+  }, [enabled, workspaceId, includeManagement, t.billing.pendingPayments.loadError]);
   useEffect(() => {
     mounted.current = true;
     void refresh();
@@ -111,10 +142,13 @@ function PendingCheckoutsState({
       if (document.visibilityState === "visible" && !refreshing.current) void refresh();
     };
     window.addEventListener("focus", onFocus);
+    const onChanged = () => { void refresh(); };
+    window.addEventListener(PAYMENTS_CHANGED, onChanged);
     return () => {
       mounted.current = false;
       revision.current++;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(PAYMENTS_CHANGED, onChanged);
     };
   }, [refresh]);
   const markCleared = useCallback(
@@ -135,6 +169,7 @@ function PendingCheckoutsState({
         refresh,
         markCleared,
         count: enabled ? items.filter((item) => !closed.has(item.id)).length : 0,
+        attentionCount: enabled ? new Set(items.filter(item => !closed.has(item.id)).map(item => item.server.id)).size + Number(managementPending) : 0,
       }}
     >
       {children}

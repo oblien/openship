@@ -876,6 +876,14 @@ check retryable before starting the move.
   cancellation actions in the selected server's billing card, preserve retry
   identity after uncertain responses, and never replace the page with a loader.
 - Checkout returns verify payment, paid coverage and managed-server readiness separately.
+  Open the hosted URL only after checkout is ready; never reserve an empty browser tab.
+  Keep a full-width primary checkout action visible if the browser refuses the popup,
+  and preserve the project draft. Lock repeat submissions after a successful handoff.
+  Reopening Add Cloud space recovers an unfinished subscription before creating another
+  space; manual retries retain a customer-scoped creation key across modal dismissal.
+  Plans & billing shows a warning count for pending Cloud plans and Manage payment.
+  Reuse the organization-wide payment read in the hub and refresh warnings after mutations
+  and on return from checkout. Hide zero counts and reset private state on scope changes.
   Show the subscription welcome only when setup is complete. Keep preparation and failure
   notices compact and above the billing columns, with a recheck action and a link to the existing server Activity tab
   for logs and retry. A paid setup failure must never direct the customer to pay again.

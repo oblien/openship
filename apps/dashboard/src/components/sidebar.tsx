@@ -22,6 +22,7 @@ import { projectsApi } from "@/lib/api";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useSidebarLayout } from "@/context/SidebarLayoutContext";
 import { useIssueCounts } from "@/hooks/useIssueCounts";
+import { usePendingCheckouts } from "@/components/billing/PendingCheckoutsContext";
 import { countProjectCollections, getSidebarNavCountsRevision, subscribeSidebarNavCounts } from "@/lib/sidebar-nav-counts";
 import {
   getMailNavSections,
@@ -153,11 +154,13 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   const [switchingOrgId, setSwitchingOrgId] = useState<string | null>(null);
   const hasMonitoring = navSections.some(({ items }) => items.some(({ key }) => key === "issues"));
   const issueCounts = useIssueCounts(orgsLoaded && hasMonitoring ? activeOrgId : undefined);
+  const payments = usePendingCheckouts();
   const countFor = (key: string): number | null => {
     // Match Home's Needs attention card; available updates are advisories.
     if (key === "issues")
       return issueCounts ? issueCounts.outage + issueCounts.actionRequired : null;
     if (key === "projects" || key === "apps") return navCounts?.[key] ?? null;
+    if (key === "billing") return payments?.attentionCount ?? null;
     return null;
   };
 
@@ -373,18 +376,20 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                   const { key, href, icon: Icon, labelSource } = item;
                   const active = isNavItemActive(item, navPathname, currentTab);
                   const count = countFor(key);
-                  const issueLabel =
+                  const attentionLabel =
                     key === "issues" && count != null && count > 0
                       ? `${label(key, labelSource)}: ${count === 1 ? t.dashboard.home.oneIssue : interpolate(t.dashboard.home.manyIssues, { n: String(count) })}`
-                      : undefined;
+                      : key === "billing" && count != null && count > 0
+                        ? `${label(key, labelSource)}: ${interpolate(t.billing.pendingPayments.count, { count: String(count) })}`
+                        : undefined;
                   return (
                     <Link
                       key={key}
                       href={href}
-                      title={collapsed ? (issueLabel ?? label(key, labelSource)) : undefined}
-                      aria-label={issueLabel}
+                      title={collapsed ? (attentionLabel ?? label(key, labelSource)) : undefined}
+                      aria-label={attentionLabel}
                       aria-current={active ? "page" : undefined}
-                      className={`th-nav-item flex items-center rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors ${
+                      className={`th-nav-item relative flex items-center rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors ${
                         collapsed ? "justify-center" : "gap-3"
                       }`}
                     >
@@ -392,10 +397,18 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                       {!collapsed && (
                         <span className="flex-1 truncate">{label(key, labelSource)}</span>
                       )}
-                      {/* Hide zero/loading counts; keep issue counts in the collapsed label. */}
-                      {!collapsed && count != null && count > 0 && (
+                      {/* Keep attention counts accessible when the rail is collapsed. */}
+                      {(!collapsed || key === "billing") && count != null && count > 0 && (
                         <span
-                          className={`shrink-0 text-[13px] tabular-nums ${key === "issues" ? (issueCounts?.outage ? "text-danger" : "text-warning") : "text-muted-foreground/45"}`}
+                          className={[
+                            "shrink-0 tabular-nums",
+                            collapsed ? "absolute -end-0.5 -top-0.5 min-w-4 text-center text-[10px]" : "text-[13px]",
+                            key === "billing"
+                              ? `rounded-full bg-danger/10 py-0.5 text-danger ${collapsed ? "px-1" : "px-2"}`
+                              : key === "issues"
+                                ? (issueCounts?.outage ? "text-danger" : "text-warning")
+                                : "text-muted-foreground/45",
+                          ].join(" ")}
                         >
                           {count}
                         </span>
