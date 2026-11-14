@@ -125,10 +125,10 @@ interface Answer {
 }
 
 /** One request with an explicit `Host`, which `fetch` refuses to set. */
-function ask(port: number, path: string, host: string): Promise<Answer> {
+function ask(port: number, path: string, host: string, cookie?: string): Promise<Answer> {
   return new Promise<Answer>((resolve, reject) => {
     const req = httpRequest(
-      { host: "127.0.0.1", port, path, method: "GET", headers: { Host: host } },
+      { host: "127.0.0.1", port, path, method: "GET", maxHeaderSize: 64 * 1024, headers: { Host: host, ...(cookie ? { Cookie: cookie } : {}) } },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
@@ -180,7 +180,20 @@ http {
     # An app that answers 502 ITSELF. Its body must reach the client untouched.
     server { listen ${PORT_OWN_502}; location / { return 502 "BODY-FROM-APP"; } }
     # A healthy app, so "the page never fires on a working request" is observable.
-    server { listen ${PORT_HEALTHY}; location / { return 200 "BODY-FROM-HEALTHY-APP"; } }
+    server {
+      listen ${PORT_HEALTHY};
+      # The stand-in app must accept the headers forwarded by the edge too.
+      large_client_header_buffers 4 32k;
+      location / { return 200 "BODY-FROM-HEALTHY-APP"; }
+      location = /large-headers {
+        content_by_lua_block {
+          local cookies = {}
+          for i = 1, 6 do cookies[i] = "session." .. i .. "=" .. string.rep("a", 3000) .. "; Path=/; HttpOnly" end
+          ngx.header["Set-Cookie"] = cookies
+          ngx.print("AUTH-RESPONSE")
+        }
+      }
+    }
 
     include ${SITES_DIR}/*.conf;
 }
@@ -230,6 +243,10 @@ http {
         tls: false,
         targetUrl: `http://127.0.0.1:${PORT_HEALTHY}`,
       }),
+      unbuffered: await renderVhost({
+        domain: "unbuffered.test", tls: false,
+        targetUrl: `http://127.0.0.1:${PORT_HEALTHY}`, proxy: { proxyBuffering: false },
+      }),
       // No upstream at all: the page must not be in this vhost, so a missing file stays the
       // plain 404 it has always been.
       staticsite: await renderVhost({ domain: "staticsite.test", tls: false, staticRoot: WWW }),
@@ -258,7 +275,8 @@ http {
     const container = await runtime.docker.createContainer({
       Image: image,
       Entrypoint: ["sh", "-c"],
-      Cmd: [script],
+      // Keep each argv entry below Linux's per-string limit as Lua fixtures grow.
+      Cmd: ['printf "%s" "$@" | sh', "openship-edge-e2e", ...script.match(/[\s\S]{1,32768}/g)!],
       Tty: true,
       ExposedPorts: { "80/tcp": {} },
       HostConfig: {
@@ -271,7 +289,7 @@ http {
 
     const info = await container.inspect();
     const bound = info.NetworkSettings.Ports?.["80/tcp"]?.[0]?.HostPort;
-    if (!bound) throw new Error("docker published no host port for 80/tcp");
+    if (!bound) throw new Error("docker published no host port for 80/tcp: " + (await container.logs({ stdout: true, stderr: true })).toString());
     const published = Number(bound);
 
     // Ready when it answers, dead when it exits — and a dead edge must report the reason
@@ -329,6 +347,17 @@ http {
     const res = await ask(port, "/", "healthy.test");
     expect(res.status).toBe(200);
     expect(res.body).toBe("BODY-FROM-HEALTHY-APP");
+  });
+
+  it.each(["healthy.test", "unbuffered.test"])("relays large auth headers and accepts the next cookie-bearing request: %s", async host => {
+    const res = await ask(port, "/large-headers", host);
+    expect(res.status).toBe(200);
+    expect(res.body).toBe("AUTH-RESPONSE");
+    const cookies = res.headers["set-cookie"] as string[];
+    expect(cookies).toHaveLength(6);
+    const cookie = cookies.map(value => value.split(";")[0]).join("; ");
+    expect(cookie.length).toBeGreaterThan(16 * 1024);
+    expect((await ask(port, "/", host, cookie)).status).toBe(200);
   });
 
   it("answers text/html even when the URI looks like a stylesheet", async () => {
