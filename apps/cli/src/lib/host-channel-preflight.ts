@@ -188,7 +188,7 @@ async function realProbe(host: string, port: number): Promise<ProbeResult> {
       "-e",
       `OPENSHIP_PROBE_PORT=${port}`,
       "api",
-      "bun",
+      "node",
       "-e",
       PROBE_SCRIPT,
     ],

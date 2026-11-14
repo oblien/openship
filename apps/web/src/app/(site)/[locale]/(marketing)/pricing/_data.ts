@@ -22,9 +22,7 @@ export function faq(pricing: CloudPricing, copy: Copy): FaqItem[] {
             })
           : copy("See your dashboard for current Cloud plans and availability."),
         pricing.annual.enabled
-          ? copy(
-              "Yearly billing is also available; the cards show the monthly equivalent and full yearly charge.",
-            )
+          ? copy("Choose Yearly to see the full annual price, paid once a year.")
           : null,
         copy(
           "Each subscription includes one Cloud Space for your projects, with no per-seat fees. Share the included CPU, RAM and storage across your projects and builds.",

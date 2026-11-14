@@ -48,6 +48,7 @@ vi.mock("../../src/lib/local-connection", () => ({
 
 import { loginCommand } from "../../src/commands/login";
 import { CLOUD_API_URL, CLOUD_DASHBOARD_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
+import { SDK_CAPABILITIES } from "@repo/contracts";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 import { setJsonMode } from "../../src/lib/output";
 
@@ -67,6 +68,38 @@ afterEach(() => {
 });
 
 describe("openship login endpoint preservation", () => {
+  it.each([404, 200])("discovers the same-origin API after a dashboard response (%s) and saves it", async (status) => {
+    fetchStub.restore();
+    fetchStub = stubFetch(request => {
+      if (request.url === "https://ship.example.com/api/tokens") return { status, text: "<html>Dashboard</html>" };
+      if (request.url.endsWith("/health")) {
+        expect(request.headers.authorization).toBeUndefined();
+        return { json: { status: "ok", sdk: SDK_CAPABILITIES } };
+      }
+      expect(request.url).toBe("https://ship.example.com/api/proxy/api/tokens");
+      expect(request.headers.authorization).toBe("Bearer opsh_pat_test");
+      return { json: { data: [] } };
+    });
+    const result = await runCommand(loginCommand, ["--api-url", "https://ship.example.com", "--token", "opsh_pat_test"]);
+    expect(result.code).toBe(0);
+    expect(h.added.at(-1)?.opts).toMatchObject({ apiUrl: "https://ship.example.com/api/proxy", dashboardUrl: "https://ship.example.com" });
+    expect(fetchStub.calls).toHaveLength(3);
+  });
+
+  it("does not send a token to a guessed endpoint without a valid API health response", async () => {
+    fetchStub.restore();
+    fetchStub = stubFetch(() => ({ status: 404, json: { error: "Not found" } }));
+    const result = await runCommand(loginCommand, ["--api-url", "https://ship.example.com", "--token", "opsh_pat_test"]);
+    expect(result.code).toBe(1);
+    expect(h.added).toEqual([]);
+    expect(fetchStub.calls.map(call => call.url)).toEqual(["https://ship.example.com/api/tokens", "https://ship.example.com/api/proxy/api/health"]);
+    expect(fetchStub.calls[1]!.headers.authorization).toBeUndefined();
+  });
+
+  it("derives the dashboard correctly for an explicitly supplied proxy API", async () => {
+    await runCommand(loginCommand, ["--api-url", "https://ship.example.com/api/proxy", "--token", "opsh_pat_test"]);
+    expect(h.added.at(-1)?.opts.dashboardUrl).toBe("https://ship.example.com");
+  });
   it("guides a fresh interactive login to Cloud and opens its token page", async () => {
     h.interactive = true;
     const result = await runCommand(loginCommand, []);

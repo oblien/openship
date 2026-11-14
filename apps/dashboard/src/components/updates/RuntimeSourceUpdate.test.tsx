@@ -7,7 +7,7 @@ import { CloudResourceContext } from "@/context/CloudResourceContext";
 import { ApiError, setApiResourceScope } from "@/lib/api/client";
 import { RuntimeSourceUpdate } from "./RuntimeSourceUpdate";
 import { SecurityProjectReview } from "./SecurityProjectReview";
-import type { ProjectSecurityResult } from "@repo/contracts";
+import type { ProjectControlOperations, ProjectSecurityResult } from "@repo/contracts";
 
 const api = vi.hoisted(() => ({ git: vi.fn(), read: vi.fn(), preview: vi.fn(), publish: vi.fn() }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getGit: api.git } }));
@@ -23,6 +23,22 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock("@/hooks/useRuntimeUpdate", () => ({ useRuntimeUpdate: () => ({ updating: false }) }));
 let root: Root, host: HTMLDivElement;
+const gitInfo = {
+  success: true,
+  provider: "github",
+  owner: "acme",
+  repo: "app",
+  branch: "main",
+  commits: [],
+  auto_deploy: false,
+  webhook_strategy: "app",
+  webhook_active: true,
+  webhook_domain: null,
+  available_strategies: ["app"],
+  verified_domains: [],
+  installation_installed: true,
+  default_rollback_strategy: "git",
+} satisfies Awaited<ReturnType<ProjectControlOperations["getGitInfo"]>>;
 const source = {
   owner: "acme",
   repo: "app",
@@ -38,12 +54,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   setApiResourceScope("source-test");
   vi.resetAllMocks();
-  api.git.mockResolvedValue({
-    gitProvider: "github",
-    gitOwner: "acme",
-    gitRepo: "app",
-    gitBranch: "main",
-  });
+  api.git.mockResolvedValue(gitInfo);
   api.read.mockResolvedValue({ data: source });
   api.preview.mockResolvedValue({
     data: {
@@ -90,6 +101,8 @@ async function setImage(value: string) {
 it("requires a reviewed diff, invalidates it on edit, and creates a PR without triggering a deployment", async () => {
   await render();
   await click("Propose image update");
+  expect(api.read).toHaveBeenCalledWith("project", { path: "Dockerfile", format: "dockerfile" });
+  expect(document.body.textContent).toContain("acme/app · main");
   await setImage("node:24");
   expect(document.body.textContent).not.toContain("Create draft PR");
   await click("Review change");
@@ -108,6 +121,20 @@ it("requires a reviewed diff, invalidates it on edit, and creates a PR without t
     expect.objectContaining({ image: "node:24", reviewId: "b".repeat(64) }),
   );
   expect(document.body.textContent).toContain("Recheck the deployed runtime");
+});
+it.each([
+  { success: false, error: "No repository connected", code: "NO_REPOSITORY" },
+  { ...gitInfo, provider: "local" },
+  { ...gitInfo, branch: "" },
+])("does not load or publish source without a supported repository and branch: %j", async (git) => {
+  api.git.mockResolvedValue(git);
+  await render();
+  await click("Propose image update");
+  expect(document.body.textContent).toContain(
+    "This project needs a connected GitHub repository and deployment branch.",
+  );
+  expect(api.read).not.toHaveBeenCalled();
+  expect(api.publish).not.toHaveBeenCalled();
 });
 it("discards source and pending responses after an account/workspace switch", async () => {
   let resolve!: (value: unknown) => void;

@@ -171,6 +171,7 @@ export {
   type AlternativeHostPort,
   type SuggestAlternativeHostPort,
   probeListeningPort,
+  probeListeningPortOwners,
   isDockerHostPortAvailable,
   ensurePortAvailable,
 } from "./runtime/port-conflict";

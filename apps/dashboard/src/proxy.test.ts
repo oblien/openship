@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { proxy } from "./proxy";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { config, proxy } from "./proxy";
 
 describe("dashboard proxy middleware", () => {
+  it.each(["/api", "/api/proxy/api/projects/folder/upload/session", "/api/auth/sign-in/email", "/api/mcp"])(
+    "does not buffer API request bodies through middleware: %s", (url) => {
+      expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(false);
+    },
+  );
+  it.each(["/projects", "/login", "/api-docs"])("still matches page requests: %s", (url) => {
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(true);
+  });
   it("mirrors a valid theme cookie for the initial server render", () => {
     const response = proxy(new NextRequest("https://app.openship.io/login", {
       headers: { cookie: "openship-theme=system:dim", "x-openship-theme": "light:light" },

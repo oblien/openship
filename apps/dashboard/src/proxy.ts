@@ -90,5 +90,7 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // API routes authenticate in the API process. Matching them here makes Next
+  // clone/buffer uploads, truncating the stream at its middleware body limit.
+  matcher: ["/((?!api(?:/|$)|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

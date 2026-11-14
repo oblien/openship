@@ -202,6 +202,13 @@
     "pageOf": "Sayfa {page} / {total}",
     "range": "{total} dağıtımdan {from}–{to}"
   },
+  "containerConflict": {
+    "title": "Yinelenen kapsayıcıları çözün",
+    "description": "Hedef sunucudaki kapsayıcıları ve bağlı birimlerini inceleyin. Kullanılacak kapsayıcıyı ve verilerini koruyun, yalnızca kullanılmadığını doğruladığınız kopyayı kaldırın ve yeniden dağıtın. Hangisini koruyacağınızdan emin değilseniz bu dağıtım referansıyla destek ekibine ulaşın.",
+    "containers": "Eşleşen kapsayıcılar",
+    "reviewServer": "Sunucuyu incele",
+    "reference": "Dağıtım referansı"
+  },
   "resourceGuidance": {
     "label": "Dağıtım kaynak rehberi",
     "reviewCapacity": "Kapasiteyi incele",

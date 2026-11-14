@@ -11,7 +11,7 @@ import { IllustratedLink } from "@/components/marketing/illustrated-link";
 import { CLOUD_SLA } from "@/lib/cloud-service";
 import {
   UI,
-  cloudFrom,
+  startingCloudPlan,
   priceParts,
   getCloudPricing,
   cloudPlanSummary,
@@ -61,6 +61,7 @@ function PlanCard({
   cta,
   popular,
   support,
+  benefits = [],
   children,
 }: {
   name: string;
@@ -72,6 +73,7 @@ function PlanCard({
   cta: string;
   popular?: boolean;
   support: string;
+  benefits?: string[];
   children: ReactNode;
 }) {
   const copy = useCopy();
@@ -97,10 +99,14 @@ function PlanCard({
         {copy(cta)} <ArrowRight className="size-4" aria-hidden="true" />
       </a>
       <div className="pp-plan-details">{children}</div>
-      <p className="pp-plan-support">
-        <Check className="size-4" aria-hidden="true" />
-        {copy(support)}
-      </p>
+      <ul className="pp-plan-support">
+        {[...benefits, support].map((benefit) => (
+          <li key={benefit}>
+            <Check className="size-4" aria-hidden="true" />
+            {copy(benefit)}
+          </li>
+        ))}
+      </ul>
     </article>
   );
 }
@@ -161,6 +167,7 @@ async function CloudPlans({
 }) {
   const copy = await getCopy();
   const standard = resolveStandard(await getLocale());
+  const plans = pricing.tiers.filter((plan) => plan.price[interval] != null);
 
   if (!pricing.available)
     return (
@@ -176,13 +183,13 @@ async function CloudPlans({
   return (
     <>
       <div className="pp-plans">
-        {pricing.tiers.map((plan) => {
-          const billingInterval =
-            interval === "annual" && plan.price.annual != null ? "annual" : "monthly";
-          const price = priceParts(plan, billingInterval);
+        {plans.map((plan) => {
+          const price = priceParts(plan, interval);
           const billing =
-            billingInterval === "annual"
-              ? copy("{value0} billed yearly", { value0: String(money(plan.price.annual!)) })
+            interval === "annual"
+              ? pricing.annual.monthsFree > 0
+                ? copy("{months} months free", { months: pricing.annual.monthsFree })
+                : copy("Billed yearly")
               : copy("Billed monthly");
           return (
             <PlanCard
@@ -206,10 +213,19 @@ async function CloudPlans({
                   )}
                 </>
               }
-              href={cloudPlanHref(plan.id, billingInterval)}
+              href={cloudPlanHref(plan.id, interval)}
               cta={copy("Choose {name}", { name: plan.name })}
               popular={plan.popular}
               support={supportLabels[plan.support] ?? "See support options"}
+              benefits={
+                pricing.management?.includedWithCloud
+                  ? [
+                      copy("Free management for {count} servers", {
+                        count: pricing.management.includedServers,
+                      }),
+                    ]
+                  : []
+              }
             >
               <PlanResources plan={plan} />
             </PlanCard>
@@ -218,7 +234,7 @@ async function CloudPlans({
       </div>
       <div className="pp-billing-note">
         <p>
-          {pricing.tiers.every((plan) => plan.billingMode === "monthly")
+          {plans.every((plan) => plan.billingMode === "monthly")
             ? copy(
                 "CPU, RAM and storage included. Apps and builds share capacity. Managed proxy transfer and backups are billed separately.",
               )
@@ -376,74 +392,76 @@ export default async function PricingPage() {
   const copy = await getCopy();
 
   const pricing = await getCloudPricing(await getLocale());
-  const from = cloudFrom(pricing);
+  const billingView = (interval: "monthly" | "annual") => {
+    const startingPlan = startingCloudPlan(pricing, interval);
+    const yearly = interval === "annual";
+    return {
+      plans: <CloudPlans pricing={pricing} interval={interval} />,
+      headline: startingPlan
+        ? copy.rich(
+            yearly ? "From <price>{amount}</price>/year" : "From <price>{amount}</price>/month",
+            {
+              amount: priceParts(startingPlan, interval).amount,
+              price: (amount) => <bdi dir="ltr">{amount}</bdi>,
+            },
+          )
+        : copy("Choose your capacity."),
+      note: !startingPlan
+        ? null
+        : yearly
+          ? pricing.annual.monthsFree > 0
+            ? copy("{months} months free", { months: pricing.annual.monthsFree })
+            : copy("Billed yearly")
+          : copy("Billed monthly"),
+    };
+  };
   return (
     <>
       <Navbar />
       <main className="pp-root">
-        <section className="pp-hero">
-          <div className="site-container pp-hero-inner">
-            <h1 className="pp-headline">
-              {copy("Cloud resources for your projects.")}
-              <br />
-              <span>
-                {from
-                  ? copy("From {value0}/month.", { value0: String(from) })
-                  : copy("Choose your capacity.")}
-              </span>
-            </h1>
-          </div>
-        </section>
-        <section
-          id="plans"
-          className="pp-plans-section"
-          aria-label={copy("Plans and hosting options")}
+        <CloudBilling
+          monthly={billingView("monthly")}
+          annual={
+            pricing.annual.enabled && startingCloudPlan(pricing, "annual")
+              ? billingView("annual")
+              : undefined
+          }
+          monthsFree={pricing.annual.monthsFree}
         >
-          <div className="site-container">
-            <div
-              className="pp-cloud-benefits"
-              role="group"
-              aria-label={copy("Included with every Cloud plan")}
-            >
-              <IllustratedLink
-                href={CLOUD_SLA.termsHref}
-                illustration="deployment-health-checks"
-                heading="h2"
-                title={copy("{value0}% uptime guarantee", {
-                  value0: String(CLOUD_SLA.monthlyUptimePercent),
-                })}
-                description={copy("Monthly SLA with service credits on every Cloud plan.")}
-              />
-              <IllustratedLink
-                href="/support"
-                illustration="notifications"
-                heading="h2"
-                title={copy("Support included")}
-                description={copy("Email us or open Support in your app’s sidebar.")}
-              />
-            </div>
-            <CloudBilling
-              monthly={<CloudPlans pricing={pricing} interval="monthly" />}
-              annual={
-                pricing.available && pricing.annual.enabled ? (
-                  <CloudPlans pricing={pricing} interval="annual" />
-                ) : undefined
-              }
-              monthsFree={pricing.annual.monthsFree}
+          <div
+            className="pp-cloud-benefits"
+            role="group"
+            aria-label={copy("Included with every Cloud plan")}
+          >
+            <IllustratedLink
+              href={CLOUD_SLA.termsHref}
+              illustration="deployment-health-checks"
+              heading="h2"
+              title={copy("{value0}% uptime guarantee", {
+                value0: String(CLOUD_SLA.monthlyUptimePercent),
+              })}
+              description={copy("Monthly SLA with service credits on every Cloud plan.")}
             />
-            {pricing.customTiers.map((plan) => (
-              <div className="pp-enterprise" key={plan.id}>
-                <p>
-                  <strong>{copy(plan.name)}</strong>
-                  <span>{copy(plan.description)}</span>
-                </p>
-                <a href={plan.contactSales ?? CLOUD_CTA_HREF} className="pp-text-link">
-                  {copy(UI.ctaContact)} <ArrowRight className="size-4" aria-hidden="true" />
-                </a>
-              </div>
-            ))}
+            <IllustratedLink
+              href="/support"
+              illustration="notifications"
+              heading="h2"
+              title={copy("Support included")}
+              description={copy("Email us or open Support in your app’s sidebar.")}
+            />
           </div>
-        </section>
+          {pricing.customTiers.map((plan) => (
+            <div className="pp-enterprise" key={plan.id}>
+              <p>
+                <strong>{copy(plan.name)}</strong>
+                <span>{copy(plan.description)}</span>
+              </p>
+              <a href={plan.contactSales ?? CLOUD_CTA_HREF} className="pp-text-link">
+                {copy(UI.ctaContact)} <ArrowRight className="size-4" aria-hidden="true" />
+              </a>
+            </div>
+          ))}
+        </CloudBilling>
         <section className="pp-offering-section" aria-labelledby="management-title">
           <div className="site-container">
             <header className="pp-section-heading">

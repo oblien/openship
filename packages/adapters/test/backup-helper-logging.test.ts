@@ -1,7 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ServiceHandle } from "../src/backup/types";
+import { FakeAttachStream, harness } from "./helpers/docker-helper-harness";
 
 /**
  * The backup helper streams a volume's archive over `attach()`. With the
@@ -11,34 +10,45 @@ import { fileURLToPath } from "node:url";
  * volume produced a 12 GB log, so a backup spiked host disk by far more than
  * it read and only released it when the helper exited.
  *
- * Asserted against the source because the alternative is a full dockerode
- * double, which would pin far more of the executor's shape than this one
- * property is worth.
+ * Exercise the executor's actual helper configuration for each codec.
  */
-const executorSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../src/backup/executors/docker.ts"),
-  "utf8",
-);
+const attach = vi.hoisted(() => ({ stream: null as FakeAttachStream | null }));
+vi.mock("../src/runtime/docker-exec-stream", async (original) => ({
+  ...(await original<typeof import("../src/runtime/docker-exec-stream")>()),
+  startAttachStream: async () => attach.stream!,
+}));
+
+afterEach(() => vi.restoreAllMocks());
+
+const service: ServiceHandle = {
+  id: "svc_1",
+  projectId: "prj_1",
+  name: "db",
+  image: "postgres:16",
+  env: {},
+  volumes: ["pgdata:/var/lib/postgresql/data"],
+  containerId: null,
+  projectSlug: "shop",
+  namespaceVolumes: false,
+};
 
 describe("backup helper container", () => {
-  it("disables container logging for the archive stream", () => {
-    expect(executorSource).toMatch(/LogConfig:\s*\{\s*Type:\s*"none"/);
-  });
-
-  it("keeps the log config on the same HostConfig that binds the source", () => {
-    // Anchored to the statement that immediately follows the literal, so the
-    // slice stays inside streamPath — `const helper =` moved into the shared
-    // withHelper/handOffHelper wrappers and would now widen this to two methods.
-    const hostConfig = executorSource.slice(
-      executorSource.indexOf("const hostConfig"),
-      executorSource.indexOf("return this.handOffHelper("),
-    );
-    expect(hostConfig).toContain(":/mnt:ro");
-    // AutoRemove must stay OFF: the daemon reaping the helper at exit races
-    // container.wait() (404 on the exit status) and tears down the attach socket
-    // while bytes are still buffered (truncated tar). demuxContainerStream owns
-    // the removal instead, once the archive is fully demuxed.
-    expect(hostConfig).toContain("AutoRemove: false");
-    expect(hostConfig).toMatch(/LogConfig/);
-  });
+  it.each(["none", "gzip", "zstd"] as const)(
+    "keeps %s capture read-only with logging disabled and cleanup owned by the executor",
+    async (compression) => {
+      attach.stream = new FakeAttachStream();
+      const h = harness({ wait: 0 }, () => ({}));
+      const executor = await h.executor();
+      const { stdout, awaitExit } = await executor.streamPath(service, "pgdata-0", { compression });
+      stdout.resume();
+      attach.stream.finish();
+      await awaitExit;
+      expect(h.created.at(-1)?.HostConfig).toMatchObject({
+        Mounts: [{ Type: "volume", Source: "pgdata", Target: "/mnt", ReadOnly: true }],
+        AutoRemove: false,
+        LogConfig: { Type: "none", Config: {} },
+      });
+      expect(h.removals).toHaveLength(1);
+    },
+  );
 });

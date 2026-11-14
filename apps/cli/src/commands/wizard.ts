@@ -1231,7 +1231,7 @@ export async function runControl(): Promise<void> {
       `${chalk.dim("Dashboard".padEnd(11))}${dashUrl}\n` +
       (ports.api ? `${chalk.dim("API".padEnd(11))}http://localhost:${ports.api}\n` : "") +
       `${chalk.dim("Manager".padEnd(11))}${managerLabel}`,
-    "Openship is already set up",
+    "Openship is installed",
   );
 
   // Crash-looping on a corrupt DB is the one case where "Start" won't help —
@@ -1279,6 +1279,7 @@ export async function runControl(): Promise<void> {
           : { value: "start", label: "Start the service" },
         { value: "stop", label: "Stop the service", hint: "won't restart on boot" },
         ...(corrupted ? [] : [{ value: "repair", label: "Repair database", hint: "backup → heal a corrupt DB" }]),
+        { value: "create-admin", label: "Create first admin", hint: "finish a new install; existing accounts stay intact" },
         { value: "reset", label: "Reset admin password", hint: "sets a local email + password login" },
         { value: "reconfigure", label: "Re-run setup", hint: "reconfigure domain / cloud / admin" },
         { value: "quit", label: "Quit" },
@@ -1287,6 +1288,16 @@ export async function runControl(): Promise<void> {
   );
 
   switch (action) {
+    case "create-admin": {
+      const admin = await promptLocalAdmin();
+      const result = await bootstrapAdmin(apiPort, admin);
+      outro(result.ok
+        ? result.message === "already-exists"
+          ? "An admin already exists. Use Reset admin password if you need to recover access."
+          : `Admin created. Sign in at ${primaryUrl}.`
+        : `Could not create the admin: ${result.message}`);
+      return;
+    }
     case "repair": {
       const res = await runRepair();
       outro(res.healed ? chalk.green(res.detail) : chalk.yellow(res.detail));

@@ -276,6 +276,8 @@ export interface McpRouteMeta {
   description: string;
   /** Override the inferred hint for actions such as destructive migration cutover. */
   destructive?: boolean;
+  /** Whether this tool may interact with external systems; defaults to true. */
+  openWorld?: boolean;
 }
 
 export interface PermissionSpec {

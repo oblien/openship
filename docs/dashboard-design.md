@@ -174,6 +174,9 @@ The banner settings menu can hide runtime security banners, including critical o
 for the current browser/account/workspace. Settings → Notifications restores them.
 Keep this visibility choice separate from security checks, notification delivery and
 per-project automatic-refresh consent. Operator maintenance notices stay independent.
+Managed Cloud's global update banner shows only verified workload-security notices.
+It skips installation releases, upgrade prompts and the operator-announcements feed;
+Desktop and self-hosted instances retain those feeds.
 When the signed advisory has no patched release in the observed runtime's major,
 show the required version-change guidance and open the existing saved deployment
 configuration. Do not offer another image refresh as a fix or silently upgrade a major.
@@ -777,10 +780,11 @@ check retryable before starting the move.
 - Cloud plan purchases place the compact Monthly / Yearly control before Plans / Custom
   in the same purchase header. Use the existing secondary fill for the selected interval;
   do not add a decorative ring or another label row.
-  Default new purchases to Yearly, while preserving a saved
-  subscription or an explicit monthly purchase intent. Show it only when the provider enables annual purchases.
-  Yearly cards display a monthly equivalent with the full annual charge directly below;
-  checkout charges that full year. Custom uses the same interval and resets its quote
+  Default new purchases to Monthly, while preserving a saved
+  subscription or an explicit purchase intent. Show it only when the provider enables annual purchases.
+  Yearly cards display the full annual price per year, with the catalog's free-month savings below;
+  checkout charges that full year. Custom totals, breakdowns and extra-resource rates use the
+  same selected period. Custom resets its quote
   on interval changes. Existing subscriptions keep their saved interval; Manage remains
   monthly. Disable interval changes during checkout and never reuse a quote from another
   interval. Do not add another product navigation or price calculator.

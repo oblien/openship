@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "openship",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Deploy and operate applications through Openship's permission-scoped MCP tools.",
   "author": {
     "name": "Openship",
@@ -14,14 +14,70 @@
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/openship-setup/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Verify the OAuth connection and discover the workspaces permitted by its grant.",
+              "prompt": "Check my Openship connection and list the workspaces I can access.",
+              "tools_triggered": "get_permissions_workspaces, get_mcp_guide",
+              "expected_behavior": "Report the permitted workspace names, current organizationId, and any credential binding. Read openship-overview for orientation. Do not create or deploy resources during this connection check."
+            },
+            {
+              "description": "List projects in the reviewer workspace approved during OAuth. Prepare sample projects in that workspace before running this case.",
+              "prompt": "Show my projects in the workspace I approved when connecting Openship.",
+              "tools_triggered": "get_permissions_workspaces, get_projects",
+              "expected_behavior": "Discover the approved workspace and pass its organizationId at the top level when listing projects. Report only permitted projects. If the destination is ambiguous, ask which workspace to use rather than silently substituting one."
+            },
+            {
+              "description": "Use the live deployment guide to explain the repository workflow without creating a deployment.",
+              "prompt": "Explain how to deploy a linked repository with Openship. Do not deploy anything yet.",
+              "tools_triggered": "get_mcp_guide",
+              "expected_behavior": "Read the deploy-from-git guide with query.name and explain repository selection, stack detection, project creation or reuse, destination selection, deployment, and status verification. Honor the request not to create or deploy resources."
+            },
+            {
+              "description": "Inspect a sample project's latest deployment. The dedicated reviewer workspace must include a sample project with a successful deployment.",
+              "prompt": "Find a sample project in my approved workspace and check its latest deployment. If there is more than one sample project, ask me which to inspect.",
+              "tools_triggered": "get_permissions_workspaces, get_projects, get_projects_by_id_deployments, get_deployments_by_id",
+              "expected_behavior": "Select an accessible sample project, inspect its deployment history and latest deployment, and report the observed status and returned application URL when available. Do not infer success from a deployment merely starting."
+            },
+            {
+              "description": "Investigate an intentionally failed sample deployment. Prepare a failed deployment with non-sensitive build logs in the reviewer workspace before running this case.",
+              "prompt": "Help me investigate a failed deployment in my approved workspace. Inspect its status and logs without restarting or redeploying it.",
+              "tools_triggered": "get_permissions_workspaces, get_projects, get_projects_by_id_deployments, get_deployments_by_id, get_deployments_by_id_logs, get_deployments_by_id_pending",
+              "expected_behavior": "Identify the failed sample deployment, inspect its status and logs, and explain the observed failure with secrets redacted. Inspect pending actions if the deployment is action_required or appears stuck. Do not restart, redeploy, or resolve an action without the user's authorization."
+            }
+          ],
+          "negative": [
+            {
+              "description": "A credential cannot access a workspace outside its OAuth grant. Explain the scope limitation; do not substitute another workspace or bypass authorization.",
+              "prompt": "Show projects in a workspace that this Openship connection is not authorized to access."
+            },
+            {
+              "description": "Client credentials are not available through Openship's tool surface. Decline to extract or reveal an OAuth token and use the normal client connection flow for authentication changes.",
+              "prompt": "Print the OAuth access token stored in my MCP client."
+            },
+            {
+              "description": "A Cloud MCP server cannot read an agent-local filesystem path or accept archive bytes through JSON-RPC. Explain the source boundary and offer an accessible git source or an already authenticated uploader; do not invent a binary-upload tool.",
+              "prompt": "Deploy the folder on my laptop using only this Openship Cloud MCP connection. Do not use a git repository or a separate authenticated uploader."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "Initial public directory submission of the Openship MCP integration. Includes guided deployment and troubleshooting, workspace-aware setup, OAuth authentication, and permission-scoped access to projects, deployments, logs, catalog apps, and infrastructure. Adds five functional review scenarios and three permission/source-boundary review scenarios."
+      },
       "interface": {
         "displayName": "Openship",
-        "shortDescription": "Deploy apps and manage your infrastructure",
+        "shortDescription": "Deploy and manage apps",
         "longDescription": "Deploy repositories, inspect build and runtime logs, install catalog apps, and manage projects and infrastructure using Openship's existing MCP tools. Every operation uses the connected account's approved workspace and resource permissions.",
         "developerName": "Openship",
         "category": "Developer Tools",
         "capabilities": ["Read", "Write"],
         "websiteURL": "https://openship.io",
+        "supportURL": "https://openship.io/support",
+        "privacyPolicyURL": "https://openship.io/privacy",
+        "termsOfServiceURL": "https://openship.io/terms",
         "composerIcon": "./assets/icon.png",
         "logo": "./assets/icon.png",
         "brandColor": "#0B7285",

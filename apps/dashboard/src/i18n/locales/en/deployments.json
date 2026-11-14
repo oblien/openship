@@ -202,6 +202,13 @@
     "confirm": "Roll back",
     "cancel": "Cancel"
   },
+  "containerConflict": {
+    "title": "Resolve duplicate containers",
+    "description": "Inspect the containers and their mounts on the target server. Keep the intended container and its data, remove only a confirmed unused duplicate, then redeploy. If you are unsure which to keep, contact support with this deployment reference.",
+    "containers": "Matching containers",
+    "reviewServer": "Review server",
+    "reference": "Deployment reference"
+  },
   "resourceGuidance": {
     "label": "Deployment resource guidance",
     "reviewCapacity": "Review capacity",

@@ -15,7 +15,7 @@ describe("signUpNext", () => {
   it("goes to verification when sign-up succeeds WITHOUT a session", () => {
     // The exact better-auth shape for requireEmailVerification.
     const next = signUpNext({ data: { token: null } }, opts);
-    expect(next).toEqual({ kind: "verify", href: "/verify-email?email=a%40b.co" });
+    expect(next).toEqual({ kind: "verify", href: "/verify-email?email=a%40b.co&signup=1" });
   });
 
   it("treats a missing token field the same as an explicit null", () => {
@@ -53,4 +53,17 @@ describe("signUpNext", () => {
     // address to the OTP endpoint.
     expect(next.kind === "verify" && next.href).toContain("a%2Btag%40b.co");
   });
+});
+
+it("preserves the Cloud consent and PKCE continuation through signup verification", () => {
+  const returnTo = "/cloud-authorize?mode=device&state=test-state&code_challenge=test-challenge";
+  const next = signUpNext(
+    { data: { token: null } },
+    { email: "existing@example.test", authParams: new URLSearchParams({ returnTo }) },
+  );
+  expect(next.kind).toBe("verify");
+  if (next.kind !== "verify") throw new Error("Expected email continuation");
+  const params = new URL(next.href, "https://app.example.test").searchParams;
+  expect(params.get("signup")).toBe("1");
+  expect(params.get("returnTo")).toBe(returnTo);
 });

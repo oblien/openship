@@ -6,9 +6,16 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Backups
+
 - Back up verified existing empty Docker volumes and bind directories without blocking
   populated sibling sources. Reject missing sources before capture and preserve failures
   for unavailable backing storage (#1767).
+
+### CLI
+
+- Run the container-to-host connectivity probe with Node.js, matching the API image,
+  so `openship up` and `openship doctor` can diagnose the host channel without Bun.
 
 ## 0.9.12
 

@@ -1571,7 +1571,7 @@
   outline-offset: 5px;
 }
 .pp-hero {
-  padding: 150px 0 64px;
+  padding: 132px 0 44px;
 }
 .pp-hero-inner {
   text-align: center;
@@ -1584,6 +1584,11 @@
   color: var(--th-text-heading);
 }
 .pp-headline span {
+  color: var(--th-text-secondary);
+}
+.pp-hero-billing {
+  margin-top: 18px;
+  font-size: 14px;
   color: var(--th-text-secondary);
 }
 .pp-solid-cta,
@@ -1630,9 +1635,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 32px;
-  padding-bottom: 24px;
-  margin-bottom: 32px;
-  border-bottom: 1px solid var(--th-bd-default);
+  margin-top: 32px;
 }
 .pp-offering-section {
   padding: 48px 0;
@@ -1824,13 +1827,17 @@
   text-align: end;
 }
 .pp-plan-support {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 8px;
   padding-top: 18px;
   border-top: 1px solid var(--th-bd-default);
   font-size: 13px;
   color: var(--th-text-strong);
+}
+.pp-plan-support li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .pp-plan-support svg {
   flex-shrink: 0;
@@ -2009,8 +2016,7 @@
   .pp-cloud-benefits {
     grid-template-columns: 1fr;
     gap: 8px;
-    padding-bottom: 16px;
-    margin-bottom: 24px;
+    margin-top: 24px;
   }
   .pp-plans {
     grid-template-columns: 1fr;
