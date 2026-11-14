@@ -135,6 +135,7 @@ export function harness(
       const runtime = await DockerRuntime.create();
       // ensureImage → runtime.pullImage; never touch a registry in a unit test.
       (runtime as unknown as { pullImage: () => Promise<void> }).pullImage = async () => {};
+      runtime.docker.getVolume = (() => ({ inspect: async () => ({}) })) as never;
       runtime.docker.createContainer = (async (opts: Record<string, unknown>) => {
         created.push(opts);
         return helper;

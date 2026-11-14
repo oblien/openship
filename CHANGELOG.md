@@ -4,6 +4,12 @@ All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## Unreleased
+
+- Back up verified existing empty Docker volumes and bind directories without blocking
+  populated sibling sources. Reject missing sources before capture and preserve failures
+  for unavailable backing storage (#1767).
+
 ## 0.9.12
 
 **Critical update** for build-secret protection, database upgrade repairs and
