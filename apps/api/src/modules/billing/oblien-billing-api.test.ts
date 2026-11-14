@@ -659,7 +659,7 @@ describe("Oblien monthly capacity contract", () => {
         .toThrow(/does not match/);
     }
   });
-  it.each(["past_due", "unpaid", "paused", "canceled"] as const)("keeps billing readable for an expired paid month and a %s renewal", async status => {
+  it.each(["active", "past_due", "unpaid", "paused", "canceled"] as const)("keeps billing readable for an expired paid month and a %s renewal", async status => {
     const state = unpaidMonthlyCloudBilling("org-one", "os-one");
     state.subscription.status = status;
     const entitlement = await setup(state.entitlement).api.getEntitlement("os-one");
@@ -668,9 +668,8 @@ describe("Oblien monthly capacity contract", () => {
     expect(entitlement).toMatchObject({ status: "canceled", computeCovered: false, capacity: { status: "expired", computeCovered: false } });
     expect(entitlement.periodEnd).not.toBe(subscription!.periodEnd);
   });
-  it("still rejects funded, overlapping, foreign or inconsistent unpaid renewal records", () => {
+  it.each(["active", "past_due"] as const)("still rejects funded, overlapping, foreign or inconsistent %s renewal records", status => {
     for (const mutate of [
-      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.status = "active"; },
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.status = "trialing"; },
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.status = "active"; },
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = true; },
@@ -681,9 +680,12 @@ describe("Oblien monthly capacity contract", () => {
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodStart = "2026-10-15T00:00:00Z"; },
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodStart = null; },
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.subscription.periodEnd = state.subscription.periodStart; },
+      (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.periodStart = state.entitlement.capacity!.periodStart = state.entitlement.periodEnd!; },
       (state: ReturnType<typeof unpaidMonthlyCloudBilling>) => { state.entitlement.capacity!.periodEnd = "2026-10-31T00:00:00Z"; },
     ]) {
-      const state = unpaidMonthlyCloudBilling(); mutate(state);
+      const state = unpaidMonthlyCloudBilling();
+      state.subscription.status = status;
+      mutate(state);
       expect(() => assertOblienEntitlementMatchesSubscription(state.entitlement, state.subscription)).toThrow(/does not match/);
     }
   });

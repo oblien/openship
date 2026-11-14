@@ -231,12 +231,13 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
   const monthly = subscription?.offer?.billingMode === "monthly";
   const expectedTier = monthly ? "capacity" : subscription?.tierId ?? "free";
   const capacity = entitlement.capacity;
-  // An unpaid renewal advances Stripe's invoice period without buying another
-  // month of compute. The retained, expired capacity still describes the last
-  // funded period. Keep billing readable so the customer can pay, while the
-  // provider's uncovered entitlement continues to block new billable work.
+  // Stripe can advance an active subscription's period while its renewal invoice
+  // is still a draft, before attempting payment. An overdue renewal has the same
+  // period split: expired capacity describes the last funded month. Accept this
+  // uncovered state for billing/management reads without granting compute or
+  // inventing a grace period; billable work still requires provider coverage.
   const unpaidRenewal = monthly && subscription &&
-    ["past_due", "unpaid", "paused", "canceled"].includes(subscription.status) &&
+    ["active", "past_due", "unpaid", "paused", "canceled"].includes(subscription.status) &&
     entitlement.status !== "active" && entitlement.computeCovered === false &&
     capacity?.computeCovered === false && capacity.status === "expired" &&
     entitlement.periodStart !== null && entitlement.periodEnd !== null &&
