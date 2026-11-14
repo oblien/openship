@@ -59,7 +59,7 @@ describe("scanFolderSession", () => {
     expect(resolveFromLocalMock).toHaveBeenCalledWith(stagingDir, {
       env: { MY_VERSION: "1.2.3" },
       composePath: "deploy/compose.yaml",
-    });
+    }, "app");
     expect(result.services).toBe(refreshed);
     expect(upload.services).toBe(initial);
   });
