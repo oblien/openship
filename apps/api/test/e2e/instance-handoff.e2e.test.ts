@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterAll, expect, it } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
 import { createHmac } from "node:crypto";
 import { freePort, startApi, stopApi, jsonRequest, type RunningApi } from "./fixtures/instance-api";
 import type { DataTransferFile } from "../../src/modules/system/data-transfer/types";
@@ -431,6 +431,47 @@ it("resumes after a lost activation acknowledgement without reimporting or start
     (await jsonRequest<{ data: { id: string } }>(restarted.baseUrl, `/api/projects/${newer.id}`))
       .data.id,
   ).toBe(newer.id);
+}, 120_000);
+
+it.each(["resume", "cancel"] as const)("recovers a persisted quiescing source after restart with %s", async action => {
+  const { source, target } = await pair();
+  const original = await createProject(source, "Before interrupted drain");
+  const offer = await post<{ code: string }>(target, "/api/system/instance/offer", { direction: "target" });
+  // A real admitted mutation waits for its remaining request body. The move must
+  // keep waiting for it, rather than treating an incomplete drain as a snapshot.
+  const held = httpRequest(`${source.baseUrl}/api/projects`, {
+    method: "POST", headers: { "content-type": "application/json" },
+  });
+  held.on("error", () => { /* The fixture intentionally interrupts this request. */ });
+  held.write('{"name":');
+  let restarted: RunningApi | undefined;
+  try {
+    await post(source, "/api/system/instance/move", { code: offer.code, confirmReplace: true });
+    await expect.poll(async () => (await state(source)).role, { timeout: 15_000 }).toBe("quiescing");
+    const exited = new Promise<void>(resolve => source.child.once("exit", () => resolve()));
+    source.child.kill("SIGKILL"); // simulate a crash after the durable fence
+    await exited;
+    held.destroy();
+    restarted = await startApi({ dbDir: source.dbDir, port: source.port, secret: source.secret });
+    apis.push(restarted);
+    expect(await state(restarted)).toMatchObject({ role: "quiescing", handoff: { running: false } });
+    expect((await fetch(`${restarted.baseUrl}/api/health`)).status).toBe(200);
+    expect((await fetch(`${restarted.baseUrl}/api/projects`)).status).toBe(503);
+    await post(restarted, `/api/system/instance/${action}`);
+    if (action === "resume") {
+      await waitMove(restarted);
+      expect((await state(target)).role).toBe("active");
+      expect((await jsonRequest<{ data: { id: string } }>(target.baseUrl, `/api/projects/${original.id}`)).data.id).toBe(original.id);
+    } else {
+      expect(await state(restarted)).toMatchObject({ role: "active", handoff: { status: "aborted" } });
+      expect((await jsonRequest<{ data: { id: string } }>(restarted.baseUrl, `/api/projects/${original.id}`)).data.id).toBe(original.id);
+    }
+  } finally {
+    held.destroy();
+    await stopApi(source);
+    await stopApi(target);
+    if (restarted) await stopApi(restarted);
+  }
 }, 120_000);
 
 it("cancels a prepared but unactivated receiver and restores its recovery archive", async () => {
