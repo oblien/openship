@@ -180,4 +180,63 @@ describe("shared Compose environment editor", () => {
     expect(h.config.services[0]!.environment.POSTGRES_PASSWORD).toBe(MASK);
     expect(h.update).not.toHaveBeenCalled();
   });
+
+  it("reveals saved shared environment secrets using the project service lookup", async () => {
+    h.config.projectId = "project-id";
+    h.config.services[0]!.serviceId = "service-id";
+    h.config.envVars = [
+      {
+        key: "SHARED_TOKEN",
+        value: MASK,
+        visible: false,
+        isSecret: true,
+        preserveValue: true,
+      },
+    ];
+    h.stored.mockResolvedValue({ environment: { SHARED_TOKEN: "shared-secret-value" } });
+
+    renderToStaticMarkup(
+      <I18nProvider>
+        <ComposeServices />
+      </I18nProvider>,
+    );
+
+    const sharedEditor = h.editors.find((props) =>
+      props.envVars?.some((row) => row.key === "SHARED_TOKEN"),
+    );
+    expect(sharedEditor).toBeDefined();
+    expect(sharedEditor?.onReveal).toBeDefined();
+    expect(await sharedEditor!.onReveal!(["SHARED_TOKEN"])).toEqual({
+      SHARED_TOKEN: "shared-secret-value",
+    });
+    expect(h.stored).toHaveBeenCalledWith(
+      "project-id",
+      "service-id",
+      ["SHARED_TOKEN"],
+      undefined,
+    );
+  });
+
+  it("leaves onReveal undefined in shared environment editor when project is not yet saved", () => {
+    h.config.envVars = [
+      {
+        key: "SHARED_TOKEN",
+        value: "initial-value",
+        visible: true,
+      },
+    ];
+
+    renderToStaticMarkup(
+      <I18nProvider>
+        <ComposeServices />
+      </I18nProvider>,
+    );
+
+    const sharedEditor = h.editors.find((props) =>
+      props.envVars?.some((row) => row.key === "SHARED_TOKEN"),
+    );
+    expect(sharedEditor).toBeDefined();
+    expect(sharedEditor?.onReveal).toBeUndefined();
+  });
 });
+
