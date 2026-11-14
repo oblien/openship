@@ -268,8 +268,6 @@ export async function headlessProvision(opts: {
 }): Promise<ProvisionResult> {
   const { port, inputs, token } = opts;
   const log = opts.onLog ?? (() => {});
-  const warnings: string[] = [];
-
   log("Waiting for the API to become healthy…");
   if (!(await waitHealthy(port))) {
     throw new HeadlessInputError("The API did not become healthy in time — check `openship logs`.");
@@ -279,8 +277,24 @@ export async function headlessProvision(opts: {
   const admin = await bootstrapOrReset(port, inputs.admin, token);
   if (!admin.ok) throw new HeadlessInputError(`Could not create the admin account: ${admin.message}`);
 
+  return { adminReady: true, ...await provisionInstanceDomain({ ...opts, domain: inputs.domain }) };
+}
+
+/** Register routing independently of credentials, including managed-edge
+ * re-runs on an already initialized Compose install. */
+export async function provisionInstanceDomain(opts: {
+  port: string;
+  dashPort?: string;
+  domain: InstallInputs["domain"];
+  token?: string;
+  onLog?: (msg: string) => void;
+  onSlugTaken?: (taken: string) => Promise<string | null>;
+}): Promise<Omit<ProvisionResult, "adminReady">> {
+  const { port, token } = opts;
+  const log = opts.onLog ?? (() => {});
+  const warnings: string[] = [];
   const dashPort = opts.dashPort ? Number(opts.dashPort) : undefined;
-  const d = inputs.domain;
+  const d = opts.domain;
   let liveUrl: string | undefined;
   let domainRegistered = false;
 
@@ -392,5 +406,5 @@ export async function headlessProvision(opts: {
     }
   }
 
-  return { adminReady: true, domainRegistered, liveUrl, warnings };
+  return { domainRegistered, liveUrl, warnings };
 }
