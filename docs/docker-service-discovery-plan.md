@@ -220,8 +220,16 @@ Docker/Podman compatibility work below is required before declaring full runtime
   scheduling in one transaction — a crash between them would strand live
   routes on a server no sweep selects); UNSUPPRESS cancels only
   SUPPRESSION-specific retirement — withdrawals owed to server disable or
-  observed loss survive the change of heart (row-locked reason check).
-  Tests: repo 45, reconciler 19, operations 9, sweep 20 (queue serialization
+  observed loss survive the change of heart (row-locked reason check), and a
+  BLOCKED binding's retirement (conflict/removal policy) survives too, as
+  does the withdrawal of a row that was never actually suppressed (an
+  unsuppress requires evidence of a real reversal). FORGET reads the binding
+  INSIDE the queue (a queued scan can change the hostname before the task
+  runs — reading outside would retire a stale hostname and strand the new
+  route), and DISABLE is queued as well (an already-started FIRST route write
+  must record appliedGeneration before withdrawal scheduling, or its binding
+  would be excluded from retirement).
+  Tests: repo 45, reconciler 19, operations 11, sweep 20 (queue serialization
   with operator mutations + rejection-safe cleanup).
   Remaining: server UI, live Podman canary (7/8).
 - **Review acceptance check.** After `markInvalid()` clears `containerId`, a
