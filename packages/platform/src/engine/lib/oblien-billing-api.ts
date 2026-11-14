@@ -700,7 +700,8 @@ export class OblienBillingApi {
     const url = new URL(value);
     if (url.hostname === "api.oblien.com") {
       this.validateHostedUrl(value, "api.oblien.com");
-      if (url.pathname === oblienApiUrl(oblienApiBaseUrl(), "/billing/pay").pathname && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
+      // This is the hosted browser page, not a versioned control-plane endpoint.
+      if (url.pathname === "/billing/pay" && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
       throw new AppError("Cloud billing returned an invalid hosted URL", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
     }
     this.validateHostedUrl(value, "checkout.stripe.com");

@@ -813,6 +813,10 @@ operator needs a proxy, the override must be the complete API mount including
 its version. Remove a previously configured unversioned provider origin during
 the coordinated cutover.
 
+The custom checkout browser page remains `https://api.oblien.com/billing/pay`.
+Only its control-plane creation/status requests use `/v1`; do not rewrite the
+returned payment URL or apply the API mount to Runtime/CDN URLs.
+
 Activate the matching Oblien `/v1` API and migrated database before deploying
 this integration. Older SDK routes are not probed and failed writes are not
 replayed. OpenShip's organization/workspace records, managed-server IDs, paid

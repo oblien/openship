@@ -279,21 +279,23 @@ describe("Oblien billing SDK and transport contract", () => {
     expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/checkout", expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ ...input, allowPromotionCodes: true });
   });
-  it("accepts the exact Oblien promotion checkout and preserves its opaque ID", async () => {
+  it("keeps the hosted payment page unversioned while sending checkout requests to /v1", async () => {
     const checkoutId = "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee";
-    const url = `https://api.oblien.com/v1/billing/pay#${"a".repeat(43)}`;
-    const { api } = setup({ success: true, url, checkoutId });
+    const url = `https://api.oblien.com/billing/pay#${"a".repeat(43)}`;
+    const { api, fetcher } = setup({ success: true, url, checkoutId });
     await expect(api.createCheckout({ namespace: "os-one", kind: "topup", offer, metadata,
       successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "promotion-checkout" }))
       .resolves.toMatchObject({ url, checkoutId });
+    expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v1/billing/checkout", expect.objectContaining({ method: "POST" }));
   });
   it.each([
     "http://api.oblien.com/billing/pay", "https://api.oblien.com.evil.example/billing/pay",
-    "https://api.oblien.com/v1/billing/pay?return=https://evil.example", "https://api.oblien.com/v1/other",
-    "https://api.oblien.com/v1/billing/pay", "https://user@api.oblien.com/billing/pay",
-    "https://api.oblien.com:8443/billing/pay", "https://api.oblien.com/v1/billing/pay/",
+    "https://api.oblien.com/billing/pay?return=https://evil.example", "https://api.oblien.com/v1/other",
+    "https://api.oblien.com/billing/pay", "https://user@api.oblien.com/billing/pay",
+    "https://api.oblien.com:8443/billing/pay", "https://api.oblien.com/billing/pay/",
+    "https://api.oblien.com/v1/billing/pay",
   ])("rejects an invalid promotion checkout URL: %s", async (value) => {
-    const url = value + (value === "https://api.oblien.com/v1/billing/pay" ? "#short" : `#${"a".repeat(43)}`);
+    const url = value + (value === "https://api.oblien.com/billing/pay" ? "#short" : `#${"a".repeat(43)}`);
     await expect(setup({ success: true, url, checkoutId: "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee" }).api.createCheckout({
       namespace: "os-one", kind: "topup", offer, metadata, successUrl: "https://app.openship.io",
       cancelUrl: "https://app.openship.io", idempotencyKey: "bad-promotion-checkout" }))
