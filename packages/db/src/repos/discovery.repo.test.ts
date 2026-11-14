@@ -349,6 +349,25 @@ describe("binding observations", () => {
     await repo.disableAndScheduleWithdrawals(SERVER);
     const disabled = await repo.unsuppress(SERVER, "id:disabled");
     expect(disabled?.withdrawalPending).toBe(true); // preserved
+
+    // A BLOCKED binding's retirement is conflict/removal policy, not the
+    // suppression's: it survives unsuppress even while enabled and observed.
+    await repo.observe(SERVER, observation({ serviceKey: "id:blocked", hostname: "blocked.example.com", containerId: "ctr_5", ipAddress: "172.20.0.9" }));
+    await repo.markApplied(SERVER, "id:blocked", 1);
+    await repo.block(SERVER, "id:blocked", "hostname conflict");
+    await repo.markMissing(SERVER, "id:blocked"); // loss-driven withdrawal on a blocked row
+    const blocked = await repo.unsuppress(SERVER, "id:blocked");
+    expect(blocked?.applyState).toBe("blocked");
+    expect(blocked?.withdrawalPending).toBe(true); // preserved
+
+    // Unsuppressing a row that was NEVER suppressed is a no-op for the
+    // withdrawal: no suppression reversal, nothing cancelled.
+    await repo.observe(SERVER, observation({ serviceKey: "id:clean", hostname: "clean.example.com", containerId: "ctr_6", ipAddress: "172.20.0.10" }));
+    await repo.markApplied(SERVER, "id:clean", 1);
+    await repo.markMissing(SERVER, "id:clean"); // loss-driven withdrawal, never suppressed
+    const clean = await repo.unsuppress(SERVER, "id:clean");
+    expect(clean?.suppressed).toBe(false);
+    expect(clean?.withdrawalPending).toBe(true); // preserved
   });
 
   it("disable schedules retirement for every applied binding and the server stays sweepable", async () => {

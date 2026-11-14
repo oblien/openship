@@ -60,11 +60,18 @@ const sweep = vi.fn(async () => ({
 const retire = vi.fn(async () => {});
 
 const queueTasks: Array<() => Promise<unknown>> = [];
+/** Set by queue-deferral tests: tasks queue without executing until flushed. */
+let deferQueue = false;
+const runQueuedTasksNow = async (): Promise<void> => {
+  deferQueue = false;
+  while (queueTasks.length > 0) await queueTasks.shift()!();
+};
 vi.mock("./engine/modules/discovery/discovery-sweep", () => ({
   sweepServerDiscovery: sweep,
-  runInServerQueue: vi.fn(async (_serverId: string, task: () => Promise<unknown>) => {
+  runInServerQueue: vi.fn((_serverId: string, task: () => Promise<unknown>) => {
     queueTasks.push(task);
-    return task();
+    if (!deferQueue) return task();
+    return Promise.resolve();
   }),
 }));
 vi.mock("./engine/modules/discovery/discovery-reconciler", () => ({ retireBindingRoute: retire }));
@@ -76,10 +83,10 @@ const ctx = {
   userId: "usr_1",
 } as unknown as import("./context").ExecutionContext;
 
-function binding(serviceKey = "id:my-app"): Record<string, unknown> {
+function binding(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: "dsb_1",
-    serviceKey,
+    serviceKey: "id:my-app",
     hostname: "app.example.com",
     port: 3000,
     containerName: "my-app",
@@ -92,6 +99,7 @@ function binding(serviceKey = "id:my-app"): Record<string, unknown> {
     suppressed: false,
     withdrawalPending: false,
     updatedAt: new Date("2026-01-01T00:00:00Z"),
+    ...overrides,
   };
 }
 
@@ -103,6 +111,7 @@ beforeEach(() => {
   state.configured = [];
   state.withdrawalsScheduled = 0;
   queueTasks.length = 0;
+  deferQueue = false;
 });
 
 describe("createDiscoveryOperations", () => {
@@ -143,6 +152,7 @@ describe("createDiscoveryOperations", () => {
     expect(discoveryRepo.disableAndScheduleWithdrawals).toHaveBeenCalledWith("srv_1");
     expect(discoveryRepo.configure).not.toHaveBeenCalled();
     expect(data.settings.enabled).toBe(false);
+    expect(queueTasks).toHaveLength(1); // the whole disable entered the server queue
   });
 
   it("enable keeps using the plain configure path", async () => {
@@ -176,7 +186,8 @@ describe("createDiscoveryOperations", () => {
     expect(retireOrder).toBeLessThan(forgetOrder);
     // P1: the WHOLE retire+delete sequence runs inside the serialized server
     // queue — an in-flight reconcile must not recreate the route between the
-    // two steps.
+    // two steps. (The inline mock executed the task once; the recorded entry
+    // must never be re-run — the binding is already deleted.)
     expect(queueTasks).toHaveLength(1);
   });
 
@@ -185,6 +196,36 @@ describe("createDiscoveryOperations", () => {
     const ops = createDiscoveryOperations({ authorize } as never);
     await expect(ops.forget(ctx, "srv_1", { serviceKey: "id:my-app" })).rejects.toThrow("edge down");
     expect(state.bindings.has("id:my-app")).toBe(true);
+    expect(queueTasks).toHaveLength(1); // the failed task entered and drained from the queue
+  });
+
+  it("forget reads the binding INSIDE the queue: a queued scan may have changed the hostname first", async () => {
+    const ops = createDiscoveryOperations({ authorize } as never);
+    deferQueue = true; // the forget task queues behind a not-yet-run scan
+    const pending = ops.forget(ctx, "srv_1", { serviceKey: "id:my-app" });
+    await vi.waitFor(() => expect(queueTasks.length).toBe(1)); // the op reached the queue
+    // The queued scan REPLACES the container: same serviceKey, new hostname.
+    state.bindings.set("id:my-app", binding({ hostname: "renamed.example.com" }));
+    await runQueuedTasksNow(); // scan already consumed its slot; the forget task now runs
+    await pending;
+    // The retirement targeted the CURRENT (post-scan) hostname, not a stale one.
+    expect(retire).toHaveBeenCalledWith(
+      "srv_1",
+      "org_1",
+      expect.objectContaining({ hostname: "renamed.example.com" }),
+    );
+    expect(discoveryRepo.forget).toHaveBeenCalledWith("srv_1", "id:my-app");
+  });
+
+  it("disable runs INSIDE the server queue too (cannot race a first route write)", async () => {
+    const ops = createDiscoveryOperations({ authorize } as never);
+    deferQueue = true;
+    const pending = ops.configure(ctx, "srv_1", { enabled: false }); // queued behind passes
+    expect(discoveryRepo.disableAndScheduleWithdrawals).not.toHaveBeenCalled(); // waits for the queue
+    await runQueuedTasksNow();
+    await pending;
+    expect(discoveryRepo.disableAndScheduleWithdrawals).toHaveBeenCalledWith("srv_1");
+    expect(state.settings.enabled).toBe(false);
   });
 
   it("suppress/unsuppress return the updated service with its TLS state", async () => {
