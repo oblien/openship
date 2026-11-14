@@ -351,14 +351,22 @@ describe("binding observations", () => {
     expect(disabled?.withdrawalPending).toBe(true); // preserved
 
     // A BLOCKED binding's retirement is conflict/removal policy, not the
-    // suppression's: it survives unsuppress even while enabled and observed.
+    // suppression's: it survives unsuppress even while enabled and OBSERVED —
+    // no observed loss involved. The withdrawal here is scheduled by the
+    // suppression itself on a blocked+applied row; blocked still forbids
+    // cancelling it.
     await repo.observe(SERVER, observation({ serviceKey: "id:blocked", hostname: "blocked.example.com", containerId: "ctr_5", ipAddress: "172.20.0.9" }));
     await repo.markApplied(SERVER, "id:blocked", 1);
     await repo.block(SERVER, "id:blocked", "hostname conflict");
-    await repo.markMissing(SERVER, "id:blocked"); // loss-driven withdrawal on a blocked row
+    await repo.suppress(SERVER, "id:blocked"); // schedules retirement on the blocked row (applied history)
+    const suppressedBlocked = await repo.getBinding(SERVER, "id:blocked");
+    expect(suppressedBlocked?.applyState).toBe("blocked");
+    expect(suppressedBlocked?.observationStatus).toBe("observed"); // NOT missing — enabled + observed
+    expect(suppressedBlocked?.withdrawalPending).toBe(true);
     const blocked = await repo.unsuppress(SERVER, "id:blocked");
     expect(blocked?.applyState).toBe("blocked");
     expect(blocked?.withdrawalPending).toBe(true); // preserved
+    expect(blocked?.suppressed).toBe(false); // the opt-out itself did revert
 
     // Unsuppressing a row that was NEVER suppressed is a no-op for the
     // withdrawal: no suppression reversal, nothing cancelled.

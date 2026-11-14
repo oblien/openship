@@ -1252,5 +1252,99 @@
     "saved": "Paramètre GPU enregistré",
     "saveFailed": "Impossible d’enregistrer le paramètre GPU",
     "badge": "GPU"
+  },
+  "discovery": {
+    "title": "Découverte de conteneurs",
+    "subtitle": "Conteneurs inscrits volontairement enregistrés sur l'edge de ce serveur",
+    "enabledLabel": "Activé",
+    "disabledLabel": "Désactivé",
+    "rescan": "Rescanner",
+    "rescanning": "Analyse…",
+    "busyHint": "Une autre action est en cours",
+    "cancel": "Annuler",
+    "retry": "Réessayer",
+    "lastScan": "Dernière analyse il y a {time}",
+    "neverScanned": "Jamais analysé",
+    "reconciling": "Réconciliation des routes…",
+    "scanFailedLabel": "Échec de la dernière analyse",
+    "permissionDenied": "Vous n'avez pas la permission de gérer la découverte de ce serveur.",
+    "emptyHint": "Aucun service découvert pour l'instant. Activez la découverte et démarrez un conteneur déclarant un label openship.service.",
+    "disabledHint": "La découverte est désactivée. Activez-la pour enregistrer les conteneurs inscrits sur l'edge de ce serveur, avec routes et certificats automatiques.",
+    "actionsLabel": "Actions du service",
+    "retries": "{count} tentatives",
+    "nextRetry": "prochaine tentative {time}",
+    "routeState": {
+      "active": "Route en service",
+      "reconciling": "Réconciliation",
+      "pending": "En attente",
+      "withdrawing": "Retrait de la route",
+      "retained": "Indisponible",
+      "failed": "Échec d'application",
+      "blocked": "Bloquée",
+      "suppressed": "Supprimée",
+      "unknown": "En attente d'analyse",
+      "retired": "Retirée"
+    },
+    "routeHints": {
+      "withdrawing": "Une route confirmée est en cours de retrait car le backend a été supprimé, invalidé ou désinscrit.",
+      "retained": "Le backend a disparu. Son adresse renvoie désormais une page d'indisponibilité ; le certificat est conservé et la route revient automatiquement au redémarrage du conteneur.",
+      "retainedInvalid": "La déclaration de découverte du conteneur a été rejetée. Son ancienne adresse renvoie une page d'indisponibilité ; le certificat est conservé jusqu'à la correction de la déclaration ou l'oubli du service.",
+      "suppressed": "Supprimée : reste visible ici, sa route est retirée et aucune route n'est réconciliée avant sa réacceptation. Le certificat est conservé.",
+      "blocked": "Un conflit (p. ex. un nom d'hôte détenu par un autre service) a bloqué cette route. Résolvez le conflit et rescannez.",
+      "awaitingScan": "En attente de la prochaine analyse pour classer ce service.",
+      "retired": "La découverte est désactivée : la route de ce service a été retirée. Le matériel du certificat est conservé ; réactivez la découverte pour le router à nouveau."
+    },
+    "tlsState": {
+      "verified": "Certificat vérifié",
+      "issued": "Certificat émis",
+      "error": "Échec du certificat",
+      "none": "Aucun certificat",
+      "provisioning": "Certificat en cours de délivrance",
+      "expired": "Certificat expiré"
+    },
+    "strategy": {
+      "network-ip": "réseau du conteneur",
+      "published-port": "port publié"
+    },
+    "upstreamUnresolved": "Amont pas encore résolu",
+    "backend": {
+      "running": "En cours",
+      "stopped": "Arrêté",
+      "missing": "Absent",
+      "invalid": "Déclaration invalide"
+    },
+    "confirm": {
+      "disableTitle": "Désactiver la découverte de conteneurs ?",
+      "disableMessage": "Chaque route appliquée sur ce serveur est retirée (conteneurs arrêtés compris). Les certificats sont conservés et les services découverts restent listés jusqu'à leur oubli.",
+      "disableConfirm": "Désactiver et retirer les routes",
+      "suppressTitle": "Ne plus router ce service ?",
+      "suppressMessage": "Sa route active est retirée maintenant et aucune route n'est réconciliée avant sa réacceptation. Le service reste listé et son certificat est conservé.",
+      "suppressConfirm": "Supprimer le service",
+      "forgetTitle": "Oublier {service} ?",
+      "forgetMessage": "Sa route est retirée maintenant et le service découvert est supprimé. L'enregistrement du certificat est conservé. Si le conteneur tourne toujours avec son label de découverte, la prochaine analyse le redécouvrira.",
+      "forgetConfirm": "Oublier le service"
+    },
+    "toastTitle": "Découverte de conteneurs",
+    "toast": {
+      "enabled": "Découverte activée",
+      "disabled": "Découverte désactivée. Les routes sont en cours de retrait.",
+      "rescanDone": "Rescan terminé",
+      "suppressed": "Service supprimé",
+      "unsuppressed": "Service réaccepté — la prochaine analyse appliquera à nouveau sa route",
+      "forgotten": "Service oublié. Le matériel du certificat a été conservé.",
+      "rescanPartial": "Le rescan s'est terminé avec des échecs : {detail}"
+    },
+    "lifecycle": {
+      "title": "Comportement",
+      "stopRemove": "Arrêter ou supprimer un conteneur garde son adresse sur une page d'indisponibilité et conserve son certificat ; l'émission se met en pause à l'arrêt et reprend juste après le démarrage.",
+      "disableSuppress": "Désactiver la découverte ou supprimer un service retire ses routes complètement ; les certificats sont conservés.",
+      "forget": "Oublier retire la route et l'entrée du service, et conserve le matériel du certificat.",
+      "rediscovery": "Un conteneur qui réapparaît avec la même identité est redécouvert à la prochaine analyse et sa route est réappliquée automatiquement."
+    },
+    "serviceLabel": {
+      "suppress": "Supprimer",
+      "unsuppress": "Réaccepter",
+      "forget": "Oublier"
+    }
   }
 }

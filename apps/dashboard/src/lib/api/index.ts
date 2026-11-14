@@ -285,6 +285,13 @@ export type {
 
 /* --- Backups ------------------------------------------------------- */
 export { backupDestinationsApi, backupsApi } from "./backups";
+export { discoveryApi } from "./discovery";
+export type {
+  DiscoveryConfigureInput,
+  DiscoveryRescan,
+  DiscoveryService,
+  DiscoveryStatus,
+} from "./discovery";
 export {
   serverGithubApi,
   type ServerGithubStatus,

@@ -1252,5 +1252,99 @@
     "saved": "Configuração de GPU salva",
     "saveFailed": "Não foi possível salvar a configuração de GPU",
     "badge": "GPU"
+  },
+  "discovery": {
+    "title": "Descoberta de contêineres",
+    "subtitle": "Contêineres inscritos registrados no edge deste servidor",
+    "enabledLabel": "Ativa",
+    "disabledLabel": "Inativa",
+    "rescan": "Rreexaminar",
+    "rescanning": "Examinando…",
+    "busyHint": "Outra ação está em andamento",
+    "cancel": "Cancelar",
+    "retry": "Tentar novamente",
+    "lastScan": "Último exame há {time}",
+    "neverScanned": "Nunca examinado",
+    "reconciling": "Reconciliando rotas…",
+    "scanFailedLabel": "O último exame falhou",
+    "permissionDenied": "Você não tem permissão para gerenciar a descoberta deste servidor.",
+    "emptyHint": "Ainda não há serviços descobertos. Ative a descoberta e inicie um contêiner que declare um rótulo openship.service.",
+    "disabledHint": "A descoberta está desativada. Ative-a para registrar contêineres inscritos no edge deste servidor, com rotas e certificados automáticos.",
+    "actionsLabel": "Ações do serviço",
+    "retries": "{count} tentativas",
+    "nextRetry": "próxima tentativa {time}",
+    "routeState": {
+      "active": "Rota ativa",
+      "reconciling": "Reconciliando",
+      "pending": "Pendente",
+      "withdrawing": "Removendo rota",
+      "retained": "Indisponível",
+      "failed": "Falha na aplicação",
+      "blocked": "Bloqueada",
+      "suppressed": "Suprimida",
+      "unknown": "Aguardando exame",
+      "retired": "Aposentada"
+    },
+    "routeHints": {
+      "withdrawing": "Uma rota confirmada está sendo removida porque o backend foi removido, invalidado ou desinscrito.",
+      "retained": "O backend desapareceu. Seu endereço agora serve uma página de indisponibilidade; o certificado é mantido e a rota retorna automaticamente quando o contêiner iniciar novamente.",
+      "retainedInvalid": "A declaração de descoberta do contêiner foi rejeitada. O endereço antigo serve uma página de indisponibilidade; o certificado é mantido até corrigir a declaração ou esquecer o serviço.",
+      "suppressed": "Suprimida: continua visível aqui, sua rota foi removida e nenhuma rota será reconciliada até a reaceitação. O certificado é mantido.",
+      "blocked": "Um conflito (p. ex. um nome de host de outro serviço) bloqueou esta rota. Resolva o conflito e reexamine.",
+      "awaitingScan": "Aguardando o próximo exame para classificar este serviço.",
+      "retired": "A descoberta está desativada, então a rota deste serviço foi removida. O material do certificado é mantido; reative a descoberta para roteá-lo novamente."
+    },
+    "tlsState": {
+      "verified": "Certificado verificado",
+      "issued": "Certificado emitido",
+      "error": "Falha no certificado",
+      "none": "Sem certificado",
+      "provisioning": "Certificado em provisionamento",
+      "expired": "Certificado expirado"
+    },
+    "strategy": {
+      "network-ip": "rede do contêiner",
+      "published-port": "porta publicada"
+    },
+    "upstreamUnresolved": "Upstream ainda não resolvido",
+    "backend": {
+      "running": "Em execução",
+      "stopped": "Parado",
+      "missing": "Ausente",
+      "invalid": "Declaração inválida"
+    },
+    "confirm": {
+      "disableTitle": "Desativar a descoberta de contêineres?",
+      "disableMessage": "Cada rota aplicada neste servidor será removida (incluindo contêineres parados). Os certificados são mantidos e os serviços descobertos permanecem listados até serem esquecidos.",
+      "disableConfirm": "Desativar e remover rotas",
+      "suppressTitle": "Parar de rotear este serviço?",
+      "suppressMessage": "Sua rota ativa é removida agora e nenhuma rota será reconciliada até a reaceitação. O serviço continua listado e seu certificado é mantido.",
+      "suppressConfirm": "Suprimir serviço",
+      "forgetTitle": "Esquecer {service}?",
+      "forgetMessage": "Sua rota é removida agora e o serviço descoberto é excluído. O registro do certificado é mantido. Se o contêiner ainda executar com seu rótulo de descoberta, o próximo exame o redescobrirá.",
+      "forgetConfirm": "Esquecer serviço"
+    },
+    "toastTitle": "Descoberta de contêineres",
+    "toast": {
+      "enabled": "Descoberta ativada",
+      "disabled": "Descoberta desativada. As rotas estão sendo removidas.",
+      "rescanDone": "Reexame concluído",
+      "suppressed": "Serviço suprimido",
+      "unsuppressed": "Serviço reaceito — o próximo exame aplicará sua rota novamente",
+      "forgotten": "Serviço esquecido. O material do certificado foi mantido.",
+      "rescanPartial": "O reexame terminou com falhas: {detail}"
+    },
+    "lifecycle": {
+      "title": "Como se comporta",
+      "stopRemove": "Parar ou remover um contêiner mantém seu endereço servindo uma página de indisponibilidade e mantém seu certificado; a emissão pausa enquanto parado e retoma logo após a inicialização.",
+      "disableSuppress": "Desativar a descoberta ou suprimir um serviço remove suas rotas por completo; os certificados são mantidos.",
+      "forget": "Esquecer remove a rota e a entrada do serviço, e mantém o material do certificado.",
+      "rediscovery": "Um contêiner que reaparece com a mesma identidade é redescoberto no próximo exame e sua rota é reaplicada automaticamente."
+    },
+    "serviceLabel": {
+      "suppress": "Suprimir",
+      "unsuppress": "Reaceitar",
+      "forget": "Esquecer"
+    }
   }
 }

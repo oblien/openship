@@ -1252,5 +1252,99 @@
     "saved": "GPU-Einstellung gespeichert",
     "saveFailed": "GPU-Einstellung konnte nicht gespeichert werden",
     "badge": "GPU"
+  },
+  "discovery": {
+    "title": "Container-Erkennung",
+    "subtitle": "Angemeldete Container, die über die Edge dieses Servers registriert sind",
+    "enabledLabel": "Ein",
+    "disabledLabel": "Aus",
+    "rescan": "Neu scannen",
+    "rescanning": "Scan läuft…",
+    "busyHint": "Eine andere Aktion läuft",
+    "cancel": "Abbrechen",
+    "retry": "Erneut versuchen",
+    "lastScan": "Letzter Scan vor {time}",
+    "neverScanned": "Noch nie gescannt",
+    "reconciling": "Routen werden abgeglichen…",
+    "scanFailedLabel": "Letzter Scan fehlgeschlagen",
+    "permissionDenied": "Ihnen fehlt die Berechtigung, die Discovery dieses Servers zu verwalten.",
+    "emptyHint": "Noch keine entdeckten Dienste. Aktivieren Sie die Discovery und starten Sie einen Container mit openship.service-Label.",
+    "disabledHint": "Discovery ist aus. Aktivieren Sie sie, um angemeldete Container über die Edge dieses Servers mit automatischen Routen und Zertifikaten zu registrieren.",
+    "actionsLabel": "Dienstaktionen",
+    "retries": "{count} Versuche",
+    "nextRetry": "nächster Versuch {time}",
+    "routeState": {
+      "active": "Route aktiv",
+      "reconciling": "Abgleich",
+      "pending": "Ausstehend",
+      "withdrawing": "Route wird entfernt",
+      "retained": "Nicht verfügbar",
+      "failed": "Anwendung fehlgeschlagen",
+      "blocked": "Blockiert",
+      "suppressed": "Unterdrückt",
+      "unknown": "Wartet auf Scan",
+      "retired": "Zurückgezogen"
+    },
+    "routeHints": {
+      "withdrawing": "Eine bestätigte Route wird entfernt, weil das Backend entfernt, ungültig gemacht oder abgemeldet wurde.",
+      "retained": "Das Backend ist verschwunden. Seine Adresse liefert jetzt eine Hinweisseite; das Zertifikat bleibt erhalten und die Route kehrt automatisch zurück, sobald der Container wieder startet.",
+      "retainedInvalid": "Die Discovery-Deklaration des Containers wurde abgelehnt. Die alte Adresse liefert eine Hinweisseite; das Zertifikat bleibt erhalten, bis die Deklaration korrigiert ist oder der Dienst vergessen wird.",
+      "suppressed": "Unterdrückt: bleibt hier sichtbar, die Route ist entfernt und wird erst nach dem Freigeben wieder abgeglichen. Das Zertifikat bleibt erhalten.",
+      "blocked": "Ein Konflikt (z. B. ein von einem anderen Dienst belegter Hostname) hat diese Route blockiert. Konflikt lösen und neu scannen.",
+      "awaitingScan": "Wartet auf den nächsten Scan, um diesen Dienst einzuzuorden.",
+      "retired": "Discovery ist aus, daher wurde die Route dieses Dienstes entfernt. Das Zertifikatsmaterial bleibt erhalten; aktivieren Sie die Discovery erneut, um ihn wieder zu routen."
+    },
+    "tlsState": {
+      "verified": "Zertifikat verifiziert",
+      "issued": "Zertifikat ausgestellt",
+      "error": "Zertifikat fehlgeschlagen",
+      "none": "Kein Zertifikat",
+      "provisioning": "Zertifikat wird ausgestellt",
+      "expired": "Zertifikat abgelaufen"
+    },
+    "strategy": {
+      "network-ip": "Controllernetzwerk",
+      "published-port": "veröffentlichter Port"
+    },
+    "upstreamUnresolved": "Upstream noch nicht ermittelt",
+    "backend": {
+      "running": "Läuft",
+      "stopped": "Gestoppt",
+      "missing": "Verschollen",
+      "invalid": "Ungültige Deklaration"
+    },
+    "confirm": {
+      "disableTitle": "Container-Discovery deaktivieren?",
+      "disableMessage": "Jede angewendete Route auf diesem Server wird entfernt (auch gestoppte Container). Zertifikate bleiben erhalten; entdeckte Dienste bleiben gelistet, bis sie vergessen werden.",
+      "disableConfirm": "Deaktivieren und Routen entfernen",
+      "suppressTitle": "Routing für diesen Dienst beenden?",
+      "suppressMessage": "Die Live-Route wird jetzt entfernt und erst nach dem Freigeben wieder abgeglichen. Der Dienst bleibt gelistet, das Zertifikat bleibt erhalten.",
+      "suppressConfirm": "Dienst unterdrücken",
+      "forgetTitle": "{service} vergessen?",
+      "forgetMessage": "Die Route wird jetzt entfernt und der entdeckte Dienst gelöscht. Der Zertifikatseintrag bleibt erhalten. Läuft der Container weiter mit seinem Discovery-Label, findet der nächste Scan ihn erneut.",
+      "forgetConfirm": "Dienst vergessen"
+    },
+    "toastTitle": "Container-Discovery",
+    "toast": {
+      "enabled": "Discovery aktiviert",
+      "disabled": "Discovery deaktiviert. Routen werden entfernt.",
+      "rescanDone": "Scan abgeschlossen",
+      "suppressed": "Dienst unterdrückt",
+      "unsuppressed": "Dienst wieder angenommen — der nächste Scan wendet die Route erneut an",
+      "forgotten": "Dienst vergessen. Zertifikatsmaterial wurde bewahrt.",
+      "rescanPartial": "Scan mit Fehlern abgeschlossen: {detail}"
+    },
+    "lifecycle": {
+      "title": "Verhalten",
+      "stopRemove": "Stoppen oder Entfernen eines Containers lässt seine Adresse eine Hinweisseite liefern und bewahrt sein Zertifikat; Ausstellung pausiert beim Stoppen und setzt direkt nach dem Start fort.",
+      "disableSuppress": "Deaktivieren oder Unterdrücken entfernt Routen vollständig; Zertifikate bleiben erhalten.",
+      "forget": "Vergessen entfernt Route und Diensteintrag und bewahrt das Zertifikatsmaterial.",
+      "rediscovery": "Ein Container, der mit derselben Identität wieder auftaucht, wird beim nächsten Scan erneut entdeckt und seine Route automatisch wieder angewendet."
+    },
+    "serviceLabel": {
+      "suppress": "Unterdrücken",
+      "unsuppress": "Freigeben",
+      "forget": "Vergessen"
+    }
   }
 }

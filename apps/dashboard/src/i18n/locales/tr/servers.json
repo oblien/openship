@@ -1252,5 +1252,99 @@
     "saved": "GPU ayarı kaydedildi",
     "saveFailed": "GPU ayarı kaydedilemedi",
     "badge": "GPU"
+  },
+  "discovery": {
+    "title": "Konteyner keşfi",
+    "subtitle": "Bu sunucunun edge'ine kaydolmuş isteğe bağlı konteynerler",
+    "enabledLabel": "Açık",
+    "disabledLabel": "Kapalı",
+    "rescan": "Yeniden tara",
+    "rescanning": "Taranıyor…",
+    "busyHint": "Başka bir işlem sürüyor",
+    "cancel": "İptal",
+    "retry": "Yeniden dene",
+    "lastScan": "Son tarama: {time} önce",
+    "neverScanned": "Hiç taranmadı",
+    "reconciling": "Rotalar eşitleniyor…",
+    "scanFailedLabel": "Son tarama başarısız",
+    "permissionDenied": "Bu sunucunun keşfini yönetme izniniz yok.",
+    "emptyHint": "Henüz keşfedilen servis yok. Keşfi etkinleştirin ve openship.service etiketi bildiren bir konteyner başlatın.",
+    "disabledHint": "Keşif kapalı. Etkinleştirin; isteğe bağlı konteynerler bu sunucunun edge'ine otomatik rotalar ve sertifikalarla kaydolsun.",
+    "actionsLabel": "Servis işlemleri",
+    "retries": "{count} deneme",
+    "nextRetry": "sonraki deneme {time}",
+    "routeState": {
+      "active": "Rota etkin",
+      "reconciling": "Eşleniyor",
+      "pending": "Bekliyor",
+      "withdrawing": "Rota kaldırılıyor",
+      "retained": "Kullanılamaz",
+      "failed": "Uygulama başarısız",
+      "blocked": "Engellendi",
+      "suppressed": "Baskılandı",
+      "unknown": "Tarama bekleniyor",
+      "retired": "Emekli"
+    },
+    "routeHints": {
+      "withdrawing": "Onaylı bir rota kaldırılıyor: arka uç kaldırıldı, geçersiz kılındı veya vazgeçildi.",
+      "retained": "Arka uç kayboldu. Adresi şu anda kullanılamaz sayfası döndürüyor; sertifika korunur ve konteyner yeniden başladığında rota otomatik döner.",
+      "retainedInvalid": "Konteynerin keşif bildirimi reddedildi. Eski adresi kullanılamaz sayfası döndürüyor; bildirim düzeltilene veya servis unutulana kadar sertifika korunur.",
+      "suppressed": "Baskılanmış: burada görünür kalır, rotası kaldırıldı ve yeniden kabul edilene kadar eşlenmez. Sertifika korunur.",
+      "blocked": "Bir çakışma (ör. başka bir servise ait ana makine adı) bu rotayı engelledi. Çakışmayı çözün ve yeniden tarayın.",
+      "awaitingScan": "Bu servisin sınıflandırılması için sonraki tarama bekleniyor.",
+      "retired": "Keşif kapalı, bu yüzden bu servisin rotası kaldırıldı. Sertifika malzemesi korunur; yeniden yönlendirmek için keşfi etkinleştirin."
+    },
+    "tlsState": {
+      "verified": "Sertifika doğrulandı",
+      "issued": "Sertifika verildi",
+      "error": "Sertifika başarısız",
+      "none": "Sertifika yok",
+      "provisioning": "Sertifika sağlanıyor",
+      "expired": "Sertifikanın süresi doldu"
+    },
+    "strategy": {
+      "network-ip": "konteyner ağı",
+      "published-port": "yayımlanan port"
+    },
+    "upstreamUnresolved": "Upstream henüz çözülmedi",
+    "backend": {
+      "running": "Çalışıyor",
+      "stopped": "Durduruldu",
+      "missing": "Kayıp",
+      "invalid": "Geçersiz bildirim"
+    },
+    "confirm": {
+      "disableTitle": "Konteyner keşfi kapatılsın mı?",
+      "disableMessage": "Bu sunucudaki uygulanan her rota kaldırılır (durdurulmuş konteynerler dahil). Sertifikalar korunur; keşfedilen servisler unutulana kadar listelenir.",
+      "disableConfirm": "Kapat ve rotaları kaldır",
+      "suppressTitle": "Bu servisin yönlendirmesi durdurulsun mu?",
+      "suppressMessage": "Canlı rotası şimdi kaldırılır ve yeniden kabul edilene kadar eşlenmez. Servis listelenir kalır, sertifikası korunur.",
+      "suppressConfirm": "Servisi baskıla",
+      "forgetTitle": "{service} unutulsun mu?",
+      "forgetMessage": "Rotası şimdi kaldırılır ve keşfedilen servis silinir. Sertifika kaydı korunur. Konteyner keşif etiketiyle çalışmaya devam ediyorsa sonraki tarama onu yeniden keşfeder.",
+      "forgetConfirm": "Servisi unut"
+    },
+    "toastTitle": "Konteyner keşfi",
+    "toast": {
+      "enabled": "Keşif etkinleştirildi",
+      "disabled": "Keşif kapatıldı. Rotalar kaldırılıyor.",
+      "rescanDone": "Tarama tamamlandı",
+      "suppressed": "Servis baskılandı",
+      "unsuppressed": "Servis yeniden kabul edildi — sonraki tarama rotasını yeniden uygulayacak",
+      "forgotten": "Servis unutuldu. Sertifika malzemesi korundu.",
+      "rescanPartial": "Yeniden tarama hatalarla bitti: {detail}"
+    },
+    "lifecycle": {
+      "title": "Nasıl davranır",
+      "stopRemove": "Bir konteyneri durdurmak veya kaldırmak, adresini kullanılamaz sayfasında tutar ve sertifikasını korur; verim durdurulurken duraklar ve başlamanın hemen ardından sürer.",
+      "disableSuppress": "Keşfi kapatmak veya bir servisi baskılamak rotalarını tamamen kaldırır; sertifikalar korunur.",
+      "forget": "Unutmak rotayı ve servis kaydını kaldırır, sertifika malzemesini korur.",
+      "rediscovery": "Aynı kimlikle yeniden beliren konteyner sonraki taramada yeniden keşfedilir ve rotası otomatik uygulanır."
+    },
+    "serviceLabel": {
+      "suppress": "Baskıla",
+      "unsuppress": "Kabul et",
+      "forget": "Unut"
+    }
   }
 }

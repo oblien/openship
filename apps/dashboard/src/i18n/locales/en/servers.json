@@ -1252,5 +1252,99 @@
     "saved": "GPU setting saved",
     "saveFailed": "Could not save the GPU setting",
     "badge": "GPU"
+  },
+  "discovery": {
+    "title": "Container discovery",
+    "subtitle": "Opted-in containers registered with this server's edge",
+    "enabledLabel": "On",
+    "disabledLabel": "Off",
+    "rescan": "Rescan",
+    "rescanning": "Scanning…",
+    "busyHint": "Another action is running",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "lastScan": "Last scan {time} ago",
+    "neverScanned": "Never scanned",
+    "reconciling": "Reconciling routes…",
+    "scanFailedLabel": "Last scan failed",
+    "permissionDenied": "You don't have permission to manage discovery on this server.",
+    "emptyHint": "No discovered services yet. Enable discovery and start a container that declares an openship.service label.",
+    "disabledHint": "Discovery is off. Enable it to register opted-in containers with this server's edge, with automatic routes and certificates.",
+    "actionsLabel": "Service actions",
+    "retries": "{count} attempts",
+    "nextRetry": "next attempt {time}",
+    "routeState": {
+      "active": "Route active",
+      "reconciling": "Reconciling",
+      "pending": "Pending",
+      "withdrawing": "Retiring route",
+      "retained": "Unavailable",
+      "failed": "Apply failed",
+      "blocked": "Blocked",
+      "suppressed": "Suppressed",
+      "unknown": "Waiting for scan",
+      "retired": "Retired"
+    },
+    "routeHints": {
+      "withdrawing": "A confirmed route is being removed because the backend was removed, invalidated, or opted out.",
+      "retained": "The backend is gone. Its address now returns an unavailable page; the certificate is kept and the route returns automatically when the container starts again.",
+      "retainedInvalid": "The container's discovery declaration was rejected. Its old address returns an unavailable page; the certificate is kept until the declaration is fixed or the service is forgotten.",
+      "suppressed": "Suppressed: kept visible here, its route is removed and no route is reconciled until you unsuppress. The certificate is kept.",
+      "blocked": "A conflict (e.g. a hostname owned by another service) blocked this route. Resolve the conflict and rescan.",
+      "awaitingScan": "Waiting for the next scan to classify this service.",
+      "retired": "Discovery is off, so this service's route has been removed. Its certificate material is retained; re-enable discovery to route it again."
+    },
+    "tlsState": {
+      "verified": "Certificate verified",
+      "issued": "Certificate issued",
+      "error": "Certificate failed",
+      "none": "No certificate",
+      "provisioning": "Certificate provisioning",
+      "expired": "Certificate expired"
+    },
+    "strategy": {
+      "network-ip": "container network",
+      "published-port": "published port"
+    },
+    "upstreamUnresolved": "Upstream not resolved yet",
+    "backend": {
+      "running": "Running",
+      "stopped": "Stopped",
+      "missing": "Missing",
+      "invalid": "Invalid declaration"
+    },
+    "confirm": {
+      "disableTitle": "Disable container discovery?",
+      "disableMessage": "Every applied route on this server is removed (stopped containers included). Certificates are kept, and discovered services stay listed until forgotten.",
+      "disableConfirm": "Disable and remove routes",
+      "suppressTitle": "Stop routing this service?",
+      "suppressMessage": "Its live route is removed now and no route is reconciled until you unsuppress it. The service stays listed and its certificate is kept.",
+      "suppressConfirm": "Suppress service",
+      "forgetTitle": "Forget {service}?",
+      "forgetMessage": "Its route is removed now and the discovered service is deleted. The certificate record is kept. If the container still runs with its discovery label, the next scan discovers it again.",
+      "forgetConfirm": "Forget service"
+    },
+    "toastTitle": "Container discovery",
+    "toast": {
+      "enabled": "Discovery enabled",
+      "disabled": "Discovery disabled. Routes are being retired.",
+      "rescanDone": "Rescan complete",
+      "suppressed": "Service suppressed",
+      "unsuppressed": "Service accepted again — the next scan re-applies its route",
+      "forgotten": "Service forgotten. Certificate material was kept.",
+      "rescanPartial": "Rescan finished with failures: {detail}"
+    },
+    "lifecycle": {
+      "title": "How this behaves",
+      "stopRemove": "Stopping or removing a container keeps its address serving an unavailable page and keeps its certificate; issuance pauses while it is stopped and resumes right after it starts.",
+      "disableSuppress": "Disabling discovery or suppressing a service removes its routes outright; certificates are retained.",
+      "forget": "Forgetting removes the route and the service entry, and keeps the certificate material.",
+      "rediscovery": "A container that reappears with the same identity is rediscovered on the next scan and its route is re-applied automatically."
+    },
+    "serviceLabel": {
+      "suppress": "Suppress",
+      "unsuppress": "Unsuppress",
+      "forget": "Forget"
+    }
   }
 }

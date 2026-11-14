@@ -1252,5 +1252,99 @@
     "saved": "GPU 设置已保存",
     "saveFailed": "无法保存 GPU 设置",
     "badge": "GPU"
+  },
+  "discovery": {
+    "title": "容器发现",
+    "subtitle": "已选择加入并注册到本服务器边缘的容器",
+    "enabledLabel": "开",
+    "disabledLabel": "关",
+    "rescan": "重新扫描",
+    "rescanning": "扫描中…",
+    "busyHint": "另一个操作正在进行",
+    "cancel": "取消",
+    "retry": "重试",
+    "lastScan": "上次扫描：{time}前",
+    "neverScanned": "从未扫描",
+    "reconciling": "正在协调路由…",
+    "scanFailedLabel": "上次扫描失败",
+    "permissionDenied": "您没有权限管理此服务器的发现功能。",
+    "emptyHint": "尚无已发现的服务。启用发现功能，并启动一个声明了 openship.service 标签的容器。",
+    "disabledHint": "发现功能已关闭。启用后，选择加入的容器将注册到本服务器的边缘，并自动获得路由和证书。",
+    "actionsLabel": "服务操作",
+    "retries": "{count} 次尝试",
+    "nextRetry": "下次尝试 {time}",
+    "routeState": {
+      "active": "路由生效",
+      "reconciling": "协调中",
+      "pending": "等待中",
+      "withdrawing": "正在移除路由",
+      "retained": "不可用",
+      "failed": "应用失败",
+      "blocked": "已阻塞",
+      "suppressed": "已抑制",
+      "unknown": "等待扫描",
+      "retired": "已撤除"
+    },
+    "routeHints": {
+      "withdrawing": "由于后端被移除、判定无效或选择退出，一条已确认的路由正在被移除。",
+      "retained": "后端已消失。其地址现在返回不可用页面；证书保留，容器再次启动后路由会自动恢复。",
+      "retainedInvalid": "容器的发现声明被拒绝。旧地址返回不可用页面；在声明修复或服务被遗忘之前，证书保留。",
+      "suppressed": "已抑制：在此仍可见，其路由已移除，在重新接受前不会协调路由。证书保留。",
+      "blocked": "冲突（例如主机名已被其他服务占用）阻塞了此路由。解决冲突后重新扫描。",
+      "awaitingScan": "等待下一次扫描以分类此服务。",
+      "retired": "发现功能已关闭，此服务的路由已被移除。证书材料保留；重新启用发现功能以恢复路由。"
+    },
+    "tlsState": {
+      "verified": "证书已验证",
+      "issued": "证书已签发",
+      "error": "证书失败",
+      "none": "无证书",
+      "provisioning": "证书正在签发",
+      "expired": "证书已过期"
+    },
+    "strategy": {
+      "network-ip": "容器网络",
+      "published-port": "发布端口"
+    },
+    "upstreamUnresolved": "上游尚未解析",
+    "backend": {
+      "running": "运行中",
+      "stopped": "已停止",
+      "missing": "缺失",
+      "invalid": "声明无效"
+    },
+    "confirm": {
+      "disableTitle": "禁用容器发现？",
+      "disableMessage": "此服务器上每条已应用的路由都将被移除（包括已停止的容器）。证书保留，已发现的服务在遗忘之前仍会列出。",
+      "disableConfirm": "禁用并移除路由",
+      "suppressTitle": "停止路由此服务？",
+      "suppressMessage": "其生效路由将立即移除，在重新接受前不再协调路由。服务仍会列出，证书保留。",
+      "suppressConfirm": "抑制服务",
+      "forgetTitle": "遗忘 {service}？",
+      "forgetMessage": "其路由将立即移除，已发现的服务条目将被删除。证书记录保留。如果容器仍带着发现标签运行，下次扫描会再次发现它。",
+      "forgetConfirm": "遗忘服务"
+    },
+    "toastTitle": "容器发现",
+    "toast": {
+      "enabled": "发现已启用",
+      "disabled": "发现已禁用。正在移除路由。",
+      "rescanDone": "重新扫描完成",
+      "suppressed": "服务已抑制",
+      "unsuppressed": "服务已重新接受 — 下次扫描将重新应用其路由",
+      "forgotten": "服务已遗忘。证书材料已保留。",
+      "rescanPartial": "重新扫描完成但存在失败：{detail}"
+    },
+    "lifecycle": {
+      "title": "行为说明",
+      "stopRemove": "停止或移除容器时，其地址继续返回不可用页面并保留证书；签发在停止期间暂停，启动后立即恢复。",
+      "disableSuppress": "禁用发现或抑制服务会彻底移除其路由；证书保留。",
+      "forget": "遗忘会移除路由和服务条目，并保留证书材料。",
+      "rediscovery": "以相同身份重新出现的容器会在下次扫描时被重新发现，其路由会自动重新应用。"
+    },
+    "serviceLabel": {
+      "suppress": "抑制",
+      "unsuppress": "重新接受",
+      "forget": "遗忘"
+    }
   }
 }

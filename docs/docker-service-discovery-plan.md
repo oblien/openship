@@ -231,7 +231,69 @@ Docker/Podman compatibility work below is required before declaring full runtime
   would be excluded from retirement).
   Tests: repo 45, reconciler 19, operations 11, sweep 20 (queue serialization
   with operator mutations + rejection-safe cleanup).
-  Remaining: server UI, live Podman canary (7/8).
+- **Step 6 — server UI LANDED.** `DiscoveryCard` on the server detail page's
+  Overview tab (docker-component gate, covering Podman via the compat API):
+  enable/disable switch (disable confirmed — it retires every applied route),
+  fresh rescan (180s client budget, dedupe off — the pass may order a
+  certificate), and per-service rows with identity, hostname, backend state
+  (running/stopped/missing/invalid — display only, never route truth),
+  network, resolved upstream (strategy + ip:port), route chip, TLS chip,
+  actionable applyError with attempt count and next retry, and
+  suppress/unsuppress/forget actions (suppress/forget confirmed). Route chips
+  derive from CONFIRMED routing state only — "Route active" requires
+  applyState applied with matching desired/applied generations and no
+  pending withdrawal; a running container or a successful request never
+  reads as an active route; a first apply (no history) reads pending, a
+  generation gap reads reconciling, missing/invalid with applied history
+  reads the retained-unavailable (503) state. Lifecycle notes state the
+  real behavior: stop/remove retains the unavailable vhost + certificate
+  with issuance paused and resumed on start; disable/suppress retire routes
+  outright while keeping certificates; forget removes route + binding while
+  keeping certificate material AND warns the next scan rediscovers a still-
+  labeled container. Client: `lib/api/discovery.ts` (service keys fully
+  percent-encoded in the path — Compose identities contain `/`; Hono
+  decodes the segment) + `useServerDiscovery` (polls ONLY while
+  withdrawal/generation-gap/retry/issuance is pending, settled servers
+  schedule no timers; stale-response sequence guard; one busyKey makes
+  duplicate submissions impossible; single-service responses merge
+  immediately then a silent refresh reconciles the rest). Authorization:
+  enforced server-side (server:read / server:write / server:admin); 401/403
+  degrade to a no-access state, not a generic error. i18n: full
+  `servers.discovery` namespace in all 10 locales (parity test green).
+  The withdrawn-regression hardening: on an ENABLED server an observed,
+  BLOCKED binding with a pending withdrawal keeps that withdrawal after
+  unsuppress — scheduled by the suppression itself on applied history, no
+  observed loss involved (repo test asserts the exact state triple).
+  A render-test found and fixed a REAL hook bug: a superseded non-silent
+  status read never reset the loading flag (its finally skipped on
+  supersession while the newer silent read never owned the flag) — the card
+  could hang on skeletons forever. Review hardening: TLS chips/polling use
+  the domain row's REAL states (none | provisioning | active | expired |
+  error — never "issued"/"pending"); "Route active" additionally requires a
+  RUNNING, observed backend (the reconciler records markApplied after
+  writing the retained 503 vhost for a stopped backend, so matching
+  generations alone are not serving truth) and a DISABLED server reads
+  applied-history rows as retired (markWithdrawn only clears the flag, so
+  withdrawn rows keep matching generations); the retained "Unavailable"
+  reading is reached ONLY after the apply is confirmed — BLOCKED outranks it
+  first (the reconciler retires blocked routes OUTRIGHT and only then clears
+  withdrawalPending, so a cleared flag confirms REMOVAL — a missing/invalid
+  blocked row reads blocked, never unavailable), then error,
+  first-apply-pending, and generation gaps, so a stopped backend whose 503
+  write failed reads as failed and one still queued reads as reconciling
+  (the unblocked missing/invalid branch is inherently confirmed:
+  withdrawalPending is cleared only after the unavailable write succeeds); an ENABLED settled list
+  refreshes on a slow 60s idle cadence (automatic container/TLS changes
+  never push — a freshly enabled empty server would otherwise sit empty
+  indefinitely), while a disabled settled server schedules no timers; a
+  rescan whose HTTP 200 carries stage failures (scan not ok, reconcile/
+  repair not ok, per-service failed entries) surfaces a failure toast with
+  stage names, counts and the first reason instead of success. Tests:
+  dashboard 428 in the servers/api/i18n/hooks scopes incl. 19
+  discovery-card render tests (phases incl. stopped/disabled truth, 403,
+  confirmations, busy guard, fast+idle polling + cleanup, stale-response
+  loss, rescan partial failures) and 5 URL-construction tests.
+  Remaining: live Podman canary (7/8).
 - **Review acceptance check.** After `markInvalid()` clears `containerId`, a
   repeated scan must continue matching the rejected declaration by stable identity
   and retain `observationStatus='invalid'`. Add a regression that repeats the scan;
