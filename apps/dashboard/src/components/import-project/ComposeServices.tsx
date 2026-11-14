@@ -26,7 +26,7 @@ import { servicesApi } from "@/lib/api/services";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { serviceEnvironmentRows } from "@/lib/service-environment-editor";
 import { Button } from "@/components/ui/button";
-import { isEnvironmentValueMissing } from "./environment-resolution";
+import { isEnvironmentValueMissing, type EnvironmentVariableMeta } from "./environment-resolution";
 import { composeEnvironmentPreview, editComposeEnvironment } from "./compose-environment-preview";
 import BuildSettings from "./BuildSettings";
 import { cn } from "@/lib/utils";
@@ -315,7 +315,9 @@ const SharedEnvironmentCard: React.FC<{
   envVars: EnvVarRow[];
   rootEnvVars: EnvVarRow[];
   onChange: (envVars: EnvVarRow[]) => void;
-}> = ({ envVars, rootEnvVars, onChange }) => {
+  onReveal?: (keys: string[]) => Promise<Record<string, string>>;
+  envMeta?: Record<string, EnvironmentVariableMeta>;
+}> = ({ envVars, rootEnvVars, onChange, onReveal, envMeta }) => {
   const { t } = useI18n();
   const sh = t.importProject.composeServices.shared;
   const [envModalOpen, setEnvModalOpen] = useState(false);
@@ -423,7 +425,9 @@ const SharedEnvironmentCard: React.FC<{
             showSettingsActions={false}
             borderless
             envVars={envVars}
+            envMeta={envMeta}
             onEnvVarsChange={onChange}
+            onReveal={onReveal}
           />
         </div>
       </Modal>
@@ -1027,6 +1031,14 @@ const ComposeServices: React.FC = () => {
   const rootEnvVars = config.rootEnvVars || [];
   const isServiceDeployment = usesServiceDeployment(config);
   const [modeOptionsOpen, setModeOptionsOpen] = useState(false);
+  const revealService =
+    services.find((s) => s.serviceId && s.environmentDraft?.environment) ??
+    services.find((s) => s.serviceId);
+  const sharedReveal = useServiceEnvReveal(
+    config.projectId,
+    revealService?.serviceId,
+    revealService?.environmentDraft?.environment,
+  );
 
   const updateService = useCallback(
     (index: number, updates: Partial<ComposeServiceInfo>) => {
@@ -1139,6 +1151,7 @@ const ComposeServices: React.FC = () => {
                 envVars={sharedEnvVars}
                 rootEnvVars={rootEnvVars}
                 onChange={updateSharedEnv}
+                onReveal={sharedReveal}
               />
 
               {/* Duplicate-domain warning — two routes can't share a hostname. */}
