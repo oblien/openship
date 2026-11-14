@@ -593,13 +593,19 @@ export function createDiscoveryRepo(db: Database) {
     },
 
     /**
-     * Revert an opt-out. The pending withdrawal is cleared ONLY when it was
-     * suppression-specific: a withdrawal scheduled by server DISABLE (settings
-     * off — those routes must still be removed) or by OBSERVED LOSS
-     * (missing/invalid backend — the upstream is genuinely gone) must survive
-     * the unsuppress, or its route would stay live indefinitely. A withdrawal
-     * that already ran cleared the flag via markWithdrawn; the next scan
-     * re-applies from scratch.
+     * Revert an opt-out. The pending withdrawal is cleared ONLY on evidence of
+     * an ACTUAL suppression reversal whose retirement was suppression-owned:
+     *   - the row was actually suppressed (an unsuppress of a clean row must
+     *     not cancel anything), AND
+     *   - discovery is enabled (a DISABLE-scheduled withdrawal — those routes
+     *     must still be removed — survives), AND
+     *   - the backend was not lost (missing/invalid — the upstream is genuinely
+     *     gone), AND
+     *   - the binding is not BLOCKED: a blocked binding's retirement was
+     *     scheduled by conflict/removal policy, not by the suppression, and
+     *     must proceed regardless of the operator's change of heart.
+     * Any other withdrawal survives; a withdrawal that already ran cleared the
+     * flag via markWithdrawn, and the next scan re-applies from scratch.
      */
     async unsuppress(serverId: string, serviceKey: string) {
       return db.transaction(async (tx) => {
@@ -618,13 +624,17 @@ export function createDiscoveryRepo(db: Database) {
         const discoveryDisabled = settingsRow ? !settingsRow.enabled : true;
         const observationLoss =
           existing.observationStatus === "missing" || existing.observationStatus === "invalid";
-        const suppressionOnly = !discoveryDisabled && !observationLoss;
+        const suppressionOwned =
+          existing.suppressed === true &&
+          !discoveryDisabled &&
+          !observationLoss &&
+          existing.applyState !== "blocked";
         const [row] = await tx
           .update(binding)
           .set({
             suppressed: false,
             suppressedAt: null,
-            ...(suppressionOnly ? { withdrawalPending: false } : {}),
+            ...(suppressionOwned ? { withdrawalPending: false } : {}),
             updatedAt: new Date(),
           })
           .where(eq(binding.id, existing.id))

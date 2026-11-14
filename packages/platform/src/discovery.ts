@@ -140,14 +140,18 @@ export function createDiscoveryOperations(authorization: Authorization): Platfor
         const row = await repos.discovery.configure(serverId, { enabled: true });
         if (!row) throw new AppError("Discovery settings could not be written", 500, "DISCOVERY_CONFIGURE_FAILED");
       } else {
-        // Disable is ATOMIC: the settings flip and the withdrawal scheduling
-        // commit together. Committing "disabled" first would leave live routes
-        // on a server no sweep would select if the process died in between
-        // (sweepable = enabled ∪ owing-withdrawals). The reconciler's
+        // Disable is ATOMIC and SERIALIZED: the settings flip and the
+        // withdrawal scheduling commit together (a crash in between would
+        // strand live routes on a server no sweep selects), and the whole
+        // operation enters the server's sweep queue — an already-started FIRST
+        // route write must finish (and record appliedGeneration) before the
+        // scheduling runs, or a binding without application history would be
+        // excluded from retirement while its route goes live. The reconciler's
         // withdrawal stage is the one that runs for disabled servers; watcher
         // leases expire on their own.
-        const rows = await repos.discovery.disableAndScheduleWithdrawals(serverId);
-        void rows;
+        await runInServerQueue(serverId, async () => {
+          await repos.discovery.disableAndScheduleWithdrawals(serverId);
+        });
       }
       return { context: ctx, data: await statusData(ctx, serverId) };
     },
@@ -203,15 +207,16 @@ export function createDiscoveryOperations(authorization: Authorization): Platfor
     async forget(ctx, serverId, input): Promise<OperationResult<{ forgotten: boolean }>> {
       await authorizeServer(ctx, serverId, "admin");
       const { serviceKey } = parseInput(DiscoveryServiceActionInputSchema, input ?? {});
-      const binding = await requireBinding(serverId, serviceKey);
-      // The WHOLE forget runs inside the server's sweep queue: an in-flight
-      // reconcile could otherwise recreate the route between removal and row
-      // deletion, stranding a live route with no binding. Serialization means
-      // any reconcile that read the binding finishes before the removal, and
-      // any pass after the deletion no longer sees it. A failed removal (edge
-      // down) leaves the binding intact for a retry; the domain row
-      // (certificate material) deliberately survives.
+      // The WHOLE forget — INCLUDING the binding read — runs inside the
+      // server's sweep queue. A queued scan can change the hostname before
+      // this task executes; reading outside the queue would retire the OLD
+      // hostname and delete the CURRENT binding, stranding its new route.
+      // Inside, the read sees the post-scan row, the removal targets the right
+      // hostname, and the deletion cannot interleave with a reconcile. A
+      // failed removal (edge down) leaves the binding intact for a retry; the
+      // domain row (certificate material) deliberately survives.
       await runInServerQueue(serverId, async () => {
+        const binding = await requireBinding(serverId, serviceKey);
         await retireBindingRoute(serverId, ctx.organizationId, binding);
         await repos.discovery.forget(serverId, serviceKey);
       });
