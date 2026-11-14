@@ -11,7 +11,7 @@ describe("compileRoutingToOblien", () => {
           { source: "/(.*)", destination: "/index.html" },
         ],
       },
-      { staticPage: "my-frontend", backend: { workspace: "ws_backend", port: 3000 } },
+      { staticPage: "my-frontend", backend: { vm: "ws_backend", port: 3000 } },
     );
 
     expect(input.static).toEqual({ page: "my-frontend" });
@@ -19,7 +19,7 @@ describe("compileRoutingToOblien", () => {
     expect(input.routes).toEqual([
       {
         match: { path: "/api/", type: "prefix" },
-        action: { kind: "proxy", workspace: "ws_backend", port: 3000 },
+        action: { kind: "proxy", vm: "ws_backend", port: 3000 },
       },
     ]);
   });
@@ -27,27 +27,27 @@ describe("compileRoutingToOblien", () => {
   it("builds a COMPLETE table for the workspace topology (frontend + backend both workspaces)", () => {
     const input = compileRoutingToOblien(
       { rewrites: [{ source: "/api/(.*)", destination: "/api/index.js" }] },
-      { root: { workspace: "ws_frontend", port: 8080 }, backend: { workspace: "ws_backend", port: 3000 } },
+      { root: { vm: "ws_frontend", port: 8080 }, backend: { vm: "ws_backend", port: 3000 } },
     );
     expect(input.static).toBeUndefined();
     // /api proxies to the backend; `/` catch-all proxies to the frontend LAST.
     expect(input.routes).toEqual([
-      { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_backend", port: 3000 } },
-      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_frontend", port: 8080 } },
+      { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", vm: "ws_backend", port: 3000 } },
+      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: "ws_frontend", port: 8080 } },
     ]);
   });
 
   it("builds a server-only table (root workspace backs everything)", () => {
-    const input = compileRoutingToOblien({}, { root: { workspace: "ws_api", port: 8080 } });
+    const input = compileRoutingToOblien({}, { root: { vm: "ws_api", port: 8080 } });
     expect(input.routes).toEqual([
-      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_api", port: 8080 } },
+      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: "ws_api", port: 8080 } },
     ]);
   });
 
   it("proxies a full-URL rewrite to a literal origin (not the owned workspace)", () => {
     const input = compileRoutingToOblien(
       { rewrites: [{ source: "/proxy/(.*)", destination: "https://api.example.com/fixed" }] },
-      { backend: { workspace: "ws_backend", port: 3000 } },
+      { backend: { vm: "ws_backend", port: 3000 } },
     );
     expect(input.routes).toEqual([
       {
@@ -80,13 +80,13 @@ describe("compileRoutingToOblien", () => {
           { source: "/see", destination: "/other", statusCode: 303 }, // Oblien has no 303 → 307
         ],
       },
-      { root: { workspace: "ws_app", port: 8080 } },
+      { root: { vm: "ws_app", port: 8080 } },
     );
     expect(input.routes).toEqual([
       { match: { path: "/old", type: "exact" }, action: { kind: "redirect", status: 308, to: "/new" } },
       { match: { path: "/tmp", type: "exact" }, action: { kind: "redirect", status: 307, to: "/temp" } },
       { match: { path: "/see", type: "exact" }, action: { kind: "redirect", status: 307, to: "/other" } },
-      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_app", port: 8080 } },
+      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: "ws_app", port: 8080 } },
     ]);
   });
 
@@ -101,7 +101,7 @@ describe("compileRoutingToOblien", () => {
           { source: "/docs/(.*)", destination: "/documentation/$1" },
         ],
       },
-      { root: { workspace: "ws_app", port: 8080 } },
+      { root: { vm: "ws_app", port: 8080 } },
     );
     expect(input.routes).toEqual([
       {
@@ -112,7 +112,7 @@ describe("compileRoutingToOblien", () => {
         match: { path: "/docs/(.*)", type: "wildcard" },
         action: { kind: "redirect", status: 308, to: "/documentation/$1" },
       },
-      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "ws_app", port: 8080 } },
+      { match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: "ws_app", port: 8080 } },
     ]);
   });
 
@@ -155,7 +155,7 @@ describe("compileRoutingToOblien", () => {
         rewrites: [{ source: "/evil; } location / { proxy_pass http://x; }", destination: "/api" }],
         redirects: [{ source: "/r", destination: "/y; return 200 'pwned'" }],
       },
-      { backend: { workspace: "ws_backend", port: 3000 } },
+      { backend: { vm: "ws_backend", port: 3000 } },
     );
     expect(input.routes).toEqual([]);
   });
@@ -165,6 +165,6 @@ describe("compileRoutingToOblien", () => {
 describe("Cloud static fallback", () => {
   it.each([undefined, true, false])("carries the static setting to the provider: %s", (spaFallback) => {
     expect(compileRoutingToOblien({ spaFallback }, { staticPage: "site" }).spa).toBe(spaFallback);
-    expect(compileRoutingToOblien({ spaFallback }, { root: { workspace: "app", port: 8080 } })).not.toHaveProperty("spa");
+    expect(compileRoutingToOblien({ spaFallback }, { root: { vm: "app", port: 8080 } })).not.toHaveProperty("spa");
   });
 });

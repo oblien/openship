@@ -606,7 +606,9 @@ export {
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
 export { Oblien, OblienError, cloudWorkspaceCreationFailure } from "./oblien";
+export { oblienApiBaseUrl, oblienApiUrl, toOblienVmLimits, toOblienVmCapacity, toOblienVmPolicy, toOblienVmOffer, cloudBillingContract } from "./oblien-contract";
 export type {
+  NamespaceResourceLimits,
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,
   NamespaceUsageUnitsParams,

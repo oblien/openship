@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ token: vi.fn(), routes: vi.fn(), checkSlug: vi.fn(), verify: vi.fn(), scopedVerify: vi.fn(), spend: vi.fn(), createPlatform: vi.fn(), quota: vi.fn() }));
-vi.mock("@repo/adapters", () => ({ createPlatform: h.createPlatform }));
+vi.mock("@repo/adapters", async original => ({ ...await original<typeof import("@repo/adapters")>(), createPlatform: h.createPlatform }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { OBLIEN_API_URL: "https://api.oblien.com" } }));
 vi.mock("@repo/platform/engine/lib/routing-domains", () => ({ getRoutingBaseDomain: () => "opsh.io" }));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({

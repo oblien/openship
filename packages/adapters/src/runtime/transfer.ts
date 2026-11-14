@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 
-import type { WorkspaceHandle } from "oblien";
+import type { VMHandle } from "oblien";
 
 import { TRANSFER_EXCLUDES, safeErrorMessage } from "@repo/core";
 import { getTarCreateEnv, prepareSourceTarArgs } from "../archive";
@@ -24,7 +24,7 @@ export type LocalDirectoryTarget =
     }
   | {
       kind: "cloud-runtime";
-      runtime: Awaited<ReturnType<WorkspaceHandle["runtime"]>>;
+      runtime: Awaited<ReturnType<VMHandle["runtime"]>>;
       path: string;
     };
 

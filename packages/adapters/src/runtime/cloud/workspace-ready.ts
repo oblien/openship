@@ -1,8 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { Oblien, WorkspaceData } from "oblien";
+import type { Oblien, VMData } from "oblien";
 import { AppError } from "@repo/core";
 
-export function assertDockerWorkspaceOwner(workspace: WorkspaceData, namespace: string, workspaceId: string): void {
+export function assertDockerWorkspaceOwner(workspace: VMData, namespace: string, workspaceId: string): void {
   if (workspace.namespace !== namespace || workspace.id !== workspaceId)
     throw new AppError("Cloud workspace identity does not match its server", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");
 }
@@ -20,7 +20,7 @@ export function isDockerWorkspaceRunning(workspace: { status: string; info?: unk
   return cloudWorkspaceStatus(workspace) === "running";
 }
 
-export function assertCloudWorkspaceRunning(workspace: WorkspaceData): void {
+export function assertCloudWorkspaceRunning(workspace: VMData): void {
   const state = cloudWorkspaceStatus(workspace);
   if (state === "running") return;
   if (["stopped", "paused", "suspended"].includes(state))
@@ -35,7 +35,7 @@ export function assertCloudWorkspaceRunning(workspace: WorkspaceData): void {
 export async function waitForCloudWorkspaceStopped(client: Oblien, workspaceId: string, namespace: string) {
   const deadline = Date.now() + 60_000;
   for (;;) {
-    const workspace = await client.workspaces.get(workspaceId);
+    const workspace = await client.vms.get(workspaceId);
     assertDockerWorkspaceOwner(workspace, namespace, workspaceId);
     if (["stopped", "paused", "suspended"].includes(cloudWorkspaceStatus(workspace))) return;
     if (Date.now() >= deadline) throw new Error("The managed server has not returned to its stopped state");
@@ -47,11 +47,11 @@ export async function waitForCloudWorkspaceStopped(client: Oblien, workspaceId: 
 export async function waitForCloudDockerWorkspace(
   client: Oblien, workspaceId: string, namespace: string,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
-): Promise<WorkspaceData> {
+): Promise<VMData> {
   const deadline = Date.now() + (options.timeoutMs ?? 600_000);
   while (true) {
     options.signal?.throwIfAborted();
-    const workspace = await client.workspaces.get(workspaceId);
+    const workspace = await client.vms.get(workspaceId);
     assertDockerWorkspaceOwner(workspace, namespace, workspaceId);
     const provisioning = workspace.provisioning as { state?: string; error?: unknown } | undefined;
     if (provisioning?.state === "failed" || ["error", "failed"].includes(cloudWorkspaceStatus(workspace))) {

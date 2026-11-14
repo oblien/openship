@@ -5,7 +5,7 @@ import { authorizeCloudRelayWorkspace } from "./cloud-relay-access";
 
 export async function createCloudPage(
   ctx: RequestContext,
-  input: { workspace_id: string; path: string; name: string; slug: string; domain?: string },
+  input: { vm_id: string; path: string; name: string; slug: string; domain?: string },
 ): Promise<unknown> {
   const workspaceId = await authorizeCloudRelayWorkspace(ctx);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);

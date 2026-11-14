@@ -14,7 +14,7 @@ describe("project routes on a managed server", () => {
     });
     expect(h.pages.create).toHaveBeenCalledOnce();
     await h.infra.registerRoute(route);
-    expect(h.routes.set).toHaveBeenLastCalledWith(route.domain, { routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }] });
+    expect(h.routes.set).toHaveBeenLastCalledWith(route.domain, { routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: h.workspaceId, port: 3000 } }] });
     expect(h.pages.create).toHaveBeenCalledOnce();
   });
 
@@ -25,7 +25,7 @@ describe("project routes on a managed server", () => {
     });
     expect(h.routes.set).toHaveBeenCalledWith(route.domain, {
       spa: false,
-      routes: [{ match: { path: "/v3", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }],
+      routes: [{ match: { path: "/v3", type: "prefix" }, action: { kind: "proxy", vm: h.workspaceId, port: 3000 } }],
     });
   });
   it("updates one project-owned Page repeatedly without a new workspace", async () => {
@@ -33,10 +33,10 @@ describe("project routes on a managed server", () => {
     await h.infra.registerRoute(route);
     expect(h.pages.create).toHaveBeenCalledOnce();
     expect(h.routes.set).toHaveBeenCalledTimes(2);
-    expect(h.routes.set).toHaveBeenLastCalledWith(route.domain, { routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }] });
+    expect(h.routes.set).toHaveBeenLastCalledWith(route.domain, { routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: h.workspaceId, port: 3000 } }] });
     expect(h.workspace.network.update).toHaveBeenCalledWith({ ingress_ports: [443, 3000] });
   });
-  it.each(["namespace", "source_workspace_id", "exported_path"])("refuses a changed %s before mutating the route", async field => {
+  it.each(["namespace", "source_vm_id", "exported_path"])("refuses a changed %s before mutating the route", async field => {
     await h.infra.registerRoute(route);
     h.records.get("app")![field] = "another-owner";
     h.routes.set.mockClear(); h.pages.enable.mockClear();
@@ -58,8 +58,8 @@ describe("project routes on a managed server", () => {
   it("validates every composite backend, not only the root", async () => {
     await h.infra.registerRoute(route);
     h.routes.set.mockClear();
-    await expect(h.infra.setDomainRoutes(route.domain, { routes: [{ match: { path: "/admin", type: "prefix" }, action: { kind: "proxy", workspace: "another-vm", port: 3000 } }] })).rejects.toThrow("does not belong");
-    await expect(h.infra.setDomainRoutes(route.domain, { routes: [{ match: { path: "/admin", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 4000 } }] })).rejects.toThrow("unowned");
+    await expect(h.infra.setDomainRoutes(route.domain, { routes: [{ match: { path: "/admin", type: "prefix" }, action: { kind: "proxy", vm: "another-vm", port: 3000 } }] })).rejects.toThrow("does not belong");
+    await expect(h.infra.setDomainRoutes(route.domain, { routes: [{ match: { path: "/admin", type: "prefix" }, action: { kind: "proxy", vm: h.workspaceId, port: 4000 } }] })).rejects.toThrow("unowned");
     expect(h.routes.set).not.toHaveBeenCalled();
   });
   it("keeps unrelated ingress ports when adding an application", async () => {

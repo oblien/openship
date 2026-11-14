@@ -9,13 +9,14 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Oblien } from "../src/oblien";
+import { oblienApiBaseUrl, oblienApiUrl } from "../src/oblien-contract";
 import { cloudWorkspaceStatus, waitForCloudDockerWorkspace } from "../src/runtime/cloud/workspace-ready";
 import { CloudWorkspaceExecutor } from "../src/runtime/cloud/workspace-executor";
 import { deleteCloudWorkspace } from "../src/runtime/cloud/workspace-delete";
 
 if (process.argv[2] !== "--staging-env" || !process.argv[3]) throw new Error("Provide a confirmed staging credential file with --staging-env");
 const config = parseEnv(await readFile(process.argv[3], "utf8"));
-const baseUrl = config.OBLIEN_API_URL || "https://api.oblien.com";
+const baseUrl = oblienApiBaseUrl(config.OBLIEN_API_URL).toString();
 if (!config.OBLIEN_CLIENT_ID || !config.OBLIEN_CLIENT_SECRET || new URL(baseUrl).protocol !== "https:") throw new Error("Staging credentials and HTTPS are required");
 const admin = new Oblien({ clientId: config.OBLIEN_CLIENT_ID, clientSecret: config.OBLIEN_CLIENT_SECRET, baseUrl });
 const tag = `os-cycle-${randomUUID().replaceAll("-", "").slice(0, 14)}`;
@@ -61,7 +62,7 @@ async function suspendedWorkspaceStops(client: Oblien, workspaceId: string, name
   let observedState: string | undefined;
   try {
     await until(name, async () => {
-      const workspace = await client.workspaces.get(workspaceId);
+      const workspace = await client.vms.get(workspaceId);
       const state = cloudWorkspaceStatus(workspace);
       if (state !== observedState) {
         const info = workspace.info as { status?: string; is_running?: boolean } | undefined;
@@ -81,13 +82,13 @@ async function suspendedWorkspaceStops(client: Oblien, workspaceId: string, name
       message: error instanceof Error ? error.message : "Unknown failure" });
     // Preserve the failed automatic-stop result, then exercise the independent
     // customer cleanup and explicit-reactivation contract on the same fixture.
-    await client.workspace(workspaceId).stop();
-    await until("explicit Stop completes during suspension", async () => cloudWorkspaceStatus(await client.workspaces.get(workspaceId)) === "stopped");
+    await client.vm(workspaceId).stop();
+    await until("explicit Stop completes during suspension", async () => cloudWorkspaceStatus(await client.vms.get(workspaceId)) === "stopped");
   }
 }
 const a = `${tag}-a`, b = `${tag}-b`;
-const resources = { max_workspaces: 1, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 32 };
-const policy = (quotaLimit: number) => ({ quotaLimit, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_workspaces" as const });
+const resources = { max_vms: 1, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 32 };
+const policy = (quotaLimit: number) => ({ quotaLimit, overdraft: 0, suspendThreshold: 0, onOverdraftAction: "stop_vms" as const });
 const create = (namespace: string, suffix: string) => ({ namespace, name: `${namespace}-${suffix}`, slug: `${namespace}-${suffix}`,
   image: "oblien/docker:29", mode: "temporary" as const, wait_ready: false, idempotency_key: `${namespace}-${suffix}`,
   config: { cpus: 2, memory_mb: 4096, disk_size_mb: 32768, ttl: "15m", ttl_action: "remove" as const,
@@ -96,7 +97,7 @@ const create = (namespace: string, suffix: string) => ({ namespace, name: `${nam
 try {
   log("starting isolated quota test", { directory });
   const defaults = await admin.billing.defaults();
-  check("new namespaces have finite automatic onboarding policy", defaults.autoApply && defaults.quotaLimit === 0 && defaults.overdraft === 0 && defaults.suspendThreshold === 0 && defaults.onOverdraftAction === "stop_workspaces");
+  check("new namespaces have finite automatic onboarding policy", defaults.autoApply && defaults.quotaLimit === 0 && defaults.overdraft === 0 && defaults.suspendThreshold === 0 && defaults.onOverdraftAction === "stop_vms");
   for (const namespace of [a, b]) {
     const input = { name: namespace, slug: namespace, resource_limits: resources };
     const { data } = namespace === a ? await admin.namespaces.ensure(input) : await admin.namespaces.create(input);
@@ -108,7 +109,7 @@ try {
     log("new namespace billing", { customer: namespace === a ? "A" : "B", method: namespace === a ? "ensure" : "create", entitlement, balance,
       policy: inheritedPolicy, subscription: await admin.billing.subscription(namespace) });
     check(`${namespace === a ? "A" : "B"}: zero credit inherited without a grant`, entitlement.namespace === namespace && entitlement.quota.limit === 0 && balance.blocking &&
-      inheritedPolicy.quotaLimit === 0 && inheritedPolicy.overdraft === 0 && inheritedPolicy.suspendThreshold === 0 && inheritedPolicy.onOverdraftAction === "stop_workspaces", false);
+      inheritedPolicy.quotaLimit === 0 && inheritedPolicy.overdraft === 0 && inheritedPolicy.suspendThreshold === 0 && inheritedPolicy.onOverdraftAction === "stop_vms", false);
     const subscription = (await admin.billing.subscription(namespace)).subscription;
     check(`${namespace === a ? "A" : "B"}: unpaid namespace cannot inherit the owner's plan`, subscription === null && (entitlement.tierId === null || entitlement.tierId === "free") && entitlement.periodStart === null && entitlement.periodEnd === null, false);
     // Continue the independent enforcement checks with an explicit fixture
@@ -125,7 +126,7 @@ try {
     const request = client._http.request.bind(client._http);
     client._http.request = async <T>(input: Parameters<typeof client._http.request>[0]): Promise<T> => {
       const result = await request<T>(input);
-      if (input.method === "POST" && input.path === "/workspace") {
+      if (input.method === "POST" && input.path === "/vms") {
         const data = result as Record<string, unknown>;
         log("workspace creation response shape", { keys: Object.keys(data), success: data.success, code: data.code,
           error: typeof data.error === "string" ? data.error : undefined,
@@ -134,15 +135,15 @@ try {
       return result;
     };
   }
-  check("exhausted customers retain scoped inspection access", (await clientA.workspaces.list()).workspaces.length === 0);
-  await denied("unpaid namespace cannot create compute", () => clientA.workspaces.create(create(a, "unpaid")), [402, 403]);
+  check("exhausted customers retain scoped inspection access", (await clientA.vms.list()).vms.length === 0);
+  await denied("unpaid namespace cannot create compute", () => clientA.vms.create(create(a, "unpaid")), [402, 403]);
 
   for (const namespace of [a, b]) await admin.billing.setPolicy(namespace, policy(100));
   check("isolated test allowance activates only its namespace", (await admin.billing.entitlement(a)).status === "active" && !(await admin.billing.balance(b)).blocking);
   const repeated = await admin.namespaces.ensure({ name: a, slug: a, resource_limits: resources });
   check("ensure preserves an existing namespace's allowance", repeated.data.id === namespaceIds.get(a) && (await admin.billing.policy(a)).quotaLimit === 100);
-  const raced = await Promise.allSettled([clientA.workspaces.create(create(a, "race-1")), clientA.workspaces.create(create(a, "race-2"))]);
-  const winners = raced.filter((item): item is PromiseFulfilledResult<Awaited<ReturnType<typeof clientA.workspaces.create>>> => item.status === "fulfilled");
+  const raced = await Promise.allSettled([clientA.vms.create(create(a, "race-1")), clientA.vms.create(create(a, "race-2"))]);
+  const winners = raced.filter((item): item is PromiseFulfilledResult<Awaited<ReturnType<typeof clientA.vms.create>>> => item.status === "fulfilled");
   const losers = raced.filter(item => item.status === "rejected");
   log("concurrent create outcomes", { results: raced.map(item => item.status === "fulfilled"
     ? { state: item.status, workspaceId: item.value?.id, namespace: item.value?.namespace }
@@ -151,19 +152,19 @@ try {
   const workspaceA = winners[0]!.value;
   // Inspect the actual wire status, independently of Openship's compatibility
   // normalization for the provider's former HTTP-200 limit failures.
-  const limited = await fetch(new URL("/workspace", baseUrl), {
+  const limited = await fetch(oblienApiUrl(new URL(baseUrl), "/vms"), {
     method: "POST", headers: { Authorization: `Bearer ${tokenA}`, "Content-Type": "application/json" },
     body: JSON.stringify(create(a, "raw-limit")), redirect: "error", signal: AbortSignal.timeout(30_000),
   });
   log("workspace cap wire response", { status: limited.status });
   check("workspace cap returns HTTP 409", limited.status === 409);
   await limited.arrayBuffer();
-  const workspaceB = await clientB.workspaces.create(create(b, "main"));
+  const workspaceB = await clientB.vms.create(create(b, "main"));
   await waitForCloudDockerWorkspace(clientA, workspaceA.id, a, { signal: abort.signal });
   await waitForCloudDockerWorkspace(clientB, workspaceB.id, b, { signal: abort.signal });
   check("two customers own different workspaces", workspaceA.id !== workspaceB.id && workspaceA.namespace === a && workspaceB.namespace === b);
   for (const [client, workspace, namespace] of [[clientA, workspaceA, a], [clientB, workspaceB, b]] as const) {
-    const executor = new CloudWorkspaceExecutor(() => client.workspace(workspace.id).runtime());
+    const executor = new CloudWorkspaceExecutor(() => client.vm(workspace.id).runtime());
     const path = `/opt/openship/cloud-docker/routes/${namespace}`;
     try {
       await executor.mkdir(path); await executor.writeFile(`${path}/index.html`, `Isolated customer ${namespace}`);
@@ -175,16 +176,16 @@ try {
     finally { await executor.dispose(); }
     pages.set(namespace, namespace);
     await save();
-    await admin.pages.create({ slug: namespace, namespace, workspace_id: workspace.id, path, domain: "preview.oblien.com" });
+    await admin.pages.create({ slug: namespace, namespace, vm_id: workspace.id, path, domain: "preview.oblien.com" });
   }
-  const visibleA = (await clientA.workspaces.list()).workspaces;
-  const visibleB = (await clientB.workspaces.list()).workspaces;
+  const visibleA = (await clientA.vms.list()).vms;
+  const visibleB = (await clientB.vms.list()).vms;
   check("workspace lists are isolated", visibleA.length === 1 && visibleA[0]!.namespace === a && visibleB.length === 1 && visibleB[0]!.namespace === b);
-  await denied("customer cannot read another customer's VM", () => clientA.workspaces.get(workspaceB.id), [403, 404]);
-  await denied("customer cannot stop another customer's VM", () => clientA.workspace(workspaceB.id).stop(), [403, 404]);
-  await denied("customer cannot delete another customer's VM", () => clientA.workspaces.delete(workspaceB.id), [403, 404]);
-  await denied("customer cannot escape its namespace on creation", () => clientA.workspaces.create(create(b, "escape")), [400, 403, 409, 422]);
-  check("foreign namespace still owns exactly its original workspace", (await clientB.workspaces.list()).workspaces.length === 1);
+  await denied("customer cannot read another customer's VM", () => clientA.vms.get(workspaceB.id), [403, 404]);
+  await denied("customer cannot stop another customer's VM", () => clientA.vm(workspaceB.id).stop(), [403, 404]);
+  await denied("customer cannot delete another customer's VM", () => clientA.vms.delete(workspaceB.id), [403, 404]);
+  await denied("customer cannot escape its namespace on creation", () => clientA.vms.create(create(b, "escape")), [400, 403, 409, 422]);
+  check("foreign namespace still owns exactly its original workspace", (await clientB.vms.list()).vms.length === 1);
   await denied("customer cannot access account billing", () => clientA.billing.entitlement(b), [403]);
   await denied("customer cannot grant itself credit", () => clientA.billing.setPolicy(a, policy(500)), [403]);
   await denied("customer cannot mint a more privileged token", () => clientA.tokens.create({ scope: "namespace", namespace: b }), [403]);
@@ -194,10 +195,10 @@ try {
     check("Page listing cannot expose another namespace", visible.every(page => page.namespace === a), false);
   } catch (error) { check("Page listing requires privileged proxy", (error as { status?: number }).status === 403); }
   await denied("customer cannot read another customer's Page", () => clientA.pages.get(b), [403, 404]);
-  await denied("namespace CPU ceiling blocks resize", () => clientA.workspace(workspaceA.id).resources.update({ cpus: 3, apply: false }), [400, 409, 422]);
-  await denied("namespace RAM ceiling blocks resize", () => clientA.workspace(workspaceA.id).resources.update({ memory_mb: 8192, apply: false }), [400, 409, 422]);
-  await denied("namespace disk ceiling blocks resize", () => clientA.workspace(workspaceA.id).resources.update({ disk_size_mb: 65536, apply: false }), [400, 409, 422]);
-  check("rejected resize keeps the original allocation", (await clientA.workspaces.get(workspaceA.id)).resources?.cpus === 2);
+  await denied("namespace CPU ceiling blocks resize", () => clientA.vm(workspaceA.id).resources.update({ cpus: 3, apply: false }), [400, 409, 422]);
+  await denied("namespace RAM ceiling blocks resize", () => clientA.vm(workspaceA.id).resources.update({ memory_mb: 8192, apply: false }), [400, 409, 422]);
+  await denied("namespace disk ceiling blocks resize", () => clientA.vm(workspaceA.id).resources.update({ disk_size_mb: 65536, apply: false }), [400, 409, 422]);
+  check("rejected resize keeps the original allocation", (await clientA.vms.get(workspaceA.id)).resources?.cpus === 2);
 
   try {
     await until("provider records compute usage", async () => (await admin.billing.entitlement(a)).quota.used > 0, 300_000);
@@ -228,25 +229,25 @@ try {
   check("exhaustion is visible in entitlement and balance", true);
   check("new usage crossed the configured credit allowance", effectiveAllowance !== null && (await admin.billing.entitlement(a)).quota.used >= effectiveAllowance);
   try {
-    await until("provider stops exhausted namespace", async () => cloudWorkspaceStatus(await clientA.workspaces.get(workspaceA.id)) === "stopped", 90_000);
+    await until("provider stops exhausted namespace", async () => cloudWorkspaceStatus(await clientA.vms.get(workspaceA.id)) === "stopped", 90_000);
     check("provider stops A on exhaustion", true);
   } catch {
     check("provider stops A on exhaustion", false, false);
     log("explicitly stopping A to continue independent management checks");
-    await clientA.workspace(workspaceA.id).stop();
+    await clientA.vm(workspaceA.id).stop();
   }
-  check("B keeps running when A is exhausted", cloudWorkspaceStatus(await clientB.workspaces.get(workspaceB.id)) === "running" && !(await admin.billing.balance(b)).blocking);
-  await denied("exhausted customer cannot restart compute", () => clientA.workspace(workspaceA.id).start(), [402, 403, 409]);
-  await denied("exhausted customer cannot create replacement compute", () => clientA.workspaces.create(create(a, "blocked")), [402, 403, 409]);
-  check("exhausted customer can still inspect its stopped VM", (await clientA.workspaces.get(workspaceA.id)).id === workspaceA.id);
-  await clientA.workspace(workspaceA.id).stop();
-  await clientA.workspace(workspaceA.id).stop();
+  check("B keeps running when A is exhausted", cloudWorkspaceStatus(await clientB.vms.get(workspaceB.id)) === "running" && !(await admin.billing.balance(b)).blocking);
+  await denied("exhausted customer cannot restart compute", () => clientA.vm(workspaceA.id).start(), [402, 403, 409]);
+  await denied("exhausted customer cannot create replacement compute", () => clientA.vms.create(create(a, "blocked")), [402, 403, 409]);
+  check("exhausted customer can still inspect its stopped VM", (await clientA.vms.get(workspaceA.id)).id === workspaceA.id);
+  await clientA.vm(workspaceA.id).stop();
+  await clientA.vm(workspaceA.id).stop();
   check("billing-suspended customer can repeat Stop", true);
 
   await admin.billing.setPolicy(a, policy(100));
   await until("billing restoration", async () => (await admin.billing.entitlement(a)).status === "active" && !(await admin.billing.balance(a)).blocking);
-  check("restoring credit does not restart compute implicitly", cloudWorkspaceStatus(await clientA.workspaces.get(workspaceA.id)) === "stopped");
-  await clientA.workspace(workspaceA.id).start();
+  check("restoring credit does not restart compute implicitly", cloudWorkspaceStatus(await clientA.vms.get(workspaceA.id)) === "stopped");
+  await clientA.vm(workspaceA.id).start();
   await waitForCloudDockerWorkspace(clientA, workspaceA.id, a, { signal: abort.signal });
   check("restored customer explicitly resumes the same VM", true);
 
@@ -254,28 +255,28 @@ try {
   await suspendedWorkspaceStops(clientA, workspaceA.id, a, "manual suspension stops A");
   await admin.billing.setPolicy(a, policy(200));
   check("credit increase cannot undo a manual suspension", (await admin.namespaces.get(a)).data.status === "suspended" && (await admin.billing.balance(a)).blocking);
-  await denied("manual suspension blocks Start despite positive credit", () => clientA.workspace(workspaceA.id).start(), [402, 403, 409]);
+  await denied("manual suspension blocks Start despite positive credit", () => clientA.vm(workspaceA.id).start(), [402, 403, 409]);
   await admin.namespaces.activate(namespaceIds.get(a)!);
-  check("explicit reactivation restores access without starting the VM", (await admin.namespaces.get(a)).data.status === "active" && !(await admin.billing.balance(a)).blocking && cloudWorkspaceStatus(await clientA.workspaces.get(workspaceA.id)) === "stopped");
-  await clientA.workspace(workspaceA.id).start();
+  check("explicit reactivation restores access without starting the VM", (await admin.namespaces.get(a)).data.status === "active" && !(await admin.billing.balance(a)).blocking && cloudWorkspaceStatus(await clientA.vms.get(workspaceA.id)) === "stopped");
+  await clientA.vm(workspaceA.id).start();
   await waitForCloudDockerWorkspace(clientA, workspaceA.id, a, { signal: abort.signal });
   check("manually suspended VM starts only after reactivation", true);
   log("second manual suspension response", { namespace: a, response: await admin.namespaces.suspend(namespaceIds.get(a)!) });
   await suspendedWorkspaceStops(clientA, workspaceA.id, a, "second manual suspension stops A");
-  await clientA.workspace(workspaceA.id).stop();
-  await clientA.workspace(workspaceA.id).stop();
+  await clientA.vm(workspaceA.id).stop();
+  await clientA.vm(workspaceA.id).stop();
   check("manually suspended customer can repeat Stop", true);
-  await deleteCloudWorkspace(clientA.workspace(workspaceA.id));
-  await until("A disappears from the scoped workspace list", async () => (await clientA.workspaces.list()).workspaces.length === 0, 60_000);
-  check("suspended customer can delete resources", (await clientA.workspaces.list()).workspaces.length === 0);
-  check("B remains available after A cleanup", cloudWorkspaceStatus(await clientB.workspaces.get(workspaceB.id)) === "running");
+  await deleteCloudWorkspace(clientA.vm(workspaceA.id));
+  await until("A disappears from the scoped workspace list", async () => (await clientA.vms.list()).vms.length === 0, 60_000);
+  check("suspended customer can delete resources", (await clientA.vms.list()).vms.length === 0);
+  check("B remains available after A cleanup", cloudWorkspaceStatus(await clientB.vms.get(workspaceB.id)) === "running");
   await admin.billing.setPolicy(b, policy(0));
-  await until("B stops for billing-suspended deletion check", async () => (await admin.billing.balance(b)).blocking && cloudWorkspaceStatus(await clientB.workspaces.get(workspaceB.id)) === "stopped");
-  await clientB.workspace(workspaceB.id).stop();
-  await clientB.workspace(workspaceB.id).stop();
-  await deleteCloudWorkspace(clientB.workspace(workspaceB.id));
-  await until("B disappears from the scoped workspace list", async () => (await clientB.workspaces.list()).workspaces.length === 0, 60_000);
-  check("billing-suspended customer can inspect, repeat Stop and Delete", (await clientB.workspaces.list()).workspaces.length === 0);
+  await until("B stops for billing-suspended deletion check", async () => (await admin.billing.balance(b)).blocking && cloudWorkspaceStatus(await clientB.vms.get(workspaceB.id)) === "stopped");
+  await clientB.vm(workspaceB.id).stop();
+  await clientB.vm(workspaceB.id).stop();
+  await deleteCloudWorkspace(clientB.vm(workspaceB.id));
+  await until("B disappears from the scoped workspace list", async () => (await clientB.vms.list()).vms.length === 0, 60_000);
+  check("billing-suspended customer can inspect, repeat Stop and Delete", (await clientB.vms.list()).vms.length === 0);
 } catch (error) {
   check("all lifecycle checks completed", false, false);
   log("test failed", { message: error instanceof Error ? error.message.replace(/([?&](?:token|access_token)=)[^&\s]+/gi, "$1[redacted]") : "Unknown failure", status: (error as { status?: number }).status });

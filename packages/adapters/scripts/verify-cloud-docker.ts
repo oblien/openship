@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Oblien } from "../src/oblien";
+import { oblienApiBaseUrl, oblienApiUrl } from "../src/oblien-contract";
 import { CloudDockerRuntime } from "../src/runtime/cloud/docker";
 import { CloudProcessSupervisor } from "../src/runtime/cloud/process-supervisor";
 import { cloudDockerProjectPaths } from "../src/runtime/cloud/docker-paths";
@@ -33,7 +34,7 @@ const domainFlag = process.argv.indexOf("--public-domain");
 const publicDomain = domainFlag >= 0 ? process.argv[domainFlag + 1]! : "opsh.io";
 if (!publicDomain || !/^[a-z0-9.-]+$/.test(publicDomain))
   throw new Error("Invalid public test domain");
-const baseUrl = configuration.OBLIEN_API_URL || "https://api.oblien.com";
+const baseUrl = oblienApiBaseUrl(configuration.OBLIEN_API_URL).toString();
 const presetFlag = process.argv.indexOf("--preset");
 const softwarePreset = presetFlag >= 0 ? process.argv[presetFlag + 1] : undefined;
 if (presetFlag >= 0 && (!softwarePreset || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(softwarePreset)))
@@ -93,7 +94,7 @@ try {
     name: tag,
     slug: tag,
     type: "testing",
-    resource_limits: { max_workspaces: 1, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 32 },
+    resource_limits: { max_vms: 1, max_vcpus: 2, max_ram_mb: 4096, max_disk_gb: 32 },
   });
   namespaceId = created.data.id;
   await save();
@@ -103,7 +104,7 @@ try {
     quotaLimit: 100,
     overdraft: 0,
     suspendThreshold: 0,
-    onOverdraftAction: "stop_workspaces",
+    onOverdraftAction: "stop_vms",
   });
   const token = await admin.tokens.create({ scope: "namespace", namespace: tag, ttl: 1800 });
   const client = new Oblien({ token: token.token, baseUrl });
@@ -127,11 +128,11 @@ try {
       network_config: { allow_internet: true, public_ingress: false },
     },
   };
-  const workspace = await client.workspaces.create(createOptions);
+  const workspace = await client.vms.create(createOptions);
   workspaceId = workspace.id;
   await save();
   check("workspace created in test namespace", workspace.namespace === tag && workspaceId);
-  const replay = await client.workspaces.create(createOptions);
+  const replay = await client.vms.create(createOptions);
   check("provider idempotency reuses workspace", replay.id === workspaceId);
   const progress = setInterval(() => log("waiting for Docker workspace"), 20_000);
   try {
@@ -140,10 +141,10 @@ try {
     clearInterval(progress);
   }
   log("Docker workspace ready");
-  await client.workspace(workspaceId).lifecycle.makePermanent();
+  await client.vm(workspaceId).lifecycle.makePermanent();
   check(
     "managed server can be made permanent",
-    (await client.workspaces.get(workspaceId)).mode === "permanent",
+    (await client.vms.get(workspaceId)).mode === "permanent",
   );
   await client
     .workspace(workspaceId)
@@ -170,7 +171,7 @@ try {
     return { ...result, pages: result.pages.filter((page) => page.namespace === tag) };
   };
   adminPages.create = async (input) => {
-    if (input.workspace_id !== workspaceId || !input.slug?.startsWith(tag))
+    if (input.vm_id !== workspaceId || !input.slug?.startsWith(tag))
       throw new Error("Smoke route escaped its workspace");
     pages.add(input.slug);
     await save();
@@ -473,7 +474,7 @@ try {
   await runtime.stop(second.containerId);
   check(
     "service stop preserves workspace and sibling",
-    isDockerWorkspaceRunning(await client.workspaces.get(workspaceId)) &&
+    isDockerWorkspaceRunning(await client.vms.get(workspaceId)) &&
       (await runtime.getContainerInfo(internal.containerId)).status === "running",
   );
   const stoppedPorts = second.hostPortByContainerPort;
@@ -536,7 +537,7 @@ try {
     env: { OPENSHIP_SMOKE_PROCESS: "saved" },
   };
   await processSupervisor.deploy(processOptions);
-  const workload = () => client.workspace(workspaceId!).workloads.get(`openship-${processId}`);
+  const workload = () => client.vm(workspaceId!).workloads.get(`openship-${processId}`);
   const savedProcess = await workload();
   check(
     "provider returns saved process configuration",
@@ -565,10 +566,10 @@ try {
   );
   await processSupervisor.stop(processId);
 
-  check("provider accepts server stop", (await client.workspace(workspaceId).stop()).success);
+  check("provider accepts server stop", (await client.vm(workspaceId).stop()).success);
   await waitForCloudWorkspaceStopped(client, workspaceId, tag);
   log("workspace stopped for recovery check", {
-    status: (await client.workspaces.get(workspaceId)).status,
+    status: (await client.vms.get(workspaceId)).status,
   });
   check(
     "stopped workspace reads do not start compute",
@@ -590,7 +591,7 @@ try {
     "bare deletion retains the Docker application and server",
     (await processSupervisor.getInfo(processId)).status === "missing" &&
       (await runtime.getContainerInfo(second.containerId)).status === "running" &&
-      isDockerWorkspaceRunning(await client.workspaces.get(workspaceId)),
+      isDockerWorkspaceRunning(await client.vms.get(workspaceId)),
   );
   check(
     "workspace restart preserves the volume",
@@ -599,7 +600,7 @@ try {
   );
   check(
     "bridge recovery reuses its workload",
-    (await client.workspace(workspaceId).workloads.list({ name: "openship-docker-api-v1" }))
+    (await client.vm(workspaceId).workloads.list({ name: "openship-docker-api-v1" }))
       .length === 1,
   );
   const hostnames = await infra.listProjectRouteHostnames();
@@ -630,11 +631,11 @@ try {
   }
   check(
     "one workspace for the whole stack",
-    (await client.workspaces.list()).workspaces.length === 1,
+    (await client.vms.list()).vms.length === 1,
   );
 } catch (error) {
   if (workspaceId) {
-    const workspace = await admin.workspaces.get(workspaceId).catch(() => null);
+    const workspace = await admin.vms.get(workspaceId).catch(() => null);
     if (workspace) {
       const provisioning = workspace.provisioning as
         | { state?: string; error?: unknown }
@@ -662,7 +663,7 @@ try {
   for (const slug of pages) {
     try {
       const page = (await admin.pages.get(slug)).page;
-      if (page.namespace !== tag || page.source_workspace_id !== workspaceId)
+      if (page.namespace !== tag || page.source_vm_id !== workspaceId)
         throw new Error("Unexpected smoke page owner");
       await admin.pages.delete(slug);
       pages.delete(slug);
@@ -676,7 +677,7 @@ try {
   }
   if (workspaceId) {
     try {
-      await deleteCloudWorkspace(admin.workspace(workspaceId));
+      await deleteCloudWorkspace(admin.vm(workspaceId));
       workspaceId = undefined;
     } catch (error) {
       if ((error as { status?: number }).status === 404) workspaceId = undefined;

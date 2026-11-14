@@ -10,9 +10,9 @@ import { authorizeCloudRelayWorkspace } from "./cloud-relay-access";
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const path = z.string().min(1).max(2048);
 const domain = z.string().min(1).max(253);
-const source = z.object({ workspace_id: id, path }).strict();
+const source = z.object({ vm_id: id, path }).strict();
 const action = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("proxy"), workspace: id, port: z.number().int().min(1).max(65535),
+  z.object({ kind: z.literal("proxy"), vm: id, port: z.number().int().min(1).max(65535),
     stripPrefix: z.boolean().optional(), path: path.optional() }).strict(),
   z.object({ kind: z.literal("rewrite"), to: path }).strict(),
   z.object({ kind: z.literal("redirect"), to: path, status: z.union([z.literal(301), z.literal(302), z.literal(307), z.literal(308)]).optional() }).strict(),

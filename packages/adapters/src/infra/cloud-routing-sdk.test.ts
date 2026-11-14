@@ -27,14 +27,14 @@ beforeEach(() => {
       return page ? Response.json({ success: true, page }) : Response.json({ error: "Not found" }, { status: 404 });
     if (url.pathname === "/pages" && method === "POST") {
       page = { id: 42, slug: body.slug, domain: body.domain, namespace: h.namespace,
-        source_workspace_id: body.workspace_id, exported_path: body.path, url: `https://${hostname}` };
+        source_vm_id: body.vm_id, exported_path: body.path, url: `https://${hostname}` };
       return Response.json({ success: true, page });
     }
     if (url.pathname === "/pages/app/enable" && method === "POST")
       return Response.json({ success: true });
-    if (url.pathname === `/workspace/${h.workspaceId}/network` && method === "GET")
+    if (url.pathname === `/vms/${h.workspaceId}/network` && method === "GET")
       return Response.json({ ingress_ports: [443] });
-    if (url.pathname === `/workspace/${h.workspaceId}/network` && method === "PATCH")
+    if (url.pathname === `/vms/${h.workspaceId}/network` && method === "PATCH")
       return Response.json({ success: true });
     if (url.pathname === `/domain/routes/${hostname}` && method === "PUT")
       return Response.json({ success: true, hostname, version: writes.length,
@@ -54,7 +54,7 @@ it.each([301, 302, 307, 308])("sends canonical redirect intent through the real 
   } });
   await provider.registerRoute({ domain: hostname, targetUrl: "http://127.0.0.1:3000", tls: true });
   const tables = writes.filter(request => request.path === `/domain/routes/${hostname}`);
-  expect(tables.at(-1)?.body).toEqual({ routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }] });
+  expect(tables.at(-1)?.body).toEqual({ routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: h.workspaceId, port: 3000 } }] });
   expect(writes.filter(request => request.path === "/pages")).toHaveLength(1);
   expect(requests.some(url => url.pathname === "/workspace")).toBe(false);
 });
@@ -66,13 +66,13 @@ it("reuses the owned Page through the SDK after routes become a compiled table",
   const routes = writes.filter(request => request.path === `/domain/routes/${hostname}`);
   expect(routes).toHaveLength(2);
   expect(routes[1]).toEqual({ method: "PUT", path: `/domain/routes/${hostname}`, body: {
-    routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.workspaceId, port: 3000 } }],
+    routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: h.workspaceId, port: 3000 } }],
   } });
-  expect(writes).toContainEqual({ method: "PATCH", path: `/workspace/${h.workspaceId}/network`, body: { ingress_ports: [443, 3000] } });
+  expect(writes).toContainEqual({ method: "PATCH", path: `/vms/${h.workspaceId}/network`, body: { ingress_ports: [443, 3000] } });
   expect(requests.some(url => url.pathname === "/workspace")).toBe(false);
 });
 
-it.each(["namespace", "source_workspace_id", "exported_path"])("does not write when the Page's %s changes", async field => {
+it.each(["namespace", "source_vm_id", "exported_path"])("does not write when the Page's %s changes", async field => {
   await provider.registerRoute({ domain: hostname, targetUrl: "http://127.0.0.1:3000", tls: true });
   page![field] = "different-owner";
   writes.length = 0;
@@ -92,7 +92,7 @@ it("publishes path-only routes through the SDK without a static or SPA fallback"
       spa: false,
       routes: [{
         match: { path: "/api/", type: "prefix" },
-        action: { kind: "proxy", workspace: h.workspaceId, port: 3000 },
+        action: { kind: "proxy", vm: h.workspaceId, port: 3000 },
       }],
     },
   });

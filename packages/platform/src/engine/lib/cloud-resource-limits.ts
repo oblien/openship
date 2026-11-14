@@ -1,6 +1,7 @@
 import { AppError, resolvePlan, type CloudCapacityPool, type PlanTierId } from "@repo/core";
 import { getOblienClient } from "./oblien-client";
 import { z } from "zod";
+import { toOblienVmLimits, type NamespaceResourceLimits } from "@repo/adapters";
 
 type NamespaceLimits = ReturnType<typeof cloudNamespaceLimits>;
 
@@ -10,8 +11,8 @@ export function cloudNamespaceLimits(tier: PlanTierId) {
   return { ...resolvePlan(tier).oblienLimits };
 }
 
-export async function initialCloudNamespaceLimits(): Promise<NamespaceLimits> {
-  return cloudNamespaceLimits("free");
+export async function initialCloudNamespaceLimits() {
+  return toOblienVmLimits(cloudNamespaceLimits("free"));
 }
 
 /** Submit the verified subscription's declared policy under the billing lock.
@@ -25,13 +26,14 @@ export async function syncCloudResourceLimits(
 ): Promise<void> {
   const client = getOblienClient();
   const { data: current } = await client.namespaces.get(namespace);
+  const providerLimits = toOblienVmLimits(desired);
   if (current.slug !== namespace) throw new AppError("Cloud namespace ownership changed", 502, "CLOUD_NAMESPACE_MISMATCH");
   // Compare declared policy, never Oblien's effective_resource_limits: account
   // capacity may change without changing the customer's purchase contract.
-  const matches = (limits: Partial<NamespaceLimits> | null | undefined) =>
-    (Object.keys(desired) as Array<keyof NamespaceLimits>).every(key => (limits?.[key] ?? null) === desired[key]);
+  const matches = (limits: NamespaceResourceLimits | null | undefined) =>
+    (Object.keys(providerLimits) as Array<keyof typeof providerLimits>).every(key => (limits?.[key] ?? null) === providerLimits[key]);
   if (matches(current.resource_limits)) return;
-  const { data: updated } = await client.namespaces.update(current.id, { resource_limits: { ...desired } });
+  const { data: updated } = await client.namespaces.update(current.id, { resource_limits: providerLimits });
   if (updated.slug !== namespace || !matches(updated.resource_limits)) {
     throw new AppError("Cloud resource limits were not confirmed", 502, "CLOUD_RESOURCE_LIMITS_UNCONFIRMED");
   }
@@ -39,13 +41,13 @@ export async function syncCloudResourceLimits(
 
 const capacityResponse = z.object({ success: z.literal(true), data: z.object({
   slug: z.string(),
-  effective_resource_limits: z.object({ max_workspaces: z.number().nonnegative().nullable(),
+  effective_resource_limits: z.object({ max_vms: z.number().nonnegative().nullable(),
     max_vcpus: z.number().nonnegative().nullable().optional(),
     max_ram_mb: z.number().nonnegative().nullable().optional(),
     max_disk_gb: z.number().nonnegative().nullable().optional(),
     max_total_vcpus: z.number().nonnegative().nullable(), max_total_ram_mb: z.number().nonnegative().nullable(),
     max_total_disk_gb: z.number().nonnegative().nullable() }).optional(),
-  allocated_resource_usage: z.object({ workspaces: z.number().nonnegative(), vcpus: z.number().nonnegative(),
+  allocated_resource_usage: z.object({ vms: z.number().nonnegative(), vcpus: z.number().nonnegative(),
     ram_mb: z.number().nonnegative(), disk_gb: z.number().nonnegative(), pending_updates: z.number().int().nonnegative() }).optional(),
 }) });
 
@@ -63,7 +65,7 @@ function presentCapacity(data: Awaited<ReturnType<typeof readNamespaceCapacity>>
   const limits = data.effective_resource_limits, used = data.allocated_resource_usage;
   if (!limits || !used) return {};
   return {
-    workspaces: { used: used.workspaces, max: limits.max_workspaces },
+    workspaces: { used: used.vms, max: limits.max_vms },
     vcpus: { used: used.vcpus, max: limits.max_total_vcpus },
     ramMb: { used: used.ram_mb, max: limits.max_total_ram_mb },
     diskGb: { used: used.disk_gb, max: limits.max_total_disk_gb },

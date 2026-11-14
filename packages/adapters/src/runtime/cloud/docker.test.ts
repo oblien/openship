@@ -54,13 +54,13 @@ beforeEach(async () => {
       if (!page) throw new NotFoundError("missing");
       return { page };
     }),
-    create: vi.fn(async (input: { slug: string; workspace_id: string; path: string }) => {
-      const page = { slug: input.slug, domain: "opsh.io", url: `https://${input.slug}.opsh.io`, namespace: "namespace-a", source_workspace_id: input.workspace_id, exported_path: input.path };
+    create: vi.fn(async (input: { slug: string; vm_id: string; path: string }) => {
+      const page = { slug: input.slug, domain: "opsh.io", url: `https://${input.slug}.opsh.io`, namespace: "namespace-a", source_vm_id: input.vm_id, exported_path: input.path };
       pageRows.set(input.slug, page); return { page };
     }),
     enable: vi.fn(async () => ({ success: true })), connectDomain: vi.fn(), delete: vi.fn(async () => ({ success: true })),
   };
-  provider = { workspace: vi.fn(() => ws), workspaces: { get: ws.get, create: vi.fn(), delete: vi.fn() }, pages };
+  provider = { vm: vi.fn(() => ws), vms: { get: ws.get, create: vi.fn(), delete: vi.fn() }, pages };
   runtime = await CloudDockerRuntime.forWorkspace(provider as unknown as Oblien, {
     projectId: "project-a", ownerWorkspaceId: "managed-a", workspaceId: "workspace-a", namespace: "namespace-a", beforeProvision: async () => { await spend(); },
     provisionLock: { run: fn => fn() }, resolveRegistryAuth: async () => undefined,
@@ -145,7 +145,7 @@ describe("containers on one Oblien Docker workspace", () => {
     const options = { projectId: "project-a", serviceName: "api", onReplaced: vi.fn() };
     await expect(runtime.applyEnvironment("container-a", { VALUE: "new" }, options)).resolves.toEqual({ containerId: "replacement-a" });
     expect(apply).toHaveBeenCalledExactlyOnceWith("container-a", { VALUE: "new" }, options);
-    expect(provider.workspaces.create).not.toHaveBeenCalled();
+    expect(provider.vms.create).not.toHaveBeenCalled();
     expect(ws.restart).not.toHaveBeenCalled();
     expect(ws.delete).not.toHaveBeenCalled();
     expect(spend).toHaveBeenCalled();
@@ -356,8 +356,8 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(first.hostPortByContainerPort![8080]).not.toBe(first.hostPortByContainerPort![9090]);
     expect(next.hostPortByContainerPort![8080]).toBe(first.hostPortByContainerPort![8080]);
     await infra.publishRoute("project-a.opsh.io", next.hostPortByContainerPort![8080]!, false);
-    expect(routes).toHaveBeenCalledWith("project-a.opsh.io", expect.objectContaining({ routes: [expect.objectContaining({ action: { kind: "proxy", workspace: "workspace-a", port: next.hostPortByContainerPort![8080] } })] }));
-    expect(provider.workspaces.create).not.toHaveBeenCalled();
+    expect(routes).toHaveBeenCalledWith("project-a.opsh.io", expect.objectContaining({ routes: [expect.objectContaining({ action: { kind: "proxy", vm: "workspace-a", port: next.hostPortByContainerPort![8080] } })] }));
+    expect(provider.vms.create).not.toHaveBeenCalled();
   });
   it("keeps named and image-declared volume identities across container replacements", async () => {
     await runtime.deployServiceWorkload(group, config);
@@ -496,7 +496,7 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(ws.delete).not.toHaveBeenCalled();
   });
   it("does not take over another project's hostname in the same organization", async () => {
-    pageRows.set("project-a", { namespace: "namespace-a", source_workspace_id: "workspace-other", exported_path: "/app" });
+    pageRows.set("project-a", { namespace: "namespace-a", source_vm_id: "workspace-other", exported_path: "/app" });
     const result = await runtime.deployServiceWorkload(group, config);
     await expect(infra.publishRoute("project-a.opsh.io", result.hostPortByContainerPort![8080]!, false)).rejects.toThrow(/owned|belong/);
     expect(pages.enable).not.toHaveBeenCalled();
@@ -549,7 +549,7 @@ describe("containers on one Oblien Docker workspace", () => {
     const failure = Object.assign(new Error("Provider unavailable"), { status: 503 });
     ws.get.mockRejectedValue(failure);
     await expect(runtime.listAllContainers()).rejects.toBe(failure);
-    expect(provider.workspaces.create).not.toHaveBeenCalled();
+    expect(provider.vms.create).not.toHaveBeenCalled();
   });
   it("refuses another namespace's container inventory", async () => {
     ws.get.mockResolvedValue({ namespace: "another-namespace", status: "running" });
@@ -603,7 +603,7 @@ describe("containers on one Oblien Docker workspace", () => {
       adminProxy: { pages: pages as never, domainRoutes: async () => ({ data: [{ hostname: "project-a.opsh.io", namespace: "namespace-a", owner_type: "page", owner_id: "project-a" }] }) as never } });
     await cleanup.removeRoute("project-a.opsh.io");
     expect(pages.delete).toHaveBeenCalledWith("project-a");
-    pageRows.get("project-a")!.source_workspace_id = "workspace-other";
+    pageRows.get("project-a")!.source_vm_id = "workspace-other";
     await expect(cleanup.removeRoute("project-a.opsh.io")).rejects.toThrow("not owned");
   });
   it("inventories disabled routing Pages without confusing their numeric IDs with slugs", async () => {
@@ -611,7 +611,7 @@ describe("containers on one Oblien Docker workspace", () => {
       Ports: [{ PrivatePort: 8080, PublicPort: 30001, Type: "tcp" }] }];
     await infra.publishRoute("project-a.opsh.io", 30001, false);
     pageRows.get("project-a")!.status = "disabled";
-    pageRows.set("other", { slug: "other", domain: "opsh.io", namespace: "namespace-a", source_workspace_id: "workspace-other", exported_path: "/opt/openship/cloud-docker/routes/other" });
+    pageRows.set("other", { slug: "other", domain: "opsh.io", namespace: "namespace-a", source_vm_id: "workspace-other", exported_path: "/opt/openship/cloud-docker/routes/other" });
     expect(await infra.listProjectRouteHostnames()).toEqual(["project-a.opsh.io"]);
     const cleanup = new CloudInfraProvider(provider as unknown as Oblien, { namespace: "namespace-a", scope: runtime.routingScope() });
     await cleanup.removeRoute("project-a.opsh.io");
@@ -707,7 +707,7 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(dockerfile).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
     expect(transfer).not.toHaveBeenCalled();
     expect(runtime.connectionOptions?.executor).toBe(runtime.executor);
-    expect(provider.workspaces.create).not.toHaveBeenCalled();
+    expect(provider.vms.create).not.toHaveBeenCalled();
   });
   it("does not let an empty image-only source mask a later inline build context", async () => {
     const source = { projectId: "project-a", sessionId: "build-a", repoUrl: "" };

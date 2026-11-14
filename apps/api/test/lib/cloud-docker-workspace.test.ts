@@ -30,8 +30,8 @@ vi.mock("@repo/adapters", async (original) => ({
   ...await original<typeof import("@repo/adapters")>(),
   Oblien: class {
     constructor(credentials: unknown) { h.credentials.push(credentials); }
-    workspaces = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
-    workspace = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
+    vms = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
+    vm = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
       lifecycle: { makePermanent: h.permanent }, resources: { update: h.resize },
       runtime: async () => ({ exec: { run: h.exec } }), invalidateRuntime: h.invalidate });
   },
@@ -86,7 +86,7 @@ beforeEach(() => {
     return { success: true, relaunched: true };
   });
   h.inFlight.mockResolvedValue([]);
-  h.list.mockResolvedValue({ workspaces: [], total: 0, limit: 100, page: 1 });
+  h.list.mockResolvedValue({ vms: [], total: 0, limit: 100, page: 1 });
   h.discard.mockImplementation(async () => {
     binding = undefined;
   });
@@ -190,7 +190,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
   it("adopts an earlier workspace discovered after a quota refusal instead of creating another", async () => {
     binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
     h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
-    h.list.mockResolvedValue({ workspaces: [await h.get()], total: 1, limit: 100, page: 1 });
+    h.list.mockResolvedValue({ vms: [await h.get()], total: 1, limit: 100, page: 1 });
     await expect(ensureCloudDockerWorkspace(input)).resolves.toEqual({ projectId: project.id, workspaceId: "workspace-a", ownerWorkspaceId: "owner-a" });
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.discard).not.toHaveBeenCalled();
@@ -209,8 +209,8 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
     h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
     const workspace = await h.get();
-    h.list.mockResolvedValueOnce({ workspaces: [{ ...workspace, namespace: "other-namespace", id: "foreign-vm" }], total: 2, limit: 1, page: 1 });
-    h.list.mockResolvedValueOnce({ workspaces: [workspace], total: 2, limit: 1, page: 2 });
+    h.list.mockResolvedValueOnce({ vms: [{ ...workspace, namespace: "other-namespace", id: "foreign-vm" }], total: 2, limit: 1, page: 1 });
+    h.list.mockResolvedValueOnce({ vms: [workspace], total: 2, limit: 1, page: 2 });
     await expect(ensureCloudDockerWorkspace(input)).resolves.toMatchObject({ workspaceId: "workspace-a" });
     expect(h.list).toHaveBeenNthCalledWith(2, { page: 2, limit: 100 });
     expect(h.attach).toHaveBeenCalledExactlyOnceWith(ownerRef, project.organizationId, "namespace-a", "workspace-a");
@@ -219,7 +219,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
     h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
     const workspace = await h.get();
-    h.list.mockResolvedValue({ workspaces: [workspace, { ...workspace, id: "duplicate-vm" }], total: 2, limit: 100, page: 1 });
+    h.list.mockResolvedValue({ vms: [workspace, { ...workspace, id: "duplicate-vm" }], total: 2, limit: 100, page: 1 });
     await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("Multiple Cloud servers");
     expect(h.attach).not.toHaveBeenCalled();
     expect(h.discard).not.toHaveBeenCalled();
@@ -288,7 +288,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     const error = Object.assign(new Error("initial provisioning failed"), {
       status: 422,
       code: "CREATE_FAILED",
-      details: { workspace_id: "workspace-a" },
+      details: { vm_id: "workspace-a" },
     });
     h.create.mockRejectedValueOnce(error);
     await expect(ensureCloudDockerWorkspace(input)).rejects.toBe(error);
@@ -328,7 +328,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     h.create.mockRejectedValueOnce(
       Object.assign(new Error("creation failed"), {
         status: 422,
-        details: { workspace_id: "workspace-a" },
+        details: { vm_id: "workspace-a" },
       }),
     );
     const created = await h.get();

@@ -261,8 +261,8 @@ beforeEach(async () => {
       { ip: "8.8.4.4", countryCode: "US" },
       { ip: "1.1.1.1", countryCode: "AU" },
     ]),
-    workspaces: { get: vi.fn(async () => vm), invalidateRuntime: vi.fn() },
-    workspace: vi.fn(() => handle),
+    vms: { get: vi.fn(async () => vm), invalidateRuntime: vi.fn() },
+    vm: vi.fn(() => handle),
   };
   h.namespaceClient.mockImplementation(async () => ({ client: h.client, namespace }));
   h.canWork.mockResolvedValue(undefined);
@@ -414,7 +414,7 @@ describe("managed server controls through real HTTP, policy and SQL ownership", 
       "MANAGED_RUNTIME_TOKEN_CHANGED",
     );
     expect(handle.apiAccess.rotateToken).toHaveBeenCalledTimes(1);
-    expect(h.client.workspaces.invalidateRuntime).toHaveBeenCalledWith(vmId);
+    expect(h.client.vms.invalidateRuntime).toHaveBeenCalledWith(vmId);
     handle.apiAccess.getToken.mockResolvedValue({ token: jwt("another-vm") });
     expect(
       (await request("managed/runtime-api/credential", "POST", { confirm: true })).status,
@@ -482,7 +482,7 @@ describe("managed server controls through real HTTP, policy and SQL ownership", 
       "MANAGED_RUNTIME_TOKEN_CHANGED",
     );
     expect(handle.apiAccess.rotateToken).toHaveBeenCalledTimes(1);
-    expect(h.client.workspaces.invalidateRuntime).toHaveBeenCalledWith(vmId);
+    expect(h.client.vms.invalidateRuntime).toHaveBeenCalledWith(vmId);
     const recovered = await request("managed/runtime-api/credential", "POST", { confirm: true });
     expect(recovered.status).toBe(200);
     expect(recovered.body.revision).not.toBe(input.expectedRevision);

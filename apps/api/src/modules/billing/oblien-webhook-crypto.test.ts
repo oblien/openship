@@ -64,7 +64,7 @@ describe("deriveOblienEventId", () => {
   const base: OblienEventEnvelope = {
     event: "credits.usage",
     timestamp: "2026-07-21T10:00:00Z",
-    data: { namespace: "os-abc", workspace_id: "ws_1", period_end: "2026-08-01T00:00:00Z" },
+    data: { namespace: "os-abc", vm_id: "ws_1", period_end: "2026-08-01T00:00:00Z" },
   };
 
   it("is deterministic for the same payload", () => {

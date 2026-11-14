@@ -1,4 +1,4 @@
-import type { WorkspaceData, WorkspaceHandle } from "oblien";
+import type { VMData, VMHandle } from "oblien";
 import { cloudCpus, type ResourceConfig } from "../../types";
 import { cloudWorkspaceStatus } from "./workspace-ready";
 
@@ -6,7 +6,7 @@ type WorkspaceResources = Pick<ResourceConfig, "cpuCores" | "memoryMb"> &
   Partial<Pick<ResourceConfig, "diskMb">>;
 
 export function cloudWorkspaceHasResources(
-  workspace: Pick<WorkspaceData, "resources">,
+  workspace: Pick<VMData, "resources">,
   expected: WorkspaceResources,
 ): boolean {
   const actual = workspace.resources;
@@ -21,9 +21,9 @@ export function cloudWorkspaceHasResources(
  * Require an applied change and read the allocation back before claiming the
  * runtime was resized. Callers retain ownership of readiness and restoration. */
 export async function updateCloudWorkspaceResources(
-  workspace: WorkspaceHandle,
+  workspace: VMHandle,
   resources: WorkspaceResources,
-  current?: WorkspaceData,
+  current?: VMData,
 ): Promise<void> {
   const before = current ?? (await workspace.get());
   if (before.id !== workspace.id)

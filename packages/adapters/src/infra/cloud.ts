@@ -109,7 +109,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
   }
 
   async getQuota(): Promise<unknown> {
-    return this.client.workspaces.getQuota();
+    return this.client.vms.getQuota();
   }
 
   // ── Domain / Slug checks ───────────────────────────────────────────────
@@ -199,7 +199,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     if (
       !page ||
       (this.workspaceId &&
-        (page.source_workspace_id !== this.workspaceId ||
+        (page.source_vm_id !== this.workspaceId ||
           page.exported_path !== `${this.routeRoot}/${page.slug}`))
     )
       throw disconnected();
@@ -230,11 +230,11 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     if (route.protection) throw new Error("Password protection is not supported by the Cloud edge.");
     if (route.webhookProxy)
       throw new Error("Managed application routes cannot proxy control-plane webhooks");
-    const proxyTargets = new Map<string, { workspace: string; port: number }>();
+    const proxyTargets = new Map<string, { vm: string; port: number }>();
     for (const location of route.proxyLocations ?? []) {
       if (location.external) continue;
       proxyTargets.set(location.targetUrl, {
-        workspace: this.scope.workspaceId,
+        vm: this.scope.workspaceId,
         port: await this.scope.resolveUrl(location.targetUrl),
       });
     }
@@ -251,7 +251,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         trailingSlash: route.trailingSlash,
       },
       {
-        root: port ? { workspace: this.scope.workspaceId, port } : undefined,
+        root: port ? { vm: this.scope.workspaceId, port } : undefined,
         staticPage: route.staticRoot ? slug : undefined,
         proxyTargets,
       },
@@ -300,7 +300,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       }
       if (
         page.namespace === this.options.namespace &&
-        page.source_workspace_id === this.workspaceId &&
+        page.source_vm_id === this.workspaceId &&
         page.exported_path === `${this.routeRoot}/${page.slug}`
       )
         hostnames.push(...cloudPageHostnames(page));
@@ -348,14 +348,14 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     )
       throw new Error("Invalid cloud routing port");
     const pathsOnly = hostPort === undefined && !staticRoot;
-    if (pathsOnly && !input?.routes.some((rule) => rule.action.kind === "proxy"))
+    if (pathsOnly && !input?.routes?.some((rule) => rule.action.kind === "proxy"))
       throw new Error("A route needs a process or a static release");
     const slug = this.routeSlug(hostname, custom);
     let routes = input ?? {
       routes: [
         {
           match: { path: "/", type: "prefix" as const },
-          action: { kind: "proxy" as const, workspace: this.scope.workspaceId, port: hostPort! },
+          action: { kind: "proxy" as const, vm: this.scope.workspaceId, port: hostPort! },
         },
       ],
     };
@@ -375,7 +375,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     }
     const assertPage = () => {
       if (
-        page!.source_workspace_id !== this.workspaceId ||
+        page!.source_vm_id !== this.workspaceId ||
         page!.namespace !== this.options.namespace ||
         page!.exported_path !== path
       )
@@ -408,7 +408,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         );
         if (page) {
           const deployed = await this.pages.deploy(slug, {
-            workspace_id: this.scope.workspaceId,
+            vm_id: this.scope.workspaceId,
             path,
           });
           if (!deployed.success) throw new Error("Could not publish the static release");
@@ -422,7 +422,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       if (!page) {
         try {
           await this.pages.create({
-            workspace_id: this.scope.workspaceId,
+            vm_id: this.scope.workspaceId,
             path,
             name: `Route ${hostname}`,
             slug,
@@ -440,9 +440,9 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         if (page.custom_domain !== hostname)
           await this.pages.connectDomain(slug, { domain: hostname });
       }
-      const ports = routes.routes.flatMap((rule) =>
+      const ports = (routes.routes ?? []).flatMap((rule) =>
         rule.action.kind === "proxy" &&
-        rule.action.workspace === this.workspaceId &&
+        rule.action.vm === this.workspaceId &&
         rule.action.port
           ? [rule.action.port]
           : [],
@@ -462,7 +462,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
           // would leave a failed release live at the edge.
           if (hadPage && restored.trim() === "restored") {
             if (
-              !(await this.pages.deploy(slug, { workspace_id: this.scope.workspaceId, path }))
+              !(await this.pages.deploy(slug, { vm_id: this.scope.workspaceId, path }))
                 .success
             )
               throw new Error("Could not republish the previous static release");
@@ -490,9 +490,9 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
   async resolveRoutingTarget(
     containerId: string,
     port: number,
-  ): Promise<{ workspace: string; port: number }> {
+  ): Promise<{ vm: string; port: number }> {
     return {
-      workspace: this.scope.workspaceId,
+      vm: this.scope.workspaceId,
       port: await this.scope.resolveTarget(containerId, port),
     };
   }
@@ -513,9 +513,9 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         throw new AppError("Domain does not belong to this project", 404, "DOMAIN_NOT_FOUND");
       await this.assertRouteTargets(input);
       await this.ensureIngressPorts(
-        input.routes.flatMap((route) =>
+        (input.routes ?? []).flatMap((route) =>
           route.action.kind === "proxy" &&
-          route.action.workspace === this.workspaceId &&
+          route.action.vm === this.workspaceId &&
           route.action.port
             ? [route.action.port]
             : [],
@@ -534,7 +534,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       const { page } = await this.pages.get(input.static.page);
       if (
         page.namespace !== this.options.namespace ||
-        page.source_workspace_id !== this.workspaceId ||
+        page.source_vm_id !== this.workspaceId ||
         page.exported_path !== `${this.routeRoot}/${page.slug}`
       )
         throw new AppError(
@@ -545,11 +545,11 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     }
     const ports = new Set<number>();
     if (publishedPort !== undefined) ports.add(publishedPort);
-    for (const route of input.routes) {
+    for (const route of input.routes ?? []) {
       if (
         route.action.kind === "proxy" &&
         !route.action.origin &&
-        (route.action.workspace !== this.workspaceId ||
+        (route.action.vm !== this.workspaceId ||
           typeof route.action.port !== "number")
       )
         throw new AppError(
@@ -570,7 +570,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
    * only ensures the project's validated route ports can receive edge traffic. */
   private async ensureIngressPorts(add: number[]) {
     if (!add.length) return;
-    const workspace = this.client.workspace(this.scope.workspaceId);
+    const workspace = this.client.vm(this.scope.workspaceId);
     const network = await workspace.network.get();
     const current = Array.isArray(network.ingress_ports) ? (network.ingress_ports as number[]) : [];
     const next = [...new Set([...current, ...add])];
@@ -593,7 +593,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
    * is uncertain state and must retain the deletion fence. */
   private isForeignProjectRoute(page: {
     slug: string;
-    source_workspace_id?: string | null;
+    source_vm_id?: string | null;
     exported_path?: string | null;
   }): boolean {
     const prefix = `${CLOUD_DOCKER_ROUTE_ROOT}/projects/`;
@@ -602,7 +602,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     if (
       !this.routeRoot ||
       !canonicalRoot(this.routeRoot) ||
-      !page.source_workspace_id?.trim() ||
+      !page.source_vm_id?.trim() ||
       !page.exported_path ||
       !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(page.slug)
     )
@@ -629,7 +629,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       const page = await this.pageForDomain(domain);
       if (!page) return "absent";
       if (
-        page.source_workspace_id !== this.workspaceId ||
+        page.source_vm_id !== this.workspaceId ||
         page.exported_path !== `${this.routeRoot}/${page.slug}`
       ) {
         if (mode === "project-cleanup" && this.isForeignProjectRoute(page)) return "foreign";

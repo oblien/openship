@@ -243,7 +243,7 @@ export async function purchaseManagement(ctx: ExecutionContext, input: Managemen
           name: "Openship Manage",
           slug: owner.namespace,
           resource_limits: {
-            max_workspaces: 0,
+            max_vms: 0,
             max_vcpus: 0,
             max_ram_mb: 0,
             max_disk_gb: 0,

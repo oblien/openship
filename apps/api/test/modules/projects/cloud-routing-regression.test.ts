@@ -113,7 +113,7 @@ describe("managed Cloud route port edits and repair", () => {
     await editRoutes(["app.opsh.io"]);
     expect(h.fixture.pages.create).toHaveBeenCalledOnce();
     expect(h.fixture.routes.set).toHaveBeenLastCalledWith("app.opsh.io", expect.objectContaining({
-      routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32001 } }],
+      routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: h.fixture.workspaceId, port: 32001 } }],
     }));
     expect(h.syncManagedEdge).not.toHaveBeenCalled();
   });
@@ -124,7 +124,7 @@ describe("managed Cloud route port edits and repair", () => {
     expect(h.fixture.pages.connectDomain).toHaveBeenCalledWith(expect.any(String), { domain: "app.example.com" });
     expect(h.fixture.workspace.network.update).toHaveBeenCalledWith(expect.objectContaining({ ingress_ports: [443, 32000] }));
     expect(h.fixture.routes.set).toHaveBeenCalledWith("app.example.com", expect.objectContaining({
-      routes: expect.arrayContaining([expect.objectContaining({ action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 } })]),
+      routes: expect.arrayContaining([expect.objectContaining({ action: { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 } })]),
     }));
   });
 
@@ -165,8 +165,8 @@ describe("managed Cloud route port edits and repair", () => {
     h.domains.push({ ...h.domains[0]!, id: "domain-b", hostname: "console.opsh.io", targetPort: 9000, isPrimary: false });
     expect(await retryProjectRouting(h.project.id, h.project.organizationId)).toEqual({ ok: true });
     expect(h.fixture.routes.set.mock.calls.map(([host, table]) => [host, table.routes[0]?.action])).toEqual([
-      ["app.opsh.io", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 }],
-      ["console.opsh.io", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32001 }],
+      ["app.opsh.io", { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 }],
+      ["console.opsh.io", { kind: "proxy", vm: h.fixture.workspaceId, port: 32001 }],
     ]);
   });
 
@@ -196,8 +196,8 @@ describe("managed Cloud route port edits and repair", () => {
     }));
     expect(await retryProjectRouting(h.project.id, h.project.organizationId)).toEqual({ ok: true });
     expect(h.fixture.routes.set.mock.calls.map(([host, table]) => [host, table.routes[0]?.action])).toEqual([
-      ["app.example.com", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 }],
-      ["alias.example.com", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 }],
+      ["app.example.com", { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 }],
+      ["alias.example.com", { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 }],
     ]);
     expect(h.fixture.pages.delete).not.toHaveBeenCalled();
   });

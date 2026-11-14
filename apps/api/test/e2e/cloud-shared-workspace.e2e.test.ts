@@ -152,13 +152,13 @@ describeDockerE2E("multiple projects on one subscribed Docker workspace", () => 
     };
     const vm = { id: providerVm, namespace, status: "running" };
     const provider = {
-      workspaces: {
+      vms: {
         get: async () => vm,
         create: () => {
           throw new Error("Project operation attempted to create a second host");
         },
       },
-      workspace: () => ({
+      vm: () => ({
         get: async () => vm,
         runtime: async () => providerRuntime,
         workloads: { list: async () => [] },
@@ -185,7 +185,7 @@ describeDockerE2E("multiple projects on one subscribed Docker workspace", () => 
             domain: "opsh.io",
             url: `https://${input.slug}.opsh.io`,
             namespace,
-            source_workspace_id: input.workspace_id,
+            source_vm_id: input.vm_id,
             exported_path: input.path,
           };
           pages.set(input.slug, page);
@@ -359,7 +359,7 @@ describeDockerE2E("multiple projects on one subscribed Docker workspace", () => 
     );
     expect((await a.listAllContainers()).map((row) => row.id)).toEqual([aId]);
     expect(routes.get(`${ids[0]}.opsh.io`).routes[0].action).toMatchObject({
-      workspace: providerVm,
+      vm: providerVm,
       port: first.hostPortByContainerPort?.[8080],
     });
   });

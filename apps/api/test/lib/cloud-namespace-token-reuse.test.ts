@@ -98,7 +98,7 @@ it("renews expiring credentials once across concurrent clients", async () => {
   ]);
   vi.setSystemTime(Date.now() + 1741_000);
   await Promise.all(
-    clients.map(({ client }) => client._http.request({ method: "GET", path: "/workspace" })),
+    clients.map(({ client }) => client._http.request({ method: "GET", path: "/vms" })),
   );
   expect(h.mint).toHaveBeenCalledTimes(2);
   expect(fetcher.mock.calls).toHaveLength(2);
@@ -111,12 +111,12 @@ it("evicts rejected credentials without replaying a mutation", async () => {
     .mockImplementation(async () => Response.json({ success: true }));
   vi.stubGlobal("fetch", fetcher);
   const { client } = await getNamespaceClient("org", "space");
-  await expect(client._http.request({ method: "POST", path: "/workspace" })).rejects.toMatchObject({
+  await expect(client._http.request({ method: "POST", path: "/vms" })).rejects.toMatchObject({
     status: 401,
   });
   expect(fetcher).toHaveBeenCalledTimes(1);
   const next = await getNamespaceClient("org", "space");
-  await next.client._http.request({ method: "GET", path: "/workspace" });
+  await next.client._http.request({ method: "GET", path: "/vms" });
   expect(h.mint).toHaveBeenCalledTimes(2);
   expect(new Headers(fetcher.mock.calls[1]![1].headers).get("authorization")).toBe(
     "Bearer token-2",
@@ -171,9 +171,9 @@ it("does not evict a renewed token when an older request returns a late 401", as
     .mockImplementation(async () => Response.json({ success: true }));
   vi.stubGlobal("fetch", fetcher);
   const { client } = await getNamespaceClient("org", "space");
-  const old = client._http.request({ method: "POST", path: "/workspace" }).catch((error) => error);
+  const old = client._http.request({ method: "POST", path: "/vms" }).catch((error) => error);
   vi.setSystemTime(Date.now() + 1741_000);
-  await client._http.request({ method: "GET", path: "/workspace" });
+  await client._http.request({ method: "GET", path: "/vms" });
   rejectOld(Response.json({ code: "token_revoked" }, { status: 401 }));
   expect(await old).toMatchObject({ status: 401 });
   await getNamespaceClient("org", "space");

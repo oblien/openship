@@ -1,10 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { WorkspaceHandle } from "oblien";
+import type { VMHandle } from "oblien";
 
 /** An accepted deletion is still running on Oblien. Keep local cleanup pending
  * until the scoped resource is absent; a failed read must not erase ownership. */
 export async function deleteCloudWorkspace(
-  workspace: Pick<WorkspaceHandle, "delete" | "get">,
+  workspace: Pick<VMHandle, "delete" | "get">,
   options: { timeoutMs?: number } = {},
 ): Promise<void> {
   try {

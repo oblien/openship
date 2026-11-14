@@ -227,7 +227,7 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
             ? await openRuntime()
             : await CloudDockerRuntime.forWorkspace(
                 {
-                  workspaces: {
+                  vms: {
                     get: async () => ({
                       id: serverId,
                       namespace: owner.organizationId,
