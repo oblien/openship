@@ -59,7 +59,6 @@ function customQuote(resources: CustomServerResources): BillingCustomQuote {
 let management: ManagementState;
 let root: Root;
 let host: HTMLDivElement;
-let popup: { opener: object | null; closed: boolean; location: { href: string }; close: ReturnType<typeof vi.fn> };
 function SidebarState() {
   const { autoCollapse } = useSidebarLayout();
   const { collapsed } = useSidebarCollapse("plans", autoCollapse);
@@ -101,16 +100,16 @@ beforeEach(() => {
   vi.resetAllMocks(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.user = "user-a"; h.org = "org-a"; h.connected = true; h.sessionPending = false;
   window.location.href = "http://localhost:3000/";
+  sessionStorage.clear();
   management = { pricing: PRICING.management, purchasesAvailable: true, cloudIncluded: false,
     active: false, serverLimit: 0, connectedServers: 0, pendingCheckout: false, subscription: null, change: null };
-  h.get.mockImplementation(async (path, options) => path === "/billing/manage" ? { data: management } : path.endsWith("/quote")
+  h.get.mockImplementation(async (path, options) => path === "billing/checkouts" ? { data: { items: [] } } : path === "/billing/manage" ? { data: management } : path.endsWith("/quote")
     ? { data: customQuote(options.params) } : catalog);
   h.create.mockResolvedValue(server);
   h.readServer.mockResolvedValue({ id: server.serverId, name: server.name, managed: server });
   h.available.mockResolvedValue({ servers: [] });
   h.post.mockResolvedValue({ data: { checkoutUrl: "https://checkout.example.test/new-server" } });
-  popup = { opener: {}, closed: false, location: { href: "about:blank" }, close: vi.fn() };
-  vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  vi.spyOn(window, "open").mockReturnValue(null);
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {
@@ -259,6 +258,7 @@ describe("referral checkout handoff", () => {
 describe("annual Cloud purchases", () => {
   beforeEach(() => {
     h.get.mockImplementation(async (path, options) => {
+      if (path === "billing/checkouts") return { data: { items: [] } };
       if (path.endsWith("/quote")) {
         const annual = options.params.interval === "annual";
         return { data: { ...customQuote(options.params), reference: annual ? "quote-annual" : "quote-monthly",
@@ -546,7 +546,83 @@ describe("buying another managed server", () => {
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
     await click("Choose Starter");
-    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName });
+    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName, idempotencyKey: expect.any(String) });
+  });
+
+  it("reuses the manual server identity after a lost response and reopening the modal", async () => {
+    h.create.mockRejectedValueOnce(new Error("Creation response lost"));
+    await render(<ManagedServerPurchase preserveProject />);
+    await click("Choose Hobby");
+    expect(h.post).not.toHaveBeenCalled();
+    const first = h.create.mock.calls[0];
+    await act(async () => root.unmount()); root = createRoot(host);
+    await render(<ManagedServerPurchase preserveProject />);
+    await click("Choose Hobby");
+    expect(h.create.mock.calls[1]).toEqual(first);
+    expect(h.post).toHaveBeenCalledOnce();
+    await click("Choose Hobby");
+    expect(h.post).toHaveBeenCalledOnce();
+  });
+
+  it("reopens an existing unpaid purchase without creating another Cloud space", async () => {
+    await render(<ModalProvider><AddServerFromProject /></ModalProvider>);
+    await click("Add a destination"); await click("Choose Hobby");
+    expect(h.create).toHaveBeenCalledOnce();
+    await click(copy.workspaces.returnToSetup);
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === "billing/checkouts" ? Promise.resolve({ data: { items: [{
+      id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Saved Hobby",
+      amountCents: 1200, currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
+    }] } }) : ordinary(path, options));
+    await click("Add a destination"); await click("Choose Hobby");
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain("Saved Hobby");
+    expect(h.post).toHaveBeenCalledOnce();
+    h.post.mockResolvedValueOnce({ data: { status: "ready", checkoutId: "cs_pending", checkoutUrl: "https://checkout.example.test/original" } });
+    await click(copy.pendingPayments.resume);
+    expect(h.post).toHaveBeenLastCalledWith("billing/checkout/resume", { workspaceId: server.id, id: "a".repeat(64) });
+    expect(window.open).toHaveBeenLastCalledWith("https://checkout.example.test/original", "_blank", "noopener,noreferrer");
+  });
+
+  it("never creates resources when pending payments cannot be checked", async () => {
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === "billing/checkouts" ? Promise.reject(new Error("Payment status unavailable")) : ordinary(path, options));
+    await render(<ManagedServerPurchase preserveProject />); await click("Choose Hobby");
+    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Payment status unavailable");
+  });
+
+  it("opens recovery for a submitted payment without attempting another subscription", async () => {
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === "billing/checkouts" ? Promise.resolve({ data: { items: [{
+      id: "a".repeat(64), checkoutId: "cs_processing", server: { ...server, planTierId: "hobby" },
+      kind: "subscription", name: "Submitted Hobby payment", amountCents: 1200, currency: "usd",
+      interval: "monthly", state: "processing", canResume: false, canCancel: false,
+    }] } }) : ordinary(path, options));
+    await render(<ManagedServerPurchase preserveProject />); await click("Choose Hobby");
+    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Submitted Hobby payment");
+    expect(document.body.textContent).toContain(copy.pendingPayments.states.processing);
+  });
+
+  it("starts a new manual space after the previous purchase completed", async () => {
+    h.create.mockResolvedValueOnce({ ...server, planTierId: "hobby", state: "running" });
+    await render(<ManagedServerPurchase preserveProject />); await click("Choose Hobby");
+    expect(h.create).toHaveBeenCalledTimes(2);
+    expect(h.create.mock.calls[1][0].idempotencyKey).not.toBe(h.create.mock.calls[0][0].idempotencyKey);
+    expect(h.post).toHaveBeenCalledOnce();
+  });
+
+  it("does not create a space after the pending-payment read resolves for a different account", async () => {
+    let finish!: (value: unknown) => void;
+    const ordinary = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, options) => path === "billing/checkouts" ? new Promise(resolve => { finish = resolve; }) : ordinary(path, options));
+    await render(<ManagedServerPurchase preserveProject />); await click("Choose Hobby");
+    h.org = "org-b"; await render(<ManagedServerPurchase preserveProject />);
+    await act(async () => finish({ data: { items: [] } }));
+    expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
   });
 
   it("keeps the landing-page plan using the live offer without creating anything on arrival", async () => {
@@ -645,9 +721,8 @@ describe("buying another managed server", () => {
       id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Starter", amountCents: 2000,
       currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
     }] } } : catalog);
-    h.post.mockRejectedValueOnce(new ApiError(409, "Already pending", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" }));
     await render(<ManagedServerPurchase requestedPlanId="starter" autoCheckout checkoutIntent={key} />);
-    const first = h.post.mock.calls[0][1].idempotencyKey;
+    expect(h.post).not.toHaveBeenCalled();
     await click(copy.pendingPayments.cancel);
     h.post.mockResolvedValueOnce({ data: { status: "expired", checkoutId: "cs_pending", checkoutUrl: null } });
     await click(copy.pendingPayments.confirmCancel);
@@ -655,14 +730,15 @@ describe("buying another managed server", () => {
     expect(url.searchParams.has("startCheckout")).toBe(false);
     expect(url.searchParams.get("checkoutIntent")).toBe(key);
     expect(url.searchParams.get("checkoutAttempt")).not.toBe(key);
-    expect(h.post).toHaveBeenCalledTimes(2);
+    expect(h.post).toHaveBeenCalledOnce();
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [] } } : catalog);
     await act(async () => root.unmount()); root = createRoot(host);
     await render(<ManagedServerPurchase requestedPlanId="starter" checkoutIntent={key} />);
-    expect(h.post).toHaveBeenCalledTimes(2);
+    expect(h.post).toHaveBeenCalledOnce();
     await click("Choose Starter");
-    expect(h.create.mock.calls[1]).toEqual(h.create.mock.calls[0]);
-    expect(h.post.mock.calls[2][1].idempotencyKey).not.toBe(first);
-    expect(h.post.mock.calls[2][1].workspaceId).toBe(server.id);
+    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName, idempotencyKey: key });
+    expect(h.post.mock.calls[1][1].idempotencyKey).toBe(`${url.searchParams.get("checkoutAttempt")}-starter-monthly`);
+    expect(h.post.mock.calls[1][1].workspaceId).toBe(server.id);
   });
 
   it("starts a fresh explicit purchase after removing the cancelled draft", async () => {
@@ -672,7 +748,6 @@ describe("buying another managed server", () => {
       id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Starter", amountCents: 2000,
       currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
     }] } } : catalog);
-    h.post.mockRejectedValueOnce(new ApiError(409, "Already pending", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" }));
     await render(<ManagedServerPurchase requestedPlanId="starter" autoCheckout checkoutIntent={key} />);
     await click(copy.pendingPayments.cancel);
     h.post.mockResolvedValueOnce({ data: { status: "expired", checkoutId: "cs_pending", checkoutUrl: null } });
@@ -680,11 +755,12 @@ describe("buying another managed server", () => {
     h.remove.mockResolvedValueOnce({ data: { accepted: true } });
     await click(copy.pendingPayments.deleteServer);
     await click(copy.workspaces.confirmDelete);
-    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.create).not.toHaveBeenCalled();
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [] } } : catalog);
     expect(new URL(window.location.href).searchParams.get("checkoutIntent")).not.toBe(key);
     expect(new URL(window.location.href).searchParams.has("startCheckout")).toBe(false);
     await click("Choose Starter");
-    expect(h.create.mock.calls[1][0].idempotencyKey).not.toBe(key);
+    expect(h.create.mock.calls[0][0].idempotencyKey).not.toBe(key);
   });
 
   it("does not continue a pending pricing purchase in another account or organization", async () => {
@@ -706,7 +782,7 @@ describe("buying another managed server", () => {
       currentPeriod: { start: null, end: null }, monthlyCreditLimit: 0, buildTimeMinutes: 0,
       balance: { total: 0, quotaLimit: 0, quotaUsed: 0, quotaRemaining: 0 },
       workspace: server, billing: { enabled: true } };
-    h.get.mockImplementation(async path => path === "billing/state" ? { data: billing } : catalog);
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [] } } : path === "billing/state" ? { data: billing } : catalog);
     const location = window.location.href;
     await render(<ModalProvider><AddServerFromProject /></ModalProvider>);
     await click("Add a destination");
@@ -741,7 +817,7 @@ describe("buying another managed server", () => {
     const started = vi.fn();
     await render(<BillingWorkspaceProvider workspaceId="cws-already-paid"><ManagedServerPurchase preserveProject onCheckoutStarted={started} /></BillingWorkspaceProvider>);
     await act(async () => { buttons("Choose Starter")[0]!.click(); buttons("Choose Starter")[0]!.click(); });
-    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName });
+    expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName, idempotencyKey: expect.any(String) });
     expect(h.post).not.toHaveBeenCalled();
     await act(async () => created(server));
     expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ workspaceId: server.id, planTierId: "starter" }));
@@ -750,8 +826,7 @@ describe("buying another managed server", () => {
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.post.mock.calls[1]).toEqual(h.post.mock.calls[0]);
     expect(started).toHaveBeenCalledWith(server, "https://checkout.example.test/new-server");
-    expect(popup.location.href).toBe("https://checkout.example.test/new-server");
-    expect(popup.opener).toBeNull();
+    expect(window.open).toHaveBeenCalledExactlyOnceWith("https://checkout.example.test/new-server", "_blank", "noopener,noreferrer");
   });
 
   it("keeps the new server and exact purchase when retrying from unavailable-capacity feedback", async () => {
@@ -762,7 +837,7 @@ describe("buying another managed server", () => {
     await click("Choose Pro");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(copy.checkoutUnavailable.capacityTitle);
     expect(document.body.textContent).not.toContain("Raw provider failure");
-    expect(popup.close).toHaveBeenCalledOnce();
+    expect(window.open).not.toHaveBeenCalled();
     expect(h.post.mock.calls[0]![1]).toMatchObject({ workspaceId: server.id, planTierId: "pro" });
     await click(copy.checkoutUnavailable.retry);
     expect(h.create).toHaveBeenCalledOnce();
@@ -775,7 +850,6 @@ describe("buying another managed server", () => {
       id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Saved Starter",
       amountCents: 2000, currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
     }] } } : catalog);
-    h.post.mockRejectedValueOnce(new ApiError(409, "Blocked", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING", error: "Raw pending error" }));
     h.post.mockImplementation(async path => path === "billing/checkout/cancel"
       ? { data: { status: "expired", checkoutId: "cs_pending", checkoutUrl: null } }
       : { data: { checkoutUrl: "https://checkout.example.test/new-server" } });
@@ -785,6 +859,7 @@ describe("buying another managed server", () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(copy.pendingPayments.title);
     expect(document.body.textContent).not.toContain("Raw pending error");
     await click(copy.pendingPayments.cancel); await click(copy.pendingPayments.confirmCancel);
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [] } } : catalog);
     if (remove) {
       await click(copy.pendingPayments.deleteServer); await click(copy.workspaces.confirmDelete);
       h.create.mockResolvedValueOnce({ ...server, id: "cws-replacement", serverId: "server-replacement" });
@@ -792,10 +867,9 @@ describe("buying another managed server", () => {
     await act(async () => document.querySelector<HTMLButtonElement>(`button[aria-label="${copy.checkoutUnavailable.close}"]`)!.click());
     await click("Choose Starter");
     const attempts = h.post.mock.calls.filter(([path]) => path === "billing/subscription").map(([, input]) => input);
-    expect(attempts).toHaveLength(2);
-    expect(attempts[1].idempotencyKey).not.toBe(attempts[0].idempotencyKey);
-    expect(attempts[1].workspaceId).toBe(remove ? "cws-replacement" : server.id);
-    expect(h.create).toHaveBeenCalledTimes(remove ? 2 : 1);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].workspaceId).toBe(remove ? "cws-replacement" : server.id);
+    expect(h.create).toHaveBeenCalledTimes(remove ? 1 : 0);
   });
 
   it("discards an unavailable checkout when the customer changes organization", async () => {
@@ -818,7 +892,7 @@ describe("buying another managed server", () => {
     await render(<ManagedServerPurchase preserveProject />);
     await act(async () => created(server));
     expect(h.post).not.toHaveBeenCalled();
-    expect(popup.close).toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
     h.create.mockResolvedValueOnce({ ...server, id: "cws-org-b" });
     await click("Choose Starter");
     expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ workspaceId: "cws-org-b" }));

@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import type { ActionBudget as BudgetData, ActionCreditPurchase } from "@repo/contracts";
 import { billingApi } from "@/lib/api/billing";
-import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
+import { navigateToCheckout } from "@/lib/checkout-navigation";
 import { randomUUID } from "@/lib/random-uuid";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,6 @@ function Budget({ onClose }: { onClose?: () => void }) {
 
   async function checkout(id?: string) {
     if (!data?.purchasesAvailable || mutation.busy) return;
-    const navigation = beginCheckoutNavigation(!!onClose);
     setCheckoutUrl(null);
     if (!attempts.current.has(deposit)) attempts.current.set(deposit, randomUUID());
     const result = await mutation.execute(() =>
@@ -85,15 +84,13 @@ function Budget({ onClose }: { onClose?: () => void }) {
     );
     if (result?.checkoutUrl) {
       const url = result.checkoutUrl;
-      const destination = await mutation.execute(async () => navigation.navigate(url));
+      const destination = await mutation.execute(async () => navigateToCheckout(url, !!onClose));
       if (destination) setCheckoutUrl(destination);
-      else navigation.close();
     } else if (result && !id) {
       // A completed/expired intent is no longer a new deposit. A subsequent
       // explicit purchase gets its own key; uncertain responses keep this one.
       attempts.current.delete(deposit);
     }
-    if (!result?.checkoutUrl) navigation.close();
     budget.refresh();
   }
 

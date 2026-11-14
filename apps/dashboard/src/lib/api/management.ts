@@ -1,8 +1,11 @@
 import type { BillingOperations } from "@repo/contracts";
 import { api } from "./client";
+import { invalidatePayments } from "@/lib/billing-events";
 type Result<K extends keyof BillingOperations> = Awaited<ReturnType<BillingOperations[K]>>;
-const post = async <K extends keyof BillingOperations>(path: string, body?: unknown) =>
-  (await api.post<{ data: Result<K> }>(`/billing/manage/${path}`, body)).data;
+const post = async <K extends keyof BillingOperations>(path: string, body?: unknown) => {
+  try { return (await api.post<{ data: Result<K> }>(`/billing/manage/${path}`, body)).data; }
+  finally { invalidatePayments(); }
+};
 export const managementApi = {
   get: async () => (await api.get<{ data: Result<"getManagement"> }>("/billing/manage")).data,
   purchase: (input: Parameters<BillingOperations["purchaseManagement"]>[0]) =>

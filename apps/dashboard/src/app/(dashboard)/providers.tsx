@@ -7,6 +7,7 @@ import { PlatformProvider } from "@/context/PlatformContext";
 import { MailScopeProvider } from "@/context/MailScopeContext";
 import { AuthProvider, type AuthUser } from "@/context/AuthContext";
 import { ModalProvider } from "@/context/ModalContext";
+import { DashboardPaymentsProvider } from "@/components/billing/PendingCheckoutsContext";
 import type { ProductView } from "@/lib/product-view";
 
 interface DashboardProvidersProps {
@@ -50,7 +51,7 @@ export function DashboardProviders({
   // Modal content renders where its provider lives, even when opened by a
   // descendant. Keep dashboard dialogs inside their platform/auth/mail context;
   // the root layout's provider serves public screens outside this shell.
-  const content = <ModalProvider><LocalePreferenceSync />{children}</ModalProvider>;
+  const content = <DashboardPaymentsProvider><ModalProvider><LocalePreferenceSync />{children}</ModalProvider></DashboardPaymentsProvider>;
   return (
     <AuthProvider initialUser={initialUser}>
       <PlatformProvider

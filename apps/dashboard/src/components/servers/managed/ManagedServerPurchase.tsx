@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
@@ -8,8 +9,9 @@ import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceC
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
 import { systemApi } from "@/lib/api/system";
-import { getApiErrorMessage } from "@/lib/api/client";
-import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
+import { billingApi } from "@/lib/api/billing";
+import { useResourceScope } from "@/hooks/use-scoped-resource";
 import { randomUUID } from "@/lib/random-uuid";
 import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
 
@@ -31,8 +33,7 @@ interface PurchaseProps {
  * Browsing does not create a server; retries reuse the identity just created. */
 export function ManagedServerPurchase(props: PurchaseProps) {
   const { data: session, isPending } = useSession();
-  const cloudKey = useCloudResourceKey();
-  const contextKey = `${cloudKey}:${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const contextKey = useResourceScope();
   const [intent, setIntent] = useState<{ owner: string; key: string; paymentKey: string; automatic: boolean } | null>(null);
   useEffect(() => {
     if (intent || isPending || !session?.user.id || !session.session.activeOrganizationId) return;
@@ -84,14 +85,55 @@ function Purchase({
   onIntentRemoved,
 }: PurchaseProps & { sessionPending?: boolean; onCheckoutSettled?: () => void; onIntentRemoved?: () => void }) {
   const { t } = useI18n();
+  const scope = useResourceScope();
+  const owner = useRef(scope);
+  owner.current = scope;
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const created = useRef<CloudWorkspaceSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function prepareWorkspace() {
-    created.current ??= await systemApi.createManagedServer({
-      name: t.billing.workspaces.defaultName,
-      ...(checkoutIntent ? { idempotencyKey: checkoutIntent } : {}),
-    });
+    if (created.current) return created.current.id;
+    // Reopening a modal must recover its unpaid space, not buy another one.
+    // Recover its saved payment directly, including processing payments.
+    const pending = await billingApi.listCheckouts();
+    if (!mounted.current || owner.current !== scope) throw new Error("Purchase scope changed");
+    const unfinished = pending.items.find(item => item.kind === "subscription");
+    if (unfinished) {
+      created.current = unfinished.server;
+      return { workspaceId: unfinished.server.id, checkoutPending: true as const };
+    }
+    const storageKey = `openship:cloud-purchase:${scope}`;
+    let key = checkoutIntent;
+    if (!key) {
+      try { key = sessionStorage.getItem(storageKey) ?? undefined; }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
+      if (!isCloudPurchaseIntent(key)) key = randomUUID();
+      try { sessionStorage.setItem(storageKey, key); }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
+    }
+    const create = (idempotencyKey: string) => {
+      if (!mounted.current || owner.current !== scope) throw new Error("Purchase scope changed");
+      return systemApi.createManagedServer({ name: t.billing.workspaces.defaultName, idempotencyKey });
+    };
+    let server: CloudWorkspaceSummary;
+    try { server = await create(key); }
+    catch (error) {
+      if (checkoutIntent || getApiErrorCode(error) !== "CLOUD_WORKSPACE_PURCHASE_REMOVED") throw error;
+      key = randomUUID();
+      try { sessionStorage.setItem(storageKey, key); }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
+      server = await create(key);
+    }
+    if (!checkoutIntent && (server.planTierId !== "free" || server.resources)) {
+      // The last purchase completed. This explicit Add space is a new purchase.
+      key = randomUUID();
+      try { sessionStorage.setItem(storageKey, key); }
+      catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }
+      server = await create(key);
+    }
+    created.current = server;
     return created.current.id;
   }
 

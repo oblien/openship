@@ -6,6 +6,12 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Cloud billing
+
+- Open checkout only when its payment URL is ready, with a visible fallback button.
+  Recover unfinished Cloud purchases when reopening setup instead of creating duplicate
+  unpaid spaces. Show pending-plan warnings in the Plans & billing sidebar entry.
+
 ### Backups
 
 - Back up verified existing empty Docker volumes and bind directories without blocking

@@ -1,19 +1,18 @@
-/** Reserve a tab inside the user's click so payment never discards a draft.
- * The API validates hosted-payment URLs; blocked popups retain a manual link. */
-export function beginCheckoutNavigation(preserveProject: boolean) {
-  const tab = preserveProject ? window.open("about:blank", "_blank") : null;
-  if (tab) tab.opener = null;
-  return {
-    close: () => tab?.close(),
-    navigate(value: string) {
-      const url = new URL(value);
-      if (url.protocol !== "https:") throw new Error("Invalid checkout URL");
-      if (preserveProject) {
-        if (tab && !tab.closed) tab.location.href = url.href;
-      } else {
-        window.location.href = url.href;
-      }
-      return url.href;
-    },
-  };
+import { reportCaughtError } from "@repo/core/diagnostics";
+
+/** The API validates payment hosts. Open only its final HTTPS URL.
+ * Blocked popups retain the visible checkout
+ * action; failed requests never leave blank tabs or discard project drafts. */
+export function navigateToCheckout(value: string, preserveProject: boolean) {
+  const url = new URL(value);
+  if (url.protocol !== "https:") throw new Error("Invalid checkout URL");
+  if (preserveProject) {
+    try { window.open(url.href, "_blank", "noopener,noreferrer"); }
+    catch {
+      // Browser errors can embed the payment URL. Report no hosted-session data.
+      reportCaughtError(new Error("Browser refused to open hosted checkout"), "dashboard/lib/checkout-navigation");
+      // Keep the validated manual action available when popups are refused.
+    }
+  } else window.location.href = url.href;
+  return url.href;
 }
