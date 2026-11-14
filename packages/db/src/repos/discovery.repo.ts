@@ -593,40 +593,72 @@ export function createDiscoveryRepo(db: Database) {
     },
 
     /**
-     * Revert an opt-out that has NOT retired its route yet: clear the pending
-     * withdrawal so the reconciler doesn't remove a route the operator decided
-     * to keep after all. (A withdrawal that already ran cleared the flag via
-     * markWithdrawn; the next scan re-applies from scratch.)
+     * Revert an opt-out. The pending withdrawal is cleared ONLY when it was
+     * suppression-specific: a withdrawal scheduled by server DISABLE (settings
+     * off — those routes must still be removed) or by OBSERVED LOSS
+     * (missing/invalid backend — the upstream is genuinely gone) must survive
+     * the unsuppress, or its route would stay live indefinitely. A withdrawal
+     * that already ran cleared the flag via markWithdrawn; the next scan
+     * re-applies from scratch.
      */
     async unsuppress(serverId: string, serviceKey: string) {
-      const [row] = await db
-        .update(binding)
-        .set({ suppressed: false, suppressedAt: null, withdrawalPending: false, updatedAt: new Date() })
-        .where(and(eq(binding.serverId, serverId), eq(binding.serviceKey, serviceKey)))
-        .returning();
-      return row;
+      return db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(binding)
+          .where(and(eq(binding.serverId, serverId), eq(binding.serviceKey, serviceKey)))
+          .for("update");
+        if (!existing) return undefined;
+        const [settingsRow] = await tx
+          .select({ enabled: settings.enabled })
+          .from(settings)
+          .where(eq(settings.serverId, serverId));
+        // No settings row = discovery is off at the server level: keep the
+        // withdrawal (conservative — removal is the safe direction).
+        const discoveryDisabled = settingsRow ? !settingsRow.enabled : true;
+        const observationLoss =
+          existing.observationStatus === "missing" || existing.observationStatus === "invalid";
+        const suppressionOnly = !discoveryDisabled && !observationLoss;
+        const [row] = await tx
+          .update(binding)
+          .set({
+            suppressed: false,
+            suppressedAt: null,
+            ...(suppressionOnly ? { withdrawalPending: false } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(binding.id, existing.id))
+          .returning();
+        return row;
+      });
     },
 
     /**
      * Disable mode's route policy (docs: "Disable mode cancels watchers,
-     * withdraws discovery-owned application routes"): schedule retirement for
-     * EVERY binding with application history. The reconciler consumes these
-     * even while discovery is disabled (withdrawals are the one stage that
-     * runs for disabled servers) and removes outright — with discovery off,
-     * no vhost is retained at all.
+     * withdraws discovery-owned application routes") in ONE transaction:
+     * flips the settings row to disabled AND schedules retirement for every
+     * binding with application history. Atomicity matters — a crash between
+     * "disabled" and "withdrawals scheduled" would leave live routes on a
+     * disabled server that no sweep would ever select (sweepable = enabled ∪
+     * owing-withdrawals).
      */
-    async scheduleWithdrawalForAll(serverId: string) {
-      const rows = await db
-        .update(binding)
-        .set({ withdrawalPending: true, updatedAt: new Date() })
-        .where(
-          and(
-            eq(binding.serverId, serverId),
-            or(eq(binding.applyState, "applied"), gt(binding.appliedGeneration, 0)),
-          ),
-        )
-        .returning();
-      return rows;
+    async disableAndScheduleWithdrawals(serverId: string) {
+      return db.transaction(async (tx) => {
+        await tx
+          .update(settings)
+          .set({ enabled: false, updatedAt: new Date() })
+          .where(eq(settings.serverId, serverId));
+        return tx
+          .update(binding)
+          .set({ withdrawalPending: true, updatedAt: new Date() })
+          .where(
+            and(
+              eq(binding.serverId, serverId),
+              or(eq(binding.applyState, "applied"), gt(binding.appliedGeneration, 0)),
+            ),
+          )
+          .returning();
+      });
     },
 
     /**

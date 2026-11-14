@@ -47,13 +47,31 @@ export interface DiscoveryServerSweepSummary {
 }
 
 /**
- * ONE queue per server: the startup inventory, the cron tick, and every
- * event-triggered pass serialize through it. Without this, an older pass can
- * read pre-event state and withdraw or replace a route a newer pass just
- * wrote — scan→reconcile is a read-modify-write cycle and must not overlap
- * itself for one server. Different servers still sweep independently.
+ * ONE queue per server: the startup inventory, the cron tick, every
+ * event-triggered pass, AND operator mutations that touch routes (forget)
+ * serialize through it. Without this, an older pass can read pre-event state
+ * and withdraw or replace a route a newer pass just wrote — scan→reconcile is
+ * a read-modify-write cycle and must not overlap itself for one server.
+ * Different servers still queue independently.
  */
-const serverSweepQueues = new Map<string, Promise<DiscoveryServerSweepSummary>>();
+const serverSweepQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Serialize a task on a server's queue. The queue entry observes BOTH outcomes
+ * (then(onFulfilled, onRejected), never a discarded run.finally) so a failing
+ * task rejects only through the CALLER's promise — no unhandled rejection —
+ * and the entry is dropped once it is the tail.
+ */
+export async function runInServerQueue<T>(serverId: string, task: () => Promise<T>): Promise<T> {
+  const tail = serverSweepQueues.get(serverId);
+  const run = (tail ?? Promise.resolve()).catch(() => undefined).then(task);
+  serverSweepQueues.set(serverId, run);
+  const dropQueueEntry = (): void => {
+    if (serverSweepQueues.get(serverId) === run) serverSweepQueues.delete(serverId);
+  };
+  void run.then(dropQueueEntry, dropQueueEntry);
+  return run;
+}
 
 export interface DiscoverySweepSummary {
   servers: number;
@@ -72,27 +90,12 @@ export interface DiscoverySweepSummary {
  * lifecycle event (a stop event just after a scan must not reconcile cached
  * state). Only the recurring cron poll applies the interval.
  */
-export async function sweepServerDiscovery(
+export function sweepServerDiscovery(
   serverId: string,
   organizationId: string,
   options?: { fresh?: boolean },
 ): Promise<DiscoveryServerSweepSummary> {
-  const tail = serverSweepQueues.get(serverId);
-  const run = (tail ?? Promise.resolve<DiscoveryServerSweepSummary>({ serverId, failed: [] }))
-    .catch(() => undefined)
-    .then(() => runServerSweep(serverId, organizationId, options));
-  serverSweepQueues.set(serverId, run);
-  // Drop the queue entry once this run is the tail — otherwise the map grows
-  // by one entry per server forever. The cleanup observes BOTH outcomes: a
-  // bare `run.finally(...)` would discard a rejecting promise (an unhandled
-  // rejection even when the caller catches `run` itself — reproduced with a
-  // failing settings read), while then(onFulfilled, onRejected) settles the
-  // cleanup chain quietly and leaves `run`'s rejection to the caller's catch.
-  const dropQueueEntry = (): void => {
-    if (serverSweepQueues.get(serverId) === run) serverSweepQueues.delete(serverId);
-  };
-  void run.then(dropQueueEntry, dropQueueEntry);
-  return run;
+  return runInServerQueue(serverId, () => runServerSweep(serverId, organizationId, options));
 }
 
 async function runServerSweep(

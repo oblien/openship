@@ -41,7 +41,7 @@ import { repos, type DiscoveryBinding } from "@repo/db";
 import type { Authorization } from "./authorization";
 import type { ExecutionContext } from "./context";
 import type { OperationResult } from "./deployments";
-import { sweepServerDiscovery } from "./engine/modules/discovery/discovery-sweep";
+import { runInServerQueue, sweepServerDiscovery } from "./engine/modules/discovery/discovery-sweep";
 import {
   retireBindingRoute,
   type DiscoveryEdgeTarget,
@@ -136,13 +136,18 @@ export function createDiscoveryOperations(authorization: Authorization): Platfor
       if (!settings && !parsed.enabled) {
         // Configuring nothing to nothing: still a valid no-op state.
       }
-      const row = await repos.discovery.configure(serverId, { enabled: parsed.enabled });
-      if (!row) throw new AppError("Discovery settings could not be written", 500, "DISCOVERY_CONFIGURE_FAILED");
-      if (!parsed.enabled) {
-        // Disable: cancel the accelerator (watcher leases expire) and withdraw
-        // every applied route — the reconciler's withdrawal stage is the one
-        // that runs for disabled servers.
-        await repos.discovery.scheduleWithdrawalForAll(serverId);
+      if (parsed.enabled) {
+        const row = await repos.discovery.configure(serverId, { enabled: true });
+        if (!row) throw new AppError("Discovery settings could not be written", 500, "DISCOVERY_CONFIGURE_FAILED");
+      } else {
+        // Disable is ATOMIC: the settings flip and the withdrawal scheduling
+        // commit together. Committing "disabled" first would leave live routes
+        // on a server no sweep would select if the process died in between
+        // (sweepable = enabled ∪ owing-withdrawals). The reconciler's
+        // withdrawal stage is the one that runs for disabled servers; watcher
+        // leases expire on their own.
+        const rows = await repos.discovery.disableAndScheduleWithdrawals(serverId);
+        void rows;
       }
       return { context: ctx, data: await statusData(ctx, serverId) };
     },
@@ -199,12 +204,17 @@ export function createDiscoveryOperations(authorization: Authorization): Platfor
       await authorizeServer(ctx, serverId, "admin");
       const { serviceKey } = parseInput(DiscoveryServiceActionInputSchema, input ?? {});
       const binding = await requireBinding(serverId, serviceKey);
-      // Retire the route FIRST: a failed removal (edge down) leaves the
-      // binding intact for a retry instead of stranding a route with no
-      // record. Then delete the row; the domain row (certificate material)
-      // deliberately survives.
-      await retireBindingRoute(serverId, ctx.organizationId, binding);
-      await repos.discovery.forget(serverId, serviceKey);
+      // The WHOLE forget runs inside the server's sweep queue: an in-flight
+      // reconcile could otherwise recreate the route between removal and row
+      // deletion, stranding a live route with no binding. Serialization means
+      // any reconcile that read the binding finishes before the removal, and
+      // any pass after the deletion no longer sees it. A failed removal (edge
+      // down) leaves the binding intact for a retry; the domain row
+      // (certificate material) deliberately survives.
+      await runInServerQueue(serverId, async () => {
+        await retireBindingRoute(serverId, ctx.organizationId, binding);
+        await repos.discovery.forget(serverId, serviceKey);
+      });
       return { context: ctx, data: { forgotten: true } };
     },
   };
