@@ -62,7 +62,7 @@ vi.mock("../../lib/background-work", () => ({
   trackBackgroundWork: (p: Promise<unknown>) => p,
 }));
 
-const { sweepDiscovery, sweepServerDiscovery, startDiscoverySweep } = await import("./discovery-sweep");
+const { sweepDiscovery, sweepServerDiscovery, startDiscoverySweep, runInServerQueue } = await import("./discovery-sweep");
 const { scheduleSystemJob } = await import("../../lib/system-jobs");
 
 function enable(serverId: string, organizationId: string | null, settings?: Partial<{ sweepIntervalSeconds: number; lastScanAt: Date | null }>) {
@@ -204,6 +204,59 @@ describe("queue cleanup under rejection", () => {
     discoveryRepo.getSettings.mockRejectedValueOnce(new Error("db hiccough again"));
     await expect(sweepServerDiscovery("srv_1", "org_1")).rejects.toThrow("db hiccough again");
     expect(scan).not.toHaveBeenCalled(); // both failures happened before any stage ran
+  });
+});
+
+describe("runInServerQueue (operator mutations serialize with sweeps)", () => {
+  it("a mutation task waits for an in-flight sweep and vice versa", async () => {
+    enable("srv_1", "org_1");
+    let releaseScan: (() => void) | undefined;
+    scan.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseScan = () =>
+            resolve({ scanned: 1, eligible: 1, observed: [], desiredChanged: [], invalid: [], missing: [], withdrawn: [], blocked: [], errors: [], ok: true });
+        }),
+    );
+    let sweepSettled = false;
+    const sweepPass = sweepServerDiscovery("srv_1", "org_1", { fresh: true }).finally(() => {
+      sweepSettled = true;
+    });
+    // A forget-style mutation enters the queue while the sweep holds it.
+    const mutation = runInServerQueue("srv_1", async () => {
+      // SERIALIZATION: the sweep's every stage completed before this task
+      // started — an in-flight reconcile can never interleave with a route
+      // deletion. (Measured via the stage mocks: the queue's internal run
+      // settles a microtask before its async-wrapper promise, so wrapper
+      // callbacks lag the real completion order.)
+      expect(scan).toHaveBeenCalledTimes(1);
+      expect(reconcile).toHaveBeenCalledTimes(1);
+      expect(repair).toHaveBeenCalledTimes(1);
+    });
+    await vi.waitFor(() => expect(releaseScan).toBeDefined());
+    expect(sweepSettled).toBe(false); // nothing finished yet
+    releaseScan!();
+    await Promise.all([sweepPass, mutation]);
+    expect(sweepSettled).toBe(true);
+  });
+
+  it("a mutation task rejection cleans the queue entry without an unhandled rejection", async () => {
+    enable("srv_1", "org_1");
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      await expect(runInServerQueue("srv_1", async () => { throw new Error("removal failed"); })).rejects.toThrow("removal failed");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toHaveLength(0);
+      // The queue is usable again: the next task is not chained behind the dead one.
+      const result = await runInServerQueue("srv_1", async () => "ok");
+      expect(result).toBe("ok");
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
 

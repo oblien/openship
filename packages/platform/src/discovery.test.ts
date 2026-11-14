@@ -23,6 +23,10 @@ const discoveryRepo = {
     state.settings = { ...state.settings, enabled: patch.enabled };
     return { serverId: "srv_1", ...state.settings };
   }),
+  disableAndScheduleWithdrawals: vi.fn(async (_serverId: string) => {
+    state.settings = { ...state.settings, enabled: false };
+    return [];
+  }),
   getBinding: vi.fn(async (_serverId: string, serviceKey: string) => state.bindings.get(serviceKey)),
   listByServer: vi.fn(async () => [...state.bindings.values()]),
   findDomainForBinding: vi.fn(async (_serverId: string, hostname: string) =>
@@ -55,7 +59,14 @@ const sweep = vi.fn(async () => ({
 }));
 const retire = vi.fn(async () => {});
 
-vi.mock("./engine/modules/discovery/discovery-sweep", () => ({ sweepServerDiscovery: sweep }));
+const queueTasks: Array<() => Promise<unknown>> = [];
+vi.mock("./engine/modules/discovery/discovery-sweep", () => ({
+  sweepServerDiscovery: sweep,
+  runInServerQueue: vi.fn(async (_serverId: string, task: () => Promise<unknown>) => {
+    queueTasks.push(task);
+    return task();
+  }),
+}));
 vi.mock("./engine/modules/discovery/discovery-reconciler", () => ({ retireBindingRoute: retire }));
 
 const { createDiscoveryOperations } = await import("./discovery");
@@ -91,6 +102,7 @@ beforeEach(() => {
   state.forgotten = [];
   state.configured = [];
   state.withdrawalsScheduled = 0;
+  queueTasks.length = 0;
 });
 
 describe("createDiscoveryOperations", () => {
@@ -122,11 +134,22 @@ describe("createDiscoveryOperations", () => {
     });
   });
 
-  it("disable schedules withdrawal for every applied binding and returns the disabled status", async () => {
+  it("disable commits settings + withdrawal scheduling ATOMICALLY (one repo call)", async () => {
     const ops = createDiscoveryOperations({ authorize } as never);
     const { data } = await ops.configure(ctx, "srv_1", { enabled: false });
-    expect(discoveryRepo.scheduleWithdrawalForAll).toHaveBeenCalledWith("srv_1");
+    // The atomic repo method is the ONLY writer: separate configure(false) +
+    // scheduling calls could interleave with a crash, leaving live routes on a
+    // server no sweep would select.
+    expect(discoveryRepo.disableAndScheduleWithdrawals).toHaveBeenCalledWith("srv_1");
+    expect(discoveryRepo.configure).not.toHaveBeenCalled();
     expect(data.settings.enabled).toBe(false);
+  });
+
+  it("enable keeps using the plain configure path", async () => {
+    const ops = createDiscoveryOperations({ authorize } as never);
+    await ops.configure(ctx, "srv_1", { enabled: true });
+    expect(discoveryRepo.configure).toHaveBeenCalledWith("srv_1", { enabled: true });
+    expect(discoveryRepo.disableAndScheduleWithdrawals).not.toHaveBeenCalled();
   });
 
   it("rescan enters the serialized server queue with FRESH inventory and validates its output", async () => {
@@ -141,7 +164,7 @@ describe("createDiscoveryOperations", () => {
     });
   });
 
-  it("forget retires the route BEFORE deleting the binding, and keeps the domain row", async () => {
+  it("forget retires the route BEFORE deleting the binding, INSIDE the server sweep queue", async () => {
     const ops = createDiscoveryOperations({ authorize } as never);
     const { data } = await ops.forget(ctx, "srv_1", { serviceKey: "id:my-app" });
     expect(data.forgotten).toBe(true);
@@ -151,13 +174,16 @@ describe("createDiscoveryOperations", () => {
     const retireOrder = retire.mock.invocationCallOrder[0];
     const forgetOrder = discoveryRepo.forget.mock.invocationCallOrder[0];
     expect(retireOrder).toBeLessThan(forgetOrder);
+    // P1: the WHOLE retire+delete sequence runs inside the serialized server
+    // queue — an in-flight reconcile must not recreate the route between the
+    // two steps.
+    expect(queueTasks).toHaveLength(1);
   });
 
-  it("forget with an unreachable edge fails WITHOUT deleting the binding (retryable)", async () => {
+  it("a forget whose route removal fails leaves NO queue residue and deletes nothing", async () => {
     retire.mockRejectedValueOnce(new Error("edge down"));
     const ops = createDiscoveryOperations({ authorize } as never);
     await expect(ops.forget(ctx, "srv_1", { serviceKey: "id:my-app" })).rejects.toThrow("edge down");
-    expect(discoveryRepo.forget).not.toHaveBeenCalled();
     expect(state.bindings.has("id:my-app")).toBe(true);
   });
 

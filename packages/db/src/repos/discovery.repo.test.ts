@@ -309,6 +309,7 @@ describe("binding observations", () => {
   });
 
   it("suppress schedules retirement for applied bindings and unsuppress reverts a pending one", async () => {
+    await repo.configure(SERVER, { enabled: true }); // discovery ON: unsuppress may cancel its own withdrawal
     await repo.observe(SERVER, observation());
     await repo.markApplied(SERVER, "id:my-app", 1);
     expect(await repo.dueForWithdrawal(SERVER)).toHaveLength(0);
@@ -331,6 +332,23 @@ describe("binding observations", () => {
     const fresh = await repo.suppress(SERVER, "id:fresh");
     expect(fresh?.withdrawalPending).toBe(false);
     expect(await repo.dueForWithdrawal(SERVER)).toHaveLength(0);
+
+    // A withdrawal owed to OBSERVED LOSS survives unsuppress: the upstream is
+    // genuinely gone regardless of the operator's change of heart.
+    await repo.observe(SERVER, observation({ serviceKey: "id:gone", hostname: "gone.example.com", containerId: "ctr_3", ipAddress: "172.20.0.7" }));
+    await repo.markApplied(SERVER, "id:gone", 1);
+    await repo.markMissing(SERVER, "id:gone");
+    expect((await repo.getBinding(SERVER, "id:gone"))?.withdrawalPending).toBe(true);
+    const gone = await repo.unsuppress(SERVER, "id:gone");
+    expect(gone?.suppressed).toBe(false);
+    expect(gone?.withdrawalPending).toBe(true); // preserved
+
+    // A withdrawal owed to server DISABLE survives unsuppress too.
+    await repo.observe(SERVER, observation({ serviceKey: "id:disabled", hostname: "disabled.example.com", containerId: "ctr_4", ipAddress: "172.20.0.8" }));
+    await repo.markApplied(SERVER, "id:disabled", 1);
+    await repo.disableAndScheduleWithdrawals(SERVER);
+    const disabled = await repo.unsuppress(SERVER, "id:disabled");
+    expect(disabled?.withdrawalPending).toBe(true); // preserved
   });
 
   it("disable schedules retirement for every applied binding and the server stays sweepable", async () => {
@@ -343,12 +361,13 @@ describe("binding observations", () => {
     // Enabled servers are sweepable.
     expect((await repo.listSweepableServerIds()).map((r) => r.serverId)).toContain(SERVER);
 
-    const scheduled = await repo.scheduleWithdrawalForAll(SERVER);
+    // Atomic disable: settings flip AND withdrawal scheduling in one step.
+    const scheduled = await repo.disableAndScheduleWithdrawals(SERVER);
     expect(scheduled.map((r) => r.serviceKey).sort()).toEqual(["id:my-app", "id:second"]);
+    expect((await repo.getSettings(SERVER))?.enabled).toBe(false);
 
     // A disabled server owing withdrawals is STILL sweepable (reconcile must
-    // run to retire the routes) — while a merely disabled server is not.
-    await repo.configure(SERVER, { enabled: false });
+    // run to retire the routes).
     expect((await repo.listSweepableServerIds()).map((r) => r.serverId)).toContain(SERVER);
   });
 
