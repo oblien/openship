@@ -46,7 +46,7 @@ import { pinDockerfileBaseImages } from "./docker-base-images";
 import type { BaseImageReceipt } from "@repo/core";
 import {
   DEFAULT_BUILD_CACHE_KEEP_BYTES, DOCKER_BUILD_STORAGE_COMMAND, parseBuildStorage,
-  assertBuildStorage, buildKitCacheConfig,
+  assertBuildStorage, buildKitCacheConfig, BUILD_STORAGE_GC_FREE_FRACTION,
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
   type BuildStorage,
 } from "./docker-build-cache";
@@ -1800,6 +1800,21 @@ export class DockerRuntime implements RuntimeAdapter {
     return buildKitCacheConfig(storage, await this.configuredBuildCacheBudget());
   }
 
+  /** Routine cache accounting belongs to the scheduled sweep. Only storage
+   * pressure justifies walking idle caches on the deployment path.
+   * Called under the same host lock as worker creation and cache collection. */
+  private async checkManagedBuildStorage(executor: CommandExecutor, log?: BuildLogger): Promise<BuildStorage> {
+    const host = await this.buildCacheHostExecutor(executor);
+    let storage = parseBuildStorage(await host.exec(DOCKER_BUILD_STORAGE_COMMAND));
+    if (storage.freeBytes < Math.ceil(storage.totalBytes * BUILD_STORAGE_GC_FREE_FRACTION) || storage.freeInodes === 0) {
+      const cleaned = await this.pruneManagedBuildState(executor);
+      if (cleaned.spaceReclaimed) log?.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
+      storage = parseBuildStorage(await host.exec(DOCKER_BUILD_STORAGE_COMMAND));
+    }
+    assertBuildStorage(storage);
+    return storage;
+  }
+
   /** A failed settings read falls back to the automatic budget rather than failing a build. */
   private async configuredBuildCacheBudget(): Promise<number | null> {
     try {
@@ -1926,10 +1941,7 @@ export class DockerRuntime implements RuntimeAdapter {
       signal?.throwIfAborted();
       await removeProjectBuildKitWorker(executor, config.projectId);
       await this.assertBuildCacheCommandsStopped(config.projectId);
-      const cleaned = await this.pruneManagedBuildState(executor);
-      if (cleaned.spaceReclaimed) log.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
-      const storage = parseBuildStorage(await cacheHost.exec(DOCKER_BUILD_STORAGE_COMMAND));
-      assertBuildStorage(storage);
+      const storage = await this.checkManagedBuildStorage(executor, log);
       const reused = await ensureProjectBuildCache(this.docker, config.projectId);
       const configPath = `/tmp/openship-buildkit-${randomUUID()}.toml`;
       try {
@@ -1958,8 +1970,7 @@ export class DockerRuntime implements RuntimeAdapter {
     await removeProjectBuildKitWorker(executor, projectId);
     await this.assertBuildCacheCommandsStopped(projectId);
     await this.withBuildCacheLock(async () => {
-      await this.pruneManagedBuildState(executor);
-      assertBuildStorage(parseBuildStorage(await (await this.buildCacheHostExecutor(executor)).exec(DOCKER_BUILD_STORAGE_COMMAND)));
+      await this.checkManagedBuildStorage(executor);
     });
   }
 

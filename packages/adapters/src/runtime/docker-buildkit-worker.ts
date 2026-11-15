@@ -26,36 +26,39 @@ export async function removeProjectBuildKitWorker(
   executor: Pick<CommandExecutor, "exec">,
   projectId: string,
 ): Promise<void> {
-  for (const [worker, keepState] of [
+  const workers = [
     [buildKitWorker(projectId, "openship-"), false],
     [projectBuildKitWorker(projectId), true],
-  ] as const) await removeBuildKitWorker(executor, worker, keepState);
-}
-
-async function removeBuildKitWorker(
-  executor: Pick<CommandExecutor, "exec">,
-  { builderName, containerName }: ReturnType<typeof projectBuildKitWorker>,
-  keepState: boolean,
-): Promise<void> {
-  const list = `docker container ls --all --filter ${sq(`name=^/${containerName}$`)} --format ${sq("{{.Names}}")}`;
-  const exists = async () => {
-    const names = (await executor.exec(list)).trim().split(/\r?\n/).filter(Boolean);
-    if (names.some((name) => name !== containerName))
-      throw new Error("Docker returned a different build worker identity");
-    return names.length > 0;
-  };
+  ] as const;
+  const receipt = "OPENSHIP_BUILD_WORKERS_STOPPED";
+  // Run the complete reconciliation beside Docker. Repeated lifecycle checks
+  // still query the daemon, but no longer require four or more remote commands.
+  const script = [
+    "set -eu",
+    ...workers.flatMap(([worker, keepState]) => {
+      const { builderName, containerName } = worker;
+      const list = `docker container ls --all --filter ${sq(`name=^/${containerName}$`)} --format ${sq("{{.Names}}")}`;
+      return [
+        // Buildx metadata can remain after an interrupted client even if its
+        // container is gone. Remove it without treating its exit code as proof.
+        `docker buildx rm --force${keepState ? " --keep-state" : ""} ${sq(builderName)} >/dev/null 2>&1 || true`,
+        `names="$(${list})"`,
+        `case "$names" in`,
+        "  '') ;;",
+        `  ${sq(containerName)})`,
+        `    docker container rm --force ${sq(containerName)} >/dev/null 2>&1 || true`,
+        `    names="$(${list})"`,
+        '    test -z "$names" ;;',
+        "  *) exit 1 ;;",
+        "esac",
+      ];
+    }),
+    `printf '%s\\n' ${sq(receipt)}`,
+  ].join("\n");
   try {
-    // Buildx state may already be missing. The daemon check below is authoritative.
-    // Managed cache GC owns state deletion after the worker is confirmed absent.
-    await executor.exec(`docker buildx rm --force${keepState ? " --keep-state" : ""} ${sq(builderName)}`).catch(() => {
-      /* diagnostics-ignore: Confirmed daemon absence below supersedes CLI metadata errors. */
-    });
-    if (await exists()) {
-      await executor.exec(`docker container rm --force ${sq(containerName)}`).catch(() => {
-        /* diagnostics-ignore: A lost removal reply is resolved by the daemon query below. */
-      });
-      if (await exists()) throw new Error("Docker still reports the project build worker");
-    }
+    const output = await executor.exec(script);
+    if (!output.split(/\r?\n/).includes(receipt))
+      throw new Error("Docker did not confirm build worker shutdown");
   } catch (cause) {
     throw Object.assign(
       new AppError(

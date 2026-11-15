@@ -92,6 +92,10 @@ export function buildCacheKeepBytes(
   return Math.min(configuredBytes, Math.max(0, storage.totalBytes - buildStorageReserve(storage)));
 }
 
+function buildCacheRetentionFloor(storage: BuildStorage): number {
+  return Math.min(DEFAULT_BUILD_CACHE_KEEP_BYTES, Math.floor(storage.totalBytes / 10));
+}
+
 /**
  * Below the 20% free-space GC target, idle caches give space back before rollback artifacts and
  * running apps do: the budget shrinks to what still fits above that target, but never below the
@@ -106,7 +110,7 @@ export function pressureAdjustedKeepBytes(
 ): number {
   const freeTarget = Math.ceil(storage.totalBytes * BUILD_STORAGE_GC_FREE_FRACTION);
   if (storage.freeBytes >= freeTarget) return budgetBytes;
-  const floor = Math.min(DEFAULT_BUILD_CACHE_KEEP_BYTES, Math.floor(storage.totalBytes / 10));
+  const floor = buildCacheRetentionFloor(storage);
   return Math.min(budgetBytes, Math.max(floor, idleCacheBytes + storage.freeBytes - freeTarget));
 }
 
@@ -392,5 +396,9 @@ export function buildKitCacheConfig(
   storage: BuildStorage,
   configuredBudgetBytes?: number | null,
 ): string {
-  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage, configuredBudgetBytes)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
+  const budget = buildCacheKeepBytes(storage, configuredBudgetBytes);
+  // Match idle-cache retention: otherwise an unattainable free-space target
+  // evicts even freshly built layers and every redeploy becomes a cold build.
+  const reserved = Math.min(budget, buildCacheRetentionFloor(storage));
+  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = ${reserved}\nmaxUsedSpace = ${budget}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
 }

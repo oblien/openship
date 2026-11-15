@@ -23,6 +23,7 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
       command.includes("docker info --format '{{.ID}}'") ? "test-daemon" :
       command.startsWith("docker info --format") ? JSON.stringify({ OSType: "linux", SecurityOptions: [] }) :
       command.startsWith("docker image inspect") ? JSON.stringify([{ Config: { Labels: { "org.openship.build-metadata-policy": "1" }, Entrypoint: ["/usr/local/bin/openship-buildkitd"] } }]) :
+      command.includes("OPENSHIP_BUILD_WORKERS_STOPPED") ? "OPENSHIP_BUILD_WORKERS_STOPPED\n" :
       command.includes("df -Pk") ? "104857600 52428800\n200000 100000\n" : "",
     ),
     writeFile: vi.fn(async () => {}),
@@ -61,6 +62,41 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
 }
 
 describe("Cloud Docker build execution limits", () => {
+  it("keeps routine cache inventory out of a build with sufficient storage", async () => {
+    const h = fixture();
+    await h.run();
+    expect(h.runtime._docker.listVolumes).not.toHaveBeenCalled();
+    expect(h.runtime._docker.listContainers).not.toHaveBeenCalled();
+    expect(h.commands()).not.toContain("du -sk");
+    expect(h.commands()).toContain("df -Pk");
+  });
+
+  it.each(["bytes", "inodes", "headroom"])("reclaims idle cache under %s pressure", async dimension => {
+    const h = fixture();
+    const exec = h.executor.exec.getMockImplementation()!;
+    let reclaimed = false;
+    h.executor.exec.mockImplementation(command => command.includes("df -Pk") && !reclaimed
+      ? Promise.resolve(dimension === "bytes" ? "104857600 0\n200000 100000\n" : dimension === "headroom" ? "104857600 15728640\n200000 100000\n" : "104857600 52428800\n200000 0\n")
+      : exec(command));
+    h.runtime.pruneManagedBuildState = vi.fn(async () => {
+      reclaimed = true;
+      return { cachesDeleted: ["idle-cache"], spaceReclaimed: 4096 };
+    });
+    await h.run();
+    expect(h.runtime.pruneManagedBuildState).toHaveBeenCalledTimes(1);
+    expect(h.executor.streamExec).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses repository execution when reclaim does not restore storage", async () => {
+    const h = fixture();
+    const exec = h.executor.exec.getMockImplementation()!;
+    h.executor.exec.mockImplementation(command => command.includes("df -Pk")
+      ? Promise.resolve("104857600 0\n200000 100000\n") : exec(command));
+    h.runtime.pruneManagedBuildState = vi.fn(async () => ({ cachesDeleted: [], spaceReclaimed: 0 }));
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_STORAGE_LOW" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+  });
+
   it("clears both native and protected caches on explicit trusted-host maintenance", async () => {
     const h = fixture("ssh");
     h.runtime.connectionOptions.nativeBuilds = true;
