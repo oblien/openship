@@ -66,7 +66,7 @@ export default function HomeAppsCard({
                 className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               />
               <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background">
-                <ProjectIcon project={project} appTemplateId={project.appTemplateId} preferAppLogo className="size-5" />
+                <ProjectIcon project={project} appTemplateId={project.appTemplateId} className="size-5" />
               </div>
               <p
                 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"

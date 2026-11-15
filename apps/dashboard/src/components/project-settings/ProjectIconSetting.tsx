@@ -23,16 +23,14 @@ export function ProjectIconSetting() {
           project={{
             ...projectData,
             iconUrl: null,
-            favicon: projectData.iconUrl ? null : projectData.favicon,
           }}
           appTemplateId={projectData.appTemplateId}
-          preferAppLogo={!!projectData.isApp}
           className="size-7"
         />
       }
       onSave={async (iconUrl) => {
         const response = await projectsApi.update(projectData.id, { iconUrl });
-        updateProjectData({ iconUrl, favicon: response.data.favicon });
+        updateProjectData({ iconUrl: response.data.iconUrl });
         invalidateProjectCaches(projectData.id);
       }}
     />

@@ -21,10 +21,3 @@ export function isImageUrl(value: unknown): value is string {
     return false;
   }
 }
-
-/** One precedence rule for every project and deployment presentation. */
-export function projectIconUrl(
-  project: { iconUrl?: string | null; favicon?: string | null } | null | undefined,
-): string | null {
-  return project?.iconUrl || project?.favicon || null;
-}

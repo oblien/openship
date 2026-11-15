@@ -5,7 +5,6 @@ import { OperationError } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { presentProject } from "../../../projects";
 import { authorization } from "../../lib/authorization";
-import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
 import { canProxyCloudResources } from "../../lib/cloud/scope";
 import * as projectService from "./project.service";
@@ -85,10 +84,6 @@ export async function getProjectHome(ctx: ExecutionContext) {
     const latest = latestByProject.get(original.id);
     const primary = primariesByProject.get(original.id);
     const services = servicesByProject.get(original.id) ?? [];
-
-    refreshProjectFaviconIfStale(original, {
-      hostname: primary?.verified ? primary.hostname : null,
-    });
 
     return {
       ...presentProject(enriched),

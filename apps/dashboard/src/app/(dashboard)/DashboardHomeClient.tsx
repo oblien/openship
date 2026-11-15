@@ -143,7 +143,7 @@ export default function DashboardHomeClient({
               ) : (
                 <div className="divide-y divide-border/50">
                   {sourceProjects.slice(0, 5).map((p) => (
-                    <ProjectCard key={p.id} project={p} preferAppLogo onChanged={() => removeProject(p.id)} />
+                    <ProjectCard key={p.id} project={p} onChanged={() => removeProject(p.id)} />
                   ))}
                 </div>
               )}

@@ -48,9 +48,6 @@ interface Props {
    *  every row by the projects list and `/info`, but isn't declared on `Project`
    *  (constants/mock) yet, so it's spelled out here rather than cast away. */
   project: Project & { primaryDomain?: string | null };
-  /** On the Apps page: show the catalog app's brand logo instead of the
-   *  framework/service fallback icon. */
-  preferAppLogo?: boolean;
   /** Show an "update available" badge (fed by the update scan). Off by default
    *  so the Projects page is unaffected. */
   updateAvailable?: boolean;
@@ -59,7 +56,7 @@ interface Props {
   onChanged?: () => void;
 }
 
-const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable, onChanged }) => {
+const ProjectCard: React.FC<Props> = ({ project, updateAvailable, onChanged }) => {
   const { t } = useI18n();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
@@ -115,10 +112,8 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
       <Link href={clickTarget} aria-label={project.name} className="absolute inset-0 z-0" />
 
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3.5 @xl/project-row:flex @xl/project-row:gap-4 @xl/project-row:px-5">
-        {/* Icon — on the Apps page show the catalog app's brand logo; otherwise
-            the project favicon, falling back to the framework/service glyph. */}
         <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors overflow-hidden">
-          <ProjectIcon project={project} appTemplateId={appTemplateId} preferAppLogo={!!preferAppLogo && !!project.isApp} />
+          <ProjectIcon project={project} appTemplateId={appTemplateId} />
         </div>
 
         {/* Name + domain */}

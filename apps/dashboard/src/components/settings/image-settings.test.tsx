@@ -30,7 +30,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.profile.mockResolvedValue({ data: { status: true }, error: null });
-  h.project.mockResolvedValue({ data: { favicon: "https://app.example.test/favicon.ico" } });
+  h.project.mockImplementation(async (_id, data) => ({ data }));
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -65,7 +65,7 @@ it("saves the avatar through the current user's existing auth update", async () 
   expect(h.profile).toHaveBeenCalledWith({ image: "https://cdn.example.test/avatar.png" });
 });
 
-it("clears the project override through existing settings and immediately restores the discovered icon", async () => {
+it("clears the single project icon field through existing settings", async () => {
   await act(async () =>
     root.render(
       <I18nProvider>
@@ -77,7 +77,6 @@ it("clears the project override through existing settings and immediately restor
   expect(h.project).toHaveBeenCalledWith("project-a", { iconUrl: null });
   expect(h.update).toHaveBeenCalledWith({
     iconUrl: null,
-    favicon: "https://app.example.test/favicon.ico",
   });
   expect(h.invalidate).toHaveBeenCalledWith("project-a");
 });

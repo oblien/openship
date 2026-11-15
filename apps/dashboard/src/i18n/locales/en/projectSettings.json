@@ -1440,7 +1440,7 @@
   },
   "icon": {
     "label": "Project icon URL",
-    "hint": "A custom icon replaces automatic discovery. Clear it to use the discovered icon again.",
-    "reset": "Use automatic icon"
+    "hint": "Use an HTTP or HTTPS image URL. Clear it to use the default icon.",
+    "reset": "Use default icon"
   }
 }

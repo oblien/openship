@@ -9,33 +9,33 @@ import { handleApiError } from "../../../src/middleware/error-handler";
 
 const app = new Hono().onError(handleApiError).route("/api/projects", projectRoutes);
 
-it("persists an icon override through authenticated settings, protects it against discovery and restores automatic mode", async () => {
+it("uses one icon URL across authenticated settings, reads and deployment history", async () => {
   const owner = await seedOwner();
   const project = await seedProject(owner.orgId);
-  const automatic = "https://app.example.test/favicon.ico";
   const custom = "https://cdn.example.test/project.svg";
-  await repos.project.updateFaviconCache(project.id, { favicon: automatic });
   const update = (iconUrl: unknown, auth = owner.auth) =>
     app.request(`/api/projects/${project.id}`, {
       method: "PATCH",
       headers: { ...auth, "Content-Type": "application/json" },
       body: JSON.stringify({ iconUrl }),
     });
-  const saved = await update(custom);
+  const assertIcon = (data: unknown, expected: string | null) => {
+    expect(data).toMatchObject({ iconUrl: expected });
+    expect(data).not.toHaveProperty("favicon");
+    expect(data).not.toHaveProperty("faviconCheckedAt");
+  };
+  const saved = await update(`  ${custom}  `);
   expect(saved.status, await saved.clone().text()).toBe(200);
-  expect(await saved.json()).toMatchObject({ data: { iconUrl: custom, favicon: custom } });
+  assertIcon((await saved.json()).data, custom);
+  assertIcon(await repos.project.findById(project.id), custom);
+  const read = await app.request(`/api/projects/${project.id}`, { headers: owner.auth });
+  expect(read.status, await read.clone().text()).toBe(200);
+  assertIcon((await read.json()).data, custom);
   await seedDeployment(project);
   for (const options of [{ projectId: project.id }, {}]) {
     const history = await listDeployments(owner.orgId, options);
-    expect(history.rows[0]).toMatchObject({ favicon: custom, iconUrl: custom });
+    assertIcon(history.rows[0], custom);
   }
-  await repos.project.updateFaviconCache(project.id, {
-    favicon: "https://app.example.test/new-auto.ico",
-  });
-  expect(await repos.project.findById(project.id)).toMatchObject({
-    iconUrl: custom,
-    favicon: automatic,
-  });
   const stranger = await seedOwner();
   expect((await update("https://stranger.example.test/icon.png", stranger.auth)).status).toBe(404);
   for (const unsafe of [
@@ -45,7 +45,14 @@ it("persists an icon override through authenticated settings, protects it agains
     "/relative.png",
   ])
     expect((await update(unsafe)).status).toBe(400);
-  const cleared = await update(null);
-  expect(cleared.status).toBe(200);
-  expect(await cleared.json()).toMatchObject({ data: { iconUrl: null, favicon: automatic } });
+  assertIcon(await repos.project.findById(project.id), custom);
+  for (const reset of [null, ""]) {
+    expect((await update(custom)).status).toBe(200);
+    const cleared = await update(reset);
+    expect(cleared.status).toBe(200);
+    assertIcon((await cleared.json()).data, null);
+    assertIcon(await repos.project.findById(project.id), null);
+    const history = await listDeployments(owner.orgId, { projectId: project.id });
+    assertIcon(history.rows[0], null);
+  }
 });

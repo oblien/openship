@@ -20,9 +20,8 @@ const ProjectGridCard: React.FC<{
    *  every row by the projects list and `/info`, but isn't declared on `Project`
    *  (constants/mock) yet, so it's spelled out here rather than cast away. */
   project: Project & { primaryDomain?: string | null };
-  preferAppLogo?: boolean;
   updateAvailable?: boolean;
-}> = ({ project, preferAppLogo, updateAvailable }) => {
+}> = ({ project, updateAvailable }) => {
   const { t } = useI18n();
   const router = useRouter();
 
@@ -62,7 +61,7 @@ const ProjectGridCard: React.FC<{
 
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
-          <ProjectIcon project={project} appTemplateId={appTemplateId} preferAppLogo={!!preferAppLogo && !!project.isApp} />
+          <ProjectIcon project={project} appTemplateId={appTemplateId} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">

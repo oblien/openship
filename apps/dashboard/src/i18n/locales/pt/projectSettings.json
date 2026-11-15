@@ -1440,7 +1440,7 @@
   },
   "icon": {
     "label": "URL do ícone do projeto",
-    "hint": "Um ícone personalizado substitui a detecção automática. Limpe a URL para usar o ícone detectado.",
-    "reset": "Usar ícone automático"
+    "hint": "Use uma URL de imagem HTTP ou HTTPS. Limpe-a para usar o ícone padrão.",
+    "reset": "Usar ícone padrão"
   }
 }

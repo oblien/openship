@@ -97,7 +97,6 @@ export const DeploymentSchema = Type.Object({
   updatedAt: Type.String(),
   isActive: Type.Optional(Type.Boolean()),
   projectName: Type.Optional(Type.String()),
-  favicon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   iconUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

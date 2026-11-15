@@ -148,9 +148,9 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         aria-label={deployment.projectName || t.deployments.card.unknownProject}
         className="absolute inset-0 z-0"
       />
-      {/* App logo (catalog apps) → project favicon → framework icon → initials */}
+      {/* Project icon → catalog logo → framework or service icon */}
       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
-        <ProjectIcon project={deployment} appTemplateId={appTemplateId} preferAppLogo className="size-5" />
+        <ProjectIcon project={deployment} appTemplateId={appTemplateId} className="size-5" />
       </div>
 
       {/* Main info */}

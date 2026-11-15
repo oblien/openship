@@ -78,7 +78,6 @@ export interface Project {
   lifecycleOperation?: ProjectLifecycleOperation | null;
 
   /* ── Hosting info (enriched by API) ─────────────────────── */
-  favicon?: string | null;
   iconUrl?: string | null;
   deployTarget?: string | null;
   serverId?: string | null;

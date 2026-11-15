@@ -68,10 +68,6 @@ const PROJECT_FIELDS_NOT_CLONED = [
   "deletionInProgress",
   "lifecycleOperation",
   "disabledAt",
-  // Detected from the live site; the copy has no site yet, so copying these would show the
-  // original's icon next to a project that has never served a request.
-  "favicon",
-  "faviconCheckedAt",
   // Routing that names specific hostnames. The copy starts with no domains (the confirm dialog
   // promises exactly this) — the originals stay with the project still serving them.
   "compositeRoutes",

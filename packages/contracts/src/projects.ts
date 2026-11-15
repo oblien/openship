@@ -15,7 +15,6 @@ export const ProjectSchema = Type.Object({
   name: Type.String(),
   slug: Type.String(),
   iconUrl: Type.Optional(nullableString()),
-  favicon: Type.Optional(nullableString()),
   createdAt: Type.String(),
   updatedAt: Type.String(),
   environmentName: Type.Optional(Type.String()),

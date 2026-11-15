@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isImageUrl, MAX_IMAGE_URL_LENGTH, projectIconUrl } from "./image-url";
+import { isImageUrl, MAX_IMAGE_URL_LENGTH } from "./image-url";
 
 describe("display image URLs", () => {
   it.each([
@@ -22,13 +22,4 @@ describe("display image URLs", () => {
     " https://example.test/image.png",
     `https://example.test/${"a".repeat(MAX_IMAGE_URL_LENGTH)}`,
   ])("refuses unsafe or malformed input %j", (url) => expect(isImageUrl(url)).toBe(false));
-  it("uses an explicit project icon before the discovered cache and restores the cache when cleared", () => {
-    const project = {
-      iconUrl: "https://images.example.test/custom.png",
-      favicon: "https://app.example.test/favicon.ico",
-    };
-    expect(projectIconUrl(project)).toBe(project.iconUrl);
-    expect(projectIconUrl({ ...project, iconUrl: null })).toBe(project.favicon);
-    expect(projectIconUrl(null)).toBeNull();
-  });
 });

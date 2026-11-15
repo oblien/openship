@@ -66,9 +66,10 @@ beforeEach(() => {
 
 describe("connections to a service inside a project", () => {
   it("offers all eligible projects while excluding the current project and read-only access", async () => {
-    h.candidates = ["source", "read-only", ...Array.from({ length: 120 }, (_, i) => `consumer-${i}`)].map(id => ({ id, name: id, environmentName: "production", appTemplateId: null }));
+    h.candidates = ["source", "read-only", ...Array.from({ length: 120 }, (_, i) => `consumer-${i}`)].map(id => ({ id, name: id, environmentName: "production", appTemplateId: null, iconUrl: "https://cdn.example.test/icon.svg", framework: "nextjs" }));
     const choices = await listConnectionCandidates(ctx, "source");
     expect(choices).toHaveLength(120);
+    expect(choices[0]).toMatchObject({ iconUrl: "https://cdn.example.test/icon.svg", framework: "nextjs" });
     expect(choices.some(choice => ["source", "read-only"].includes(choice.id))).toBe(false);
     expect(h.authorize).toHaveBeenCalledWith(ctx, { resourceType: "project", resourceId: "source", action: "write" });
   });

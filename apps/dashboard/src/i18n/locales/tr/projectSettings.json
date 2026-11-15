@@ -1440,7 +1440,7 @@
   },
   "icon": {
     "label": "Proje simgesi URL’si",
-    "hint": "Özel simge otomatik algılamanın yerini alır. Algılanan simgeye dönmek için URL’yi temizleyin.",
-    "reset": "Otomatik simgeyi kullan"
+    "hint": "HTTP veya HTTPS resim URL’si kullanın. Varsayılan simgeyi kullanmak için URL’yi temizleyin.",
+    "reset": "Varsayılan simgeyi kullan"
   }
 }

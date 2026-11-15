@@ -7,10 +7,10 @@ and a consistent type hierarchy across light, dim, and dark themes.
 
 Personal avatar URLs live in Settings → General → Profile. Project icon URLs live
 in the Project Info card in project Settings. Both use the shared URL editor with
-a preview and a reset action. Custom project icons take precedence across project,
-app and deployment lists and pause automatic favicon discovery. Clearing an override
-restores the cached favicon and its normal discovery flow. Image URLs are displayed
-directly by the browser with no referrer; the control plane does not fetch custom URLs.
+a preview and a reset action. Each project has one `iconUrl`; project, app, connection
+and deployment lists use the same renderer. Clearing the URL restores the catalog
+logo or framework/service icon. Image URLs are displayed directly by the browser
+with no referrer; the control plane does not fetch them or discover favicons.
 
 Assistant settings belong in **Settings → Assistant**; event-driven flows and run
 history open from **Automations** in the AI Agents right column.

@@ -109,11 +109,11 @@ export default function ProjectsPage() {
             ) : filtered.length > 0 ? (
               view === "grid" ? (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3">
-                  {filtered.map(project => <ProjectGridCard key={project.id} project={project} preferAppLogo updateAvailable={updatesBehind.has(project.id)} />)}
+                  {filtered.map(project => <ProjectGridCard key={project.id} project={project} updateAvailable={updatesBehind.has(project.id)} />)}
                 </div>
               ) : (
                 <div className="divide-y divide-border/50 rounded-2xl bg-card">
-                  {filtered.map(project => <ProjectCard key={project.id} project={project} preferAppLogo updateAvailable={updatesBehind.has(project.id)} onChanged={() => removeProject(project.id)} />)}
+                  {filtered.map(project => <ProjectCard key={project.id} project={project} updateAvailable={updatesBehind.has(project.id)} onChanged={() => removeProject(project.id)} />)}
                 </div>
               )
             ) : (

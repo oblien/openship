@@ -69,10 +69,6 @@ export const projectGroup = pgTable("project_app", {
   gitUrl: text("git_url"),
   installationId: integer("installation_id"),
 
-  /** Shared favicon cache */
-  favicon: text("favicon"),
-  faviconCheckedAt: timestamp("favicon_checked_at"),
-
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -499,12 +495,8 @@ export const project = pgTable(
      * nobody opted into paying for this, so nobody keeps paying for it silently.
      */
     collectPaths: boolean("collect_paths").notNull().default(false),
-    /** Optional display override; independent of the discovered favicon cache. */
+    /** Project display image, managed in project settings. */
     iconUrl: text("icon_url"),
-    /** Auto-detected favicon URL from the deployed site */
-    favicon: text("favicon"),
-    /** Last time favicon detection was attempted for this project */
-    faviconCheckedAt: timestamp("favicon_checked_at"),
     /** Soft delete */
     deletedAt: timestamp("deleted_at"),
     /**
