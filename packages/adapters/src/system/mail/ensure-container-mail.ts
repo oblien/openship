@@ -342,22 +342,34 @@ async function readEnvFileValue(
   return null;
 }
 
-/** GH-1768: an engine update carries the host's ignore-ip list across; nothing else moves. */
+/** Apply an explicit API override without removing a server's own exclusions. */
 async function carryIgnoreIp(executor: CommandExecutor, onLog: SystemLogCallback): Promise<void> {
-  const key = "OPENSHIP_MAIL_F2B_IGNOREIP", wanted = process.env[key]?.trim();
-  const profile = await resolveEnvironment(executor).catch(() => null);
-  const host = profile?.canSudo ? elevatedExecutor(executor) : executor;
-  const body = await host.readFile(ENGINE_ENV_FILE).catch(() => "");
-  const records: Record<string, string> = {};
-  for (const line of body.split("\n")) {
-    const eq = line.indexOf("=");
-    if (eq > 0) records[line.slice(0, eq).trim()] = line.slice(eq + 1);
+  const key = "OPENSHIP_MAIL_F2B_IGNOREIP";
+  const configured = process.env[key];
+  // Existing installations may configure different lists directly on each server.
+  if (configured === undefined) return;
+  const wanted = configured.trim();
+  try {
+    const host = await rootOrDegrade(executor, {
+      purpose: "Updating the mail engine's fail2ban exclusions",
+      consequence: "The exclusions may not be updated.",
+      report: message => onLog(log(message, "warn")),
+    });
+    const body = await host.readFile(ENGINE_ENV_FILE);
+    if (!body.trim()) throw new Error(`The retained ${ENGINE_ENV_FILE} is empty; restore its credentials before updating exclusions.`);
+    const records: Record<string, string> = Object.create(null);
+    for (const line of body.split("\n")) {
+      const eq = line.indexOf("=");
+      if (eq > 0) records[line.slice(0, eq).trim()] = line.slice(eq + 1);
+    }
+    if (wanted ? records[key] === wanted : records[key] === undefined) return;
+    if (wanted) records[key] = wanted;
+    else delete records[key];
+    await writeEnvFile(host, ENGINE_ENV_FILE, records);
+  } catch (failure) {
+    observeCaughtError(failure, "adapters/system/mail/ensure-container-mail");
+    onLog(log(`Could not update ${key}: ${safeErrorMessage(failure)}`, "warn"));
   }
-  if (!body || records[key] === wanted) return;
-  wanted ? (records[key] = wanted) : delete records[key];
-  await writeEnvFile(host, ENGINE_ENV_FILE, records).catch((failure: unknown) =>
-    onLog(log(`Could not carry ${key} across the update: ${safeErrorMessage(failure)}`, "warn")),
-  );
 }
 
 /**
