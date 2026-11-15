@@ -8,6 +8,7 @@ import { nativeJobsEnabled } from "../../native/execution-policy";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
 import { githubFetch } from "../github/github.auth";
 import { getFileContent } from "../github/github.service";
+import { GitHubApiError } from "../github/github.error";
 import { triggerActionWorkflow, rerunActionWorkflow } from "./action.service";
 import { parseActionWorkflow, record } from "./workflow";
 import { matchesActionFilters } from "./trigger-pattern";
@@ -150,13 +151,27 @@ export async function dispatchActionWebhook(
         untrusted = pullRequest.head.repo.id !== pullRequest.repository.id;
         if (untrusted && !workflow.allowForks) continue;
       }
-      const source =
-        workflow.source ??
-        (
-          await getFileContent(ctx, owner, repo, workflow.path, {
-            branch: workflowRevision ?? revision,
-          })
-        ).content;
+      let source = workflow.source;
+      if (source == null) {
+        try {
+          source = (
+            await getFileContent(ctx, owner, repo, workflow.path, {
+              branch: workflowRevision ?? revision,
+            })
+          ).content;
+        } catch (error) {
+          if (!(error instanceof GitHubApiError && error.status === 404)) throw error;
+          // Only an absent file is a no-op. Repository and revision access must still work.
+          await githubFetch({
+            ctx,
+            owner,
+            repo,
+            url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${workflowRevision ?? revision}`,
+          });
+          await repos.actions.workflowError(workflow.organizationId, workflow.id, null);
+          continue;
+        }
+      }
       const plan = await parseActionWorkflow(source, workflow.path);
       if (
         !workflow.source &&
