@@ -21,36 +21,55 @@ if (!process.argv.includes("--check")) {
   cpSync(join(root, "packages/platform/dist/native/lua"), join(dist, "native/lua"), { recursive: true });
   // Resolve declarations in the distribution's dependency context. Private
   // @repo packages are bundled types, never external public dependencies.
+  const sdkDts = {
+    resolve: [/^@repo\//],
+    compilerOptions: {
+      baseUrl: root,
+      // The engine/* export-map wildcards (platform's self-referencing
+      // imports) need an explicit root to rewrite in declarations — without
+      // it the dts worker aborts with TS2209, same as the CLI tsconfig.
+      rootDir: root,
+      paths: {
+        ...Object.fromEntries(
+          ["sdk", "platform", "contracts", "core", "commands"].map((name) => [
+            `@repo/${name}`,
+            [`packages/${name}/src/index.ts`],
+          ]),
+        ),
+        "@repo/platform/native": ["packages/platform/src/native-host.ts"],
+        "@repo/platform/source-files": [
+          "packages/platform/src/source-files.ts",
+        ],
+        "@repo/db/lock": ["packages/db/src/pglite-lock.ts"],
+      },
+    },
+  };
+  // The native entry bundles @repo/platform, whose graph reaches the db
+  // client's top-level await — unrepresentable in CJS output. index
+  // re-exports native, so it carries the same constraint; only client
+  // (pure HTTP) ships CJS. require() of the ESM entries lands on Node's
+  // require(esm) (Node >= 22.12).
   await build({
     entry: Object.fromEntries(
-      ["index", "native", "client"].map((entry) => [
+      ["index", "native"].map((entry) => [
         entry,
         join(root, `packages/sdk/src/${entry}.ts`),
       ]),
     ),
     tsconfig: join(root, "packages/sdk/tsconfig.json"),
     outDir: join(dist, "sdk"),
+    format: ["esm"],
+    target: "node22",
+    dts: sdkDts,
+    noExternal: [/^@repo\//],
+  });
+  await build({
+    entry: { client: join(root, "packages/sdk/src/client.ts") },
+    tsconfig: join(root, "packages/sdk/tsconfig.json"),
+    outDir: join(dist, "sdk"),
     format: ["esm", "cjs"],
     target: "node22",
-    dts: {
-      resolve: [/^@repo\//],
-      compilerOptions: {
-        baseUrl: root,
-        paths: {
-          ...Object.fromEntries(
-            ["sdk", "platform", "contracts", "core", "commands"].map((name) => [
-              `@repo/${name}`,
-              [`packages/${name}/src/index.ts`],
-            ]),
-          ),
-          "@repo/platform/native": ["packages/platform/src/native-host.ts"],
-          "@repo/platform/source-files": [
-            "packages/platform/src/source-files.ts",
-          ],
-          "@repo/db/lock": ["packages/db/src/pglite-lock.ts"],
-        },
-      },
-    },
+    dts: sdkDts,
     noExternal: [/^@repo\//],
   });
   cpSync(join(root, "LICENSE"), join(packageDir, "LICENSE"));
@@ -64,7 +83,8 @@ for (const file of [
   "node-entry.js", "node-bootstrap.js", "index.js", "server/index.js", "native/engine-worker.mjs",
   "server/pglite/pglite.wasm", "server/pglite/pglite.data", "server/migrations/meta/_journal.json",
   "server/assets/actions-runner/manifest.json", "server/assets/actions-runner/THIRD_PARTY_NOTICES.txt",
-  ...["index", "native", "client"].flatMap((name) => ["js", "cjs", "d.ts", "d.cts"].map((ext) => `sdk/${name}.${ext}`)),
+  ...["index", "native"].flatMap((name) => ["js", "d.ts"].map((ext) => `sdk/${name}.${ext}`)),
+  ...["js", "cjs", "d.ts", "d.cts"].map((ext) => `sdk/client.${ext}`),
 ]) if (!existsSync(join(dist, file))) throw new Error(`Missing public package artifact: dist/${file}. Run bun run build.`);
 
 let bytes = 0;

@@ -36,8 +36,8 @@
         "default": "./dist/sdk/index.js"
       },
       "require": {
-        "types": "./dist/sdk/index.d.cts",
-        "default": "./dist/sdk/index.cjs"
+        "types": "./dist/sdk/index.d.ts",
+        "default": "./dist/sdk/index.js"
       }
     },
     "./native": {
@@ -46,8 +46,8 @@
         "default": "./dist/sdk/native.js"
       },
       "require": {
-        "types": "./dist/sdk/native.d.cts",
-        "default": "./dist/sdk/native.cjs"
+        "types": "./dist/sdk/native.d.ts",
+        "default": "./dist/sdk/native.js"
       }
     },
     "./client": {
