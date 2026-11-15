@@ -150,3 +150,28 @@ export async function daemonSupportsBuildKitSession(
   if (version == null) return null;
   return !isPodmanDaemon(version);
 }
+
+/**
+ * "podman" | "docker" for the daemon behind `key`, from the SAME cached
+ * GET /version payload the BuildKit probe uses — so a build logs the engine it
+ * talks to at no extra probe cost, and the BuildKit decision below reads the
+ * payload this call already fetched. undefined = the probe failed or returned
+ * nothing usable; callers keep the Docker wording (still true of the API
+ * surface they speak, which is what the surrounding steps name).
+ */
+export async function daemonEngineName(
+  key: string,
+  fetchVersion: () => Promise<unknown>,
+): Promise<"docker" | "podman" | undefined> {
+  if (!daemonVersionByDaemon.has(key)) {
+    try {
+      daemonVersionByDaemon.set(key, await fetchVersion());
+    } catch {
+      // Same policy as the BuildKit probe: a failed probe is not a verdict.
+      return undefined;
+    }
+  }
+  const version = daemonVersionByDaemon.get(key);
+  if (version == null) return undefined;
+  return isPodmanDaemon(version) ? "podman" : "docker";
+}

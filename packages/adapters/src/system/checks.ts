@@ -24,6 +24,7 @@ import { resolveEnvironment } from "./environment";
 import { enrichAvailableVersions } from "./available-version";
 import { getSystemComponentDefinition, SYSTEM_COMPONENTS } from "./components";
 import { formatDuration, systemDebug } from "./debug";
+import { detectContainerEngine } from "./engine";
 import { probeExec, withReason } from "./probe-exec";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ function healthy(
   name: string,
   version: string,
   running?: boolean,
+  engine?: string,
 ): ComponentStatus {
   const component = getSystemComponentDefinition(name);
   return {
@@ -74,16 +76,17 @@ function healthy(
     version,
     running,
     healthy: running !== undefined ? running : true,
+    ...(engine && { engine }),
     message: running
-      ? `${name} ${version} - running`
-      : `${name} ${version} - installed`,
+      ? `${engine ?? name} ${version} - running`
+      : `${engine ?? name} ${version} - installed`,
   };
 }
 
 function unhealthy(
   name: string,
   message: string,
-  opts?: { version?: string; running?: boolean },
+  opts?: { version?: string; running?: boolean; engine?: string },
 ): ComponentStatus {
   const component = getSystemComponentDefinition(name);
   return {
@@ -95,6 +98,7 @@ function unhealthy(
     version: opts?.version,
     running: opts?.running,
     healthy: false,
+    ...(opts?.engine && { engine: opts.engine }),
     message,
   };
 }
@@ -107,9 +111,21 @@ export async function checkDocker(
   const startedAt = Date.now();
   const recipe = systemCatalog.checks.docker;
   const version = await probeExec(executor, recipe.versionCommand, "checks");
+  // Name the engine BEFORE the verdicts so every message below says what
+  // exists: on a podman host this is "podman …", not "docker …" (the shim
+  // short-circuits from the --version output itself — no second probe).
+  const engine = await detectContainerEngine(executor, version.output || null);
   if (!version.output) {
     systemDebug("checks", `docker:missing (${formatDuration(startedAt)})`);
-    return unhealthy("docker", withReason(recipe.missingMessage, version.error));
+    const message = engine === "podman"
+      ? "podman is installed, but this server has no docker CLI for Openship to use — " +
+        "install the docker shim (podman-docker) or a docker CLI"
+      : recipe.missingMessage;
+    return unhealthy(
+      "docker",
+      withReason(message, version.error),
+      engine ? { engine } : undefined,
+    );
   }
 
   const parsed = recipe.parseVersion(version.output);
@@ -126,11 +142,22 @@ export async function checkDocker(
         info.error ?? "probe exited 0 with no server version"
       }`,
     );
+    const headline = denied
+      ? engine === "podman"
+        // Podman's rootless socket has no `docker` group to join; the fix is
+        // the socket's own group (or root).
+        ? "Podman is installed but this connection is not allowed to use its socket — " +
+          "add the login user to the socket's group, or connect as root"
+        : recipe.deniedMessage
+      : engine === "podman"
+        ? "Podman is installed but the daemon is not running"
+        : recipe.notRunningMessage!;
     return unhealthy(
       "docker",
-      withReason((denied && recipe.deniedMessage) || recipe.notRunningMessage!, info.error),
+      withReason(headline, info.error),
       {
         version: parsed,
+        ...(engine && { engine }),
         // Left UNSET when denied: `running: false` would be a fact we don't have. The
         // permission check happens before the daemon is consulted, so a refusal is
         // equally consistent with a healthy daemon, and asserting it is stopped is the
@@ -141,7 +168,11 @@ export async function checkDocker(
   }
 
   systemDebug("checks", `docker:healthy (${formatDuration(startedAt)})`);
-  return healthy("docker", parsed, true);
+  // Pair the engine name with the DAEMON's version, not the CLI's: a real
+  // docker CLI 29 pointed at a podman 5.8.2 socket would otherwise read
+  // "podman 29.0.0 - running" — one engine's version under another's name.
+  // `info` is the daemon probe, i.e. the daemon's own word.
+  return healthy("docker", info.output || parsed, true, engine ?? undefined);
 }
 
 export async function checkGit(

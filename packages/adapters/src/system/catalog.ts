@@ -100,7 +100,11 @@ export const systemCatalog = {
         "docker info --format '{{.ServerVersion}}' 2>/dev/null || " +
         "docker info --format '{{.Version.Version}}'",
       parseVersion: (output: string) =>
-        output.match(/Docker version ([^\s,]+)/)?.[1] ?? output,
+        output.match(/Docker version ([^\s,]+)/)?.[1] ??
+        // Podman's docker shim execs `podman`, so its `docker --version` prints
+        // "podman version 5.8.2" — take the engine's own version, not raw text.
+        output.match(/version ([^\s,]+)/i)?.[1] ??
+        output,
       missingMessage: "Docker is not installed",
       notRunningMessage: "Docker is installed but the daemon is not running",
       // Deliberately does NOT claim the daemon is up or down: the socket's permission

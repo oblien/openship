@@ -354,6 +354,8 @@ export const ServerComponentSchema = Type.Object({
   healthy: Type.Boolean(),
   message: Type.String(),
   optional: Type.Optional(Type.Boolean()),
+  /** The engine actually found behind the component ("docker" | "podman"). */
+  engine: Type.Optional(Type.String()),
 });
 export const CheckServerInputSchema = Type.Object(
   { components: Type.Optional(Type.Array(Type.String())) },

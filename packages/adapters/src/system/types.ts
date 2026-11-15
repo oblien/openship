@@ -61,6 +61,12 @@ export interface ComponentStatus {
   message: string;
   /** Infrastructure components - shown only when detected on the server */
   optional?: boolean;
+  /**
+   * The engine actually found behind the component ("docker" | "podman", see
+   * system/engine.ts) — the "docker" component can be backed by Podman's
+   * compat surface, and messages/logs name what exists rather than the API.
+   */
+  engine?: string;
 }
 
 // ─── Aggregate check result ──────────────────────────────────────────────────

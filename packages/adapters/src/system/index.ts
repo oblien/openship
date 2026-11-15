@@ -96,6 +96,7 @@ export {
   checkRsync,
   COMPONENT_CHECKS,
 } from "./checks";
+export { detectContainerEngine, parseEngineName, type ContainerEngine } from "./engine";
 export {
   REMOTE_SERVER_REQUIRED_COMPONENTS,
   resolveSystemComponentInstallPlan,

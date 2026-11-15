@@ -186,12 +186,20 @@ export const serverInstallationDependencies: NonNullable<ServerDependencies["ins
             // reinstall it. Probe first and skip a healthy Docker daemon, even if
             // config.reinstall was intended for the requested Edge component.
             if (!explicitlyRequested.has(name)) {
-              const healthy = await sshManager.withExecutor(serverId, async (executor) => {
+              const dependency = await sshManager.withExecutor(serverId, async (executor) => {
                 const statuses = await checkComponents(executor, [name]);
-                return statuses[0]?.healthy === true;
+                return statuses[0];
               });
-              if (healthy) {
-                appendSetupLog(session.id, name, `${name} is already ready; dependency satisfied`);
+              if (dependency?.healthy === true) {
+                // Name the engine that exists, not the component's key: on a
+                // Podman host the "docker" dependency is satisfied by Podman's
+                // compat surface, and "docker is already ready" is a lie the
+                // operator pays for later.
+                appendSetupLog(
+                  session.id,
+                  name,
+                  `${dependency.engine ?? name} is already ready; dependency satisfied`,
+                );
                 updateComponentProgress(session.id, name, "installed");
                 continue;
               }

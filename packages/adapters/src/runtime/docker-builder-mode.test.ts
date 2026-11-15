@@ -8,6 +8,7 @@ import type { BuildConfig } from "../types";
 import { DockerRuntime, useFreshBuildConnection } from "./docker";
 import {
   DOCKER_BUILDER_MODE_ENV,
+  daemonEngineName,
   daemonProbeCacheKey,
   daemonSupportsBuildKitSession,
   isBuildKitSessionUnavailable,
@@ -378,6 +379,48 @@ describe("daemonSupportsBuildKitSession probe", () => {
         vi.fn(async () => Promise.reject(new Error("ECONNREFUSED"))),
       ),
     ).resolves.toBeNull();
+  });
+});
+
+// ── Engine naming (log wording) ──────────────────────────────────────────────
+//
+// Same payload, second consumer: the build logs name the engine the daemon
+// serves ("Connected to Podman daemon") off the SAME cached /version probe the
+// BuildKit decision uses — naming must never cost a second round trip, and a
+// failed probe must keep the Docker wording instead of caching a verdict.
+describe("daemonEngineName", () => {
+  const podmanVersion = {
+    Platform: { Name: "linux - Podman Engine 5.8.2" },
+    Components: [{ Name: "Podman Engine", Version: "5.8.2" }],
+  };
+  const dockerVersion = {
+    Platform: { Name: "Docker Engine 27.3.1 (linux)" },
+    Components: [{ Name: "Engine", Version: "27.3.1" }],
+  };
+
+  beforeEach(() => {
+    resetDaemonBuildKitProbeCache();
+  });
+
+  it("names podman from the /version payload", async () => {
+    await expect(daemonEngineName("e1", vi.fn(async () => podmanVersion))).resolves.toBe("podman");
+  });
+
+  it("names docker for dockerd", async () => {
+    await expect(daemonEngineName("e2", vi.fn(async () => dockerVersion))).resolves.toBe("docker");
+  });
+
+  it("returns undefined (keep the Docker wording) when the probe fails", async () => {
+    await expect(
+      daemonEngineName("e3", vi.fn(async () => Promise.reject(new Error("ECONNREFUSED")))),
+    ).resolves.toBeUndefined();
+  });
+
+  it("shares the cache with the BuildKit probe — one fetch names and classifies", async () => {
+    const fetches = vi.fn(async () => podmanVersion);
+    await expect(daemonEngineName("e4", fetches)).resolves.toBe("podman");
+    await expect(daemonSupportsBuildKitSession("e4", fetches)).resolves.toBe(false);
+    expect(fetches).toHaveBeenCalledTimes(1);
   });
 });
 

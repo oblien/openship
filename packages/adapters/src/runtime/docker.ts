@@ -250,6 +250,7 @@ import {
   type LegacyBuildContainerTermination,
 } from "./docker-build-container-tracker";
 import {
+  daemonEngineName,
   daemonProbeCacheKey,
   daemonSupportsBuildKitSession,
   isBuildKitSessionUnavailable,
@@ -2669,6 +2670,35 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     return false;
   }
 
+  /**
+   * The daemon's engine ("podman" | "docker"), probed once per RUNTIME from the
+   * same cached GET /version payload `probeDaemonSkipsBuildKit` reads — so the
+   * logs say Podman on a podman host at zero extra round trips, and the BuildKit
+   * decision below reuses the payload this call already fetched. undefined =
+   * the probe could not classify (unreachable daemon, transport without stable
+   * coordinates); callers keep the Docker wording, which stays true of the
+   * Docker-API surface every other step in the log names.
+   */
+  private daemonEnginePromise?: Promise<"docker" | "podman" | undefined>;
+
+  private daemonEngine(): Promise<"docker" | "podman" | undefined> {
+    return (this.daemonEnginePromise ??= (async () => {
+      try {
+        const key = daemonProbeCacheKey(this.docker.modem as never);
+        if (!key) return undefined;
+        return await daemonEngineName(key, () => this.docker.version());
+      } catch (error) {
+        observeCaughtError(error, "adapters/runtime/docker");
+        return undefined;
+      }
+    })());
+  }
+
+  /** The word the logs use for the daemon behind this runtime. */
+  private async daemonWord(): Promise<string> {
+    return (await this.daemonEngine()) === "podman" ? "Podman" : "Docker";
+  }
+
   private selectDockerodeBuilder(
     config: BuildConfig,
     requiresBuildKit: boolean,
@@ -2763,7 +2793,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     log: BuildLogger,
     cancelSignal?: AbortSignal,
   ): Promise<BaseImageReceipt[] | undefined> {
-    log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
+    log.log(`Streaming build context to ${await this.daemonWord()} daemon - image tag: ${tag}`);
     let pin: Awaited<ReturnType<DockerRuntime["pinBuildBaseImages"]>>;
     let secrets: ReadonlyMap<string, string> | undefined;
     // Build environment secrets exist only for a generated (non-repository)
@@ -2850,7 +2880,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           }, secrets);
           detachCancellation();
 
-          log.log("Connected to Docker daemon. Build output follows:");
+          log.log(`Connected to ${await this.daemonWord()} daemon. Build output follows:`);
           await this.streamDockerodeBuild(stream, log, {
             trace: builder.trace,
             diagnosticContext,
@@ -2860,7 +2890,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
               legacyBuilder: { expectedMemoryBytes: buildLimits.memory, ownershipHost },
             }),
           });
-          log.log("Docker daemon finished streaming build output. Finalizing image...\n");
+          log.log(`${await this.daemonWord()} daemon finished streaming build output. Finalizing image...\n`);
           return pin.baseImages;
         } catch (err) {
           observeCaughtError(new Error(log.errorMessage(err)), "adapters/runtime/docker");
@@ -3145,7 +3175,15 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     try {
       if (abort.signal.aborted) return cancelled();
-      log.log(`Build strategy: docker (${this.transport.description})\n`);
+      // The transport names the API ("Docker daemon"); the probe names the
+      // ENGINE behind it — on a podman host this line says Podman, which is
+      // what the operator is actually driving.
+      const engineWord = await this.daemonWord();
+      log.log(
+        `Build strategy: docker (${
+          this.transport.description.replace("Docker daemon", `${engineWord} daemon`)
+        })\n`,
+      );
 
       // Ensure the host is provisioned for Docker, but avoid doing a second
       // SSH bridge handshake before the real build request. The build call

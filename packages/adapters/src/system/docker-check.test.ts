@@ -192,6 +192,98 @@ describe("checkDocker", () => {
 
     expect(status.healthy).toBe(true);
     expect(status.running).toBe(true);
-    expect(status.version).toBe("29.7.1");
+    // The daemon's answer outranks the CLI's --version line: what's RUNNING is
+    // 5.8.2, and the CLI version (29.7.1) is a different engine's number.
+    expect(status.version).toBe("5.8.2");
+  });
+});
+
+// ── Engine naming ────────────────────────────────────────────────────────────
+//
+// The component is named "docker", but the ENGINE behind it is what the
+// operator drives: on a podman host every "docker …" message sends them to a
+// tool that was never installed. checkDocker therefore names what it found
+// (system/engine.ts) in the status message, and carries it on the status.
+describe("checkDocker names the engine it finds", () => {
+  // The podman-docker shim execs `podman`, so `docker --version` itself prints
+  // "podman version …" — the shim short-circuits detection, no extra probe.
+  it("reports a shim host as podman running", async () => {
+    const status = await checkDocker(box([
+      ["docker --version", "podman version 5.8.2"],
+      ["docker info --format '{{.Version.Version}}'", "5.8.2"],
+    ]));
+
+    expect(status.engine).toBe("podman");
+    expect(status.healthy).toBe(true);
+    expect(status.running).toBe(true);
+    expect(status.version).toBe("5.8.2");
+    expect(status.message).toBe("podman 5.8.2 - running");
+  });
+
+  // A REAL docker CLI pointed at Podman's socket: the daemon's section names
+  // Podman even though `docker --version` said Docker.
+  it("believes the daemon's section over the CLI's version line", async () => {
+    const status = await checkDocker(box([
+      [...VERSION],
+      ["docker info", "5.8.2"],
+      ["docker version", "Client: Docker Engine - Community\n Version: 29.7.1\n\nServer:       Podman Engine\nVersion:      5.8.2"],
+    ]));
+
+    expect(status.engine).toBe("podman");
+    // Review finding on #11: the message must not pair Podman's NAME with the
+    // docker CLI's VERSION ("podman 29.7.1 - running") — the daemon probe's
+    // answer is the version that is actually running.
+    expect(status.version).toBe("5.8.2");
+    expect(status.message).toBe("podman 5.8.2 - running");
+    expect(status.message).not.toContain("29.7.1");
+  });
+
+  it("names a real dockerd as docker, same words as before", async () => {
+    const status = await checkDocker(box([
+      [...VERSION],
+      ["docker info", "29.7.1"],
+      ["docker version", "Client: Docker Engine - Community\n Version: 29.7.1\n\nServer: Docker Engine - Community\n  Engine:\n   Version: 29.7.1"],
+    ]));
+
+    expect(status.engine).toBe("docker");
+    expect(status.message).toBe("docker 29.7.1 - running");
+  });
+
+  // A podman-only box (no docker CLI at all): "Docker is not installed" would
+  // send the operator to install the wrong thing.
+  it("points a podman-only host at the docker shim instead of Docker", async () => {
+    const status = await checkDocker(box([
+      ["docker --version", new Error("sh: 1: docker: not found")],
+      ["docker version", "sh: 1: docker: not found"],
+      ["podman --version", "podman version 6.0.2"],
+    ]));
+
+    expect(status.engine).toBe("podman");
+    expect(status.healthy).toBe(false);
+    expect(status.installed).toBe(false);
+    expect(status.message).toContain("podman is installed, but this server has no docker CLI");
+  });
+
+  it("gives a denied podman host the socket-group remedy, not the docker group", async () => {
+    const status = await checkDocker(box([
+      ["docker --version", "podman version 5.8.2"],
+      ["docker info", new Error("permission denied at /var/run/docker.sock")],
+    ]));
+
+    expect(status.engine).toBe("podman");
+    expect(status.message).toContain("Podman is installed but this connection is not allowed");
+    expect(status.message).toContain("socket's group");
+    expect(status.message).not.toContain("`docker` group");
+  });
+
+  it("keeps docker wording when nothing classifies (the old behaviour)", async () => {
+    // Both detection probes answer nothing: the wording must not regress.
+    const status = await checkDocker(box([
+      [...VERSION],
+      ["docker info", "29.7.1"],
+    ]));
+
+    expect(status.engine).toBeUndefined();
+    expect(status.message).toBe("docker 29.7.1 - running");
   });
 });
