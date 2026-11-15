@@ -1,6 +1,6 @@
 {
   "name": "@repo/platform",
-  "version": "0.9.12-fork.1",
+  "version": "0.9.12-fork.2",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
