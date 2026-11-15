@@ -57,6 +57,12 @@ violation.
 
 ## Scope
 
+Organization owners and administrators can perform host administration. Ordinary
+members retain read/write access but cannot perform operations requiring `admin`,
+including server shell execution. Restricted users require explicit resource grants;
+scoped tokens also respect their user's current built-in role. Host commands execute
+as the server's configured account, so delegate server administration accordingly.
+
 In scope — all Openship components:
 
 - Managed Openship Cloud

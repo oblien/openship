@@ -820,9 +820,8 @@ async function execOnServer(
   body: Parameters<ServerOperations["exec"]>[1],
 ) {
 
-  // Primary gate: permission resolver (404 on deny, IDOR-safe). Asserted BEFORE the
-  // row is read, so a caller without access cannot distinguish "no such server"
-  // from "not yours".
+  // The shared server operation asserts server:admin before calling this service
+  // for every transport. Retain the organization-scoped lookup here as well.
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
 

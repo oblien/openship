@@ -121,7 +121,7 @@ describe("organization-scoped DNS operations", () => {
     const dns = createDnsOperations(authorization, { operations: { addCredential } as never, requireAdmin });
     const input = { provider: "cloudflare" as const, name: "Production", apiToken: "private" };
     state.members.set("org-a:alice", { id: "member-a", role: "member" });
-    await expect(dns.addCredential(ctx, input)).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
+    await expect(dns.addCredential(ctx, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(addCredential).not.toHaveBeenCalled();
     state.members.set("org-a:alice", { id: "member-a", role: "owner" });
     const identity = { ...alice, tokenScope: { tokenId: "token" }, credential: { organizationId: "org-a", readOnly: false } };

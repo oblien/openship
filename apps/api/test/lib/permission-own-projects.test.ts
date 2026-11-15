@@ -3,9 +3,10 @@ import { describe, it, expect, vi } from "vitest";
 // checkPermission touches only member.find (membership gate) and, for a
 // concrete project id, project.findById (org resolution). We pass the grant
 // source explicitly via opts, so resourceGrant is never consulted.
+// The owner can delegate project admin; the token must still satisfy each grant.
 vi.mock("@repo/db", () => ({
   repos: {
-    member: { find: vi.fn(async () => ({ id: "m1", role: "member" })) },
+    member: { find: vi.fn(async () => ({ id: "m1", role: "owner" })) },
     project: {
       findById: vi.fn(async (id: string) =>
         id === "*" ? null : { id, organizationId: "org1" },
