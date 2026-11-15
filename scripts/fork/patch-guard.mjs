@@ -25,6 +25,8 @@
  *                              (0.9.5 guard exempts the dashboard only)
  *   9. host-key from= own IP  — provisioner allowlists the box's own IPv4
  *                              (pasta-forwarded channel source, podman VPS)
+ *  10. build SSH submodules   — opt-in OPENSHIP_BUILD_SSH_DIR mount + SSH
+ *                              transport for private git@<alias>: submodules
  *
  * WHEN UPSTREAM ADOPTS THE SAME FIX: resolve the merge by taking THEIR version
  * and delete that check here. Every merged upstream PR shrinks the fork back
@@ -244,6 +246,34 @@ check(
   "hostKeyAuthLine lost the own-IP from= extension — a re-provision on the podman VPS re-breaks the container→host SSH channel (correct key, 'not from a permitted host').",
 );
 
+// ── Patch 10: private SSH submodules on the api-host clone ─────────────────
+// Our repos keep `.gitmodules` on git@<alias>: URLs (one read-only deploy key
+// per submodule; changing them to HTTPS is a security regression for the dev
+// machines). The scoped token clone is HTTPS-only, so the operator can mount a
+// build SSH directory and the clone uses it for those submodule URLs.
+const gitCloneTs = read("packages/adapters/src/runtime/git-clone.ts") ?? "";
+check(
+  "patch 10 (build SSH identity)",
+  gitCloneTs.includes("OPENSHIP_BUILD_SSH_DIR") &&
+    gitCloneTs.includes("function buildSshCommand") &&
+    gitCloneTs.includes("protocol.ssh.allow") &&
+    gitCloneTs.includes('https:ssh'),
+  "git-clone.ts lost the opt-in build SSH identity (OPENSHIP_BUILD_SSH_DIR) — private submodules pinned to git@<alias>: URLs fail again with \"transport 'ssh' not allowed\".",
+);
+check(
+  "patch 10 (compose mounts it)",
+  composeCliTs.includes("BUILD_SSH_MOUNT_MARKER") &&
+    composeCliTs.includes("resolveBuildSshDir") &&
+    composeCliTs.includes("target: /root/.ssh") &&
+    composeCliTs.includes('OPENSHIP_BUILD_SSH_DIR: "/root/.ssh"'),
+  "compose.ts no longer renders the read-only build SSH mount / container env — the API has no keys for SSH submodule URLs.",
+);
+check(
+  "patch 10 (env documented)",
+  (read(".env.example") ?? "").includes("OPENSHIP_BUILD_SSH_DIR"),
+  ".env.example no longer documents OPENSHIP_BUILD_SSH_DIR.",
+);
+
 if (failures.length > 0) {
   console.error("\n✖ fork patch guard: a patch no longer looks intact after the merge.\n");
   for (const f of failures) console.error(`  - ${f}`);
@@ -255,5 +285,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(
-  "✔ fork patch guard: all nine patches intact (extrahosts JSON, builder fallback, nginx Connection map, fork badge, folder-deploy endpoints, hosted-only own domain, podman actions runner, self-app api domain, host-key from= own IP).",
+  "✔ fork patch guard: all ten patches intact (extrahosts JSON, builder fallback, nginx Connection map, fork badge, folder-deploy endpoints, hosted-only own domain, podman actions runner, self-app api domain, host-key from= own IP, build SSH submodules).",
 );

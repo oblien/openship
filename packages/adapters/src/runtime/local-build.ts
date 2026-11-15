@@ -68,6 +68,9 @@ export async function runLocalBuild(opts: LocalBuildOptions): Promise<BuildPipel
 
   const buildEnv: BuildEnvironment = {
     projectDir: buildDir,
+    // LocalExecutor by construction below — the build runs on the API host,
+    // so the host-mounted build SSH identity (private submodules) applies.
+    onApiHost: true,
     exec: async (command, logCb) => {
       if (abort?.aborted) throw new Error("Build cancelled");
       const { code, output } = await localExec.streamExec(wrapLocalBuildCommand(command), logCb);

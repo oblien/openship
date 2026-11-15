@@ -2369,6 +2369,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     }
 
     // Centralized clone assembly (token / relay / ssh / ambient) — see git-clone.ts.
+    // Deliberately NO buildSsh: this clone executes ON THE TARGET SERVER via the
+    // executor, and the build SSH identity (OPENSHIP_BUILD_SSH_DIR → /root/.ssh)
+    // is mounted only inside the API container. An SSH-alias submodule here
+    // keeps the HTTPS-only rewrite and fails with git's own transport error.
     const gitInvocation = assembleGitClone({
       repoUrl: config.repoUrl,
       gitToken: config.gitToken,

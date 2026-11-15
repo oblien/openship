@@ -700,6 +700,10 @@ export class BareRuntime implements RuntimeAdapter {
       // executor's file channel, never the streamed `exec`, so key bytes never
       // reach the build log. Works for both local and SSH executors.
       writeSecretFile: (p, content) => this.executor.writeFile(p, content),
+      // The build SSH identity (private submodules) is mounted in the API
+      // container only: this pipeline may build on an SSH TARGET instead, and
+      // only the local-executor shape shares this process's filesystem.
+      onApiHost: this.executor instanceof LocalExecutor,
     };
 
     const result = await runBuildPipeline(

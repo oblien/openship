@@ -12,7 +12,7 @@ import type { BuildConfig, LogCallback } from "../types";
 
 import { getTarCreateEnv, prepareSourceTarArgs } from "../archive";
 import { assembleGitClone } from "./build-pipeline";
-import { exactCommitFetchArgs, GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
+import { exactCommitFetchArgs, apiHostBuildSshIdentity, GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import { localGitSshWriter, materializeGitSsh, type GitSshMaterial } from "./git-ssh-material";
 import { generateDockerfile } from "./docker-build-plan";
 import { generatedBuildIgnore } from "./docker-recipes/cache";
@@ -413,12 +413,15 @@ async function cloneGitSource(
   // Same assembly the on-server clones use (git-clone.ts), in argv form.
   // `config.gitAmbient` is deliberately NOT forwarded: it names credentials that
   // exist on the BUILD SERVER, and this clone runs on the orchestrator standing
-  // in for it — the server's identity is not ours to use.
+  // in for it — the server's identity is not ours to use. The build SSH
+  // identity IS ours to use: this clone spawns locally in the API process,
+  // where the OPENSHIP_BUILD_SSH_DIR mount (private submodules) exists.
   const { cloneUrl, env: gitEnv, credArgs } = assembleGitClone({
     repoUrl: config.repoUrl,
     gitToken: config.gitToken,
     gitTokenRepositories: config.gitTokenRepositories,
     ssh: sshMaterial,
+    buildSsh: apiHostBuildSshIdentity(),
   });
 
   try {

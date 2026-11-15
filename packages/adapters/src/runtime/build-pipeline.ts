@@ -19,6 +19,7 @@ import { safeErrorMessage, packageManagerEnsureCommand, nodeBinPathExport } from
 import {
   sq,
   injectGitToken,
+  apiHostBuildSshIdentity,
   assembleGitClone,
   gitShellCommand,
   exactCommitFetchArgs,
@@ -189,6 +190,16 @@ export interface BuildEnvironment {
    * risk leaking the key through `exec`.
    */
   writeSecretFile?(path: string, content: string): Promise<void>;
+
+  /**
+   * The build environment shares THIS process's filesystem (the API host /
+   * container). Host-mounted resources — notably the optional build SSH
+   * identity (`OPENSHIP_BUILD_SSH_DIR` → /root/.ssh, for private SSH
+   * submodules) — resolve here. Runtimes that build ELSEWHERE (SSH server
+   * target, cloud workspace) leave it unset, so clone commands never reference
+   * a path that exists only inside the API container.
+   */
+  readonly onApiHost?: boolean;
 }
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
@@ -354,6 +365,9 @@ export async function runBuildPipeline(
           }
 
           // Centralized clone assembly (token / relay / ssh / ambient) — see git-clone.ts.
+          // The build SSH identity is API-host-only: `onApiHost` gates it, so a
+          // clone this pipeline executes on an SSH target or in a cloud
+          // workspace never references the API container's /root/.ssh mount.
           const gitInvocation = assembleGitClone({
             repoUrl: config.repoUrl,
             gitToken: config.gitToken,
@@ -361,6 +375,7 @@ export async function runBuildPipeline(
             gitCredentialHelperPath: config.gitCredentialHelperPath,
             ssh: sshMaterial,
             ambient: config.gitAmbient,
+            ...(env.onApiHost && { buildSsh: apiHostBuildSshIdentity() }),
           });
           const { cloneUrl, credFlag: CRED } = gitInvocation;
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   sq,
   injectGitToken,
+  apiHostBuildSshIdentity,
   gitCredentialPair,
   toGitHubSshUrl,
   assembleGitClone,
@@ -545,4 +546,76 @@ describe("exactCommitFetchArgs", () => {
       expect(exactCommitFetchArgs(value)).toBeNull();
     },
   );
+});
+
+describe("build SSH identity for private submodules", () => {
+  const token = "github_pat_fixtureBuildSsh00000000000001";
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "openship-build-ssh-"));
+    writeFileSync(join(dir, "config"), "Host gh-backend\n  HostName github.com\n");
+    process.env.OPENSHIP_BUILD_SSH_DIR = dir;
+  });
+
+  afterEach(() => {
+    delete process.env.OPENSHIP_BUILD_SSH_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("uses the mounted config and adds ssh to the allowed transports", () => {
+    const identity = apiHostBuildSshIdentity();
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/Acme/Parent.git",
+      gitToken: token,
+      buildSsh: identity,
+    });
+    expect(inv.env.GIT_ALLOW_PROTOCOL).toBe("https:ssh");
+    expect(inv.env.GIT_SSH_COMMAND).toContain(`-F '${join(dir, "config")}'`);
+    expect(inv.env.GIT_SSH_COMMAND).toContain("StrictHostKeyChecking=yes");
+    expect(inv.credArgs).toContain("protocol.ssh.allow=always");
+    // With an SSH identity, do not force SSH submodule URLs back to HTTPS.
+    expect(inv.credArgs.join(" ")).not.toContain(
+      "url.https://github.com/.insteadOf=git@github.com:",
+    );
+  });
+
+  it("stays HTTPS-only when the configured directory has no config file", () => {
+    rmSync(join(dir, "config"), { force: true });
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/Acme/Parent.git",
+      gitToken: token,
+      buildSsh: apiHostBuildSshIdentity(),
+    });
+    expect(inv.env.GIT_ALLOW_PROTOCOL).toBe("https");
+    expect(inv.env.GIT_SSH_COMMAND).toBeUndefined();
+    expect(inv.credArgs.join(" ")).not.toContain("protocol.ssh.allow");
+  });
+
+  it("stays HTTPS-only when OPENSHIP_BUILD_SSH_DIR is unset", () => {
+    delete process.env.OPENSHIP_BUILD_SSH_DIR;
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/Acme/Parent.git",
+      gitToken: token,
+      buildSsh: apiHostBuildSshIdentity(),
+    });
+    expect(inv.env.GIT_ALLOW_PROTOCOL).toBe("https");
+    expect(inv.env.GIT_SSH_COMMAND).toBeUndefined();
+  });
+
+  // Review finding on #12: the identity lives in the API process's env, but a
+  // clone can execute ELSEWHERE (SSH server build clones on the target; a cloud
+  // build runs in the provider workspace) — neither has the /root/.ssh mount.
+  // Only a caller that KNOWS the clone runs on the API host may set buildSsh;
+  // assembling without it must stay HTTPS-only even with the env var present.
+  it("leaks nothing to clones that execute elsewhere: no buildSsh → HTTPS-only", () => {
+    const inv = assembleGitClone({
+      repoUrl: "https://github.com/Acme/Parent.git",
+      gitToken: token,
+    });
+    expect(inv.env.GIT_ALLOW_PROTOCOL).toBe("https");
+    expect(inv.env.GIT_SSH_COMMAND).toBeUndefined();
+    expect(inv.credArgs.join(" ")).toContain("url.https://github.com/.insteadOf=git@github.com:");
+    expect(inv.credArgs.join(" ")).not.toContain("protocol.ssh.allow");
+  });
 });

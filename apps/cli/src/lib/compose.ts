@@ -131,6 +131,10 @@ function edgeVolumeYaml(indent: string): string {
 
 /** Marker the API service's volume list carries until {@link renderComposeYaml} fills it. */
 const DOCKER_CONFIG_MOUNT_MARKER = "__OPENSHIP_DOCKER_CONFIG_MOUNT__";
+/** Marker for the optional build-host SSH identity (private SSH submodules). */
+const BUILD_SSH_MOUNT_MARKER = "__OPENSHIP_BUILD_SSH_MOUNT__";
+/** Marker for the container path of that identity, next to the other api env. */
+const BUILD_SSH_ENV_MARKER = "__OPENSHIP_BUILD_SSH_ENV__";
 
 /**
  * The API's read-only Docker-config mount, or nothing when the host has none.
@@ -164,6 +168,39 @@ function dockerConfigMountYaml(indent: string): string {
 }
 
 /**
+ * The operator-provided build SSH directory, or null when SSH submodules are off.
+ *
+ * `OPENSHIP_BUILD_SSH_DIR` is read from the environment and then the existing
+ * `.env` (the file is written AFTER the compose file, so the first run must use
+ * the environment — later runs carry it in `.env`). The directory must exist and
+ * contain a `config` file; mounting a missing source would make Docker create an
+ * empty directory that looks configured but authenticates nothing.
+ */
+function resolveBuildSshDir(): string | null {
+  const raw = process.env.OPENSHIP_BUILD_SSH_DIR?.trim() || readComposeEnvFile().env.OPENSHIP_BUILD_SSH_DIR?.trim();
+  if (!raw) return null;
+  const dir = resolve(raw);
+  try {
+    if (!statSync(dir).isDirectory()) return null;
+    if (!statSync(join(dir, "config")).isFile()) return null;
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "cli/lib/compose");
+    return null;
+  }
+  return dir;
+}
+
+/** Read-only mount of the build SSH directory into the API service. */
+function buildSshMountYaml(indent: string, dir: string): string {
+  return [
+    `${indent}- type: bind`,
+    `${indent}  source: ${JSON.stringify(dir)}`,
+    `${indent}  target: /root/.ssh`,
+    `${indent}  read_only: true`,
+  ].join("\n");
+}
+
+/**
  * The compose file to write.
  *
  * Everything static lives in `COMPOSE_YAML`; only what depends on the host at RUN time
@@ -173,7 +210,14 @@ function dockerConfigMountYaml(indent: string): string {
  */
 export function renderComposeYaml(): string {
   const mount = dockerConfigMountYaml("      ");
-  return COMPOSE_YAML.split(`${DOCKER_CONFIG_MOUNT_MARKER}\n`).join(mount ? `${mount}\n` : "");
+  const sshDir = resolveBuildSshDir();
+  const sshMount = sshDir ? buildSshMountYaml("      ", sshDir) : "";
+  return COMPOSE_YAML.split(`${DOCKER_CONFIG_MOUNT_MARKER}\n`)
+    .join(mount ? `${mount}\n` : "")
+    .split(`${BUILD_SSH_MOUNT_MARKER}\n`)
+    .join(sshMount ? `${sshMount}\n` : "")
+    .split(`${BUILD_SSH_ENV_MARKER}\n`)
+    .join(sshDir ? '      OPENSHIP_BUILD_SSH_DIR: "/root/.ssh"\n' : "");
 }
 
 declare const __CLI_VERSION__: string;
@@ -575,6 +619,7 @@ services:
       # the host has no config, so nothing is invented. Substituted at write time (the
       # path depends on DOCKER_CONFIG and on the file existing), hence the marker.
 __OPENSHIP_DOCKER_CONFIG_MOUNT__
+__OPENSHIP_BUILD_SSH_MOUNT__
       # Routing state shared with the edge, as HOST BIND MOUNTS (generated from
       # EDGE_CONTAINER_MOUNTS): the vhost tree, /etc/letsencrypt, the ACME webroot
       # and the static doc-roots the API writes and the edge serves. Named volumes
@@ -601,6 +646,7 @@ ${edgeVolumeYaml("      ")}
       REDIS_URL: redis://redis:6379
       OPENSHIP_EDGE_MODE: docker
       OPENSHIP_EDGE_CONTAINER: openship-edge
+__OPENSHIP_BUILD_SSH_ENV__
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

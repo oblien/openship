@@ -16,8 +16,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   /** Paths that "exist" for existsSync. */
   existing: new Set<string>(),
-  /** path → { isFile } for statSync; absent throws ENOENT like the real call. */
-  stats: new Map<string, { isFile: boolean }>(),
+  /** path → stat flags for statSync; absent throws ENOENT like the real call. */
+  stats: new Map<string, { isFile: boolean; isDirectory?: boolean }>(),
   written: new Map<string, string>(),
 }));
 
@@ -54,7 +54,7 @@ vi.mock("node:fs", () => ({
       err.code = "ENOENT";
       throw err;
     }
-    return { isFile: () => entry.isFile };
+    return { isFile: () => entry.isFile, isDirectory: () => entry.isDirectory ?? false };
   },
 }));
 
@@ -96,17 +96,21 @@ function volumesOf(service: string): string {
 }
 
 const ORIGINAL_DOCKER_CONFIG = process.env.DOCKER_CONFIG;
+const ORIGINAL_BUILD_SSH_DIR = process.env.OPENSHIP_BUILD_SSH_DIR;
 
 beforeEach(() => {
   h.existing = new Set(["/var/run/docker.sock"]);
   h.stats = new Map();
   h.written = new Map();
   delete process.env.DOCKER_CONFIG;
+  delete process.env.OPENSHIP_BUILD_SSH_DIR;
 });
 
 afterEach(() => {
   if (ORIGINAL_DOCKER_CONFIG === undefined) delete process.env.DOCKER_CONFIG;
   else process.env.DOCKER_CONFIG = ORIGINAL_DOCKER_CONFIG;
+  if (ORIGINAL_BUILD_SSH_DIR === undefined) delete process.env.OPENSHIP_BUILD_SSH_DIR;
+  else process.env.OPENSHIP_BUILD_SSH_DIR = ORIGINAL_BUILD_SSH_DIR;
 });
 
 describe("openship up — host Docker config mount (#581)", () => {
@@ -170,5 +174,48 @@ describe("openship up — host Docker config mount (#581)", () => {
 
     await composeUp({ version: "0.3.0" });
     expect(volumesOf("api")).toContain(`source: ${JSON.stringify(abs)}`);
+  });
+});
+
+describe("openship up — build SSH identity mount (private SSH submodules)", () => {
+  it("omits the mount and its env when OPENSHIP_BUILD_SSH_DIR is unset", async () => {
+    await composeUp({ version: "0.3.0" });
+    expect(composeYaml()).not.toContain("/root/.ssh");
+    expect(composeYaml()).not.toContain("OPENSHIP_BUILD_SSH_DIR");
+    expect(composeYaml()).not.toContain("__OPENSHIP_BUILD_SSH_MOUNT__");
+    expect(composeYaml()).not.toContain("__OPENSHIP_BUILD_SSH_ENV__");
+  });
+
+  it("mounts a directory that contains config, read-only, into the api service", async () => {
+    process.env.OPENSHIP_BUILD_SSH_DIR = "/home/op/build-ssh";
+    h.stats.set("/home/op/build-ssh", { isFile: false, isDirectory: true });
+    h.stats.set("/home/op/build-ssh/config", { isFile: true });
+
+    await composeUp({ version: "0.3.0" });
+    const api = volumesOf("api");
+    expect(api).toContain('source: "/home/op/build-ssh"');
+    expect(api).toContain("target: /root/.ssh");
+    expect(api).toContain("read_only: true");
+    expect(composeYaml()).toContain('OPENSHIP_BUILD_SSH_DIR: "/root/.ssh"');
+    expect(volumesOf("dashboard")).not.toContain("/root/.ssh");
+    expect(volumesOf("edge")).not.toContain("/root/.ssh");
+  });
+
+  it("does NOT mount a directory that has no config file", async () => {
+    process.env.OPENSHIP_BUILD_SSH_DIR = "/home/op/build-ssh";
+    h.stats.set("/home/op/build-ssh", { isFile: false, isDirectory: true });
+
+    await composeUp({ version: "0.3.0" });
+    expect(composeYaml()).not.toContain("/root/.ssh");
+    expect(composeYaml()).not.toContain("OPENSHIP_BUILD_SSH_DIR");
+  });
+
+  it("quotes a path containing YAML-significant characters", async () => {
+    process.env.OPENSHIP_BUILD_SSH_DIR = "/home/my op:1/build-ssh";
+    h.stats.set("/home/my op:1/build-ssh", { isFile: false, isDirectory: true });
+    h.stats.set("/home/my op:1/build-ssh/config", { isFile: true });
+
+    await composeUp({ version: "0.3.0" });
+    expect(volumesOf("api")).toContain('source: "/home/my op:1/build-ssh"');
   });
 });
