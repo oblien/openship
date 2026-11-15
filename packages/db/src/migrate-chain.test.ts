@@ -268,6 +268,32 @@ describe("migration chain applies to an existing, populated database", () => {
     expect(await appliedMigrations(client)).toBe(total);
   });
 
+  test("adds an optional icon override without changing the cached favicon or losing a saved override on retry", async () => {
+    const cutoff = journal.entries.findIndex((entry) => entry.tag === "0231_project_icon_url");
+    expect(journal.entries[cutoff - 1]?.tag).toBe("0230_restore_workspace_security_fields");
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec("SET session_replication_role = replica;");
+      await seedRow(client, "project", SEED_ID);
+      await client.exec("UPDATE project SET favicon = 'https://app.example.test/favicon.ico', favicon_checked_at = '2026-11-01 12:00:00', active_deployment_id = 'retained-release'");
+      const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project")).rows;
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect((await client.query("SELECT * FROM project")).rows).toEqual(
+        projects.map((project) => ({ ...project, icon_url: null })),
+      );
+      await client.exec("UPDATE project SET icon_url = 'https://cdn.example.test/custom.svg'");
+      const customized = (await client.query("SELECT * FROM project")).rows;
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect((await client.query("SELECT * FROM project")).rows).toEqual(customized);
+      expect(await appliedMigrations(client)).toBe(total);
+    } finally {
+      await client.close();
+      rmSync(legacy, { recursive: true, force: true });
+    }
+  });
+
   test("adds runtime roles after the applied lifecycle migration without changing existing releases", async () => {
     const cutoff = journal.entries.findIndex((entry) => entry.tag === "0192_runtime_roles");
     expect(journal.entries[cutoff - 1]?.tag).toBe("0191_project_lifecycle_operation");
@@ -286,7 +312,7 @@ describe("migration chain applies to an existing, populated database", () => {
 
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false })),
+        projects.map((project) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: null })),
       );
       expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
         deployments.map((deployment) => ({
@@ -332,7 +358,7 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false })),
+        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: null })),
       );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
@@ -535,6 +561,7 @@ describe("migration chain applies to an existing, populated database", () => {
           ...previous,
           runtime_version: null, runtime_image: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null,
           auto_deploy_cancel_builds: false,
+          icon_url: null,
           cloud_promotion: null,
           lifecycle_operation: null,
           cloud_static_hosting: "pages",
