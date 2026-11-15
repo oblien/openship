@@ -499,6 +499,8 @@ export const project = pgTable(
      * nobody opted into paying for this, so nobody keeps paying for it silently.
      */
     collectPaths: boolean("collect_paths").notNull().default(false),
+    /** Optional display override; independent of the discovered favicon cache. */
+    iconUrl: text("icon_url"),
     /** Auto-detected favicon URL from the deployed site */
     favicon: text("favicon"),
     /** Last time favicon detection was attempted for this project */

@@ -79,6 +79,7 @@ export interface Project {
 
   /* ── Hosting info (enriched by API) ─────────────────────── */
   favicon?: string | null;
+  iconUrl?: string | null;
   deployTarget?: string | null;
   serverId?: string | null;
   serverName?: string | null;

@@ -1437,5 +1437,10 @@
     "bytes": "octets",
     "emptyBodyHint": "Ce statut nécessite un corps de réponse vide.",
     "headersHint": "Ajoutez des en-têtes de cache, CORS ou autres."
+  },
+  "icon": {
+    "label": "URL de l’icône du projet",
+    "hint": "Une icône personnalisée remplace la détection automatique. Effacez l’URL pour retrouver l’icône détectée.",
+    "reset": "Utiliser l’icône automatique"
   }
 }

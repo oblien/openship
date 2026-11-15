@@ -1437,5 +1437,10 @@
     "bytes": "Bytes",
     "emptyBodyHint": "Dieser Status erfordert einen leeren Antwortinhalt.",
     "headersHint": "Cache-, CORS- oder andere Antwortheader hinzufügen."
+  },
+  "icon": {
+    "label": "URL des Projektsymbols",
+    "hint": "Ein eigenes Symbol ersetzt die automatische Erkennung. Leere die URL, um das erkannte Symbol zu verwenden.",
+    "reset": "Automatisches Symbol verwenden"
   }
 }

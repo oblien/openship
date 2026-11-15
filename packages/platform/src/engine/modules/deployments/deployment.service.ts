@@ -10,7 +10,7 @@ import { findProjectDeployment } from "../../lib/active-deployment";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { existsSync, readFileSync } from "node:fs";
 import { repos, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, deploymentBelongsToProject, type DeploymentHistoryQuery } from "@repo/core";
+import { projectIconUrl, NotFoundError, ForbiddenError, deploymentBelongsToProject, type DeploymentHistoryQuery } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import {
@@ -91,7 +91,8 @@ export async function listDeployments(
         projectName: project.name,
         // Project favicon → the dashboard uses it as the row's logo instead
         // of the framework/Docker glyph.
-        favicon: project.favicon ?? null,
+        favicon: projectIconUrl(project),
+        iconUrl: project.iconUrl ?? null,
       })),
     };
   }
@@ -111,7 +112,8 @@ export async function listDeployments(
       projectName: proj?.name ?? "Unknown",
       isActive: proj?.activeDeploymentId === d.id,
       // Project favicon → dashboard row logo (see listByProject above).
-      favicon: proj?.favicon ?? null,
+      favicon: projectIconUrl(proj),
+      iconUrl: proj?.iconUrl ?? null,
     };
   });
 

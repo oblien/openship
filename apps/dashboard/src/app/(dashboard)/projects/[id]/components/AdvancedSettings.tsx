@@ -27,6 +27,7 @@ import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { AppConfiguration } from "./AppConfiguration";
 import { BuildSettings } from "./BuildSettings";
 import { CloudStaticHosting } from "@/components/project-settings/CloudStaticHosting";
+import { ProjectIconSetting } from "@/components/project-settings/ProjectIconSetting";
 
 interface Props {
   onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -357,6 +358,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             and collided — and since this card has no `overflow-hidden` (the ⋮ menu needs
             to escape it), the collision spilled into the neighbouring card. */}
         <div className="space-y-2.5 px-5 py-4">
+          <div className="mb-5"><ProjectIconSetting /></div>
           <MetricRow label={t.projectSettings.advanced.metric.status} value={isProjectActive ? t.projectSettings.advanced.statusActive : t.projectSettings.advanced.statusDisabled} />
           <MetricRow
             label={t.projectSettings.advanced.metric.project}

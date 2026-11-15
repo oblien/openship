@@ -8,10 +8,8 @@ import { DeploymentMenu } from "./DeploymentMenu";
 import { CommitDetailsModal } from "./CommitDetailsModal";
 import type { Deployment } from "../types";
 import { formatDistanceToNow, formatBuildTime, getStatusConfig } from "../utils";
-import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
-import { AppLogo } from "@/components/AppLogo";
+import { ProjectIcon } from "@/components/shared/ProjectIcon";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useImageFallback } from "@/hooks/useImageFallback";
 
 type ServiceStatusLabels = {
   deployed: string;
@@ -122,7 +120,6 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
   const { t } = useI18n();
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const favicon = useImageFallback(deployment.favicon);
   const statusConfig = getStatusConfig(deployment.status);
 
   const statusLabelMap: Record<string, string> = {
@@ -153,19 +150,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
       />
       {/* App logo (catalog apps) → project favicon → framework icon → initials */}
       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
-        {appTemplateId ? (
-          <AppLogo appId={appTemplateId} className="size-5 object-contain" />
-        ) : favicon.showImage ? (
-          <img
-            ref={favicon.ref}
-            src={deployment.favicon!}
-            alt=""
-            className="size-5 object-contain"
-            onError={favicon.onError}
-          />
-        ) : (
-          <ProjectStackIcon framework={deployment.framework} serviceDeploymentMode={deployment.serviceDeploymentMode} className="size-5" />
-        )}
+        <ProjectIcon project={deployment} appTemplateId={appTemplateId} preferAppLogo className="size-5" />
       </div>
 
       {/* Main info */}

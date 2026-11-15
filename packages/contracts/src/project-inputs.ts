@@ -8,6 +8,7 @@ import { Type, type Static, type TLiteral } from "@sinclair/typebox";
 import { GitHubDeploymentChecksSchema } from "./deployment-checks";
 import {
   STACK_IDS,
+  MAX_IMAGE_URL_LENGTH,
   RUNTIME_VERSION_PATTERN,
   RUNTIME_VERSION_MAX_LENGTH,
   ALL_PACKAGE_MANAGERS,
@@ -559,7 +560,10 @@ export const CreateProjectBody = Type.Object({
 
 // `serverId` is create/ensure-only. Keeping it out of the generic PATCH body is
 // also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
-export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId"]));
+export const UpdateProjectBody = Type.Object({
+  ...Type.Partial(Type.Omit(CreateProjectBody, ["serverId"])).properties,
+  iconUrl: Type.Optional(Type.Union([Type.String({ maxLength: MAX_IMAGE_URL_LENGTH }), Type.Null()])),
+});
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to

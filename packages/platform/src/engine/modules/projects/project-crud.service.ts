@@ -13,8 +13,7 @@ import {
   type Project,
   type Server,
 } from "@repo/db";
-import {
-  slugify,
+import { isImageUrl, slugify,
   runtimeProjectUpdate,
   assertRuntimeVersionTarget,
   AppError,
@@ -1901,6 +1900,11 @@ async function updateProjectUnlocked(
     if (GIT_SOURCE_IDENTITY_KEYS.has(key)) continue;
     if (PROJECT_IDENTITY_KEYS.has(key)) continue;
     if (raw[key] !== undefined) update[key] = raw[key];
+  }
+  if (data.iconUrl !== undefined) {
+    const iconUrl = typeof data.iconUrl === "string" ? data.iconUrl.trim() || null : data.iconUrl;
+    if (iconUrl !== null && !isImageUrl(iconUrl)) throw new ValidationError("Icon URL must be an HTTP or HTTPS URL without credentials.");
+    update.iconUrl = iconUrl;
   }
   Object.assign(update, runtimeProjectUpdate(p, update));
   assertRuntimeVersionTarget({ ...p, ...update });

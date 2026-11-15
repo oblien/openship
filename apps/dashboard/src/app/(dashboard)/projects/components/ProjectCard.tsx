@@ -5,8 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useState } from "react";
 import Link from "next/link";
 import { type Project } from "@/constants/mock";
-import { AppLogo } from "@/components/AppLogo";
-import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
+import { ProjectIcon } from "@/components/shared/ProjectIcon";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, projectCardHref, projectDisplayDomain } from "@/utils/project-status";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
@@ -15,7 +14,6 @@ import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi, getApiErrorMessage } from "@/lib/api";
 import { timeAgo } from "@/lib/time";
-import { useImageFallback } from "@/hooks/useImageFallback";
 import type { Dictionary } from "@/i18n";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -68,7 +66,6 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
   const [menuOpen, setMenuOpen] = useState(false);
   const status = getProjectStatus(project);
   const fw = getFrameworkConfig(project.framework);
-  const favicon = useImageFallback(project.favicon);
 
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
@@ -121,19 +118,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
         {/* Icon — on the Apps page show the catalog app's brand logo; otherwise
             the project favicon, falling back to the framework/service glyph. */}
         <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors overflow-hidden">
-          {preferAppLogo && project.isApp ? (
-            <AppLogo appId={appTemplateId} className="w-6 h-6 object-contain" />
-          ) : favicon.showImage ? (
-            <img
-              ref={favicon.ref}
-              src={project.favicon!}
-              alt=""
-              className="w-6 h-6 object-contain"
-              onError={favicon.onError}
-            />
-          ) : (
-            <ProjectStackIcon framework={project.framework} />
-          )}
+          <ProjectIcon project={project} appTemplateId={appTemplateId} preferAppLogo={!!preferAppLogo && !!project.isApp} />
         </div>
 
         {/* Name + domain */}

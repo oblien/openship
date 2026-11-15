@@ -1437,5 +1437,10 @@
     "bytes": "bayt",
     "emptyBodyHint": "Bu durum kodu boş bir yanıt gövdesi gerektirir.",
     "headersHint": "Önbellek, CORS veya diğer yanıt başlıklarını ekleyin."
+  },
+  "icon": {
+    "label": "Proje simgesi URL’si",
+    "hint": "Özel simge otomatik algılamanın yerini alır. Algılanan simgeye dönmek için URL’yi temizleyin.",
+    "reset": "Otomatik simgeyi kullan"
   }
 }

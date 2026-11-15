@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./image-url";
 export * from "./docker-swarm";
 export * from "./actions";
 export * from "./action-capabilities";

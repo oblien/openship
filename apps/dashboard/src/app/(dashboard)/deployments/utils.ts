@@ -42,6 +42,7 @@ export const mapRowToDeployment = (row: any): Deployment => {
     projectId: row.projectId,
     projectName: row.projectName,
     favicon: row.favicon ?? null,
+    iconUrl: row.iconUrl ?? null,
     failureReason: row.errorMessage ?? undefined,
     /* Rollback state — flows from the listing endpoint, which enriches
      * each row with isActive and surfaces the orchestrator-owned

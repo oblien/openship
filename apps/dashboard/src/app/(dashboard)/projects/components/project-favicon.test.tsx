@@ -43,6 +43,15 @@ for (const [name, Card] of [["list", ProjectCard], ["grid", ProjectGridCard]] as
     <I18nProvider><ModalProvider><Card project={{ ...project, favicon }} /></ModalProvider></I18nProvider>
   );
   describe(`${name} favicon`, () => {
+    it("uses a custom icon before the catalog logo on the Apps page", async () => {
+      complete = false;
+      root = createRoot(container);
+      await act(async () => root!.render(
+        <I18nProvider><ModalProvider><Card preferAppLogo project={{ ...project, isApp: true, appTemplateId: "redis", iconUrl: "https://cdn.example.test/custom.png", favicon: "/auto.ico" }} /></ModalProvider></I18nProvider>,
+      ));
+      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe("https://cdn.example.test/custom.png");
+    });
+
     it("falls back when the image failed before hydration attached its error listener", async () => {
       const view = render();
       container.innerHTML = renderToString(view);

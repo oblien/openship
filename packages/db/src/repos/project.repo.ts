@@ -677,7 +677,7 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
 
       if (Object.keys(patch).length === 0) return;
 
-      await db.update(project).set(patch).where(eq(project.id, id));
+      await db.update(project).set(patch).where(and(eq(project.id, id), isNull(project.iconUrl)));
     },
 
     /** Soft-delete a project */

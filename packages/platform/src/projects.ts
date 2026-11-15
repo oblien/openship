@@ -1,3 +1,4 @@
+import { projectIconUrl } from "@repo/core";
 import {
   AppError,
   CreateProjectBody,
@@ -128,6 +129,7 @@ export interface ProjectDependencies {
 /** One public presentation for HTTP, native and remote project operations. */
 export function presentProject(row: unknown): Project {
   const data = JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
+  if (data.iconUrl) data.favicon = projectIconUrl(data);
   delete data.cloneTokenEncrypted;
   delete data.webhookSecret;
   delete data.cloudPromotion;

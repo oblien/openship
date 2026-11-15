@@ -1,5 +1,7 @@
 "use client";
 
+import { UserAvatar } from "@/components/ui/UserAvatar";
+
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -472,9 +474,11 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
               title={collapsed ? activeOrg?.name : undefined}
             >
               {/* Org avatar / initial */}
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.08] text-sm font-semibold uppercase text-foreground">
-                {activeOrg?.name?.[0] ?? <UiIcon name="building" className="size-4" />}
-              </div>
+              {activeOrg?.id === `org_${user?.id}` ? <UserAvatar image={user?.image} name={displayName} /> : (
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.08] text-sm font-semibold uppercase text-foreground">
+                  {activeOrg?.name?.[0] ?? <UiIcon name="building" className="size-4" />}
+                </div>
+              )}
 
               {!collapsed && (
                 <>
@@ -563,9 +567,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                 {/* Footer separator + signed-in-as + sign out */}
                 <div className="border-t border-border/40 px-2 py-2">
                   <div className="flex items-center gap-2.5 rounded-xl px-2 py-1.5">
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] text-[11px] font-semibold uppercase text-foreground">
-                      {displayInitial}
-                    </div>
+                    <UserAvatar image={user?.image} name={displayInitial} className="size-7 text-[11px]" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[12px] font-medium leading-tight text-foreground">
                         {displayName}
@@ -612,9 +614,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
                 collapsed ? "justify-center" : "gap-3"
               }`}
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] text-sm font-semibold uppercase text-foreground">
-                {displayInitial}
-              </div>
+              <UserAvatar image={user?.image} name={displayInitial} />
 
               {!collapsed && (
                 <>

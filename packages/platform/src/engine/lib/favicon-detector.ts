@@ -22,6 +22,7 @@ interface FaviconRefreshProject {
   slug?: string | null;
   activeDeploymentId?: string | null;
   favicon?: string | null;
+  iconUrl?: string | null;
   faviconCheckedAt?: Date | string | null;
 }
 
@@ -108,7 +109,7 @@ export function refreshProjectFaviconIfStale(
   project: FaviconRefreshProject,
   options?: RefreshOptions,
 ): void {
-  if (!project.activeDeploymentId || !isRefreshDue(project)) {
+  if (project.iconUrl || !project.activeDeploymentId || !isRefreshDue(project)) {
     return;
   }
 
@@ -140,6 +141,8 @@ export async function detectAndStoreFavicon(projectId: string, siteUrl: string):
   const checkedAt = new Date();
 
   try {
+    const project = await repos.project.findById(projectId);
+    if (!project || project.iconUrl) return;
     const faviconUrl = await probeFavicon(siteUrl);
     if (faviconUrl) {
       await repos.project.updateFaviconCache(projectId, {

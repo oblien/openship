@@ -5,6 +5,13 @@ and a consistent type hierarchy across light, dim, and dark themes.
 
 ## Surfaces and controls
 
+Personal avatar URLs live in Settings → General → Profile. Project icon URLs live
+in the Project Info card in project Settings. Both use the shared URL editor with
+a preview and a reset action. Custom project icons take precedence across project,
+app and deployment lists and pause automatic favicon discovery. Clearing an override
+restores the cached favicon and its normal discovery flow. Image URLs are displayed
+directly by the browser with no referrer; the control plane does not fetch custom URLs.
+
 Assistant settings belong in **Settings → Assistant**; event-driven flows and run
 history open from **Automations** in the AI Agents right column.
 Keep the conversation free of view tabs, with an AI Agents return action on the automations page.

@@ -1437,5 +1437,10 @@
     "bytes": "bytes",
     "emptyBodyHint": "Este estado requiere un cuerpo de respuesta vacío.",
     "headersHint": "Añade cabeceras de caché, CORS u otras."
+  },
+  "icon": {
+    "label": "URL del icono del proyecto",
+    "hint": "El icono personalizado sustituye la detección automática. Borra la URL para volver al icono detectado.",
+    "reset": "Usar icono automático"
   }
 }
