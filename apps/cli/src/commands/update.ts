@@ -54,7 +54,14 @@ import { shortSha } from "../lib/from-source";
 import { readCliInstall, writeCliInstall, type CliInstall } from "../lib/cli-install";
 import { ensureCliPayload } from "../lib/cli-payload";
 import { ensureNodeRuntime, writeLauncher } from "../lib/node-runtime";
-import { applyOnlyArgv, isReexecChild, REEXEC_ENV } from "../lib/update-reexec";
+import {
+  applyOnlyArgv,
+  freshInvocation,
+  isReexecChild,
+  REEXEC_ENV,
+  targetVersionEnv,
+  TARGET_VERSION_ENV,
+} from "../lib/update-reexec";
 import {
   readSourceInstall,
   rebuildFromSource,
@@ -107,7 +114,20 @@ export async function verifyHostChannelAfterUpdate(): Promise<void> {
 
 async function runReconcile(): Promise<boolean> {
   if (readInstallMethod() === "compose") {
-    const { applied, refused } = await composeUpdate();
+    // The fetch phase's installed version (TARGET_VERSION_ENV) outranks this
+    // bundle's own __CLI_VERSION__: the re-exec prefers the bin on PATH, but if
+    // the resolution still landed on the PREVIOUS bundle (isolated global store,
+    // stale launcher, symlink captured before the swap), letting it pin its own
+    // version would regenerate .env with the OLD image tag — installing the new
+    // CLI and then pulling the previous images right back. Warn + pin the target
+    // instead; when the child IS the fresh bundle this is exactly a no-op.
+    const target = targetVersionEnv();
+    if (target && target !== __CLI_VERSION__ && !isJsonMode()) {
+      info(
+        `Applying v${target} (this process is still bundle v${__CLI_VERSION__} — 'openship' on PATH resolves elsewhere; check 'command -v openship').`,
+      );
+    }
+    const { applied, refused } = await composeUpdate(target ?? undefined);
     if (isJsonMode()) printJson({ reconciled: applied, refused, method: "compose" });
     else if (applied) ok("Compose stack regenerated, images pulled, services recreated.");
     // A refusal already printed what's wrong and what to do; "retry" would contradict it.
@@ -145,13 +165,28 @@ async function reconcileCurrentCompose(): Promise<void> {
  * spawned=false (only on a spawn failure, e.g. ENOENT) tells the caller to fall
  * back to an in-process reconcile so the box is never left un-reconciled.
  */
-function reexecApply(): { spawned: boolean; status: number | null } {
+function reexecApply(targetVersion?: string): { spawned: boolean; status: number | null } {
   if (isReexecChild()) return { spawned: false, status: null };
-  const { runtime, args } = selfInvocation();
+  // PATH preference only for the ENTRY shape on package-manager fetches
+  // (targetVersion set): the bin on PATH is what `add -g` just repointed, while
+  // argv[1] can still sit in the previous version's directory after a swap. The
+  // LAUNCHER shape (tarball: args []) falls through freshInvocation unchanged —
+  // substituting its empty entry would hand the launcher the bin path as a
+  // bogus first command — and its child is already the fresh bundle (the
+  // launcher re-resolves cli/current on every boot), so only the pinned target
+  // matters there.
+  const { runtime, args } = targetVersion
+    ? freshInvocation(selfInvocation())
+    : selfInvocation();
   const argv = applyOnlyArgv(args, isJsonMode());
   const res = spawnSync(runtime, argv, {
     stdio: "inherit",
-    env: { ...process.env, [REEXEC_ENV]: "1" },
+    env: {
+      ...process.env,
+      [REEXEC_ENV]: "1",
+      // Whichever bundle the child turns out to be, the reconcile pins THIS.
+      ...(targetVersion ? { [TARGET_VERSION_ENV]: targetVersion } : {}),
+    },
   });
   return { spawned: res.error == null, status: res.status };
 }
@@ -283,7 +318,7 @@ async function runTarballUpdate(install: CliInstall, opts: UpdateOpts): Promise<
   // Re-exec the freshly-repointed binary so ITS code runs the reconcile — the
   // NEW compose template / service unit lands in this same command. Fall back to
   // an in-process reconcile only if the spawn fails (box never left un-reconciled).
-  const applyViaChild = reexecApply();
+  const applyViaChild = reexecApply(latest);
   if (applyViaChild.spawned) {
     process.exitCode = applyViaChild.status ?? 1;
     return;
@@ -408,7 +443,7 @@ async function runForkUpdate(opts: UpdateOpts): Promise<void> {
   // compose regen repins OPENSHIP_VERSION to the new CLI version, which pulls
   // the matching fork images from the pinned registry. Same contract as the
   // npm path above.
-  const applyViaChild = reexecApply();
+  const applyViaChild = reexecApply(latest.version);
   if (applyViaChild.spawned) {
     process.exitCode = applyViaChild.status ?? 0;
     return;
@@ -534,7 +569,7 @@ export const updateCommand = new Command("update")
     // Re-exec the just-installed binary so ITS code runs the reconcile (new
     // template / unit applied in one command). Fall back to an in-process
     // reconcile only if the spawn fails, so the box is never left un-reconciled.
-    const applyViaChild = reexecApply();
+    const applyViaChild = reexecApply(latest);
     if (applyViaChild.spawned) {
       process.exitCode = applyViaChild.status ?? 1;
       return;

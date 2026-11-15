@@ -21,6 +21,9 @@ beforeEach(() => {
   vi.resetModules();
   vi.stubGlobal("__CLI_VERSION__", "0.9.11");
   vi.stubEnv("OPENSHIP_UPDATE_REEXEC", "");
+  // The npm path's re-exec resolves the just-installed bin through PATH
+  // (freshInvocation); a developer's real global `openship` must not leak in.
+  vi.stubEnv("PATH", "/nonexistent");
   process.exitCode = 0;
   h.source.mockReturnValue(null);
   h.install.mockReturnValue(null);
