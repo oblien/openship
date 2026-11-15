@@ -5,10 +5,11 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useMemo, useState } from "react";
 import { resolveLocalized } from "@repo/core";
+import type { ProjectConnectionCandidate } from "@repo/contracts";
 import { Modal } from "@/components/ui/Modal";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Checkbox } from "@/components/ui/Checkbox";
-import { AppLogo } from "@/components/AppLogo";
+import { ProjectIcon } from "@/components/shared/ProjectIcon";
 import { connectionsApi, type ConnectionMode } from "@/lib/api/connections";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
@@ -47,15 +48,6 @@ function InlineHint({ text }: { text: string }) {
       )}
     </>
   );
-}
-
-interface TargetProject {
-  id: string;
-  name: string;
-  description: string;
-  appTemplateId?: string;
-  favicon?: string | null;
-  clusterId?: string | null;
 }
 
 interface ConnectionFormProps {
@@ -104,7 +96,7 @@ export function ProjectConnectionForm({
       (!sourceDatabaseId || output.sourceDatabaseId === sourceDatabaseId),
   ), [suppliedOutputs, view, sourceServiceId, sourceDatabaseId]);
 
-  const [targets, setTargets] = useState<TargetProject[]>([]);
+  const [targets, setTargets] = useState<ProjectConnectionCandidate[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [targetId, setTargetId] = useState(fixedTargetId ?? "");
   const [mode, setMode] = useState<ConnectionMode>(guide?.defaultMode ?? "internal");
@@ -164,7 +156,7 @@ export function ProjectConnectionForm({
     setLoadingProjects(true);
     connectionsApi.candidates(fixedSourceId ?? fixedTargetId ?? "")
       .then(result => {
-        if (!cancelled) setTargets(result.data.map(project => ({ ...project, appTemplateId: project.appTemplateId ?? undefined })));
+        if (!cancelled) setTargets(result.data);
       })
       .catch(error => { if (!cancelled) setLoadError(getApiErrorMessage(error, c.failed)); })
       .finally(() => { if (!cancelled) setLoadingProjects(false); });
@@ -237,7 +229,7 @@ export function ProjectConnectionForm({
                     label: p.name,
                     description: p.description || undefined,
                     icon: (
-                      <AppLogo appId={p.appTemplateId} src={p.favicon ?? undefined} className="size-4" />
+                      <ProjectIcon project={p} appTemplateId={p.appTemplateId} className="size-4" />
                     ),
                   }))}
                   onChange={fixedTargetId ? setSourceProjectId : setTargetId}

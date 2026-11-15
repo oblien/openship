@@ -1437,5 +1437,10 @@
     "bytes": "bytes",
     "emptyBodyHint": "Este estado exige um corpo de resposta vazio.",
     "headersHint": "Adicione cabeçalhos de cache, CORS ou outros."
+  },
+  "icon": {
+    "label": "URL do ícone do projeto",
+    "hint": "Use uma URL de imagem HTTP ou HTTPS. Limpe-a para usar o ícone padrão.",
+    "reset": "Usar ícone padrão"
   }
 }

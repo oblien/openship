@@ -10,7 +10,6 @@ import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
 import { audit } from "../../lib/audit-emitter";
 import { assertNativeSourcePath } from "../../native/source-policy";
-import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { createProjectControls } from "./project-controls.operations";
 import { clusterDatabaseEvents } from "./cluster-database.operations";
 import { clusterVolumeEvents } from "./cluster-volume.operations";
@@ -88,7 +87,6 @@ export const projectDependencies: ProjectDependencies = {
   async get(ctx, id) {
     const service = await import("./project.service");
     const project = await service.getProject(id, ctx.organizationId);
-    refreshProjectFaviconIfStale(project);
     return project;
   },
   async update(ctx, id, input) {
@@ -113,7 +111,6 @@ export const projectDependencies: ProjectDependencies = {
           }),
       }),
     });
-    result.rows.forEach((row) => refreshProjectFaviconIfStale(row));
     return { ...result, rows: result.rows.map((p) => ({ ...p, source: "local" })) };
   },
   recordAudit,

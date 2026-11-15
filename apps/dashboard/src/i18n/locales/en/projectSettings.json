@@ -1437,5 +1437,10 @@
     "bytes": "bytes",
     "emptyBodyHint": "This status requires an empty response body.",
     "headersHint": "Add cache, CORS, or other response headers."
+  },
+  "icon": {
+    "label": "Project icon URL",
+    "hint": "Use an HTTP or HTTPS image URL. Clear it to use the default icon.",
+    "reset": "Use default icon"
   }
 }

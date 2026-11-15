@@ -13,7 +13,6 @@ vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: vi.fn() },
 }));
 vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn() } }));
-vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: vi.fn(),
 }));

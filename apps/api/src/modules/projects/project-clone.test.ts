@@ -32,8 +32,7 @@ const h = {
     deletedAt: null,
     deletionInProgress: false,
     lifecycleOperation: { kind: "delete", status: "failed", error: "Previous cleanup failure" },
-    favicon: "https://clincai.example/favicon.ico",
-    faviconCheckedAt: new Date(),
+    iconUrl: "https://clincai.example/icon.png",
     compositeRoutes: [{ host: "clincai.example" }],
     workspaceId: null,
     gitProvider: "github",
@@ -194,6 +193,7 @@ describe("the copy direction is COPY-by-default", () => {
     await clone();
     const p = clonedProject();
     expect(p.framework).toBe("nextjs");
+    expect(p.iconUrl).toBe("https://clincai.example/icon.png");
     expect(p.routeStrategy).toBe("loopback");
     expect(p.rollbackWindow).toBe(5);
     // Same for the service rows: a build command exists in no container.
@@ -231,7 +231,7 @@ describe("what it deliberately does NOT copy", () => {
     const p = clonedProject();
     // `id`/`groupId` are the insert's, and name/slug/serverId/workspaceId/activeDeploymentId are set
     // explicitly above — the rest must simply be absent.
-    for (const field of ["deletedAt", "deletionInProgress", "lifecycleOperation", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudPromotion", "id", "groupId", "createdAt", "updatedAt"]) {
+    for (const field of ["deletedAt", "deletionInProgress", "lifecycleOperation", "disabledAt", "compositeRoutes", "cloudPromotion", "id", "groupId", "createdAt", "updatedAt"]) {
       expect(p, field).not.toHaveProperty(field);
     }
   });

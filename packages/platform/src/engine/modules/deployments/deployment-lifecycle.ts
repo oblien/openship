@@ -38,8 +38,6 @@ import {
   sanitizeStorableStrings,
   sliceWithoutSplittingPair,
 } from "./build-log-sanitize";
-import { detectAndStoreFavicon } from "../../lib/favicon-detector";
-import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
@@ -1064,11 +1062,6 @@ export async function onSuccess(
       },
     },
   );
-
-  // Async favicon detection - don't block the deploy response
-  if (result.url) {
-    void trackBackgroundWork(detectAndStoreFavicon(project.id, result.url));
-  }
 
   // Webmail on Openship Cloud, routed on the mail server's own `mail.<domain>`:
   // the mail VPS proxies that hostname to the cloud URL, which can only be

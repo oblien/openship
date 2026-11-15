@@ -1581,7 +1581,7 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
   // Per-service domains have no endpoint order to reorder — primary is the
   // domain row's isPrimary flag. Flip it via the API, then reflect locally
   // (exactly one primary per project). getPrimaryByProject picks this up for
-  // the project's canonical URL / favicon / analytics, and it survives
+  // the project's canonical URL / analytics, and it survives
   // redeploys (service route registration preserves an existing isPrimary).
   const handleSetPrimaryServiceDomain = async (summary: DomainSummaryItem) => {
     if (!summary.domainId || summary.isPrimary) return;

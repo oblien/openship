@@ -45,8 +45,6 @@ export function projectPromotionDigest(dump: DatabaseDump): string {
     delete row.deletionInProgress;
     delete row.lifecycleOperation;
     delete row.updatedAt;
-    delete row.favicon;
-    delete row.faviconCheckedAt;
   }
   for (const [name, rows] of Object.entries(tables)) {
     tables[name] = rows

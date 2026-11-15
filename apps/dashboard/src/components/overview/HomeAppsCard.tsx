@@ -4,7 +4,7 @@ import { useId } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
 import type { Project } from "@/constants/mock";
-import { AppLogo } from "@/components/AppLogo";
+import { ProjectIcon } from "@/components/shared/ProjectIcon";
 import { useI18n } from "@/components/i18n-provider";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { Button } from "@/components/ui/button";
@@ -66,7 +66,7 @@ export default function HomeAppsCard({
                 className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               />
               <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-background">
-                <AppLogo appId={project.appTemplateId ?? undefined} className="size-5" />
+                <ProjectIcon project={project} appTemplateId={project.appTemplateId} className="size-5" />
               </div>
               <p
                 className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"

@@ -982,7 +982,7 @@ export interface ProjectAccess {
 /** The project's ONE canonical public domain row, chosen over ALL rows
  *  (project-level AND service-scoped): a verified primary, else the first
  *  verified row, else none. The single primary-selection rule the detail Access
- *  URL, the list card's primaryDomain, and the favicon refresh all share, so
+ *  URL and the list card's primaryDomain share, so
  *  those surfaces can never disagree on which domain is "the" one. */
 export function pickCanonicalDomainRow<T extends Pick<ProjectDomainRow, "verified" | "isPrimary"> & { hostname?: string }>(
   rows: T[] | null | undefined,

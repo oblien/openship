@@ -32,6 +32,7 @@ import { useI18n } from "@/components/i18n-provider";
 
 import { BuildPreferences } from "./_components/BuildPreferences";
 import { AppearanceSetting } from "./_components/AppearanceSetting";
+import { ProfileSetting } from "./_components/ProfileSetting";
 import { AppearanceEditor } from "@/components/appearance/AppearanceEditor";
 import { RoutePreferences } from "./_components/RoutePreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
@@ -144,6 +145,7 @@ function SettingsPageInner() {
         <div className="space-y-6 min-w-0">
           {activeTab === "general" && !customizeAppearance && (
             <>
+              <ProfileSetting />
               <AppearanceSetting />
               {/* Deploy Defaults + Routing hidden for now — advanced/rarely-needed,
                   reduces general-settings noise. The edge defaults to loopback-port
