@@ -76,7 +76,7 @@ export interface McpPrincipal {
   /** Resolved with the same persisted instance-authority policy as HTTP calls. */
   instanceAdmin?: boolean;
   role: "owner" | "admin" | "member" | "restricted";
-  /** Current membership before narrowing it to the credential's grants. */
+  /** For scoped tokens, the current membership in their bound organization. */
   membershipRole?: "owner" | "admin" | "member" | "restricted";
   readOnly: boolean;
   /** Resource types the token holds grants on — only consulted when role === "restricted". */
@@ -356,8 +356,9 @@ export function filterToolsForPrincipal(
 ): McpToolDef[] {
   return tools.filter((t) => {
     const action = assertedAction(t.perm.action);
-    if (principal.membershipRole && principal.membershipRole !== "restricted" &&
-      !roleAllowsResourceType(principal.membershipRole, t.perm.leaf as CheckedResourceType, action)) return false;
+    const role = principal.membershipRole ?? principal.role;
+    if (role !== "restricted" &&
+      !roleAllowsResourceType(role, t.perm.leaf as CheckedResourceType, action)) return false;
     // Read-only tokens can only call GET — the runtime gate rejects mutations by
     // HTTP method, so mirror that exactly rather than guessing from the tag.
     if (principal.readOnly && t.method !== "GET") return false;
@@ -381,9 +382,7 @@ export function filterToolsForPrincipal(
       if (principal.role === "restricted" && !caps?.has(needed)) return false;
     }
 
-    if (principal.role !== "restricted") {
-      return roleAllowsResourceType(principal.role, t.perm.leaf as CheckedResourceType, action);
-    }
+    if (principal.role !== "restricted") return true;
     // "Own projects" scope: the create-capable project wildcard grant reaches the
     // dedicated create routes (POST /projects, POST /apps) and the project list
     // (which the caller filters to its self-created projects). Checked before the
@@ -409,11 +408,11 @@ export function filterToolsForPrincipal(
       // A per-id grant still fails here, correctly: `wildcardGrants` holds only
       // resourceId "*" rows.
       const held = principal.wildcardGrants.get(t.perm.leaf);
-      return held ? permitsAction(held, assertedAction(t.perm.action)) : false;
+      return held ? permitsAction(held, action) : false;
     }
     if (principalHasGrantFor(principal.grantedRootTypes, t.perm.grantRoot)) return true;
     // Same mapping the permission check uses: `domain:admin` ⇒ `domains:delete`.
-    const capability = capabilityFor(t.perm.leaf, assertedAction(t.perm.action));
+    const capability = capabilityFor(t.perm.leaf, action);
     return !!capability && !!principal.grantedCapabilities?.has(capability);
   });
 }

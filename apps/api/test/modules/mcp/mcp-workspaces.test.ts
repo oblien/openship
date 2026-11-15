@@ -138,6 +138,22 @@ describe("MCP workspace discovery", () => {
     expect(denied.isError).toBe(true);
   });
 
+  it.each([false, true])("advertises administration in another workspace only for an unbound credential (bound=%s)", async bound => {
+    const owner = await seedOwner({ bound });
+    await secondWorkspace(owner, "admin");
+    await db.update(schema.member).set({ role: "member" }).where(and(eq(schema.member.userId, owner.userId), eq(schema.member.organizationId, owner.orgId)));
+    const listed = await (await rpc(owner, "tools/list")).json() as { result: { tools: { name: string }[] } };
+    expect(listed.result.tools.some(tool => tool.name === "delete_projects_by_id")).toBe(!bound);
+    if (!bound) {
+      const group = await repos.projectGroup.create({ organizationId: owner.orgId, name: "Member project", slug: "member-project" });
+      const project = await repos.project.create({ organizationId: owner.orgId, groupId: group.id, name: "Member project", slug: "member-project" });
+      const denied = await call(owner, "delete_projects_by_id", { id: project.id, organizationId: owner.orgId });
+      expect(denied).toMatchObject({ isError: true, data: { code: "NOT_FOUND" } });
+      expect(forwarding.fetch).toHaveBeenCalled();
+      expect(await repos.project.findById(project.id)).toMatchObject({ id: project.id });
+    }
+  });
+
   it("shares the discovery contract with SDKs and respects fixed native scopes", async () => {
     const owner = await seedOwner({ bound: false });
     const target = await secondWorkspace(owner);
