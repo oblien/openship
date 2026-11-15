@@ -12,7 +12,7 @@ vi.mock("../../src/lib/request-context", () => ({ getRequestContext: () => ({ or
 vi.mock("../../src/modules/cloud/cloud-relay-access", () => ({ authorizeCloudRelayWorkspace: async () => null }));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ ensureNamespace: async () => "ns-a" }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: () => ({
-  workspaces: { get: h.workspaceGet },
+  vms: { get: h.workspaceGet },
   pages: { list: h.pageList, get: h.pageGet, create: h.pageCreate, deploy: h.pageDeploy, delete: h.pageDelete },
   domain: { routes: h.routes }, routes: { set: h.setRoutes },
 }) }));
@@ -46,18 +46,18 @@ describe("desktop-to-SaaS Cloud resource delegation", () => {
   it("round-trips page reads and redeploys through the SaaS ownership checks", async () => {
     const proxy = createRemoteCloudAdmin("org-a");
     expect(await proxy.pages!.get("site-a")).toMatchObject({ page: { namespace: "ns-a" } });
-    await proxy.pages!.deploy("site-a", { workspace_id: "ws-a", path: "/app/dist" });
-    expect(h.pageDeploy).toHaveBeenCalledWith("site-a", { workspace_id: "ws-a", path: "/app/dist" });
+    await proxy.pages!.deploy("site-a", { vm_id: "ws-a", path: "/app/dist" });
+    expect(h.pageDeploy).toHaveBeenCalledWith("site-a", { vm_id: "ws-a", path: "/app/dist" });
     expect(h.spend).toHaveBeenCalledWith("org-a", null);
   });
   it("ignores the client's namespace and pins a create to its server identity", async () => {
-    await createRemoteCloudAdmin("org-a").pages!.create({ workspace_id: "ws-a", path: "/app/dist", name: "Site", slug: "site-a", namespace: "ns-b" });
+    await createRemoteCloudAdmin("org-a").pages!.create({ vm_id: "ws-a", path: "/app/dist", name: "Site", slug: "site-a", namespace: "ns-b" });
     expect(h.pageCreate).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-a" }));
   });
   it("refuses both foreign page reads and foreign source exports", async () => {
     const pages = createRemoteCloudAdmin("org-a").pages!;
     await expect(pages.get("site-b")).rejects.toMatchObject({ status: 404 });
-    await expect(pages.create({ workspace_id: "ws-b", path: "/app/dist", name: "Site", slug: "site-a" })).rejects.toMatchObject({ status: 404 });
+    await expect(pages.create({ vm_id: "ws-b", path: "/app/dist", name: "Site", slug: "site-a" })).rejects.toMatchObject({ status: 404 });
     expect(h.pageCreate).not.toHaveBeenCalled();
   });
   it("preserves provider 404 so the runtime can create a missing page", async () => {

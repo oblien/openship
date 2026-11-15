@@ -99,7 +99,8 @@ export interface AuthorizationDependencies {
 }
 
 export interface PermissionOptions {
-  roleOverride?: ContextRole;
+  /** A credential may narrow membership authority to its own grants. */
+  roleOverride?: "restricted";
   grants?: PermissionGrantSource;
 }
 
@@ -118,14 +119,15 @@ export const PROJECT_ROOTED: ReadonlySet<CheckedResourceType> = new Set([
   "build_session",
 ]);
 
-/** Shared with capability discovery; restricted roles use grants instead. */
+/** Shared role ceiling for execution and discovery; restricted roles use grants. */
 export function roleAllowsResourceType(
   role: "owner" | "admin" | "member",
   type: CheckedResourceType,
+  action: Permission,
 ): boolean {
   if (role === "owner") return true;
   if (role === "admin") return type !== "billing";
-  return type !== "billing" && type !== "audit";
+  return action !== "admin" && type !== "billing" && type !== "audit";
 }
 
 export function permitsAction(permissions: readonly GrantPermission[], action: Permission): boolean {
@@ -262,10 +264,12 @@ export function createAuthorization(deps: AuthorizationDependencies) {
     if (!["read", "write", "admin", "create"].includes(input.action)) return false;
     const persistedRole = membershipRole(member);
     if (!persistedRole) return false;
-    const role = opts?.roleOverride ?? persistedRole;
-    if (role === "owner" || role === "admin" || role === "member")
-      return roleAllowsResourceType(role, input.resourceType);
-    if (role !== "restricted") return false;
+    // A token narrows its user's current authority. A previously minted grant
+    // must not retain administration after that user is demoted to member.
+    if (persistedRole !== "restricted") {
+      if (!roleAllowsResourceType(persistedRole, input.resourceType, input.action)) return false;
+      if (opts?.roleOverride !== "restricted") return true;
+    }
     const source = opts?.grants ?? repos.resourceGrant;
 
     // A create-only wildcard permits creation and a filtered list, never an

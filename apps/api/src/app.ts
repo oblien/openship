@@ -23,6 +23,7 @@ import {
   registerControllerLifecycle,
 } from "./modules/system/instance/controller-state";
 import { resumeControllerSockets } from "./lib/ws";
+import { resumeControllerStreams } from "./lib/sse";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 import { instanceAuthorityGuard } from "./modules/system/instance/authority-guard";
 import { quiesceController } from "./modules/system/instance/quiescence";
@@ -408,6 +409,7 @@ async function startControllerBackground(): Promise<void> {
   backgroundStarted = true;
   try {
     resumeControllerSockets();
+    resumeControllerStreams();
     // ─── Backup job runner + boot reconcile ─────────────────────────────
     //
     // One JobRunner powers all backup work — BullMQ when Redis is

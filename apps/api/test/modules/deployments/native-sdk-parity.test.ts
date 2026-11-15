@@ -1897,8 +1897,8 @@ describe("domain and DNS HTTP/native parity", () => {
     const local = await native();
     h.members.set("org-a:alice", { id: "member-a", role: "member" });
     for (const dns of [remote().dns, local.dns]) {
-      await expect(dns.addCredential(input)).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
-      await expect(dns.removeCredential("dns-a")).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
+      await expect(dns.addCredential(input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(dns.removeCredential("dns-a")).rejects.toMatchObject({ code: "NOT_FOUND" });
     }
     expect(h.dnsAdd).not.toHaveBeenCalled();
     expect(h.dnsRemove).not.toHaveBeenCalled();
@@ -2045,10 +2045,10 @@ describe("provider credential HTTP/native parity", () => {
     const local = await native();
     h.members.set("org-a:alice", { id: "member-a", role: "member" });
     for (const credentials of [local.credentials, remote().credentials]) {
-      await expect(credentials.create({ provider: "docker-registry", name: "Registry", values: { secret: "value" } })).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
-      await expect(credentials.update("credential-a", { name: "Renamed" })).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
-      await expect(credentials.remove("credential-a")).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
-      await expect(credentials.verify("credential-a")).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
+      await expect(credentials.create({ provider: "docker-registry", name: "Registry", values: { secret: "value" } })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(credentials.update("credential-a", { name: "Renamed" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(credentials.remove("credential-a")).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(credentials.verify("credential-a")).rejects.toMatchObject({ code: "NOT_FOUND" });
     }
     expect(h.credentialCreate).not.toHaveBeenCalled();
     expect(h.credentialUpdate).not.toHaveBeenCalled();
@@ -2492,6 +2492,20 @@ describe("server HTTP/native parity", () => {
     expect(h.serverRemove).not.toHaveBeenCalled();
   });
 
+  it("denies ordinary members host execution through native, SDK and raw HTTP operations", async () => {
+    h.members.set("org-a:alice", { id: "member-a", role: "member" });
+    const local = await native();
+    for (const servers of [local.servers, remote().servers]) {
+      await expect(servers.exec("server-a", { command: "whoami" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+    const response = await app.request("/api/system/servers/server-a/exec", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: "whoami" }),
+    });
+    expect(response.status).toBe(404);
+    expect(h.serverWithExecutor).not.toHaveBeenCalled();
+    expect(h.audit.mock.calls.filter(([event]) => event.eventType === "server.exec")).toHaveLength(0);
+  });
+
   it("returns the same partial teardown result and keeps HTTP 409", async () => {
     h.serverWorkloads.mockResolvedValue([{ id: "project-a", name: "Application", appTemplateId: null }]);
     h.projectTeardown.mockResolvedValue({ rowDeleted: false, orphaned: [], unrecoverable: [{ error: "volume busy" }] });
@@ -2584,11 +2598,11 @@ describe("HTTP/native system parity", () => {
       for (const system of [local.system, remote().system]) {
         await expect(system.updateSettings({ productMode: "mail" })).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.updateEmailSettings({ host: null })).rejects.toMatchObject({ statusCode: 403 });
-        await expect(system.resetSettings()).rejects.toMatchObject({ statusCode: 403 });
+        await expect(system.resetSettings()).rejects.toMatchObject({ statusCode: role === "member" ? 404 : 403 });
         await expect(system.health()).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.browse({ path: "/" })).rejects.toMatchObject({ statusCode: 403 });
         await expect(system.listUntrackedEdgeSites()).rejects.toMatchObject({ statusCode: 403 });
-        await expect(system.removeUntrackedEdgeSite({ hostname: "orphan.example.test" })).rejects.toMatchObject({ statusCode: 403 });
+        await expect(system.removeUntrackedEdgeSite({ hostname: "orphan.example.test" })).rejects.toMatchObject({ statusCode: role === "member" ? 404 : 403 });
       }
     }
     expect(h.settingsUpsert).not.toHaveBeenCalled();

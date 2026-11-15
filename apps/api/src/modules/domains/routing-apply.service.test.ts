@@ -132,7 +132,7 @@ describe("Cloud Docker route tables", () => {
         } as Record<string, number>
       )[`${container}:${port}`];
       if (!published) throw new Error("service port is not published");
-      return { workspace: "shared-vm", port: published };
+      return { vm: "shared-vm", port: published };
     });
   });
   it("repairs an existing single static container route without rebuilding", async () => {
@@ -149,7 +149,7 @@ describe("Cloud Docker route tables", () => {
     };
     domainRepo.listByProject.mockResolvedValue([savedDomain]);
     domainRepo.findByHostname.mockResolvedValue(savedDomain);
-    target.mockResolvedValue({ workspace: "shared-vm", port: 30000 });
+    target.mockResolvedValue({ vm: "shared-vm", port: 30000 });
     await applyCloudRouting({
       project: { ...base, workloadType: "static", hasServer: false, port: 3000 } as never,
       deployment: {
@@ -186,9 +186,9 @@ describe("Cloud Docker route tables", () => {
       ["stack-api.opsh.io", 30003, false],
     ]);
     expect(publish.mock.calls.map((call) => call[3].routes[0].action)).toEqual([
-      { kind: "proxy", workspace: "shared-vm", port: 30001 },
-      { kind: "proxy", workspace: "shared-vm", port: 30002 },
-      { kind: "proxy", workspace: "shared-vm", port: 30003 },
+      { kind: "proxy", vm: "shared-vm", port: 30001 },
+      { kind: "proxy", vm: "shared-vm", port: 30002 },
+      { kind: "proxy", vm: "shared-vm", port: 30003 },
     ]);
   });
   it("resolves project-level domains to their service's exact published port", async () => {
@@ -209,7 +209,7 @@ describe("Cloud Docker route tables", () => {
       expect.objectContaining({
         routes: [
           expect.objectContaining({
-            action: { kind: "proxy", workspace: "shared-vm", port: 30002 },
+            action: { kind: "proxy", vm: "shared-vm", port: 30002 },
           }),
         ],
       }),
@@ -235,15 +235,15 @@ describe("Cloud Docker route tables", () => {
     expect(writes[0]![3].routes).toEqual([
       {
         match: { path: "/api/status", type: "exact" },
-        action: { kind: "proxy", workspace: "shared-vm", port: 30001 },
+        action: { kind: "proxy", vm: "shared-vm", port: 30001 },
       },
       {
         match: { path: "/api/", type: "prefix" },
-        action: { kind: "proxy", workspace: "shared-vm", port: 30003 },
+        action: { kind: "proxy", vm: "shared-vm", port: 30003 },
       },
       {
         match: { path: "/", type: "prefix" },
-        action: { kind: "proxy", workspace: "shared-vm", port: 30001 },
+        action: { kind: "proxy", vm: "shared-vm", port: 30001 },
       },
     ]);
   });
@@ -259,7 +259,7 @@ describe("Cloud Docker route tables", () => {
       }],
     });
     expect(publish).toHaveBeenCalledWith("api.onvo.me", undefined, true, {
-      routes: [{ match: { path: "/v3", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30003 } }],
+      routes: [{ match: { path: "/v3", type: "prefix" }, action: { kind: "proxy", vm: "shared-vm", port: 30003 } }],
     });
   });
   it("keeps the old composite table if any path target is missing, while updating other hosts", async () => {
@@ -296,11 +296,11 @@ describe("Cloud Docker route tables", () => {
     expect(rules).toEqual([
       {
         match: { path: "/api/", type: "prefix" },
-        action: { kind: "proxy", workspace: "shared-vm", port: 30003 },
+        action: { kind: "proxy", vm: "shared-vm", port: 30003 },
       },
       {
         match: { path: "/", type: "prefix" },
-        action: { kind: "proxy", workspace: "shared-vm", port: 30001 },
+        action: { kind: "proxy", vm: "shared-vm", port: 30001 },
       },
     ]);
   });

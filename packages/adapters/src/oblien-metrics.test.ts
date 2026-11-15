@@ -32,7 +32,7 @@ it("keeps provider credentials server-side, rejects redirects and releases the r
   }
   expect(cancel).toHaveBeenCalledOnce();
   const [url, request] = fetcher.mock.calls[0]! as unknown as [URL, RequestInit];
-  expect(url.href).toBe("https://api.oblien.com/workspace/ws-owned/stats/stream");
+  expect(url.href).toBe("https://api.oblien.com/v1/vms/ws-owned/stats/stream");
   expect(request.redirect).toBe("error");
   expect(new Headers(request.headers).get("Authorization")).toBe("Bearer scoped-token");
   expect(request.signal?.aborted).toBe(true);

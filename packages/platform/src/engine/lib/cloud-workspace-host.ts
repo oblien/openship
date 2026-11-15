@@ -32,7 +32,7 @@ export async function readCloudWorkspaceHost(organizationId: string, id: string)
   if (!env.CLOUD_MODE) {
     const connection = await remoteServerConnection(organizationId, id);
     const { client } = await getNamespaceClient(organizationId, id, connection);
-    const workspace = await client.workspaces.get(connection.workspaceId);
+    const workspace = await client.vms.get(connection.workspaceId);
     if (workspace.namespace !== connection.namespace) throw new AppError("Cloud space ownership changed", 409, "CLOUD_NAMESPACE_MISMATCH");
     if (workspace.id !== connection.workspaceId)
       throw new AppError("Cloud returned a different Cloud space", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");
@@ -76,7 +76,7 @@ async function runningConnection(organizationId: string, id: string) {
  * a host or installing the Docker API bridge just to read metrics/open a shell. */
 export async function openCloudWorkspaceExecutor(organizationId: string, id: string) {
   const { client, binding } = await runningConnection(organizationId, id);
-  return new CloudWorkspaceExecutor(options => client.workspace(binding.workspaceId!).runtime(options), binding.workspaceId!);
+  return new CloudWorkspaceExecutor(options => client.vm(binding.workspaceId!).runtime(options), binding.workspaceId!);
 }
 
 /** Server-authorized Docker operations (inventory and migration). Applications
@@ -127,7 +127,7 @@ async function measuredHost(organizationId: string, id: string) {
 export async function sampleCloudWorkspaceResources(organizationId: string, id: string, sampleUsage = true) {
   const { client, binding, provider } = await runningConnection(organizationId, id);
   if (!sampleUsage) return { capacity: provider.allocation, usage: unavailableServerUsage("Not sampled for an uncapped build") };
-  const executor = new CloudWorkspaceExecutor(options => client.workspace(binding.workspaceId!).runtime(options), binding.workspaceId!);
+  const executor = new CloudWorkspaceExecutor(options => client.vm(binding.workspaceId!).runtime(options), binding.workspaceId!);
   try {
     return { capacity: provider.allocation, usage: await sampleServerUsage(executor) };
   } finally {

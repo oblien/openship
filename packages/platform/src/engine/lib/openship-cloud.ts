@@ -5,7 +5,7 @@
  */
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { createHash } from "node:crypto";
-import { Oblien, OblienError } from "@repo/adapters";
+import { Oblien, OblienError, oblienApiBaseUrl } from "@repo/adapters";
 import { OperationError } from "@repo/contracts";
 import { AppError, safeErrorMessage } from "@repo/core";
 import { repos } from "@repo/db";
@@ -108,7 +108,7 @@ export async function issueNamespaceToken(organizationId: string, workspaceId?: 
   const namespace = await ensureNamespaceWithQuota(organizationId, workspaceId);
   try {
     const result = await getOblienClient().tokens.create({ scope: "namespace", namespace, ttl: 1800 });
-    return { token: result.token, namespace, expiresAt: result.expiresAt, providerApiUrl: env.OBLIEN_API_URL };
+    return { token: result.token, namespace, expiresAt: result.expiresAt, providerApiUrl: oblienApiBaseUrl(env.OBLIEN_API_URL).toString() };
   } catch (error) {
     errorDiagnostics.warn("platform/engine/lib/openship-cloud", `[oblien] token issuance failed for org ${organizationId}: ${safeErrorMessage(error)}`, error);
     if (error instanceof OblienError && typeof error.status === "number" && [429, 502, 503, 504].includes(error.status)) {
@@ -130,7 +130,7 @@ async function internalNamespaceToken(organizationId: string, workspaceId?: Clou
   // Authorization is always read before cache lookup. A token cache must never
   // turn a deleted/moved workspace into access granted by an earlier request.
   const namespace = await ensureNamespaceWithQuota(organizationId, workspaceId);
-  const key = namespaceTokenKey(organizationId, namespace, env.OBLIEN_API_URL);
+  const key = namespaceTokenKey(organizationId, namespace, oblienApiBaseUrl(env.OBLIEN_API_URL).toString());
   const store = await cacheStore<NamespaceTokenResult>("oblien-internal-tokens", { maxSize: 10_000 });
   const readFresh = async () => {
     const cached = await store.get(key);
@@ -142,7 +142,7 @@ async function internalNamespaceToken(organizationId: string, workspaceId?: Clou
     const renewed = await readFresh();
     if (renewed) return renewed;
     const credentials = await issueNamespaceToken(organizationId, workspaceId);
-    if (credentials.namespace !== namespace || credentials.providerApiUrl !== env.OBLIEN_API_URL)
+    if (credentials.namespace !== namespace || credentials.providerApiUrl !== oblienApiBaseUrl(env.OBLIEN_API_URL).toString())
       throw new AppError("Cloud execution ownership changed", 409, "CLOUD_NAMESPACE_MISMATCH");
     const ttl = Math.floor((Date.parse(credentials.expiresAt) - Date.now() - 60_000) / 1000);
     if (!credentials.token || !Number.isFinite(ttl) || ttl <= 0)

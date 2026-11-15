@@ -17,7 +17,7 @@
   "services": [
     {
       "name": "umami",
-      "image": "ghcr.io/umami-software/umami:postgresql-v2.20.2",
+      "image": "ghcr.io/umami-software/umami:3.4.1",
       "exposedPort": 3000,
       "exposed": true,
       "routes": [

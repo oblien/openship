@@ -14,7 +14,8 @@ export function creditAlertNotification(input: {
   const { eventType, eventId, data, entitlement, organizationId } = input;
   // Late credit events cannot turn a paid capacity contract into a credit alert.
   if (entitlement.tierId === "capacity") return null;
-  if (data.service !== undefined && data.service !== "workspace_vm") return null;
+  // Signed deliveries queued before the VM API cutover can still name the old service.
+  if (data.service !== undefined && data.service !== "vm_compute" && data.service !== "workspace_vm") return null;
   const alert = entitlement.quota.alert;
   if (!alert || !["low", "grace", "depleted"].includes(alert.state)) return null;
   const created =

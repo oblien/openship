@@ -187,7 +187,7 @@ export async function createRemoteAssistantClient(
           connection.organizationId,
           server!.workspaceId,
         );
-        let runtime = await owned.client.workspace(owned.binding.workspaceId!).runtime();
+        let runtime = await owned.client.vm(owned.binding.workspaceId!).runtime();
         const baseUrl = "http://openship-assistant.invalid";
         return {
           id: `assistant:${server!.id}`,
@@ -210,7 +210,7 @@ export async function createRemoteAssistantClient(
             let result = await send();
             if (result.status === 401) {
               runtime = await owned.client
-                .workspace(owned.binding.workspaceId!)
+                .vm(owned.binding.workspaceId!)
                 .runtime({ force: true });
               result = await send();
             }

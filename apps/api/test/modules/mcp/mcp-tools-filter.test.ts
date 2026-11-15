@@ -135,6 +135,7 @@ function principal(
   const granted = new Set([...(p.grantedRootTypes ?? []), ...Object.keys(wildcards)]);
   return {
     role: p.role ?? "restricted",
+    membershipRole: p.membershipRole,
     readOnly: p.readOnly ?? false,
     grantedRootTypes: granted,
     wildcardGrants: p.wildcardGrants ?? new Map(Object.entries(wildcards)),
@@ -147,6 +148,16 @@ function principal(
 const RWA: Permission[] = ["read", "write", "admin"];
 
 describe("filterToolsForPrincipal", () => {
+  it("hides server administration from members and their existing scoped tokens", () => {
+    const read = tool({ name: "server_read", method: "GET", perm: { root: "server", leaf: "server", grantRoot: "server", action: "read", wildcard: false } });
+    const exec = tool({ name: "server_exec", method: "POST", perm: { root: "server", leaf: "server", grantRoot: "server", action: "admin", wildcard: false } });
+    for (const caller of [
+      principal({ role: "member" }),
+      principal({ role: "restricted", membershipRole: "member", grantedRootTypes: new Set(["server"]), wildcards: { server: RWA } }),
+    ]) expect(names(filterToolsForPrincipal([read, exec], caller))).toEqual(["server_read"]);
+    expect(names(filterToolsForPrincipal([read, exec], principal({ role: "admin" })))).toEqual(["server_exec", "server_read"]);
+  });
+
   it("owner sees everything", () => {
     const out = filterToolsForPrincipal(ALL, principal({ role: "owner" }));
     expect(out.length).toBe(ALL.length);

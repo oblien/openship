@@ -15,7 +15,8 @@ import { getApiErrorCode, getApiErrorMessage } from "@/lib/api/client";
 import { useSession } from "@/lib/auth-client";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
-import { beginCheckoutNavigation } from "@/lib/checkout-navigation";
+import { navigateToCheckout } from "@/lib/checkout-navigation";
+import { invalidatePayments } from "@/lib/billing-events";
 import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
 import { useManagedServerActions } from "@/components/servers/managed/useManagedServerActions";
 import { useBillingScope } from "./BillingWorkspaceContext";
@@ -244,33 +245,27 @@ function CheckoutRow({
     setBusy(operation);
     setError(null);
     setConfirmCancel(false);
-    const navigation = operation === "resume" ? beginCheckoutNavigation(preserveProject) : null;
     if (operation === "cancel") setCancelAttempted(true);
     try {
       const response = await billingApi[
         operation === "resume" ? "resumeCheckout" : "cancelCheckout"
       ]({ workspaceId: item.server.id, id: item.id });
-      if (!mounted.current) {
-        navigation?.close();
-        return;
-      }
+      if (!mounted.current) return;
       setResult(response);
       if (response.status === "ready") {
-        if (!response.checkoutUrl || !navigation) throw new Error(copy.actionError);
-        const url = navigation.navigate(response.checkoutUrl);
+        if (!response.checkoutUrl || operation !== "resume") throw new Error(copy.actionError);
+        const url = navigateToCheckout(response.checkoutUrl, preserveProject);
         if (preserveProject) {
           setCheckoutUrl(url);
           onCheckoutStarted?.(url);
         }
         void onRefresh();
       } else {
-        navigation?.close();
         setCheckoutUrl(null);
         if (response.status === "expired") onCleared?.();
         router.refresh();
       }
     } catch (err) {
-      navigation?.close();
       if (!mounted.current) return;
       setError(getApiErrorMessage(err, copy.actionError));
       if (getApiErrorCode(err) === "BILLING_CHECKOUT_CANCEL_UNAVAILABLE") setCancelAttempted(false);
@@ -278,6 +273,7 @@ function CheckoutRow({
       // Refresh reads persisted recovery state; it never starts another checkout.
       void onRefresh();
     } finally {
+      if (mounted.current) invalidatePayments();
       busyRef.current = false;
       if (mounted.current) setBusy(null);
     }

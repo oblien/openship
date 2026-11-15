@@ -9,6 +9,8 @@ import { getActiveOrganizationId, setActiveOrganizationId } from "@/lib/api/clie
 import { useIssueCounts } from "@/hooks/useIssueCounts";
 import { Sidebar } from "./sidebar";
 import { SidebarLayoutProvider, useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
+import { DashboardPaymentsProvider, PendingCheckoutsProvider } from "./billing/PendingCheckoutsContext";
+import { invalidatePayments } from "@/lib/billing-events";
 
 const mocks = vi.hoisted(() => ({
   pathname: "/monitoring",
@@ -18,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   feed: vi.fn(),
   organization: vi.fn(),
   projects: vi.fn(),
+  payments: vi.fn(),
+  management: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
@@ -25,6 +29,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({ data: { user: { id: "user-a" }, session: { activeOrganizationId: "org-a" } } }),
   authClient: {
     organization: {
       list: async () => ({ data: [] }),
@@ -55,6 +60,8 @@ vi.mock("@/lib/api/client", async (original) => {
         if (path === "issues/summary") return mocks.summary();
         if (path === "issues" || path === "issues?status=resolved") return mocks.feed(path);
         if (path === "projects/home") return mocks.projects();
+        if (path === "billing/checkouts") return mocks.payments();
+        if (path === "/billing/manage") return mocks.management();
         throw new Error(`Unexpected GET ${path}`);
       },
     },
@@ -74,6 +81,8 @@ beforeEach(() => {
   mocks.organization.mockResolvedValue({ data: { id: "org-a" } });
   mocks.summary.mockResolvedValue({ data: counts });
   mocks.projects.mockResolvedValue({ success: true, projects: [] });
+  mocks.payments.mockResolvedValue({ data: { items: [] } });
+  mocks.management.mockResolvedValue({ data: { pendingCheckout: false, subscription: null, change: null } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -115,18 +124,48 @@ it.each([
   expect(mocks.projects).toHaveBeenCalledOnce();
 });
 
-async function render(props: ComponentProps<typeof Sidebar> = {}) {
+async function render(props: ComponentProps<typeof Sidebar> = {}, payments = false) {
+  const content = <SidebarLayoutProvider><Sidebar {...props} /><PlanLayoutRequest /></SidebarLayoutProvider>;
   await act(async () =>
     root.render(
       <I18nProvider>
-        <SidebarLayoutProvider>
-          <Sidebar {...props} />
-          <PlanLayoutRequest />
-        </SidebarLayoutProvider>
+        {payments ? <DashboardPaymentsProvider><PendingCheckoutsProvider>{content}</PendingCheckoutsProvider></DashboardPaymentsProvider> : content}
       </I18nProvider>,
     ),
   );
 }
+
+it("counts unpaid Cloud plans and Manage once in the sidebar and refreshes after payment changes", async () => {
+  mocks.cloudConnected = true;
+  mocks.payments.mockResolvedValue({ data: { items: [
+    { id: "one", server: { id: "space-a" } },
+    { id: "two", server: { id: "space-a" } },
+    { id: "three", server: { id: "space-b" } },
+  ] } });
+  mocks.management.mockResolvedValue({ data: { pendingCheckout: true, subscription: null, change: null } });
+  await render({}, true);
+  const link = () => host.querySelector<HTMLAnchorElement>('a[href="/billing"]')!;
+  expect(link().querySelector(".tabular-nums")?.textContent).toBe("3");
+  expect(link().querySelector(".tabular-nums")?.className).toContain("text-danger");
+  expect(link().getAttribute("aria-label")).toContain("Pending: 3");
+  // The hub's nested provider reuses the organization-wide read.
+  expect(mocks.payments).toHaveBeenCalledOnce();
+  await act(async () => sidebarToggle().click());
+  expect(link().title).toContain("Pending: 3");
+  expect(link().querySelector(".tabular-nums")?.textContent).toBe("3");
+  mocks.payments.mockResolvedValue({ data: { items: [] } });
+  mocks.management.mockResolvedValue({ data: { pendingCheckout: false, subscription: null, change: null } });
+  await act(async () => invalidatePayments());
+  expect(link().getAttribute("aria-label")).toBeNull();
+  await act(async () => sidebarToggle().click());
+  expect(link().querySelector(".tabular-nums")).toBeNull();
+});
+
+it("does not request payment data on an installation disconnected from Cloud", async () => {
+  await render({}, true);
+  expect(mocks.payments).not.toHaveBeenCalled();
+  expect(mocks.management).not.toHaveBeenCalled();
+});
 const monitoring = () => host.querySelector<HTMLAnchorElement>('a[href="/monitoring"]')!;
 const badge = () => monitoring().querySelector(".tabular-nums");
 const sidebarToggle = () => host.querySelector<HTMLButtonElement>(

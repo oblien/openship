@@ -107,8 +107,7 @@ it("discards server-rendered project settings and late services when the Cloud i
 it("does not open a checkout returned for a disconnected Cloud account", async () => {
   const old = deferred<unknown>();
   h.checkout.mockReturnValue(old.promise);
-  const popup = { close: vi.fn(), opener: null, location: { href: "about:blank" } };
-  const open = vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
   const started = vi.fn();
   function Checkout() {
     const checkout = useCloudCheckout({ enabled: true, preserveProject: true, onCheckoutStarted: started });
@@ -121,8 +120,7 @@ it("does not open a checkout returned for a disconnected Cloud account", async (
     await render("account-b", page);
     await act(async () => old.resolve({ data: { checkoutUrl: "https://checkout.stripe.com/old-account" } }));
     expect(host.textContent).toBe("Choose plan");
-    expect(popup.location.href).toBe("about:blank");
-    expect(popup.close).toHaveBeenCalledOnce();
+    expect(open).not.toHaveBeenCalled();
     expect(started).not.toHaveBeenCalled();
   } finally { open.mockRestore(); }
 });

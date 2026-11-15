@@ -30,7 +30,7 @@ vi.mock("@repo/adapters", async (original) => ({
     prepare = state.prepare;
   },
   Oblien: class {
-    workspaces = {
+    vms = {
       create: state.create,
       get: state.get,
       delete: state.remove,

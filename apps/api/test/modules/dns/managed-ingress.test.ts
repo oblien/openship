@@ -94,6 +94,6 @@ describe("managed ingress through authenticated HTTP and the public SDK", () => 
       headers,
       body: JSON.stringify({ credentialId: "no-secret" }),
     });
-    expect(denied.status).toBe(403);
+    expect(denied.status).toBe(404);
   });
 });
