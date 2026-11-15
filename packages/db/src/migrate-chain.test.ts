@@ -287,7 +287,7 @@ describe("migration chain applies to an existing, populated database", () => {
           ('inherited', 'org', 'group-icon', 'inherited', 'Inherited', 'inherited', NULL, NULL);
       `);
       const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project ORDER BY id")).rows;
-      const groups = (await client.query("SELECT * FROM project_app ORDER BY id")).rows;
+      const groups = (await client.query<Record<string, unknown>>("SELECT * FROM project_app ORDER BY id")).rows;
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project ORDER BY id")).rows).toEqual(
         projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({
