@@ -6,6 +6,12 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Authorization
+
+- Require administrative authority for admin operations across HTTP, SDK, native and
+  MCP access. Ordinary organization membership no longer grants host command execution;
+  token grants remain bounded by the user's current built-in role (#1783).
+
 ### Cloud billing
 
 - Open checkout only when its payment URL is ready, with a visible fallback button.

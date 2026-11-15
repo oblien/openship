@@ -19,9 +19,10 @@
 
 import { describe, it, expect, vi } from "vitest";
 
+// The owner's role ceiling permits delegation; the tests enforce grant widths.
 vi.mock("@repo/db", () => ({
   repos: {
-    member: { find: vi.fn(async () => ({ id: "m1", role: "member" })) },
+    member: { find: vi.fn(async () => ({ id: "m1", role: "owner" })) },
     project: {
       findById: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })),
       findEnvVarById: vi.fn(async () => null),
@@ -198,7 +199,7 @@ describe("a full project wildcard now lists and creates (deliberate widening)", 
 });
 
 describe("non-restricted roles are untouched by this arm", () => {
-  it("a member is authorized by role, without consulting grants", async () => {
+  it("an owner is authorized by role, without consulting grants", async () => {
     const boom = {
       findForResource: async () => {
         throw new Error("the role arm must return before any grant lookup");

@@ -128,6 +128,7 @@ async function resolveMcpCaller(token: string, headers: Headers): Promise<McpCal
         credential: { organizationId: id.organizationId, readOnly: id.readOnly },
       }, "read"),
       role,
+      membershipRole: member.role as McpPrincipal["role"],
       readOnly: id.readOnly,
       grantedRootTypes,
       wildcardGrants,
