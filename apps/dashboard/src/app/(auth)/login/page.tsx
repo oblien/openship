@@ -236,7 +236,7 @@ function LoginPageInner() {
     );
   }
 
-  /* ── Cloud mode (desktop): redirect to Openship Cloud for all auth ── */
+  /* ── Cloud mode (desktop): redirect to OpenShip Cloud for all auth ── */
   if (authMode === "cloud") {
     const apiUrl = getApiOrigin(typeof window !== "undefined" ? window.location.origin : undefined);
     const callbackUrl = `${apiUrl}/api/auth/cloud-callback`;
@@ -251,7 +251,7 @@ function LoginPageInner() {
             {t.auth.login.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Sign in with your Openship account to continue.
+            Sign in with your OpenShip account to continue.
           </p>
         </div>
 
@@ -272,7 +272,7 @@ function LoginPageInner() {
           onClick={() => { void handleCloudSignIn(callbackUrl); }}
         >
           {loading ? <UiIcon name="spinner" className="me-2 size-4 animate-spin" /> : <UiIcon name="external-link" className="me-2 size-4" />}
-          {loading ? "Opening Openship Cloud..." : "Sign in with Openship"}
+          {loading ? "Opening OpenShip Cloud..." : "Sign in with OpenShip"}
         </Button>
       </AuthShell>
     );

@@ -1,7 +1,7 @@
 {
   "cloudClient": {
     "title": "E-mails",
-    "subtitle": "Utilisez vos boîtes mail existantes avec Openship Webmail.",
+    "subtitle": "Utilisez vos boîtes mail existantes avec OpenShip Webmail.",
     "connectTitle": "Connecter votre serveur mail",
     "description": "Connectez tout serveur IMAP/SMTP. Vos boîtes mail et la livraison des messages restent chez votre fournisseur.",
     "connectAction": "Connecter un serveur mail existant",
@@ -11,8 +11,8 @@
   "cloudComingSoon": {
     "title": "Messagerie gérée",
     "badge": "Bientôt disponible",
-    "description": "La messagerie gérée sur Openship Cloud arrive bientôt. Les offres de serveurs Cloud hébergent des applications et ne créent pas de serveur de messagerie.",
-    "selfHosted": "La messagerie sur votre propre serveur est disponible avec une installation autohébergée d’Openship."
+    "description": "La messagerie gérée sur OpenShip Cloud arrive bientôt. Les offres de serveurs Cloud hébergent des applications et ne créent pas de serveur de messagerie.",
+    "selfHosted": "La messagerie sur votre propre serveur est disponible avec une installation autohébergée d’OpenShip."
   },
   "page": {
     "title": "Serveur de messagerie",
@@ -37,7 +37,7 @@
   },
   "adopt": {
     "title": "Adopter un serveur de messagerie existant",
-    "intro": "Vous avez déjà configuré un serveur de messagerie avec Openship sur l'un de vos serveurs ? Sélectionnez-le et lancez l'analyse — si une pile de messagerie est détectée, elle est réadoptée dans le tableau de bord sans réinstallation ni modification de vos données.",
+    "intro": "Vous avez déjà configuré un serveur de messagerie avec OpenShip sur l'un de vos serveurs ? Sélectionnez-le et lancez l'analyse — si une pile de messagerie est détectée, elle est réadoptée dans le tableau de bord sans réinstallation ni modification de vos données.",
     "scanning": "Analyse en cours…",
     "scan": "Analyser le serveur",
     "detected": "Serveur de messagerie détecté",

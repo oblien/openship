@@ -55,7 +55,7 @@
     "appsEmptyDesc": "Ein Klick, vollständig selbst gehostet — Datenbanken, Automatisierung, Analytics, Passwort-Vaults und mehr, auf deinen eigenen Servern."
   },
   "nav": {
-    "affiliates": "Empfehlungen",
+    "referrals": "Empfehlungen",
     "resources": "Cloud-Bereiche",
     "support": "Support",
     "scale": "Skalierung",
@@ -70,7 +70,7 @@
     "servers": "Server",
     "emails": "E-Mails",
     "settings": "Einstellungen",
-    "billing": "Abrechnung & Nutzung",
+    "billing": "Tarife & Abrechnung",
     "audit": "Audit-Log",
     "mailSetup": "Mail einrichten",
     "mailSetupProgress": "Einrichtungsfortschritt",
@@ -140,7 +140,7 @@
       "addCustom": "Eigene hinzufügen",
       "howToAddApp": "Wie man eine App hinzufügt",
       "removeCustomApp": "Benutzerdefinierte App entfernen",
-      "needsUpdateDesc": "Aktualisieren Sie Ihre Openship-Instanz, um diese App zu installieren.",
+      "needsUpdateDesc": "Aktualisieren Sie Ihre OpenShip-Instanz, um diese App zu installieren.",
       "needsUpdateBadge": "Aktualisierung erforderlich",
       "needsVersionBadge": "Erfordert v{version}",
       "removedToast": "„{name}“ entfernt.",

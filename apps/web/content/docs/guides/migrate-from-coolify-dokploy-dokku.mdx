@@ -40,9 +40,12 @@ Don't stop Coolify/Dokploy/Dokku's proxy *before* scanning — Openship reads yo
 certificates from it. You'll retire it later, and Openship does that step for you (and can roll it back).
 </Callout>
 
-- Migration is **self-hosted only** and needs `server:write` on the source (and target, for server-to-server).
-- **Connect the source server to Openship over SSH first** (Servers → Add server). Your apps and their proxy
-  stay running throughout.
+- Migration is available in **Openship Cloud, Desktop, and self-hosted installations**, with write access
+  required on the source and destination. Cloud imports use eligible managed destinations.
+- In Cloud, open **New project → Import existing project → Server or Docker** and add an external
+  migration source with a public SSH address and a password or uploaded private key. This connection is
+  for importing only, not a general deployment destination. In Desktop or self-hosted Openship, choose
+  a connected server (Servers → Add server). Leave applications and their proxy running for the scan.
 - You can safely stop the old platform's **control-plane app** at any time — your running app containers and
   their proxy don't depend on it. Leave the *proxy* up until the takeover step.
 
@@ -137,9 +140,10 @@ Moving a whole stack from one host to another is the same flow, with the data st
 - Named volumes and movable app-data mounts stream **A → B** directly (same daemon: a `tar → tar` copy; across
   daemons: a gzip stream). System paths (`/proc`, `/sys`, `/var/lib/docker`, sockets, …) are never copied.
 - Openship **refuses to overwrite a non-empty same-named volume** on the target, so you can't clobber data.
-- Server-to-server always uses the **deploy path** (a downtime window), and it **can't move locally-built
-  images** — those have no registry to pull from on B, so take them over **in place on their current server**
-  instead.
+- Server-to-server uses the **deploy path** with a downtime window. Locally built Docker images can
+  transfer through the shared image-save and image-load pipeline, without a registry push or rebuild.
+  Review destination capacity before starting. See [Server-to-server migration](/docs/guides/server-to-server-migration)
+  for Cloud source restrictions, transfer choices and recovery.
 
 ## Why the architecture is different
 

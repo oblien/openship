@@ -1,0 +1,17 @@
+{
+  "name": "openship",
+  "owner": {
+    "name": "Openship"
+  },
+  "metadata": {
+    "description": "Deploy and operate applications with Openship."
+  },
+  "plugins": [
+    {
+      "name": "openship",
+      "source": "./plugins/openship",
+      "description": "Deploy apps and manage infrastructure through Openship's scoped MCP tools.",
+      "category": "development"
+    }
+  ]
+}

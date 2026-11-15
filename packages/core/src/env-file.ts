@@ -6,6 +6,13 @@ export interface EnvFileEntry {
   interpolation?: string;
 }
 
+export class EnvFileSyntaxError extends Error {
+  constructor(readonly line: number) {
+    super(`Invalid .env syntax on line ${line}`);
+    this.name = "EnvFileSyntaxError";
+  }
+}
+
 const DOUBLE_QUOTE_ESCAPES: Readonly<Record<string, string>> = {
   a: "\x07",
   b: "\b",
@@ -31,9 +38,16 @@ function closingQuote(content: string, start: number, quote: string): number {
 
 /** Read Compose-compatible .env syntax without resolving variable references.
  * Keeping literal values separate from expressions lets editor imports and
- * Compose interpolation share quoting rules without expanding saved secrets. */
-export function parseEnvFile(content: string): EnvFileEntry[] {
+ * Compose interpolation share quoting rules without expanding saved secrets.
+ * Strict mode validates whole-file edits, rejecting invalid lines and duplicate keys. */
+export function parseEnvFile(content: string, options: { strict?: boolean } = {}): EnvFileEntry[] {
   const entries: EnvFileEntry[] = [];
+  const keys = new Set<string>();
+  const fail = (offset: number) => {
+    const line = content.slice(0, offset).split("\n").length;
+    throw new EnvFileSyntaxError(line);
+  };
+  if (options.strict && content.includes("\0")) fail(content.indexOf("\0"));
   let cursor = content.startsWith("\uFEFF") ? 1 : 0;
   while (cursor < content.length) {
     const newline = content.indexOf("\n", cursor);
@@ -44,12 +58,23 @@ export function parseEnvFile(content: string): EnvFileEntry[] {
     );
     const valueStart = cursor + (assignment?.[0].length ?? 0);
     cursor = lineEnd + 1;
-    if (!assignment) continue;
+    if (!assignment) {
+      if (options.strict && line.trim() && !line.trimStart().startsWith("#")) fail(valueStart);
+      continue;
+    }
 
     const key = assignment[1]!;
+    if (options.strict && keys.has(key)) fail(valueStart);
+    keys.add(key);
     const quote = content[valueStart];
     if (quote === '"' || quote === "'") {
       const end = closingQuote(content, valueStart + 1, quote);
+      if (options.strict) {
+        if (end < 0) fail(valueStart);
+        const tailEnd = content.indexOf("\n", end + 1);
+        const tail = content.slice(end + 1, tailEnd < 0 ? content.length : tailEnd).trim();
+        if (tail && !tail.startsWith("#")) fail(end + 1);
+      }
       const quoted = content.slice(valueStart + 1, end < 0 ? lineEnd : end);
       if (end >= 0) {
         const nextLine = content.indexOf("\n", end + 1);

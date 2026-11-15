@@ -77,7 +77,7 @@
   },
   "welcome": {
     "title": "Starte dein erstes Projekt",
-    "subtitle": "Verbinde ein Repository oder starte mit einer Vorlage – Openship baut es, deployt es und liefert dir in Minuten eine Live-URL.",
+    "subtitle": "Verbinde ein Repository oder starte mit einer Vorlage – OpenShip baut es, deployt es und liefert dir in Minuten eine Live-URL.",
     "createProject": "Projekt erstellen",
     "importGithub": "Aus GitHub importieren",
     "tipPrefix": "Tipp: drücke",

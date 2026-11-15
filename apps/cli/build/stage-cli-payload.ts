@@ -56,7 +56,8 @@ const pkg = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf8")) 
 // The release job runs on a tag push, so GITHUB_REF_NAME is the version tag
 // (e.g. v0.5.0); local builds fall back to v<version>. The asset name mirrors
 // the dashboard bundle's `openship-dashboard-<tag>.tar.gz`.
-const TAG = process.env.GITHUB_REF_NAME || `v${pkg.version}`;
+const ref = process.env.GITHUB_REF_NAME;
+const TAG = ref && /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(ref) ? ref : `v${pkg.version}`;
 const ASSET = `openship-cli-${TAG}.tar.gz`;
 
 if (!existsSync(join(DIST, "index.js"))) {

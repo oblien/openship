@@ -55,7 +55,7 @@
     "appsEmptyDesc": "بنقرة واحدة وباستضافة ذاتية كاملة — قواعد بيانات وأتمتة وتحليلات وخزائن كلمات مرور وغيرها، تعمل على سيرفراتك."
   },
   "nav": {
-    "affiliates": "الإحالات",
+    "referrals": "الإحالات",
     "resources": "مساحات السحابة",
     "support": "الدعم",
     "scale": "التوسّع",
@@ -70,7 +70,7 @@
     "servers": "الخوادم",
     "emails": "البريد الإلكتروني",
     "settings": "الإعدادات",
-    "billing": "الفوترة والاستخدام",
+    "billing": "الخطط والفوترة",
     "audit": "سجل التدقيق",
     "mailSetup": "إعداد البريد",
     "mailSetupProgress": "تقدّم الإعداد",
@@ -140,7 +140,7 @@
       "addCustom": "إضافة مخصصة",
       "howToAddApp": "كيفية إضافة تطبيق",
       "removeCustomApp": "إزالة التطبيق المخصص",
-      "needsUpdateDesc": "قم بتحديث نسخة Openship لتثبيت هذا التطبيق.",
+      "needsUpdateDesc": "قم بتحديث نسخة OpenShip لتثبيت هذا التطبيق.",
       "needsUpdateBadge": "يتطلب التحديث",
       "needsVersionBadge": "يتطلب الإصدار {version}",
       "removedToast": "تمت إزالة \"{name}\".",

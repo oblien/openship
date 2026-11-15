@@ -19,7 +19,7 @@
   "actionAdopt": "再ポイント",
   "actionInSync": "設定済み",
   "actionConflict": "競合",
-  "conflictNote": "Openship の管理対象外です。削除するか、このレコードを手動で設定してください。",
+  "conflictNote": "OpenShip の管理対象外です。削除するか、このレコードを手動で設定してください。",
   "outcomeApplied": "適用済み",
   "outcomeSkipped": "スキップ",
   "outcomeFailed": "失敗",

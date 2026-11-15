@@ -88,7 +88,8 @@ export * from "./github";
 export * from "./notices";
 
 export * from "./billing";
-export * from "./affiliates";
+export * from "./referrals";
+export * from "./affiliates"; // Compatibility for existing SDK consumers.
 export * from "./cloud-workspaces";
 export * from "./server-managed";
 
@@ -102,7 +103,6 @@ export * from "./cluster-database";
 export * from "./mail-inputs";
 export * from "./mail-security";
 export * from "./mail";
-export * from "./cloud-analytics";
 export * from "./terminal";
 export * from "./instance";
 
@@ -126,3 +126,4 @@ export * from "./assistant-agents";
 
 export * from "./server-security";
 export * from "./discovery";
+export * from "./platform-migration";

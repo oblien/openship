@@ -38,6 +38,7 @@ import {
 
 import { RateLimitSettings } from "./_components/rate-limit-settings";
 import { GpuCard } from "./_components/gpu-card";
+import { BuildCacheCard } from "./_components/build-cache-card";
 import { DiscoveryCard } from "./_components/discovery-card";
 import { ExposedPortsCard } from "./_components/exposed-ports-card";
 import { PortForwardingCard } from "./_components/port-forwarding-card";
@@ -733,6 +734,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
                 showComponents={canInspect}
               />}
               {server.gpu && <GpuCard key={`${serverId}:${server.gpu.override ?? "auto"}`} server={server} onChanged={updated => setServer(current => current ? { ...current, ...updated } : updated)} />}
+              {server.buildCacheBudgetBytes !== undefined && server.capabilities?.buildCacheBudget && <BuildCacheCard key={`${serverId}:${server.buildCacheBudgetBytes ?? "auto"}`} server={server} onChanged={updated => setServer(current => current ? { ...current, ...updated } : updated)} />}
               {canInspect && components.some(component => component.name === "docker" && component.installed) && <ServerSwarm serverId={serverId} />}
               {/* Container discovery (Docker and Podman via the compat API) — same
                   runtime gate as ServerSwarm: needs the docker component present. */}

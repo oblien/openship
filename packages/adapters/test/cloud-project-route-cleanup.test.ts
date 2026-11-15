@@ -17,7 +17,7 @@ describe("project-scoped route cleanup", () => {
   it.each(["workspace-one", "another-workspace"])(
     "preserves a different project's Page on %s while explicit removal stays strict",
     async (workspaceId) => {
-      h.records.get("app")!.source_workspace_id = workspaceId;
+      h.records.get("app")!.source_vm_id = workspaceId;
       h.records.get("app")!.exported_path =
         `${cloudDockerProjectPaths("active-project").routes}/app`;
       const activePage = structuredClone(h.records.get("app"));
@@ -61,13 +61,13 @@ describe("project-scoped route cleanup", () => {
   });
 
   it.each([
-    { source_workspace_id: "another-workspace" },
+    { source_vm_id: "another-workspace" },
     { exported_path: undefined },
     { exported_path: "/unrecognised-owner/app" },
     { exported_path: `${cloudDockerProjectPaths("active-project").routes}/wrong-slug` },
     {
       exported_path: `${cloudDockerProjectPaths("active-project").routes}/app`,
-      source_workspace_id: null,
+      source_vm_id: null,
     },
   ])("blocks deletion when foreign ownership is unproven: %j", async (changes) => {
     Object.assign(h.records.get("app")!, changes);

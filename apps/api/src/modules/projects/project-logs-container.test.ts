@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   containerId: "cid-db" as string | null,
   activeDeploymentId: "dep_1" as string,
+  deploymentMeta: {} as Record<string, unknown>,
   deploymentOwner: { projectId: "proj_1", organizationId: "org_1" },
   services: [] as Array<{ id: string; name: string; enabled: boolean; exposed: boolean }>,
   serviceRows: [] as Array<{ id: string; serviceId: string; containerId: string | null }>,
@@ -49,7 +50,7 @@ vi.mock("@repo/db", async (original) => ({
         containerId: h.containerId,
         status: "ready",
         roleContainers: h.roleContainers,
-        meta: { deployTarget: "server", serverId: "srv_1" },
+        meta: { deployTarget: "server", serverId: "srv_1", ...h.deploymentMeta },
       }),
       findBuildSessionByDeploymentId: async () => null,
     },
@@ -162,6 +163,7 @@ describe("project role logs (#1282)", () => {
 beforeEach(() => {
   h.containerId = "cid-db";
   h.activeDeploymentId = "dep_1";
+  h.deploymentMeta = {};
   h.deploymentOwner = { projectId: "proj_1", organizationId: "org_1" };
   h.services = [];
   h.serviceRows = [];
@@ -177,6 +179,56 @@ beforeEach(() => {
 });
 
 describe("project logs target the primary service, not the recorded database", () => {
+  it.each([
+    { deployTarget: "server", runtimeMode: "docker", framework: "docker", serviceDeploymentMode: "single" },
+    { deployTarget: "server", runtimeMode: "docker", framework: "docker" },
+    { deployTarget: "cloud", runtimeMode: "docker", framework: "docker" },
+    { deployTarget: "server", runtimeMode: "bare", framework: "nestjs" },
+  ])("keeps application logs after adding a companion service: %j", async (meta) => {
+    h.deploymentMeta = meta;
+    h.containerId = "cid-nestjs";
+    h.services = [{ id: "svc_redis", name: "redis", enabled: true, exposed: false }];
+    h.serviceRows = [{ id: "row_redis", serviceId: "svc_redis", containerId: "cid-redis" }];
+    h.live = [container("redis", "cid-redis")];
+
+    await getRuntimeLogs("proj_1", "org_1", 50);
+    const stream = await streamRuntimeLogs("proj_1", "org_1", () => {}, { tail: 5 });
+
+    expect(h.logTargets).toEqual(["cid-nestjs"]);
+    expect(h.stream).toHaveBeenCalledWith("cid-nestjs", expect.any(Function), { tail: 5 });
+    expect(h.healed).toEqual([]);
+    stream.cleanup();
+  });
+
+  it("keeps a historical application's logs after its project gains services", async () => {
+    h.containerId = "cid-old-app";
+    h.activeDeploymentId = "dep_new";
+    h.services = [{ id: "svc_redis", name: "redis", enabled: true, exposed: false }];
+    h.serviceRows = [{ id: "row_redis", serviceId: "svc_redis", containerId: "cid-redis" }];
+    h.live = [container("redis", "cid-new-redis")];
+
+    await getDeploymentLogs("dep_1", "org_1");
+
+    expect(h.logTargets).toEqual(["cid-old-app"]);
+    expect(h.healed).toEqual([]);
+  });
+
+  it.each([
+    { serviceDeploymentMode: "services" },
+    { composeDeployment: { totalServices: 1 } },
+  ])("resolves a service release when its primary container record is stale: %j", async (meta) => {
+    h.deploymentMeta = meta;
+    h.containerId = "cid-retired";
+    h.services = [{ id: "svc_app", name: "app", enabled: true, exposed: true }];
+    h.serviceRows = [{ id: "row_app", serviceId: "svc_app", containerId: "cid-old" }];
+    h.live = [container("app", "cid-new")];
+
+    await getRuntimeLogs("proj_1", "org_1");
+
+    expect(h.logTargets).toEqual(["cid-new"]);
+    expect(h.healed).toEqual([{ rowId: "row_app", containerId: "cid-new" }]);
+  });
+
   it.each([
     { projectId: "other-project", organizationId: "org_1" },
     { projectId: "proj_1", organizationId: "other-org" },
@@ -222,6 +274,7 @@ describe("project logs target the primary service, not the recorded database", (
   });
 
   it("heals a stale service row from the live host instead of handing docker a dead id", async () => {
+    h.containerId = "cid-old";
     h.services = [{ id: "svc_app", name: "app", enabled: true, exposed: true }];
     h.serviceRows = [{ id: "row_app", serviceId: "svc_app", containerId: "cid-old" }];
     h.live = [container("app", "cid-new")];
@@ -249,6 +302,7 @@ describe("project logs target the primary service, not the recorded database", (
     // runs NOW. For an older release that is the wrong container, and healing from
     // it would rewrite history from a GET — these endpoints take any deployment id.
     h.activeDeploymentId = "dep_7";
+    h.containerId = "cid-v3";
     h.services = [{ id: "svc_app", name: "app", enabled: true, exposed: true }];
     h.serviceRows = [{ id: "row_app", serviceId: "svc_app", containerId: "cid-v3" }];
     h.live = [container("app", "cid-v7")];

@@ -83,7 +83,7 @@ describe("ServerForm variants", () => {
    * used to suggest `~/.ssh/id_rsa`, which can only ever fail — so the placeholder
    * shape and the hint about WHOSE filesystem it is are both load-bearing.
    */
-  it("asks for an absolute path on the Openship host, not a tilde path", () => {
+  it("asks for an absolute path on the OpenShip host, not a tilde path", () => {
     // A stored host path opens the key tab in "Host path" mode (a paste/upload
     // form has no path field). renderToStaticMarkup can't click the sub-toggle.
     const server = {
@@ -95,7 +95,7 @@ describe("ServerForm variants", () => {
 
     const html = render({ server });
     expect(placeholders(html)).not.toContain("~/.ssh/id_rsa");
-    expect(text(html)).toContain("Absolute path to the private key on the machine running Openship.");
+    expect(text(html)).toContain("Absolute path to the private key on the machine running OpenShip.");
   });
 
   /**

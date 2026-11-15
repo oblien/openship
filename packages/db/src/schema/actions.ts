@@ -202,6 +202,7 @@ export const actionDeployment = pgTable(
         forceAll?: boolean;
         changedPaths?: string[] | null;
         forcePullImages?: boolean;
+        acceptComposeChanges?: boolean;
         strictServiceScope?: boolean;
         smartRoute?: boolean;
         event?: Record<string, unknown>;

@@ -92,7 +92,8 @@ export async function securityOverview(
       await annotateSecurityRefreshAvailability(
         ctx,
         project,
-        (stored.get(project.projectId)?.inventory as SecurityInventory | undefined)?.images,
+        stored.get(project.projectId)?.inventory as SecurityInventory | undefined,
+        feed.security?.advisories ?? [],
       );
     await annotateSecurityRefreshState(project);
   }

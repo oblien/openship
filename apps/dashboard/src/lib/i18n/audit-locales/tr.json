@@ -302,7 +302,7 @@
   "server.unreachable": {
     "label": "Sunucuya ulaşılamıyor",
     "action": "sunucuya ulaşılamadığını bildirdi",
-    "description": "Openship bu sunucuya SSH bağlantısı kuramadı."
+    "description": "OpenShip bu sunucuya SSH bağlantısı kuramadı."
   },
   "server.reachable": {
     "label": "Sunucu yeniden erişilebilir",
@@ -335,7 +335,7 @@
   "identity.provisioned": {
     "label": "Kimlik sağlandı",
     "action": "kimliği sağladı",
-    "description": "Güvenilir bir ana makine harici bir kimliği bir Openship kullanıcısıyla eşledi."
+    "description": "Güvenilir bir ana makine harici bir kimliği bir OpenShip kullanıcısıyla eşledi."
   },
   "organization.created": {
     "label": "Organizasyon oluşturuldu",
@@ -467,7 +467,7 @@
   "mcp.tool_called": {
     "label": "Yapay zeka araç çağrısı",
     "action": "MCP aracını çalıştırdı",
-    "description": "MCP istemcisi tarafından bir Openship aracı çalıştırıldı."
+    "description": "MCP istemcisi tarafından bir OpenShip aracı çalıştırıldı."
   },
   "admin.bootstrapped": {
     "label": "İlk yönetici hesabı oluşturuldu",
@@ -577,7 +577,7 @@
   "updates:write": {
     "label": "Sistem güncellemesi",
     "action": "güncellemeleri denetledi veya uyguladı",
-    "description": "Openship bileşenlerinin güncellemesi başlatıldı."
+    "description": "OpenShip bileşenlerinin güncellemesi başlatıldı."
   },
   "cloud.disconnect": {
     "label": "Bulut bağlantısı kesildi",

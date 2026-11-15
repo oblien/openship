@@ -28,7 +28,11 @@ vi.mock("@repo/platform/engine/modules/jobs/job.service", async (original) => ({
 }));
 vi.mock("@repo/platform/engine/lib/job-runner/index", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/lib/job-runner/index")>()),
-  getJobRunner: async () => ({ start: async () => {}, describe: () => "boot-test" }),
+  getJobRunner: async () => ({
+    start: async () => {},
+    removeRecurring: async () => {},
+    describe: () => "boot-test",
+  }),
 }));
 vi.mock("@repo/platform/engine/modules/backups/triggers/cron", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/backups/triggers/cron")>()),
@@ -59,10 +63,6 @@ vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
 vi.mock("@repo/platform/engine/modules/cloud-support/index", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/cloud-support/index")>()),
   startCloudSupport: async () => {},
-}));
-vi.mock("@repo/platform/engine/modules/cloud-analytics/index", async (original) => ({
-  ...(await original<typeof import("@repo/platform/engine/modules/cloud-analytics/index")>()),
-  startCloudAnalytics: async () => {},
 }));
 vi.mock("@repo/platform/engine/modules/github/github.service", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.service")>()),
@@ -119,6 +119,8 @@ it.each([true, false])(
     expect(paths.has("/api/system/onboarding")).toBe(!cloud);
     expect(paths.has("/api/migration/sources")).toBe(true);
     expect(paths.has("/api/diagnostics/client-errors")).toBe(cloud);
+    expect(paths.has("/api/cloud/telemetry")).toBe(false);
+    expect(paths.has("/api/cloud/analytics")).toBe(cloud);
     expect(paths.has("/api/migration/migrate")).toBe(true);
     expect(paths.has("/api/actions/oidc/token")).toBe(true);
     expect(paths.has("/api/actions/oidc/jwks")).toBe(true);

@@ -45,6 +45,8 @@ import {
 } from "../../../lib/compose-parser";
 import { resolveServicePort } from "./domain-helpers";
 import { ServiceBuildDnsDiagnostics } from "./build-service-dns";
+import { loadServiceDeployEnvironment } from "./required-env-preflight";
+import { decryptEnvMap } from "../../../lib/encryption";
 
 function sanitizeComposeImageName(value: string): string {
   return (
@@ -682,6 +684,22 @@ export async function buildComposeImages(opts: {
       sessionManager.broadcastInstallPhase(opts.dep.id, { id: "images", status: "skipped" });
     }
 
+    // Source builds use the same saved service scope as activation. A sibling's
+    // database credentials must not become another app's build environment.
+    const buildEnvironment = new Map<string, Record<string, string>>();
+    const frozenEnv = decryptEnvMap((opts.dep.envVars ?? {}) as Record<string, string>);
+    for (const service of buildable) {
+      const layered = await loadServiceDeployEnvironment({
+        projectId: opts.project.id,
+        dep: opts.dep,
+        service,
+        projectEnv: opts.composeInterpolationEnv,
+        frozenEnv,
+        logger: opts.logger,
+      });
+      buildEnvironment.set(service.id, { ...opts.buildEnvVars, ...layered.env });
+    }
+
     // Prepare a build spec per service: constructs the per-service BuildConfig +
     // logger and broadcasts "building". Kept SEPARATE from the build itself so a
     // runtime that builds every service on one daemon (Docker) can clone/transfer
@@ -779,7 +797,7 @@ export async function buildComposeImages(opts: {
             dep: opts.dep,
             snapshot: opts.snapshot,
             sessionId: `${opts.buildSessionId}-${service.id}`,
-            envVars: opts.buildEnvVars,
+            envVars: buildEnvironment.get(service.id)!,
             resources,
             gitToken: opts.gitToken,
             overrides: {
@@ -818,7 +836,7 @@ export async function buildComposeImages(opts: {
             dep: opts.dep,
             snapshot: opts.snapshot,
             sessionId: `${opts.buildSessionId}-${service.id}`,
-            envVars: opts.buildEnvVars,
+            envVars: buildEnvironment.get(service.id)!,
             resources,
             gitToken: opts.gitToken,
             overrides: {
@@ -832,7 +850,7 @@ export async function buildComposeImages(opts: {
               dockerfilePath: dockerfile ?? undefined,
               buildArgs: resolveComposeBuildArgs(
                 service.buildArgs,
-                opts.buildEnvVars,
+                buildEnvironment.get(service.id)!,
                 service.advanced?.buildArgTemplateKeys,
               ),
               // Inline catalog build: the source IS the materialized root, so

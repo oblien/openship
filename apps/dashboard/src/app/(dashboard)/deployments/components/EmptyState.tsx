@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React from "react";
 import Link from "next/link";
@@ -29,50 +30,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ hasFilters }) => {
   }
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 px-6 pb-10 text-center">
-      {/* SVG Illustration - matches home page empty state */}
-      <div className="relative mx-auto w-64 h-44">
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 260 180" fill="none">
-          {/* Background card stack */}
-          <rect x="75" y="45" width="130" height="95" rx="14" fill="var(--th-sf-04)" />
-          <rect x="65" y="35" width="130" height="95" rx="14" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-          <rect x="55" y="25" width="130" height="95" rx="14" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-
-          {/* Card header bar */}
-          <rect x="55" y="25" width="130" height="28" rx="14" fill="var(--th-sf-05)" />
-          <circle cx="72" cy="39" r="4" fill="#ef4444" fillOpacity="0.6" />
-          <circle cx="84" cy="39" r="4" fill="#eab308" fillOpacity="0.6" />
-          <circle cx="96" cy="39" r="4" fill="#22c55e" fillOpacity="0.6" />
-
-          {/* Content lines */}
-          <rect x="70" y="65" width="50" height="5" rx="2.5" fill="var(--th-on-12)" />
-          <rect x="70" y="76" width="85" height="4" rx="2" fill="var(--th-on-08)" />
-          <rect x="70" y="85" width="65" height="4" rx="2" fill="var(--th-on-08)" />
-
-          {/* Rocket icon in card */}
-          <circle cx="84" cy="108" r="10" fill="var(--th-on-05)" stroke="var(--th-on-10)" strokeWidth="1" />
-          <path d="M84 102l3 8h-6l3-8z" fill="var(--th-on-20)" />
-          <circle cx="84" cy="106" r="2" fill="var(--th-on-30)" />
-
-          {/* Plus button */}
-          <circle cx="210" cy="90" r="22" fill="var(--th-on-05)" />
-          <circle cx="210" cy="90" r="16" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="2" strokeDasharray="4 3" />
-          <path d="M210 82v16M202 90h16" stroke="var(--th-on-40)" strokeWidth="2" strokeLinecap="round" />
-
-          {/* Decorative dots */}
-          <circle cx="30" cy="60" r="4" fill="var(--th-on-10)" />
-          <circle cx="40" cy="140" r="6" fill="var(--th-on-08)" />
-          <circle cx="230" cy="40" r="3" fill="var(--th-on-12)" />
-          <circle cx="245" cy="130" r="5" fill="var(--th-on-06)" />
-
-          {/* Sparkle accents */}
-          <path d="M25 100l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-16)" />
-          <path d="M220 150l1.5-3 1.5 3-3-1.5 3 0-3 1.5z" fill="var(--th-on-12)" />
-
-          {/* Connecting line */}
-          <path d="M185 95 Q 192 92 195 90" stroke="var(--th-on-12)" strokeWidth="1.5" strokeDasharray="3 3" fill="none" />
-        </svg>
-      </div>
+    <div className="bg-card rounded-2xl px-6 py-10 text-center">
+      <FeatureIllustration
+        name="push-to-deploy"
+        className="illustration-color mx-auto mb-6 h-auto w-20"
+      />
 
       <h3 className="text-lg font-medium text-foreground/80 mb-2">
         {t.deployments.empty.none.title}

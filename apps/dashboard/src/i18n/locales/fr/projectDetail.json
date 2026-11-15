@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} service",
       "serviceCountOther": "{count} services",
       "searchPlaceholder": "Rechercher par nom, image ou tag…",
-      "cloudConnectHint": "Connectez Openship Cloud pour parcourir le catalogue de services cloud. Vous pouvez toujours ajouter n'importe quelle image manuellement.",
+      "cloudConnectHint": "Connectez OpenShip Cloud pour parcourir le catalogue de services cloud. Vous pouvez toujours ajouter n'importe quelle image manuellement.",
       "noMatchesTitle": "Aucun résultat",
       "noMatchesBody": "Essayez une autre catégorie ou un autre terme de recherche - ou choisissez Image personnalisée dans la barre latérale.",
       "localImages": "Images locales",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "Docker local",
       "customEntryName": "Image personnalisée",
       "customEntryDescription": "Récupérez n'importe quelle image Docker publique ou privée par tag.",
@@ -133,9 +133,9 @@
         "runtime": "Environnements d'exécution",
         "other": "Autre"
       },
-      "cloudConnectTitle": "Connecter Openship Cloud",
-      "cloudConnectBody": "Liez cette instance à Openship Cloud pour parcourir et ajouter des images cloud gérées. Vous pouvez toujours ajouter n'importe quelle image manuellement depuis Images locales.",
-      "cloudConnectButton": "Se connecter à Openship Cloud",
+      "cloudConnectTitle": "Connecter OpenShip Cloud",
+      "cloudConnectBody": "Liez cette instance à OpenShip Cloud pour parcourir et ajouter des images cloud gérées. Vous pouvez toujours ajouter n'importe quelle image manuellement depuis Images locales.",
+      "cloudConnectButton": "Se connecter à OpenShip Cloud",
       "repositorySource": {
         "catalog": "Catalogue",
         "title": "Depuis le dépôt",
@@ -200,7 +200,7 @@
           "reviewFailed": "Impossible de vérifier la configuration partagée. Vos modifications n’ont pas été enregistrées."
         },
         "helpTitle": "Fonctionnement des variables d’environnement",
-        "description": "Enregistré dans Openship. L’enregistrement permet de vérifier les changements partagés lorsqu’une source du projet existe. Les valeurs propres au service priment sur Compose et le projet.",
+        "description": "Enregistré dans OpenShip. L’enregistrement permet de vérifier les changements partagés lorsqu’une source du projet existe. Les valeurs propres au service priment sur Compose et le projet.",
         "sources": {
           "service": "Valeur personnalisée du service",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "Terminal",
       "statusTitle": "État du service indisponible",
-      "statusHint": "Openship n’a pas pu confirmer l’état actuel. Votre service fonctionne peut-être encore.",
+      "statusHint": "OpenShip n’a pas pu confirmer l’état actuel. Votre service fonctionne peut-être encore.",
       "checkingTitle": "Vérification du service",
       "checkingHint": "En attente d’une réponse du serveur. Vous pouvez déjà essayer d’ouvrir le terminal.",
       "startingTitle": "En attente du service",
@@ -449,7 +449,7 @@
       "errorTitle": "Terminal indisponible",
       "errors": {
         "auth": "Votre accès n’a pas pu être vérifié. Reconnectez-vous à votre compte ou vérifiez vos autorisations.",
-        "connect": "Openship n’a pas pu atteindre le shell du service. Réessayez lorsque le serveur sera de nouveau accessible.",
+        "connect": "OpenShip n’a pas pu atteindre le shell du service. Réessayez lorsque le serveur sera de nouveau accessible.",
         "notFound": "Ce service est indisponible ou vous n’y avez pas accès.",
         "notDeployed": "Aucun conteneur en cours d’exécution n’est disponible. Vérifiez l’état du service et réessayez.",
         "notSupported": "L’environnement d’exécution de ce service ne prend pas en charge de terminal interactif.",

@@ -2,6 +2,7 @@ import type { UpdateDependencies } from "../../../updates";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import * as service from "./updates.service";
 import { updateProjectRuntime } from "./runtime-update";
+import { getRuntimeSource, previewRuntimeSource, publishRuntimeSource } from "./runtime-source";
 import { checkProjectRuntimeImages } from "./runtime-image-check";
 import { organizationAdvisories } from "./security-overview";
 import { securityCheckPolicy, setSecurityCheckPolicy } from "./security-check-policy";
@@ -27,6 +28,9 @@ export const updatesDependencies: UpdateDependencies = {
     },
   },
   projects: {
+    runtimeSource: getRuntimeSource,
+    previewRuntimeSource,
+    publishRuntimeSource,
     security: (ctx, id) => projectSecurityStatus(ctx, id),
     checkSecurity: (ctx, id) => projectSecurityStatus(ctx, id, undefined, true),
     securityPolicy: setProjectSecurityPolicy,

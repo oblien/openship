@@ -49,6 +49,7 @@ export function normalizeDeployActionConfig(
   config: IncomingWebhookActionConfig,
 ): IncomingWebhookActionConfig {
   const ids = deployServiceIds(config);
-  if (config.serviceIds !== undefined) return { serviceIds: ids };
-  return ids ? { serviceId: ids[0] } : {};
+  const accept = config.acceptComposeChanges ? { acceptComposeChanges: true } : {};
+  if (config.serviceIds !== undefined) return { serviceIds: ids, ...accept };
+  return ids ? { serviceId: ids[0], ...accept } : { ...accept };
 }

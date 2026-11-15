@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} servicio",
       "serviceCountOther": "{count} servicios",
       "searchPlaceholder": "Buscar por nombre, imagen o etiqueta…",
-      "cloudConnectHint": "Conecta Openship Cloud para explorar el catálogo de servicios en la nube. Aún puedes añadir cualquier imagen manualmente.",
+      "cloudConnectHint": "Conecta OpenShip Cloud para explorar el catálogo de servicios en la nube. Aún puedes añadir cualquier imagen manualmente.",
       "noMatchesTitle": "Sin coincidencias",
       "noMatchesBody": "Prueba con otra categoría o término de búsqueda, o elige Imagen personalizada en la barra lateral.",
       "localImages": "Imágenes locales",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "Docker local",
       "customEntryName": "Imagen personalizada",
       "customEntryDescription": "Descarga cualquier imagen de Docker pública o privada por etiqueta.",
@@ -134,7 +134,7 @@
         "other": "Otros"
       },
       "cloudConnectTitle": "¿Necesitas bases de datos administradas o almacenamiento de objetos?",
-      "cloudConnectBody": "Conecta Openship Cloud para aprovisionar Postgres sin servidor, Redis y buckets compatibles con S3 junto a este proyecto.",
+      "cloudConnectBody": "Conecta OpenShip Cloud para aprovisionar Postgres sin servidor, Redis y buckets compatibles con S3 junto a este proyecto.",
       "cloudConnectButton": "Explorar complementos de Cloud",
       "repositorySource": {
         "catalog": "Catálogo",
@@ -200,7 +200,7 @@
           "reviewFailed": "No se pudo revisar la configuración compartida. No se han guardado los cambios."
         },
         "helpTitle": "Cómo funcionan las variables de entorno",
-        "description": "Se guarda en Openship. Al guardar se revisan los cambios compartidos si existe un origen en el proyecto. Las sobrescrituras del servicio prevalecen sobre Compose y el proyecto.",
+        "description": "Se guarda en OpenShip. Al guardar se revisan los cambios compartidos si existe un origen en el proyecto. Las sobrescrituras del servicio prevalecen sobre Compose y el proyecto.",
         "sources": {
           "service": "Sobrescritura del servicio",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "Terminal",
       "statusTitle": "Estado del servicio no disponible",
-      "statusHint": "Openship no pudo confirmar el estado actual. Es posible que tu servicio siga funcionando.",
+      "statusHint": "OpenShip no pudo confirmar el estado actual. Es posible que tu servicio siga funcionando.",
       "checkingTitle": "Comprobando el servicio",
       "checkingHint": "Esperando una respuesta del servidor. Ya puedes intentar abrir la terminal.",
       "startingTitle": "Esperando al servicio",
@@ -449,7 +449,7 @@
       "errorTitle": "Terminal no disponible",
       "errors": {
         "auth": "No se pudo verificar tu acceso. Inicia sesión de nuevo o revisa tus permisos.",
-        "connect": "Openship no pudo acceder a la consola del servicio. Inténtalo cuando el servidor vuelva a estar disponible.",
+        "connect": "OpenShip no pudo acceder a la consola del servicio. Inténtalo cuando el servidor vuelva a estar disponible.",
         "notFound": "Este servicio no está disponible o no tienes acceso.",
         "notDeployed": "No hay un contenedor en ejecución al que conectarse. Comprueba el estado del servicio e inténtalo de nuevo.",
         "notSupported": "El entorno de ejecución de este servicio no admite una terminal interactiva.",

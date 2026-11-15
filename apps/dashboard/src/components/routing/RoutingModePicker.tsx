@@ -41,6 +41,9 @@ interface RoutingModePickerProps {
    *  toggle CREATES a redirect — hiding the control would leave the user with a
    *  301 they didn't see and can't change. */
   allowRedirects?: boolean;
+  /** Hostnames behind external ingress — forwarded to the endpoints card so
+   *  password protection shows "not supported" for them. */
+  externalIngressHostnames?: ReadonlySet<string>;
 }
 
 // Segmented tab styling — identical to RoutingSettingsCard's Free/Custom tabs so
@@ -61,6 +64,7 @@ export function RoutingModePicker({
   allowPortEdit = false,
   saveMode = "change",
   allowRedirects = false,
+  externalIngressHostnames,
 }: RoutingModePickerProps) {
   const { t } = useI18n();
   const w = t.widgets.routing.settingsCard;
@@ -104,6 +108,7 @@ export function RoutingModePicker({
             saveMode={saveMode}
             hideTypeToggle
             allowRedirects={allowRedirects}
+            externalIngressHostnames={externalIngressHostnames}
             onChange={onEndpointsChange}
             allowWww={mode === "custom"}
           />

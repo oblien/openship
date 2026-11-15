@@ -34,7 +34,7 @@ function truncate(text: string, max: number): string {
  * Per-page OG/Twitter card for any docs route. Shared by the two image files so
  * both produce the identical card from one definition.
  *
- * An unresolvable slug falls back to the generic Openship card rather than
+ * An unresolvable slug falls back to the generic OpenShip card rather than
  * throwing: a missing image degrades a social preview, but a throw here would
  * fail the page's whole metadata render.
  */

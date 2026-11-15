@@ -118,6 +118,7 @@ describe("swapManagedImage — from-source backstop", () => {
     setManagedImagesFromSource("edge", true);
     const { executor, commands } = absentTarget();
     const start = vi.fn(async () => true);
+    const prepare = vi.fn(async () => {});
     const messages: string[] = [];
 
     const res = await swapManagedImage(executor, {
@@ -127,17 +128,22 @@ describe("swapManagedImage — from-source backstop", () => {
       label: "edge",
       onLog: (l) => messages.push(l.message),
       start,
+      prepare,
     });
 
     expect(res).toEqual({ swapped: false, down: false });
     expect(commands.some((c) => c.startsWith("docker pull"))).toBe(false);
     expect(start).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
     expect(messages.join("\n")).toMatch(/from-source edge image .* isn't on this server/);
   });
 
   it("pulls an absent tag as before when NOT from source (prod)", async () => {
     const { executor, commands } = absentTarget();
-    const start = vi.fn(async () => true);
+    const start = vi.fn(async () => {
+      commands.push("start");
+      return true;
+    });
 
     const res = await swapManagedImage(executor, {
       kind: "edge",
@@ -146,10 +152,17 @@ describe("swapManagedImage — from-source backstop", () => {
       label: "edge",
       onLog: () => {},
       start,
+      prepare: async () => {
+        commands.push("preserve");
+      },
     });
 
     expect(commands.some((c) => c.startsWith("docker pull"))).toBe(true);
     expect(res.swapped).toBe(true);
+    expect(commands.findIndex((c) => c.startsWith("docker pull"))).toBeLessThan(
+      commands.indexOf("preserve"),
+    );
+    expect(commands.indexOf("preserve")).toBeLessThan(commands.indexOf("start"));
   });
 
   it("uses THIS component's flag — a from-source mail flag doesn't gate an edge swap", async () => {
@@ -176,6 +189,24 @@ describe("swapManagedImage — recovery after startup exceptions", () => {
   const executor = {
     exec: async () => "sha256:available",
   } as unknown as CommandExecutor;
+
+  it("does not start replacement or rollback when preservation preflight refuses", async () => {
+    const start = vi.fn(async () => true);
+    await expect(
+      swapManagedImage(executor, {
+        kind: "mail",
+        from: "img:old",
+        to: "img:new",
+        label: "mail engine",
+        onLog: () => {},
+        prepare: async () => {
+          throw new Error("Could not preserve ban history");
+        },
+        start,
+      }),
+    ).rejects.toThrow("Could not preserve ban history");
+    expect(start).not.toHaveBeenCalled();
+  });
 
   it("restores the old image when replacement startup throws after removing it", async () => {
     let servingImage: string | null = "img:old";

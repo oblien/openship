@@ -6,6 +6,7 @@ import { Icon } from "@repo/ui/icons";
 import type { BillingState } from "@/lib/api/billing";
 import { formatMilliCredits } from "@/lib/billing-usage";
 import { BillingLink } from "./BillingWorkspaceContext";
+import { isMonthlyCloudPlan } from "@/lib/billing-presentation";
 
 /** Billing overview only. Reuse the selected server's authoritative billing state. */
 export function CloudCreditAlert({ state }: { state: BillingState }) {
@@ -13,9 +14,8 @@ export function CloudCreditAlert({ state }: { state: BillingState }) {
   const copy = t.billing.creditAlert;
   const alert = state.creditAlert;
   const funded = state.tier !== "free" || (alert?.limit ?? 0) > 0 || state.balance.quotaUsed > 0;
-  const billingMode = state.compute?.billingMode ?? state.plan?.billingMode;
   if (
-    billingMode === "monthly" || !funded || !alert ||
+    isMonthlyCloudPlan(state) || !funded || !alert ||
     !["low", "grace", "depleted"].includes(alert.state)
   ) return null;
 

@@ -87,7 +87,7 @@ describe("token lifecycle shared by native SDK and HTTP", () => {
     expect(await c.remote.tokens.listMcpClients()).toEqual([]);
     await flushAudit();
     const events = await db.select().from(schema.auditEvent).where(eq(schema.auditEvent.organizationId, owner.orgId));
-    expect(events.map(row => row.eventType).sort()).toEqual(["mcp.authorized", "mcp.disconnected", "mcp.scope_changed"]);
+    expect(events.map(row => row.eventType).sort()).toEqual(["mcp.authorized", "mcp.disconnected", "mcp.scope_changed", "settings:read", "settings:read"]);
   });
 
   it("caps new token expiry at the caller's trusted credential lifetime", async () => {

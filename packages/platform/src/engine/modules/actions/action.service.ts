@@ -25,7 +25,7 @@ import {
   authorizeActionRun,
   authorizeActionRepository,
 } from "./access";
-import { actionConcurrency, parseActionWorkflow, record } from "./workflow";
+import { ACTIONS_YAML_ALIAS_LIMIT, actionConcurrency, parseActionWorkflow, record } from "./workflow";
 import { actionRuntimeUrl, authorizeActionStorage } from "./storage";
 import { snapshotActionWorkflows } from "./reusable";
 import { reusableSourceReader } from "./reusable-source";
@@ -276,7 +276,7 @@ function validateStandaloneWorkflow(
     throw new ValidationError(
       "Push and pull-request triggers require a repository. Use manual, schedule or webhook triggers for a standalone workflow.",
     );
-  const workflow = record(parse(source, { maxAliasCount: 0 }));
+  const workflow = record(parse(source, { maxAliasCount: ACTIONS_YAML_ALIAS_LIMIT }));
   for (const job of Object.values(record(workflow.jobs))) {
     const steps = record(job).steps;
     if (!Array.isArray(steps)) continue;
@@ -320,7 +320,7 @@ function dispatchInputs(
   provided: Record<string, unknown>,
 ): Record<string, unknown> {
   const definitions = record(
-    record(record(parse(source, { maxAliasCount: 0 })).on).workflow_dispatch,
+    record(record(parse(source, { maxAliasCount: ACTIONS_YAML_ALIAS_LIMIT })).on).workflow_dispatch,
   ).inputs;
   const inputs = record(definitions);
   for (const key of Object.keys(provided))

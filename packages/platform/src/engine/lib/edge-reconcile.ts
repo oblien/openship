@@ -107,17 +107,20 @@ export async function reconcileServerEdge(
       listening: false,
       checked: false,
     }); });
-    const serving = probe.checked ? probe.listening : true;
+    const down = probe.checked && !probe.listening;
     opts.onLog({
       timestamp: new Date().toISOString(),
-      level: serving ? "warn" : "error",
-      message: serving
+      level: down ? "error" : "warn",
+      message: !probe.checked
+        ? `The edge did not converge (${error}) — its current health could not be verified. ` +
+          `Reconnect and recheck routing; this is not confirmation that existing routes are serving.`
+        : probe.listening
         ? `The edge did not converge (${error}) — the server is still served by whatever ` +
           `held 80/443 before, and this is retried on the next deploy.`
         : `The edge did not converge (${error}) — and nothing is listening on :80 on ` +
           `this server, so every domain it serves is down.`,
     });
-    return { converted: false, updated: false, edgeDown: !serving, error };
+    return { converted: false, updated: false, edgeDown: down, error };
   }
 }
 

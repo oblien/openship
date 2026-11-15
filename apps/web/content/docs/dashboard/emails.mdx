@@ -285,7 +285,9 @@ usually means this outer layer is dropping the connection.
 
 Backups run through Openship's general backup system, so the mail server is just another backup source.
 Choose **what to back up**: accounts, domains &amp; aliases (always included), **Mailbox message data** (the
-maildirs — can be large), and **DKIM keys &amp; secrets**.
+maildirs, folders, queue and quarantine — can be large), and **DKIM keys &amp; secrets**.
+New policies include messages and keys by default; existing exclusions are retained.
+Full backups pause delivery and IMAP while copying, then resume the daemons that were running.
 
 <Callout title="Backups can contain secrets" type="warn">
 Including keys means the archive holds password hashes, DKIM private keys, and plaintext secrets. Keep the
@@ -295,6 +297,11 @@ destination private.
 Pick a **Destination** (managed on the [Backups](/docs/dashboard/backups) page) and an **Automatic backups**
 schedule (Manual only / Daily / Weekly), then **Save settings** or **Back up now**. **Recent backups** lists
 each run; successful runs offer **Restore** (in place) and **Migrate** (onto another server).
+Prepare the target mail server with the same primary domain and a compatible mail/PostgreSQL version
+first. Restore includes all mail tables, additional domains, managed mailbox/relay credentials and
+DKIM keys; the destination retains its database-role credentials and TLS configuration. Review the
+new DNS/PTR records before cutover. Failed partial restores stay stopped for review and retry.
+Settings → Instance export does not include mailbox messages by default.
 
 ### Advanced
 

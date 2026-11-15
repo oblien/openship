@@ -11,6 +11,7 @@ import { deploymentFixture } from "./fixtures";
 describe("deployment contract", () => {
   it("advertises all public controller/CLI flags without exposing internal pipeline controls", () => {
     expect(Object.keys(CreateDeploymentSchema.properties).sort()).toEqual([
+      "acceptComposeChanges",
       "branch",
       "commitSha",
       "environment",

@@ -55,7 +55,7 @@
     "viewAllApps": "Tüm {count} uygulamayı gör →"
   },
   "nav": {
-    "affiliates": "Yönlendirmeler",
+    "referrals": "Yönlendirmeler",
     "resources": "Bulut alanları",
     "support": "Destek",
     "scale": "Ölçeklendirme",
@@ -72,7 +72,7 @@
     "emails": "E-postalar",
     "jobs": "Görevler",
     "settings": "Ayarlar",
-    "billing": "Faturalandırma ve Kullanım",
+    "billing": "Planlar ve faturalandırma",
     "audit": "Denetim kaydı",
     "mailSetup": "E-posta kur",
     "mailSetupProgress": "Kurulum ilerlemesi",
@@ -140,7 +140,7 @@
       "addCustom": "Özel ekle",
       "howToAddApp": "Nasıl uygulama eklenir",
       "removeCustomApp": "Özel uygulamayı kaldır",
-      "needsUpdateDesc": "Bu uygulamayı yüklemek için Openship örneğinizi güncelleyin.",
+      "needsUpdateDesc": "Bu uygulamayı yüklemek için OpenShip örneğinizi güncelleyin.",
       "needsUpdateBadge": "Güncelleme gerekli",
       "needsVersionBadge": "v{version} gerekli",
       "removedToast": "\"{name}\" kaldırıldı.",

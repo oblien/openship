@@ -64,9 +64,12 @@ provider wallet is not a second sale. Actual fleet costs, safe placement density
 card fees and operational headroom belong to infrastructure/finance planning;
 Openship does not approximate them to bypass provider admission.
 
-## Prepaid PAYG pricing preview
+## Archived prepaid compute proposal
 
-The UI now previews one customer balance funding multiple independently sized
+The proposal below is historical and is not a product offering. The pricing preview
+and its retail tiers were removed; current purchases use monthly or yearly plans.
+
+The earlier proposal previewed one customer balance funding multiple independently sized
 managed servers. Monthly hosts keep one subscription each. Both use the same
 server acquisition and deployment architecture; selecting a purchase view does
 not switch an existing server's contract.
@@ -79,8 +82,8 @@ are display selections, not new entries in the old namespace top-up catalog.
 PAYG uses the provider's published resource rates, credit conversion and
 reference period length. It reuses the monthly resource controls but does not
 request monthly quotes or derive a retail ceiling from monthly host prices.
-Provider settlement terms remain owned by Oblien. The UI is a pricing preview
-and cannot initiate PAYG checkout, even if the catalog's availability flag
+Provider settlement terms remain owned by Oblien. That UI was a pricing preview
+and could not initiate PAYG checkout, even if the catalog's availability flag
 changes. No wallet, quota, subscription or deployment mutation is introduced
 by the estimator.
 

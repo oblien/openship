@@ -2,6 +2,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React, { useState, useRef, useCallback } from "react";
 import { usePlatform } from "@/context/PlatformContext";
@@ -129,20 +130,18 @@ export function FolderUpload() {
           </p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {frameworks
-            .filter((fw) => fw.id !== "static")
-            .map((fw) => (
-              <button
-                key={fw.id}
-                onClick={() => setStack(fw)}
-                className="flex flex-col items-center gap-3 p-5 rounded-xl border border-border/50 bg-background hover:bg-muted/40 hover:border-border transition-all group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  {fw.icon("var(--foreground)")}
-                </div>
-                <span className="text-sm font-medium text-foreground">{fw.name}</span>
-              </button>
-            ))}
+          {frameworks.map((fw) => (
+            <button
+              key={fw.id}
+              onClick={() => setStack(fw)}
+              className="flex flex-col items-center gap-3 p-5 rounded-xl border border-border/50 bg-background hover:bg-muted/40 hover:border-border transition-all group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center group-hover:scale-105 transition-transform">
+                {fw.icon("var(--foreground)")}
+              </div>
+              <span className="text-sm font-medium text-foreground">{fw.name}</span>
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -206,9 +205,10 @@ export function FolderUpload() {
               multiple
               onChange={(e) => e.target.files && void handleFiles(e.target.files)}
             />
-            <div className="w-10 h-10 rounded-xl bg-foreground/[0.06] flex items-center justify-center mx-auto mb-2">
-              <UiIcon name="upload" className="size-5 text-muted-foreground" />
-            </div>
+            <FeatureIllustration
+              name="local-folder-deploys"
+              className="illustration-color mx-auto mb-3 h-auto w-16"
+            />
             <p className="text-sm font-medium text-foreground mb-0.5">
               {t.library.folderUpload.dropTitle}
             </p>

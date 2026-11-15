@@ -4,6 +4,7 @@ import type { Database } from "../connection";
 import {
   cloudSupportTicket as tickets,
   cloudSupportMessage as messages,
+  cloudSupportBlock as blocks,
 } from "../schema/cloud-support";
 
 export type CloudSupportTicket = typeof tickets.$inferSelect;
@@ -12,7 +13,7 @@ type TicketInput = Pick<
   CloudSupportTicket,
   "id" | "inputHash" | "name" | "email" | "subject" | "message" | "source"
 > &
-  Partial<Pick<CloudSupportTicket, "ownerUserId" | "category">>;
+  Partial<Pick<CloudSupportTicket, "ownerUserId" | "category" | "clientIp">>;
 
 export function createCloudSupportRepo(db: Database) {
   const find = async (id: string) =>
@@ -28,6 +29,18 @@ export function createCloudSupportRepo(db: Database) {
   return {
     find,
     findForUser,
+    async isBlocked(email: string, clientIp?: string | null) {
+      const keys = [`email:${email.trim().toLowerCase()}`, ...(clientIp ? [`ip:${clientIp}`] : [])];
+      return (await db.select({ key: blocks.key }).from(blocks).where(inArray(blocks.key, keys)).limit(1)).length > 0;
+    },
+    async listBlocks() { return db.select().from(blocks).orderBy(desc(blocks.createdAt)).limit(1000); },
+    async setBlock(kind: "email" | "ip", value: string, reason: string) {
+      return db.insert(blocks).values({ key: `${kind}:${value}`, kind, value, reason })
+        .onConflictDoUpdate({ target: blocks.key, set: { reason } });
+    },
+    async removeBlock(kind: "email" | "ip", value: string) {
+      await db.delete(blocks).where(eq(blocks.key, `${kind}:${value}`));
+    },
     async create(input: TicketInput, delivery: { receiptBody?: string; sendReceipt?: boolean } = {}) {
       return db.transaction(async (tx) => {
         const [inserted] = await tx.insert(tickets).values(input).onConflictDoNothing().returning();

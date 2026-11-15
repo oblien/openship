@@ -76,7 +76,7 @@ it("offers the shared checkout inline without mounting the connection form or fe
   expect(h.get).toHaveBeenCalledTimes(1);
   expect(form()).toBeNull();
   expect(host.querySelector('a[href="/billing/manage"]')).toBeNull();
-  expect(host.textContent).toContain("Openship Manage");
+  expect(host.textContent).toContain("OpenShip Manage");
   expect(host.textContent).not.toContain("Need dedicated hardware?");
   const redirect = vi.spyOn(window.location, "assign").mockImplementation(() => {});
   h.purchase.mockResolvedValue({ url: "https://checkout.stripe.com/inline" });

@@ -155,6 +155,7 @@ describe("backupRun.transition — status must not ride a payload that can fail"
 // ─── Layer 2: the orchestrator ───────────────────────────────────────────────
 
 const h = vi.hoisted(() => ({
+  recoveryFailure: false,
   run: null as Record<string, unknown> | null,
   policy: null as Record<string, unknown> | null,
   services: [] as Array<Record<string, unknown>>,
@@ -225,6 +226,14 @@ vi.mock("@repo/db", () => ({
 
 // `node:stream` is imported INSIDE the factory: vi.mock factories are hoisted
 // above the file's own imports, so closing over a top-level binding throws.
+vi.mock("@repo/platform/engine/modules/mail/backup-lifecycle", () => ({
+  prepareMailBackup: async () => ({
+    payload: { payloadConfig: {} },
+    metadata: { version: 2, domain: "example.test", messageData: false, keys: false },
+    cleanup: async () => { if (h.recoveryFailure) throw new Error("mail restart refused"); },
+  }),
+}));
+
 vi.mock("@repo/adapters", async () => {
   const { Readable, PassThrough } = await import("node:stream");
   // Pulled from the real (side-effect-free) leaf module rather than restated, so a
@@ -245,6 +254,7 @@ vi.mock("@repo/adapters", async () => {
     runPrefix: () => "pfx/",
     buildManifest: () => ({ version: 1 }),
     resolveDestination: () => ({
+      deleteMany: async (keys: string[]) => ({ deleted: keys, failed: [] }),
       preflight: async () => ({ ok: true }),
       put: async (_key: string, body: AsyncIterable<Buffer>) => {
         let bytesWritten = 0;
@@ -270,7 +280,11 @@ vi.mock("@repo/adapters", async () => {
         };
       },
     }),
-    resolveProducer: () => ({ async *produce() {} }),
+    resolveProducer: () => ({
+      async *produce() {
+        yield { name: "vmail.tar.zst", stream: Readable.from([Buffer.from("bytes")]), sizeHint: 5, payloadKind: "custom_command", metadata: h.artifactMetadata };
+      },
+    }),
   };
 });
 
@@ -312,6 +326,7 @@ import { boundedStorableText } from "@repo/platform/engine/modules/deployments/b
 /** Wire the orchestrator to the REAL run repo over the Postgres-shaped fake, so
  *  a rejected write fails exactly where it fails in production. */
 function wireRun(): PgFake {
+  h.policy = { ...h.policy, payloadKind: "custom_command" };
   const pg = makePgFake({ id: "bkr_live", status: "queued" });
   const repo = createBackupRunRepo(pg.db as never);
   h.run = {
@@ -330,6 +345,7 @@ function wireRun(): PgFake {
 }
 
 beforeEach(() => {
+  h.recoveryFailure = false;
   h.executionRow = null;
   h.policy = {
     id: "pol_1",
@@ -509,6 +525,15 @@ describe("a terminal status is final — one owner per verdict", () => {
 });
 
 describe("BackupOrchestrator.execute — hook output cannot fail the backup", () => {
+  it("records source recovery failures before the terminal verdict and still acknowledges execution", async () => {
+    const pg = wireRun();
+    h.recoveryFailure = true;
+    await new BackupOrchestrator().execute("bkr_live");
+    expect(pg.row.status).toBe("failed");
+    expect(pg.row.errorMessage).toContain("Mail recovery needs attention: mail restart refused");
+    expect(h.acknowledgements).toEqual([{ runId: "bkr_live", status: "failed" }]);
+  });
+
   it("delivers failure references when policy and destination lookup are unavailable", async () => {
     const pg = wireRun();
     h.policy = null;

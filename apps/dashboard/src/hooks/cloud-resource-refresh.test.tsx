@@ -7,7 +7,6 @@ vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: "
 vi.mock("@/lib/api", () => ({ projectsApi: { getHome: h.home, getInfo: h.info, getCommitStatus: async () => ({ data: { supported: false } }) }, servicesApi: { list: h.services }, api: {}, endpoints: {}, ApiError: class extends Error {} }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.servers } }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { post: h.checkout } }));
-vi.mock("@/lib/cloud-analytics", () => ({ trackCloudEvent: () => {} }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: true }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
 import { CloudResourceContext } from "@/context/CloudResourceContext";
@@ -108,8 +107,7 @@ it("discards server-rendered project settings and late services when the Cloud i
 it("does not open a checkout returned for a disconnected Cloud account", async () => {
   const old = deferred<unknown>();
   h.checkout.mockReturnValue(old.promise);
-  const popup = { close: vi.fn(), opener: null, location: { href: "about:blank" } };
-  const open = vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
   const started = vi.fn();
   function Checkout() {
     const checkout = useCloudCheckout({ enabled: true, preserveProject: true, onCheckoutStarted: started });
@@ -122,8 +120,7 @@ it("does not open a checkout returned for a disconnected Cloud account", async (
     await render("account-b", page);
     await act(async () => old.resolve({ data: { checkoutUrl: "https://checkout.stripe.com/old-account" } }));
     expect(host.textContent).toBe("Choose plan");
-    expect(popup.location.href).toBe("about:blank");
-    expect(popup.close).toHaveBeenCalledOnce();
+    expect(open).not.toHaveBeenCalled();
     expect(started).not.toHaveBeenCalled();
   } finally { open.mockRestore(); }
 });

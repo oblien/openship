@@ -21,7 +21,7 @@
  * the queue until a slot opens.
  */
 
-import { observedAllSettled, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { diagnosticTraceparent, observedAllSettled, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { observeBackground } from "@repo/core/diagnostics/node";
 import cronParser from "cron-parser";
 import { repos } from "@repo/db";
@@ -47,7 +47,7 @@ export class InProcessJobRunner implements JobRunner {
   private readonly recurring = new Map<string, RecurringSchedule>();
   private readonly inFlight = new Set<string>();
   private readonly activeTasks = new Set<Promise<unknown>>();
-  private readonly enqueueQueue: string[] = [];
+  private readonly enqueueQueue: { runId: string; traceparent?: string }[] = [];
   private readonly maxConcurrency = DEFAULT_CONCURRENCY;
   private shuttingDown = false;
   private started = false;
@@ -118,7 +118,7 @@ export class InProcessJobRunner implements JobRunner {
     // Fast path — fire as soon as the event loop yields. The persistent
     // row in backup_run guarantees crash-safety; the next poll picks it
     // up if we crash before fire.
-    if (!this.inFlight.has(runId) && !this.enqueueQueue.includes(runId)) this.enqueueQueue.push(runId);
+    if (!this.inFlight.has(runId) && !this.enqueueQueue.some(entry => entry.runId === runId)) this.enqueueQueue.push({ runId, traceparent: diagnosticTraceparent() });
     setImmediate(() => void this.drainQueue());
   }
 
@@ -200,13 +200,14 @@ export class InProcessJobRunner implements JobRunner {
       this.enqueueQueue.length > 0 &&
       this.inFlight.size < this.maxConcurrency
     ) {
-      const runId = this.enqueueQueue.shift();
-      if (!runId) break;
+      const queued = this.enqueueQueue.shift();
+      if (!queued) break;
+      const { runId, traceparent } = queued;
       if (this.inFlight.has(runId)) continue; // dedupe
       this.inFlight.add(runId);
       void this.track(async () => {
         try {
-          await observeBackground({ component: "backup-runner", runId }, () => this.processRun!(runId));
+          await observeBackground({ component: "backup-runner", runId }, () => this.processRun!(runId), { parent: traceparent });
         } catch (err) {
           errorDiagnostics.error("platform/engine/lib/job-runner/in-process",
             `[job-runner:in-process] run ${runId} crashed:`,
@@ -235,8 +236,8 @@ export class InProcessJobRunner implements JobRunner {
     try {
       const queued = await repos.backupRun.listQueued(20);
       for (const run of queued) {
-        if (!this.inFlight.has(run.id) && !this.enqueueQueue.includes(run.id)) {
-          this.enqueueQueue.push(run.id);
+        if (!this.inFlight.has(run.id) && !this.enqueueQueue.some(entry => entry.runId === run.id)) {
+          this.enqueueQueue.push({ runId: run.id });
         }
       }
       if (this.enqueueQueue.length > 0) void this.drainQueue();
@@ -256,7 +257,7 @@ export class InProcessJobRunner implements JobRunner {
     try {
       const queued = await repos.backupRun.listQueued(100);
       for (const run of queued) {
-        this.enqueueQueue.push(run.id);
+        this.enqueueQueue.push({ runId: run.id });
       }
       if (this.enqueueQueue.length > 0) void this.drainQueue();
     } catch (err) {

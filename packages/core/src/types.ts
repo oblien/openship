@@ -263,6 +263,9 @@ export type ComposeAdvancedPatch = {
 };
 
 export type ComposeAdvanced = {
+  /** Long-form Compose startup conditions; short-form dependencies only require
+   * container startup. Kept with the imported service snapshot. */
+  dependsOnConditions?: Record<string, "service_started" | "service_healthy" | "service_completed_successfully">;
   /**
    * Provenance for a Compose `image:` expression. `resolved` remains in the
    * service's ordinary `image` column for display and rollback snapshots; this
@@ -488,6 +491,8 @@ export function mergeAdvanced(
  * upstream/LB weights, …) as a pure shape-widening — no migration (JSONB).
  */
 export type RouteRuleSpec = {
+  /** Domain-scoped virtual route. Access rules are evaluated independently first. */
+  response?: import("./edge-response").EdgeResponse;
   /**
    * Per-client rate limit (fixed 1s window, keyed by client IP). Omit = unlimited.
    * `status` overrides the 429 response code. Runs alongside (does not replace)

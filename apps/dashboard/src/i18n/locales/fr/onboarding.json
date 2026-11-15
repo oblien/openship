@@ -12,10 +12,10 @@
     "language": "Langue"
   },
   "choose": {
-    "title": "Bienvenue sur Openship",
-    "subtitle": "Choisissez comment exécuter Openship. Les deux options vous donnent accès à toutes les fonctionnalités, et vous pouvez changer à tout moment.",
+    "title": "Bienvenue sur OpenShip",
+    "subtitle": "Choisissez comment exécuter OpenShip. Les deux options vous donnent accès à toutes les fonctionnalités, et vous pouvez changer à tout moment.",
     "cloud": {
-      "name": "Openship Cloud",
+      "name": "OpenShip Cloud",
       "desc": "Nous gérons l'infrastructure, les mises à jour et les sauvegardes. Il vous suffit de vous connecter et de commencer à déployer.",
       "perk1": "Aucun serveur requis",
       "perk2": "Offre gratuite incluse",
@@ -25,7 +25,7 @@
     "or": "ou",
     "selfhost": {
       "name": "Auto-hébergé",
-      "desc": "Exécutez Openship sur votre propre matériel. Connectez un serveur distant ou utilisez cette machine.",
+      "desc": "Exécutez OpenShip sur votre propre matériel. Connectez un serveur distant ou utilisez cette machine.",
       "perk1": "Propriété totale des données",
       "perk2": "Serveur distant ou ce Mac",
       "perk3": "Nous nous occupons du reste",
@@ -35,15 +35,15 @@
     "skip": "Passer pour l'instant"
   },
   "selfhost": {
-    "title": "Où exécuter Openship ?",
-    "subtitleLine1": "Choisissez où installer la plateforme Openship.",
+    "title": "Où exécuter OpenShip ?",
+    "subtitleLine1": "Choisissez où installer la plateforme OpenShip.",
     "subtitleLine2": "Les deux options vous offrent un contrôle total et la propriété de vos données.",
     "local": {
       "title": "Cette machine",
       "badge": "Bêta",
-      "desc": "Installez Openship directement ici, sans SSH ni configuration distante",
+      "desc": "Installez OpenShip directement ici, sans SSH ni configuration distante",
       "comingSoon": "Bientôt disponible",
-      "comingSoonDesc": "Exécuter Openship directement sur cette machine n'est pas encore prêt — connectez un serveur pour l'instant."
+      "comingSoonDesc": "Exécuter OpenShip directement sur cette machine n'est pas encore prêt — connectez un serveur pour l'instant."
     },
     "remote": {
       "title": "Un autre serveur",
@@ -61,7 +61,7 @@
     "methodPassword": "Mot de passe",
     "methodKey": "Clé SSH",
     "methodAgent": "Agent",
-    "agentHint": "Se connecte via l'agent SSH de cette machine, comme VSCode, sans mot de passe ni clé. L'hôte exécutant Openship doit déjà avoir accès à ce serveur (une clé chargée dans son ssh-agent).",
+    "agentHint": "Se connecte via l'agent SSH de cette machine, comme VSCode, sans mot de passe ni clé. L'hôte exécutant OpenShip doit déjà avoir accès à ce serveur (une clé chargée dans son ssh-agent).",
     "passwordLabel": "Mot de passe",
     "passwordPlaceholder": "Mot de passe du serveur",
     "keyPathLabel": "Chemin de la clé",
@@ -85,7 +85,7 @@
     "subtitle": "Votre serveur a besoin d'être accessible depuis Internet pour les webhooks, le SSL et l'accès public.",
     "providers": {
       "edge": {
-        "title": "Openship Edge",
+        "title": "OpenShip Edge",
         "desc": "Aucune configuration. SSL automatique, haute disponibilité et protection anti-DDoS, le tout intégré.",
         "badge": "Recommandé"
       },
@@ -102,7 +102,7 @@
     "ngrokTokenLabel": "Jeton d'authentification ngrok",
     "cloudflarePlaceholder": "Collez votre jeton de tunnel",
     "ngrokPlaceholder": "Collez votre jeton d'authentification ngrok",
-    "edgeHint": "Openship Edge nécessite un compte Openship. Vous vous connecterez pour continuer.",
+    "edgeHint": "OpenShip Edge nécessite un compte OpenShip. Vous vous connecterez pour continuer.",
     "signInContinue": "Se connecter et continuer"
   },
   "preferences": {
@@ -129,15 +129,15 @@
     "connecting": "Connexion…",
     "verifying": "Vérification de votre serveur",
     "retry": "Réessayer",
-    "openingCloud": "Ouverture d'Openship Cloud…",
+    "openingCloud": "Ouverture d'OpenShip Cloud…",
     "waitingAuth": "En attente de la fin de l'authentification",
     "couldNotStartAuthTitle": "Impossible de démarrer l'authentification cloud",
     "authFailedTitle": "Échec de l'authentification cloud",
     "couldNotStartAuthMsg": "Le flux d'authentification du bureau n'a pas pu être démarré.",
     "authFailedMsg": "Veuillez réessayer et terminer la connexion dans votre navigateur.",
     "completingSignIn": "Finalisation de la connexion…",
-    "returningToOpenship": "Retour à Openship",
-    "redirectingCloud": "Redirection vers Openship Cloud…",
+    "returningToOpenship": "Retour à OpenShip",
+    "redirectingCloud": "Redirection vers OpenShip Cloud…",
     "newTabSignIn": "Vous terminerez la connexion dans un nouvel onglet",
     "couldNotSaveTitle": "Impossible d'enregistrer la configuration",
     "couldNotSaveMsg": "L'API n'a pas répondu. Assurez-vous que les services sont en cours d'exécution.",

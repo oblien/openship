@@ -1,4 +1,26 @@
-import { getAppEndpoints, resolveInternalEndpoint, type AppTemplate } from "@repo/core";
+import {
+  getAppEndpoints,
+  resolveInternalEndpoint,
+  ValidationError,
+  type AppTemplate,
+} from "@repo/core";
+
+/** Substitute only the authorized connection's host. No expression evaluation,
+ * environment interpolation, protocol changes or guessing database names. */
+export function renderConnectionValue(template: string, endpoint: string): string {
+  if (!template.includes("${host}") || template.length > 32_768)
+    throw new ValidationError(
+      "The connection value must contain a host placeholder and fit within 32 KiB.",
+    );
+  let host: string;
+  try {
+    host = new URL(endpoint).hostname;
+  } catch {
+    throw new ValidationError("This connection does not provide a network host.");
+  }
+  if (!host) throw new ValidationError("This connection does not provide a network host.");
+  return template.replaceAll("${host}", host);
+}
 
 /**
  * Rewrite a connection URL's host to the source app's internal service alias

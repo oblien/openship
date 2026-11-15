@@ -125,7 +125,15 @@ export async function verifyDeployedContainers(
       let verdict: StabilityVerdict;
       try {
         verdict = await watchContainerStability(
-          { sample: () => sampler(target.containerId) },
+          {
+            sample: () => sampler(target.containerId),
+            onPending: (sample, elapsedMs, remainingMs) => logger.log(
+              `Waiting for "${target.serviceName}" startup verification: ${sample.state}, ` +
+                `health ${sample.health ?? "not configured"}, restarts ${sample.restartCount} ` +
+                `(${Math.floor(elapsedMs / 1000)}s observed, ${Math.ceil(remainingMs / 1000)}s remaining).\n`,
+              "info", { serviceName: target.serviceName, serviceId: target.serviceId },
+            ),
+          },
           {
             windowMs,
             pollMs,

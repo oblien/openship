@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { BuildLogger, DockerRuntime, LocalExecutor, sq, type BuildConfig } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, LocalExecutor, elevatedExecutor, sq, type BuildConfig } from "@repo/adapters";
 import { generateDockerfile } from "../../../../packages/adapters/src/runtime/docker-build-plan";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
 import { protectedBuildKitImage } from "../helpers/buildkit-image";
@@ -44,6 +44,9 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     protectedImage = await protectedBuildKitImage(projectId, docker);
     root = await mkdtemp(join(tmpdir(), "openship-cloud-build-capacity-"));
     executor = new LocalExecutor();
+    // The simulated Cloud commands run as root; file transfers must use the same
+    // identity. Reuse protected staging instead of placing secret bytes in commands.
+    if (useSudo) executor.writeFile = elevatedExecutor(new LocalExecutor()).writeFile;
     // Reap the test's local shell as the Cloud executor reaps its remote task.
     const hostExec = executor.exec.bind(executor);
     executor.exec = (command, options) => hostExec(privileged(command), options);
@@ -89,18 +92,22 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     const marker = `running-${randomUUID()}`;
     const image = `openship/capacity-e2e:${randomUUID()}`;
     images.add(image);
-    await writeFile(
-      join(root, "Dockerfile"),
-      [
-        "FROM alpine:3.20",
-        // Keep a real RUN active long enough to inspect the actual worker limits.
-        `RUN echo ${marker} && sleep ${outcome === "cancel" ? 60 : 3}${outcome === "failure" ? " && exit 7" : ""}`,
-        'CMD ["echo", "cloud-build-capacity-ok"]',
-        "",
-      ].join("\n"),
-    );
+    const secret = `example-private-cloud-${randomUUID()}\nwith trailing newline\n`;
+    const config = {
+      projectId, sessionId: marker, resources: limits,
+      stack: "custom", buildImage: "alpine:3.20", runtimeImage: "alpine:3.20",
+      packageManager: "", installCommand: 'test -n "$PRIVATE_VALUE"',
+      // Keep the RUN active long enough to inspect limits, after reading the secret.
+      buildCommand: `printf '%s' "$PRIVATE_VALUE" | sha256sum > /workspace/proof; printf '%s\\n' "$PRIVATE_VALUE"; echo ${marker} && sleep ${outcome === "cancel" ? 60 : 3}${outcome === "failure" ? " && exit 7" : ""}`,
+      startCommand: "echo cloud-build-capacity-ok", rootDirectory: "", port: 3000,
+      envVars: { PRIVATE_VALUE: secret },
+    } as BuildConfig;
+    await writeFile(join(root, "Dockerfile"), generateDockerfile(config));
     const controller = new AbortController();
     const logs: string[] = [];
+    const logger = new BuildLogger((entry) => logs.push(entry.message));
+    logger.protectBuild(config);
+    const writes = vi.spyOn(executor, "writeFile");
     // Calling the existing private command boundary avoids implementing a second
     // build runner in the test or provisioning any paid Cloud infrastructure.
     const remote = runtime as unknown as {
@@ -110,17 +117,17 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         dockerfile: string,
         tag: string,
         logger: BuildLogger,
-        options: { signal: AbortSignal },
+        options: { signal: AbortSignal; usesRepositoryDockerfile: boolean },
       ): Promise<void>;
     };
     const result = remote
       .buildImageOnRemote(
-        { projectId, sessionId: marker, resources: limits } as BuildConfig,
+        config,
         root,
         "Dockerfile",
         image,
-        new BuildLogger((entry) => logs.push(entry.message)),
-        { signal: controller.signal },
+        logger,
+        { signal: controller.signal, usesRepositoryDockerfile: false },
       )
       .then(
         () => ({ error: null }),
@@ -130,7 +137,7 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       let completed: Awaited<typeof result> | undefined;
       void result.then(value => { completed = value; });
       const deadline = Date.now() + 120_000;
-      while (!logs.join("\n").includes(marker)) {
+      while (!new RegExp(`\\d+\\.\\d+ ${marker}`).test(logs.join(""))) {
         if (completed?.error) throw completed.error;
         if (completed || Date.now() >= deadline)
           throw new Error(`Build did not reach its RUN marker.\n${logs.join("\n")}`);
@@ -148,9 +155,19 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       expect((await inspect(sibling)).State.Running).toBe(true);
       if (outcome === "cancel") controller.abort();
       const finished = await result;
+      logger.flush();
+      expect(logs.join("\n") + String(finished.error ?? "")).not.toContain("example-private-cloud-");
+      expect(logs.join("\n")).toContain("***");
+      const files = writes.mock.calls.filter(([path]) => path.startsWith("/tmp/openship-build-secrets."));
+      expect(files).toHaveLength(1);
+      expect((await executor.exec(`test ! -e ${sq(files[0]![0].replace(/\/[^/]+$/, ""))} && printf removed`)).trim()).toBe("removed");
       if (outcome === "success") {
         expect(finished.error, logs.join("\n")).toBeNull();
         expect((await docker("run", "--rm", image)).stdout.trim()).toBe("cloud-build-capacity-ok");
+        expect((await docker("history", "--no-trunc", image)).stdout).not.toContain("example-private-cloud-");
+        const proof = await docker("run", "--rm", "--network", "none", image, "sh", "-c",
+          'test ! -e /run/secrets/openship-build-env && test -z "$PRIVATE_VALUE" && cat /workspace/proof');
+        expect(proof.stdout).toContain(createHash("sha256").update(secret).digest("hex"));
       } else if (outcome === "cancel") {
         expect(finished.error).toMatchObject({ name: "BuildCancelledError" });
       } else {
@@ -162,6 +179,8 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     } finally {
       controller.abort();
       await result;
+      logger.flush();
+      writes.mockRestore();
     }
   }
 
@@ -315,7 +334,7 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       "FROM alpine:3.20",
       "ARG BUILD",
       "ARG FAIL=false",
-      'RUN --mount=type=cache,id=packages,target=/cache,sharing=locked if [ -f /cache/ready ]; then echo CACHE_REUSED; else echo CACHE_EMPTY; fi && touch /cache/ready && echo "$BUILD" > /version',
+      'RUN --mount=type=cache,id=packages,target=/cache,sharing=locked if [ -f /cache/ready ]; then echo reused > /cache-state; else echo empty > /cache-state; fi && touch /cache/ready && echo "$BUILD" > /version',
       'RUN test "$FAIL" = false',
       'CMD ["cat", "/version"]',
     ].join("\n"));
@@ -324,21 +343,33 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         tag: string, logger: BuildLogger): Promise<void>;
     };
     let attemptedTag = "";
-    const attempt = async (version: string, fail = false) => {
+    const attempt = async (version: string, fail = false, project = projectId) => {
       const tag = `openship/cache-e2e:${randomUUID()}`;
       attemptedTag = tag;
       images.add(tag);
       const logs: string[] = [];
-      await remote.buildImageOnRemote({ projectId, sessionId: randomUUID(), resources,
+      await remote.buildImageOnRemote({ projectId: project, sessionId: randomUUID(), resources,
         buildArgs: { BUILD: version, FAIL: String(fail) } } as BuildConfig, root, "Dockerfile", tag,
         new BuildLogger(entry => logs.push(entry.message)));
       return { tag, logs: logs.join("\n") };
     };
     const first = await attempt("first");
-    expect(first.logs).toContain("CACHE_EMPTY");
+    expect((await docker("run", "--rm", first.tag, "cat", "/cache-state")).stdout.trim(), first.logs).toBe("empty");
     const second = await attempt("second");
-    expect(second.logs).toContain("CACHE_REUSED");
+    expect((await docker("run", "--rm", second.tag, "cat", "/cache-state")).stdout.trim(), second.logs).toBe("reused");
     expect((await docker("run", "--rm", second.tag)).stdout.trim()).toBe("second");
+    // Identical cache-mount IDs in another project must not expose this
+    // project's package cache, even though both projects use the same daemon.
+    const otherProject = `${projectId}-isolated`;
+    const otherBuilder = `openship-cache-${createHash("sha256").update(otherProject).digest("hex").slice(0, 24)}`;
+    try {
+      const isolated = await attempt("isolated", false, otherProject);
+      expect((await docker("run", "--rm", isolated.tag, "cat", "/cache-state")).stdout.trim(), isolated.logs).toBe("empty");
+      expect((await docker("run", "--rm", isolated.tag)).stdout.trim()).toBe("isolated");
+    } finally {
+      await docker("buildx", "rm", "--force", otherBuilder).catch(() => {});
+      await docker("volume", "rm", `buildx_buildkit_${otherBuilder}0_state`).catch(() => {});
+    }
     await expect(attempt("failed", true)).rejects.toThrow(/exit code: 1/);
     await expect(docker("image", "inspect", attemptedTag)).rejects.toThrow();
     expect((await docker("run", "--rm", first.tag)).stdout.trim()).toBe("first");
@@ -373,10 +404,10 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       await writeFile(join(directory, "Dockerfile"), generateDockerfile(config));
       const remote = runtime as unknown as {
         buildImageOnRemote(config: BuildConfig, directory: string, dockerfile: string,
-          tag: string, logger: BuildLogger): Promise<void>;
+          tag: string, logger: BuildLogger, options: { usesRepositoryDockerfile: boolean }): Promise<void>;
       };
       await remote.buildImageOnRemote(config, directory, "Dockerfile", tag,
-        new BuildLogger(entry => logs.push(entry.message)));
+        new BuildLogger(entry => logs.push(entry.message)), { usesRepositoryDockerfile: false });
       expect((await docker("ps", "-aq", "--filter", `name=^/${worker}$`)).stdout.trim()).toBe("");
       // A cached build must not need its cache volume or network at runtime.
       const result = await docker("run", "--rm", "--network", "none", tag);

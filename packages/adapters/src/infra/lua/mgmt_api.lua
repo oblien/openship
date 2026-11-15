@@ -134,6 +134,12 @@ if uri == "/analytics/config" then
     return json({ error = "method not allowed" }, 405)
 end
 
+-- Safe to probe before sending a new rule kind to an older edge. It cannot
+-- clear a ruleset, unlike an empty POST /rules.
+if uri == "/rules/capabilities" then
+    return json({ ok = true, staticResponses = require("openship.rules_lib").static_responses == true })
+end
+
 if uri == "/rules" then
     local rules = ngx.shared.rules
     if not rules then return json({ error = "rules dict unavailable" }, 503) end
@@ -144,33 +150,92 @@ if uri == "/rules" then
         if not host or host == "" then return bad("missing ?host=") end
         host = host:lower()
         local raw = rules:get(host)
-        return json({ host = host, rules = raw and cjson.decode(raw) or {} })
+        local list = raw and cjson.decode(raw) or {}
+        local responses = rules:get("responses:" .. host)
+        for _, entry in ipairs(responses and cjson.decode(responses) or {}) do
+            list[#list + 1] = entry
+        end
+        return json({ host = host, rules = list })
     end
 
     if method == "DELETE" then
         local host = ngx.var.arg_host
         if not host or host == "" then return bad("missing ?host=") end
         rules:delete(host:lower())
+        rules:delete("responses-version:" .. host:lower())
+        rules:delete("responses:" .. host:lower())
         return json({ ok = true })
     end
 
     if method == "POST" then
         ngx.req.read_body()
         local body = ngx.req.get_body_data()
+        -- Literal response content can exceed nginx's in-memory body buffer.
+        -- Read only the temporary file nginx created for THIS request.
+        if not body then
+            local path = ngx.req.get_body_file()
+            local file = path and io.open(path, "rb")
+            if file then
+                body = file:read(8 * 1024 * 1024 + 1)
+                file:close()
+            end
+        end
         if not body then return bad("empty body") end
+        if #body > 8 * 1024 * 1024 then return bad("rules payload exceeds 8 MiB") end
         local payload = cjson.decode(body)
-        if type(payload) ~= "table" or not payload.host then
+        if type(payload) ~= "table" or type(payload.host) ~= "string"
+            or #payload.host == 0 or #payload.host > 253
+            or string.find(payload.host, "[^0-9A-Za-z.*_%-]") then
             return bad("expected { host, rules: [...] }")
         end
         local host = tostring(payload.host):lower()
         local list = payload.rules
         if type(list) ~= "table" or #list == 0 then
             rules:delete(host)                 -- empty set = clear the host
+            rules:delete("responses-version:" .. host)
+            rules:delete("responses:" .. host)
             return json({ ok = true, host = host, count = 0 })
         end
-        local ok, err = rules:set(host, cjson.encode(list))
-        if not ok then return json({ error = "set failed: " .. (err or "?") }, 500) end
-        return json({ ok = true, host = host, count = #list })
+        -- Keep responses out of the legacy policy key. A worker still running
+        -- the old guard during an upgrade must never treat one as an empty
+        -- access policy and shadow the domain's real protections.
+        local policies, responses = {}, {}
+        for _, entry in ipairs(list) do
+            local target = type(entry) == "table" and type(entry.spec) == "table"
+                and entry.spec.response ~= nil and responses or policies
+            target[#target + 1] = entry
+        end
+        local lib = require "openship.rules_lib"
+        if #responses > 0 then
+            if lib.static_responses ~= true or type(lib.valid_responses) ~= "function"
+                or type(lib.response_revision) ~= "function" then
+                return json({ error = "reload the edge to enable static responses" }, 409)
+            end
+            if not lib.valid_responses(responses) then
+                return bad("invalid static response rules (maximum 64 per domain)")
+            end
+        end
+        local response_raw = #responses > 0 and cjson.encode(responses) or nil
+        local revision = response_raw and lib.response_revision(response_raw) or nil
+        if response_raw and not revision then return json({ error = "response digest failed" }, 500) end
+        if #policies == 0 then rules:delete(host) else
+            -- Literal bodies must not evict this or another host's policies.
+            local ok, err = rules:safe_set(host, cjson.encode(policies))
+            if not ok then return json({ error = "set failed: " .. (err or "?") }, 503) end
+        end
+        if response_raw then
+            local ok, err = rules:safe_set("responses:" .. host, response_raw)
+            if not ok then return json({ error = "set failed: " .. (err or "?") }, 503) end
+            -- Publish the small revision last: warm requests never copy the
+            -- potentially multi-megabyte response payload out of shared memory.
+            ok, err = rules:safe_set("responses-version:" .. host, revision)
+            if not ok then return json({ error = "set failed: " .. (err or "?") }, 503) end
+        else
+            rules:delete("responses-version:" .. host)
+            rules:delete("responses:" .. host)
+        end
+        return json({ ok = true, host = host, count = #list,
+            staticResponses = lib.static_responses == true })
     end
 
     return json({ error = "method not allowed" }, 405)

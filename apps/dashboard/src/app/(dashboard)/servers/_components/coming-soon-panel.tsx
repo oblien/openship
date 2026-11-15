@@ -1,15 +1,7 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
-import {
-  PrivateNetworkIllustration,
-  ServerClusterIllustration,
-} from "@/components/servers/InfrastructureIllustrations";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
-/**
- * Preview placeholder for features that have not shipped yet. Uses the same illustration language as the empty states — a
- * themed monochrome (--th-*) vector that shows what the feature will do — plus
- * a "Coming soon" chip, title, and blurb. Pass `art` for the illustration;
- * `icon` is a fallback tile when no art matches.
- */
+/** Preview of an upcoming feature, using shared artwork when available. */
 export function ComingSoonPanel({
   icon: Icon,
   art,
@@ -24,11 +16,12 @@ export function ComingSoonPanel({
   badge: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      {art === "cluster" ? (
-        <ServerClusterIllustration className="mb-8" />
-      ) : art === "network" ? (
-        <PrivateNetworkIllustration className="mb-8" />
+    <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+      {art ? (
+        <FeatureIllustration
+          name={art === "network" ? "private-networking" : "server-management"}
+          className="illustration-color mb-4 h-auto w-20"
+        />
       ) : Icon ? (
         <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-muted">
           <UiIcon name={Icon} className="size-6 text-muted-foreground" />

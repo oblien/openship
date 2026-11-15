@@ -130,12 +130,19 @@ export async function tryWithCloudWorkspaceActivity<T>(
   workspaceId: string,
   work: () => Promise<T>,
   scope: string,
+  options?: { expectedActivityId: string | null },
 ): Promise<T | undefined> {
   // Recovery must not interpret its own shared activity as an idle workspace.
   if (sharesCloudBuildAdmission(workspaceId, { scope })) return undefined;
   if (held.getStore()?.get(workspaceId)?.active) return undefined;
-  return tryWithProvisionLock(`cloud:workspace-activity:${workspaceId}`,
-    () => runCloudWorkspaceActivity(workspaceId, work, undefined, { scope }));
+  return tryWithProvisionLock(`cloud:workspace-activity:${workspaceId}`, async () => {
+    if (options) {
+      const current = await repos.cloudWorkspace.findById(workspaceId);
+      if (!current || (current.activity?.id ?? null) !== options.expectedActivityId)
+        return undefined;
+    }
+    return runCloudWorkspaceActivity(workspaceId, work, undefined, { scope });
+  });
 }
 
 async function runCloudWorkspaceActivity<T>(

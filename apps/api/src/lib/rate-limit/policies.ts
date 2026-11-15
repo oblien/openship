@@ -37,9 +37,14 @@ export type PolicyId =
   | "webhook-flood"
   | "billing-portal"
   | "support-contact"
-  | "support-reply";
+  | "support-reply"
+  | "support-contact-ip";
 
 export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
+  "support-contact-ip": {
+    id: "support-contact-ip", limit: 20, windowMs: 15 * MINUTE_MS, subject: "ip",
+    description: "Contact and support writes per trusted client IP, across accounts and API replicas.",
+  },
   "actions-runtime": {
     id: "actions-runtime", limit: 1200, windowMs: MINUTE_MS, subject: "ip",
     description: "Capability-authenticated Actions artifact/cache metadata and bounded upload chunks, including runners behind a shared NAT.",

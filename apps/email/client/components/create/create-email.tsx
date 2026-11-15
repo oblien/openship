@@ -16,7 +16,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Attachment } from '@/types';
 import { useQueryState } from 'nuqs';
 import { X } from '../icons/icons';
-import posthog from 'posthog-js';
 import { toast } from 'sonner';
 import './prosemirror.css';
 
@@ -105,17 +104,6 @@ export function CreateEmail({
 
     setDraftId(null);
     clearUndoData();
-
-    // Track different email sending scenarios
-    if (data.cc && data.cc.length > 0 && data.bcc && data.bcc.length > 0) {
-      posthog.capture('Create Email Sent with CC and BCC');
-    } else if (data.cc && data.cc.length > 0) {
-      posthog.capture('Create Email Sent with CC');
-    } else if (data.bcc && data.bcc.length > 0) {
-      posthog.capture('Create Email Sent with BCC');
-    } else {
-      posthog.capture('Create Email Sent');
-    }
 
     handleUndoSend(result, settings, {
       to: data.to,

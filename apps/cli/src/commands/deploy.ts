@@ -37,6 +37,30 @@ function git(args: string[]): string | undefined {
   }
 }
 
+/** When the Compose review gate refuses a deploy, show what changed and how to accept it. */
+function composeReviewDetails(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.code !== "COMPOSE_REVIEW_REQUIRED")
+    return null;
+  const changes = (error.details as Record<string, unknown> | undefined)
+    ?.composeChanges as
+    | { added?: string[]; changed?: string[]; removed?: string[] }
+    | undefined;
+  const lists: Array<[string, string[] | undefined]> = [
+    ["added", changes?.added],
+    ["changed", changes?.changed],
+    ["removed", changes?.removed],
+  ];
+  const lines = lists
+    .filter(([, names]) => names && names.length > 0)
+    .map(([label, names]) => `  ${label}: ${(names as string[]).join(", ")}`);
+  if (lines.length === 0) return null;
+  return [
+    "Compose changes pending review:",
+    ...lines,
+    "Re-run with --accept-compose-changes to deploy the current Compose source.",
+  ].join("\n");
+}
+
 export const deployCommand = new Command("deploy")
   .description("Trigger a deployment for the current project")
   .option("--project <id>", "Project ID (defaults to the linked project in .openship/project.json)")
@@ -47,6 +71,7 @@ export const deployCommand = new Command("deploy")
   .option("--service-ids <ids>", "Comma-separated service IDs to deploy (smart routing)")
   .option("--smart-route", "Rebuild only services changed since the active deploy")
   .option("--refresh", "Re-apply current env to the active deploy (no git pull, no rebuild)")
+  .option("--accept-compose-changes", "Accept the current Compose source as reviewed for this deploy")
   .option("--folder", "Upload the current folder as source (also works inside a Git repository)")
   .option(
     "--name <name>",
@@ -68,9 +93,16 @@ export const deployCommand = new Command("deploy")
     // --service-ids scopes BOTH a git redeploy and a folder redeploy (so a
     // backend-only change doesn't recreate stateful services), so it is NOT
     // git-only; commit/smart-route/refresh genuinely need git history.
-    const gitOnlyFlags = opts.branch || opts.commit || opts.smartRoute || opts.refresh;
+    const gitOnlyFlags =
+      opts.branch ||
+      opts.commit ||
+      opts.smartRoute ||
+      opts.refresh ||
+      opts.acceptComposeChanges;
     if (opts.folder && gitOnlyFlags) {
-      err("--folder cannot be combined with --branch, --commit, --smart-route, or --refresh.");
+      err(
+        "--folder cannot be combined with --branch, --commit, --smart-route, --refresh, or --accept-compose-changes.",
+      );
       exitCommand(1);
     }
     const folderUpload = opts.folder || (!inGitRepo && !gitOnlyFlags && opts.name);
@@ -149,6 +181,7 @@ export const deployCommand = new Command("deploy")
         serviceIds,
         smartRoute: opts.smartRoute || undefined,
         refresh: opts.refresh || undefined,
+        acceptComposeChanges: opts.acceptComposeChanges || undefined,
       };
 
       const spinner = isJsonMode() ? null : ora("Triggering deployment").start();
@@ -159,6 +192,8 @@ export const deployCommand = new Command("deploy")
       rethrowCommandExit(e);
         spinner?.fail("Deployment failed to start");
         err(e instanceof ApiError ? e.message : String(e));
+        const details = composeReviewDetails(e);
+        if (details) err(details);
         exitCommand(1);
       }
 

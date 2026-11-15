@@ -14,9 +14,18 @@ import type { ApiPlan } from "./PricingCards";
 import { BillingUsage } from "./BillingUsage";
 import { BillingCapacity } from "./BillingCapacity";
 
-const mocks = vi.hoisted(() => ({ state: vi.fn(), get: vi.fn(), post: vi.fn(), deploy: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  state: vi.fn(),
+  resources: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+  deploy: vi.fn(),
+  toast: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/lib/api/billing", () => ({ billingApi: { getBillingState: mocks.state } }));
+vi.mock("@/lib/api/billing", () => ({
+  billingApi: { getBillingState: mocks.state, getResources: mocks.resources },
+}));
 vi.mock("@/lib/api/client", async (original) => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: mocks.get, post: mocks.post } }));
 vi.mock("./UsageChart", () => ({ UsageChart: ({ buckets }: { buckets: unknown }) => <div data-testid="chart">{JSON.stringify(buckets)}</div> }));
 
@@ -56,7 +65,6 @@ function Harness() {
 
 let root: Root;
 let container: HTMLDivElement;
-let checkoutTab: { opener: unknown; closed: boolean; location: { href: string }; close: ReturnType<typeof vi.fn> };
 let open: ReturnType<typeof vi.spyOn>;
 const restriction = () => new ApiError(402, "Payment Required", { code: "CLOUD_BILLING_BLOCKED" });
 function button(label: string) {
@@ -73,11 +81,14 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.state.mockResolvedValue(free);
+  mocks.resources.mockResolvedValue({
+    compute: { status: "unavailable" },
+    edge: { status: "unavailable", limits: {} },
+  });
   mocks.get.mockResolvedValue({ data: { locale: "en", annual: { enabled: true, monthsFree: 0 }, ui: pricingUi("en"), plans } });
   mocks.deploy.mockRejectedValue(restriction());
   mocks.post.mockResolvedValue({ data: { checkoutUrl: "https://checkout.example.test/session" } });
-  checkoutTab = { opener: window, closed: false, location: { href: "about:blank" }, close: vi.fn() };
-  open = vi.spyOn(window, "open").mockReturnValue(checkoutTab as unknown as Window);
+  open = vi.spyOn(window, "open").mockReturnValue(null);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -129,13 +140,13 @@ describe("deployment plan selection", () => {
     let resolveCheckout!: (value: unknown) => void;
     mocks.post.mockReturnValueOnce(new Promise((resolve) => { resolveCheckout = resolve; }));
     await act(async () => { button("Choose Hobby").click(); button("Choose Hobby").click(); });
-    expect(open).toHaveBeenCalledOnce();
-    expect(checkoutTab.opener).toBeNull();
-    expect(checkoutTab.location.href).toBe("about:blank");
+    expect(open).not.toHaveBeenCalled();
     expect(mocks.post).toHaveBeenCalledTimes(1);
-    expect(mocks.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ planTierId: "starter", interval: "annual", idempotencyKey: expect.any(String) }));
+    expect(mocks.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ planTierId: "starter", interval: "monthly", idempotencyKey: expect.any(String) }));
     await act(async () => resolveCheckout({ data: { checkoutUrl: "https://checkout.example.test/session" } }));
-    expect(checkoutTab.location.href).toBe("https://checkout.example.test/session");
+    expect(open).toHaveBeenCalledExactlyOnceWith("https://checkout.example.test/session", "_blank", "noopener,noreferrer");
+    await click("Choose Hobby");
+    expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(container.querySelector("input")?.value).toBe("My configured project");
     expect(mocks.deploy).toHaveBeenCalledTimes(1);
     await click(copy.deployGate.checkPlan);
@@ -198,7 +209,7 @@ describe("deployment plan selection", () => {
     await click("Deploy");
     await click("Choose Hobby");
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Checkout temporarily unavailable");
-    expect(checkoutTab.close).toHaveBeenCalledOnce();
+    expect(open).not.toHaveBeenCalled();
     await click("Choose Hobby");
     expect(mocks.post.mock.calls[1]![1].idempotencyKey).toBe(mocks.post.mock.calls[0]![1].idempotencyKey);
   });

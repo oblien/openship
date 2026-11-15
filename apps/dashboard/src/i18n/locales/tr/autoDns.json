@@ -19,7 +19,7 @@
   "actionAdopt": "Yeniden yönlendir",
   "actionInSync": "Yerinde",
   "actionConflict": "Çakışma",
-  "conflictNote": "Openship tarafından yönetilmiyor — kaldırın veya bu kaydı elle ayarlayın.",
+  "conflictNote": "OpenShip tarafından yönetilmiyor — kaldırın veya bu kaydı elle ayarlayın.",
   "outcomeApplied": "Uygulandı",
   "outcomeSkipped": "Atlandı",
   "outcomeFailed": "Başarısız",

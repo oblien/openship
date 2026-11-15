@@ -61,7 +61,7 @@ vi.mock("@repo/platform/engine/modules/projects/project-cleanup.service", () => 
   collectDeploymentManifest: h.collect,
   executeCleanup: h.cleanup,
 }));
-vi.mock("@repo/platform/engine/modules/deployments/deployment-recovery", () => ({ recoverManagedDeploymentExecution: h.recover }));
+vi.mock("@repo/platform/engine/modules/deployments/deployment-recovery", () => ({ recoverDeploymentExecution: h.recover }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -123,6 +123,15 @@ describe("cancel request and worker ownership", () => {
     expect(h.cancelWorker).not.toHaveBeenCalled();
     expect(h.collect).not.toHaveBeenCalled();
     expect(h.acknowledgeUnstarted).not.toHaveBeenCalled();
+  });
+
+  it("recovers a cancelled SSH build through the same ownership-aware path", async () => {
+    h.status = "cancelled";
+    h.session.startedAt = new Date();
+    h.recover.mockResolvedValue(true);
+    await expect(cancelBuildSession("dep-1")).resolves.toMatchObject({ pending: false, success: true });
+    expect(h.recover).toHaveBeenCalledWith(expect.objectContaining({ id: "dep-1", status: "cancelled" }), expect.objectContaining({ workspaceId: undefined }));
+    expect(h.cleanup).not.toHaveBeenCalled();
   });
 
   it("can finish an already-requested cancellation after the managed worker dies", async () => {

@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Feature graphics in context — Openship</title>
+    <style>
+      @font-face {
+        font-family: Gellix;
+        src: url("https://cdn.oblien.com/fonts/Gellix-Regular.woff2") format("woff2");
+        font-weight: 400;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: Gellix;
+        src: url("https://cdn.oblien.com/fonts/Gellix-Medium.woff2") format("woff2");
+        font-weight: 500;
+        font-display: swap;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: white;
+        color: #151515;
+        font-family: Gellix, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      h1,
+      h2,
+      h3,
+      h4,
+      p {
+        margin: 0;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      svg {
+        display: block;
+      }
+      button {
+        font: inherit;
+      }
+      a:focus-visible {
+        outline: 2px solid #555;
+        outline-offset: 4px;
+      }
+
+      .site-container {
+        width: 100%;
+        max-width: 1280px;
+        margin-inline: auto;
+        padding-inline: 32px;
+      }
+      @media (max-width: 640px) {
+        .site-container {
+          padding-inline: 24px;
+        }
+      }
+
+      .dark-section {
+        position: relative;
+        z-index: 20;
+      }
+      .dark-section__inner {
+        position: relative;
+        background: #0c0d12;
+        overflow: hidden;
+        border-radius: clamp(32px, 5vw, 56px);
+        box-shadow: 0 -20px 80px rgba(0, 0, 0, 0.18);
+        transform-origin: top center;
+      }
+      @media (max-width: 768px) {
+        .dark-section__inner {
+          border-radius: 0;
+          box-shadow: none;
+        }
+      }
+      .dark-section__inner::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: radial-gradient(
+          70% 50% at 50% 100%,
+          rgba(139, 92, 246, 0.045) 0%,
+          transparent 65%
+        );
+        z-index: 0;
+        pointer-events: none;
+      }
+      .dark-section__inner > * {
+        position: relative;
+        z-index: 2;
+      }
+      .dark-section__edge-glow {
+        position: absolute;
+        top: 0;
+        left: 10%;
+        right: 10%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+        z-index: 3;
+      }
+      .cp-outer {
+        padding: 0 16px;
+        margin-top: clamp(64px, 8vw, 120px);
+        scroll-margin-top: 100px;
+      }
+      .cp-container {
+        position: relative;
+        max-width: 1160px;
+        padding: clamp(64px, 7vw, 104px) clamp(24px, 4vw, 48px);
+      }
+      .cp-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 32px;
+        margin-bottom: 56px;
+      }
+      .cp-title {
+        font-size: clamp(30px, 3.4vw, 48px);
+        line-height: 1.14;
+        letter-spacing: -0.035em;
+        font-weight: 500;
+        color: #fff;
+      }
+      .cp-title span {
+        color: rgba(255, 255, 255, 0.58);
+      }
+      .cp-sub {
+        max-width: 620px;
+        margin-top: 22px;
+        font-size: 16px;
+        line-height: 1.7;
+        color: rgba(255, 255, 255, 0.64);
+      }
+      .cp-all-link {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 8px;
+        padding-bottom: 4px;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 14px;
+      }
+      .cp-all-link:hover {
+        color: #fff;
+        text-decoration: underline;
+        text-underline-offset: 5px;
+      }
+      .cp-stack {
+        display: grid;
+      }
+      .cp-group {
+        display: grid;
+        grid-template-columns: minmax(190px, 0.75fr) minmax(0, 3fr);
+        gap: 32px;
+        padding-block: 28px;
+        border-top: 1px solid rgba(255, 255, 255, 0.13);
+      }
+      .cp-group-intro {
+        padding-block: 16px;
+      }
+      .cp-group-intro h3 {
+        font-size: 22px;
+        line-height: 1.3;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        color: #fff;
+      }
+      .cp-group-intro p {
+        max-width: 230px;
+        margin-top: 12px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.57);
+      }
+      .cp-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .cp-item {
+        position: relative;
+        display: block;
+        min-width: 0;
+        padding: 22px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.035);
+        transition: background 0.2s;
+      }
+      .cp-item:hover {
+        background: rgba(255, 255, 255, 0.075);
+      }
+      .cp-item-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 22px;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .cp-item h4 {
+        font-size: 16px;
+        line-height: 1.4;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.95);
+      }
+      .cp-item p {
+        margin-top: 9px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.58);
+      }
+      .cp-item-arrow {
+        position: absolute;
+        right: 22px;
+        top: 25px;
+        width: 16px;
+        height: 16px;
+        color: rgba(255, 255, 255, 0.4);
+        transition:
+          transform 0.2s,
+          color 0.2s;
+      }
+      .cp-item:hover .cp-item-arrow {
+        color: #fff;
+        transform: translateX(3px);
+      }
+      .cp-interfaces {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 28px;
+        border-top: 1px solid rgba(255, 255, 255, 0.13);
+        padding-top: 28px;
+        font-size: 14px;
+      }
+      .cp-interfaces span {
+        margin-right: auto;
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .cp-interfaces a {
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .cp-interfaces a:hover {
+        text-decoration: underline;
+        text-underline-offset: 5px;
+      }
+      .cp-outer a:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 5px;
+      }
+      @media (max-width: 1050px) {
+        .cp-head {
+          align-items: start;
+          flex-direction: column;
+          gap: 24px;
+        }
+        .cp-group {
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        .cp-group-intro p {
+          max-width: none;
+        }
+      }
+      @media (max-width: 640px) {
+        .cp-outer {
+          padding-inline: 0;
+        }
+        .cp-grid {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+        .cp-head {
+          margin-bottom: 32px;
+        }
+        .cp-item {
+          padding: 20px 48px 20px 60px;
+        }
+        .cp-item-icon {
+          position: absolute;
+          left: 20px;
+          top: 22px;
+          width: 22px;
+          height: 22px;
+          margin: 0;
+        }
+        .cp-interfaces span {
+          flex-basis: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ha-card,
+        .ha-card-arrow,
+        .cp-item-arrow {
+          transition: none;
+        }
+        .ha-card:hover,
+        .ha-card:hover .ha-card-arrow,
+        .cp-item:hover .cp-item-arrow {
+          transform: none;
+        }
+      }
+      .preview-bar {
+        max-width: 1160px;
+        margin: auto;
+        padding: 24px 32px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        font-size: 13px;
+        color: #777;
+      }
+      .preview-brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: #151515;
+        font-size: 17px;
+        font-weight: 500;
+      }
+      .preview-brand svg {
+        width: 25px;
+        height: 25px;
+      }
+      .preview-brand span {
+        padding-left: 16px;
+        margin-left: 8px;
+        border-left: 1px solid #e8e8e8;
+        font-size: 12px;
+        font-weight: 400;
+        color: #777;
+      }
+      .cp-outer {
+        margin-top: 24px;
+        margin-bottom: 20px;
+      }
+      .cp-all-link svg {
+        width: 16px;
+        height: 16px;
+      }
+      .cp-item-art {
+        width: 70px;
+        height: 56px;
+        margin-bottom: 18px;
+      }
+      @media (max-width: 640px) {
+        .preview-bar {
+          padding: 20px 24px;
+          flex-wrap: wrap;
+          gap: 14px;
+        }
+        .preview-brand span {
+          display: none;
+        }
+        .cp-outer {
+          margin-top: 8px;
+          margin-bottom: 0;
+        }
+        .cp-item {
+          padding-left: 88px;
+        }
+        .cp-item-art {
+          position: absolute;
+          left: 18px;
+          top: 20px;
+          width: 54px;
+          height: 44px;
+          margin: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="preview-bar">
+      <a class="preview-brand" href="/"
+        ><svg viewBox="0 0 32 32" aria-hidden="true">
+          <circle
+            cx="16"
+            cy="16"
+            r="13.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.3"
+          /></svg
+        >Openship<span>Feature graphics in context</span></a
+      ><span>Flat SVG preview · not applied</span>
+    </header>
+    <main>
+      <section id="features" class="cp-outer" aria-labelledby="platform-title">
+        <div class="dark-section">
+          <div class="dark-section__inner" data-section="dark">
+            <div class="dark-section__edge-glow" aria-hidden="true"></div>
+            <div class="site-container cp-container">
+              <header class="cp-head">
+                <div>
+                  <h2 id="platform-title" class="cp-title">
+                    Apps, data, and automation.<br /><span>Run it all from Openship.</span>
+                  </h2>
+                  <p class="cp-sub">
+                    Deploy code, run services, and manage the infrastructure behind them. Use
+                    Openship Cloud or connect your own servers.
+                  </p>
+                </div>
+                <a class="cp-all-link" href="/features"
+                  >Explore all
+                  <!-- -->45<!-- -->
+                  features<!-- -->
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="lucide lucide-arrow-right size-4"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12h14"></path>
+                    <path d="m12 5 7 7-7 7"></path></svg
+                ></a>
+              </header>
+              <div class="cp-stack">
+                <div class="cp-group">
+                  <div class="cp-group-intro">
+                    <h3>Deploy your stack</h3>
+                    <p>Applications, databases, and public endpoints in the same project.</p>
+                  </div>
+                  <div class="cp-grid">
+                    <a class="cp-item" href="/features/compose-multi-service"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="compose-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <rect x="29" y="30" width="12" height="4" rx="2" fill="black"></rect>
+                            <rect x="29" y="40" width="10" height="9" rx="2" fill="black"></rect>
+                            <rect x="43" y="40" width="10" height="9" rx="2" fill="black"></rect>
+                            <rect x="57" y="40" width="6" height="9" rx="2" fill="black"></rect>
+                          </mask>
+                        </defs>
+                        <rect
+                          x="4"
+                          y="7"
+                          width="46"
+                          height="35"
+                          rx="8"
+                          fill="#f1f0f5"
+                          opacity=".1"
+                        ></rect>
+                        <rect
+                          x="12"
+                          y="14"
+                          width="46"
+                          height="35"
+                          rx="8"
+                          fill="#f1f0f5"
+                          opacity=".25"
+                        ></rect>
+                        <rect
+                          x="22"
+                          y="22"
+                          width="48"
+                          height="35"
+                          rx="8"
+                          fill="#f1f0f5"
+                          mask="url(#compose-cut)"
+                        ></rect>
+                        <circle cx="68" cy="24" r="6" fill="#ffe2ab"></circle>
+                        <path
+                          d="m65 24 2 2 4-4"
+                          fill="none"
+                          stroke="#29212b"
+                          stroke-opacity="1"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                      </svg>
+                      <h4>Compose &amp; multi-service</h4>
+                      <p>Ship a whole stack — app, worker, db — as one project.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg></a
+                    ><a class="cp-item" href="/features/managed-databases"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="db-top-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <circle cx="52" cy="13" r="2" fill="black"></circle>
+                            <rect
+                              x="17"
+                              y="11.5"
+                              width="15"
+                              height="3"
+                              rx="1.5"
+                              fill="black"
+                            ></rect>
+                          </mask>
+                        </defs>
+                        <rect
+                          x="9"
+                          y="6"
+                          width="53"
+                          height="14"
+                          rx="6"
+                          fill="#f1f0f5"
+                          mask="url(#db-top-cut)"
+                        ></rect>
+                        <rect
+                          x="9"
+                          y="25"
+                          width="53"
+                          height="14"
+                          rx="6"
+                          fill="#f1f0f5"
+                          opacity=".52"
+                        ></rect>
+                        <rect
+                          x="9"
+                          y="44"
+                          width="53"
+                          height="14"
+                          rx="6"
+                          fill="#f1f0f5"
+                          opacity=".21"
+                        ></rect>
+                        <path
+                          d="M17 32h15M17 51h15"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="0.8"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <path
+                          d="M63 32h7v19H63"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="0.6"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <circle cx="70" cy="51" r="4" fill="#ffe2ab"></circle>
+                      </svg>
+                      <h4>Databases &amp; service connections</h4>
+                      <p>Database templates, private wiring, and supported cluster operations.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg></a
+                    ><a class="cp-item" href="/features/domains-ssl"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="domain-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <circle cx="16" cy="32.5" r="6" fill="black"></circle>
+                            <rect x="29" y="30" width="27" height="4" rx="2" fill="black"></rect>
+                          </mask>
+                          <mask
+                            id="domain-lock-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <path
+                              d="M60 47v-3a5 5 0 0 1 10 0v3"
+                              fill="none"
+                              stroke="black"
+                              stroke-width="2"
+                            ></path>
+                            <rect x="58" y="47" width="14" height="8" rx="2" fill="black"></rect>
+                          </mask>
+                        </defs>
+                        <circle
+                          cx="34"
+                          cy="31"
+                          r="24"
+                          fill="none"
+                          stroke="white"
+                          stroke-opacity=".13"
+                          stroke-width="1"
+                        ></circle>
+                        <rect
+                          x="3"
+                          y="20"
+                          width="72"
+                          height="25"
+                          rx="9"
+                          fill="#f1f0f5"
+                          mask="url(#domain-cut)"
+                        ></rect>
+                        <circle
+                          cx="16"
+                          cy="32.5"
+                          r="4.7"
+                          fill="none"
+                          stroke="white"
+                          stroke-width="1"
+                        ></circle>
+                        <path
+                          d="M11.5 32.5h9M16 28v9"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="1"
+                          stroke-width="1"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <rect
+                          x="53"
+                          y="37"
+                          width="24"
+                          height="23"
+                          rx="8"
+                          fill="#ffe2ab"
+                          mask="url(#domain-lock-cut)"
+                        ></rect>
+                        <rect x="64" y="49" width="2" height="4" rx="1" fill="#ffe2ab"></rect>
+                      </svg>
+                      <h4>Domains &amp; SSL</h4>
+                      <p>Connect domains, verify DNS, and manage HTTPS certificates.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg
+                    ></a>
+                  </div>
+                </div>
+                <div class="cp-group">
+                  <div class="cp-group-intro">
+                    <h3>Automate the work</h3>
+                    <p>Build delivery pipelines, schedule tasks, and connect your AI tools.</p>
+                  </div>
+                  <div class="cp-grid">
+                    <a class="cp-item" href="/features/actions-ci"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="ci-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <path d="M37 25 47 32 37 39Z" fill="black"></path>
+                          </mask>
+                        </defs>
+                        <path
+                          d="M12 32h17m24 0h8V14h7M61 32v18h7"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="0.3"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <circle cx="9" cy="32" r="5" fill="#f1f0f5" opacity=".4"></circle>
+                        <rect
+                          x="26"
+                          y="17"
+                          width="29"
+                          height="30"
+                          rx="10"
+                          fill="#f1f0f5"
+                          mask="url(#ci-cut)"
+                        ></rect>
+                        <rect
+                          x="64"
+                          y="7"
+                          width="13"
+                          height="14"
+                          rx="4"
+                          fill="#f1f0f5"
+                          opacity=".3"
+                        ></rect>
+                        <rect x="64" y="43" width="13" height="14" rx="4" fill="#ffe2ab"></rect>
+                        <path
+                          d="m67 50 2 2 4-5"
+                          fill="none"
+                          stroke="#29212b"
+                          stroke-opacity="1"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                      </svg>
+                      <h4>Actions &amp; CI</h4>
+                      <p>GitHub-compatible workflows with visual editing and live execution.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg></a
+                    ><a class="cp-item" href="/features/jobs-triggers"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="jobs-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <rect x="9" y="19" width="49" height="2" rx="0" fill="black"></rect>
+                            <rect x="19" y="29" width="6" height="5" rx="1.5" fill="black"></rect>
+                            <rect x="31" y="29" width="6" height="5" rx="1.5" fill="black"></rect>
+                            <rect x="43" y="29" width="6" height="5" rx="1.5" fill="black"></rect>
+                            <rect x="19" y="39" width="6" height="5" rx="1.5" fill="black"></rect>
+                            <rect x="31" y="39" width="6" height="5" rx="1.5" fill="black"></rect>
+                          </mask>
+                        </defs>
+                        <rect
+                          x="9"
+                          y="9"
+                          width="49"
+                          height="43"
+                          rx="9"
+                          fill="#f1f0f5"
+                          mask="url(#jobs-cut)"
+                        ></rect>
+                        <rect x="19" y="4" width="4" height="10" rx="2" fill="#f1f0f5"></rect>
+                        <rect x="44" y="4" width="4" height="10" rx="2" fill="#f1f0f5"></rect>
+                        <circle cx="59" cy="47" r="14" fill="#ffe2ab"></circle>
+                        <path
+                          d="M59 39v9l6 3"
+                          fill="none"
+                          stroke="#29212b"
+                          stroke-opacity="1"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <circle cx="59" cy="47" r="1.8" fill="#29212b"></circle>
+                      </svg>
+                      <h4>Scheduled jobs &amp; automation</h4>
+                      <p>Cron-like jobs and webhook-triggered actions with live logs.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg></a
+                    ><a class="cp-item" href="/features/ai-mcp"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="ai-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <circle cx="40" cy="32" r="7" fill="black"></circle>
+                          </mask>
+                        </defs>
+                        <path
+                          d="M5 32h10M65 32h10"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="0.25"
+                          stroke-width="1.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <circle cx="5" cy="32" r="2" fill="#f1f0f5" opacity=".35"></circle>
+                        <circle cx="75" cy="32" r="3" fill="#ffe2ab"></circle>
+                        <g mask="url(#ai-cut)">
+                          <rect
+                            x="35"
+                            y="8"
+                            width="10"
+                            height="48"
+                            rx="5"
+                            fill="#f1f0f5"
+                            transform="rotate(0 40 32)"
+                          ></rect>
+                          <rect
+                            x="35"
+                            y="8"
+                            width="10"
+                            height="48"
+                            rx="5"
+                            fill="#f1f0f5"
+                            transform="rotate(60 40 32)"
+                          ></rect>
+                          <rect
+                            x="35"
+                            y="8"
+                            width="10"
+                            height="48"
+                            rx="5"
+                            fill="#f1f0f5"
+                            transform="rotate(120 40 32)"
+                          ></rect>
+                        </g>
+                        <rect x="35" y="8" width="10" height="14" rx="5" fill="#ffe2ab"></rect>
+                      </svg>
+                      <h4>AI &amp; MCP</h4>
+                      <p>Drive deploys from Claude, Cursor, or any MCP client.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg
+                    ></a>
+                  </div>
+                </div>
+                <div class="cp-group">
+                  <div class="cp-group-intro">
+                    <h3>Stay in control</h3>
+                    <p>Follow service health, protect your data, and recover a previous release.</p>
+                  </div>
+                  <div class="cp-grid">
+                    <a class="cp-item" href="/features/logs-monitoring"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs></defs>
+                        <rect
+                          x="4"
+                          y="9"
+                          width="72"
+                          height="48"
+                          rx="9"
+                          fill="#f1f0f5"
+                          opacity=".08"
+                        ></rect>
+                        <rect
+                          x="11"
+                          y="18"
+                          width="14"
+                          height="3"
+                          rx="1.5"
+                          fill="#f1f0f5"
+                          opacity=".7"
+                        ></rect>
+                        <rect
+                          x="11"
+                          y="26"
+                          width="10"
+                          height="3"
+                          rx="1.5"
+                          fill="#f1f0f5"
+                          opacity=".4"
+                        ></rect>
+                        <rect
+                          x="11"
+                          y="34"
+                          width="14"
+                          height="3"
+                          rx="1.5"
+                          fill="#f1f0f5"
+                          opacity=".4"
+                        ></rect>
+                        <rect
+                          x="11"
+                          y="42"
+                          width="8"
+                          height="3"
+                          rx="1.5"
+                          fill="#f1f0f5"
+                          opacity=".2"
+                        ></rect>
+                        <path
+                          d="M31 16v32M37 46h32"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="0.13"
+                          stroke-width="1"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <path d="M38 44v-9l7-9 7 8 9-16 8 8v18Z" fill="#f1f0f5" opacity=".1"></path>
+                        <path
+                          d="m38 35 7-9 7 8 9-16 8 8"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="1"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <circle cx="61" cy="18" r="3.5" fill="#ffe2ab"></circle>
+                      </svg>
+                      <h4>Logs, metrics &amp; incidents</h4>
+                      <p>Streaming logs and real-time metrics across every service.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg></a
+                    ><a class="cp-item" href="/features/backups-restore"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs>
+                          <mask
+                            id="backups-cut"
+                            maskUnits="userSpaceOnUse"
+                            x="0"
+                            y="0"
+                            width="80"
+                            height="64"
+                          >
+                            <rect x="0" y="0" width="80" height="64" rx="0" fill="white"></rect>
+                            <rect x="20" y="27" width="22" height="3" rx="1.5" fill="black"></rect>
+                            <rect x="20" y="35" width="16" height="3" rx="1.5" fill="black"></rect>
+                          </mask>
+                        </defs>
+                        <rect
+                          x="23"
+                          y="4"
+                          width="43"
+                          height="42"
+                          rx="8"
+                          fill="#f1f0f5"
+                          opacity=".12"
+                        ></rect>
+                        <rect
+                          x="17"
+                          y="11"
+                          width="43"
+                          height="42"
+                          rx="8"
+                          fill="#f1f0f5"
+                          opacity=".28"
+                        ></rect>
+                        <rect
+                          x="11"
+                          y="18"
+                          width="43"
+                          height="42"
+                          rx="8"
+                          fill="#f1f0f5"
+                          mask="url(#backups-cut)"
+                        ></rect>
+                        <circle cx="61" cy="46" r="14" fill="#17161d"></circle>
+                        <path
+                          d="M52 46a9 9 0 1 1 9 9m-9-16v7h7"
+                          fill="none"
+                          stroke="#ffe2ab"
+                          stroke-opacity="1"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                      </svg>
+                      <h4>Backups &amp; restore</h4>
+                      <p>Scheduled recovery points with your destinations and retention.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg></a
+                    ><a class="cp-item" href="/features/instant-rollbacks"
+                      ><svg
+                        class="cp-item-art"
+                        viewBox="0 0 80 64"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        focusable="false"
+                      >
+                        <defs></defs>
+                        <rect
+                          x="29"
+                          y="6"
+                          width="46"
+                          height="12"
+                          rx="5"
+                          fill="#f1f0f5"
+                          opacity=".2"
+                        ></rect>
+                        <rect x="25" y="26" width="46" height="12" rx="5" fill="#f1f0f5"></rect>
+                        <rect
+                          x="29"
+                          y="46"
+                          width="46"
+                          height="12"
+                          rx="5"
+                          fill="#f1f0f5"
+                          opacity=".2"
+                        ></rect>
+                        <path
+                          d="M18 51C1 51 1 12 18 12h6"
+                          fill="none"
+                          stroke="#f1f0f5"
+                          stroke-opacity="0.65"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        ></path>
+                        <path d="M18 6 25 12 18 18Z" fill="#ffe2ab"></path>
+                        <circle cx="33" cy="32" r="2.5" fill="#15151c"></circle>
+                        <rect x="40" y="30.5" width="17" height="3" rx="1.5" fill="#15151c"></rect>
+                      </svg>
+                      <h4>Release history &amp; rollbacks</h4>
+                      <p>Restore a retained application image from deployment history.</p>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-arrow-right cp-item-arrow"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path></svg
+                    ></a>
+                  </div>
+                </div>
+              </div>
+              <div class="cp-interfaces">
+                <span>Your workflow, your interface.</span
+                ><a href="/features/dashboard-cli-desktop">Dashboard, desktop &amp; CLI</a
+                ><a href="/features/api-sdk">API &amp; SDK</a
+                ><a href="/features/ai-mcp">AI &amp; MCP</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

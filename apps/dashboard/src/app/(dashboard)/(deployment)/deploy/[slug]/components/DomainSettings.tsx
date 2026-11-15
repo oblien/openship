@@ -2,9 +2,9 @@
 
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { IngressDestinationNotice } from "@/components/ingress/DomainIngressSettings";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { isValidCustomHostname, withKeyedMutex } from "@repo/core";
-import { getApiErrorMessage, projectsApi } from "@/lib/api";
+import { domainsApi, getApiErrorMessage, projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { RoutingModePicker, type RoutingMode } from "@/components/routing/RoutingModePicker";
@@ -50,6 +50,46 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
 }) => {
   const { showToast } = useToast();
   const { t } = useI18n();
+
+  /** Hostnames of this project's domains whose TLS terminates upstream
+   *  (e.g. a Cloudflare Tunnel). Password protection can never apply to
+   *  them — route apply rejects it — so the wizard's protection dialog must
+   *  show "not supported" instead of offering a password that can never be
+   *  applied. Empty until the list loads (or when there is no project yet),
+   *  so a fresh hostname is never wrongly blocked. */
+  const [externalIngressHostnames, setExternalIngressHostnames] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  useEffect(() => {
+    if (!projectId) {
+      setExternalIngressHostnames(new Set());
+      return;
+    }
+    let active = true;
+    domainsApi
+      .list(projectId)
+      .then(({ data }) => {
+        if (!active) return;
+        setExternalIngressHostnames(
+          new Set(
+            data
+              .filter((domain) => domain.externalIngress)
+              .map((domain) => domain.hostname.toLowerCase()),
+          ),
+        );
+      })
+      .catch((error) => {
+        if (!active) return;
+        errorDiagnostics.error(
+          "dashboard/app/(dashboard)/(deployment)/deploy/[slug]/components/DomainSettings",
+          "Failed to load project domains for route protection:",
+          error,
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
   const handleChange = useCallback(async (
     nextEndpoints: PublicEndpoint[],
@@ -162,6 +202,7 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
       hasServer={hasServer}
       runtimePort={runtimePort}
       onEndpointsChange={handleChange}
+      externalIngressHostnames={externalIngressHostnames}
       allowRedirects
     /></div>
   );

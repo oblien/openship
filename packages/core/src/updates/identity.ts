@@ -127,6 +127,42 @@ export function digestSha(digest?: string): string | undefined {
   return at >= 0 ? digest.slice(at + 1) : digest;
 }
 
+/** Local evidence for a service whose deployment did not record its digest. */
+export interface UnknownDigestLocalCheck {
+  containerImageId?: string | null;
+  containerRegistryDigest?: string | null;
+  tagImageId?: string | null;
+  tagRegistryDigest?: string | null;
+  latestDigest?: string | null;
+}
+
+export interface UnknownDigestVerdict {
+  behind: boolean;
+  unknown: boolean;
+  /** Observed running digest, for this response only. */
+  recoveredDigest?: string;
+}
+
+export function resolveUnknownDigestDrift(check: UnknownDigestLocalCheck): UnknownDigestVerdict {
+  const containerId = check.containerImageId?.trim();
+  const tagId = check.tagImageId?.trim();
+  if (!containerId) return { behind: false, unknown: true };
+  // A tag digest describes the running container only when their image IDs match.
+  const recoveredDigest =
+    check.containerRegistryDigest ||
+    (containerId === tagId ? check.tagRegistryDigest : undefined) ||
+    undefined;
+  const deployed = digestSha(recoveredDigest);
+  const latest = digestSha(check.latestDigest ?? undefined);
+  if (deployed && latest) {
+    return { behind: deployed !== latest, unknown: false, recoveredDigest };
+  }
+  if (tagId && containerId !== tagId) {
+    return { behind: true, unknown: false, recoveredDigest };
+  }
+  return { behind: false, unknown: true, recoveredDigest };
+}
+
 /** Compact human label for an identity — used in logs / UI subtitles. */
 export function identityLabel(id: UpdatableIdentity): string {
   switch (id.kind) {

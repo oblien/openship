@@ -19,7 +19,7 @@
   "actionAdopt": "Перенаправить",
   "actionInSync": "На месте",
   "actionConflict": "Конфликт",
-  "conflictNote": "Не управляется Openship — удалите её или настройте эту запись вручную.",
+  "conflictNote": "Не управляется OpenShip — удалите её или настройте эту запись вручную.",
   "outcomeApplied": "Применено",
   "outcomeSkipped": "Пропущено",
   "outcomeFailed": "Ошибка",

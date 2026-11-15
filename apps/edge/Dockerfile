@@ -19,7 +19,7 @@ FROM openresty/openresty:1.27.1.1-alpine
 # (49180) transiently and the edge proxies /.well-known/acme-challenge/ to it
 # (see nginx.conf) — zero downtime, no webroot, no port-80 fight.
 # procps → `pkill` for the reload command's restart fallback.
-# curl   → the mgmt-API exec transport (project-analytics.ts execMgmt) reaches
+# curl   → the mgmt-API exec transport (edge-management.ts execMgmt) reaches
 #          127.0.0.1:9145 from INSIDE this container, since network_mode: host
 #          puts that loopback out of the api container's reach.
 # openssl → the CLI (the base image ships only the libraries) for the temporary

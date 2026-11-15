@@ -53,14 +53,14 @@ export default function GlobalError({
         <div className="ge-wrap">
           <div className="ge-brand">
             <div className="ge-mark" aria-hidden="true" />
-            <span className="ge-name">Openship</span>
+            <span className="ge-name">OpenShip</span>
           </div>
 
-          <h1 className="ge-title">Openship couldn&rsquo;t start</h1>
+          <h1 className="ge-title">OpenShip couldn&rsquo;t start</h1>
           <p className="ge-body">
             The dashboard failed to load. Your deployments and containers keep
             running — this is only the control panel. Try again, and if it
-            persists, restart Openship.
+            persists, restart OpenShip.
           </p>
 
           <button type="button" className="ge-btn" onClick={() => reset()}>

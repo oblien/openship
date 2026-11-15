@@ -30,18 +30,25 @@ move them ahead of the source copy. Installed dependencies, compiled executables
 `.nuxt` and other required outputs are not automatically mounted as caches.
 Repository Dockerfiles remain the source of truth and can declare their own cache
 mounts. Native/bare builds are unchanged.
-Custom build images retain layer caching without automatic cache mounts, preserving
+Custom build images retain caching for environment-independent layers without automatic cache mounts, preserving
 their configured users, home directories and any preseeded offline dependencies.
 Yarn package archives also stay in image layers: both Classic and modern
 Plug'n'Play loaders can need the global cache at runtime. Yarn builds still reuse
 Docker layers and supported framework/Turborepo build-only caches.
 
-Legacy Docker builders use the original recipes. Engine-API builds with explicit
-CPU/RAM limits also retain their original builder behavior; enabling cache mounts
-must not silently remove those limits. Set `OPENSHIP_BUILD_CACHE_MOUNTS=false` on
-the OpenShip API/worker, or in a project's build environment, to disable automatic
-mounts. This also accommodates custom clean scripts that remove entire mounted
-cache directories. Docker layer caching remains available.
+Generated Docker builds require BuildKit. Build environment values travel through a
+required secret mount, never inline exports in the Dockerfile or inherited build
+arguments. Environment-dependent RUN steps use an opaque attempt-specific secret
+ID so a redeploy cannot reuse layers built with old values. Package and framework
+cache mount identities remain reusable; base-image and source layers still cache.
+
+Set `OPENSHIP_BUILD_CACHE_MOUNTS=false` on the OpenShip API/worker, or in a project's
+build environment, to disable automatic **cache** mounts. Required secret mounts
+remain enabled. A generated build with explicit CPU/RAM limits cannot run through
+the native Engine API, whose BuildKit backend ignores those limits; it fails before
+executing repository commands and directs the operator to the protected SSH server
+worker. Cloud and SSH worker limits remain enforced. Repository Dockerfiles retain
+their existing builder selection and explicit ARG semantics.
 
 ## Remote worker lifecycle
 
@@ -59,8 +66,10 @@ and the Docker client continue to use the login user's executor and context. Mis
 fails before repository build commands run. These paths never fall back to an
 unprotected embedded or legacy builder. Desktop uses the same policy when it
 controls a remote server. Disabling automatic package cache mounts does not
-change this boundary. Local socket/TCP Engine-API builds retain their existing
-builder selection and are outside this remote-build protection scope.
+change this boundary. Explicitly trusted SSH hosts can use native BuildKit for
+uncapped builds; secret delivery and cleanup apply to both worker modes.
+Local socket/TCP Engine-API builds require BuildKit for generated recipes and
+are outside this remote-build protection scope.
 
 The trusted worker entrypoint installs and verifies IPv4 and IPv6 rules before
 starting BuildKit, including after a worker restart. Rules live only inside that
@@ -113,8 +122,17 @@ deployment gates before cutover.
 
 ## Storage policy
 
-Managed remote-worker idle caches retain at most 10% of Docker’s filesystem, capped at
-5 GiB, with a seven-day idle expiry. Collection removes the least recently used idle state first. BuildKit
+Managed remote-worker idle caches retain at most 20% of Docker’s filesystem, with a
+seven-day idle expiry. When free space falls below 20% of the filesystem, the idle budget
+shrinks to what still fits above that target, but never below `min(5 GiB, 10%)`.
+Server admins can replace the automatic share for a remote deployment server under
+**Servers → Overview → Build cache** (or `buildCacheBudgetBytes` on the server update API).
+The API accepts 1 GiB to 64 TiB; the budget applied is capped at the filesystem minus the
+admission reserve, and under storage pressure it still shrinks as above, though never below
+the lower of the configured budget and `min(5 GiB, 10%)`. The local "This Server" row builds
+with the host daemon's native cache and migration sources never build, so the setting is not
+offered on either.
+Collection removes the least recently used idle state first. BuildKit
 workers also receive that cache ceiling and a native BuildKit GC target of
 20% free space. Attached state and active build records remain protected. Collection runs
 before and after builds and in the daily cache sweep. Explicit cache clearing and project deletion use

@@ -37,14 +37,14 @@ vi.mock("@/lib/api", () => ({
   deployApi: { trigger: h.trigger },
 }));
 vi.mock("@/context/ProjectSettingsContext", () => ({
-  useProjectSettings: () => ({ projectData: { framework: "node", activeDeploymentId: "active", workspaceId: null }, servicesData: { services: [] } }),
+  useProjectSettings: () => ({ id: "web", projectData: { framework: "node", activeDeploymentId: "active", workspaceId: null }, servicesData: { services: [] } }),
 }));
 vi.mock("@/context/ModalContext", () => ({ useModal: () => ({ showModal: vi.fn(), hideModal: vi.fn() }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => () => false }));
 
 const HINT =
-  "If the target is already deployed, Openship tries to redeploy it right away. Save other environment changes first.";
+  "If the target is already deployed, OpenShip tries to redeploy it right away. Save other environment changes first.";
 
 const outputs: AppConnectionOutput[] = [
   {

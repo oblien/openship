@@ -28,7 +28,8 @@ import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 import { useTheme } from "@/components/theme-provider";
-import { Tabs, type TabDef } from "@/components/ui/Tabs";
+import { WorkloadDetailHeader, WORKLOAD_TABS, type WorkloadTab, type WorkloadChoice } from "./WorkloadDetailHeader";
+import { applicationServiceRoute } from "@/lib/project-application";
 import { Button } from "@/components/ui/button";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { ServiceSettingsForm } from "./ServiceSettingsForm";
@@ -48,18 +49,8 @@ import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
 import { useRuntimeRedeployActions } from "@/components/project-settings/RuntimeRedeployMenu";
 import { RuntimeImageUpdateNotice } from "@/components/project-settings/RuntimeImageUpdateNotice";
 
-type ServiceTab = "overview" | "terminal" | "logs" | "env" | "domains" | "volumes" | "settings" | "backup";
-const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
-  { key: "overview", label: "Overview" },
-  { key: "terminal", label: "Terminal" },
-  { key: "logs", label: "Logs" },
-  { key: "env", label: "Environment" },
-  { key: "domains", label: "Domains" },
-  { key: "volumes", label: "Volumes" },
-  { key: "backup", label: "Backup" },
-  { key: "settings", label: "Settings" },
-];
-const SERVICE_TABS = SERVICE_TAB_DEFS.map((t) => t.key);
+type ServiceTab = WorkloadTab;
+const SERVICE_TABS = WORKLOAD_TABS;
 /* ── Props ──────────────────────────────────────────────────────────── */
 
 interface ServiceDetailPanelProps {
@@ -87,6 +78,8 @@ interface ServiceDetailPanelProps {
   serverId?: string | null;
   /** Sibling services for the header switcher (same project). */
   siblingServices?: Service[];
+  workloadChoices?: WorkloadChoice[];
+  routeId?: string;
   /** Deep-link the active tab into the URL (projects route). Off at server level. */
   deepLink?: boolean;
   /** Override the service switcher — server level swaps in place instead of
@@ -113,6 +106,8 @@ export function ServiceDetailPanel({
   deployTarget,
   serverId,
   siblingServices,
+  workloadChoices,
+  routeId = applicationServiceRoute(service),
   deepLink = true,
   onSwitchService,
 }: ServiceDetailPanelProps) {
@@ -156,6 +151,10 @@ export function ServiceDetailPanel({
   const [environmentVisited, setEnvironmentVisited] = useState(initialTab === "env");
   const [envDirty, setEnvDirty] = useState(false);
   useEffect(() => {
+    setActiveTab(SERVICE_TABS.includes(initialTab as ServiceTab) &&
+      (initialTab !== "backup" || supportsBackup) ? initialTab as ServiceTab : "overview");
+  }, [initialTab, supportsBackup]);
+  useEffect(() => {
     if (activeTab === "env") setEnvironmentVisited(true);
   }, [activeTab]);
   const [domainIntent, setDomainIntent] = useState<ServiceDomainIntent>({});
@@ -166,7 +165,7 @@ export function ServiceDetailPanel({
     // off the projects route (server level) where that URL shape doesn't apply.
     if (deepLink && typeof window !== "undefined") {
       const scrollY = window.scrollY;
-      window.history.replaceState({}, "", `/projects/${projectId}/services/${service.id}/${tab}`);
+      window.history.replaceState({}, "", `/projects/${projectId}/services/${routeId}/${tab}`);
       requestAnimationFrame(() => window.scrollTo(0, scrollY));
     }
   };
@@ -178,16 +177,17 @@ export function ServiceDetailPanel({
   // tab. Backup is compose-only — fall back to Overview if the target can't
   // show it, so a switch never lands on an empty hidden tab.
   const switchableServices = siblingServices ?? [];
-  const canSwitchService = switchableServices.length > 1;
   const switchService = (targetId: string) => {
     if (targetId === service.id) return;
     const target = switchableServices.find((s) => s.id === targetId);
+    const projectRuntime = target?.applicationMode === "project" || targetId === "application";
     const targetTab =
-      activeTab === "backup" && target && serviceKind(target) !== "compose"
+      (projectRuntime && (activeTab === "terminal" || activeTab === "backup")) ||
+      (activeTab === "backup" && target && serviceKind(target) !== "compose")
         ? "overview"
         : activeTab;
     if (onSwitchService) onSwitchService(targetId, targetTab);
-    else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
+    else router.push(`/projects/${projectId}/services/${target ? applicationServiceRoute(target) : targetId}/${targetTab}`);
   };
 
   // ── Terminal section state ──────────────────────────────────────────
@@ -557,67 +557,16 @@ export function ServiceDetailPanel({
 
   /* ── Render ─────────────────────────────────────────────────── */
 
-  const serviceIdentity = (
-    <>
-      <ServiceIcon service={service} className="size-5 shrink-0" />
-      <span className="truncate" title={service.name}>{service.name}</span>
-    </>
-  );
-
   return (
     <div className="min-w-0 space-y-5">
       <UseInProjectModal open={shareOpen} onClose={() => setShareOpen(false)} sourceProjectId={projectId} sourceServiceId={service.id} />
-      {/* ── Service identity and actions ──────────────────────── */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <div className="flex min-w-0 flex-[1_1_16rem] items-center gap-2">
-          {onBack && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              title={t.projectDetail.services.addModal.allServices}
-              className="shrink-0"
-            >
-              <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" />
-              <span className="sr-only">{t.projectDetail.services.addModal.allServices}</span>
-            </Button>
-          )}
-          <div className="@container min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2.5">
-              {canSwitchService ? (
-                <>
-                  <h2 className="sr-only">{service.name}</h2>
-                  <DropdownMenu
-                    align="left"
-                    className="min-w-0"
-                    menuClassName="w-[min(18rem,100cqw)] min-w-0"
-                    triggerClassName="group flex h-9 w-full items-center gap-2 rounded-lg text-base font-medium text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    trigger={
-                      <>
-                        {serviceIdentity}
-                        <UiIcon name="chevron-down" className="size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-                      </>
-                    }
-                    actions={switchableServices.map((s) => ({
-                      id: s.id,
-                      label: s.name,
-                      icon: <ServiceIcon service={s} className="size-4" />,
-                      disabled: s.id === service.id,
-                      onClick: () => switchService(s.id),
-                    }))}
-                  />
-                </>
-              ) : (
-                <h2 className="flex h-9 min-w-0 items-center gap-2 text-base font-medium text-foreground">
-                  {serviceIdentity}
-                </h2>
-              )}
-              <div className="shrink-0"><ServiceStatusBadge status={status} /></div>
-            </div>
-          </div>
-        </div>
-        <div className="ms-auto flex max-w-full flex-wrap items-center gap-2">
+      <WorkloadDetailHeader
+        id={service.id} name={service.name}
+        icon={<ServiceIcon service={service} className="size-5 shrink-0" />}
+        status={<ServiceStatusBadge status={status} />}
+        choices={workloadChoices ?? switchableServices.map(s => ({ id: s.id, name: s.name, icon: <ServiceIcon service={s} className="size-4" /> }))}
+        onSwitch={switchService} onBack={onBack} busy={serviceOperationBusy}
+        actions={<>
           {service.enabled && (
             <Button
               type="button"
@@ -655,35 +604,20 @@ export function ServiceDetailPanel({
               actions={serviceActions}
             />
           )}
-        </div>
-        {/* Another container on the host also answers to this service — a
-            leftover from an adopt/redeploy. It isn't the one we manage, and it
-            may still be holding a port or a volume. */}
-        {container?.duplicates && container.duplicates.length > 0 && (
-          <p className="w-full text-xs text-warning">
-            {interpolate(t.projectDetail.services.detail.duplicateContainers, {
-              names: container.duplicates.join(", "),
-            })}
-          </p>
-        )}
-      </div>
 
-      {/* ── Tab strip ──────────────────────────────────────────── */}
-      <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult} busy={serviceOperationBusy} onRefresh={runtimeUpdate.update} />
-      <Tabs
-        className="border-b-0"
-        size="md"
-        fullWidth
-        tabs={SERVICE_TAB_DEFS.map((def) => ({
-          ...def,
-          label: t.projectDetail.services.detail.tabs[def.key],
-          href: deepLink ? `/projects/${projectId}/services/${service.id}/${def.key}` : undefined,
-          ...(def.key === "volumes" && service.volumes?.length ? { count: service.volumes.length } : {}),
-          ...(def.key === "domains" && configuredServiceEndpoints(service).length ? { count: configuredServiceEndpoints(service).length } : {}),
-          ...(def.key === "backup" ? { hidden: !supportsBackup } : {}),
+        </>}
+        notice={<>
+          {container?.duplicates && container.duplicates.length > 0 && <p className="text-xs text-warning">{interpolate(t.projectDetail.services.detail.duplicateContainers, { names: container.duplicates.join(", ") })}</p>}
+          <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult} busy={serviceOperationBusy} onRefresh={runtimeUpdate.update} />
+        </>}
+        tabs={WORKLOAD_TABS.map(key => ({
+          key, label: t.projectDetail.services.detail.tabs[key],
+          href: deepLink ? `/projects/${projectId}/services/${routeId}/${key}` : undefined,
+          ...(key === "volumes" && service.volumes?.length ? { count: service.volumes.length } : {}),
+          ...(key === "domains" && configuredServiceEndpoints(service).length ? { count: configuredServiceEndpoints(service).length } : {}),
+          ...(key === "backup" ? { hidden: !supportsBackup } : {}),
         }))}
-        value={activeTab}
-        onChange={changeTab}
+        value={activeTab} onChange={changeTab}
       />
 
       {status === "unknown" && activeTab !== "terminal" && (

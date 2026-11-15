@@ -23,7 +23,7 @@ describe("managed route cleanup", () => {
     await h.infra.removeRoute("app.opsh.io");
     expect(h.pages.delete).toHaveBeenCalledWith("app");
   });
-  it.each(["source_workspace_id", "exported_path"])("refuses cleanup after %s changes", async field => {
+  it.each(["source_vm_id", "exported_path"])("refuses cleanup after %s changes", async field => {
     h.records.get("app")![field] = "another-owner";
     await expect(h.infra.removeRoute("app.opsh.io")).rejects.toThrow("not owned");
     expect(h.pages.delete).not.toHaveBeenCalled();

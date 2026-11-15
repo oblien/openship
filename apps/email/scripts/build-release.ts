@@ -108,7 +108,7 @@ const CLIENT_BUILD_EXCLUDE = new Set(['wrangler.json']);
  *
  *   localhost:<port> / 127.0.0.1:<port> / 0.0.0.0:<port>
  *     An origin baked in from a dev env. Port-qualified DELIBERATELY:
- *     react-router (URL parse base), posthog, linkify and punycode each
+ *     react-router (URL parse base), linkify and punycode each
  *     ship a bare portless "localhost" of their own and none is a bug, so
  *     matching plain `localhost` would only teach us to ignore this check.
  *

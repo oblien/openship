@@ -82,3 +82,29 @@ it.each([false, true])(
     ).toHaveLength(2);
   },
 );
+
+it("reuses controlled fields in saved settings without exposing or changing route targets", async () => {
+  const updateOptions = vi.fn();
+  const updateConfig = vi.fn();
+  const config = {
+    framework: "nextjs", runtimeMode: "bare",
+    publicEndpoints: [
+      createPublicEndpoint({ domainType: "custom", customDomain: "app.example.com", port: "3000" }),
+      createPublicEndpoint({ domainType: "custom", customDomain: "metrics.example.com", port: "9000" }),
+    ],
+    options: { hasBuild: true, hasServer: true, workloadType: "web", productionPort: "3000" },
+  };
+  mocks.config = { framework: "static", options: { hasServer: false } };
+  await act(async () => root.render(<BuildSettings surface="settings" buildConfig={config}
+    updateOptions={updateOptions} updateConfig={updateConfig} />));
+  expect(container.textContent).not.toContain("metrics.example.com");
+  const port = container.querySelector<HTMLInputElement>('input[type="number"]')!;
+  expect(port.value).toBe("3000");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(port, "8080");
+    port.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(updateOptions).toHaveBeenCalledExactlyOnceWith({ productionPort: "8080" });
+  expect(updateConfig).not.toHaveBeenCalled();
+  expect(mocks.updateConfig).not.toHaveBeenCalled();
+});

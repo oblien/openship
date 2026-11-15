@@ -166,4 +166,14 @@ describe("Actions home setup flow", () => {
       "Succeeded",
     );
   });
+
+  it("shows a workflow's latest status even when its run is outside the global history", async () => {
+    h.list.mockResolvedValue([{ ...workflow, latestRunStatus: "failure" }]);
+    h.runs.mockResolvedValue([]);
+    await render();
+    expect(host.querySelector('a[href="/actions/workflows/ci"]')?.textContent).toContain("Failed");
+    expect(host.querySelector('a[href="/actions/workflows/ci"]')?.textContent).not.toContain(
+      "No runs yet",
+    );
+  });
 });

@@ -508,6 +508,7 @@ async function dropRelayTlsPolicy(
 export async function configureOutboundRelay(
   exec: CommandExecutor,
   input: ConfigureRelayInput,
+  options: { reload?: boolean } = {},
 ): Promise<MailServerState> {
   validate(input);
   const { saslMap, tlsPolicy, hostFiles, engineExec, engine } = await relayTransport(exec);
@@ -613,7 +614,7 @@ export async function configureOutboundRelay(
   }
 
   // 4) Reload Postfix (inside the engine).
-  await engineExec.exec(engine("postfix reload"));
+  if (options.reload !== false) await engineExec.exec(engine("postfix reload"));
 
   // 5) Persist the relay block (encrypted password) + fan DNS across every
   //    relayed domain (primary + additional).
@@ -650,7 +651,7 @@ export async function configureOutboundRelay(
 }
 
 /** Disable the outbound relay — revert Postfix to direct-to-MX + clear state. */
-export async function disableOutboundRelay(exec: CommandExecutor): Promise<MailServerState | null> {
+export async function disableOutboundRelay(exec: CommandExecutor, options: { reload?: boolean } = {}): Promise<MailServerState | null> {
   const { saslMap, tlsPolicy, hostFiles, engineExec, engine } = await relayTransport(exec);
 
   // Remove the relay-specific directives (leave smtp_tls_security_level — it's
@@ -678,7 +679,7 @@ export async function disableOutboundRelay(exec: CommandExecutor): Promise<MailS
     });
   }
 
-  await engineExec.exec(engine("postfix reload"));
+  if (options.reload !== false) await engineExec.exec(engine("postfix reload"));
 
   const state = await readState(exec);
   if (!state) return null;

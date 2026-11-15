@@ -86,7 +86,7 @@ r.patch(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Update this registered server’s name or SSH connection settings. Omitted fields are preserved. Check reachability after changing connection settings.",
+        "Update this registered server’s name, SSH connection settings or build-cache budget (buildCacheBudgetBytes, remote deployment servers only, server admin required; null returns to the automatic share of the disk). Omitted fields are preserved. Check reachability after changing connection settings.",
     },
   },
   serversCtrl.updateServer,

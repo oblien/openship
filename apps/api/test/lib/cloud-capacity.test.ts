@@ -20,7 +20,7 @@ vi.mock("@repo/db", () => ({
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
   getOblienClient: () => ({
-    workspaces: { get: h.workspace },
+    vms: { get: h.workspace },
     namespaces: { get: h.namespace },
   }),
 }));

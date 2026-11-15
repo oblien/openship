@@ -129,7 +129,7 @@ export {
   waitForCloudDockerWorkspace,
   waitForCloudWorkspaceStopped,
 } from "./runtime/cloud/workspace-ready";
-export { cloudDockerProjectPaths } from "./runtime/cloud/docker-paths";
+export { cloudDockerProjectPaths, isCloudProjectMountSource } from "./runtime/cloud/docker-paths";
 export { ensureCloudProjectVolume } from "./runtime/cloud/docker-volume";
 export { updateCloudWorkspaceResources } from "./runtime/cloud/workspace-resources";
 export { CloudWorkspaceExecutor } from "./runtime/cloud/workspace-executor";
@@ -147,6 +147,7 @@ export {
   type PromptPayload,
   type PromptUserFn,
   runDeployPipeline,
+  DeployCancelledError,
 } from "./runtime/deploy-pipeline";
 export {
   type RoutedDomainInput,
@@ -170,6 +171,7 @@ export {
   type AlternativeHostPort,
   type SuggestAlternativeHostPort,
   probeListeningPort,
+  probeListeningPortOwners,
   isDockerHostPortAvailable,
   ensurePortAvailable,
 } from "./runtime/port-conflict";
@@ -604,7 +606,9 @@ export {
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
 export { Oblien, OblienError, cloudWorkspaceCreationFailure } from "./oblien";
+export { oblienApiBaseUrl, oblienApiUrl, toOblienVmLimits, toOblienVmCapacity, toOblienVmPolicy, toOblienVmOffer, cloudBillingContract } from "./oblien-contract";
 export type {
+  NamespaceResourceLimits,
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,
   NamespaceUsageUnitsParams,
@@ -663,3 +667,5 @@ export { inspectDockerSwarm } from "./runtime/swarm/inspect";
 export { SwarmRuntime } from "./runtime/swarm/runtime";
 export { assertSwarmServiceConfig } from "./runtime/swarm/spec";
 export { prepareRemoteSource } from "./runtime/remote-source";
+
+export { withDeploymentProgress } from "./runtime/deployment-progress";

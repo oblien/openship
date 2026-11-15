@@ -56,6 +56,7 @@ import {
   type DriftStatus,
   type UpstreamDrift,
 } from "@repo/platform/engine/modules/projects/project-crud.service";
+import { verifyUnknownImageDrift } from "./local-image-drift";
 import { redeployBuildSession, triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
 
@@ -255,6 +256,7 @@ const UPSTREAM_RETRY_MS = 10 * 60 * 1000;
 const UPSTREAM_POLL_MS = 8_000;
 const CACHE_WRITE_MS = 2_500;
 const FEED_BUDGET_MS = 12_000;
+const RESPONSE_MARGIN_MS = 50;
 
 /** Concurrent upstream polls. One wave can be every project in an org. */
 const POLL_LIMIT = 6;
@@ -456,6 +458,20 @@ export async function scanInstanceUpdates(): Promise<ScanSummary> {
 
 export type UpdateItem = NonNullable<Awaited<ReturnType<typeof driftItem>>>;
 
+/** One composition for feed reads, project reads and update admission. */
+async function currentDrift(
+  actor: RequestContext | null,
+  project: Project,
+  upstream: UpstreamDrift,
+  deadline: number,
+): Promise<DriftStatus> {
+  const status = await evaluateDrift(project, upstream, actor);
+  if (status.supported && status.mode === "image") {
+    await verifyUnknownImageDrift(project, status, deadline - RESPONSE_MARGIN_MS);
+  }
+  return status;
+}
+
 /**
  * One project's drift, as the dashboard renders it. Null when the project has no
  * drift question to answer (nothing deployed, no remote source, no image
@@ -465,11 +481,12 @@ async function driftItem(
   actor: RequestContext | null,
   project: Project,
   row: UpdateStatus | undefined,
+  deadline: number,
 ) {
   const resolved = await upstreamFor(actor, project, row);
   if (!resolved) return null;
-  const status: DriftStatus = await evaluateDrift(project, resolved.upstream, actor).catch(
-    (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return ({ supported: false }) as DriftStatus; },
+  const status = await currentDrift(actor, project, resolved.upstream, deadline).catch(
+    (error) => { observeCaughtError(error, "platform/engine/modules/updates/updates.service"); return { supported: false as const }; },
   );
   const view = presentation(status);
   if (!view || !status.supported) return null;
@@ -483,6 +500,7 @@ async function driftItem(
     behind: status.behind,
     latestInProgress: status.latestInProgress,
     inProgressDeploymentId: status.inProgressDeploymentId,
+    unverified: status.mode === "image" ? status.unverified : false,
     currentLabel: view.currentLabel,
     latestLabel: view.latestLabel,
     detail: view.detail,
@@ -524,16 +542,25 @@ export async function listOrganizationUpdates(
     const remaining = deadline - Date.now();
     if (remaining <= 0) return;
     const item = await withTimeout(
-      driftItem(ctx, project, rowByProject.get(project.id)),
+      driftItem(ctx, project, rowByProject.get(project.id), deadline),
       remaining,
       "Update feed timed out",
     ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return null; });
     if (item) items.push(item);
   });
 
-  // Deterministic despite the concurrency: behind first, then by name.
-  items.sort((a, b) => Number(b.behind) - Number(a.behind) || a.name.localeCompare(b.name));
-  return opts?.behindOnly ? items.filter((i) => i.behind || i.latestInProgress) : items;
+  // Deterministic despite the concurrency: behind first, then unverified —
+  // a project we could not verify is not "up to date", so it sorts above
+  // the ones we could — then by name.
+  items.sort(
+    (a, b) =>
+      Number(b.behind) - Number(a.behind) ||
+      Number(b.unverified) - Number(a.unverified) ||
+      a.name.localeCompare(b.name),
+  );
+  return opts?.behindOnly
+    ? items.filter((i) => i.behind || i.latestInProgress || i.unverified)
+    : items;
 }
 
 /**
@@ -549,8 +576,9 @@ export async function getProjectDrift(
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   if (!hasDeployedSide(project)) return { supported: false };
+  const deadline = Date.now() + FEED_BUDGET_MS;
   return withTimeout(
-    pollUpstream(ctx, project).then((upstream) => evaluateDrift(project, upstream, ctx)),
+    pollUpstream(ctx, project).then((upstream) => currentDrift(ctx, project, upstream, deadline)),
     FEED_BUDGET_MS,
     "Project update check timed out",
   ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/updates/updates.service"); return ({ supported: false }); });

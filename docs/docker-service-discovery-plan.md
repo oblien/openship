@@ -23,9 +23,10 @@ Docker/Podman compatibility work below is required before declaring full runtime
   `packages/db/src/schema/discovery.ts` (`discovery_settings`,
   `discovery_binding` incl. upstreamStrategy/hostPort/hostIp, withdrawalPending,
   containerRunning, blocked apply state), `domain.serverId` for
-  ownerType='server'; migration `drizzle/0224_server_discovery.sql`
-  (hand-written; still undeployed anywhere, so in-place amendment remains
-  valid — if any instance applies it, switch to append-only). Repo:
+  ownerType='server'; migration `drizzle/0231_server_discovery.sql`
+  (hand-written; renumbered from 0224 during the 0.9.12 sync, where upstream
+  claimed 0224-0230 — the statements are `IF NOT EXISTS` so a fork instance
+  that already applied it under the old number re-applies as a no-op). Repo:
   `packages/db/src/repos/discovery.repo.ts` (34 PGlite tests; also validates
   the migration): observation upsert requeues on config OR runtime-target
   changes (container id/IP/running/strategy/host port), invalidation via

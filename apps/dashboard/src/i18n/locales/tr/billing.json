@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "Yayına hazır mısınız?",
     "plansAndBilling": "Planlar ve faturalandırma",
     "description": "Büyümeye alan tanıyan, yönetilen derlemeler ve barındırma.",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "Kapasite ve Kullanım",
-    "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",
+    "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler OpenShip Cloud'dan senkronize edilir.",
     "routes": "Ücretsiz rotalar",
     "runningServices": "Çalışan hizmetler",
     "projects": "Projeler",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "Faturalandırmayı yönetmek için Openship Bulut'a bağlanın",
-      "description": "Yerel Openship kurulumunuz henüz Openship Bulut'a bağlı değil. Abonelik durumunu, kullanımı, faturaları ve kredi yüklemelerini görüntülemek için bağlanın.",
-      "connect": "Openship Bulut'a Bağlan",
+      "title": "Faturalandırmayı yönetmek için OpenShip Bulut'a bağlanın",
+      "description": "Yerel OpenShip kurulumunuz henüz OpenShip Bulut'a bağlı değil. Abonelik durumunu, kullanımı, faturaları ve kredi yüklemelerini görüntülemek için bağlanın.",
+      "connect": "OpenShip Bulut'a Bağlan",
       "connecting": "Giriş yapılması bekleniyor…"
     },
     "sessionExpired": {
-      "title": "Openship Bulut oturumunuzun süresi doldu",
-      "description": "Hâlâ bağlısınız ancak Openship Bulut tarafından sağlanan oturum jetonu artık geçerli değil. Yenilemek için yeniden bağlanın — önce bağlantıyı kesmeniz gerekmez.",
-      "reconnect": "Openship Bulut'a Tekrar Bağlan",
+      "title": "OpenShip Bulut oturumunuzun süresi doldu",
+      "description": "Hâlâ bağlısınız ancak OpenShip Bulut tarafından sağlanan oturum jetonu artık geçerli değil. Yenilemek için yeniden bağlanın — önce bağlantıyı kesmeniz gerekmez.",
+      "reconnect": "OpenShip Bulut'a Tekrar Bağlan",
       "connecting": "Giriş yapılması bekleniyor…"
     },
     "unreachable": {
-      "title": "Openship Bulut faturalandırma servisine ulaşılamadı",
+      "title": "OpenShip Bulut faturalandırma servisine ulaşılamadı",
       "description": "Bulut oturumunuzun süresi dolmuş olabilir veya bulut servisi geçici olarak kullanılamıyor olabilir. Tekrar deneyin ya da Ayarlar → Bulut bölümünden tekrar bağlanın.",
       "tryAgain": "Tekrar dene",
       "reconnect": "Tekrar Bağlan"
     },
     "notEnabled": {
       "title": "Cloud satın alımları henüz kullanılamıyor",
-      "description": "Openship abonelikleri ve kredi satın alımlarını henüz etkinleştirmedi. Lütfen daha sonra tekrar deneyin."
+      "description": "OpenShip abonelikleri ve kredi satın alımlarını henüz etkinleştirmedi. Lütfen daha sonra tekrar deneyin."
     },
     "notConfigured": {
       "title": "Cloud faturalandırma kurulumu tamamlanmadı",
-      "description": "Openship’in faturalandırma kurulumunu tamamlaması gerekiyor. Lütfen Openship desteğiyle iletişime geçin."
+      "description": "OpenShip’in faturalandırma kurulumunu tamamlaması gerekiyor. Lütfen OpenShip desteğiyle iletişime geçin."
     },
     "forbidden": {
       "title": "Faturalandırmaya erişiminiz yok",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "Faturalandırma yüklenemedi",
-      "description": "Faturalandırma geçici olarak kullanılamıyor. Tekrar deneyin. Sorun devam ederse Openship desteğiyle iletişime geçin."
+      "description": "Faturalandırma geçici olarak kullanılamıyor. Tekrar deneyin. Sorun devam ederse OpenShip desteğiyle iletişime geçin."
     }
   },
   "plansRoute": {
@@ -246,8 +246,8 @@
     "weekTick": "{n}. hafta"
   },
   "layout": {
-    "title": "Faturalandırma ve Kullanım",
-    "subtitle": "Aboneliğinizi, kullanımınızı ve ödeme yöntemlerinizi yönetin.",
+    "title": "Planlar ve faturalandırma",
+    "subtitle": "Cloud alanlarınızı ve bağlı sunucu planlarınızı yönetin.",
     "getServer": "Sunucu al"
   },
   "sidebar": {
@@ -409,7 +409,7 @@
     "planRequired": "Plan gerekli",
     "savedCredits": "Saklanan kullanım bakiyesi",
     "savedCreditsHint": "Ön ödemeli kullanımınız bu çalışma alanında kalır. Cloud dağıtımlarında kullanmak için bir plan seçin.",
-    "offerTitle": "Openship Cloud üzerinde yayına çıkın",
+    "offerTitle": "OpenShip Cloud üzerinde yayına çıkın",
     "offerLabel": "Dağıtıma başlayın",
     "offerDescription": "Projeleriniz için yönetilen kaynaklar.",
     "startingWith": "{name} ile başlayın",
@@ -450,7 +450,7 @@
     "diskHint": "Uygulama disklerinden okunan ve yazılan veriler. Depolama alanı değildir.",
     "transfer": "Uygulama veri aktarımı",
     "transferHint": "Uygulamalarınızın gelen ve giden verileri. Edge trafiği ayrı gösterilir.",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge veri aktarımı",
     "bandwidthHint": "Çalışma alanınızın Edge rotalarındaki gelen ve giden trafik. Aylık kota işlem kotasından ayrıdır. Sınırda rotalar yenilenme veya yükseltmeye kadar duraklatılır.",
     "requests": "Edge istekleri",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "Bulut alanları",
     "singular": "Bulut alanı",
-    "description": "Bir plan seçin ve dağıtın. Sunucuyu Openship yönetir; projeleriniz CPU, bellek ve depolamayı paylaşır.",
+    "description": "Bir plan seçin ve dağıtın. Sunucuyu OpenShip yönetir; projeleriniz CPU, bellek ve depolamayı paylaşır.",
     "loading": "Bulut alanları yükleniyor…",
     "choose": "Sunucu seçin",
     "chooseBilling": "Faturalandırmasını görmek için bir bulut alanı seçin.",
@@ -559,7 +559,7 @@
     "create": "Bulut alanı ekle",
     "mode": "Proje yalıtımı",
     "createHint": "Sunucu oluşturmak ücretsizdir. Sonraki adımda planını seçin; faturalandırma ödeme tamamlandıktan sonra başlar.",
-    "cloudOnly": "Yönetilen sunucular Openship Cloud'da kullanılabilir. Kendi altyapınızı yönetmek için Sunucular'ı kullanın.",
+    "cloudOnly": "Yönetilen sunucular OpenShip Cloud'da kullanılabilir. Kendi altyapınızı yönetmek için Sunucular'ı kullanın.",
     "projectCount": "{count} proje",
     "noProjects": "Bu sunucunda henüz proje yok.",
     "liveUsage": "Anlık kullanım",
@@ -616,7 +616,7 @@
     "plan": "Sunucu planı",
     "actions": "Sunucu işlemleri",
     "changePlan": "Planı değiştir",
-    "managedBy": "Openship Cloud tarafından yönetilir",
+    "managedBy": "OpenShip Cloud tarafından yönetilir",
     "network": {
       "title": "Ağ",
       "description": "Bu yönetilen sunucunun sağlayıcı ayarları.",
@@ -668,6 +668,7 @@
     "diskGrowth": "Mevcut diskler büyütülebilir. Depolamayı küçültmek için verilerini yeni bir sunucuya taşıman gerekir.",
     "range": "{min} ile {max} {unit}",
     "monthlyTotal": "Aylık toplam",
+    "yearlyTotal": "Yıllık toplam",
     "choose": "Özel planı seç",
     "updating": "Fiyat güncelleniyor",
     "invalid": "Her kaynak için belirtilen aralıkta geçerli bir miktar gir.",
@@ -679,6 +680,7 @@
     "extraMemory": "Ek bellek",
     "extraDisk": "Ek depolama",
     "rates": "Aylık ek kaynaklar: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB depolama. Yalnızca seçilen paketin üzerindeki kaynaklar ücretlendirilir.",
+    "yearlyRates": "Yıllık ek kaynaklar: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB depolama. Yalnızca seçilen paketi aşan kaynaklar ücretlendirilir.",
     "applyNotice": "Yükseltmeler ödemeden sonra uygulanır. Daha düşük ücretli değişiklikler yenilemede başlar.",
     "resizeTitle": "Aboneliğindeki kaynakları uygula",
     "resizeDescription": "Planın değişti. Bu sunucuyu yeniden başlatmadan önce yeni kapasiteyi ve etkilenen projeleri incele.",
@@ -723,57 +725,7 @@
     "manage": "Sunucunu yönet",
     "manageDescription": "Dağıtımlar, alan adları, izleme ve yedeklemeler için kendi sunucularını bağla.",
     "mode": "Faturalandırma modeli",
-    "monthly": "Bulut planları",
-    "payg": "Ön ödemeli kullanım",
-    "title": "Ön ödemeli barındırma",
-    "description": "Bir kaynak seviyesi seçin, kredi ekleyin ve sunucu kullanımına göre ödeyin.",
-    "rates": "Kaynak kullanımı",
-    "cpuUnit": "Etkin vCPU-saat başına",
-    "memoryUnit": "GiB-saat başına",
-    "diskUnit": "GiB-ay başına",
-    "transfer": "Veri aktarımı",
-    "transferUnit": "GiB başına",
-    "compareMonthly": "Aylık sunucuları karşılaştır",
-    "preview": "Fiyat önizlemesi",
-    "ratesUnavailable": "Kullanım fiyatları şu anda kullanılamıyor. Aylık sunucuları karşılaştırabilirsiniz.",
-    "packages": "Kredi paketi",
-    "packagesHint": "Kullandıkça öde sunucularınız arasında paylaşılır.",
-    "conversion": "{credits} kredi = {amount}",
-    "credits": "{amount} kredi",
-    "sizeHosts": "Sunucu kaynakları",
-    "sizeHint": "Bir sunucunun saatlik maliyetini görmek için kaynakları seçin.",
-    "activityHint": "Bir vCPU-saat, bir vCPU’nun bir geçen saat boyunca %100 etkin olmasıdır. Ayrılmış RAM ve depolama ücretlendirilmeye devam eder.",
-    "invalid": "CPU, bellek ve depolama aralıklarını kontrol edin.",
-    "ratesDetails": "Kaynak fiyatları ve faturalandırma",
-    "extras": "İsteğe bağlı yönetilen proxy: {amount}/GiB, ayrıca ücretlendirilir. Herkese açık uygulama rotaları ayrıdır.",
-    "retentionHint": "Duraklatmak RAM ücretlerini durdurmaz. Saklanan depolama silinene kadar ücretlendirilir.",
-    "estimate": "Tahmini saatlik maliyet",
-    "packageSummary": "Peşin {amount} · {credits} kredi",
-    "runtime": "Bakiye süresi",
-    "addCredits": "{amount} kredi ekle",
-    "previewHint": "Yalnızca önizleme. Satın alma henüz kullanılamıyor.",
-    "hourlyBasis": "Geçen saat başına · bir sunucu",
-    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU-saat",
-    "cpuHours": "{amount} vCPU-saat",
-    "gibHours": "{amount} GiB-saat",
-    "rangeMinimum": "Tam CPU · %100",
-    "rangeMaximum": "Boşta CPU · %0",
-    "rangeHint": "Gösterilen kullanım fiyatlarına göre, RAM ve depolama dahil.",
-    "perHour": "/ saat",
-    "creditsPerHour": "{amount} kredi/saat",
-    "hourlyHint": "Sunucu başına · %100 CPU kullanımı",
-    "tiers": {
-      "label": "Kaynak seviyesi",
-      "name": "Seviye {level}",
-      "servers": "Sunucular",
-      "unlock": "Toplam {amount} kredi alımıyla açılır",
-      "hint": "Kullandıkça öde sunucularınızın ortak kaynak sınırları.",
-      "exceeded": "Bu yapılandırma {tier} sınırını aşıyor. Sınıra uymak için kaynakları azaltın.",
-      "choose": "{tier} görüntüle",
-      "fundingHint": "Kredi alımları seviyeleri açar. Bakiyeyi kullanmak seviyenizi düşürmez.",
-      "packageUnlock": "Bu paket {tier} açar",
-      "packageTooSmall": "{tier} için toplam {amount} kredi alımı gerekir."
-    }
+    "monthly": "Bulut planları"
   },
   "compute": {
     "title": "Aylık kapsam",
@@ -791,14 +743,13 @@
     "recovery": "İşlem erişimini geri yüklemek için yenilemeyi veya ödemeyi kontrol edin.",
     "storageDue": "Korunan depolama borcu: {amount}",
     "details": "Kullanım, trafik ve depolama koşulları",
-    "paygComparison": "Kullandıkça öde fiyatlarıyla kaydedilen kullanım",
+    "usageComparison": "Kaydedilen kaynak kullanımı",
     "comparisonHint": "Yalnızca kullanım karşılaştırmasıdır; nakit tasarruf veya ek ücret değildir.",
     "proxyTransfer": "Yönetilen proxy trafiği",
     "transferRemaining": "{amount} GiB kullanılabilir",
     "proxyHint": "Git klonlarını, paket indirmelerini ve diğer yönetilen internet trafiğini kapsar. Uygulamaların genel rotaları ayrıdır.",
     "transferRecovery": "Kullanılabilir proxy trafiği yok. Eklemek için destekle iletişime geçin; ödenmiş işlem kapsamı devam eder.",
     "retention": "İşlem süresi dolduktan sonra korunan depolama silinene kadar {amount}/GiB-ay tutarındadır. Diskler en az {days} gün korunur ve otomatik silinmez.",
-    "paygMetering": "Kullandıkça öde; etkin CPU, çalışırken veya duraklatıldığında ayrılmış RAM ve korunduğu sürece sağlanmış depolamayı ölçer.",
     "buildHint": "Derlemeler bu sunucuda çalışır ve kaynakları uygulamalarınızla paylaşır.",
     "usageIncluded": "Kaynak etkinliği ücretini ödediğiniz sunucuya dahildir ve işlem kredisi harcamaz."
   },
@@ -862,7 +813,7 @@
     "priority": "Öncelikli",
     "email": "E-posta desteği",
     "prioritySupport": "Öncelikli destek",
-    "description": "Uygulamaları dağıtın ve güncelleyin, sağlıklarını izleyin ve verilerinizi yedekleyin. Sunucularınızı Openship üzerinden yönetin.",
+    "description": "Uygulamaları dağıtın ve güncelleyin, sağlıklarını izleyin ve verilerinizi yedekleyin. Sunucularınızı OpenShip üzerinden yönetin.",
     "basicDescription": "Günlük uygulamalar ve kişisel projeler için.",
     "priorityDescription": "Öncelikli desteğe ihtiyaç duyan üretim uygulamaları için.",
     "serversIncluded": "{count} bağlı sunucu",
@@ -884,5 +835,40 @@
       "backups": "Planlı yedekleme ve geri yükleme",
       "automation": "API, SDK ve CLI erişimi"
     }
+  },
+  "hub": {
+    "addPlan": "Plan ekle",
+    "addHint": "Cloud kapasitesi seçin veya kendi sunucularınızı yönetin.",
+    "viewPlan": "Planı görüntüle",
+    "active": "Etkin",
+    "inactive": "Etkin değil",
+    "management": "Sunucu yönetimi",
+    "paymentPending": "Ödeme bekleniyor",
+    "paymentRequired": "Ödemenin incelenmesi gerekiyor",
+    "reviewPayment": "Ödemeyi incele",
+    "paymentNotice": "Bu plan için kaydedilen ödemeyi inceleyin. Erişim yalnızca ödeme onaylandıktan sonra güncellenir."
+  },
+  "managementDetail": {
+    "servers": "Bu plandaki sunucular",
+    "description": "OpenShip Manage planınızın kapsadığı sunucular.",
+    "empty": "Henüz bağlı sunucu yok",
+    "emptyHint": "Uygulama dağıtmak ve OpenShip üzerinden yönetmek için kendi sunucunuzu bağlayın.",
+    "addServer": "Sunucu ekle",
+    "addSlots": "Sunucu kapasitesi ekle",
+    "additionalServers": "Ek sunucular",
+    "unitPrice": "Ek sunucu başına {price} / ay",
+    "slotHint": "Destek planınız aynı kalır. Devam etmeden önce ödenecek tutarı inceleyin.",
+    "currentTotal": "Mevcut aylık toplam",
+    "newTotal": "Yeni aylık toplam",
+    "dueNow": "Şimdi ödenecek",
+    "checkingPrice": "Fiyat kontrol ediliyor…",
+    "refreshPrice": "Fiyatı yenile",
+    "checkout": "Ödemeye devam et",
+    "confirmAddition": "Değişikliği onayla",
+    "selectedPlan": "Seçilen plan",
+    "monthlyChange": "Tahmini aylık değişiklik",
+    "processing": "Güncelleniyor…",
+    "effective": "{date} tarihinde geçerli",
+    "totalSlots": "Toplam {count} sunucu kapasitesi"
   }
 }

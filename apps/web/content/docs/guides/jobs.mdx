@@ -56,18 +56,22 @@ access to the workflow prevents new authorized execution.
 See [Openship Actions](/docs/guides/actions) for runner setup, triggers and project
 deployment rules.
 
-### Choosing a Cloud server
+### Choosing a server in hosted Openship
 
-Select an existing managed server to share its resources with your projects,
-or click **Add a dedicated server** to create a server with its own subscription.
-The same job form supports both. You can also select several servers to run the
-command on each one.
+Select a managed Cloud server or a server you own connected through Openship Manage.
+Use **Add server** to connect your own server or create a dedicated Cloud server.
+You can select several servers in the same organization to run the command on each one.
 
-Jobs use the selected server's capacity and usage allowance. The server must be
+On Cloud servers, jobs use the selected server's capacity and usage allowance. The server must be
 running and its subscription and balance must allow new work. A job does not
 provision or resume a server automatically. **Run now** opens the server's plan
 options if billing prevents execution; scheduled attempts record the failure
 in run history. Provision or resume a paid server from **Servers** when needed.
+
+On Manage servers, commands run over the saved SSH connection and use your server's resources.
+Manage access must be active for each target. Every attempt and retry checks access again.
+An SSH failure fails the run without executing the command on Openship's control plane.
+If Manage access expires, you can still view, disable or delete the saved job.
 
 Commands execute on the server itself. To run a temporary container task, use
 `docker run --rm <image> <command>` on a server with Docker available. Jobs have

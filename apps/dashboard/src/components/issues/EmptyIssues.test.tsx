@@ -82,15 +82,16 @@ describe("the three nothings", () => {
     }
   });
 
-  it("draws the panel an issue would land in, not a verdict icon", () => {
-    // The reassurance is structural — the empty state occupies the same silhouette as a
-    // real IssueGroup. Its one accent is var(--primary), which resolves to --th-btn-bg
-    // and is achromatic in all three themes; a literal hex here would escape the
-    // neutrality check above, since it never goes through a Tailwind class.
-    const html = render({ filtered: false, resolved: false });
-    expect(html).toContain("var(--primary)");
-    expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
-    // Decorative: the h3 stays the accessible name for the whole card.
-    expect(html).toContain('aria-hidden="true"');
+  it("keeps artwork decorative so the copy communicates the empty state", () => {
+    for (const props of [
+      { filtered: false, resolved: false },
+      { filtered: false, resolved: true },
+      { filtered: true, resolved: false },
+    ]) {
+      const html = render(props);
+      expect(html).toMatch(/<svg\b[^>]*aria-hidden="true"/);
+      expect(html).not.toContain('role="status"');
+      expect(html).not.toContain('role="img"');
+    }
   });
 });

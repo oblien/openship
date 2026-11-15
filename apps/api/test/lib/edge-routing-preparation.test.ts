@@ -7,18 +7,19 @@ const h = vi.hoisted(() => ({
   deliver: vi.fn(),
   ensure: vi.fn(),
   docker: vi.fn(),
+  probe: vi.fn(),
 }));
 vi.mock("@repo/adapters", () => ({
   dockerAvailable: h.docker,
   ensureContainerEdge: h.ensure,
-  waitForPortListening: vi.fn(),
+  waitForPortListening: h.probe,
 }));
 vi.mock("@repo/platform/engine/lib/edge-image", () => ({
   edgeBuildSpec: () => h.source ? { context: "/source", dockerfile: "apps/edge/Dockerfile" } : undefined,
   pinnedEdgeImage: () => "registry/edge:pinned",
 }));
 vi.mock("@repo/platform/engine/lib/deliver-managed-image", () => ({ deliverManagedImage: h.deliver }));
-import { ensureRoutingReady } from "@repo/platform/engine/lib/edge-reconcile";
+import { ensureRoutingReady, reconcileServerEdge } from "@repo/platform/engine/lib/edge-reconcile";
 
 const executor = {} as CommandExecutor;
 const opts = { onLog: vi.fn(), promptUser: vi.fn() };
@@ -38,6 +39,15 @@ beforeEach(() => {
 });
 
 describe("routing preparation from source", () => {
+  it.each([false, true])("does not claim routing is healthy or down when a failed update cannot be checked (throws=%s)", async (throws) => {
+    h.ensure.mockRejectedValueOnce(new Error("SSH connection lost"));
+    if (throws) h.probe.mockRejectedValueOnce(new Error("Network unreachable"));
+    else h.probe.mockResolvedValueOnce({ checked: false, listening: false });
+    expect(await reconcileServerEdge(executor, opts)).toMatchObject({ edgeDown: false, error: "SSH connection lost" });
+    const messages = opts.onLog.mock.calls.map(([entry]) => entry.message).join("\n");
+    expect(messages).toContain("current health could not be verified");
+    expect(messages).not.toContain("still served by");
+  });
   it("prepares Docker and the pinned image before installing a fresh edge", async () => {
     await expect(ensureRoutingReady(executor, system, opts)).resolves.toEqual({ edgeDown: false });
     expect(h.calls).toEqual(["docker", "image", "routing", "image", "edge"]);

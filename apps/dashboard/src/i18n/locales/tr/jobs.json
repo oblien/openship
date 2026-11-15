@@ -94,9 +94,8 @@
     "command": "Komut",
     "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
     "commandHint": "Seçilen her sunucuda çalışır. Konteyner görevleri için docker run --rm kullanın.",
-    "cloudServersHint": "Mevcut bir sunucuyu kullanın veya kendi aboneliği olan ayrı bir sunucu ekleyin.",
-    "cloudUsageHint": "Görevler, seçilen sunucunun kapasitesini ve kullanım kotasını paylaşır. Çalışması için aboneliği etkin olmalıdır.",
-    "addDedicatedServer": "Ayrı bir sunucu ekle",
+    "cloudServersHint": "Bir Cloud sunucusu veya Manage üzerinden bağlı bir sunucu seçin.",
+    "cloudUsageHint": "Cloud görevleri sunucunun planını ve kullanım kotasını kullanır. SSH görevleri etkin Manage erişimi gerektirir.",
     "scheduleType": "Ne zaman çalışacak",
     "scheduleTypes": {
       "recurring": "Bir zamanlamaya göre",
@@ -186,7 +185,7 @@
     "close": "Kapat",
     "exit": "Çıkış kodu {code}"
   },
-  "cloudSubtitle": "Yönetilen sunucularınızda zamanlanmış ve isteğe bağlı komutlar.",
+  "cloudSubtitle": "Cloud ve bağlı sunucularınızda zamanlanmış ve isteğe bağlı komutlar.",
   "systemJobLabels": {
     "github:deployment-checks": "GitHub dağıtım kontrolleri",
     "cloud:workspace-recovery": "Bulut çalışma alanı işlemleri",

@@ -15,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { LocalExecutor, probeListeningPortOwners } from "@repo/adapters";
 
 import { readCliInstall } from "./cli-install";
 import { IS_ALT_HOME, LOG_DIR, OS_DIR } from "./paths";
@@ -388,6 +389,50 @@ export function serviceStatus(): { kind: ServiceKind; installed: boolean; runnin
     return { kind, installed: q.ok, running: q.ok && /Running/i.test(q.out) };
   }
   return { kind, installed: false, running: false };
+}
+
+/** Only reclaim remembered listeners owned by the installed service's process tree.
+ * A saved port alone proves no ownership (for example, after `up --no-ui`).
+ * Unknown service PIDs or incomplete listener ownership use normal port resolution. */
+export async function serviceHeldPorts(): Promise<number[]> {
+  const kind = detectKind();
+  let pid: number | null = null;
+  if (kind === "launchd") pid = launchdPid();
+  else if (kind === "systemd-user" || kind === "systemd-system") {
+    const args = kind === "systemd-user" ? ["--user"] : [];
+    const result = run("systemctl", [...args, "show", SYSTEMD_NAME, "--property=MainPID", "--value"]);
+    if (result.ok && /^\d+$/.test(result.out)) pid = Number(result.out);
+  }
+  // Scheduled Tasks do not expose an authoritative process ID through schtasks.
+  if (!pid || !Number.isSafeInteger(pid) || pid <= 1) return [];
+  const processes = run("ps", ["-axo", "pid=,ppid="]);
+  if (!processes.ok) return [];
+  const parents = new Map<number, number>();
+  for (const line of processes.out.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s*$/);
+    if (match) parents.set(Number(match[1]), Number(match[2]));
+  }
+  if (!parents.has(pid)) return [];
+  const belongsToService = (owner: number | null): boolean => {
+    const seen = new Set<number>();
+    while (owner != null && owner > 1 && !seen.has(owner)) {
+      if (owner === pid) return true;
+      seen.add(owner);
+      owner = parents.get(owner) ?? null;
+    }
+    return false;
+  };
+  const stored = readStoredPorts();
+  const ports = [...new Set([stored?.api, stored?.dashboard])].filter(
+    (port): port is number => typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65535,
+  );
+  const executor = new LocalExecutor();
+  const held = await Promise.all(ports.map(async (port) => {
+    const owners = await probeListeningPortOwners(executor, port);
+    return owners.checked && owners.ownershipComplete && owners.occupants.length > 0 &&
+      owners.occupants.every((owner) => belongsToService(owner.pid)) ? port : null;
+  }));
+  return held.filter((port): port is number => port !== null);
 }
 
 /** Stop AND disable the service — it won't restart or return on reboot. */

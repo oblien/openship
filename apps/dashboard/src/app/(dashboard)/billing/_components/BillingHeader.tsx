@@ -1,5 +1,6 @@
 "use client";
 
+import { BillingSupportLink } from "@/components/billing/BillingSupportLink";
 import { useI18n } from "@/components/i18n-provider";
 import { useOptionalCloudPurchase } from "@/components/billing/CloudPurchaseContext";
 
@@ -29,6 +30,7 @@ export function BillingHeader({ children }: { children?: React.ReactNode }) {
         )}
         {buyingServer && <div ref={purchase.setDetailsTarget} hidden={purchase.mode === "manage"} className="empty:hidden" />}
         {purchase?.mode !== "manage" && children}
+        <BillingSupportLink />
       </div>
     </header>
   );

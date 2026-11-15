@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "Bereit zum Start?",
     "plansAndBilling": "Tarife und Abrechnung",
     "description": "Verwaltete Builds und Hosting, mit Platz zum Wachsen.",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "Kapazität & Nutzung",
-    "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",
+    "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus OpenShip Cloud synchronisiert.",
     "routes": "Kostenlose Routen",
     "runningServices": "Laufende Dienste",
     "projects": "Projekte",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "Mit Openship Cloud verbinden, um die Abrechnung zu verwalten",
-      "description": "Deine lokale Instanz ist noch nicht mit Openship Cloud verbunden. Verbinde dich, um Abonnementstatus, Nutzung, Rechnungen und Aufladungen einzusehen.",
-      "connect": "Mit Openship Cloud verbinden",
+      "title": "Mit OpenShip Cloud verbinden, um die Abrechnung zu verwalten",
+      "description": "Deine lokale Instanz ist noch nicht mit OpenShip Cloud verbunden. Verbinde dich, um Abonnementstatus, Nutzung, Rechnungen und Aufladungen einzusehen.",
+      "connect": "Mit OpenShip Cloud verbinden",
       "connecting": "Warten auf Anmeldung…"
     },
     "sessionExpired": {
-      "title": "Deine Openship-Cloud-Sitzung ist abgelaufen",
-      "description": "Du bist weiterhin verknüpft, aber das von Openship Cloud ausgestellte Sitzungstoken ist nicht mehr gültig. Verbinde dich erneut, um es zu aktualisieren – du musst die Verbindung nicht zuerst trennen.",
-      "reconnect": "Erneut mit Openship Cloud verbinden",
+      "title": "Deine OpenShip-Cloud-Sitzung ist abgelaufen",
+      "description": "Du bist weiterhin verknüpft, aber das von OpenShip Cloud ausgestellte Sitzungstoken ist nicht mehr gültig. Verbinde dich erneut, um es zu aktualisieren – du musst die Verbindung nicht zuerst trennen.",
+      "reconnect": "Erneut mit OpenShip Cloud verbinden",
       "connecting": "Warten auf Anmeldung…"
     },
     "unreachable": {
-      "title": "Openship-Cloud-Abrechnung konnte nicht erreicht werden",
+      "title": "OpenShip-Cloud-Abrechnung konnte nicht erreicht werden",
       "description": "Möglicherweise ist deine Cloud-Sitzung abgelaufen oder die Cloud ist vorübergehend nicht verfügbar. Versuche es erneut oder verbinde dich neu über Einstellungen → Cloud.",
       "tryAgain": "Erneut versuchen",
       "reconnect": "Erneut verbinden"
     },
     "notEnabled": {
       "title": "Cloud-Käufe sind noch nicht verfügbar",
-      "description": "Openship hat Abonnements und Guthabenkäufe noch nicht freigeschaltet. Bitte versuche es später erneut."
+      "description": "OpenShip hat Abonnements und Guthabenkäufe noch nicht freigeschaltet. Bitte versuche es später erneut."
     },
     "notConfigured": {
       "title": "Die Cloud-Abrechnung ist noch nicht vollständig eingerichtet",
-      "description": "Openship muss die Einrichtung der Abrechnung abschließen. Bitte kontaktiere den Openship-Support."
+      "description": "OpenShip muss die Einrichtung der Abrechnung abschließen. Bitte kontaktiere den OpenShip-Support."
     },
     "forbidden": {
       "title": "Du hast keinen Zugriff auf die Abrechnung",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "Die Abrechnung konnte nicht geladen werden",
-      "description": "Die Abrechnung ist vorübergehend nicht verfügbar. Versuche es erneut. Wenn das Problem weiterhin besteht, kontaktiere den Openship-Support."
+      "description": "Die Abrechnung ist vorübergehend nicht verfügbar. Versuche es erneut. Wenn das Problem weiterhin besteht, kontaktiere den OpenShip-Support."
     }
   },
   "plansRoute": {
@@ -246,8 +246,8 @@
     "weekTick": "KW {n}"
   },
   "layout": {
-    "title": "Abrechnung & Nutzung",
-    "subtitle": "Verwalte dein Abonnement, deine Nutzung und deine Zahlungsmethoden.",
+    "title": "Tarife & Abrechnung",
+    "subtitle": "Verwalte deine Cloud-Bereiche und Tarife für verbundene Server.",
     "getServer": "Server buchen"
   },
   "sidebar": {
@@ -409,7 +409,7 @@
     "planRequired": "Tarif erforderlich",
     "savedCredits": "Gespeichertes Nutzungsguthaben",
     "savedCreditsHint": "Deine vorausbezahlte Nutzung bleibt in diesem Arbeitsbereich. Wähle einen Tarif, um sie für Cloud-Bereitstellungen zu verwenden.",
-    "offerTitle": "Starte auf Openship Cloud",
+    "offerTitle": "Starte auf OpenShip Cloud",
     "offerLabel": "Jetzt bereitstellen",
     "offerDescription": "Verwaltete Ressourcen für deine Projekte.",
     "startingWith": "Starte mit {name}",
@@ -450,7 +450,7 @@
     "diskHint": "Gelesene und geschriebene App-Daten, nicht der belegte Speicherplatz.",
     "transfer": "App-Datentransfer",
     "transferHint": "Ein- und ausgehende Daten deiner Anwendungen. Edge-Traffic wird separat angezeigt.",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge-Datentransfer",
     "bandwidthHint": "Ein- und ausgehender Traffic aller Edge-Routen deines Arbeitsbereichs. Das monatliche Kontingent ist vom Rechenkontingent getrennt. Am Limit pausieren Routen bis zum Reset oder Upgrade.",
     "requests": "Edge-Anfragen",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "Cloud-Bereiche",
     "singular": "Cloud-Bereich",
-    "description": "Plan wählen und deployen. Openship verwaltet den Server; deine Projekte teilen CPU, Arbeitsspeicher und Speicherplatz.",
+    "description": "Plan wählen und deployen. OpenShip verwaltet den Server; deine Projekte teilen CPU, Arbeitsspeicher und Speicherplatz.",
     "loading": "Cloud-Bereiche werden geladen…",
     "choose": "Server auswählen",
     "chooseBilling": "Wähle einen Cloud-Bereich für die Abrechnung.",
@@ -559,7 +559,7 @@
     "create": "Cloud-Bereich hinzufügen",
     "mode": "Projektisolierung",
     "createHint": "Das Erstellen eines Server ist kostenlos. Wähle anschließend einen Plan; die Abrechnung beginnt nach dem Checkout.",
-    "cloudOnly": "Verwaltete Server sind in Openship Cloud verfügbar. Verwalten Sie selbst gehostete Infrastruktur unter Server.",
+    "cloudOnly": "Verwaltete Server sind in OpenShip Cloud verfügbar. Verwalten Sie selbst gehostete Infrastruktur unter Server.",
     "projectCount": "{count} Projekte",
     "noProjects": "Noch keine Projekte in diesem Server.",
     "liveUsage": "Aktuelle Nutzung",
@@ -616,7 +616,7 @@
     "plan": "Server-Plan",
     "actions": "Server-Aktionen",
     "changePlan": "Plan ändern",
-    "managedBy": "Verwaltet von Openship Cloud",
+    "managedBy": "Verwaltet von OpenShip Cloud",
     "network": {
       "title": "Netzwerk",
       "description": "Provider-Einstellungen für diesen verwalteten Server.",
@@ -668,6 +668,7 @@
     "diskGrowth": "Bestehende Datenträger können vergrößert werden. Zum Verkleinern müssen die Daten auf einen neuen Server verschoben werden.",
     "range": "{min} bis {max} {unit}",
     "monthlyTotal": "Monatlicher Gesamtpreis",
+    "yearlyTotal": "Jährlicher Gesamtpreis",
     "choose": "Individuell wählen",
     "updating": "Preis wird aktualisiert",
     "invalid": "Gib für jede Ressource einen gültigen Wert im angegebenen Bereich ein.",
@@ -679,6 +680,7 @@
     "extraMemory": "Zusätzlicher Arbeitsspeicher",
     "extraDisk": "Zusätzlicher Speicherplatz",
     "rates": "Monatliche Zusatzressourcen: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB Speicherplatz. Berechnet wird nur, was über das gewählte Paket hinausgeht.",
+    "yearlyRates": "Jährliche Extras: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB Speicher. Nur Ressourcen über das gewählte Paket hinaus werden berechnet.",
     "applyNotice": "Upgrades gelten nach der Zahlung. Günstigere Änderungen beginnen bei der Verlängerung.",
     "resizeTitle": "Gebuchte Ressourcen übernehmen",
     "resizeDescription": "Dein Tarif hat sich geändert. Prüfe die neue Kapazität und die betroffenen Projekte, bevor du diesen Server neu startest.",
@@ -723,57 +725,7 @@
     "manage": "Eigenen Server verwalten",
     "manageDescription": "Verbinde eigene Server für Deployments, Domains, Monitoring und Backups.",
     "mode": "Abrechnungsmodell",
-    "monthly": "Cloud-Pläne",
-    "payg": "Prepaid-Nutzung",
-    "title": "Prepaid-Hosting",
-    "description": "Wähle eine Ressourcenstufe, kaufe Guthaben und bezahle die Servernutzung.",
-    "rates": "Ressourcennutzung",
-    "cpuUnit": "Pro aktiver vCPU-Stunde",
-    "memoryUnit": "Pro GiB-Stunde",
-    "diskUnit": "Pro GiB-Monat",
-    "transfer": "Datenübertragung",
-    "transferUnit": "Pro GiB",
-    "compareMonthly": "Monatliche Server vergleichen",
-    "preview": "Preisvorschau",
-    "ratesUnavailable": "Nutzungspreise sind gerade nicht verfügbar. Du kannst weiterhin monatliche Server vergleichen.",
-    "packages": "Guthabenpaket",
-    "packagesHint": "Gemeinsam für deine nutzungsbasierten Server.",
-    "conversion": "{credits} Credits = {amount}",
-    "credits": "{amount} Credits",
-    "sizeHosts": "Serverressourcen",
-    "sizeHint": "Wähle Ressourcen, um die stündlichen Kosten eines Servers zu schätzen.",
-    "activityHint": "Eine vCPU-Stunde entspricht einer vCPU mit 100% Auslastung für eine verstrichene Stunde. Reservierter RAM und Speicher werden weiterhin berechnet.",
-    "invalid": "Prüfe die Bereiche für CPU, Arbeitsspeicher und Speicherplatz.",
-    "ratesDetails": "Ressourcenpreise und Abrechnung",
-    "extras": "Optionaler verwalteter Proxy: {amount}/GiB, separat berechnet. Öffentliche App-Routen sind davon getrennt.",
-    "retentionHint": "Pausieren beendet RAM-Kosten nicht. Aufbewahrter Speicher bleibt bis zur Löschung kostenpflichtig.",
-    "estimate": "Geschätzte Kosten pro Stunde",
-    "packageSummary": "{amount} im Voraus · {credits} Credits",
-    "runtime": "Guthabendauer",
-    "addCredits": "{amount} Credits aufladen",
-    "previewHint": "Nur Vorschau. Noch nicht käuflich.",
-    "hourlyBasis": "Pro verstrichener Stunde · ein Server",
-    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU-Std.",
-    "cpuHours": "{amount} vCPU-Std.",
-    "gibHours": "{amount} GiB-Std.",
-    "rangeMinimum": "Volle CPU · 100%",
-    "rangeMaximum": "CPU im Leerlauf · 0%",
-    "rangeHint": "Zu den angezeigten Nutzungspreisen, einschließlich RAM und Speicher.",
-    "perHour": "/ Stunde",
-    "creditsPerHour": "{amount} Credits/Stunde",
-    "hourlyHint": "Pro Server · 100 % CPU-Auslastung",
-    "tiers": {
-      "label": "Ressourcenstufe",
-      "name": "Stufe {level}",
-      "servers": "Server",
-      "unlock": "Freischaltung ab {amount} Guthabenkäufen",
-      "hint": "Gemeinsame Ressourcenlimits für deine PAYG-Server.",
-      "exceeded": "Diese Konfiguration überschreitet {tier}. Reduziere die Ressourcen entsprechend.",
-      "choose": "{tier} ansehen",
-      "fundingHint": "Guthabenkäufe schalten Stufen frei. Der Verbrauch senkt deine Stufe nicht.",
-      "packageUnlock": "Dieses Paket schaltet {tier} frei",
-      "packageTooSmall": "{tier} erfordert Guthabenkäufe von insgesamt {amount}."
-    }
+    "monthly": "Cloud-Pläne"
   },
   "compute": {
     "title": "Monatliche Abdeckung",
@@ -791,14 +743,13 @@
     "recovery": "Prüfe Verlängerung oder Zahlung, um die Rechenleistung wieder zu nutzen.",
     "storageDue": "Offener Betrag für aufbewahrten Speicher: {amount}",
     "details": "Nutzung, Datenverkehr und Speicherbedingungen",
-    "paygComparison": "Erfasste Nutzung zu PAYG-Tarifen",
+    "usageComparison": "Erfasste Ressourcennutzung",
     "comparisonHint": "Nur ein Nutzungsvergleich; keine Geldersparnis oder Zusatzgebühr.",
     "proxyTransfer": "Verwalteter Proxy-Datenverkehr",
     "transferRemaining": "{amount} GiB verfügbar",
     "proxyHint": "Umfasst Git-Klone, Paketdownloads und anderen verwalteten Internet-Datenverkehr. Öffentliche App-Routen sind separat.",
     "transferRecovery": "Kein Proxy-Datenverkehr verfügbar. Kontaktiere den Support zum Nachkaufen; bezahlte Rechenleistung bleibt abgedeckt.",
     "retention": "Nach Ablauf kostet aufbewahrter Speicher {amount}/GiB-Monat bis zur Löschung. Datenträger bleiben mindestens {days} Tage erhalten, ohne automatische Löschung.",
-    "paygMetering": "PAYG misst aktive CPU, reservierten RAM im laufenden oder pausierten Zustand und bereitgestellten Speicher bis zur Löschung.",
     "buildHint": "Builds laufen auf diesem Server und teilen seine Ressourcen mit deinen Apps.",
     "usageIncluded": "Die Ressourcenaktivität ist im bezahlten Server enthalten und verbraucht keine Compute-Credits."
   },
@@ -862,7 +813,7 @@
     "priority": "Priority",
     "email": "E-Mail-Support",
     "prioritySupport": "Priorisierter Support",
-    "description": "Apps bereitstellen und aktualisieren, ihren Zustand überwachen und Daten sichern. Ihre Server, verwaltet über Openship.",
+    "description": "Apps bereitstellen und aktualisieren, ihren Zustand überwachen und Daten sichern. Ihre Server, verwaltet über OpenShip.",
     "basicDescription": "Für alltägliche Apps und persönliche Projekte.",
     "priorityDescription": "Für produktive Apps, die bevorzugten Support benötigen.",
     "serversIncluded": "{count} verbundene Server",
@@ -884,5 +835,40 @@
       "backups": "Geplante Backups und Wiederherstellung",
       "automation": "Zugriff per API, SDK und CLI"
     }
+  },
+  "hub": {
+    "addPlan": "Tarif hinzufügen",
+    "addHint": "Cloud-Kapazität wählen oder eigene Server verwalten.",
+    "viewPlan": "Tarif ansehen",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "management": "Serververwaltung",
+    "paymentPending": "Zahlung ausstehend",
+    "paymentRequired": "Zahlung erfordert Aufmerksamkeit",
+    "reviewPayment": "Zahlung prüfen",
+    "paymentNotice": "Prüfe die gespeicherte Zahlung für diesen Tarif. Der Zugriff wird erst nach bestätigter Zahlung aktualisiert."
+  },
+  "managementDetail": {
+    "servers": "Server in diesem Tarif",
+    "description": "Server, die von deinem OpenShip Manage-Tarif abgedeckt werden.",
+    "empty": "Noch keine Server verbunden",
+    "emptyHint": "Verbinde einen eigenen Server, um Apps bereitzustellen und ihn mit OpenShip zu verwalten.",
+    "addServer": "Server hinzufügen",
+    "addSlots": "Serverplätze hinzufügen",
+    "additionalServers": "Zusätzliche Server",
+    "unitPrice": "{price} pro zusätzlichem Server / Monat",
+    "slotHint": "Dein Supporttarif bleibt gleich. Prüfe den fälligen Betrag, bevor du fortfährst.",
+    "currentTotal": "Aktueller Monatsbetrag",
+    "newTotal": "Neuer Monatsbetrag",
+    "dueNow": "Jetzt fällig",
+    "checkingPrice": "Preis wird geprüft…",
+    "refreshPrice": "Preis aktualisieren",
+    "checkout": "Weiter zur Zahlung",
+    "confirmAddition": "Änderung bestätigen",
+    "selectedPlan": "Ausgewählter Tarif",
+    "monthlyChange": "Geschätzte monatliche Änderung",
+    "processing": "Wird aktualisiert…",
+    "effective": "Gültig ab {date}",
+    "totalSlots": "Insgesamt {count} Serverplätze"
   }
 }

@@ -302,10 +302,10 @@ export class PathMissingError extends Error {
   }
 }
 
-/** Parse an `rsync --info=progress2` line → cumulative bytes transferred, or
- *  null for a non-progress line. Format: "  1,234,567  12%  1.23MB/s  0:00:05". */
+/** Parse exact rsync byte counters, including the B suffix used by newer releases.
+ * Rounded K/M/G values are deliberately not accepted as exact byte counts. */
 export function parseRsyncProgress(line: string): number | null {
-  const m = line.match(/^\s*([\d,]+)\s+\d+%/);
+  const m = line.match(/^\s*([\d,]+)B?\s+\d+%/);
   if (!m) return null;
   const n = Number(m[1]!.replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
@@ -330,7 +330,8 @@ export function rsyncCommand(
   // The reviewed destination is an empty/owned copy (or an explicitly
   // approved overwrite). Remove stale destination files after a successful
   // directory copy, matching the streamed transport's replacement semantics.
-  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
+  // Keep progress counters machine-readable across rsync versions and locales.
+  const flags = `-a --protect-args --partial --partial-dir=.openship-partial --info=progress2 --no-human-readable --timeout=60${dir ? " --delete-delay" : ""}${compress ? " -z" : ""}`;
   const dash_e = `-e ${sq(sshCommand)}`;
   const slash = dir ? "/" : "";
   const local = `${sq(localPath)}${slash}`;
@@ -369,11 +370,21 @@ export async function runRsync(
   let lastTail = "";
   for (let attempt = 1; attempt <= RSYNC_MAX_ATTEMPTS; attempt++) {
     signal?.throwIfAborted();
+    // Executors stream arbitrary chunks. Frame rsync's CR/LF updates separately
+    // for stdout and stderr, including a final update without a line ending.
+    const pending = new Map<LogEntry["level"], string>();
+    const report = (line: string) => {
+      const bytes = parseRsyncProgress(line);
+      if (bytes != null) onProgress?.(bytes);
+    };
     const { code, output } = await initiatorExec.streamExec(command, (entry: LogEntry) => {
       if (!onProgress) return;
-      const bytes = parseRsyncProgress(entry.message);
-      if (bytes != null) onProgress(bytes);
+      const lines = ((pending.get(entry.level) ?? "") + entry.message).split(/\r\n|[\r\n]/);
+      // Only the short numeric prefix matters; bound unfinished diagnostic lines.
+      pending.set(entry.level, lines.pop()!.slice(0, 4096));
+      for (const line of lines) report(line);
     }, { signal });
+    for (const line of pending.values()) report(line);
     if (code === 0) return;
 
     lastTail = output.split("\n").filter(Boolean).slice(-4).join(" ");

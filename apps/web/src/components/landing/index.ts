@@ -1,6 +1,5 @@
 export { Navbar } from "./navbar";
 export { Hero } from "./hero";
-export { SystemMap } from "./system-map";
 export { HowItWorks } from "./how-it-works";
 export { Dashboard } from "./dashboard";
 export { DeploymentModels } from "./deployment-models";
@@ -8,6 +7,7 @@ export { CompletePlatform } from "./complete-platform";
 export { AppsShowcase } from "./apps-showcase";
 export { MailServer } from "./mail-server";
 export { Comparison } from "./comparison";
+export { DataPrivacy } from "./data-privacy";
 export { OpenSource } from "./open-source";
 export { FinalCta } from "./final-cta";
 export { DarkSection } from "./dark-section";

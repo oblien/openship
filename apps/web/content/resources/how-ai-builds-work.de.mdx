@@ -1,0 +1,53 @@
+---
+title: "So funktionieren KI-Builds in OpenShip"
+description: "Ein Blick hinter die Kulissen, wie OpenShip KI nutzt, um Frameworks zu erkennen, Konfigurationen zu generieren und Builds automatisch zu optimieren."
+date: "2026-03-08"
+category: "Engineering"
+author: "OpenShip Team"
+---
+
+Wenn Sie `openship deploy` ausführen, passiert eine Menge, bevor Ihre App live geht. So funktioniert das KI-Build-System.
+
+## Schritt 1: Framework-Erkennung
+
+OpenShip durchsucht Ihr Projekt nach Signalen:
+
+- `package.json` Skripte und Abhängigkeiten
+- Konfigurationsdateien (`next.config.js`, `nuxt.config.ts`, `Cargo.toml` usw.)
+– DockerDatei vorhanden
+- Verzeichnisstrukturmuster
+
+Dies führt zu einer konfidenzbewerteten Rahmenübereinstimmung. Wenn OpenShip Next.js mit 95-prozentiger Sicherheit erkennt, wird die Build-Pipeline von Next.js verwendet. Wenn eine Docker-Datei vorhanden ist, wird diese direkt verwendet.
+
+## Schritt 2: Konfigurationsgenerierung
+
+Basierend auf dem erkannten Framework generiert OpenShip:
+
+- **Build-Befehl** – `npm run build`, `go build` usw.
+- **Startbefehl** – `npm start`, `./server` usw.
+- **Portzuordnung** – Erkennt, welchen Port Ihre App überwacht
+- **Umgebungsvariablen** – Schlägt erforderliche Variablen basierend auf Framework-Konventionen vor
+
+Sie können diese in `openship.json` überschreiben.
+
+## Schritt 3: Build-Optimierung
+
+Die KI-Schicht optimiert den Build:
+
+- **Layer-Caching** – Abhängigkeitsebenen werden getrennt vom Quellcode zwischengespeichert
+- **Mehrstufige Builds** – Produktionsimages schließen Entwicklungsabhängigkeiten aus
+- **Parallele Builds** – Multi-Service-Projekte werden gleichzeitig erstellt
+
+## Schritt 4: Gesundheitschecks
+
+Nach der Bereitstellung überprüft OpenShip Folgendes:
+
+- Der Container startet erfolgreich
+– Der Health-Check-Endpunkt antwortet
+- SSL ist bereitgestellt und gültig
+
+Wenn eine Prüfung fehlschlägt, wird die Bereitstellung automatisch zurückgesetzt.
+
+## Was kommt als nächstes?
+
+Wir arbeiten an einer KI-gestützten Diagnose – wenn ein Build fehlschlägt, analysiert OpenShip den Fehler und schlägt Korrekturen vor. Bleiben Sie dran.

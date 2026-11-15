@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
+import { DomainResponseRoutes } from "@/components/routing/DomainResponseRoutes";
 import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
 import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
@@ -338,12 +339,14 @@ function resolveDomainSsl(hostname: string, domain: any, baseDomain: string, t: 
 }
 
 interface DomainSettingsProps {
+  /** Primary app routes only, including before it has a backing service row. */
+  applicationScope?: boolean;
   /** Keep domain management inside a service, with an optional port selected. */
   serviceScope?: { serviceId: string; port?: number; add?: boolean };
   onRoutesChanged?: () => void | Promise<void>;
 }
 
-export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettingsProps = {}) => {
+export const DomainSettings = ({ applicationScope = false, serviceScope, onRoutesChanged }: DomainSettingsProps = {}) => {
   const {
     domainsData,
     updateDomains,
@@ -673,7 +676,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
   const projectHasServices =
     Number(projectData.serviceCount ?? 0) > 0 || services.length > 0;
   const hasProjectLevelRouting =
-    !serviceScope && ((Array.isArray(projectData.publicEndpoints) && projectData.publicEndpoints.length > 0) ||
+    !serviceScope && (applicationScope || (Array.isArray(projectData.publicEndpoints) && projectData.publicEndpoints.length > 0) ||
     !projectHasServices);
   const draftPublicEndpoints = useMemo(
     () =>
@@ -717,6 +720,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           (typeof endpoint?.id === "string" ? domainById.get(endpoint.id) : undefined) ||
           domainByHostname.get(hostname) ||
           null;
+        if (applicationScope && !serviceScope && domain?.serviceId) return null;
         const mappedPort = endpoint?.port !== undefined && endpoint?.port !== null
           ? String(endpoint.port)
           : projectRuntimePort;
@@ -754,6 +758,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       })
       .filter((domain): domain is DomainSummaryItem => domain !== null);
   }, [
+    applicationScope,
+    serviceScope?.serviceId,
     projectData.publicEndpoints,
     projectData.activeDeploymentId,
     projectData.awaitingDecision,
@@ -1856,9 +1862,9 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
   /** Cards actually rendered — gates "Set as primary", which needs a choice. */
   const totalRouteCards = serviceRouteCards.length + orphanDomainCards.length;
-  const inServiceScope = (summary: DomainSummaryItem) => !serviceScope || (
-    summary.serviceId === serviceScope.serviceId && (!portFilter || summary.mappedPort === portFilter)
-  );
+  const inServiceScope = (summary: DomainSummaryItem) => serviceScope
+    ? summary.serviceId === serviceScope.serviceId && (!portFilter || summary.mappedPort === portFilter)
+    : !applicationScope || !summary.serviceId;
   const visibleServiceRoutes = serviceRouteCards.filter(({ summary }) => inServiceScope(summary));
   const visibleOrphanRoutes = orphanDomainCards.filter(inServiceScope);
 
@@ -2003,6 +2009,11 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       <DomainOverviewCard
         key={item.id}
         domain={item}
+        responseRoutes={item.domainId && !isCloudProject && selfHosted &&
+          projectData.deployTarget !== "cluster" && !item.externalIngress && !item.redirectTo &&
+          !item.hostname.toLowerCase().endsWith(`.${baseDomain}`) ? (
+          <DomainResponseRoutes key={item.domainId} projectId={String(id)} domainId={item.domainId} hostname={item.hostname} />
+        ) : undefined}
         protectionControl={<RouteProtectionButton hostname={item.hostname} projectId={String(id)}
           unsupported={isCloudProject || projectData.deployTarget === "cluster" || !selfHosted || !!item.externalIngress || item.hostname.endsWith(`.${baseDomain}`) || item.hostname.startsWith("*.")} />}
         menuActions={menuActions}
@@ -2718,7 +2729,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
       {/* Routing (rewrites/redirects/headers) — advanced, sits AFTER the
           domain/route cards so the primary domain list leads the page. */}
-      {!serviceScope && <RoutingConfigCard
+      {!serviceScope && !applicationScope && <RoutingConfigCard
         id={id}
         isCloudProject={isCloudProject}
         initial={projectData.routingConfig}
@@ -2731,7 +2742,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           Advanced tab. */}
       {/* Route rules are a self-hosted-edge feature (local-only endpoints); a
           cloud-owned project uses the Oblien edge, so hide them for cloud. */}
-      {!serviceScope && !isCloudProject && <RouteRules />}
+      {!serviceScope && !applicationScope && !isCloudProject && <RouteRules />}
 
       {editingRouteService && editingRouteTarget && routeDraft && (
         <div
@@ -3104,6 +3115,7 @@ function DiagnosablePill({
 
 function DomainOverviewCard({
   domain,
+  responseRoutes,
   protectionControl,
   menuActions = [],
   sslActionBusy = false,
@@ -3123,6 +3135,7 @@ function DomainOverviewCard({
   ingressSettings,
 }: {
   domain: DomainSummaryItem;
+  responseRoutes?: React.ReactNode;
   protectionControl?: React.ReactNode;
   /** Secondary actions (edit, renew, …) collapsed into a ⋯ menu. Visit is a
    *  plain icon; Verify is a direct inline button below, not a menu item. */
@@ -3496,6 +3509,7 @@ function DomainOverviewCard({
           </div>
         ) : null}
       </div>
+      {responseRoutes}
     </div>
   );
 }

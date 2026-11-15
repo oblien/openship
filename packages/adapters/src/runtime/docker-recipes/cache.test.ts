@@ -95,7 +95,7 @@ describe("generated build cache mounts", () => {
 
   it("leaves legacy recipes unchanged and does not turn path delimiters into Docker mount options", () => {
     expect(cachedRunPrefix({ ...config, buildCache: false })).toBe("RUN ");
-    expect(generateDockerfile({ ...config, buildCache: false })).not.toContain("--mount");
+    expect(generateDockerfile({ ...config, buildCache: false })).not.toContain("--mount=type=cache");
     expect(cachedRunPrefix({ ...config, buildImage: "example.com/custom-offline-builder:1" })).toBe(
       "RUN ",
     );

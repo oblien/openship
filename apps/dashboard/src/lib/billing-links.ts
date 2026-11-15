@@ -3,6 +3,16 @@ export interface BillingLinkScope {
   organizationId?: string | null;
 }
 
+/** Unscoped plan browsing must not select an existing subscription. */
+export function isNewCloudPurchase({ tab, workspaceId, newServer, checkoutReturn }: {
+  tab: string | undefined;
+  workspaceId?: string;
+  newServer: boolean;
+  checkoutReturn: boolean;
+}) {
+  return tab === "plans" && (newServer || !workspaceId) && !checkoutReturn;
+}
+
 /** Preserve checkout reconciliation and organization scope through entry redirects. */
 export function billingTabHref(tab: "overview" | "plans" | "payment", query: Record<string, string | string[] | undefined>) {
   const params = new URLSearchParams();

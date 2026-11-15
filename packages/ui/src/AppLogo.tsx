@@ -13,6 +13,8 @@ const BRAND_LOGO: Record<
   string,
   { slug?: string; src?: string; catalogIcon?: IconName; fill?: boolean; darkInvert?: boolean }
 > = {
+  railway: { src: "/provider-logos/railway.svg", darkInvert: true },
+  vercel: { src: "/provider-logos/vercel.svg", darkInvert: true },
   // Runner capabilities are local information; their platform mark works offline too.
   linux: { src: "/app-logos/linux.svg", darkInvert: true },
   convex: { src: "https://www.google.com/s2/favicons?domain=convex.dev&sz=128" },
@@ -30,7 +32,8 @@ const BRAND_LOGO: Record<
   // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
   pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
   pocketbase: { slug: "pocketbase" },
-  mongodb: { slug: "mongodb" },
+  mongodb: { src: "/app-logos/mongodb.svg" },
+  mysql: { src: "/app-logos/mysql.svg" },
   n8n: { slug: "n8n" },
   // Ghost's brand mark is near-black — invert it on the dark themes so it
   // stays visible (it's monochrome, so invert = clean white). Colored logos
@@ -65,7 +68,7 @@ const BRAND_LOGO: Record<
   jellyfin: { src: "/app-logos/jellyfin.svg" },
   wordpress: { slug: "wordpress" },
   odoo: { slug: "odoo" },
-  postgresql: { slug: "postgresql" },
+  postgresql: { src: "/app-logos/postgresql.svg" },
   mariadb: { slug: "mariadb" },
   rabbitmq: { slug: "rabbitmq" },
   authentik: { slug: "authentik" },

@@ -5,7 +5,7 @@ const h = vi.hoisted(() => ({
   workspaceGet: vi.fn(), routes: vi.fn(), setRoutes: vi.fn(), spend: vi.fn(), pageList: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: () => ({
-  workspaces: { get: h.workspaceGet },
+  vms: { get: h.workspaceGet },
   pages: { list: h.pageList, get: h.pageGet, create: h.pageCreate, delete: h.pageDelete, disable: h.pageDisable, deploy: h.pageDeploy },
   domain: { routes: h.routes }, routes: { set: h.setRoutes },
 }) }));
@@ -32,12 +32,12 @@ describe("admin-only cloud delegation", () => {
   });
   it("rejects another customer's workspace before exporting a page", async () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
-    await expect(proxy.pages!.create({ workspace_id: "ws-other", path: "/app/dist", name: "test", slug: "test" })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(proxy.pages!.create({ vm_id: "ws-other", path: "/app/dist", name: "test", slug: "test" })).rejects.toMatchObject({ statusCode: 404 });
     expect(h.pageCreate).not.toHaveBeenCalled();
   });
   it("pins page creation to the authenticated namespace", async () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
-    await proxy.pages!.create({ workspace_id: "ws-own", path: "/app/dist", name: "test", slug: "test", namespace: "ns-other" });
+    await proxy.pages!.create({ vm_id: "ws-own", path: "/app/dist", name: "test", slug: "test", namespace: "ns-other" });
     expect(h.pageCreate).toHaveBeenCalledWith(expect.objectContaining({ namespace: "ns-own" }));
     expect(h.spend).toHaveBeenCalledWith("org-one", undefined);
   });
@@ -45,7 +45,7 @@ describe("admin-only cloud delegation", () => {
     const pages = createTenantCloudAdmin("org-one", "ns-own").pages!;
     await expect(pages.get("other-page")).rejects.toMatchObject({ statusCode: 404 });
     await expect(pages.delete("other-page")).rejects.toMatchObject({ statusCode: 404 });
-    await expect(pages.deploy("other-page", { workspace_id: "ws-own", path: "/app/dist" })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(pages.deploy("other-page", { vm_id: "ws-own", path: "/app/dist" })).rejects.toMatchObject({ statusCode: 404 });
     expect(h.pageDelete).not.toHaveBeenCalled();
     expect(h.pageDeploy).not.toHaveBeenCalled();
   });
@@ -59,11 +59,11 @@ describe("admin-only cloud delegation", () => {
   });
   it("validates both hostname and every route target before an admin mutation", async () => {
     const proxy = createTenantCloudAdmin("org-one", "ns-own");
-    const routes = [{ match: { path: "/" }, action: { kind: "proxy" as const, workspace: "ws-other", port: 8080 } }];
+    const routes = [{ match: { path: "/" }, action: { kind: "proxy" as const, vm: "ws-other", port: 8080 } }];
     await expect(proxy.setRoutes!("own.opsh.io", { routes })).rejects.toMatchObject({ statusCode: 404 });
     await expect(proxy.setRoutes!("other.opsh.io", { routes: [] })).rejects.toMatchObject({ statusCode: 404 });
     expect(h.setRoutes).not.toHaveBeenCalled();
-    await proxy.setRoutes!("own.opsh.io", { routes: [{ ...routes[0]!, action: { kind: "proxy", workspace: "ws-own", port: 8080 } }] });
+    await proxy.setRoutes!("own.opsh.io", { routes: [{ ...routes[0]!, action: { kind: "proxy", vm: "ws-own", port: 8080 } }] });
     expect(h.setRoutes).toHaveBeenCalledOnce();
   });
   it("does not use reseller authority for unverified external proxy origins", async () => {

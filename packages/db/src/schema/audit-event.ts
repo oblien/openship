@@ -64,15 +64,20 @@ export const auditEvent = pgTable(
     /**
      * WHICH client of that surface, when the surface has more than one and the
      * distinction matters forensically. Today that means MCP: `source` says an AI
-     * assistant acted, this says whether it was Claude Desktop or Cursor.
+     * assistant acted, this says whether it was Claude Desktop or Cursor — and
+     * token-authenticated REST calls: `source` says a script acted over the
+     * API/CLI, this says which token it used.
      *
      * Holds the canonical principal id the auth layer already mints —
      * `oauth:<clientId>` for a consented MCP app, `pat:<tokenId>` for a static
      * token — so it resolves to a name through a table that already exists and
-     * needs no new concept. Null for every other surface.
+     * needs no new concept. Null for calls without a token principal
+     * (browser sessions, webhooks, system rows).
      *
      * Carried on the same nonce-signed channel as `source`, for the same reason:
      * an attributable row a caller could rewrite is worse than no attribution.
+     * The token-principal value is the exception: it comes from the auth
+     * layer's own hashed-token lookup, not from a caller header.
      */
     sourceClientId: text("source_client_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

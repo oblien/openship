@@ -44,9 +44,28 @@ const provider = vi.hoisted(() => ({
   formatContent: vi.fn((_type: string, content: string) => content),
 }));
 
+/** A second registered provider, only consulted by the tests that register it. */
+const doProvider = vi.hoisted(() => ({
+  name: "digitalocean" as const,
+  descriptor: {
+    name: "digitalocean" as const,
+    displayName: "DigitalOcean",
+    description: "",
+    requiredScopes: [],
+  },
+  preflight: vi.fn(),
+  findZone: vi.fn(),
+  listRecords: vi.fn(),
+  upsertRecord: vi.fn(),
+  deleteRecord: vi.fn(),
+  pruneOrphanedMarkers: vi.fn(async () => {}),
+  formatContent: vi.fn((_type: string, content: string) => content),
+}));
+const registered = vi.hoisted(() => ({ names: ["cloudflare"] as string[] }));
+
 vi.mock("@repo/platform/engine/modules/dns/registry", () => ({
-  resolveDnsProvider: () => provider,
-  listDnsProviders: () => ["cloudflare"],
+  resolveDnsProvider: (name: string) => (name === "digitalocean" ? doProvider : provider),
+  listDnsProviders: () => registered.names,
   describeDnsProviders: () => [provider.descriptor],
 }));
 
@@ -91,6 +110,7 @@ const rec = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  registered.names = ["cloudflare"];
   provider.formatContent.mockImplementation((_type: string, content: string) => content);
   decrypt.mockImplementation((v: string) => String(v).replace(/^enc1:/, ""));
   provider.findZone.mockResolvedValue({ id: "zone_1", name: "example.com", status: "active" });
@@ -153,7 +173,33 @@ describe("resolveDnsManager", () => {
 
     const out = await resolveDnsManager("org_1", "app.example.com");
     expect(out.status).toBe("unauthorized");
-    if (out.status === "unauthorized") expect(out.credentialId).toBe("dns_1");
+    if (out.status === "unauthorized") {
+      expect(out.credentialId).toBe("dns_1");
+      expect(out.provider).toBe("cloudflare");
+    }
+  });
+
+  it("treats a stored credential without a token as unauthorized, never asking the API", async () => {
+    credentialRepo.listActiveByProvider.mockResolvedValue([
+      row({ secretsEnc: `enc1:${JSON.stringify({ apiToken: "  " })}` }),
+    ]);
+
+    const out = await resolveDnsManager("org_1", "app.example.com");
+    expect(out).toMatchObject({ status: "unauthorized", credentialId: "dns_1" });
+    expect(provider.findZone).not.toHaveBeenCalled();
+  });
+
+  it("does not match a zone that is not active, so callers fall back to manual records", async () => {
+    // DigitalOcean reports "pending" for a domain in the account whose name servers
+    // point elsewhere: records written there are served by nobody.
+    credentialRepo.listActiveByProvider.mockResolvedValue([row()]);
+    provider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "pending",
+    });
+
+    expect(await resolveDnsManager("org_1", "app.example.com")).toEqual({ status: "none" });
   });
 
   it("treats an undecryptable token as unauthorized, not as a crash", async () => {
@@ -178,6 +224,58 @@ describe("resolveDnsManager", () => {
     const out = await resolveDnsManager("org_1", "app.example.com");
     expect(out.status).toBe("matched");
     if (out.status === "matched") expect(out.manager.credentialId).toBe("dns_good");
+  });
+
+  it.each(["cloudflare", "digitalocean"])(
+    "selects the oldest matching credential when it belongs to %s",
+    async (oldestProvider) => {
+      registered.names = ["cloudflare", "digitalocean"];
+      credentialRepo.listActiveByProvider.mockImplementation(async (_org: string, name: string) => [
+        row({ id: `${name}_new`, provider: name, createdAt: new Date("2026-03-01") }),
+        row({
+          id: `${name}_old`,
+          provider: name,
+          createdAt: new Date(name === oldestProvider ? "2026-01-01" : "2026-02-01"),
+        }),
+      ]);
+      doProvider.findZone.mockResolvedValue({
+        id: "example.com",
+        name: "example.com",
+        status: "active",
+      });
+
+      const result = await resolveDnsManager("org_1", "app.example.com");
+
+      expect(result).toMatchObject({
+        status: "matched",
+        manager: { credentialId: `${oldestProvider}_old`, provider: { name: oldestProvider } },
+      });
+    },
+  );
+
+  it("asks every registered provider's tokens, with each token's own provider", async () => {
+    registered.names = ["cloudflare", "digitalocean"];
+    credentialRepo.listActiveByProvider.mockImplementation(async (_org: string, name: string) =>
+      name === "digitalocean"
+        ? [row({ id: "dns_do", provider: "digitalocean" })]
+        : [row({ id: "dns_cf" })],
+    );
+    provider.findZone.mockResolvedValue(null);
+    doProvider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "active",
+    });
+
+    const out = await resolveDnsManager("org_1", "app.example.com");
+    expect(out.status).toBe("matched");
+    if (out.status === "matched") {
+      expect(out.manager.credentialId).toBe("dns_do");
+      expect(out.manager.provider.name).toBe("digitalocean");
+    }
+    // The Cloudflare token was never handed to the DigitalOcean API, or vice versa.
+    expect(provider.findZone).toHaveBeenCalledTimes(1);
+    expect(doProvider.findZone).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -262,7 +360,21 @@ describe("planRecords", () => {
     credentialRepo.markInvalid.mockResolvedValue(undefined);
     const out = await plan1();
     expect(out.status).toBe("unauthorized");
+    expect(out).toMatchObject({ credentialId: "dns_1", provider: "cloudflare" });
     expect(out.records).toEqual([]);
+  });
+
+  it("names and marks invalid the credential the zone lookup rejected", async () => {
+    // The dashboard reconnects exactly this credential, so it must be in the result.
+    provider.findZone.mockRejectedValue(new DnsApiError("cloudflare", 401, "Invalid token"));
+    const out = await plan1();
+    expect(out).toMatchObject({
+      status: "unauthorized",
+      credentialId: "dns_1",
+      provider: "cloudflare",
+      records: [],
+    });
+    expect(credentialRepo.markInvalid).toHaveBeenCalledWith("org_1", "dns_1", expect.any(String));
   });
 });
 
@@ -386,6 +498,31 @@ describe("provisionRecords", () => {
 });
 
 describe("releaseRecords", () => {
+  it("releases owned records after the zone is no longer delegated", async () => {
+    registered.names = ["digitalocean"];
+    credentialRepo.listActiveByProvider.mockResolvedValue([
+      row({ id: "dns_do", provider: "digitalocean" }),
+    ]);
+    doProvider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "pending",
+    });
+    doProvider.listRecords.mockResolvedValue([
+      rec({ id: "owned", comment: OPENSHIP_RECORD_COMMENT }),
+      rec({ id: "foreign", comment: undefined }),
+    ]);
+    doProvider.deleteRecord.mockResolvedValue(undefined);
+
+    const out = await releaseRecords("org_1", "app.example.com", ["app.example.com"]);
+    expect(out).toEqual({ deleted: 1 });
+    expect(doProvider.deleteRecord).toHaveBeenCalledExactlyOnceWith(
+      { apiToken: "cf-token" },
+      "example.com",
+      "owned",
+    );
+  });
+
   beforeEach(() => credentialRepo.listActiveByProvider.mockResolvedValue([row()]));
 
   it("deletes ONLY records carrying our ownership marker", async () => {
@@ -428,6 +565,33 @@ describe("releaseRecords", () => {
 
     expect(out.deleted).toBe(0);
     expect(out.reason).toContain("503");
+  });
+
+  it("prunes orphaned ownership markers without counting them or failing on them", async () => {
+    registered.names = ["digitalocean"];
+    credentialRepo.listActiveByProvider.mockResolvedValue([
+      row({ id: "dns_do", provider: "digitalocean" }),
+    ]);
+    doProvider.findZone.mockResolvedValue({
+      id: "example.com",
+      name: "example.com",
+      status: "active",
+    });
+    doProvider.listRecords.mockResolvedValue([rec({ id: "rec_ours" })]);
+    doProvider.deleteRecord.mockResolvedValue(undefined);
+    doProvider.pruneOrphanedMarkers.mockRejectedValueOnce(
+      new DnsApiError("digitalocean", 429, "Rate limited"),
+    );
+
+    const out = await releaseRecords("org_1", "example.com", ["example.com", "www.example.com"]);
+
+    expect(out).toEqual({ deleted: 2 });
+    expect(doProvider.pruneOrphanedMarkers).toHaveBeenCalledTimes(2);
+    expect(doProvider.pruneOrphanedMarkers).toHaveBeenCalledWith(
+      expect.anything(),
+      "example.com",
+      "www.example.com",
+    );
   });
 
   it("is a no-op when no connected provider hosts the zone", async () => {

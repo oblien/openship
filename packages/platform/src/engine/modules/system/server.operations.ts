@@ -50,7 +50,7 @@ import {
   serverContainerStreams,
 } from "./server-containers.operations";
 import { primeGeo } from "../../lib/geo-ip";
-import { serializeServer } from "./server-view";
+import { serializeServer, supportsBuildCacheBudget } from "./server-view";
 import { execOnHost } from "../../lib/agent-exec";
 import { serverMaintenanceResources } from "./server-maintenance.operations";
 import { serverCheckResources, testConnection } from "./server-check.operations";
@@ -162,7 +162,10 @@ async function getServer(ctx: ExecutionContext, id: string) {
   const routedCounts = await repos.project.countActiveByServer(ctx.organizationId, { withRoutes: true })
     .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server.operations"); return null; });
   return {
-    ...serializeServer(server, cloud, server.workspaceId ? null : await probeServerCapacity(server.id, ctx.organizationId)),
+    ...withBuildCacheBudgetCapability(
+      serializeServer(server, cloud, server.workspaceId ? null : await probeServerCapacity(server.id, ctx.organizationId)),
+      await canSetBuildCacheBudget(ctx, server),
+    ),
     projectCount: cloud?.projectCount ?? projectCounts[id] ?? 0,
     ...(routedCounts ? { edgeRequired: (routedCounts[id] ?? 0) > 0 } : {}),
     hostChannel: server.isLocal ? await localServerHostChannel(server.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server.operations"); return null; }) : null,
@@ -356,6 +359,20 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
     return serializeServer({ ...existing, name: cloud.name }, cloud);
   }
   if (env.CLOUD_MODE) await assertServerExecution(existing);
+  if (body.buildCacheBudgetBytes !== undefined) {
+    // The local row builds through the host daemon's native cache and migration sources never
+    // build, so a stored budget would change nothing there.
+    if (!supportsBuildCacheBudget(existing))
+      return failServer(
+        {
+          error: "Build-cache budgets apply to remote deployment servers, whose builds use managed BuildKit caches.",
+          code: "BUILD_CACHE_BUDGET_UNSUPPORTED",
+        },
+        400,
+      );
+    // A large budget lets build caches hold most of the disk, so it needs host-level access.
+    await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action: "admin" });
+  }
 
   // #527: an isLocal row's ssh* fields are DISPLAY-ONLY. Every operation on this box goes
   // through the container→host channel, whose credentials come from OPENSHIP_HOST_SSH_*
@@ -420,6 +437,8 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   if (body.sshArgs !== undefined) patch.sshArgs = body.sshArgs?.trim() || null;
   // Manual GPU mark. Deliberately not a "connection" field (it is allowed on the local row too).
   if (body.gpuOverride !== undefined) patch.gpuOverride = body.gpuOverride;
+  // Build-cache budget: metadata only; server support and admin access were checked above.
+  if (body.buildCacheBudgetBytes !== undefined) patch.buildCacheBudgetBytes = body.buildCacheBudgetBytes;
 
   if (Object.keys(patch).length === 0) {
     return failServer({ error: "No fields to update" }, 400);
@@ -440,6 +459,8 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   // Audit only the fields the caller intended to touch. Skip secrets entirely.
   const auditAfter: Record<string, unknown> = {};
   if (body.gpuOverride !== undefined) auditAfter.gpuOverride = updated?.gpuOverride ?? null;
+  if (body.buildCacheBudgetBytes !== undefined)
+    auditAfter.buildCacheBudgetBytes = updated?.buildCacheBudgetBytes ?? null;
   if (body.name !== undefined) auditAfter.name = updated?.name ?? null;
   if (body.sshHost !== undefined) auditAfter.sshHost = updated?.sshHost ?? null;
   if (body.sshPort !== undefined) auditAfter.sshPort = updated?.sshPort ?? null;
@@ -464,7 +485,32 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   // Re-read the probe (cache was just invalidated) so the response carries the GPU annotation the
   // client renders; without it a manual mark would flash "could not check this server".
   const capacity = updated?.workspaceId ? null : await probeServerCapacity(id, ctx.organizationId);
-  return serializeServer(updated, null, capacity);
+  return withBuildCacheBudgetCapability(
+    serializeServer(updated, null, capacity),
+    updated ? await canSetBuildCacheBudget(ctx, updated) : false,
+  );
+}
+
+/** Whether the caller may change this server's build-cache budget: supported server, admin. */
+async function canSetBuildCacheBudget(
+  ctx: ExecutionContext,
+  server: NonNullable<Awaited<ReturnType<typeof repos.server.get>>>,
+): Promise<boolean> {
+  // The permission check also refuses read-only credentials for a non-read action.
+  if (!supportsBuildCacheBudget(server)) return false;
+  return authorization.checkPermissionOnResource(ctx, {
+    resourceType: "server",
+    resourceId: server.id,
+    action: "admin",
+  });
+}
+
+function withBuildCacheBudgetCapability<T extends { capabilities: object } | null>(
+  view: T,
+  allowed: boolean,
+): T {
+  if (!view) return view;
+  return { ...view, capabilities: { ...view.capabilities, buildCacheBudget: allowed } };
 }
 
 /**

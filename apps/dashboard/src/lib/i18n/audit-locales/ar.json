@@ -308,7 +308,7 @@
   "server.unreachable": {
     "label": "تعذر الوصول إلى الخادم",
     "action": "أبلغ عن تعذر الوصول إلى الخادم",
-    "description": "تعذر على Openship فتح اتصال SSH بهذا الخادم."
+    "description": "تعذر على OpenShip فتح اتصال SSH بهذا الخادم."
   },
   "server.reachable": {
     "label": "الخادم متاح مجدداً",
@@ -341,7 +341,7 @@
   "identity.provisioned": {
     "label": "تم تزويد الهوية",
     "action": "زود الهوية",
-    "description": "قام مضيف موثوق بربط هوية خارجية بمستخدم Openship."
+    "description": "قام مضيف موثوق بربط هوية خارجية بمستخدم OpenShip."
   },
   "organization.created": {
     "label": "تم إنشاء المنظمة",
@@ -477,7 +477,7 @@
   "mcp.tool_called": {
     "label": "استدعاء أداة الذكاء الاصطناعي",
     "action": "شغّل أداة MCP",
-    "description": "تم تنفيذ أداة Openship بواسطة عميل MCP."
+    "description": "تم تنفيذ أداة OpenShip بواسطة عميل MCP."
   },
   "admin.bootstrapped": {
     "label": "تم إنشاء حساب المسؤول الأول",
@@ -592,7 +592,7 @@
   "updates:write": {
     "label": "تحديث النظام",
     "action": "فحص أو طبق التحديثات",
-    "description": "تم بدء تحديث مكونات Openship."
+    "description": "تم بدء تحديث مكونات OpenShip."
   },
   "cloud.disconnect": {
     "label": "تم فصل السحابة",

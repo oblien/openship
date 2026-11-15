@@ -1,7 +1,7 @@
 {
   "cloudClient": {
     "title": "E-postalar",
-    "subtitle": "Mevcut posta kutularınızı Openship Webmail ile kullanın.",
+    "subtitle": "Mevcut posta kutularınızı OpenShip Webmail ile kullanın.",
     "connectTitle": "Posta sunucunuzu bağlayın",
     "description": "Herhangi bir IMAP/SMTP sunucusunu bağlayın. Posta kutularınız ve e-posta teslimatı sağlayıcınızda kalır.",
     "connectAction": "Mevcut posta sunucusunu bağla",
@@ -11,8 +11,8 @@
   "cloudComingSoon": {
     "title": "Yönetilen e-posta",
     "badge": "Yakında",
-    "description": "Openship Cloud üzerinde yönetilen e-posta yakında kullanıma sunulacak. Cloud sunucu planları uygulama barındırmak içindir ve e-posta sunucusu oluşturmaz.",
-    "selfHosted": "Kendi sunucunuzda barındırdığınız Openship kurulumu ile e-posta hizmeti kullanabilirsiniz."
+    "description": "OpenShip Cloud üzerinde yönetilen e-posta yakında kullanıma sunulacak. Cloud sunucu planları uygulama barındırmak içindir ve e-posta sunucusu oluşturmaz.",
+    "selfHosted": "Kendi sunucunuzda barındırdığınız OpenShip kurulumu ile e-posta hizmeti kullanabilirsiniz."
   },
   "page": {
     "title": "E-posta Sunucusu",
@@ -37,7 +37,7 @@
   },
   "adopt": {
     "title": "Mevcut e-posta sunucusunu yönetime al",
-    "intro": "Sunucularınızdan birinde daha önce Openship ile bir e-posta sunucusu kurdunuz mu? Sunucuyu seçip tarayın — bir e-posta yığını bulunursa verilerinize dokunulmadan ve yeniden kurulum yapılmadan kontrol paneline tekrar alınır.",
+    "intro": "Sunucularınızdan birinde daha önce OpenShip ile bir e-posta sunucusu kurdunuz mu? Sunucuyu seçip tarayın — bir e-posta yığını bulunursa verilerinize dokunulmadan ve yeniden kurulum yapılmadan kontrol paneline tekrar alınır.",
     "scanning": "Taranıyor…",
     "scan": "Sunucuyu tara",
     "detected": "E-posta sunucusu tespit edildi",

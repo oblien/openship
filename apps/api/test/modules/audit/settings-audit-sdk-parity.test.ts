@@ -43,7 +43,10 @@ describe("settings and audit shared SDK/HTTP operations", () => {
     await flushAudit();
     const audit = await c.native.audit.list();
     expect(audit).toEqual(await c.remote.audit.list());
-    expect(audit.items).toHaveLength(6);
+    // Six settings writes, plus the two remote settings reads above:
+    // token reads are audited now, so the reads leave `settings:read` rows.
+    expect(audit.items).toHaveLength(8);
+    expect(audit.items.filter((row) => row.eventType === "settings:read")).toHaveLength(2);
     expect(JSON.stringify([audit, state])).not.toContain("private-clone-token");
     await c.native.settings.setCloneCredentials({ token: null });
     expect((await c.remote.settings.get()).cloneToken).toMatchObject({ hasToken: false, asDefault: false });

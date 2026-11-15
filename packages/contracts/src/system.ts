@@ -16,7 +16,6 @@ export const SystemInfoSchema = Type.Object({
   migrationTargetUrl: nullableString, migrationInProgress: Type.Boolean(), cloudAuthUrl: Type.String(), cloudApiUrl: Type.String(),
   machineName: Type.Optional(Type.String()), hostDomain: Type.Optional(Type.String()),
   authProviders: Type.Optional(Type.Array(AdvertisedAuthProviderSchema)),
-  cloudAnalytics: Type.Optional(Type.Object({ dashboardOrigin: Type.String() }, { additionalProperties: false })),
 });
 export type SystemInfo = Static<typeof SystemInfoSchema>;
 export const SystemHealthSchema = Type.Object({

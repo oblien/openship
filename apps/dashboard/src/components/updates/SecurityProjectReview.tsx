@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/Switch";
 import Link from "next/link";
 import { encodeProjectSlug } from "@/utils/repoSlug";
 import { InvestigationLink } from "@/components/assistant/InvestigationLink";
+import { RuntimeSourceUpdate } from "./RuntimeSourceUpdate";
 
 type Finding = ProjectSecurityResult["findings"][number];
 type ReviewGroup = {
@@ -220,6 +221,35 @@ export function SecurityProjectReview({
             ))}
             {services.map(
               (finding) =>
+                finding.runtimePatch && (
+                  <div key={JSON.stringify(finding.serviceId)} className="space-y-1 text-sm">
+                    <p>
+                      {copy.runtimePatchDescription
+                        .replace(
+                          "{runtime}",
+                          finding.runtimePatch.runtime === "bun" ? "Bun" : "Node.js",
+                        )
+                        .replace("{current}", finding.runtimePatch.currentVersion)
+                        .replace("{target}", finding.runtimePatch.targetVersion)}
+                    </p>
+                    <p className="break-all font-mono text-xs text-muted-foreground">
+                      {[
+                        ...new Set([
+                          finding.runtimePatch.buildImage,
+                          finding.runtimePatch.runtimeImage,
+                        ]),
+                      ].join(" · ")}
+                    </p>
+                    {finding.runtimePatch.runtime === "bun" && (
+                      <p className="text-xs text-muted-foreground">
+                        {copy.bunRuntimePatchDescription}
+                      </p>
+                    )}
+                  </div>
+                ),
+            )}
+            {services.map(
+              (finding) =>
                 (finding.refresh || finding.refreshBlockedReason) && (
                   <div key={JSON.stringify(finding.serviceId)} className="space-y-1">
                     {services.length > 1 && (finding.serviceName || finding.serviceId) && (
@@ -307,12 +337,17 @@ export function SecurityProjectReview({
                           advisoryId: advisory.id,
                           deploymentId: data.deploymentId!,
                           serviceId: finding.serviceId,
+                          ...(finding.runtimePatch && {
+                            runtimePatchId: finding.runtimePatch.reviewId,
+                          }),
                         })
                       }
                     >
                       {action.updating
                         ? t.projectSettings.runtimeUpdates.refreshing
-                        : t.projectSettings.runtimeUpdates.refresh}
+                        : finding.runtimePatch
+                          ? copy.applyPatch
+                          : t.projectSettings.runtimeUpdates.refresh}
                     </Button>
                   ),
               )}
@@ -342,6 +377,14 @@ export function SecurityProjectReview({
                 >
                   {copy.openRuntimeConfiguration}
                 </Button>
+              )}
+              {services.some(
+                (item) => !item.canRefresh && !item.runtimePatch && !item.sourceRedeployRequired,
+              ) && (
+                <RuntimeSourceUpdate
+                  projectId={projectId}
+                  serviceId={serviceId ?? (services.length === 1 ? services[0]?.serviceId ?? undefined : undefined)}
+                />
               )}
             </div>
           </div>

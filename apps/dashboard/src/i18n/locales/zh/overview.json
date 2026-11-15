@@ -77,7 +77,7 @@
   },
   "welcome": {
     "title": "启动你的第一个项目",
-    "subtitle": "连接仓库或从模板开始 —— Openship 会构建、发布，并在几分钟内为你提供一个可访问的 URL。",
+    "subtitle": "连接仓库或从模板开始 —— OpenShip 会构建、发布，并在几分钟内为你提供一个可访问的 URL。",
     "createProject": "创建项目",
     "importGithub": "从 GitHub 导入",
     "tipPrefix": "提示：按",

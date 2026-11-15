@@ -26,11 +26,8 @@ import { trackBackgroundWork } from "../../lib/background-work";
 
 import { repos } from "@repo/db";
 import { NotFoundError } from "@repo/core";
-import {
-  resolveProjectTrafficSources,
-  fetchMgmt,
-  type ProjectTrafficSource,
-} from "@repo/platform/engine/lib/project-analytics";
+import { resolveProjectTrafficSources, type ProjectTrafficSource } from "@repo/platform/engine/lib/project-analytics";
+import { fetchMgmt } from "@repo/platform/engine/lib/edge-management";
 import { proxyCloudAnalytics } from "@repo/platform/engine/modules/cloud/cloud-analytics.service";
 import { scrapeServerIfStale } from "@repo/platform/engine/modules/system/analytics-scraper";
 import type { ExecutionContext as RequestContext } from "@repo/platform";

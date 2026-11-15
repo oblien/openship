@@ -308,7 +308,7 @@ function JobFormContent({
               <Button type="button" variant="secondary" size="sm" onClick={destinations.refresh}>{t.billing.plansRoute.tryAgain}</Button>
             </div>
           ) : servers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{selfHosted ? c.noServers : t.billing.workspaces.noneAvailable}</p>
+            <p className="text-sm text-muted-foreground">{c.noServers}</p>
           ) : (
             <div className="space-y-2">
               {servers.map((server) => {
@@ -334,7 +334,7 @@ function JobFormContent({
             </div>
           )}
           <Button type="button" variant="secondary" size="sm" onClick={addServer}>
-            <UiIcon name="plus" className="size-3.5" /> {selfHosted ? t.widgets.shared.serverSelector.addServer : c.addDedicatedServer}
+            <UiIcon name="plus" className="size-3.5" /> {t.widgets.shared.serverSelector.addServer}
           </Button>
           {!selfHosted && <p className="text-xs text-muted-foreground">{c.cloudUsageHint}</p>}
         </Section>

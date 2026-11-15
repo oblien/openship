@@ -12,10 +12,10 @@
     "language": "语言"
   },
   "choose": {
-    "title": "欢迎使用 Openship",
-    "subtitle": "选择你希望的 Openship 运行方式。两种方式都提供全部功能，而且你可以随时切换。",
+    "title": "欢迎使用 OpenShip",
+    "subtitle": "选择你希望的 OpenShip 运行方式。两种方式都提供全部功能，而且你可以随时切换。",
     "cloud": {
-      "name": "Openship Cloud",
+      "name": "OpenShip Cloud",
       "desc": "我们负责基础设施、更新和备份。只需登录即可开始部署。",
       "perk1": "无需服务器",
       "perk2": "包含免费套餐",
@@ -25,7 +25,7 @@
     "or": "或",
     "selfhost": {
       "name": "自托管",
-      "desc": "在你自己的硬件上运行 Openship。连接远程服务器或使用本机。",
+      "desc": "在你自己的硬件上运行 OpenShip。连接远程服务器或使用本机。",
       "perk1": "完全掌控数据",
       "perk2": "远程服务器或本机 Mac",
       "perk3": "其余交给我们处理",
@@ -35,13 +35,13 @@
     "skip": "暂时跳过"
   },
   "selfhost": {
-    "title": "Openship 应在何处运行？",
-    "subtitleLine1": "选择安装 Openship 平台的位置。",
+    "title": "OpenShip 应在何处运行？",
+    "subtitleLine1": "选择安装 OpenShip 平台的位置。",
     "subtitleLine2": "两种方式都让你完全掌控并拥有自己的数据。",
     "local": {
       "title": "本机",
       "badge": "Beta",
-      "desc": "直接在此安装 Openship —— 无需 SSH，无需远程配置",
+      "desc": "直接在此安装 OpenShip —— 无需 SSH，无需远程配置",
       "comingSoon": "本地安装即将推出。",
       "comingSoonDesc": "目前支持在任何安装了 Docker 的 Linux 服务器上自行托管。"
     },
@@ -61,7 +61,7 @@
     "methodPassword": "密码",
     "methodKey": "SSH 密钥",
     "methodAgent": "Agent",
-    "agentHint": "使用本机的 SSH agent 进行连接 —— 类似 VSCode，无需密码或密钥。运行 Openship 的主机必须已能访问该服务器（其 ssh-agent 中已加载相应密钥）。",
+    "agentHint": "使用本机的 SSH agent 进行连接 —— 类似 VSCode，无需密码或密钥。运行 OpenShip 的主机必须已能访问该服务器（其 ssh-agent 中已加载相应密钥）。",
     "passwordLabel": "密码",
     "passwordPlaceholder": "服务器密码",
     "keyPathLabel": "密钥路径",
@@ -85,7 +85,7 @@
     "subtitle": "你的服务器需要一种可从互联网访问的方式，用于 webhook、SSL 和公开访问。",
     "providers": {
       "edge": {
-        "title": "Openship Edge",
+        "title": "OpenShip Edge",
         "desc": "零配置。自动 SSL、高可用和 DDoS 防护 —— 全部内置。",
         "badge": "推荐"
       },
@@ -102,7 +102,7 @@
     "ngrokTokenLabel": "ngrok 认证令牌",
     "cloudflarePlaceholder": "粘贴你的隧道令牌",
     "ngrokPlaceholder": "粘贴你的 ngrok 认证令牌",
-    "edgeHint": "Openship Edge 需要 Openship 账户。你需要登录后才能继续。",
+    "edgeHint": "OpenShip Edge 需要 OpenShip 账户。你需要登录后才能继续。",
     "signInContinue": "登录并继续"
   },
   "preferences": {
@@ -129,15 +129,15 @@
     "connecting": "正在连接……",
     "verifying": "正在验证你的服务器",
     "retry": "重试",
-    "openingCloud": "正在打开 Openship Cloud……",
+    "openingCloud": "正在打开 OpenShip Cloud……",
     "waitingAuth": "正在等待认证完成",
     "couldNotStartAuthTitle": "无法启动云端认证",
     "authFailedTitle": "云端认证失败",
     "couldNotStartAuthMsg": "无法启动桌面认证流程。",
     "authFailedMsg": "请重试并在浏览器中完成登录。",
     "completingSignIn": "正在完成登录……",
-    "returningToOpenship": "正在返回 Openship",
-    "redirectingCloud": "正在跳转到 Openship Cloud……",
+    "returningToOpenship": "正在返回 OpenShip",
+    "redirectingCloud": "正在跳转到 OpenShip Cloud……",
     "newTabSignIn": "你将在新标签页中完成登录",
     "couldNotSaveTitle": "无法保存配置",
     "couldNotSaveMsg": "API 无响应。请确认各项服务正在运行。",

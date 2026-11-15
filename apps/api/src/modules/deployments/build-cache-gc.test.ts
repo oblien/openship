@@ -179,10 +179,14 @@ describe("runBuildCacheGcSweep", () => {
     const result = await runBuildCacheGcSweep(dependencies({ hasLocalDockerRuntime: () => false,
       listManagedTargets: async () => [target], createRuntime }));
     expect(createRuntime).toHaveBeenCalledExactlyOnceWith(target);
-    expect(pruneBuildCache).toHaveBeenCalledExactlyOnceWith({ all: true, keepStorageBytes: AUTOMATIC_BUILD_CACHE_KEEP_BYTES });
+    expect(pruneBuildCache).toHaveBeenCalledExactlyOnceWith({
+      all: true,
+      keepStorageBytes: AUTOMATIC_BUILD_CACHE_KEEP_BYTES,
+      automaticRetention: true,
+    });
     expect(result).toEqual({ hostsScanned: 1, cachesDeleted: 1, bytesReclaimed: 1024, errors: 0 });
   });
-  it("applies the 5 GiB policy once per host and isolates host failures", async () => {
+  it("applies the automatic retention policy once per host and isolates host failures", async () => {
     const pruneByTarget = new Map<string, ReturnType<typeof vi.fn>>();
     const disposed: string[] = [];
     const createRuntime: BuildCacheGcDependencies["createRuntime"] = async (target) => {
@@ -217,6 +221,7 @@ describe("runBuildCacheGcSweep", () => {
       expect(prune).toHaveBeenCalledWith({
         all: true,
         keepStorageBytes: AUTOMATIC_BUILD_CACHE_KEEP_BYTES,
+        automaticRetention: true,
       });
     }
   });

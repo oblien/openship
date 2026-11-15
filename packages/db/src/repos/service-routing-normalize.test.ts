@@ -10,6 +10,18 @@ import {
 import type { Database } from "../client";
 
 const testEncryption = createEncryption("repository-test-secret");
+
+describe("Compose dependency condition ownership", () => {
+  const stored = { advanced: { dependsOnConditions: { db: "service_healthy" as const } } };
+  it("keeps conditions when an older deployment snapshot omits them", () => {
+    expect(composeWritePatch({ name: "app", dependsOn: ["db"] }, stored).advanced.dependsOnConditions)
+      .toEqual(stored.advanced.dependsOnConditions);
+  });
+  it("removes an old health condition when the actual file returns to short syntax", () => {
+    expect(composeWritePatch({ name: "app", dependsOn: ["db"] }, stored, true).advanced.dependsOnConditions)
+      .toBeUndefined();
+  });
+});
 const configuration = createConfigurationSecrets(testEncryption);
 
 /** Record the resulting row, including columns a partial update preserves. */

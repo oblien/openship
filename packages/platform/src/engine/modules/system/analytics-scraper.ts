@@ -43,7 +43,7 @@ import { repos } from "@repo/db";
 import { env } from "@repo/platform/engine/config/index";
 import { cacheStore } from "@repo/platform/engine/lib/cache-store/index";
 import { systemDebug, formatDuration } from "@repo/platform/engine/lib/system-debug";
-import { fetchMgmt, postMgmtJson, probeMgmt } from "@repo/platform/engine/lib/project-analytics";
+import { fetchMgmt, postMgmtJson, probeMgmt } from "@repo/platform/engine/lib/edge-management";
 import { safeErrorMessage } from "@repo/core";
 import { reconcileAnalyticsConfig } from "@repo/platform/engine/modules/analytics/analytics-config.service";
 

@@ -176,7 +176,11 @@ describe("DockerRuntime buildViaDockerode BuildKit fallback", () => {
       verifyImageBuilt: vi.fn(async () => {}),
       streamDockerodeBuild: vi.fn(async () => {}),
     });
-    const log = { log: (message: string, level?: string) => logs.push({ message, level }) };
+    const log = {
+      log: (message: string, level?: string) => logs.push({ message, level }),
+      // Real BuildLogger.redact()s here; the fixture only needs it to exist.
+      errorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    };
     const buildViaDockerode = (
       runtime as unknown as Record<string, CallableFunction>
     ).buildViaDockerode.bind(runtime) as (
@@ -458,7 +462,11 @@ describe("buildViaDockerode daemon probe + fresh-connection fallback", () => {
       verifyImageBuilt: vi.fn(async () => {}),
       streamDockerodeBuild: vi.fn(async () => {}),
     });
-    const log = { log: (message: string, level?: string) => logs.push({ message, level }) };
+    const log = {
+      log: (message: string, level?: string) => logs.push({ message, level }),
+      // Real BuildLogger.redact()s here; the fixture only needs it to exist.
+      errorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    };
     const buildViaDockerode = (
       runtime as unknown as Record<string, CallableFunction>
     ).buildViaDockerode.bind(runtime) as (

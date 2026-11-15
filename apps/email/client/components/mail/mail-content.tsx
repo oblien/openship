@@ -3,10 +3,9 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { defaultUserSettings } from '@zero/server/schemas';
 import { useTRPC } from '@/providers/query-provider';
 import { getBrowserTimezone } from '@/lib/timezones';
+import { renderSanitizedMailHtml } from '@/lib/mail-html';
 import { useSettings } from '@/hooks/use-settings';
 import { m } from '@/paraglide/messages';
-import { useTheme } from 'next-themes';
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface MailContentProps {
@@ -26,7 +25,6 @@ export function MailContent({ id, html, senderEmail }: MailContentProps) {
   const [temporaryImagesEnabled, setTemporaryImagesEnabled] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
-  const { resolvedTheme } = useTheme();
   const trpc = useTRPC();
 
   const { mutateAsync: saveUserSettings } = useMutation({
@@ -67,12 +65,11 @@ export function MailContent({ id, html, senderEmail }: MailContentProps) {
   );
 
   const { data: processedData } = useQuery({
-    queryKey: ['email-content', id, isTrustedSender || temporaryImagesEnabled, resolvedTheme],
+    queryKey: ['email-content', id, isTrustedSender || temporaryImagesEnabled],
     queryFn: async () => {
       const result = await processEmailContent({
         html,
         shouldLoadImages: isTrustedSender || temporaryImagesEnabled,
-        theme: (resolvedTheme as 'light' | 'dark') || 'light',
       });
 
       return {
@@ -103,15 +100,7 @@ export function MailContent({ id, html, senderEmail }: MailContentProps) {
   useEffect(() => {
     if (!shadowRootRef.current || !processedData) return;
 
-    // The shadow root is style-isolated from the document - global font
-    // CSS doesn't reach it for unstyled elements. Prepend a single
-    // <style> block that applies the openship sans stack (Gellix +
-    // SF Arabic fallback) to the rendered email body. `@font-face`
-    // declarations in the outer document remain accessible per spec,
-    // so we only need to set font-family inside the shadow tree.
-    shadowRootRef.current.innerHTML =
-      `<style>:host, :host * { font-family: 'Gellix', 'SF Arabic', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }</style>` +
-      processedData.html;
+    renderSanitizedMailHtml(shadowRootRef.current, processedData.html);
   }, [processedData]);
 
   const handleImageError = useCallback(
@@ -189,7 +178,7 @@ export function MailContent({ id, html, senderEmail }: MailContentProps) {
           </button>
         </div>
       )}
-      <div ref={hostRef} className={cn('mail-content w-full flex-1 overflow-scroll no-scrollbar px-4 text-black dark:text-white')} />
+      <div ref={hostRef} className="mail-content w-full flex-1 overflow-scroll no-scrollbar px-4" />
     </>
   );
 }

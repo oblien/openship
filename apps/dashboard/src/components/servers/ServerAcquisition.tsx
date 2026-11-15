@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import type { CloudWorkspaceSummary, ServerDetail } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
-import { OptionCard } from "@/components/shared/OptionCard";
 import { ServerPicker } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
 import { useCloud } from "@/context/CloudContext";
@@ -13,25 +12,24 @@ import { useSession } from "@/lib/auth-client";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { systemApi } from "@/lib/api/system";
 import { ManagedServerPurchase } from "./managed/ManagedServerPurchase";
+import { useOptionalCloudPurchase } from "@/components/billing/CloudPurchaseContext";
 
 export type ServerAcquisitionMode = "connected" | "managed";
 
-/** The same choice appears on the server page and in inline setup dialogs. */
-export function ServerAcquisitionPicker({ value, onChange, stacked = false }: {
+/** Switch acquisition flows without repeating the active form as a choice card. */
+export function ServerAcquisitionAction({ value, onChange }: {
   value: ServerAcquisitionMode;
   onChange: (value: ServerAcquisitionMode) => void;
-  stacked?: boolean;
 }) {
   const { t } = useI18n();
-  const copy = t.servers.acquire;
+  const purchase = useOptionalCloudPurchase();
+  const target = value === "managed" ? "connected" : "managed";
   return (
-    <div className={`grid items-stretch gap-3 ${stacked ? "" : "sm:grid-cols-2"}`}>
-      {(["connected", "managed"] as const).map(mode => (
-        <OptionCard key={mode} value={mode} selected={value === mode} onSelect={() => onChange(mode)}
-          icon={<Icon name={mode === "managed" ? "cloud" : "server"} className="size-5" />}
-          label={copy[mode].label} description={copy[mode].description} />
-      ))}
-    </div>
+    <Button type="button" variant="secondary" disabled={purchase?.busy} onClick={() => onChange(target)}>
+      <Icon name={target === "managed" ? "cloud" : "server"} className="size-4" />
+      {t.servers.acquire[target].label}
+      <Icon name="arrow-right" className="size-4 rtl:rotate-180" />
+    </Button>
   );
 }
 

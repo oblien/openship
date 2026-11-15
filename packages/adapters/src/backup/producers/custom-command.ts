@@ -73,7 +73,7 @@ class CustomCommandProducerImpl implements BackupProducer {
     service: ServiceHandle,
     executor: BackupExecutor,
     artifact: ArtifactRef,
-    _opts: RestoreOpts,
+    opts: RestoreOpts,
   ): Promise<void> {
     const restoreCommand =
       (artifact.metadata.restoreCommand as string | null) ?? null;
@@ -104,7 +104,7 @@ class CustomCommandProducerImpl implements BackupProducer {
       ["sh", "-c", restoreCommand],
       body,
       // Ceiling from the catalog, so the number is not a per-producer literal.
-      { timeoutMs: payloadSpec("custom_command").restoreTimeoutMs },
+      { timeoutMs: payloadSpec("custom_command").restoreTimeoutMs, signal: opts.signal },
     );
     if (exit.code !== 0) {
       throw new Error(

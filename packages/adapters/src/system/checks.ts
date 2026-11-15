@@ -10,6 +10,7 @@
  * instead of re-running checks (see setup.ts).
  */
 
+import { mapConcurrent as mapWithConcurrency } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../types";
 import type { ComponentStatus } from "./types";
@@ -250,25 +251,6 @@ export const COMPONENT_CHECKS: Record<string, CheckFn> = {
  * both ssh2 channels and ControlMaster sessions draw from, leaving headroom for
  * the live-metrics stream sharing the same connection.
  */
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const worker = async (): Promise<void> => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await fn(items[index]!);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, worker),
-  );
-  return results;
-}
-
 /** Max component checks to run concurrently (see mapWithConcurrency). */
 const CHECK_CONCURRENCY = 4;
 

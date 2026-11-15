@@ -55,7 +55,7 @@
     "appsEmptyDesc": "Um clique, totalmente auto-hospedado — bancos de dados, automação, analytics, cofres de senhas e mais, rodando nos seus servidores."
   },
   "nav": {
-    "affiliates": "Indicações",
+    "referrals": "Indicações",
     "resources": "Espaços Cloud",
     "support": "Suporte",
     "scale": "Escalabilidade",
@@ -70,7 +70,7 @@
     "servers": "Servidores",
     "emails": "E-mails",
     "settings": "Configurações",
-    "billing": "Faturamento e uso",
+    "billing": "Planos e faturação",
     "audit": "Registo de auditoria",
     "mailSetup": "Configurar email",
     "mailSetupProgress": "Progresso da configuração",
@@ -140,7 +140,7 @@
       "addCustom": "Adicionar personalizada",
       "howToAddApp": "Como adicionar um aplicativo",
       "removeCustomApp": "Remover aplicativo personalizado",
-      "needsUpdateDesc": "Atualize sua instância do Openship para instalar este aplicativo.",
+      "needsUpdateDesc": "Atualize sua instância do OpenShip para instalar este aplicativo.",
       "needsUpdateBadge": "Requer atualização",
       "needsVersionBadge": "Requer v{version}",
       "removedToast": "\"{name}\" removido.",

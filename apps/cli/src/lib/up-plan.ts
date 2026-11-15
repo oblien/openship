@@ -30,7 +30,7 @@ import { previewHostEdge, type EdgePreview } from "./edge-preflight";
 import { DEFAULT_REPO, SOURCE_CHECKOUT_DIR, SOURCE_DIST_DIR } from "./from-source";
 import { AUTH_SECRET_FILE, DATA_DIR, INTERNAL_TOKEN_FILE, LOG_DIR } from "./paths";
 import { PORTS_FILE, resolvePorts, type ResolvedPorts } from "./ports";
-import { installStepFor, preview as previewService, type ServiceKind } from "./service";
+import { installStepFor, preview as previewService, serviceHeldPorts, type ServiceKind } from "./service";
 
 /** How `up` would run: install a supervised service, or stay attached. */
 export type UpMode = "service" | "foreground" | "from-source";
@@ -136,6 +136,7 @@ export async function planUp(opts: UpPlanOpts): Promise<UpPlan> {
             {
               api: opts.port ? Number(opts.port) : undefined,
               dashboard: opts.dashboardPort ? Number(opts.dashboardPort) : undefined,
+              reclaimable: mode === "service" ? await serviceHeldPorts() : [],
             },
             { persist: false },
           ),

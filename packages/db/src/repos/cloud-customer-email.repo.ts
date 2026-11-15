@@ -6,8 +6,8 @@ import { member } from "../schema/organization";
 
 export type CustomerEmail = typeof mail.$inferSelect;
 export type CustomerEmailInput = Pick<CustomerEmail, "id" | "kind" | "userId" | "organizationId"> &
-  Partial<Pick<CustomerEmail, "payment">>;
-export type { CustomerPaymentEmail } from "../schema/cloud-customer-email";
+  Partial<Pick<CustomerEmail, "payment" | "cancellation">>;
+export type { CustomerPaymentEmail, CustomerCancellationEmail } from "../schema/cloud-customer-email";
 
 export function createCloudCustomerEmailRepo(db: Database) {
   return {

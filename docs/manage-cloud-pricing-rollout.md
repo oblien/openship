@@ -14,7 +14,7 @@ This implements the product split agreed in #1396. The shared pricing catalog is
   Annual charges are $120, $240, $468 and $1,188 upfront; Yearly is the default
   purchase view. Hobby includes email support. Saved prices, resources and
   renewals remain intact.
-- Dedicated physical hardware is quote-only. PAYG remains a separate preview.
+- Dedicated physical hardware is quote-only. New Cloud purchases use monthly or yearly plans.
 
 ## Release order
 

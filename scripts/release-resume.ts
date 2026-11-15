@@ -44,6 +44,7 @@ export function affectsScope(path: string, scope: string): boolean {
   // retain their verified results after fixture-only corrections.
   if (
     path === "packages/platform/src/engine/modules/actions/github-checks.test.ts" ||
+    path === "packages/adapters/src/system/proxy/replace-edge-container.test.ts" ||
     path === "apps/dashboard/src/app/(dashboard)/servers/[serverId]/offline-server.render.test.tsx"
   )
     return scope === "unit" || scope === "build" || scope === "sdk";
@@ -61,7 +62,8 @@ export function affectsScope(path: string, scope: string): boolean {
               ? "heavy"
               : path === "apps/api/test/e2e/actions-runner.e2e.test.ts" || path === "apps/api/test/helpers/workspace-runtime.ts"
                 ? "actions-linux"
-                : path === "apps/api/test/e2e/update-from-previous-release.e2e.test.ts"
+              : path === "apps/api/test/e2e/update-from-previous-release.e2e.test.ts" ||
+                  path.startsWith("apps/api/test/fixtures/upgrade/")
                 ? "update"
                 : path.startsWith("apps/api/test/e2e/")
                   ? "fast"

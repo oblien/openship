@@ -8,6 +8,7 @@ import {
   writeEdgeFile,
 } from "./edge-container-executor";
 import { EXECUTOR_DELEGATE } from "./elevated-executor";
+import { framedCatCommand } from "./exact-file-read";
 import { cacheKeyFor } from "./environment";
 import { logEntry } from "./local-shell";
 import type { CommandExecutor, LogEntry } from "../types";
@@ -44,6 +45,12 @@ describe("containerCommand", () => {
     // close the outer quote and hand the rest of it to the host shell.
     const wrapped = containerCommand("openship-edge", `pkill -f '[o]penresty'`);
     expect(wrapped).toBe(`docker exec 'openship-edge' sh -c 'pkill -f '\\''[o]penresty'\\'''`);
+  });
+
+  it("keeps stdin attached only when an upload requests it", () => {
+    expect(containerCommand("openship-edge", "cat > /tmp/request.json", { stdin: true })).toBe(
+      "docker exec -i 'openship-edge' sh -c 'cat > /tmp/request.json'",
+    );
   });
 });
 
@@ -85,12 +92,12 @@ describe("edgeContainerExecutor", () => {
   it('falls back into the container in files:"auto" mode', async () => {
     // Legacy install: the host read comes back empty because the state is in a
     // named volume, so the answer has to come from inside the container.
-    const inner = fakeExecutor({ readFile: vi.fn(async () => ""), exec: vi.fn(async () => "pem") });
+    const inner = fakeExecutor({ readFile: vi.fn(async () => ""), exec: vi.fn(async () => "<openship-file>pem\n</openship-file>") });
     const edge = edgeContainerExecutor(inner, "openship-edge", { files: "auto" });
 
-    expect(await edge.readFile("/etc/letsencrypt/live/a/fullchain.pem")).toBe("pem");
+    expect(await edge.readFile("/etc/letsencrypt/live/a/fullchain.pem")).toBe("pem\n");
     expect(inner.exec).toHaveBeenCalledWith(
-      "docker exec 'openship-edge' sh -c 'cat '\\''/etc/letsencrypt/live/a/fullchain.pem'\\'''",
+      containerCommand("openship-edge", framedCatCommand("/etc/letsencrypt/live/a/fullchain.pem")),
     );
   });
 
@@ -334,10 +341,10 @@ describe("readMaybeInContainer (a named, foreign container)", () => {
   it("falls back into that container, not into ours", async () => {
     const exec = fakeExecutor({
       readFile: vi.fn(async () => ""),
-      exec: vi.fn(async () => "cert-from-caddy"),
+      exec: vi.fn(async () => "<openship-file>cert-from-caddy</openship-file>"),
     });
     expect(await readMaybeInContainer(exec, "/data/caddy/x.crt", "caddy")).toBe("cert-from-caddy");
-    expect(execCalls(exec)).toEqual([`docker exec 'caddy' sh -c 'cat '\\''/data/caddy/x.crt'\\'''`]);
+    expect(execCalls(exec)).toEqual([containerCommand("caddy", framedCatCommand("/data/caddy/x.crt"))]);
   });
 
   it("prefers the host and never runs docker when the host answers", async () => {
@@ -371,7 +378,7 @@ describe("readEdgeFile", () => {
     const inner = fakeExecutor({
       readFile: vi.fn(async () => ""),
       exec: vi.fn(async (cmd: string) =>
-        cmd.startsWith("docker ps") ? "openship-edge" : "volume-pem",
+        cmd.startsWith("docker ps") ? "openship-edge" : "<openship-file>volume-pem</openship-file>",
       ),
     });
     expect(await readEdgeFile(inner, "/etc/letsencrypt/live/a/fullchain.pem")).toBe("volume-pem");

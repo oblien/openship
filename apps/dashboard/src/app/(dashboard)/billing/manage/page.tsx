@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { ManagementBilling } from "@/components/billing/ManagementPlan";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import { useSession } from "@/lib/auth-client";
+import { ManagementPlanLayout } from "@/components/billing/ManagementPlanLayout";
 
 export default function ManagePage() {
   const query = useSearchParams();
@@ -15,8 +16,9 @@ export default function ManagePage() {
       returnQuery={Object.fromEntries(query?.entries() ?? [])} />;
   }
   return (
-    <ManagementBilling
+    <ManagementPlanLayout><ManagementBilling
+      detailView
       initialPlan={requested === "basic" || requested === "priority" ? requested : undefined}
-    />
+    /></ManagementPlanLayout>
   );
 }

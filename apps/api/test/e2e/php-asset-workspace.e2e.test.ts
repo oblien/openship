@@ -8,8 +8,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
-import type { BuildConfig } from "@repo/adapters";
+import { LocalExecutor, sq, type BuildConfig } from "@repo/adapters";
 import { generateDockerfile } from "../../../../packages/adapters/src/runtime/docker-build-plan";
+import {
+  dockerBuildSecrets,
+  withDockerBuildSecrets,
+} from "../../../../packages/adapters/src/runtime/docker-build-secrets";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
 
 const exec = promisify(execFile);
@@ -26,7 +30,8 @@ describeDockerE2E("PHP dependency assets reach the generated Node stage", () => 
       const dir = await mkdtemp(join(tmpdir(), "openship-php-assets-"));
       const image = `openship-test-php-assets:${randomUUID()}`;
       try {
-        const recipe = generateDockerfile({
+        const config = {
+          sessionId: randomUUID(),
           buildImage: "php:8.4-cli",
           runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm",
           installCommand: "composer install",
@@ -38,7 +43,8 @@ describeDockerE2E("PHP dependency assets reach the generated Node stage", () => 
           outputDirectory: "public",
           port: 8000,
           envVars: {},
-        } as BuildConfig);
+        } as BuildConfig;
+        const recipe = generateDockerfile(config);
         const start = recipe.indexOf("FROM node:");
         const end = recipe.indexOf("\nFROM ", start + 1);
         expect(start).toBeGreaterThan(-1);
@@ -78,11 +84,13 @@ RUN node install.cjs
 ${assets}
 `,
         );
-        await exec("docker", ["build", "--target", "assets", "-t", image, dir], {
-          env: dockerEnv,
-          timeout: 240_000,
-          maxBuffer: 5 * 1024 * 1024,
-        });
+        await withDockerBuildSecrets(new LocalExecutor(), dockerBuildSecrets(config), (flags) =>
+          exec("sh", ["-c", `docker build --target assets -t ${sq(image)} ${flags} ${sq(dir)}`], {
+            env: dockerEnv,
+            timeout: 240_000,
+            maxBuffer: 5 * 1024 * 1024,
+          }),
+        );
         const result = await exec(
           "docker",
           [

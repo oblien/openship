@@ -55,6 +55,7 @@ export interface DeploymentBuildStatus {
   status: string;
   deploymentStatus: string;
   is_active: boolean;
+  verification?: import("@repo/core").DeploymentVerification;
   /** Terminal worker cleanup still holds the execution lease; absent on older servers. */
   completionPending?: boolean;
   /** A completed Docker image receipt is retained for this failed attempt. */

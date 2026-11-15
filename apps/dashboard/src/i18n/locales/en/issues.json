@@ -23,7 +23,7 @@
     "clear": "Clear filters"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "Servers",
     "project": "Projects",
     "domain": "Domains"
@@ -106,12 +106,12 @@
     "offlineHint": "Displayed status may be out of date. Reconnect to refresh it.",
     "retryStatus": "Retry status",
     "recheck": "Recheck",
-    "unknownHealth": "Container health is unknown until Openship can reach this server.",
-    "monitoringHint": "Openship cannot reach the affected servers. Their current health is unknown.",
+    "unknownHealth": "Container health is unknown until OpenShip can reach this server.",
+    "monitoringHint": "OpenShip cannot reach the affected servers. Their current health is unknown.",
     "details": "Technical details",
     "mailTitle": "Mail status unavailable",
-    "mailHint": "Openship could not verify this mail server. It may still be running. Check the connection and retry.",
-    "apiTitle": "Can’t reach Openship",
+    "mailHint": "OpenShip could not verify this mail server. It may still be running. Check the connection and retry.",
+    "apiTitle": "Can’t reach OpenShip",
     "apiHint": "Status updates may be delayed."
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "Request timed out. The server took too long to respond.",
     "requestCancelled": "Request cancelled.",
     "requestFailed": "Request failed.",
-    "networkUnreachable": "Cannot reach Openship. Check the connection and server availability.",
+    "networkUnreachable": "Cannot reach OpenShip. Check the connection and server availability.",
     "hostUnreachable": "Host is not reachable",
     "sshConnectionRefused": "SSH connection refused"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "An instance administrator can enable automatic checks.",
       "scheduleEveryMinute": "Every minute",
       "scheduleCustom": "Custom schedule",
-      "runsWhileOpen": "Keep Openship running",
+      "runsWhileOpen": "Keep OpenShip running",
       "runsInBackground": "Runs in the background",
       "saving": "Saving…",
       "disable": "Disable monitoring",

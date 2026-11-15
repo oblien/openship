@@ -1,6 +1,6 @@
 "use client";
 
-import { ReferralCode, useReferralCode } from "@/components/affiliates/ReferralCode";
+import { ReferralCode, useReferralCode } from "@/components/referrals/ReferralCode";
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
 import { BillingPlanSummary } from "@/app/(dashboard)/billing/_components/billing-shared";
@@ -13,7 +13,7 @@ import { useI18n } from "@/components/i18n-provider";
 import type { BillingSubscription } from "@repo/contracts";
 import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";
-import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
+import { useCloudCheckout, useCloudPlans, type PreparedCheckoutWorkspace } from "./useCloudBilling";
 import { useBillingWorkspace } from "./BillingWorkspaceContext";
 import { CustomPlanConfigurator } from "./CustomPlanConfigurator";
 import type { ApiPlan } from "./PricingCards";
@@ -27,7 +27,6 @@ import {
   CloudPurchaseTabs,
   useCloudPurchase,
 } from "./CloudPurchaseContext";
-import { PayAsYouGoPlan } from "./PayAsYouGoPlan";
 import { useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
 import { CloudCheckoutFeedback } from "./CloudCheckoutFeedback";
 import { CheckoutRecoveryDialog } from "./CheckoutRecovery";
@@ -62,8 +61,13 @@ function PlanPicker({
   checkoutKey,
   onCheckoutSettled,
   initialReferralCode,
+  onBusyChange,
+  onVisiblePlanCountChange,
 }: {
   initialReferralCode?: string;
+  onBusyChange?: (busy: boolean) => void;
+  /** Dialog sizing follows the choices actually rendered, including filter changes. */
+  onVisiblePlanCountChange?: (count: number | null) => void;
   requestedPlanId?: string;
   requestedInterval?: "monthly" | "annual";
   autoCheckout?: boolean;
@@ -82,7 +86,7 @@ function PlanPicker({
   preserveProject?: boolean;
   onCheckoutStarted?: (checkoutUrl?: string) => void;
   /** New server acquisition resolves its identity only after choosing a plan. */
-  prepareWorkspace?: () => Promise<string>;
+  prepareWorkspace?: () => Promise<PreparedCheckoutWorkspace>;
   onWorkspaceRemoved?: (workspaceId: string) => void;
   purchaseDetails?: ReactNode;
   purchaseDisabled?: boolean;
@@ -97,14 +101,14 @@ function PlanPicker({
     Boolean(workspaceId ?? billingWorkspaceId) ||
     (currentPlan === "free" && !subscription && !complimentary);
   const { payload, loading, error, retry } = useCloudPlans();
-  // Preserve the website choice. Older links without an interval advertised monthly billing.
-  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? (autoCheckout ? "monthly" : "annual"));
+  // Preserve an explicit website choice; new purchases start with monthly billing.
+  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? "monthly");
+  const annualSavings = payload && payload.annual.monthsFree > 0 ? payload.ui.monthsFree : undefined;
   const interval =
     subscription && subscription.status !== "canceled" ? subscription.interval : !complimentary && payload?.annual.enabled ? purchaseInterval : "monthly";
   const hasPlan = !needsCloudPlan({ tier: currentPlan, subscription, complimentary });
   const canChooseMode = (!hasPlan || purchase.management) && purchase.tabs !== "none";
   const managing = canChooseMode && purchase.mode === "manage";
-  const payg = canChooseMode && purchase.mode === "payg";
   const choices = serverPlanChoices({
     plans: payload?.plans ?? [],
     currentOffer: hasPlan ? currentOffer : null,
@@ -140,13 +144,16 @@ function PlanPicker({
   const visiblePlans = showRequestedPlan
     ? [requestedPlan]
     : compareUpgrades && !showOtherPlans ? choices.upgrades : choices.available;
+  const visiblePlanCount = !loading && !error && configuration === "plans" ? visiblePlans.length : null;
+  useEffect(() => {
+    onVisiblePlanCountChange?.(visiblePlanCount);
+  }, [visiblePlanCount, onVisiblePlanCountChange]);
   const summaryAside = Boolean(
     billingState &&
     hasPlan &&
     !loading &&
     !error &&
     payload &&
-    !payg &&
     configuration === "plans" &&
     visiblePlans.length > 0 &&
     visiblePlans.length <= 2,
@@ -156,7 +163,7 @@ function PlanPicker({
       !loading &&
       !error &&
       Boolean(payload) &&
-      (payg || (configuration === "plans" && visiblePlans.length > 2)),
+      (configuration === "plans" && visiblePlans.length > 2),
   );
   const canPurchase =
     !complimentary &&
@@ -202,8 +209,8 @@ function PlanPicker({
     dismissUnavailable,
     recovery,
   } = useCloudCheckout({
-    enabled: canPurchase && !purchaseDisabled && !payg && !managing && referral.ready,
-    affiliateCode: referral.verified,
+    enabled: canPurchase && !purchaseDisabled && !managing && referral.ready,
+    referralCode: referral.verified,
     preserveProject,
     onCheckoutStarted,
     workspaceId,
@@ -218,7 +225,7 @@ function PlanPicker({
     // The website click selected this preset. Wait for authenticated scope and
     // live availability, and schedule after effect replay so Strict Mode cannot
     // cancel the only attempt during its initial mount cleanup.
-    if (autoCheckout && requestedPlan && requestedIntervalAvailable && !loading && !error && canPurchase && !purchaseDisabled && !payg && !managing && !preserveProject && referral.ready && configuration === "plans") {
+    if (autoCheckout && requestedPlan && requestedIntervalAvailable && !loading && !error && canPurchase && !purchaseDisabled && !managing && !preserveProject && referral.ready && configuration === "plans") {
       void Promise.resolve().then(() => {
         if (disposed || autoStarted.current) return;
         autoStarted.current = true;
@@ -226,10 +233,14 @@ function PlanPicker({
       });
     }
     return () => { disposed = true; };
-  }, [autoCheckout, requestedPlan?.id, requestedIntervalAvailable, loading, error, canPurchase, purchaseDisabled, payg, managing, preserveProject, referral.ready, configuration, startCheckout, interval]);
+  }, [autoCheckout, requestedPlan?.id, requestedIntervalAvailable, loading, error, canPurchase, purchaseDisabled, managing, preserveProject, referral.ready, configuration, startCheckout, interval]);
   const selectedCurrentPlan =
     hasPlan && subscription?.configuration !== "custom" ? choices.current : null;
   const busy = subscribing !== null || changes.busy;
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   const setPurchaseBusy = purchase.setBusy;
   useEffect(() => {
     if (managing) return;
@@ -383,10 +394,10 @@ function PlanPicker({
             details
           )}
           <div
-            hidden={payg || managing}
-            role={canChooseMode ? "tabpanel" : undefined}
-            id={canChooseMode ? `${purchase.id}-panel-monthly` : undefined}
-            aria-labelledby={canChooseMode ? `${purchase.id}-tab-monthly` : undefined}
+            hidden={managing}
+            role={canChooseMode && purchase.management ? "tabpanel" : undefined}
+            id={canChooseMode && purchase.management ? `${purchase.id}-panel-monthly` : undefined}
+            aria-labelledby={canChooseMode && purchase.management ? `${purchase.id}-tab-monthly` : undefined}
             className="space-y-5"
           >
             {subscription?.pendingChange && (
@@ -417,13 +428,14 @@ function PlanPicker({
               <CustomPlanConfigurator
                 key={`${selectedWorkspaceId}:${currentOffer?.offerReference ?? currentPlan}`}
                 interval={interval}
+                annualSavings={annualSavings}
                 catalog={payload.custom}
                 plans={payload.plans}
                 ui={payload.ui}
                 currentOffer={currentOffer}
                 subscription={subscription}
                 allocatedDiskGb={allocatedDiskGb}
-                disabled={!selectable || purchaseDisabled || payg || managing || (canPurchase && !referral.ready)}
+                disabled={!selectable || purchaseDisabled || managing || Boolean(checkoutUrl) || (canPurchase && !referral.ready)}
                 busy={busy}
                 actionLabel={canModify ? t.billing.planChange.review : undefined}
                 quoteRevision={quoteRevision}
@@ -442,9 +454,10 @@ function PlanPicker({
                 currentPlan={selectedCurrentPlan}
                 onSelectPlan={handleSelectPlan}
                 subscribingPlan={subscribing}
-                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || payg || managing || (canPurchase && !referral.ready)}
+                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || managing || Boolean(checkoutUrl) || (canPurchase && !referral.ready)}
                 selectionLabel={canModify ? t.billing.planChange.review : undefined}
                 interval={interval}
+                annualSavings={annualSavings}
                 workspaceScoped={workspaceScoped}
               />
             ) : (
@@ -453,24 +466,10 @@ function PlanPicker({
               </p>
             )}
           </div>
-          {canChooseMode && (
-            <div
-              hidden={!payg}
-              role="tabpanel"
-              id={`${purchase.id}-panel-payg`}
-              aria-labelledby={`${purchase.id}-tab-payg`}
-            >
-              <PayAsYouGoPlan
-                pricing={payload.computePricing}
-                catalog={payload.custom}
-                payg={payload.payg}
-              />
-            </div>
-          )}
           {contactPlans.length > 0 && (
             <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
           )}
-          {canPurchase && !payg && !managing && (
+          {canPurchase && !managing && (
             <div className="border-t border-border/50 pt-5">
               <ReferralCode referral={referral} disabled={busy} />
             </div>
@@ -489,16 +488,13 @@ function PlanPicker({
 export function CloudCheckoutNotice({ checkoutUrl }: { checkoutUrl: string }) {
   const { t } = useI18n();
   return (
-    <div role="status" className="rounded-xl bg-muted/40 p-3 text-sm">
-      <p>{t.billing.deployGate.checkoutOpened}</p>
-      <a
-        href={checkoutUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-flex font-medium text-primary hover:underline"
-      >
-        {t.billing.deployGate.continueCheckout}
-      </a>
+    <div role="status" className="space-y-3 rounded-xl bg-muted/40 p-4 text-sm">
+      <p className="text-muted-foreground">{t.billing.deployGate.checkoutOpened}</p>
+      <Button asChild className="w-full">
+        <a href={checkoutUrl} target="_blank" rel="noopener noreferrer">
+          {t.billing.deployGate.continueCheckout}
+        </a>
+      </Button>
     </div>
   );
 }

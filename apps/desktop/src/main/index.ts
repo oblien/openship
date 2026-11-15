@@ -1,5 +1,5 @@
 /**
- * Openship Desktop - Electron main process.
+ * OpenShip Desktop - Electron main process.
  *
  * Flow:
  *   1. App starts → check if onboarding is complete
@@ -68,7 +68,7 @@ import { InstanceLinkInbox, registerInstanceLinks } from "./instance-links";
  */
 
 interface AppConfig {
-  /** URL of the Openship API server */
+  /** URL of the OpenShip API server */
   apiUrl: string;
   /** URL of the dashboard */
   dashboardUrl: string;
@@ -283,7 +283,7 @@ function createWindow() {
     ...(hasStoredPosition ? { x: bounds?.x, y: bounds?.y } : { center: true }),
     minWidth: 800,
     minHeight: 560,
-    title: "Openship",
+    title: "OpenShip",
     // The app draws its own header row (DesktopChrome in the dashboard), so no
     // platform gets an OS title-bar strip above it.
     //
@@ -515,7 +515,7 @@ app.whenReady().then(async () => {
     } catch (err) {
       observeCaughtError(err, "desktop/main/index");
       dialog.showErrorBox(
-        "Openship failed to start",
+        "OpenShip failed to start",
         err instanceof Error ? err.message : String(err),
       );
       app.quit();
@@ -914,7 +914,7 @@ handleIpc("onboarding:cloud-auth", async () => {
   // it redirects to login first, then back to authorize after auth.
   const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
   const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
+  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("OpenShip Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
   shell.openExternal(cloudAuthUrl);
 
   return { ok: true, cloudAuthUrl, nonce };
@@ -1018,7 +1018,7 @@ handleIpc("cloud:connect", async () => {
 
   const callbackUrl = `${getLocalApiUrl()}/api/auth/cloud-callback`;
   const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
+  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("OpenShip Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
   shell.openExternal(cloudAuthUrl);
 
   return { ok: true, cloudAuthUrl, nonce };

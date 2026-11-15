@@ -1,0 +1,53 @@
+---
+title: "Fonctionnement des builds d'IA dans OpenShip"
+description: "Découvrez comment OpenShip utilise l'IA pour détecter les frameworks, générer des configurations et optimiser automatiquement les builds."
+date: "2026-03-08"
+category: "Engineering"
+author: "OpenShip Team"
+---
+
+Lorsque vous exécutez `openship deploy`, beaucoup de choses se produisent avant la mise en ligne de votre application. Voici comment fonctionne le système de construction d'IA.
+
+## Étape 1 : Détection du framework
+
+OpenShip analyse votre projet à la recherche de signaux :
+
+- `package.json` scripts et dépendances
+- Fichiers de configuration (`next.config.js`, `nuxt.config.ts`, `Cargo.toml`, etc.)
+- Dockerprésence du fichier
+- Modèles de structure de répertoire
+
+Cela produit une correspondance de cadre évaluée par la confiance. Si OpenShip détecte Next.js avec un niveau de confiance de 95 %, il utilise le pipeline de build Next.js. S'il existe un fichier Docker, il l'utilise directement.
+
+## Étape 2 : Génération de configuration
+
+Sur la base du framework détecté, OpenShip génère :
+
+- **Commande de construction** - `npm run build`, `go build`, etc.
+- **Commande de démarrage** - `npm start`, `./server`, etc.
+- **Mappage des ports** - Détecte le port sur lequel votre application écoute
+- **Variables d'environnement** - Suggère les variables requises en fonction des conventions du cadre
+
+Vous pouvez remplacer n'importe lequel de ces éléments dans `openship.json`.
+
+## Étape 3 : Optimisation de la création
+
+La couche IA optimise la construction :
+
+- **Mise en cache des couches** - Les couches de dépendances sont mises en cache séparément du code source
+- **Builds en plusieurs étapes** - Les images de production excluent les dépendances de développement
+- **Builds parallèles** - Les projets multiservices sont construits simultanément
+
+## Étape 4 : Bilans de santé
+
+Après le déploiement, OpenShip vérifie :
+
+- Le conteneur démarre avec succès
+- Le point de terminaison du contrôle de santé répond
+- SSL est fourni et valide
+
+Si une vérification échoue, le déploiement est automatiquement annulé.
+
+## Quelle est la prochaine étape
+
+Nous travaillons sur des diagnostics basés sur l'IA : lorsqu'une build échoue, OpenShip analyse l'erreur et suggère des correctifs. Restez à l'écoute.

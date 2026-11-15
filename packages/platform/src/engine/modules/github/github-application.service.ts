@@ -897,6 +897,15 @@ export async function listTree(ctx: ExecutionContext, input: NonNullable<Paramet
 
 /** GET /github/repos/:owner/:repo/file - Get a single file's content */
 export async function getFile(ctx: ExecutionContext, input: NonNullable<Parameters<GitHubOperations["getFile"]>[0]>) {
+  return readAuthorizedFile(ctx, input, input.file.endsWith(".json"));
+}
+
+/** Source edits need the original bytes; the ordinary file viewer may normalize JSON. */
+export async function getRawFile(ctx: ExecutionContext, input: NonNullable<Parameters<GitHubOperations["getFile"]>[0]>) {
+  return readAuthorizedFile(ctx, input, false);
+}
+
+async function readAuthorizedFile(ctx: ExecutionContext, input: NonNullable<Parameters<GitHubOperations["getFile"]>[0]>, json: boolean) {
   const owner = input.owner;
   const repo = input.repo;
   const branch = input.branch;
@@ -917,7 +926,7 @@ export async function getFile(ctx: ExecutionContext, input: NonNullable<Paramete
   const data = await githubService.getFileContent(ctx, owner, repo, file, {
     branch: branch ?? undefined,
     serverId: input.serverId,
-    json: file.endsWith(".json"),
+    json,
   });
   return data;
 }

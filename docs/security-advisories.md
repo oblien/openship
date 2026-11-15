@@ -19,12 +19,29 @@ Matching runtime advisories appear in the existing root-level critical/update
 banner, on Home and every dashboard page. **Review affected apps** opens one
 dialog with the affected applications, services and detected evidence. You do not
 need to open a project or deployment to discover a warning. The review links to
-the upstream report and offers **Refresh images & redeploy** when applicable. It uses
-the existing deployment pipeline, billing admission, service scope and health
-checks. A mutable tag can be pulled again even when its name has not changed.
-Configured versions and digest pins remain unchanged. A pinned vulnerable image
-requires an explicit configuration change; rebuilding a pinned vulnerable
-Dockerfile does not fix it automatically.
+the upstream report. Generated single-app Node.js and Bun Docker builds offer
+**Apply security patch** with the current and proposed versions and image references.
+The patch selects a fixed version from the verified advisory on the existing runtime
+major, preserves the image distribution, confirms that the official images exist,
+and saves both the build and runtime selections. It rebuilds the deployed Git commit
+through the existing deployment pipeline, billing admission and health checks.
+The review becomes invalid if the advisory or saved configuration changes.
+
+For Bun, an explicit official runtime-image version also selects the dependency
+installer's version. Repository `packageManager` and `devEngines.packageManager`
+pins cannot silently reinstall the vulnerable Bun during the build. The override
+is shown in review and build logs; repository files are not changed. The saved
+selection applies to subsequent ordinary deploys too. A newer repository Bun pin
+requires a compatible runtime image; the build will not downgrade it. Integrity requirements
+are never discarded; incompatible integrity pins must be updated in the source.
+
+The ordinary **Refresh images & redeploy** action still preserves configured versions
+and digest pins. An application-image advisory can use it when a replacement exists
+on the current tag. For Node.js and Bun fixes, custom Dockerfiles, custom runtime
+images and source service configurations require an explicit runtime change; the
+review does not advertise a builder-only refresh as a runtime patch. Other runtime
+refresh policies are unchanged. Pinned images require configuration review.
+Version-changing patches do not extend automatic-refresh consent.
 
 If the advisory has no patched release in the observed runtime's major version, the
 review explains the required major upgrade and opens the existing saved deployment

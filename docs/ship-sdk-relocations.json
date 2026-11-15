@@ -1502,6 +1502,12 @@
     "hadBaseline": true
   },
   {
+    "from": "apps/api/src/modules/mail/admin/backup-plan.ts",
+    "to": "packages/platform/src/engine/modules/mail/backup-plan.ts",
+    "hadBaseline": true,
+    "baselineCommit": "367afdec910ee096bc3427ff52a881aa44025bde"
+  },
+  {
     "from": "apps/api/src/modules/mail/admin/domain-dns.service.ts",
     "to": "packages/platform/src/engine/modules/mail/admin/domain-dns.service.ts",
     "hadBaseline": true

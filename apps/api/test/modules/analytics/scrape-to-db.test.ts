@@ -87,7 +87,7 @@ vi.mock("@repo/db", () => ({
   },
 }));
 
-vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
+vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   fetchMgmt: vi.fn(async (_serverId: string, path: string) =>
     path.startsWith("/analytics/totals") ? h.totals : null,
   ),
@@ -209,7 +209,7 @@ describe("retained minute history", () => {
     const now = Math.floor(Date.now() / 60_000);
     h.lastMinute = lastOffset === null ? null : now + lastOffset;
     const edge = new Map([[now - 300, 40], [now - 2, 8], [now, 3]]);
-    const { postMgmtJson } = await import("@repo/platform/engine/lib/project-analytics");
+    const { postMgmtJson } = await import("@repo/platform/engine/lib/edge-management");
     const collect = async (_server: string, _path: string, body: unknown) => {
       const request = body as { domains: Array<{ domain: string; from: number; to: number }> };
       const { from, to } = request.domains[0];

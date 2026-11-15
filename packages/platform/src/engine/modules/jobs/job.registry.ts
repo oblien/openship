@@ -461,8 +461,8 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
     key: "build-cache:gc",
     label: "Docker build-cache garbage collection",
-    // Build cache is daemon-wide and has no reliable project label. Keep a 5 GiB
-    // LRU budget on each Docker host instead of coupling it to image retention.
+    // Native build cache is daemon-wide and has no reliable project label, so it keeps a
+    // 5 GiB LRU budget per Docker host; managed project caches use the disk-relative budget.
     defaultCron: "37 4 * * *",
     run: async () => {
       const r = await runBuildCacheGcSweep();

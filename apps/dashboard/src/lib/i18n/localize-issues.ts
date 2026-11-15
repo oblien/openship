@@ -198,7 +198,7 @@ export function localizeDiagnosisMessage(
       localizedCore = msgs.requestFailed;
     } else if (
       core ===
-        "Cannot reach Openship. Check the connection and server availability." &&
+        "Cannot reach OpenShip. Check the connection and server availability." &&
       msgs.networkUnreachable
     ) {
       localizedCore = msgs.networkUnreachable;

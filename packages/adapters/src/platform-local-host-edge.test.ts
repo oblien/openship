@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./system/setup", () => ({ SystemManager: class {} }));
 vi.mock("./runtime/bare", () => ({ BareRuntime: class {} }));
+vi.mock("./runtime/docker", () => ({ DockerRuntime: { create: vi.fn(async () => ({})) } }));
 
 const LOCAL_EDGE = { marker: "local-container-edge" };
 
@@ -31,10 +32,12 @@ vi.mock("./system/proxy/ensure-container-edge", () => ({
 vi.mock("./system/proxy/detect", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./system/proxy/detect")>()),
   resolveOurEdgeContainer: vi.fn(async () => null),
+  detectEdgeContainer: vi.fn(async () => null),
 }));
 
 import { createPlatform } from "./platform";
 import { containerEdgeProvider } from "./system/proxy/ensure-container-edge";
+import { detectEdgeContainer } from "./system/proxy/detect";
 
 function stubExecutor() {
   return {
@@ -56,6 +59,19 @@ afterEach(() => {
 });
 
 describe("local-host edge selection", () => {
+  it.each(["absent", "stopped", "unreachable"])("keeps Docker routing on the container when the edge is %s and legacy host nginx exists", async (state) => {
+    const executor = stubExecutor();
+    vi.mocked(detectEdgeContainer).mockResolvedValueOnce(state === "unreachable" ? null : {
+      exists: state === "stopped", running: false, name: state === "stopped" ? "renamed-edge" : null, image: null,
+    });
+    const platform = await createPlatform({ target: "selfhosted", runtime: "docker", executor: executor as never });
+    expect(platform.routing).toEqual({ marker: "remote-container-edge" });
+    expect(platform.ssl).toBe(platform.routing);
+    expect(containerEdgeProvider).toHaveBeenCalledWith(executor, state === "stopped" ? "renamed-edge" : "openship-edge", undefined);
+    expect(executor.exec).not.toHaveBeenCalled();
+    expect(executor.writeFile).not.toHaveBeenCalled();
+  });
+
   it("selects the future container edge on a fresh remote host before it is installed", async () => {
     const executor = stubExecutor();
     executor.exists.mockResolvedValue(false);

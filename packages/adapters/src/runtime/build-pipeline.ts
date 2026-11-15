@@ -11,6 +11,7 @@
  * instance flows from build.service.ts → adapter → pipeline → deploy.
  */
 
+import { BuildLogRedactor, buildSecretValues } from "./build-log-redactor";
 import { buildEnvironmentPreflight } from "./build-env-preflight";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { BuildConfig, BuildStep, LogEntry, LogCallback } from "../types";
@@ -50,14 +51,26 @@ export class BuildLogger<Step extends string = BuildStep> {
   private cacheSteps = new Set<string>();
   private cacheHits = new Set<string>();
   private cacheFinished = new Set<string>();
+  private readonly redactor: BuildLogRedactor<Step>;
   constructor(
-    private readonly onLog?: LogCallback<Step>,
+    onLog?: LogCallback<Step>,
     private readonly onBuildOutput?: (data: string, streamId: string) => void,
-  ) {}
+  ) { this.redactor = new BuildLogRedactor(onLog); }
+
+  /** Register resolved values before running any customer command. */
+  protectSecrets(values: readonly string[]): void { this.redactor.protect(values); }
+  protectBuild(config: BuildConfig): void { this.protectSecrets(buildSecretValues(config)); }
+  redact(message: string): string { return this.redactor.text(message); }
+  /** Mask before shortening: truncation must not expose a credential prefix. */
+  errorMessage(error: unknown): string {
+    return safeErrorMessage(this.redact(error instanceof Error ? error.message : String(error)));
+  }
+  flush(): void { this.redactor.flush(); }
 
   /** Observe command output before rendering, without emitting another log entry. */
-  observeBuildOutput(data: string, streamId = "default"): void {
-    const lines = ((this.cacheLines.get(streamId) ?? "") + data).split(/\r?\n/);
+  observeBuildOutput(data: string | Uint8Array, streamId = "default"): string {
+    const bytes = Buffer.from(data);
+    const lines = ((this.cacheLines.get(streamId) ?? "") + bytes.toString("utf8")).split(/\r?\n/);
     this.cacheLines.set(streamId, (lines.pop() ?? "").slice(-8192));
     for (const line of lines) {
       const step = line.match(/^#(\d+)\s/);
@@ -67,7 +80,14 @@ export class BuildLogger<Step extends string = BuildStep> {
       if (/^#\d+ CACHED/.test(line)) this.cacheHits.add(id);
       if (/^#\d+ DONE/.test(line)) this.cacheFinished.add(id);
     }
-    this.onBuildOutput?.(data, streamId);
+    const safe = this.redactor.output(bytes, `observer:${streamId}`, message => this.onBuildOutput?.(message, streamId));
+    this.onBuildOutput?.(safe, streamId);
+    return safe;
+  }
+
+  /** Filter BuildKit fragments before the renderer adds per-line prefixes. */
+  redactBuildOutput(data: Uint8Array, streamId: string): string {
+    return this.redactor.output(data, `render:${streamId}`);
   }
 
   cacheSummary(): string | undefined {
@@ -83,12 +103,12 @@ export class BuildLogger<Step extends string = BuildStep> {
     level: LogEntry["level"] = "info",
     meta?: Pick<LogEntry, "serviceName" | "serviceId" | "resourceIssue">,
   ): void {
-    this.onLog?.({ timestamp: new Date().toISOString(), message, level, ...meta });
+    this.redactor.write({ timestamp: new Date().toISOString(), message, level, ...meta });
   }
 
   /** Emit a step lifecycle event (running / completed / failed / skipped). */
   step(step: Step, status: NonNullable<LogEntry["stepStatus"]>, message: string): void {
-    this.onLog?.({
+    this.redactor.write({
       timestamp: new Date().toISOString(),
       message,
       level: status === "failed" ? "error" : "info",
@@ -107,7 +127,7 @@ export class BuildLogger<Step extends string = BuildStep> {
       await fn();
       this.step(step, "completed", `${label} - done`);
     } catch (err) {
-      const msg = safeErrorMessage(err);
+      const msg = this.errorMessage(err);
       this.step(step, "failed", `${label} - ${msg}`);
       throw err;
     }
@@ -115,7 +135,7 @@ export class BuildLogger<Step extends string = BuildStep> {
 
   /** Get the underlying callback for passing to exec / stream functions. */
   get callback(): LogCallback<Step> {
-    return (entry) => this.onLog?.(entry);
+    return (entry) => this.redactor.write(entry);
   }
 }
 
@@ -252,6 +272,7 @@ export async function runBuildPipeline(
   config: BuildConfig,
   logger: BuildLogger,
 ): Promise<BuildPipelineResult> {
+  logger.protectBuild(config);
   // Initialized here so the catch below always has a baseline (covers a
   // failure during prepare). RESET after prepare so the reported build
   // duration excludes one-time server provisioning.
@@ -475,16 +496,18 @@ export async function runBuildPipeline(
 
     return { status: "deploying", durationMs };
   } catch (err) {
-    observeCaughtError(err, "adapters/runtime/build-pipeline");
+    observeCaughtError(new Error(logger.errorMessage(err)), "adapters/runtime/build-pipeline");
     const durationMs = Date.now() - startTime;
     // A cancel is not a failure — report it distinctly so the caller marks the
     // deployment "cancelled" (not "failed") and doesn't roll it into onFailure.
     if (err instanceof BuildCancelledError) {
       return { status: "cancelled", durationMs, errorMessage: err.message };
     }
-    const errorMessage = safeErrorMessage(err);
+    const errorMessage = logger.errorMessage(err);
 
     return { status: "failed", failedStep: currentStep, durationMs, errorMessage };
+  } finally {
+    logger.flush();
   }
 }
 

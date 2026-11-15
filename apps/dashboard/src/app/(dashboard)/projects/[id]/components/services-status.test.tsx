@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
       projectType: "services",
       activeDeploymentId: "deployment-a",
       deployTarget: "server",
+      framework: "nextjs",
+      runtimeMode: "bare",
     },
     servicesData: { services: [] as Service[], isLoading: false, error: null },
   },
@@ -53,6 +55,8 @@ vi.mock("@/components/terminal/ServiceTerminal", () => ({
   },
 }));
 vi.mock("./services/AddServiceModal", () => ({ AddServiceModal: () => null }));
+vi.mock("./services/ProjectApplicationPanel", () => ({ ProjectApplicationPanel: () => <div>Application environment</div> }));
+vi.mock("@/components/services/RuntimeRoles", () => ({ RuntimeRolesCard: () => null }));
 vi.mock("./services/LinkedAppsCard", () => ({ LinkedAppsCard: () => null }));
 vi.mock("./services/ServiceSettingsForm", () => ({ ServiceSettingsForm: () => null }));
 vi.mock("./UseInProjectModal", () => ({ UseInProjectModal: () => null }));
@@ -139,6 +143,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.context.id = "project-a";
   mocks.context.slug = ["services"];
+  mocks.context.projectData.framework = "nextjs";
   mocks.context.servicesData.services = [service];
   mocks.refresh.mockResolvedValue(undefined);
   host = document.createElement("div");
@@ -152,9 +157,9 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function render(view: "list" | "detail" = "list", tab = "overview") {
+async function render(view: "list" | "detail" | "application" = "list", tab = "overview") {
   mocks.context.slug =
-    view === "list" ? ["services"] : ["services", mocks.context.servicesData.services[0]!.id, tab];
+    view === "list" ? ["services"] : view === "application" ? ["services", "application", tab === "overview" ? "env" : tab] : ["services", mocks.context.servicesData.services[0]!.id, tab];
   await act(async () =>
     root.render(
       <I18nProvider>
@@ -177,6 +182,61 @@ async function click(label: string) {
 }
 
 describe("service runtime status", () => {
+  it("keeps the app environment shortcut usable when runtime status cannot be read", async () => {
+    mocks.context.servicesData.services = [];
+    mocks.containers.mockRejectedValueOnce(new Error("Runtime unavailable"));
+    await render();
+    expect(host.querySelector('a[href="/projects/project-a/services/application"]')).not.toBeNull();
+    await render("application");
+    expect(host.textContent).toContain("Application environment");
+  });
+
+  it("opens the app editor without waiting for container inspection", async () => {
+    mocks.context.servicesData.services = [];
+    mocks.containers.mockReturnValueOnce(deferred().promise);
+    await render("application");
+    expect(host.textContent).toContain("Application environment");
+  });
+
+  it.each(["docker-compose", "monorepo"])("does not create a duplicate application for %s", async framework => {
+    mocks.context.projectData.framework = framework === "monorepo" ? "node" : framework;
+    mocks.context.servicesData.services = [{ ...service, kind: framework === "monorepo" ? "monorepo" : "compose" }];
+    mocks.containers.mockResolvedValueOnce(response("running"));
+    await render("application");
+    expect(host.textContent).not.toContain("Application environment");
+    expect(host.querySelector('a[href="/projects/project-a/services/application"]')).toBeNull();
+  });
+
+  it("keeps one primary entry and its URL when a database materializes an app row", async () => {
+    mocks.context.servicesData.services = [];
+    mocks.containers.mockResolvedValue({success:true,containers:[]});
+    await render();
+    expect(host.querySelectorAll('ul > li')).toHaveLength(1);
+    const href = host.querySelector('ul a')!.getAttribute('href');
+    expect(href).toBe('/projects/project-a/services/application');
+    mocks.context.servicesData.services = [
+      {...service,id:'materialized',name:'Stack',kind:'monorepo',sortOrder:-1,applicationMode:'project'}, service,
+    ];
+    await render();
+    expect(host.querySelectorAll('ul > li')).toHaveLength(2);
+    expect(host.querySelectorAll(`a[href="${href}"]`)).toHaveLength(1);
+    expect(host.querySelector('a[href="/projects/project-a/services/materialized"]')).toBeNull();
+    await render('application');
+    expect(host.textContent).toContain('Application environment');
+    mocks.context.servicesData.services = [mocks.context.servicesData.services[0]];
+    await render();
+    expect(host.querySelectorAll('ul > li')).toHaveLength(1);
+    expect(host.querySelector(`a[href="${href}"]`)).not.toBeNull();
+  });
+
+  it("opens existing service overrides at the stable application address", async () => {
+    mocks.context.servicesData.services = [{...service,kind:'monorepo',applicationMode:'service'}];
+    mocks.containers.mockResolvedValue(response('running'));
+    await render('application', 'settings');
+    expect(host.textContent).not.toContain('Application environment');
+    expect(host.querySelector('a[href="/projects/project-a/services/application/env"]')).not.toBeNull();
+  });
+
   it("checks the list initially and preserves a confirmed status during refresh", async () => {
     const first = deferred();
     mocks.containers.mockReturnValueOnce(first.promise);

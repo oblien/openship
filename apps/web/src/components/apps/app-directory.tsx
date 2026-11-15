@@ -1,7 +1,8 @@
 "use client";
+import { useCopy } from "@/i18n/use-copy";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { Link } from "@/i18n/Link";
 import {
   ArrowUpRight,
   Search,
@@ -20,7 +21,7 @@ import {
   filterMarketplaceApps,
   type MarketplaceApp,
 } from "@/lib/app-marketplace";
-import { MarketplaceLogo } from "./marketplace-logo";
+import { MarketplaceAppLink } from "./marketplace-app-link";
 
 const categoryIcons = {
   backend: Layers,
@@ -45,6 +46,8 @@ export function AppDirectory({
   initialCategory?: string;
   initialQuery?: string;
 }) {
+  const copy = useCopy();
+
   const [category, setCategory] = useState(categoryValue(initialCategory));
   const [query, setQuery] = useState(initialQuery);
   const directoryRef = useRef<HTMLDivElement>(null);
@@ -94,8 +97,8 @@ export function AppDirectory({
   return (
     <div className="marketplace-directory" ref={directoryRef}>
       <aside className="marketplace-categories">
-        <p className="marketplace-label">Browse by category</p>
-        <div className="marketplace-category-list" role="group" aria-label="App categories">
+        <p className="marketplace-label">{copy("Browse by category")}</p>
+        <div className="marketplace-category-list" role="group" aria-label={copy("App categories")}>
           <button
             className="marketplace-category"
             type="button"
@@ -103,7 +106,7 @@ export function AppDirectory({
             onClick={() => chooseCategory("all")}
           >
             <Blocks size={16} aria-hidden="true" />
-            <span>All apps</span>
+            <span>{copy("All apps")}</span>
             <span className="marketplace-count">{apps.length}</span>
           </button>
           {categories.map((value) => {
@@ -119,89 +122,75 @@ export function AppDirectory({
                 onClick={() => chooseCategory(value)}
               >
                 <Icon size={16} aria-hidden="true" />
-                <span>{APP_CATEGORY_LABELS[value]}</span>
+                <span>{copy(APP_CATEGORY_LABELS[value])}</span>
                 <span className="marketplace-count">{count}</span>
               </button>
             );
           })}
         </div>
         <div className="marketplace-contribute">
-          <p className="th-text-heading text-sm font-medium">Missing an app?</p>
+          <p className="th-text-heading text-sm font-medium">{copy("Missing an app?")}</p>
           <p className="mt-2 text-sm leading-relaxed th-text-muted">
-            Bring a template you use. One catalog entry makes it available to everyone.
+            {copy("Bring a template you use. One catalog entry makes it available to everyone.")}
           </p>
           <Link
             href="/docs/guides/add-an-app"
             className="mt-3 inline-flex items-center gap-1 text-sm th-text-strong"
           >
-            Add a template <ArrowUpRight size={15} />
+            {copy("Add a template ")}
+            <ArrowUpRight size={15} />
           </Link>
         </div>
       </aside>
-      <section className="min-w-0" aria-label="App directory">
+      <section className="min-w-0" aria-label={copy("App directory")}>
         <div className="marketplace-toolbar">
           <p className="text-sm th-text-secondary" role="status" aria-live="polite">
-            {visible.length} {visible.length === 1 ? "app" : "apps"}
             {category !== "all"
-              ? ` in ${APP_CATEGORY_LABELS[category as keyof typeof APP_CATEGORY_LABELS]}`
-              : " to explore"}
+              ? copy(
+                  visible.length === 1 ? "{count} app in {category}" : "{count} apps in {category}",
+                  {
+                    count: visible.length,
+                    category: copy(
+                      APP_CATEGORY_LABELS[category as keyof typeof APP_CATEGORY_LABELS],
+                    ),
+                  },
+                )
+              : copy(visible.length === 1 ? "{count} app to explore" : "{count} apps to explore", {
+                  count: visible.length,
+                })}
           </p>
           <div className="marketplace-search">
             <Search size={17} aria-hidden="true" />
             <input
-              aria-label="Search apps"
+              aria-label={copy("Search apps")}
               type="search"
               maxLength={200}
               value={query}
               onChange={(event) => search(event.target.value)}
-              placeholder="Search apps, features, or tools…"
+              placeholder={copy("Search apps, features, or tools…")}
             />
             {query && (
-              <button type="button" onClick={() => search("")} aria-label="Clear search">
+              <button type="button" onClick={() => search("")} aria-label={copy("Clear search")}>
                 <X size={15} />
               </button>
             )}
           </div>
         </div>
         {visible.length ? (
-          <div className="marketplace-grid">
+          <div className="marketing-grid marketplace-grid">
             {visible.map((app) => (
-              <Link href={`/apps/${app.id}`} key={app.id} className="marketplace-card group">
-                <div className="flex items-center justify-between gap-3">
-                  <MarketplaceLogo id={app.id} logo={app.logo} name={app.name} />
-                  {!app.available && <span className="marketplace-badge">Coming soon</span>}
-                  {app.available && app.experimental && (
-                    <span className="marketplace-badge">Experimental</span>
-                  )}
-                  {app.available && !app.experimental && (
-                    <ArrowUpRight size={18} className="marketplace-card-arrow" aria-hidden="true" />
-                  )}
-                </div>
-                <h2 className="mt-5 text-lg font-medium tracking-tight th-text-heading">
-                  {app.name}
-                </h2>
-                {(app.gpu || !app.supportsCloud) && <p className="mt-2 text-xs th-text-muted">
-                  {[app.gpu === "required" ? "NVIDIA GPU required" : app.gpu === "recommended" ? "GPU recommended" : null, !app.supportsCloud ? "Self-hosted only" : null].filter(Boolean).join(" · ")}
-                </p>}
-                <p className="mt-2 line-clamp-3 text-sm leading-relaxed th-text-secondary">
-                  {app.description}
-                </p>
-                <div className="marketplace-card-bottom">
-                  <span className="truncate text-xs th-text-muted">
-                    {APP_CATEGORY_LABELS[app.category]}
-                  </span>
-                  <span className="shrink-0 text-xs font-medium th-text-strong">Explore app</span>
-                </div>
-              </Link>
+              <MarketplaceAppLink app={app} key={app.id} />
             ))}
           </div>
         ) : (
           <div className="marketplace-empty">
             <Search size={26} className="th-text-muted" aria-hidden="true" />
-            <h2 className="mt-4 text-lg font-medium th-text-heading">No apps found</h2>
-            <p className="mt-2 text-sm th-text-secondary">Try another name or category.</p>
+            <h2 className="mt-4 text-lg font-medium th-text-heading">{copy("No apps found")}</h2>
+            <p className="mt-2 text-sm th-text-secondary">
+              {copy("Try another name or category.")}
+            </p>
             <button type="button" className="marketplace-secondary mt-5" onClick={reset}>
-              Clear filters
+              {copy("Clear filters")}
             </button>
           </div>
         )}

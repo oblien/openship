@@ -42,7 +42,7 @@ it("shows one connection notice for concurrent request failures and clears it af
     await vi.advanceTimersByTimeAsync(1_500);
   });
   expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
-  expect(node.textContent).toContain("Can’t reach Openship");
+  expect(node.textContent).toContain("Can’t reach OpenShip");
   expect(node.textContent).toContain("Status updates may be delayed");
 
   // A workload failure returned by a reachable API is not a browser connection failure.

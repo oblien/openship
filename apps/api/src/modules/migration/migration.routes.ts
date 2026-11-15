@@ -6,7 +6,7 @@
  */
 
 import { Hono } from "hono";
-import { MigrationRequestSchemas } from "@repo/contracts";
+import { MigrationRequestSchemas , PlatformMigrationScopedSchemas } from "@repo/contracts";
 import { secureRouter } from "../../lib/secure-router";
 import * as migration from "./migration.controller";
 
@@ -15,6 +15,59 @@ const r = secureRouter(new Hono(), {
   basePath: "/api/migration",
   ids: { server: "serverId" },
 });
+
+r.get(
+  "/platforms/projects",
+  {
+    tag: "settings:admin",
+    collection: true,
+    query: PlatformMigrationScopedSchemas.platformProjects.input,
+    mcp: {
+      description:
+        "List projects accessible to a saved Railway or Vercel connection in this workspace.",
+    },
+  },
+  migration.platformProjects,
+);
+r.post(
+  "/platforms/discover",
+  {
+    tag: "settings:admin",
+    collection: true,
+    body: PlatformMigrationScopedSchemas.discoverPlatform.input,
+    mcp: {
+      description:
+        "Discover a platform environment for migration. Returns configuration names and data requirements, never secret values; does not change source workloads.",
+    },
+  },
+  migration.discoverPlatform,
+);
+r.post(
+  "/platforms/review",
+  {
+    tag: "settings:admin",
+    collection: true,
+    body: PlatformMigrationScopedSchemas.reviewPlatform.input,
+    mcp: {
+      description:
+        "Review selected provider services, destination and data choices. Supply missing environment values here. Does not create projects or deploy.",
+    },
+  },
+  migration.reviewPlatform,
+);
+r.post(
+  "/platforms/import",
+  {
+    tag: "server:write",
+    collection: true,
+    body: PlatformMigrationScopedSchemas.importPlatform.input,
+    mcp: {
+      description:
+        "Import a reviewed platform plan through the shared migration pipeline. Explicitly confirm source writes/workers are paused when required; source resources are never deleted. Poll the returned migration ID.",
+    },
+  },
+  migration.importPlatform,
+);
 
 r.get("/sources", { tag: "server:read", collection: true, mcp: { description: "List reusable migration-only SSH sources in the active organization. These connections cannot host Openship deployments or run general server commands." } }, migration.listSources);
 r.post("/sources/test", { tag: "server:write", collection: true, body: MigrationRequestSchemas.source, mcp: { description: "Verify a public SSH migration source using a password or uploaded private key. Returns its host fingerprint; does not save credentials or modify workloads." } }, migration.testSource);

@@ -268,6 +268,38 @@ jobs:
           bun x tsc --noEmit --project apps/api/tsconfig.update-e2e.json
           bun run --cwd apps/api test:e2e
 
+      # Exercise the actual CLI entrypoint as well as the direct Compose fixture.
+      # A local TLS registry exposes the exact candidate digests before public
+      # version tags exist. Failure remains part of update-e2e, blocking publish.
+      - name: Setup Node for the VPS CLI lifecycle
+        if: matrix.baseline == 'previous'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Build the candidate CLI entrypoint
+        if: matrix.baseline == 'previous'
+        working-directory: apps/cli
+        run: bun x tsup
+
+      - name: Verify actual CLI install, update and restart on the disposable VPS
+        if: matrix.baseline == 'previous'
+        env:
+          OPENSHIP_TEST_ISOLATED_VPS: "1"
+          OPENSHIP_E2E_NEW_API_IMAGE: ${{ steps.ref.outputs.api }}
+          OPENSHIP_E2E_NEW_DASHBOARD_IMAGE: ${{ steps.ref.outputs.dashboard }}
+          OPENSHIP_E2E_NEW_EDGE_IMAGE: ${{ steps.ref.outputs.edge }}
+        run: |
+          set -euo pipefail
+          baseline="$(git tag --list 'v*.*.*' --sort=-v:refname | grep -v -- '-' | while IFS= read -r tag; do
+            if [ "$(git rev-list -n 1 "$tag")" != "$(git rev-parse HEAD)" ]; then
+              printf '%s\n' "${tag#v}"
+              break
+            fi
+          done)"
+          test -n "$baseline"
+          OPENSHIP_E2E_OLD_VERSION="$baseline" node scripts/verify-vps-cli-update.mjs
+
   # Does the dashboard image actually CONTAIN every page in src/app?
   #
   # `next build` compiles whatever tree it is handed, so a page removed from the build

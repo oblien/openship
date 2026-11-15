@@ -56,7 +56,7 @@ export function consumeGitHubConnectError(
 
 const MESSAGES: Record<string, string> = {
   account_already_linked_to_different_user:
-    "That GitHub account is already linked to a different Openship user. Sign in as that user, or disconnect GitHub there first.",
+    "That GitHub account is already linked to a different OpenShip user. Sign in as that user, or disconnect GitHub there first.",
   "email_doesn't_match":
     "Your GitHub email doesn't match this account's email. Connect a GitHub account that uses the same email.",
   email_not_found:

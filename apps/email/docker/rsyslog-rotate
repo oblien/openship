@@ -1,0 +1,4 @@
+#!/bin/sh
+# rsyslog is owned by supervisord in this image, including after log rotation.
+set -eu
+exec /usr/bin/supervisorctl -c /opt/openship-mail/supervisord.conf signal HUP rsyslog

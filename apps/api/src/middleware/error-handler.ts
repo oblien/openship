@@ -1,11 +1,9 @@
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
 import { redactSensitiveRequestPath } from "../lib/request-log-redaction";
-import { cloudAnalytics } from "@repo/platform/engine/modules/cloud-analytics/index";
 import { noteApiError } from "./error-observation";
 
 /**
@@ -27,7 +25,6 @@ import { noteApiError } from "./error-observation";
  */
 export function handleApiError(err: unknown, c: Context) {
   noteApiError(c, err);
-  observeCloudFailure(err, c);
   if (err instanceof ZodError) {
     return c.json(
       {
@@ -102,22 +99,6 @@ export function handleApiError(err: unknown, c: Context) {
   // 500 from a log file. The response body stays deliberately generic — an unknown
   // error's message can carry internals we don't hand to a client.
   return c.json({ error: "Internal server error" }, 500);
-}
-
-function observeCloudFailure(error: unknown, c: Context): void {
-  if (!cloudAnalytics.enabled()) return;
-  try {
-    const ctx = c.get("ctx");
-    if (!ctx) return;
-    const path = c.req.path;
-    const operation = /^\/api\/billing\/(subscription|topup)$/.test(path) ? "checkout" :
-      path.startsWith("/api/deployments") ? "deployment" : path.startsWith("/api/github") || path.startsWith("/api/cloud/github") ? "github" : null;
-    if (!operation) return;
-    const status = error instanceof AppError ? error.statusCode : error instanceof HTTPException ? error.status : error instanceof ZodError || error instanceof SyntaxError ? 400 : 500;
-    const reason = status === 400 || status === 422 ? "validation" : status === 401 || status === 402 || status === 403 ? "access" : status === 409 ? "conflict" : status === 502 ? "provider" : status === 503 || status === 504 ? "unavailable" : "unknown";
-    cloudAnalytics.capture(ctx, "cloud_operation_failed", { operation, status, reason });
-  } catch (diagnosticFailure) {
-    observeCaughtError(diagnosticFailure, "api/middleware/error-handler"); /* Optional telemetry must not change API error handling. */ }
 }
 
 /**

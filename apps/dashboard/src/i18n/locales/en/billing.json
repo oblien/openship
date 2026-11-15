@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "Ready to ship?",
     "plansAndBilling": "Plans & billing",
     "description": "Managed builds and hosting, with room to grow.",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "Capacity & usage",
-    "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from Openship Cloud.",
+    "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from OpenShip Cloud.",
     "routes": "Free routes",
     "runningServices": "Running services",
     "projects": "Projects",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "Connect to Openship Cloud to manage billing",
-      "description": "Your local instance isn't connected to Openship Cloud yet. Connect to view subscription state, usage, invoices, and top-ups.",
-      "connect": "Connect to Openship Cloud",
+      "title": "Connect to OpenShip Cloud to manage billing",
+      "description": "Your local instance isn't connected to OpenShip Cloud yet. Connect to view subscription state, usage, invoices, and top-ups.",
+      "connect": "Connect to OpenShip Cloud",
       "connecting": "Waiting for sign in…"
     },
     "sessionExpired": {
-      "title": "Your Openship Cloud session expired",
-      "description": "You're still linked, but the session token Openship Cloud issued is no longer valid. Reconnect to refresh it — no need to disconnect first.",
-      "reconnect": "Reconnect to Openship Cloud",
+      "title": "Your OpenShip Cloud session expired",
+      "description": "You're still linked, but the session token OpenShip Cloud issued is no longer valid. Reconnect to refresh it — no need to disconnect first.",
+      "reconnect": "Reconnect to OpenShip Cloud",
       "connecting": "Waiting for sign in…"
     },
     "unreachable": {
-      "title": "Couldn't reach Openship Cloud billing",
+      "title": "Couldn't reach OpenShip Cloud billing",
       "description": "Your cloud session may have expired or the cloud is temporarily unavailable. Try again, or reconnect from Settings → Cloud.",
       "tryAgain": "Try again",
       "reconnect": "Reconnect"
     },
     "notEnabled": {
       "title": "Cloud purchases are not available yet",
-      "description": "Openship has not enabled subscriptions and credit purchases yet. Please try again later."
+      "description": "OpenShip has not enabled subscriptions and credit purchases yet. Please try again later."
     },
     "notConfigured": {
       "title": "Cloud billing setup is incomplete",
-      "description": "Openship needs to finish setting up billing. Please contact Openship support."
+      "description": "OpenShip needs to finish setting up billing. Please contact OpenShip support."
     },
     "forbidden": {
       "title": "You don't have access to billing",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "Couldn't load billing",
-      "description": "Billing is temporarily unavailable. Try again. If the problem continues, contact Openship support."
+      "description": "Billing is temporarily unavailable. Try again. If the problem continues, contact OpenShip support."
     }
   },
   "plansRoute": {
@@ -246,8 +246,8 @@
     "weekTick": "Wk {n}"
   },
   "layout": {
-    "title": "Billing & Usage",
-    "subtitle": "Manage your subscription, usage, and payment methods.",
+    "title": "Plans & billing",
+    "subtitle": "Manage your Cloud spaces and connected-server plans.",
     "getServer": "Add resources"
   },
   "sidebar": {
@@ -334,7 +334,7 @@
     "upgradeDescription": "Choose a plan with enough capacity, or adjust your project and try again.",
     "manageBilling": "Manage billing",
     "topups": "Add usage",
-    "checkoutOpened": "Checkout is ready in a separate tab. If it did not open, use the link below.",
+    "checkoutOpened": "Complete your payment in secure checkout. If it did not open, use the button below.",
     "continueCheckout": "Continue to checkout",
     "reasons": {
       "static-only": "Your plan does not include this type of app. Choose a plan that supports it to deploy.",
@@ -409,7 +409,7 @@
     "planRequired": "Requires a plan",
     "savedCredits": "Saved usage balance",
     "savedCreditsHint": "Your prepaid usage stays in this workspace. Choose a plan to use it for Cloud deployments.",
-    "offerTitle": "Launch on Openship Cloud",
+    "offerTitle": "Launch on OpenShip Cloud",
     "offerLabel": "Start deploying",
     "offerDescription": "Managed resources for your projects.",
     "startingWith": "Start with {name}",
@@ -450,7 +450,7 @@
     "diskHint": "Data read from and written to app disks. This is disk activity, not stored disk size.",
     "transfer": "App data transfer",
     "transferHint": "Inbound and outbound data from your compute workloads. Edge delivery is shown separately.",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge bandwidth",
     "bandwidthHint": "Incoming and outgoing traffic across your workspace’s edge routes. This monthly allowance is separate from compute. Routes pause at the limit until reset or upgrade.",
     "requests": "Edge requests",
@@ -546,6 +546,7 @@
     "diskGrowth": "Storage can grow. Reducing it requires moving your data to a new destination.",
     "range": "{min}–{max} {unit}",
     "monthlyTotal": "Monthly total",
+    "yearlyTotal": "Yearly total",
     "choose": "Choose Custom",
     "updating": "Updating price",
     "invalid": "Enter a valid amount within each resource range.",
@@ -557,6 +558,7 @@
     "extraMemory": "Additional memory",
     "extraDisk": "Additional storage",
     "rates": "Monthly extras: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB storage. Charged only above the selected bundle.",
+    "yearlyRates": "Yearly extras: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB storage. Charged only above the selected bundle.",
     "applyNotice": "Upgrades apply after payment. Lower-cost changes start at renewal.",
     "resizeTitle": "Apply your subscribed resources",
     "resizeDescription": "Your plan has changed. Review the new capacity and affected projects before applying.",
@@ -578,7 +580,7 @@
     "serverPlanReady": "Your plan is active. Return to setup to deploy.",
     "returnToSetup": "Back to setup",
     "singular": "Cloud space",
-    "description": "Choose capacity and deploy. Openship handles setup, routing and maintenance.",
+    "description": "Choose capacity and deploy. OpenShip handles setup, routing and maintenance.",
     "loading": "Loading Cloud spaces…",
     "choose": "Choose a destination",
     "chooseBilling": "Choose a Cloud space to view its billing.",
@@ -595,14 +597,14 @@
     "empty": "Ready to deploy",
     "defaultName": "Production",
     "defaultHint": "Choose a plan and deploy. Setup is automatic.",
-    "noneAvailable": "Choose a plan to deploy on Openship Cloud.",
+    "noneAvailable": "Choose a plan to deploy on OpenShip Cloud.",
     "manage": "Manage Cloud space",
     "subscriptionHint": "Each Cloud space has its own subscription.",
     "placementHint": "Projects share these resources. Deleting one leaves the others in place.",
     "create": "Add Cloud space",
     "mode": "Project isolation",
     "createHint": "Choose a plan next. Billing starts after checkout; setup is automatic.",
-    "cloudOnly": "Openship Cloud manages setup, routing and HTTPS for you.",
+    "cloudOnly": "OpenShip Cloud manages setup, routing and HTTPS for you.",
     "projectCount": "{count} projects",
     "noProjects": "No projects here yet.",
     "liveUsage": "Live usage",
@@ -671,7 +673,7 @@
     "plan": "Plan",
     "actions": "Actions",
     "changePlan": "Change plan",
-    "managedBy": "Managed by Openship Cloud",
+    "managedBy": "Managed by OpenShip Cloud",
     "network": {
       "title": "Networking",
       "description": "Managed connectivity settings.",
@@ -723,57 +725,7 @@
     "manage": "Manage your server",
     "manageDescription": "Connect your own servers for deployments, domains, monitoring and backups.",
     "mode": "Billing model",
-    "monthly": "Cloud plans",
-    "payg": "Prepaid PAYG",
-    "title": "Prepaid hosting",
-    "description": "Choose capacity, add credits, and pay for usage.",
-    "rates": "Resource usage",
-    "cpuUnit": "Per active vCPU-hour",
-    "memoryUnit": "Per GiB-hour",
-    "diskUnit": "Per GiB-month",
-    "transfer": "Data transfer",
-    "transferUnit": "Per GiB",
-    "compareMonthly": "Compare monthly hosts",
-    "preview": "Pricing preview",
-    "ratesUnavailable": "Usage pricing is unavailable right now. You can still compare monthly hosts.",
-    "packages": "Credit package",
-    "packagesHint": "Shared across your PAYG hosts.",
-    "conversion": "{credits} credits = {amount}",
-    "credits": "{amount} credits",
-    "sizeHosts": "Resources",
-    "sizeHint": "Choose capacity to preview its hourly cost.",
-    "activityHint": "1 vCPU-hour is one vCPU at 100% for one elapsed hour. Reserved RAM and storage still accrue usage.",
-    "invalid": "Check the CPU, memory, and storage ranges.",
-    "ratesDetails": "Resource rates and billing details",
-    "extras": "Optional managed proxy: {amount}/GiB, billed separately. Public app routes are separate.",
-    "retentionHint": "Pausing does not release RAM charges. Retained storage remains billable until deleted.",
-    "estimate": "Estimated hourly cost",
-    "packageSummary": "{amount} upfront · {credits} credits",
-    "runtime": "Balance estimate",
-    "addCredits": "Add {amount} credits",
-    "previewHint": "Preview only. Purchases are not available yet.",
-    "hourlyBasis": "Per hour · selected resources",
-    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU-h",
-    "cpuHours": "{amount} vCPU-h",
-    "gibHours": "{amount} GiB-h",
-    "rangeMinimum": "Full CPU · 100%",
-    "rangeMaximum": "Idle CPU · 0%",
-    "rangeHint": "At the displayed usage rates, with RAM and storage included.",
-    "perHour": "/ hour",
-    "creditsPerHour": "{amount} credits/hour",
-    "hourlyHint": "At 100% CPU usage",
-    "tiers": {
-      "label": "Resource tier",
-      "name": "Tier {level}",
-      "servers": "Resources",
-      "unlock": "Unlocks after {amount} in credit purchases",
-      "hint": "Usage limits apply across your pay-as-you-go resources.",
-      "exceeded": "This configuration exceeds {tier}. Reduce the resources to fit.",
-      "choose": "View {tier}",
-      "fundingHint": "Credit purchases unlock tiers. Using your balance won’t lower your tier.",
-      "packageUnlock": "This package unlocks {tier}",
-      "packageTooSmall": "{tier} needs {amount} in total credit purchases."
-    }
+    "monthly": "Cloud plans"
   },
   "compute": {
     "title": "Monthly coverage",
@@ -791,14 +743,13 @@
     "recovery": "Review your renewal or payment to restore compute access.",
     "storageDue": "Retained storage balance: {amount}",
     "details": "Usage, transfer and storage terms",
-    "paygComparison": "Recorded usage at PAYG rates",
+    "usageComparison": "Recorded resource usage",
     "comparisonHint": "Usage comparison only; this is not a cash saving or an extra charge.",
     "proxyTransfer": "Managed proxy transfer",
     "transferRemaining": "{amount} GiB available",
     "proxyHint": "Covers Git clones, package downloads and other managed internet traffic. Public app routes are separate.",
     "transferRecovery": "No proxy transfer is available. Contact support to add transfer; paid compute remains covered.",
     "retention": "After compute expires, retained storage costs {amount}/GiB-month until deleted. Disks are retained for at least {days} days, with no automatic deletion.",
-    "paygMetering": "PAYG measures active CPU, reserved RAM while running or paused, and provisioned storage while retained.",
     "buildHint": "Builds share these resources with your apps.",
     "usageIncluded": "Resource activity is included in your paid plan. It does not spend compute credits."
   },
@@ -862,7 +813,7 @@
     "priority": "Priority",
     "email": "Email support",
     "prioritySupport": "Priority support",
-    "description": "Deploy and update apps, monitor their health, and back up your data. Your servers, managed from Openship.",
+    "description": "Deploy and update apps, monitor their health, and back up your data. Your servers, managed from OpenShip.",
     "basicDescription": "For everyday apps and personal projects.",
     "priorityDescription": "For production apps that need priority support.",
     "serversIncluded": "{count} connected servers",
@@ -884,5 +835,40 @@
       "backups": "Scheduled backups & restores",
       "automation": "API, SDK & CLI access"
     }
+  },
+  "hub": {
+    "addPlan": "Add plan",
+    "addHint": "Choose Cloud capacity or manage your own servers.",
+    "viewPlan": "View plan",
+    "active": "Active",
+    "inactive": "Inactive",
+    "management": "Server management",
+    "paymentPending": "Payment pending",
+    "paymentRequired": "Payment needs attention",
+    "reviewPayment": "Review payment",
+    "paymentNotice": "Review the saved payment for this plan. Access updates only after payment is confirmed."
+  },
+  "managementDetail": {
+    "servers": "Servers on this plan",
+    "description": "Servers covered by your OpenShip Manage plan.",
+    "empty": "No servers connected yet",
+    "emptyHint": "Connect a server you already own to deploy apps and manage it from OpenShip.",
+    "addServer": "Add server",
+    "addSlots": "Add server slots",
+    "additionalServers": "Additional servers",
+    "unitPrice": "{price} per additional server / month",
+    "slotHint": "Your support plan stays the same. Review the exact amount due before continuing.",
+    "currentTotal": "Current monthly total",
+    "newTotal": "New monthly total",
+    "dueNow": "Due now",
+    "checkingPrice": "Checking price…",
+    "refreshPrice": "Refresh price",
+    "checkout": "Continue to checkout",
+    "confirmAddition": "Confirm change",
+    "selectedPlan": "Selected plan",
+    "monthlyChange": "Estimated monthly change",
+    "processing": "Updating…",
+    "effective": "Effective {date}",
+    "totalSlots": "{count} server slots in total"
   }
 }

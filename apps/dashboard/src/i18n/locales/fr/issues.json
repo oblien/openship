@@ -1,6 +1,6 @@
 {
   "title": "Surveillance",
-  "subtitle": "Tout ce qu'Openship a trouvé d'anormal dans vos projets, serveurs et domaines.",
+  "subtitle": "Tout ce qu'OpenShip a trouvé d'anormal dans vos projets, serveurs et domaines.",
   "tabs": {
     "open": "Vue générale",
     "health": "Santé",
@@ -23,7 +23,7 @@
     "clear": "Réinitialiser les filtres"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "Serveurs",
     "project": "Projets",
     "domain": "Domaines"
@@ -106,12 +106,12 @@
     "offlineHint": "L’état affiché est peut-être obsolète. Reconnectez-vous pour le mettre à jour.",
     "retryStatus": "Actualiser l’état",
     "recheck": "Revérifier",
-    "unknownHealth": "L’état des conteneurs reste inconnu tant qu’Openship ne peut pas joindre ce serveur.",
-    "monitoringHint": "Openship ne peut pas joindre les serveurs concernés. Leur état actuel est inconnu.",
+    "unknownHealth": "L’état des conteneurs reste inconnu tant qu’OpenShip ne peut pas joindre ce serveur.",
+    "monitoringHint": "OpenShip ne peut pas joindre les serveurs concernés. Leur état actuel est inconnu.",
     "details": "Détails techniques",
     "mailTitle": "État du serveur mail indisponible",
-    "mailHint": "Openship n’a pas pu vérifier ce serveur mail. Il fonctionne peut-être encore. Vérifiez la connexion et réessayez.",
-    "apiTitle": "Openship est injoignable",
+    "mailHint": "OpenShip n’a pas pu vérifier ce serveur mail. Il fonctionne peut-être encore. Vérifiez la connexion et réessayez.",
+    "apiTitle": "OpenShip est injoignable",
     "apiHint": "Les mises à jour de l’état peuvent être retardées."
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "Délai d'attente dépassé. Le serveur a mis trop de temps à répondre.",
     "requestCancelled": "Requête annulée.",
     "requestFailed": "La requête a échoué.",
-    "networkUnreachable": "Impossible de joindre Openship. Vérifiez la connexion et l'état du serveur.",
+    "networkUnreachable": "Impossible de joindre OpenShip. Vérifiez la connexion et l'état du serveur.",
     "hostUnreachable": "Hôte inaccessible",
     "sshConnectionRefused": "Connexion SSH refusée"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "Un administrateur de l'instance peut activer les vérifications automatiques.",
       "scheduleEveryMinute": "Chaque minute",
       "scheduleCustom": "Planning personnalisé",
-      "runsWhileOpen": "Garder Openship ouvert",
+      "runsWhileOpen": "Garder OpenShip ouvert",
       "runsInBackground": "S'exécute en arrière-plan",
       "saving": "Enregistrement…",
       "disable": "Désactiver la surveillance",

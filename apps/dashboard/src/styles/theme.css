@@ -3,6 +3,39 @@
 /* Built-in palettes are generated from packages/core/src/appearance-defaults.json.
  * Keep semantic utilities and aliases here; personal themes override the same tokens. */
 
+/* Shared product artwork follows built-in and personal themes without a JS theme check.
+ * Main forms stay neutral; only small details use the appearance accent.
+ * The accent is decorative; live status continues to use --st-* tokens. */
+:root,
+[data-theme="light"] {
+  --illustration-soft-ink: color-mix(in srgb, var(--th-text-title) 45%, transparent);
+  --illustration-color-ink: color-mix(in srgb, var(--th-text-title) 55%, transparent);
+}
+
+[data-theme="dim"],
+[data-theme="dark"] {
+  --illustration-soft-ink: var(--th-text-title);
+  --illustration-color-ink: var(--th-text-title);
+}
+
+[data-illustration] {
+  display: block;
+  flex-shrink: 0;
+  color: var(--th-text-title);
+  --illustration-accent: var(--th-btn-accent-from);
+  --illustration-accent-ink: var(--th-btn-accent-text);
+  --illustration-cutout: var(--th-card-on-page);
+  --illustration-surface: var(--th-card-on-page);
+}
+
+[data-illustration].illustration-soft {
+  color: var(--illustration-soft-ink);
+}
+
+[data-illustration].illustration-color {
+  color: var(--illustration-color-ink);
+}
+
 /* ══════════════════════════════════════════════════════════════
    UTILITY CLASSES  -  .th-*
    Each class is a single-purpose semantic token.

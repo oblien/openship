@@ -1,6 +1,6 @@
 import { assertLocalHostExecutionAllowed } from "@repo/core";
 import { access, lstat, mkdir, chmod, mkdtemp, readlink, rm, symlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { Mindwire, local, type NativeAuthSource, type TargetHandle } from "mindwire";
@@ -75,6 +75,36 @@ export async function linkMacosKeychain(
   await symlink(target, link);
 }
 
+/**
+ * #1669 — a GUI app launched from Finder or the Dock inherits launchd's
+ * minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), so agent CLIs installed by
+ * Homebrew, npm, Bun or the vendor installers are invisible to the probe
+ * even though they run fine in a terminal. On macOS, append the well-known
+ * install directories (same class of repair as the gh fallback paths in
+ * github.local-auth.ts). The existing PATH keeps priority, entries are
+ * de-duplicated, and other platforms are left alone.
+ */
+export function assistantSearchPath(
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+): string {
+  const base = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
+  if (platform !== "darwin") return base;
+  const extra = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    join(home, ".local", "bin"),
+    join(home, ".bun", "bin"),
+    join(home, ".npm-global", "bin"),
+    join(home, ".claude", "local"),
+  ];
+  const seen = new Set<string>();
+  return [...base.split(delimiter), ...extra]
+    .filter(Boolean)
+    .filter((dir) => (seen.has(dir) ? false : (seen.add(dir), true)))
+    .join(delimiter);
+}
+
 export async function createAssistantClient(
   directory: string,
   userId: string,
@@ -104,7 +134,7 @@ export async function createAssistantClient(
   }
   // #1614: let Claude Code reach the macOS keychain from the isolated home.
   await linkMacosKeychain(join(root, "home"));
-  const searchPath = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
+  const searchPath = assistantSearchPath();
   // macOS Unix sockets have a short path limit. Mindwire's local Git broker also starts at boot.
   const temporary = await mkdtemp("/tmp/openship-mw-");
   const env = {

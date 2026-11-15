@@ -2,6 +2,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -183,49 +184,10 @@ function EmptyState({ onImport }: { onImport: () => void }) {
   const { t } = useI18n();
   return (
     <div className="py-16 text-center">
-      {/* SVG Illustration - folder + import theme */}
-      <div className="relative mx-auto w-64 h-44 mb-8">
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 260 180" fill="none">
-          {/* Background card stack */}
-          <rect x="75" y="45" width="130" height="95" rx="14" fill="var(--th-sf-04)" />
-          <rect x="65" y="35" width="130" height="95" rx="14" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-          <rect x="55" y="25" width="130" height="95" rx="14" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-
-          {/* Card header */}
-          <rect x="55" y="25" width="130" height="28" rx="14" fill="var(--th-sf-05)" />
-          <circle cx="72" cy="39" r="4" fill="#ef4444" fillOpacity="0.6" />
-          <circle cx="84" cy="39" r="4" fill="#eab308" fillOpacity="0.6" />
-          <circle cx="96" cy="39" r="4" fill="#22c55e" fillOpacity="0.6" />
-
-          {/* Folder icon (center of card) */}
-          <rect x="95" y="65" width="50" height="38" rx="6" fill="var(--th-on-05)" stroke="var(--th-on-12)" strokeWidth="1" />
-          <path d="M99 72h16l4 4h22v23H99V72z" fill="var(--th-on-10)" rx="3" />
-          {/* Folder tab */}
-          <rect x="99" y="68" width="16" height="6" rx="3" fill="var(--th-on-12)" />
-
-          {/* Arrow into folder */}
-          <path d="M120 58v12" stroke="var(--th-on-20)" strokeWidth="2" strokeLinecap="round" strokeDasharray="3 3" />
-          <path d="M116 66l4 5 4-5" stroke="var(--th-on-20)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* Plus button */}
-          <circle cx="210" cy="90" r="22" fill="var(--th-on-05)" />
-          <circle cx="210" cy="90" r="16" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="2" strokeDasharray="4 3" />
-          <path d="M210 82v16M202 90h16" stroke="var(--th-on-40)" strokeWidth="2" strokeLinecap="round" />
-
-          {/* Decorative elements */}
-          <circle cx="30" cy="60" r="4" fill="var(--th-on-10)" />
-          <circle cx="40" cy="140" r="6" fill="var(--th-on-08)" />
-          <circle cx="230" cy="40" r="3" fill="var(--th-on-12)" />
-          <circle cx="245" cy="130" r="5" fill="var(--th-on-06)" />
-
-          {/* Sparkle accents */}
-          <path d="M25 100l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-16)" />
-          <path d="M220 150l1.5-3 1.5 3-3-1.5 3 0-3 1.5z" fill="var(--th-on-12)" />
-
-          {/* Connecting line */}
-          <path d="M185 95 Q 192 92 195 90" stroke="var(--th-on-12)" strokeWidth="1.5" strokeDasharray="3 3" fill="none" />
-        </svg>
-      </div>
+      <FeatureIllustration
+        name="local-folder-deploys"
+        className="illustration-color mx-auto mb-6 h-auto w-20"
+      />
 
       <h3 className="text-2xl font-medium text-foreground/80 mb-2" style={{ letterSpacing: "-0.2px" }}>
         {t.library.localProjects.empty.title}

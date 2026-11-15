@@ -135,6 +135,13 @@ function button(label: string) {
 async function click(label: string) {
   await act(async () => button(label).click());
 }
+function fieldInput(label: string, scope: ParentNode = document) {
+  const field = [...scope.querySelectorAll("label")].find(
+    (element) => element.textContent?.trim() === label,
+  );
+  if (!field) return null;
+  return document.getElementById(field.htmlFor) as HTMLInputElement | null;
+}
 async function fill(input: HTMLInputElement, value: string) {
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -155,7 +162,7 @@ async function render(persisted = true) {
 }
 async function connect() {
   await click("Connect a DNS provider");
-  const token = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  const token = fieldInput("API token")!;
   expect(token).not.toBeNull();
   await fill(token, "token-for-tests-only");
 }
@@ -242,14 +249,14 @@ describe("in-context DNS connection", () => {
     ).not.toBeNull();
     expect(document.body.textContent).toContain("Zone:Read and DNS:Edit");
     expect(document.body.textContent).not.toContain("Registry host");
-    await click("Add credential");
+    await click("Add connection");
     expect(h.create).toHaveBeenCalledExactlyOnceWith({
       provider: "cloudflare",
       name: "Cloudflare · api.example.com",
       selector: null,
       values: { apiToken: "token-for-tests-only" },
     });
-    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(fieldInput("API token")).toBeNull();
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(draft.value).toBe("Draft survives DNS setup");
     expect(buttons("Auto-configure DNS")).toHaveLength(2);
@@ -267,7 +274,7 @@ describe("in-context DNS connection", () => {
   it("can connect for an unsaved domain while leaving DNS writes until the domain exists", async () => {
     await render(false);
     await connect();
-    await click("Add credential");
+    await click("Add connection");
     expect(h.previewRecords).toHaveBeenCalledWith("api.example.com", false, "server-selected");
     expect(h.verifyZone).toHaveBeenCalledWith("api.example.com");
     expect(document.body.textContent).toContain("Deploy first");
@@ -302,7 +309,7 @@ describe("in-context DNS connection", () => {
       await render();
       await click("Connect a DNS provider");
       expect(document.body.textContent).toContain("An owner or admin must connect");
-      expect(document.querySelector('input[type="password"]')).toBeNull();
+      expect(fieldInput("API token")).toBeNull();
       expect(h.credentials).not.toHaveBeenCalled();
       expect(h.create).not.toHaveBeenCalled();
     },
@@ -322,7 +329,7 @@ describe("in-context DNS connection", () => {
     );
     expect(document.querySelector('[role="listbox"]')).toBeNull();
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2);
-    expect(document.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe(
+    expect(fieldInput("API token")!.value).toBe(
       "token-for-tests-only",
     );
   });
@@ -335,13 +342,13 @@ describe("in-context DNS connection", () => {
     );
     await render();
     await connect();
-    await click("Add credential");
+    await click("Add connection");
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("DNS:Edit is required");
-    expect(document.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
+    expect(fieldInput("API token")?.value).toBe(
       "token-for-tests-only",
     );
     expect(h.deploy).not.toHaveBeenCalled();
-    await click("Add credential");
+    await click("Add connection");
     expect(buttons("Auto-configure DNS")).toHaveLength(2);
   });
 
@@ -354,7 +361,7 @@ describe("in-context DNS connection", () => {
     }));
     await render();
     await click("Reconnect provider");
-    const token = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+    const token = fieldInput("API token")!;
     expect(token.value).toBe("");
     await fill(token, "replacement-test-token");
     await click("Save changes");
@@ -365,6 +372,112 @@ describe("in-context DNS connection", () => {
     });
     expect(h.create).not.toHaveBeenCalled();
     expect(buttons("Auto-configure DNS")).toHaveLength(2);
+  });
+
+  it("reconnects the provider whose token was rejected, not the first one listed", async () => {
+    h.providers.mockResolvedValue({
+      data: [getCredentialProvider("cloudflare"), getCredentialProvider("digitalocean")],
+    });
+    h.descriptors.mockResolvedValue({
+      data: [
+        { name: "cloudflare", displayName: "Cloudflare", requiredScopes: [] },
+        {
+          name: "digitalocean",
+          displayName: "DigitalOcean",
+          requiredScopes: [],
+          tokenUrl: "https://cloud.digitalocean.com/account/api/tokens",
+        },
+      ],
+    });
+    h.credentials.mockResolvedValue({
+      data: [
+        saved,
+        {
+          ...saved,
+          id: "cred-do",
+          provider: "digitalocean",
+          providerLabel: "DigitalOcean",
+          status: "invalid",
+        },
+      ],
+    });
+    h.dnsPlan.mockImplementation(async (id: string) => ({
+      data: h.connected
+        ? plan(id)
+        : { status: "unauthorized", records: [], reason: "Token expired" },
+    }));
+    await render();
+    await click("Reconnect provider");
+    expect(
+      document.querySelector('a[href="https://cloud.digitalocean.com/account/api/tokens"]'),
+    ).not.toBeNull();
+    await fill(
+      fieldInput("API token")!,
+      "replacement-test-token",
+    );
+    await click("Save changes");
+    expect(h.update).toHaveBeenCalledExactlyOnceWith("cred-do", {
+      name: "Production DNS",
+      selector: null,
+      values: { apiToken: "replacement-test-token" },
+    });
+  });
+
+  it("reconnects the exact credential the failed lookup named", async () => {
+    h.providers.mockResolvedValue({
+      data: [getCredentialProvider("cloudflare"), getCredentialProvider("digitalocean")],
+    });
+    h.descriptors.mockResolvedValue({
+      data: [
+        { name: "cloudflare", displayName: "Cloudflare", requiredScopes: [] },
+        {
+          name: "digitalocean",
+          displayName: "DigitalOcean",
+          requiredScopes: [],
+          tokenUrl: "https://cloud.digitalocean.com/account/api/tokens",
+        },
+      ],
+    });
+    // Both are invalid and Cloudflare's is listed first: only the plan's
+    // credentialId can say the DigitalOcean one is the token that was rejected.
+    h.credentials.mockResolvedValue({
+      data: [
+        { ...saved, status: "invalid" },
+        {
+          ...saved,
+          id: "cred-do",
+          provider: "digitalocean",
+          providerLabel: "DigitalOcean",
+          status: "invalid",
+        },
+      ],
+    });
+    h.dnsPlan.mockImplementation(async (id: string) => ({
+      data: h.connected
+        ? plan(id)
+        : {
+            status: "unauthorized",
+            provider: "digitalocean",
+            credentialId: "cred-do",
+            records: [],
+            reason: "Token expired",
+          },
+    }));
+    await render();
+    await click("Reconnect provider");
+    expect(
+      document.querySelector('a[href="https://cloud.digitalocean.com/account/api/tokens"]'),
+    ).not.toBeNull();
+    await fill(
+      fieldInput("API token")!,
+      "replacement-test-token",
+    );
+    await click("Save changes");
+    expect(h.update).toHaveBeenCalledExactlyOnceWith("cred-do", {
+      name: "Production DNS",
+      selector: null,
+      values: { apiToken: "replacement-test-token" },
+    });
   });
 
   it("does not duplicate credential writes or dismiss the form while saving", async () => {
@@ -378,7 +491,7 @@ describe("in-context DNS connection", () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     expect(h.create).toHaveBeenCalledOnce();
-    expect(button("Add credential").disabled).toBe(true);
+    expect(button("Add connection").disabled).toBe(true);
     const dialog = document.querySelectorAll('[role="dialog"]')[1];
     await act(async () =>
       dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
@@ -445,8 +558,8 @@ describe("shared credential form secret handling", () => {
         </I18nProvider>,
       ),
     );
-    expect(host.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe("");
-    await fill(host.querySelector<HTMLInputElement>('input:not([type="password"])')!, "New label");
+    expect(fieldInput("API token", host)!.value).toBe("");
+    await fill(fieldInput("Label", host)!, "New label");
     await click("Save changes");
     expect(h.update).toHaveBeenCalledExactlyOnceWith(saved.id, {
       name: "New label",

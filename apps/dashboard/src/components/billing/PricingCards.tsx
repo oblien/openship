@@ -4,9 +4,9 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
 import type { OblienLimits, PlanLimits, PlanTierId } from "@repo/core";
-import type { AffiliatePublicOffer } from "@repo/contracts";
-import { affiliateEstimate } from "@/components/affiliates/affiliate-presentation";
-import { referralPlans } from "@/components/affiliates/referral-plans";
+import type { ReferralPublicOffer } from "@repo/contracts";
+import { referralEstimate } from "@/components/referrals/referral-presentation";
+import { referralPlans } from "@/components/referrals/referral-plans";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { PlanResources } from "./PlanResources";
@@ -115,9 +115,10 @@ interface PricingCardsProps {
   subscribingPlan?: string | null;
   purchasesDisabled?: boolean;
   interval?: "monthly" | "annual";
+  annualSavings?: string;
   workspaceScoped?: boolean;
   selectionLabel?: string;
-  referralOffer?: AffiliatePublicOffer;
+  referralOffer?: ReferralPublicOffer;
 }
 
 /* ------------------------------------------------------------------ */
@@ -131,11 +132,10 @@ function formatPrice(
 ): { label: string; suffix: string | null } {
   if (cents === null) return { label: ui.custom, suffix: null };
   if (cents === 0) return { label: ui.free, suffix: null };
-  const monthlyCents = interval === "annual" ? cents / 12 : cents;
   // Whole dollars stay whole ($39, not $39.00); a cents-precise price keeps them.
   return {
-    label: `$${(monthlyCents / 100).toFixed(monthlyCents % 100 === 0 ? 0 : 2)}`,
-    suffix: ui.perMonth,
+    label: `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`,
+    suffix: interval === "annual" ? ui.perYear : ui.perMonth,
   };
 }
 
@@ -149,7 +149,7 @@ function formatPrice(
 function resolveCardPrice(
   plan: ApiPlan,
   interval: "monthly" | "annual",
-  referral: AffiliatePublicOffer | null,
+  referral: ReferralPublicOffer | null,
 ): {
   listCents: number | null;
   chargedCents: number | null;
@@ -157,7 +157,7 @@ function resolveCardPrice(
 } {
   const listCents = interval === "annual" ? plan.price.annual : plan.listPrice?.monthly ?? plan.price.monthly;
   const chargedCents = referral
-    ? affiliateEstimate(listCents!, 0, referral.discountBps).paid
+    ? referralEstimate(listCents!, 0, referral.discountBps).paid
     : interval === "annual" ? listCents : plan.effectivePrice?.monthly ?? listCents;
   return {
     listCents,
@@ -193,6 +193,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   subscribingPlan,
   purchasesDisabled = false,
   interval = "monthly",
+  annualSavings,
   workspaceScoped = false,
   selectionLabel,
   referralOffer,
@@ -218,7 +219,6 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
           const referral = referralOffer && referralPlans([plan], referralOffer, interval).length
             ? referralOffer : null;
           const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval, referral);
-          // Compare monthly equivalents; annual cards disclose the full charge below.
           const { label, suffix } = formatPrice(
             discounted ? chargedCents : listCents,
             ui,
@@ -307,13 +307,13 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
               <p className="mt-1 min-h-5 text-xs text-muted-foreground">
                 {isPaid
                   ? interval === "annual"
-                    ? interpolate(t.billing.pricing.annualTotal, { price: `$${(chargedCents! / 100).toFixed(chargedCents! % 100 === 0 ? 0 : 2)}` })
+                    ? annualSavings ?? t.billing.pricing.billedAnnually
                     : ui.billedMonthly
                   : ""}
               </p>
               {referral && discounted && (
                 <p className="mt-0.5 text-xs font-medium text-success">
-                  {interpolate(t.affiliates.referralDiscount, {
+                  {interpolate(t.referrals.referralDiscount, {
                     percent: String(referral.discountBps / 100),
                     months: String(referral.durationMonths),
                   })}

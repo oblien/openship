@@ -64,6 +64,7 @@ export function createProjectConnectionRepo(db: Database | DatabaseTransaction) 
             sourceServiceId: data.sourceServiceId ?? null,
             sourceDatabaseId: data.sourceDatabaseId ?? null,
             outputId: data.outputId,
+            valueTemplateEnc: data.valueTemplateEnc ?? null,
             mode: data.mode,
             usesPrivateNetwork: data.usesPrivateNetwork ?? true,
             updatedAt: new Date(),

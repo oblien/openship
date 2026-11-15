@@ -11,6 +11,7 @@ export const STEP_INDEX: Record<string, number> = {
   install: 2,
   build: 3,
   deploy: 4,
+  verify: 5,
 };
 
 export const STEP_PROGRESS: Record<string, number> = {
@@ -19,9 +20,11 @@ export const STEP_PROGRESS: Record<string, number> = {
   install: 30,
   build: 55,
   deploy: 80,
+  verify: 90,
 };
 
 export function progressForStep(step: string, stepStatus?: LogEntry["stepStatus"]): number {
   const base = STEP_PROGRESS[step] ?? 0;
-  return stepStatus === "completed" ? base + 10 : base;
+  // 100% belongs to the terminal success event, after all bookkeeping settles.
+  return stepStatus === "completed" ? Math.min(95, base + 10) : base;
 }

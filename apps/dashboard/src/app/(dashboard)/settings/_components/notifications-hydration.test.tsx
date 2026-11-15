@@ -118,7 +118,7 @@ afterEach(() => {
 });
 
 describe("notification settings hydration", () => {
-  it("keeps the server-seeded account header stable when the client session cache resolves first", async () => {
+  it("hydrates settings navigation without a duplicate account card when the client session resolves first", async () => {
     const element = view(
       <>
         <NotificationsTab />
@@ -127,7 +127,8 @@ describe("notification settings hydration", () => {
     );
 
     host.innerHTML = renderToString(element);
-    expect(host.textContent).toContain(steve.email);
+    expect(host.querySelector("nav")?.textContent).toContain("Notifications");
+    expect(host.textContent).not.toContain(steve.email);
 
     // Better Auth may finish its browser request after SSR but before this
     // settings chunk hydrates. Both renders must still use the same seeded user.
@@ -140,7 +141,8 @@ describe("notification settings hydration", () => {
     });
 
     expect(recoverableError).not.toHaveBeenCalled();
-    expect(host.textContent).toContain(steve.email);
+    expect(host.querySelector("nav")?.textContent).toContain("Notifications");
+    expect(host.textContent).not.toContain(steve.email);
   });
 
   it("resolves notification admin controls from the seeded user without a second session request", async () => {

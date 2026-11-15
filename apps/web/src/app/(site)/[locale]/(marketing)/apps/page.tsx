@@ -1,0 +1,59 @@
+import { localizedMetadata } from "@/i18n/metadata";
+
+import { getCopy } from "@/i18n/copy-server";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
+import { getMarketplaceApps } from "@/lib/app-catalog";
+import { AppDirectory } from "@/components/apps/app-directory";
+import { MarketingIntro } from "@/components/marketing/marketing-intro";
+
+const description =
+  "Find your next backend, database, CMS, or developer tool. Explore ready-to-deploy app templates for OpenShip Cloud and your own infrastructure.";
+const metadata: Metadata = {
+  title: "Apps",
+  description,
+  alternates: { canonical: "/apps" },
+  openGraph: { title: "Apps — OpenShip", description, url: "/apps", type: "website" },
+  twitter: { card: "summary_large_image", title: "Apps — OpenShip", description },
+};
+
+export async function generateMetadata(
+  _props: unknown,
+  parent: ResolvingMetadata,
+): Promise<Metadata> {
+  return localizedMetadata(await inheritSocialImages(metadata, parent));
+}
+
+export default async function AppsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string | string[]; q?: string | string[] }>;
+}) {
+  const copy = await getCopy();
+
+  const [apps, params] = await Promise.all([getMarketplaceApps(), searchParams]);
+  const category = Array.isArray(params.category) ? params.category[0] : params.category;
+  const query = Array.isArray(params.q) ? params.q[0] : params.q;
+  // Articles stay on server-rendered detail pages, outside the directory's client payload.
+  const cards = apps.map(({ article: _, ...app }) => app);
+  return (
+    <main className="marketing-page marketplace-main">
+      <MarketingIntro
+        eyebrow="The app catalog"
+        title={
+          <>
+            {copy("Your next app.")}
+            <br />
+            <span>{copy("Ready to deploy.")}</span>
+          </>
+        }
+        description={copy(
+          "Backends, databases, and the tools your projects run on. Explore an app, review its services, and choose where it lives.",
+        )}
+      />
+      <div className="site-container">
+        <AppDirectory apps={cards} initialCategory={category} initialQuery={query?.slice(0, 200)} />
+      </div>
+    </main>
+  );
+}

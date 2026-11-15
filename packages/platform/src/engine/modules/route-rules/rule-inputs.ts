@@ -1,4 +1,5 @@
 import type { RouteRuleSpec } from "@repo/core";
+import { normalizeEdgeResponse, ValidationError } from "@repo/core";
 
 /** HTTP methods accepted in an access method allow-list. */
 const HTTP_METHODS = new Set([
@@ -20,6 +21,12 @@ const BLOCK_STATUSES = new Set([401, 403, 404, 429, 444, 451, 503]);
 export function sanitizeSpec(input: unknown): RouteRuleSpec {
   const spec = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const out: RouteRuleSpec = {};
+
+  if (Object.hasOwn(spec, "response")) {
+    if (["rateLimit", "ban", "access", "hotlink", "block"].some(key => Object.hasOwn(spec, key)))
+      throw new ValidationError("Configure static responses and access rules separately.");
+    return { response: normalizeEdgeResponse(spec.response) };
+  }
 
   // Reject empty/oversized/control-char strings; cap list length.
   const strList = (v: unknown, maxLen = 64): string[] | undefined =>

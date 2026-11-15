@@ -35,6 +35,9 @@ export interface ErrorContext {
   requestId?: string;
   parentRequestId?: string;
   traceId?: string;
+  spanId?: string;
+  traceFlags?: number;
+  eventId?: string;
   errorId?: string;
   clientEventId?: string;
   organizationId?: string;

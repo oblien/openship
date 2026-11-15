@@ -18,6 +18,7 @@ import { fetchCaps } from "../lib/caps";
 import { err, info, isJsonMode, ok, printJson } from "../lib/output";
 import { exitCommand } from "../lib/command-exit";
 import { readSecret } from "../lib/command-input";
+import { discoverPublicInstanceApi } from "../lib/public-instance-api";
 
 export interface LoginOptions {
   token?: string;
@@ -80,7 +81,7 @@ export async function runLogin(options: LoginOptions = {}): Promise<void> {
   const existing = getContext(contextName);
   const local =
     !opts.cloud && !opts.apiUrl && !existing.apiUrl ? localConnectionEndpoints() : undefined;
-  const apiUrl = opts.cloud ? CLOUD_API_URL : opts.apiUrl || existing.apiUrl || local!.apiUrl;
+  let apiUrl = opts.cloud ? CLOUD_API_URL : opts.apiUrl || existing.apiUrl || local!.apiUrl;
   const normalizedApi = new HttpClient({ baseUrl: apiUrl }).apiUrl;
   const sameEndpoint =
     existing.apiUrl && new HttpClient({ baseUrl: existing.apiUrl }).apiUrl === normalizedApi;
@@ -89,7 +90,7 @@ export async function runLogin(options: LoginOptions = {}): Promise<void> {
     : opts.dashboardUrl ||
       (sameEndpoint ? existing.dashboardUrl : undefined) ||
       local?.dashboardUrl ||
-      normalizedApi.slice(0, -4);
+      normalizedApi.slice(0, -4).replace(/\/api\/proxy$/, "");
 
   let token: string | undefined = opts.tokenFile ? readSecret(opts.tokenFile) : opts.token;
 
@@ -132,13 +133,23 @@ export async function runLogin(options: LoginOptions = {}): Promise<void> {
   // Validate the token against an authenticated endpoint before storing.
   // 200 → valid; 403 → valid but lacks settings:read scope (still usable).
   let scoped = false;
-  try {
-    const client = new OpenshipClient({ baseUrl: apiUrl, token, timeoutMs: 8000 });
-    await client.tokens.list();
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 403) {
-      scoped = true;
-    } else {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const client = new OpenshipClient({ baseUrl: apiUrl, token, timeoutMs: 8000 });
+      await client.tokens.list();
+      break;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        scoped = true;
+        break;
+      }
+      // A missing/non-JSON route can mean the supplied URL is the dashboard.
+      // An actual authentication refusal must never switch endpoints.
+      if (attempt === 0 && !opts.cloud && error instanceof ApiError &&
+        (error.status === 404 || error.message === "Invalid JSON response")) {
+        const discovered = await discoverPublicInstanceApi(apiUrl);
+        if (discovered) { apiUrl = discovered; continue; }
+      }
       err(
         error instanceof ApiError && error.status === 401
           ? "Token rejected by the API. Check that it is valid and not revoked."

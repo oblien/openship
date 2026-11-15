@@ -1,0 +1,57 @@
+"use client";
+import { reportCaughtError } from "@repo/core/diagnostics";
+
+import { useCopy } from "@/i18n/use-copy";
+import { useState } from "react";
+import { Check, Copy } from "lucide-react";
+
+interface CodeBlockProps {
+  language: string;
+  filename: string;
+  children: string;
+}
+
+export function CodeBlock({ language, filename, children }: CodeBlockProps) {
+  const copy = useCopy();
+  const [copied, setCopied] = useState(false);
+  const copyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(children);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      reportCaughtError(
+        error,
+        "web/app/(site)/(marketing)/mail/setup-guide/_components/code-block",
+      );
+      /* clipboard unavailable on http */
+    }
+  };
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-black/40">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-2">
+        <span className="font-mono text-[11px] text-white/60">{filename}</span>
+        <button
+          onClick={copyCommand}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-white/60 transition-colors hover:text-white"
+          aria-label={copy("Copy {language} snippet", { language })}
+        >
+          {copied ? (
+            <>
+              <Check className="size-3 text-emerald-400" />
+              {copy(" Copied ")}
+            </>
+          ) : (
+            <>
+              <Copy className="size-3" />
+              {copy(" Copy ")}
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-relaxed text-white">
+        <code>{children}</code>
+      </pre>
+    </div>
+  );
+}

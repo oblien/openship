@@ -42,7 +42,10 @@ import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/d
 // real @repo/db.
 const { listByProjectMock } = vi.hoisted(() => ({ listByProjectMock: vi.fn() }));
 vi.mock("@repo/db", () => ({
-  repos: { service: { listByProject: listByProjectMock } },
+  repos: {
+    service: { listByProject: listByProjectMock },
+    project: { getEnvMap: async () => ({}) },
+  },
 }));
 
 import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
@@ -136,6 +139,7 @@ describeDockerE2E("catalog inline build through the real build pipeline", () => 
         dep: {
           id: "d-widget",
           branch: "main",
+          environment: "production",
           commitSha: null,
           trigger: "deploy",
           meta: null,

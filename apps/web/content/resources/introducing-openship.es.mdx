@@ -1,0 +1,44 @@
+---
+title: "Presentamos OpenShip: implemente cualquier cosa, sea dueño de todo"
+description: "Estamos lanzando OpenShip, una plataforma de implementación de código abierto y autohospedable. He aquí por qué lo construimos y qué puede hacer."
+date: "2026-03-01"
+category: "Announcement"
+author: "OpenShip Team"
+---
+
+Hoy ofrecemos OpenShip código abierto: una plataforma de implementación que puede ejecutar en sus propios servidores.
+
+## Por qué construimos esto
+
+Las plataformas en la nube como Vercel y Netlify son excelentes para comenzar. Pero a medida que su aplicación crece, también crece la factura. CPU medida, precio por puesto, límites de ancho de banda: se acumulan rápidamente. Y cuando quiere irse, se da cuenta de que su infraestructura está bloqueada en sus sistemas propietarios.
+
+Queríamos algo diferente:
+
+- **Primero autohospedado** - Ejecutar en cualquier servidor Linux. Un VPS de $20 al mes maneja lo que cuesta más de $200 en plataformas administradas.
+- **Código abierto** - Apache-2.0 con licencia. Sin cajas negras ni dependencia de un proveedor.
+- **Asistido por IA**: la detección del marco, la optimización de la compilación y la configuración se manejan automáticamente.
+
+## Qué puedes implementar
+
+OpenShip admite cualquier pila que se ejecute en un contenedor:
+
+- **Marcos de interfaz** - Next.js, Nuxt, SvelteKit, Astro, Remix
+- **Backend** - Node.js, Python, Go, Rust, Ruby, PHP
+- **Bases de datos** - Postgres, MySQL, Redis, MongoDB
+- **Full-stack** - Aplicaciones multiservicio con redes compartidas
+
+## Empezando
+
+```bash
+curl -fsSL https://get.openship.io | sh
+cd your-project
+openship deploy
+```
+
+Tres comandos. Eso es todo.
+
+## ¿Qué sigue?
+
+Explore el [directorio de funciones](/features) para conocer la implementación actual, acciones, redes, copias de seguridad, migración y capacidades del equipo. La [documentación](/docs) explica la configuración y la disponibilidad, y el [registro de cambios](/changelog) realiza un seguimiento de las versiones enviadas.
+
+Destacanos en [GitHub](https://github.com/oblien/openship) y únete a la comunidad.

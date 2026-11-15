@@ -189,6 +189,7 @@ export interface RouteRuleRow {
   pathPrefix: string | null;
   spec: RouteRuleSpec;
   enabled: boolean;
+  edgeApplied?: boolean;
 }
 
 /**
@@ -393,7 +394,7 @@ export const projectsApi = {
       wipeVolumes?: boolean;
       force?: boolean;
       forceOrphan?: boolean;
-      /** Record-only: drop the Openship row, keep the server workload (self-hosted). */
+      /** Record-only: drop the OpenShip row, keep the server workload (self-hosted). */
       recordOnly?: boolean;
     } = {},
   ) => {
@@ -567,7 +568,7 @@ export const projectsApi = {
   updateRouteRule: (id: string | number, ruleId: string, body: RouteRuleInput) =>
     api.patch<{ rule: RouteRuleRow }>(endpoints.projects.routeRule(id, ruleId), body),
   deleteRouteRule: (id: string | number, ruleId: string) =>
-    api.delete<{ success: boolean }>(endpoints.projects.routeRule(id, ruleId)),
+    api.delete<{ success: boolean; edgeApplied?: boolean }>(endpoints.projects.routeRule(id, ruleId)),
 
   /** Create a new deployment session */
   createDeploymentSession: (id: string | number) =>
@@ -597,7 +598,7 @@ export const projectsApi = {
       upserts: Array<{ key: string; value: string; isSecret?: boolean }>;
       deletes: string[];
     },
-  ) => api.patch<{ upserted: number; deleted: number }>(endpoints.projects.env(id), body),
+  ) => api.patch<{ upserted: number; deleted: number; warnings?: string[] }>(endpoints.projects.env(id), body),
 
   /** Get environment variables (secret values returned masked) */
   getEnv: (id: string | number) =>
@@ -612,7 +613,10 @@ export const projectsApi = {
     }>(endpoints.projects.env(id)),
 
   /** Get git settings */
-  getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
+  getGit: (id: string | number) =>
+    api.get<Awaited<ReturnType<ProjectControlOperations["getGitInfo"]>>>(
+      endpoints.projects.git(id),
+    ),
 
   /** Link a GitHub repo to an existing project + register webhook */
   linkRepo: (

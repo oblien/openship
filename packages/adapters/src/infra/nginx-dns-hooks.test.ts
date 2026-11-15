@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 import { LocalExecutor } from "../system/local-executor";
-import type { RootChecked } from "../system/privilege";
+import { rootChecked } from "../system/privilege";
 import { NginxProvider } from "./nginx";
 import { OPENRESTY_DEFAULT_PATHS } from "./openresty-lua";
 
@@ -86,7 +86,7 @@ test.each([
     const nginx = new NginxProvider({
       paths: { ...OPENRESTY_DEFAULT_PATHS, sitesDir: join(scratch, "sites-enabled") },
       certDir: join(root, "live"),
-      executor: executor as RootChecked,
+      executor: rootChecked(executor, "Test executor intercepts privileged commands"),
     });
     try {
       await expect(

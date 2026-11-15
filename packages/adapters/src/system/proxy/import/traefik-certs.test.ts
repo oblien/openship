@@ -27,7 +27,9 @@ describe("traefikDeclaredCertPaths", () => {
       exec: vi.fn(async (cmd: string) => {
         if (cmd.startsWith("docker inspect ")) return JSON.stringify(args);
         if (cmd.includes("find ")) return listing;
-        return Object.entries(files).find(([path]) => cmd.includes(path))?.[1] ?? "";
+        // File reads come back framed (see exact-file-read.ts).
+        const hit = Object.entries(files).find(([path]) => cmd.includes(path));
+        return hit ? `<openship-file>${hit[1]}</openship-file>` : "";
       }),
     } as unknown as CommandExecutor;
   }
@@ -132,7 +134,7 @@ describe("traefikAcmeCert", () => {
       }),
       exec: vi.fn(async (cmd: string) => {
         const hit = Object.entries(inContainer).find(([p]) => cmd.includes(p));
-        return hit ? hit[1] : "";
+        return hit ? `<openship-file>${hit[1]}</openship-file>` : "";
       }),
     } as unknown as CommandExecutor;
   }

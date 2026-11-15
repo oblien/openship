@@ -12,10 +12,10 @@
     "language": "Dil"
   },
   "choose": {
-    "title": "Openship'e Hoş Geldiniz",
-    "subtitle": "Openship'i nasıl çalıştırmak istediğinizi seçin. Her iki seçenek de tüm özellikleri sunar — istediğiniz zaman değiştirebilirsiniz.",
+    "title": "OpenShip'e Hoş Geldiniz",
+    "subtitle": "OpenShip'i nasıl çalıştırmak istediğinizi seçin. Her iki seçenek de tüm özellikleri sunar — istediğiniz zaman değiştirebilirsiniz.",
     "cloud": {
-      "name": "Openship Bulut",
+      "name": "OpenShip Bulut",
       "desc": "Altyapıyı, güncellemeleri ve yedeklemeleri biz hallederiz. Sadece giriş yapın ve dağıtıma başlayın.",
       "perk1": "Sunucu gerekmez",
       "perk2": "Ücretsiz paket dahil",
@@ -25,7 +25,7 @@
     "or": "veya",
     "selfhost": {
       "name": "Kendi Sunucunuzda (Self-Hosted)",
-      "desc": "Openship'i kendi donanımınızda çalıştırın. Uzak bir sunucu bağlayın veya bu bilgisayarı kullanın.",
+      "desc": "OpenShip'i kendi donanımınızda çalıştırın. Uzak bir sunucu bağlayın veya bu bilgisayarı kullanın.",
       "perk1": "Tam veri sahipliği",
       "perk2": "Uzak sunucu veya bu bilgisayar",
       "perk3": "Geri kalanını biz hallederiz",
@@ -35,15 +35,15 @@
     "skip": "Şimdilik atla"
   },
   "selfhost": {
-    "title": "Openship nerede çalışmalı?",
-    "subtitleLine1": "Openship platformunu nerede kuracağınızı seçin.",
+    "title": "OpenShip nerede çalışmalı?",
+    "subtitleLine1": "OpenShip platformunu nerede kuracağınızı seçin.",
     "subtitleLine2": "Her iki seçenek de size tam kontrol ve veri sahipliği sağlar.",
     "local": {
       "title": "Bu Bilgisayar",
       "badge": "Beta",
-      "desc": "Openship'i hemen buraya kurun — SSH veya uzak kurulum gerekmez",
+      "desc": "OpenShip'i hemen buraya kurun — SSH veya uzak kurulum gerekmez",
       "comingSoon": "Yakında",
-      "comingSoonDesc": "Openship'i doğrudan bu bilgisayarda çalıştırmak henüz hazır değil — şimdilik bir sunucu bağlayın."
+      "comingSoonDesc": "OpenShip'i doğrudan bu bilgisayarda çalıştırmak henüz hazır değil — şimdilik bir sunucu bağlayın."
     },
     "remote": {
       "title": "Başka Bir Sunucu",
@@ -61,7 +61,7 @@
     "methodPassword": "Şifre",
     "methodKey": "SSH Anahtarı",
     "methodAgent": "SSH agent",
-    "agentHint": "Bu makinenin SSH agent'ını kullanarak bağlanır — VS Code'da olduğu gibi şifre veya anahtar girmeniz gerekmez. Openship'i çalıştıran ana makinenin bu sunucuya zaten erişebilmesi gerekir (ssh-agent'a bir anahtar yüklenmiş olmalıdır).",
+    "agentHint": "Bu makinenin SSH agent'ını kullanarak bağlanır — VS Code'da olduğu gibi şifre veya anahtar girmeniz gerekmez. OpenShip'i çalıştıran ana makinenin bu sunucuya zaten erişebilmesi gerekir (ssh-agent'a bir anahtar yüklenmiş olmalıdır).",
     "passwordLabel": "Şifre",
     "passwordPlaceholder": "Sunucu şifresi",
     "keyPathLabel": "Anahtar Yolu",
@@ -85,7 +85,7 @@
     "subtitle": "Webhooks, SSL ve herkese açık erişim için sunucunuza internetten ulaşılabilmesi gerekir.",
     "providers": {
       "edge": {
-        "title": "Openship Edge",
+        "title": "OpenShip Edge",
         "desc": "Sıfır yapılandırma. Otomatik SSL, yüksek erişilebilirlik ve DDoS koruması — hepsi dahili.",
         "badge": "Önerilen"
       },
@@ -102,7 +102,7 @@
     "ngrokTokenLabel": "ngrok Kimlik Doğrulama Jetonu",
     "cloudflarePlaceholder": "Tünel jetonunuzu yapıştırın",
     "ngrokPlaceholder": "ngrok kimlik doğrulama jetonunuzu yapıştırın",
-    "edgeHint": "Openship Edge bir Openship hesabı gerektirir. Devam etmek için giriş yapacaksınız.",
+    "edgeHint": "OpenShip Edge bir OpenShip hesabı gerektirir. Devam etmek için giriş yapacaksınız.",
     "signInContinue": "Giriş Yap ve Devam Et"
   },
   "preferences": {
@@ -129,15 +129,15 @@
     "connecting": "Bağlanılıyor…",
     "verifying": "Sunucunuz doğrulanıyor",
     "retry": "Tekrar dene",
-    "openingCloud": "Openship Bulut açılıyor…",
+    "openingCloud": "OpenShip Bulut açılıyor…",
     "waitingAuth": "Kimlik doğrulamasının tamamlanması bekleniyor",
     "couldNotStartAuthTitle": "Bulut kimlik doğrulaması başlatılamadı",
     "authFailedTitle": "Bulut kimlik doğrulaması başarısız oldu",
     "couldNotStartAuthMsg": "Masaüstü kimlik doğrulama akışı başlatılamadı.",
     "authFailedMsg": "Lütfen tekrar deneyin ve tarayıcınızda girişi tamamlayın.",
     "completingSignIn": "Giriş tamamlanıyor…",
-    "returningToOpenship": "Openship'e dönülüyor",
-    "redirectingCloud": "Openship Bulut'a yönlendiriliyor…",
+    "returningToOpenship": "OpenShip'e dönülüyor",
+    "redirectingCloud": "OpenShip Bulut'a yönlendiriliyor…",
     "newTabSignIn": "Giriş işlemini yeni bir sekmeyle tamamlayacaksınız",
     "couldNotSaveTitle": "Yapılandırma kaydedilemedi",
     "couldNotSaveMsg": "API yanıt vermedi. Servislerin çalıştığından emin olun.",

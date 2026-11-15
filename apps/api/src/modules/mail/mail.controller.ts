@@ -30,7 +30,7 @@ import type { Context } from "hono";
 import type { SSEStreamingApi } from "hono/streaming";
 import crypto from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
-import { buildMailBackupPayload } from "./admin/backup-plan";
+import { mailBackupFlags } from "@repo/platform/engine/modules/mail/backup-plan";
 // The mail server is one more backup SOURCE in the general system, so its policy
 // goes through the same cron validation + schedule registration as a project's.
 import { syncPolicySchedule, validateCronExpression } from "@repo/platform/engine/modules/backups/triggers/cron";
@@ -67,7 +67,6 @@ import {
 import { checkMailDelivery } from "./mail-delivery.service";
 import { checkMailHealth, mailIsServing, MAIL_COMPONENTS } from "@repo/platform/engine/modules/mail/mail-health.service";
 import { checkMailPortReachability } from "@repo/platform/engine/modules/mail/mail-port-reachability.service";
-import { resolveMailFlavor } from "@repo/platform/engine/modules/mail/mail-engine";
 import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
 import { preflightMailSetup } from "./mail-setup-preflight";
@@ -1449,20 +1448,25 @@ export async function saveMailBackupPolicy(c: Context) {
   if (!body.destinationId) {
     return c.json({ error: "destinationId is required" }, 400);
   }
+  if ((body.messageData !== undefined && typeof body.messageData !== "boolean") ||
+      (body.keys !== undefined && typeof body.keys !== "boolean")) {
+    return c.json({ error: "messageData and keys must be booleans" }, 400);
+  }
   const destination = await repos.backupDestination.findById(body.destinationId);
   if (!destination || destination.organizationId !== ctx.organizationId) {
     return c.json({ error: "Destination not found" }, 404);
   }
 
-  const messageData = body.messageData === true;
-  const keys = body.keys !== false; // default: include keys/secrets
-  // The produce/restore shell is baked HERE and executed later by the generic
-  // custom_command producer, which has no mail knowledge — so the topology has to be
-  // resolved at build time. A containerized engine keeps Postgres in a sidecar and the
-  // `vmail` user only inside the engine, and the old plan issued `sudo -u postgres` and
-  // `chown vmail` on the host, where neither exists (GH-563).
-  const flavor = await resolveMailFlavor(serverId);
-  const payload = buildMailBackupPayload(mailRow.domain, { messageData, keys }, flavor);
+  const existing = await repos.backupPolicy.findActiveByMailServer(serverId);
+  const savedFlags = mailBackupFlags(existing?.payloadConfig);
+  const messageData = body.messageData ?? savedFlags.messageData;
+  const keys = body.keys ?? savedFlags.keys;
+  // A mail policy stores intent; the worker resolves the current topology and
+  // builds the archive commands once per run through the shared mail lifecycle.
+  const payload = {
+    payloadKind: "custom_command" as const,
+    payloadConfig: { mail: { messageData, keys } },
+  };
 
   const cronExpression =
     typeof body.cronExpression === "string" && body.cronExpression.trim()
@@ -1477,8 +1481,6 @@ export async function saveMailBackupPolicy(c: Context) {
       return c.json({ error: `Invalid schedule: ${check.reason ?? "unknown"}` }, 400);
     }
   }
-
-  const existing = await repos.backupPolicy.findActiveByMailServer(serverId);
 
   // Omitted vs explicit-null, the same distinction `createPolicy` draws for
   // project policies (backup.service.ts) — and it has to be drawn here because

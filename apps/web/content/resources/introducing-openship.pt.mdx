@@ -1,0 +1,44 @@
+---
+title: "Apresentando OpenShip: implante qualquer coisa, possua tudo"
+description: "Estamos lançando OpenShip: uma plataforma de implantação auto-hospedada e de código aberto. Veja por que o construímos e o que ele pode fazer."
+date: "2026-03-01"
+category: "Announcement"
+author: "OpenShip Team"
+---
+
+Hoje temos código aberto OpenShip: uma plataforma de implantação que você pode executar em seus próprios servidores.
+
+## Por que construímos isso
+
+Plataformas em nuvem como Vercel e Netlify são ótimas para começar. Mas à medida que seu aplicativo cresce, a conta também cresce. CPU medida, preço por usuário, limites de largura de banda – isso aumenta rapidamente. E quando você quer sair, você percebe que sua infraestrutura está presa aos sistemas proprietários deles.
+
+Queríamos algo diferente:
+
+- **Auto-hospedado primeiro** - Execute em qualquer servidor Linux. Um VPS de US$ 20/mês lida com o que custa mais de US$ 200 em plataformas gerenciadas.
+- **Código aberto** - Apache-2.0 licenciado. Sem caixas pretas, sem dependência de fornecedores.
+- **Assistido por IA** - A detecção de estrutura, a otimização de compilação e a configuração são tratadas automaticamente.
+
+## O que você pode implantar
+
+OpenShip oferece suporte a qualquer pilha executada em um contêiner:
+
+- **Estruturas de front-end** - Next.js, Nuxt, SvelteKit, Astro, Remix
+- **Back-end** - Node.js, Python, Go, Rust, Ruby, PHP
+- **Bancos de dados** - Postgres, MySQL, Redis, MongoDB
+- **Full-stack** - Aplicativos multiserviços com rede compartilhada
+
+## Primeiros passos
+
+```bash
+curl -fsSL https://get.openship.io | sh
+cd your-project
+openship deploy
+```
+
+Três comandos. É isso.
+
+## O que vem a seguir
+
+Explore o [diretório de recursos](/features) para implantação atual, ações, rede, backups, migração e recursos de equipe. A [documentação](/docs) explica a configuração e a disponibilidade, e o [changelog](/changelog) rastreia as versões enviadas.
+
+Marque-nos com uma estrela em [GitHub](https://github.com/oblien/openship) e junte-se à comunidade.

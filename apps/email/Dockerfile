@@ -33,9 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Runtime + build prerequisites. supervisor = PID-1 process manager (iRedMail's
 # daemons have no systemd here); postgresql-client + netcat = the entrypoint's
-# wait-for-sidecar + schema bootstrap; the rest are iRedMail.sh's own deps.
+# wait-for-sidecar + schema bootstrap; logrotate = the binary behind the daily
+# rotation of the persisted mail logs (issue #1701) — only a Recommends of
+# rsyslog, so it must be named explicitly rather than relied on from the
+# installer's package set; the rest are iRedMail.sh's own deps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      supervisor ca-certificates curl gnupg procps rsync cron \
+      supervisor ca-certificates curl gnupg procps rsync cron logrotate \
       netcat-openbsd postgresql-client bsdmainutils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -90,6 +93,16 @@ RUN cp /opt/openship-mail/build-config /opt/iRedMail-engine/config \
     && rm -f /opt/iRedMail-engine/config \
     && rm -rf /var/lib/apt/lists/*
 
+# Refresh Debian's backported Dovecot/Pigeonhole fixes even when the installer
+# layer was cached. This check deliberately sits outside its `|| true`: missing
+# security updates must fail the image build, not ship a vulnerable mail daemon.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+      -o Dpkg::Options::=--force-confold \
+      dovecot-core dovecot-sieve dovecot-managesieved \
+    && sh /opt/openship-mail/verify-dovecot-security.sh \
+    && rm -rf /var/lib/apt/lists/*
+
 # Smoke test — the build FAILS here if the mail stack didn't actually install.
 # Every path below is a program supervisord launches at runtime (supervisord.conf);
 # an image that passes this test is guaranteed to have something to put on :25.
@@ -122,6 +135,18 @@ RUN set -eu; \
       exit 1; \
     }; \
     echo "openship-mail: all mail daemons present ->$(echo ' postfix dovecot doveadm amavisd clamd freshclam spamd fail2ban iredapd')"
+# logrotate + cron are the persisted-logs rotation path (issue #1701): cron runs
+# logrotate's daily job from inside the engine. Neither is a supervisord-launched
+# mail daemon, so they are gated separately from the daemon list above.
+RUN [ -x /usr/sbin/logrotate ] && [ -x /usr/sbin/cron ] || { \
+      echo "FATAL: logrotate or cron missing — persisted mail logs would never rotate (issue #1701)." >&2; \
+      exit 1; \
+    }
+
+# Reopen supervised log writers without systemd or Debian's policy-rc.d. Keep
+# the native rotation schedule and retention for rsyslog and Freshclam.
+RUN install -m 0755 /opt/openship-mail/rsyslog-rotate /usr/lib/rsyslog/rsyslog-rotate \
+    && install -m 0644 /opt/openship-mail/logrotate-clamav-freshclam /etc/logrotate.d/clamav-freshclam
 
 # Runtime prerequisites the installer does not leave in place under our stubbed-
 # init build (its late service/DB steps abort — see the `|| true` above):

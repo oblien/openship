@@ -247,6 +247,15 @@ export async function drainCloudBuildQueue(workspaceId?: string) {
  * candidate must acquire its exact execution lock before any recovery occurs. */
 export async function recoverCloudBuildQueue() {
   if (!env.CLOUD_MODE) return { recovered: 0 };
+  const { recoverUnfinishedDeploymentExecutions } = await import("./deployment-recovery");
+  // An unreachable managed server must not hold up SSH-session recovery.
+  const [managed, other] = await Promise.all([
+    recoverManagedBuildActivities(), recoverUnfinishedDeploymentExecutions(),
+  ]);
+  return { recovered: managed.recovered + other };
+}
+
+async function recoverManagedBuildActivities() {
   const candidates = [];
   for (let offset = 0; ; offset += 200) {
     const page = await repos.cloudBuildActivity.listUnfinished({ limit: 200, offset });

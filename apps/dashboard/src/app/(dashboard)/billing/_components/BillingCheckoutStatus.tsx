@@ -2,7 +2,7 @@
 
 import { cloudSpaceHref } from "@/lib/cloud-spaces";
 import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useI18n } from "@/components/i18n-provider";
@@ -19,6 +19,7 @@ interface CheckoutReturn {
   expectedTier?: string;
   expectedInterval?: "monthly" | "annual";
   expectedOffer?: string;
+  onResolved?: () => void;
 }
 
 type ConfirmationStatus =
@@ -49,6 +50,7 @@ function CheckoutConfirmation({
   expectedTier,
   expectedInterval,
   expectedOffer,
+  onResolved,
 }: CheckoutReturn) {
   const router = useRouter();
   const workspaceId = useBillingWorkspace();
@@ -58,6 +60,8 @@ function CheckoutConfirmation({
   const [confirmed, setConfirmed] = useState<BillingState | null>(null);
   const [setupServerId, setSetupServerId] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const resolved = useRef(onResolved);
+  resolved.current = onResolved;
 
   useEffect(() => {
     setStatus("checking");
@@ -72,6 +76,7 @@ function CheckoutConfirmation({
     let awaitingServer = false;
     function finish(next: ConfirmationStatus) {
       setStatus(next);
+      resolved.current?.();
       router.refresh();
     }
     async function refresh() {

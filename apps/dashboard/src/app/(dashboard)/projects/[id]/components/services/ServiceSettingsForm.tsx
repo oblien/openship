@@ -5,6 +5,7 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import { CommandEnvironmentNotice } from "@/components/import-project/CommandEnvironmentNotice";
 import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
+import { RuntimeSourceUpdate } from "@/components/updates/RuntimeSourceUpdate";
 import React, { useEffect, useState } from "react";
 import { useOptionalProjectSettings } from "@/context/ProjectSettingsContext";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -320,6 +321,10 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
         title={f.sections.source}
         description={isMonorepo ? f.sections.sourceMonorepoHint : f.sections.sourceHint}
       >
+        {enableAutomationActions && projectContext?.projectData?.gitOwner && <div className="mb-4 space-y-2">
+          <p className="text-sm text-muted-foreground">{t.projectSettings.sourceImageUpdate.hint}</p>
+          <RuntimeSourceUpdate projectId={projectContext.id} serviceId={service.id} initialPath={projectContext.buildData.composePath || "docker-compose.yml"} />
+        </div>}
         {isMonorepo ? (
           <>
             <Field label={f.rootDirectory}>

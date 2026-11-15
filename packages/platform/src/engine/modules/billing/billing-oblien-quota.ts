@@ -116,8 +116,6 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
       if (owner.workspaceId) await repos.cloudWorkspace.setBillingEntitlement(owner.workspaceId, organizationId, owner.namespace, mirror);
       else await repos.organization.setBillingEntitlement(organizationId, owner.namespace, mirror);
     }
-    const { observeCloudSubscription } = await import("../cloud-analytics/billing");
-    await observeCloudSubscription(organizationId, { tier, subscription, grant });
     return {
       entitlement,
       subscription,

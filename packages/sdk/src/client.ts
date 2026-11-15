@@ -43,8 +43,8 @@ import { createRemoteNoticeOperations } from "./notices-client";
 import type { NoticeOperations } from "@repo/contracts";
 import { createRemoteBillingOperations } from "./billing-client";
 import type { BillingOperations } from "@repo/contracts";
-import type { AffiliateOperations } from "@repo/contracts";
-import { createRemoteAffiliateOperations } from "./affiliates-client";
+import type { ReferralOperations } from "@repo/contracts";
+import { createRemoteReferralOperations } from "./referrals-client";
 import type { BackupOperations } from "@repo/contracts";
 import type { BackupDestinationOperations } from "@repo/contracts";
 import { deploySourceWorkflow } from "./source-workflow";
@@ -92,7 +92,9 @@ export class OpenshipClient {
   readonly backupDestinations: BackupDestinationOperations;
   readonly backups: BackupOperations;
   readonly billing: BillingOperations;
-  readonly affiliates: AffiliateOperations;
+  readonly referralProgram: ReferralOperations;
+  /** @deprecated Use referralProgram. */
+  readonly affiliates: ReferralOperations;
   readonly notices: NoticeOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
@@ -128,7 +130,8 @@ export class OpenshipClient {
     this.backupDestinations = createRemoteBackupDestinationOperations(http);
     this.backups = createRemoteBackupOperations(http);
     this.billing = createRemoteBillingOperations(http);
-    this.affiliates = createRemoteAffiliateOperations(http);
+    this.referralProgram = createRemoteReferralOperations(http);
+    this.affiliates = this.referralProgram;
     this.notices = createRemoteNoticeOperations(http);
     this.github = createRemoteGitHubOperations(http);
     this.permissions = createRemotePermissionOperations(http);

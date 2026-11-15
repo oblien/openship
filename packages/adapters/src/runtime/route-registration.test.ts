@@ -280,3 +280,56 @@ describe("registerResolvedRoutes — compiled vercel.json rules", () => {
     }
   });
 });
+
+
+describe("parallel route publication", () => {
+  it("does not hold another domain behind TLS, and applies changed upstreams on redeploy", async () => {
+    let finish!: () => void;
+    const certificate = new Promise<void>(resolve => { finish = resolve; });
+    const events: string[] = [];
+    const routing = { registerRoute: vi.fn(async (route: { domain: string }) => { events.push(`route:${route.domain}`); }) };
+    const ssl = { provisionCert: vi.fn(async (host: string) => {
+      events.push(`tls:${host}`);
+      if (host === "slow.example.com") await certificate;
+      return { domain: host, verified: true, expiresAt: "2099-01-01", issuer: "test" };
+    }) };
+    const routes = ["slow.example.com", "fast.example.com"].map(hostname => ({ ...domain(hostname), tls: true, provisionSsl: true }));
+    const pending = registerResolvedRoutes(logger, routing, ssl, routes, routeTarget);
+    try {
+      await vi.waitFor(() => expect(events).toContain("tls:fast.example.com"));
+      expect(events.indexOf("route:fast.example.com")).toBeLessThan(events.indexOf("tls:fast.example.com"));
+    } finally { finish(); }
+    expect(await pending).toEqual([]);
+    await registerResolvedRoutes(logger, routing, ssl, routes, { targetUrl: "http://127.0.0.1:54321" });
+    expect(routing.registerRoute.mock.calls.slice(2).map(([route]) => route)).toEqual(routes.map(route => ({
+      domain: route.hostname, tls: true, terminatesTlsLocally: undefined, targetUrl: "http://127.0.0.1:54321",
+    })));
+    expect(ssl.provisionCert).toHaveBeenCalledTimes(4);
+  });
+
+  it("bounds concurrency, keeps repeated host updates ordered and reports failures in input order", async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    const calls: string[] = [];
+    let active = 0, peak = 0;
+    const routing = { registerRoute: vi.fn(async (route: { domain: string }) => {
+      calls.push(route.domain);
+      peak = Math.max(peak, ++active);
+      try { await gate; throw new Error(`unreachable ${route.domain}`); }
+      finally { active--; }
+    }) };
+    const routes = ["a", "b", "c", "d", "e", "a"].map(name => domain(`${name}.example.com`));
+    const ssl = { provisionCert: vi.fn() };
+    const pending = registerResolvedRoutes(logger, routing, ssl, routes.map(route => ({ ...route, provisionSsl: true })), routeTarget);
+    try {
+      await vi.waitFor(() => expect(calls).toHaveLength(4));
+      expect(calls).toEqual(routes.slice(0, 4).map(route => route.hostname));
+    } finally { finish(); }
+    const warnings = await pending;
+    expect(peak).toBe(4);
+    expect(calls.filter(host => host === "a.example.com")).toHaveLength(2);
+    expect(warnings).toEqual(routes.map(route => `${route.hostname}: unreachable ${route.hostname}`));
+    expect(ssl.provisionCert).not.toHaveBeenCalled();
+    expect(active).toBe(0);
+  });
+});

@@ -236,7 +236,9 @@ export function harnessWrapper(directory: string, probe: HarnessProbe, node = pr
     const guarded =
       probe.provider === "codex"
         ? `  if [[ "${"${1:-}"}" == app-server ]]; then exec ${quote(node)} ${quote(guard)} ${binary} ${probe.flags.map(quote).join(" ")} "$@"; fi\n`
-        : "";
+        // Scoped Claude turns never allow switching to bypassPermissions. Merely
+        // advertising that unused mode makes Claude refuse root-hosted servers.
+        : '  openship_args=()\n  for openship_arg in "$@"; do\n    if [[ "$openship_arg" != --allow-dangerously-skip-permissions ]]; then openship_args+=("$openship_arg"); fi\n  done\n  set -- "${openship_args[@]}"\n';
     script += `if "$openship_native_turn"; then\n${guarded}  exec ${binary} ${probe.flags.map(quote).join(" ")} "$@"\nfi\nexec ${binary} "$@"\n`;
   }
   return script;

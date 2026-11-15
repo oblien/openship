@@ -232,12 +232,12 @@
   },
   "cloud": {
     "connectionGate": {
-      "reconnect": "Openship Cloud に再接続",
-      "deployedOn": "このプロジェクトは Openship Cloud にデプロイされています",
-      "sessionMissing": "Openship Cloud のセッションがありません。接続すると、{name} のデプロイの管理、ログの表示、ランタイムコントロールへのアクセスが可能になります。",
+      "reconnect": "OpenShip Cloud に再接続",
+      "deployedOn": "このプロジェクトは OpenShip Cloud にデプロイされています",
+      "sessionMissing": "OpenShip Cloud のセッションがありません。接続すると、{name} のデプロイの管理、ログの表示、ランタイムコントロールへのアクセスが可能になります。",
       "thisProject": "このプロジェクト",
       "connecting": "接続中…",
-      "connect": "Openship Cloud に接続",
+      "connect": "OpenShip Cloud に接続",
       "readOnlyNote": "切断中でも、このページを読み取り専用モードで閲覧できます。"
     }
   },
@@ -245,7 +245,7 @@
     "githubPermission": {
       "title": "GitHub に接続",
       "subtitle": "リポジトリのアクセスレベルを選択",
-      "intro": "Openship がアクセスできるリポジトリを選択してください。これは後から GitHub の設定で変更できます。",
+      "intro": "OpenShip がアクセスできるリポジトリを選択してください。これは後から GitHub の設定で変更できます。",
       "publicTitle": "公開リポジトリのみ",
       "publicDesc": "公開リポジトリへのアクセス。オープンソースプロジェクトに最適です。",
       "publicItem1": "公開リポジトリのデータを読み取る",
@@ -542,12 +542,12 @@
     "youreOn": "· 現在のバージョンは {version} です",
     "rerunInstall": "セルフホストサーバーを更新するには、インストールを再実行してください。",
     "updateNow": "今すぐ更新",
-    "downloading": "Openship {version} をダウンロード中",
-    "installing": "インストール中 — Openship が再起動します",
+    "downloading": "OpenShip {version} をダウンロード中",
+    "installing": "インストール中 — OpenShip が再起動します",
     "updateFailed": "更新に失敗しました",
     "retry": "再試行",
     "changelog": "変更履歴",
-    "updatedTo": "Openship {version} に更新しました",
+    "updatedTo": "OpenShip {version} に更新しました",
     "seeChanges": "このリリースでの変更点をご覧ください。",
     "onLatest": "最新バージョンを使用しています。",
     "whatsNew": "新着情報",

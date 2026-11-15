@@ -58,7 +58,7 @@ describe("tracked SSL provisioning progress", () => {
         if (issueError) throw issueError;
         return active;
       }),
-      renewCert: vi.fn(), installCert: vi.fn(),
+      renewCert: vi.fn(), installCert: vi.fn(), activateCert: vi.fn(),
     };
     const rows = new Map([[missing.domain, { id: "dom_1", verified: true, sslStatus: "active" }]]) as Parameters<typeof createTrackedSslProvider>[1];
     return { ssl, rows, lines, tracked: createTrackedSslProvider(ssl, rows, line => lines.push(line)) };
@@ -77,10 +77,50 @@ describe("tracked SSL provisioning progress", () => {
     "does not claim a missing certificate for $reason / verified=$verified", async onDisk => {
       const { tracked, lines } = create(onDisk);
       await tracked.provisionCert(missing.domain);
-      expect(lines[0]).toBe(`Requesting SSL certificate for ${missing.domain}…`);
+      expect(lines[0]).toBe(onDisk.verified
+        ? `Reusing the verified HTTPS certificate for ${missing.domain} (expires ${onDisk.expiresAt}).`
+        : `Checking or renewing SSL certificate for ${missing.domain}…`);
       expect(lines.join(" ")).not.toContain("HTTP route is configured");
     },
   );
+
+  it("reuses a valid certificate without bypassing activation or the final verification", async () => {
+    const { ssl, tracked } = create(active);
+    await tracked.provisionCert(missing.domain);
+    await expect(tracked.verifyCert(missing.domain)).resolves.toEqual(active);
+    expect(ssl.verifyCert).toHaveBeenCalledTimes(2);
+    expect(ssl.provisionCert).not.toHaveBeenCalled();
+    expect(ssl.activateCert).toHaveBeenCalledExactlyOnceWith(missing.domain);
+  });
+
+  it("still activates an existing certificate when the caller did not register its route", async () => {
+    const { ssl, tracked } = create(active);
+    await tracked.provisionCert(missing.domain);
+    expect(ssl.activateCert).toHaveBeenCalledExactlyOnceWith(missing.domain);
+    expect(ssl.provisionCert).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse successful issuance evidence after the certificate disappears", async () => {
+    const { ssl, tracked } = create(active);
+    await tracked.provisionCert(missing.domain);
+    vi.mocked(ssl.verifyCert).mockResolvedValue(missing);
+    await expect(tracked.verifyCert(missing.domain)).resolves.toEqual(missing);
+    await tracked.provisionCert(missing.domain);
+    expect(ssl.provisionCert).toHaveBeenCalledOnce();
+  });
+
+  it("records activation failures even when the certificate itself is valid", async () => {
+    const { ssl, tracked } = create(active);
+    vi.mocked(ssl.activateCert!).mockRejectedValue(new Error("nginx reload failed"));
+    await expect(tracked.provisionCert(missing.domain)).resolves.toMatchObject({ verified: false, reason: "read_error" });
+    expect(repos.domain.recordSslFailure).toHaveBeenCalledWith("dom_1", "nginx reload failed", "unknown");
+  });
+
+  it("keeps the renewal path for certificates inside the existing renewal window", async () => {
+    const { ssl, tracked } = create({ ...active, expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
+    await tracked.provisionCert(missing.domain);
+    expect(ssl.provisionCert).toHaveBeenCalledExactlyOnceWith(missing.domain);
+  });
 
   it("does not let a failed read-only progress probe block issuance", async () => {
     const { ssl, tracked, lines } = create();

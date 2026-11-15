@@ -2,6 +2,7 @@ import { diagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { env, runtimeTarget } from "../../config/env";
 import { sendMail } from "../../lib/mail";
+import { getOblienBillingApi } from "../../lib/oblien-client";
 import { CustomerEmailService } from "./service";
 
 export const customerEmails = new CustomerEmailService({
@@ -9,6 +10,8 @@ export const customerEmails = new CustomerEmailService({
   repo: repos.cloudCustomerEmail,
   send: sendMail,
   dashboardUrl: runtimeTarget.dashboard,
+  readSubscription: async (namespace) =>
+    (await getOblienBillingApi().getSubscription(namespace)).subscription,
 });
 
 export async function startCustomerEmails() {

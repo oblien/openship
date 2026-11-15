@@ -14,6 +14,7 @@ vi.mock("@repo/db", () => ({
       pendingActionDeploymentCount: state.pending,
       pruneDeliveries: async () => {},
       pruneRuns: async () => {},
+      settleGitHubObserverDeliveries: async () => 0,
     },
   },
 }));

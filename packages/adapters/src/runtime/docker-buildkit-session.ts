@@ -5,6 +5,7 @@ import {
   loadPackageDefinition,
   Server,
   ServerCredentials,
+  status,
   type ServiceDefinition,
 } from "@grpc/grpc-js";
 import { fromJSON } from "@grpc/proto-loader";
@@ -41,6 +42,23 @@ const definitions = loadPackageDefinition(
         },
         moby: {
           nested: {
+            buildkit: {
+              nested: {
+                secrets: {
+                  nested: {
+                    v1: {
+                      nested: {
+                        GetSecretRequest: { fields: { ID: { type: "string", id: 1 } } },
+                        GetSecretResponse: { fields: { data: { type: "bytes", id: 1 } } },
+                        Secrets: { methods: { GetSecret: {
+                          comment: "", requestType: "GetSecretRequest", responseType: "GetSecretResponse",
+                        } } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             filesync: {
               nested: {
                 v1: {
@@ -73,7 +91,7 @@ const definitions = loadPackageDefinition(
   ),
 ) as unknown as {
   grpc: { health: { v1: { Health: { service: ServiceDefinition } } } };
-  moby: { filesync: { v1: { Auth: { service: ServiceDefinition } } } };
+  moby: { filesync: { v1: { Auth: { service: ServiceDefinition } } }; buildkit: { secrets: { v1: { Secrets: { service: ServiceDefinition } } } } };
 };
 
 function serverService(service: ServiceDefinition): ServiceDefinition {
@@ -95,8 +113,12 @@ export async function buildDockerImage(
   docker: Dockerode,
   context: NodeJS.ReadableStream,
   options: Dockerode.ImageBuildOptions,
+  secrets: ReadonlyMap<string, string> = new Map(),
 ): Promise<Readable> {
-  if (options.version !== "2") return (await docker.buildImage(context, options)) as Readable;
+  if (options.version !== "2") {
+    if (secrets.size) throw new Error("Build environment secrets require BuildKit. Enable BuildKit on this Docker host.");
+    return (await docker.buildImage(context, options)) as Readable;
+  }
   const signal = options.abortSignal;
   signal?.throwIfAborted();
   const server = new Server();
@@ -136,6 +158,16 @@ export async function buildDockerImage(
               }
             : {},
         ),
+    });
+    server.addService(serverService(definitions.moby.buildkit.secrets.v1.Secrets.service), {
+      GetSecret: (
+        call: { request: { ID: string } },
+        callback: (error: { code: number; details: string } | null, value?: { data: Buffer }) => void,
+      ) => {
+        const secret = secrets.get(call.request.ID);
+        if (secret === undefined) callback({ code: status.NOT_FOUND, details: "Build secret not found" });
+        else callback(null, { data: Buffer.from(secret) });
+      },
     });
     const session = randomUUID();
     socket = await startBuildKitSessionStream(daemonConnectionFrom(docker), session, "openship");

@@ -202,6 +202,13 @@
     "pageOf": "第 {page} 页，共 {total} 页",
     "range": "第 {from}–{to} 条部署，共 {total} 条"
   },
+  "containerConflict": {
+    "title": "处理重复容器",
+    "description": "检查目标服务器上的容器及其挂载。保留预期使用的容器和数据，仅删除已确认不再使用的重复容器，然后重新部署。如果无法确定应保留哪一个，请提供此部署编号并联系支持。",
+    "containers": "匹配的容器",
+    "reviewServer": "查看服务器",
+    "reference": "部署编号"
+  },
   "resourceGuidance": {
     "label": "部署资源指引",
     "reviewCapacity": "检查容量",

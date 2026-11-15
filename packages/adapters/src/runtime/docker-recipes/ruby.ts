@@ -3,7 +3,6 @@ import type { BuildConfig } from "../../types";
 import { normalizeDockerRootDirectory } from "../docker-paths";
 import {
   builderSourceDir,
-  buildEnvPrefix,
   workspacePrepareRunLine,
   installBuildRunLine,
   runtimeCopyDirectives,
@@ -57,7 +56,6 @@ export function generateRubyDockerfile(config: BuildConfig): string {
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
-  const envPrefix = buildEnvPrefix(config.envVars);
   const workspacePrepare = config.workspacePrepareCommand?.trim();
 
   // Deployment mode makes the lockfile authoritative instead of silently
@@ -76,12 +74,12 @@ export function generateRubyDockerfile(config: BuildConfig): string {
   ];
 
   if (workspacePrepare) {
-    lines.push(workspacePrepareRunLine(config, envPrefix, workspacePrepare));
+    lines.push(workspacePrepareRunLine(config, workspacePrepare));
   }
 
   lines.push(`WORKDIR ${sourceDir}`);
 
-  const stepsLine = installBuildRunLine(config, envPrefix);
+  const stepsLine = installBuildRunLine(config);
   if (stepsLine) {
     lines.push(stepsLine);
   }

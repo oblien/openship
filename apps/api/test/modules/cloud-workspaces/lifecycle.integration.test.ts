@@ -218,7 +218,7 @@ beforeEach(async () => {
         expiresAt: "2030-01-01T00:00:00Z",
       })),
     },
-    workspaces: {
+    vms: {
       create: vi.fn(async (input: any) => {
         const existing = [...vms.values()].find((vm) => vm.slug === input.slug);
         if (existing) return existing;
@@ -242,7 +242,7 @@ beforeEach(async () => {
         return vm;
       }),
       list: vi.fn(async () => ({
-        workspaces: [...vms.values()],
+        vms: [...vms.values()],
         total: vms.size,
         page: 1,
         limit: 100,
@@ -260,9 +260,9 @@ beforeEach(async () => {
       vms.delete(id);
       return { success: true };
     }),
-    workspace: (id: string) => ({
+    vm: (id: string) => ({
       id,
-      get: () => h.client.workspaces.get(id),
+      get: () => h.client.vms.get(id),
       lifecycle: { makePermanent: async () => {} },
       resources: { update: (input: any) => h.client.resize(id, input) },
       delete: () => h.client.delete(id),
@@ -433,7 +433,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     expect((await request("POST", `/${workspace.id}/ensure`, undefined, stranger)).status).toBe(
       404,
     );
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
     const invalid = await request("POST", "", {
       name: "Broken",
       mode: "shared",
@@ -468,7 +468,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     });
     expect(observed.isError).toBe(false);
     expect(JSON.parse(observed.content[0].text).managed.operation.status).toBe("succeeded");
-    expect(h.client.workspaces.create).toHaveBeenCalledTimes(1);
+    expect(h.client.vms.create).toHaveBeenCalledTimes(1);
 
     const outsider = await seedOwner();
     expect(
@@ -492,7 +492,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
         })
       ).isError,
     ).toBe(true);
-    expect(h.client.workspaces.create).toHaveBeenCalledTimes(1);
+    expect(h.client.vms.create).toHaveBeenCalledTimes(1);
   });
   it("provisions on paid reconciliation and reuses one host across simultaneous project deployments", async () => {
     await syncOblienEntitlement(owner.orgId, { workspaceId: workspace.id });
@@ -512,7 +512,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     );
     expect(targets[0]?.workspaceId).toBe(targets[1]?.workspaceId);
     expect(targets.map((target) => target.ownerWorkspaceId)).toEqual([workspace.id, workspace.id]);
-    expect(h.client.workspaces.create).toHaveBeenCalledTimes(1);
+    expect(h.client.vms.create).toHaveBeenCalledTimes(1);
     expect(h.client.resize).not.toHaveBeenCalled();
     expect(vms.get(targets[0]!.workspaceId).resources).toMatchObject({
       cpus: 1,
@@ -544,7 +544,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     await expect(
       resolveSnapshotTarget(saved, { serverId: otherServer.id, deployTarget: "server" }),
     ).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_TARGET_CONFLICT" });
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("places bare and Docker projects on managed servers without provisioning a second host", async () => {
     const sdk = await nativeShip();
@@ -557,7 +557,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     const docker = await sdk.projects.create({ name: "Docker app", serverId: selected.serverId });
     for (const project of [bare, docker])
       expect(await repos.project.findById(project.id)).toMatchObject({ serverId: selected.serverId, workspaceId: selected.id });
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("installs and previews catalog apps on the selected managed server without creating a project VM", async () => {
     subscribe("starter");
@@ -583,7 +583,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     await expect(
       stranger.apps.install({ templateId: "redis", serverId: server.id }),
     ).rejects.toMatchObject({ statusCode: 404 });
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("carries one managed server through source staging, scan and project creation", async () => {
     const sdk = await nativeShip();
@@ -614,15 +614,15 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
       await expect(stranger.sources.scan(staged.sessionId)).rejects.toMatchObject({
         statusCode: 404,
       });
-      expect(h.client.workspaces.create).not.toHaveBeenCalled();
+      expect(h.client.vms.create).not.toHaveBeenCalled();
     } finally {
       const session = deleteFolderSession(staged.sessionId);
       if (session?.stagingDir) await rm(session.stagingDir, { recursive: true, force: true });
     }
   });
   it("recovers a lost provider create response with the same request and disk", async () => {
-    const create = h.client.workspaces.create.getMockImplementation()!;
-    h.client.workspaces.create.mockImplementationOnce(async (input: any) => {
+    const create = h.client.vms.create.getMockImplementation()!;
+    h.client.vms.create.mockImplementationOnce(async (input: any) => {
       await create(input);
       throw new Error("create response lost");
     });
@@ -642,7 +642,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     );
     expect(vms.size).toBe(1);
     expect(
-      new Set(h.client.workspaces.create.mock.calls.map(([input]: any[]) => input.idempotency_key))
+      new Set(h.client.vms.create.mock.calls.map(([input]: any[]) => input.idempotency_key))
         .size,
     ).toBe(1);
     expect(
@@ -651,7 +651,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     ).toBe([...vms.keys()][0]);
   });
   it("stops after three provisioning failures and durably escalates once without retrying the host", async () => {
-    h.client.workspaces.create.mockRejectedValue(new AppError("Hosts are temporarily at capacity", 503, "CLOUD_CAPACITY_UNAVAILABLE"));
+    h.client.vms.create.mockRejectedValue(new AppError("Hosts are temporarily at capacity", 503, "CLOUD_CAPACITY_UNAVAILABLE"));
     expect((await request("POST", `/${workspace.id}/ensure`)).status).toBe(202);
     await drainBackgroundWork();
     const createTicket = vi.spyOn(repos.cloudSupport, "create").mockRejectedValueOnce(new Error("support database temporarily unavailable"));
@@ -673,7 +673,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     expect(await repos.cloudSupport.find(ticketId)).toMatchObject({ status: "open", ownerUserId: owner.userId });
     expect(await repos.cloudSupport.messages(ticketId)).toHaveLength(2);
     await processWorkspaceOperation(workspace.id);
-    expect(h.client.workspaces.create).toHaveBeenCalledTimes(3);
+    expect(h.client.vms.create).toHaveBeenCalledTimes(3);
     expect(await repos.cloudSupport.messages(ticketId)).toHaveLength(2);
     expect((await repos.cloudWorkspace.listPendingOperations()).map(row => row.id)).not.toContain(workspace.id);
     createTicket.mockRestore();
@@ -707,7 +707,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
         },
       });
     expect((await deliver("bad-signature")).status).toBe(401);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
     expect(await db.select().from(schema.cloudCustomerEmail).where(eq(schema.cloudCustomerEmail.organizationId, owner.orgId))).toEqual([]);
     h.billing.getCheckout.mockImplementation(async () => ({
       checkout: {
@@ -731,7 +731,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
       .map(mail => mail.kind).sort()).toEqual(["invoice", "purchase"]);
     expect(result[2]).toMatchObject({ fulfilled: true, creditsGranted: 0 });
     await drainBackgroundWork();
-    expect(h.client.workspaces.create).toHaveBeenCalledTimes(1);
+    expect(h.client.vms.create).toHaveBeenCalledTimes(1);
     expect((await repos.cloudWorkspace.findById(workspace.id))?.operation?.status).toBe(
       "succeeded",
     );
@@ -764,7 +764,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
       await expect(client.resize(server.id, { revision: "a".repeat(64), confirmRestart: true, idempotencyKey: randomUUID() }))
         .rejects.toMatchObject({ code: "TOKEN_READ_ONLY" });
     }
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
 
   it("recovers one draft and its server across concurrent native/HTTP creates and scopes retries by organization", async () => {
@@ -779,7 +779,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     const stranger = await seedOwner();
     const other = await (await clients(stranger))[0]!.createManaged(input);
     expect(other.id).not.toBe(created[0]!.id);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
 
   it("never recreates a deleted purchase identity or its old provider namespace", async () => {
@@ -791,14 +791,14 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     await expect(native!.createManaged(input)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_PURCHASE_REMOVED" });
     await expect(remote!.createManaged(input)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_PURCHASE_REMOVED" });
     expect(await repos.cloudWorkspace.findById(created.id)).toBeUndefined();
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("does not provision, stop or change the entitlement mirror when provider billing is unavailable", async () => {
     await syncOblienEntitlement(owner.orgId, { workspaceId: workspace.id });
     h.billing.getEntitlement.mockRejectedValue(new Error("Billing temporarily unavailable"));
     const response = await request("POST", `/${workspace.id}/ensure`);
     expect(response.status).toBe(500);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
     expect(h.client.delete).not.toHaveBeenCalled();
     expect((await repos.cloudWorkspace.findById(workspace.id))?.subscriptionStatus).toBe("active");
   });
@@ -917,7 +917,7 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     expect((await request("POST", `/${workspace.id}/ensure`)).body.code).toBe(
       "CLOUD_SERVER_LINK_REQUIRED",
     );
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
 });
 
@@ -1757,7 +1757,7 @@ describe("managed server free-domain scope", () => {
     expect((await repos.domain.listByProject(id)).map(domain => domain.hostname)).toContain(`routed-${entry}.opsh.io`);
     expect(h.billing.getEntitlement).toHaveBeenCalled();
     expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("uses the selected metered server's entitlement and allowance", async () => {
     subscribe("starter");
@@ -1780,7 +1780,7 @@ describe("managed server free-domain scope", () => {
     expect((await repos.service.listByProject(project.id))[0]?.domain).toBe("metered-service");
     expect(h.billing.getEntitlement).toHaveBeenCalled();
     expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it.each(["ensure", "update"] as const)("refuses excess free domains before %s changes an existing project's fields", async entry => {
     const sdk = await nativeShip();
@@ -1823,7 +1823,7 @@ describe("managed server free-domain scope", () => {
       envVars: {},
     })).rejects.toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", reason: "free-subdomain-limit" });
     expect((await repos.deployment.listByProject(project.id)).rows).toEqual([]);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("does not count dormant routes outside an exclusive service deployment", async () => {
     const project = await addProject("Exclusive routes");
@@ -1839,7 +1839,7 @@ describe("managed server free-domain scope", () => {
       envVars: {}, serviceIds: [selected.id], strictServiceScope: true,
     });
     expect(queued).toMatchObject({ status: "queued" });
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("keeps existing free routes editable when the server's allowance is full", async () => {
     const sdk = await nativeShip();
@@ -1875,7 +1875,7 @@ describe("managed server free-domain scope", () => {
     expect(await repos.service.findById(service.id)).toMatchObject({ domain: "routed-console-updated" });
     expect(h.billing.getEntitlement).toHaveBeenCalled();
     expect(h.billing.getEntitlement.mock.calls.every(([namespace]: [string]) => namespace === workspace.namespace)).toBe(true);
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
   it("does not use a paid sibling's allowance or write a project for an unauthorized server", async () => {
     const sdk = await nativeShip();
@@ -1890,6 +1890,6 @@ describe("managed server free-domain scope", () => {
     await expect(sdk.projects.create({ ...input, serverId: foreignServer.id })).rejects.toMatchObject({ statusCode: 404 });
     expect((await repos.projectGroup.listByOrganization(owner.orgId, { page: 1, perPage: 1 })).total).toBe(0);
     expect(h.billing.getEntitlement).not.toHaveBeenCalled();
-    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+    expect(h.client.vms.create).not.toHaveBeenCalled();
   });
 });

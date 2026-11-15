@@ -4,6 +4,7 @@
  */
 
 import { router } from './trpc';
+import { blockedSendersRouter } from './routes/blocked-senders';
 import { mailRouter } from './routes/mail';
 import { draftsRouter } from './routes/drafts';
 import { labelsRouter } from './routes/labels';
@@ -24,6 +25,7 @@ import {
 
 export const appRouter = router({
   mail: mailRouter,
+  blockedSenders: blockedSendersRouter,
   drafts: draftsRouter,
   labels: labelsRouter,
   settings: settingsRouter,

@@ -1,0 +1,57 @@
+---
+title: "Kendi Kendini Barındırma ve Yönetilen Platformlar: Gerçek Maliyet Dağılımı"
+description: "Bir üretim Next.js uygulamasını Vercel, AWS üzerinde ve şirket içinde barındırılan OpenShip kurulumunda çalıştırmanın gerçek maliyetini karşılaştırdık. Rakamlar sizi şaşırtabilir."
+date: "2026-03-05"
+category: "Guide"
+author: "OpenShip Team"
+---
+
+Faturanız gelene kadar "Sadece Vercel kullanın" iyi bir tavsiyedir. Aynı Next.js uygulamayı üç kurulumda çalıştırdık ve 30 gün boyunca her maliyeti takip ettik.
+
+## Test uygulaması
+
+Aşağıdakileri içeren bir üretim Next.js 15 uygulaması:
+- ~50 rota, ISR etkin
+- Postgres veritabanı
+- Önbelleğe alma için Redis
+- ~100.000 aylık ziyaretçi
+- ~500GB bant genişliği/ay
+
+## Sonuçlar
+
+| | Vercel Profesyonel | AWS (ECS + RDS) | OpenShip (kendi kendine barındırılan) |
+|---|---|---|---|
+| Hesapla | 150$/ay | 85$/ay | 24$/ay |
+| Veritabanı | $50/ay (Neon) | 45$/ay | Dahil |
+| Bant genişliği | 120$/ay | 45$/ay | Dahil |
+| SSL/Etki Alanları | Dahil | 1$/ay | Dahil |
+| **Toplam** | **320$/ay** | **176$/ay** | **24$/ay** |
+
+Şirket içinde barındırılan OpenShip kurulumu, tek bir Hetzner VPS'de (CPX31: 4 vCPU, 8 GB RAM, 160 GB SSD) çalışır.
+
+## Takaslar
+
+Yönetilen platformlar size sıfır işlem sağlar. Kodu basarsınız, devreye girer. Bu gerçek değer.
+
+Ancak OpenShip aradaki farkı önemli ölçüde kapatıyor:
+- **Yapılandırmayı yapay zeka yönetir** - Derleme algılama, Dockerdosya oluşturma ve SSL otomatiktir.
+- **Tek komutla dağıtımlar** - `openship deploy` da aynı derecede hızlı.
+- **Yerleşik izleme** - Kullanıma hazır günlükler, ölçümler ve uyarılar.
+
+Geriye kalan takas ise sunucu bakımıdır - işletim sistemi güncellemeleri, disk alanı, çalışma süresinin izlenmesi. Çoğu takım için bu ayda birkaç saattir.
+
+## Ne zaman kendi kendine ev sahipliği yapılmalı
+
+Kendi kendine barındırma şu durumlarda mantıklıdır:
+- Yönetilen platformlarda aylık faturanız ~100$'ı aşıyor
+- Veri egemenliğine veya uyumluluğa ihtiyacınız var
+- Tahmin edilebilir, sabit oranlı fiyatlandırma istiyorsunuz
+- Birden fazla uygulama dağıtıyorsunuz (maliyet aynı kalıyor)
+
+## Deneyin
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+Sunucunuz, verileriniz, faturanız.

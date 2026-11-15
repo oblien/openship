@@ -6,6 +6,7 @@ export * from "./advisories";
 export * from "./resolve";
 export * from "./fork";
 export * from "./security";
+export * from "./runtime-patch";
 export * from "./poll-policy";
 export * from "./release-documents";
 export { default as updateSigningKey } from "./signing-public-key.json";

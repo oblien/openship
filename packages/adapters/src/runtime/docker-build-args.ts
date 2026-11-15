@@ -7,7 +7,8 @@ export const OPENSHIP_COMMIT_SHA_ARG = "OPENSHIP_COMMIT_SHA";
 /**
  * The one build-argument resolver for every Docker execution path.
  *
- * Project build env remains backward-compatible, NODE_ENV keeps its historical
+ * Generated recipes use secret mounts and receive no customer build arguments.
+ * Repository Dockerfile build env remains backward-compatible, NODE_ENV keeps its historical
  * default, and an explicit per-service compose arg wins over both. Invalid legacy
  * project-env names are filtered; invalid explicit Compose arg names fail closed.
  *
@@ -18,6 +19,7 @@ export const OPENSHIP_COMMIT_SHA_ARG = "OPENSHIP_COMMIT_SHA";
  */
 export function resolveDockerBuildArgs(
   config: Pick<BuildConfig, "envVars" | "buildArgs" | "commitSha">,
+  usesRepositoryDockerfile = true,
 ): Record<string, string> {
   const invalidExplicit = Object.keys(config.buildArgs ?? {}).filter((key) => !isValidEnvKey(key));
   if (invalidExplicit.length > 0) {
@@ -26,14 +28,14 @@ export function resolveDockerBuildArgs(
 
   const inherited = Object.fromEntries(
     Object.entries({
-      ...config.envVars,
+      ...(usesRepositoryDockerfile ? config.envVars : {}),
       NODE_ENV: "production",
     }).filter(([key]) => isValidEnvKey(key)),
   );
   const commit = config.commitSha?.trim();
   return {
     ...inherited,
-    ...config.buildArgs,
+    ...(usesRepositoryDockerfile ? config.buildArgs : {}),
     ...(commit && /^[0-9a-f]{7,64}$/i.test(commit) ? { [OPENSHIP_COMMIT_SHA_ARG]: commit } : {}),
   };
 }

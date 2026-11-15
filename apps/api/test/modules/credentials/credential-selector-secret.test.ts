@@ -10,6 +10,9 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: { credential: h.credentialRepo } }));
+vi.mock("@repo/platform/engine/lib/provision-lock", () => ({
+  createProvisionLock: () => ({ run: (work: () => Promise<unknown>) => work() }),
+}));
 vi.mock("@repo/platform/engine/lib/credential-encryption", () => ({
   encryptSecretField: (value: string) => `enc1:${value}`,
   decryptSecretField: (value: string) => value.replace(/^enc1:/, ""),

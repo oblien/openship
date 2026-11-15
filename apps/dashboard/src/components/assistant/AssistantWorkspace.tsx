@@ -87,7 +87,7 @@ const suggestions: Array<{ icon: IconName; title: string; prompt: string }> = [
 export function AssistantWorkspace() {
   const scope = useResourceScope();
   return (
-    <PageContainer fullScreen={false} className="flex h-full min-h-0 flex-col py-5">
+    <PageContainer fullScreen={false} className="flex h-full min-h-0 flex-col">
       <AssistantEntry key={scope} scope={scope} />
     </PageContainer>
   );
@@ -157,8 +157,13 @@ function AssistantEntry({ scope }: { scope: string }) {
     );
   return (
     <>
-      <header className="flex shrink-0 items-center justify-between gap-4">
-        <h1 className="text-2xl font-medium text-foreground">AI Agents</h1>
+      <header className="mb-6 flex shrink-0 items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-medium tracking-[-0.2px] text-foreground">AI Agents</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Deploy apps, investigate failures, and automate routine work.
+          </p>
+        </div>
       </header>
       <AssistantIntroduction>
         {investigation.status === "ready" && (

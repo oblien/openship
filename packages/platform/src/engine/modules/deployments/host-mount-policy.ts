@@ -1,5 +1,6 @@
-import { CloudDockerRuntime, type RuntimeAdapter } from "@repo/adapters";
-import { AppError, findHostMountVolumes, hasRelativeVolumeMounts } from "@repo/core";
+import { CloudDockerRuntime, isCloudProjectMountSource, type RuntimeAdapter } from "@repo/adapters";
+import { AppError, findHostMountVolumes, hasRelativeVolumeMounts, parseVolumeMount } from "@repo/core";
+import { repos } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { env } from "../../config";
 import { instanceAuthorization } from "../../lib/instance-authorization";
@@ -7,9 +8,22 @@ import { instanceAuthorization } from "../../lib/instance-authorization";
 function hasRestrictedMounts(
   volumes: readonly string[] | null | undefined,
   repositoryMounts: boolean,
+  managedProjectId?: string,
 ): boolean {
   return findHostMountVolumes(volumes).some(
-    (volume) => !repositoryMounts || !hasRelativeVolumeMounts([volume]),
+    (volume) =>
+      !(repositoryMounts && hasRelativeVolumeMounts([volume])) &&
+      !(managedProjectId && isCloudProjectMountSource(managedProjectId, parseVolumeMount(volume).source)),
+  );
+}
+
+function hostMountForbidden(cloud: boolean): AppError {
+  return new AppError(
+    cloud
+      ? "Host bind mounts are disabled in Cloud. Use named volumes or relative repository paths on a managed Docker target."
+      : "Host bind mounts are disabled. Use named volumes, or ask the instance operator to enable OPENSHIP_ALLOW_HOST_BIND_MOUNTS on an instance with trusted deployment authors.",
+    403,
+    "HOST_MOUNT_FORBIDDEN",
   );
 }
 
@@ -20,12 +34,28 @@ export async function assertHostMountWriteAccess(
     volumes?: readonly string[] | null;
     services?: readonly { volumes?: readonly string[] | null }[] | null;
   },
+  projectId?: string,
 ): Promise<void> {
   if (
     !hasRestrictedMounts(input.volumes, env.CLOUD_MODE) &&
     !input.services?.some((service) => hasRestrictedMounts(service.volumes, env.CLOUD_MODE))
   )
     return;
+  if (env.CLOUD_MODE) {
+    // Imported data already lives in a project-owned directory. Derive its root
+    // from the authorized, persisted Cloud project, never from a caller's path.
+    const project = projectId
+      ? await repos.project.findByIdInOrganization(projectId, ctx.organizationId)
+      : null;
+    if (
+      project?.workspaceId &&
+      !hasRestrictedMounts(input.volumes, true, project.id) &&
+      !input.services?.some((service) => hasRestrictedMounts(service.volumes, true, project.id))
+    )
+      return;
+    // A role upgrade cannot authorize arbitrary host files on a Cloud server.
+    throw hostMountForbidden(true);
+  }
   await instanceAuthorization.assert(ctx, "write");
 }
 
@@ -41,14 +71,15 @@ export function assertDeployVolumePolicy(
   runtime?: RuntimeAdapter,
 ): void {
   const managedRepositoryMounts = runtime instanceof CloudDockerRuntime;
-  if (!hasRestrictedMounts(volumes, managedRepositoryMounts)) return;
+  if (
+    !hasRestrictedMounts(
+      volumes,
+      managedRepositoryMounts,
+      managedRepositoryMounts ? runtime.projectId : undefined,
+    )
+  )
+    return;
   const cloud = env.CLOUD_MODE || managedRepositoryMounts;
   if (!cloud && process.env.OPENSHIP_ALLOW_HOST_BIND_MOUNTS === "true") return;
-  throw new AppError(
-    cloud
-      ? "Host bind mounts are disabled in Cloud. Use named volumes or relative repository paths on a managed Docker target."
-      : "Host bind mounts are disabled. Use named volumes, or ask the instance operator to enable OPENSHIP_ALLOW_HOST_BIND_MOUNTS on an instance with trusted deployment authors.",
-    403,
-    "HOST_MOUNT_FORBIDDEN",
-  );
+  throw hostMountForbidden(cloud);
 }

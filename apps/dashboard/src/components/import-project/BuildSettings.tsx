@@ -30,6 +30,8 @@ interface InputField {
 }
 
 interface BuildSettingsProps {
+  /** Saved app settings use the same fields without draft environment or route editors. */
+  surface?: "deploy" | "settings";
   allowWorker?: boolean;
   variant?: "deploy" | "import";
   mode?: "simple" | "advanced";
@@ -38,21 +40,24 @@ interface BuildSettingsProps {
   loading?: { [key: string]: boolean };
   buildConfig?: any;
   updateOptions?: (options: any) => void;
+  updateConfig?: (config: any) => void;
 }
 
 const BuildSettings: React.FC<BuildSettingsProps> = ({
+  surface = "deploy",
   mode = "simple",
   allowWorker = true,
   buildData: externalBuildData,
   onSave,
   loading = {},
   buildConfig,
-  updateOptions: externalUpdateOptions
+  updateOptions: externalUpdateOptions,
+  updateConfig: externalUpdateConfig,
 }) => {
   const deploymentContext = useOptionalDeployment();
-  const fallbackContext = { config: buildConfig || {}, updateOptions: externalUpdateOptions || (() => {}), updateConfig: () => {} };
+  const fallbackContext = { config: buildConfig || {}, updateOptions: externalUpdateOptions || (() => {}), updateConfig: externalUpdateConfig || (() => {}) };
   const resolvedContext = mode === 'simple'
-    ? (deploymentContext ?? fallbackContext)
+    ? (buildConfig ? fallbackContext : deploymentContext ?? fallbackContext)
     : fallbackContext;
   const { config, updateOptions, updateConfig } = resolvedContext;
   const { baseDomain } = usePlatform();
@@ -98,7 +103,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     packageManager: config?.packageManager || "npm",
     buildImage: config?.buildImage || "",
   });
-  const primaryPortLabel = primaryEndpointHost
+  const primaryPortLabel = surface === "settings" ? bs.productionPort : primaryEndpointHost
     ? (
       <>
         {bs.portForPrefix} <span className="text-foreground font-semibold">{primaryEndpointHost}</span>
@@ -242,7 +247,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
   const handleChange = (field: InputField, value: string) => {
     if (mode === 'simple' && updateOptions) {
-      if (field.key === 'productionPort' && config?.options?.hasServer && updateConfig) {
+      if (surface === "deploy" && field.key === 'productionPort' && config?.options?.hasServer && updateConfig) {
         const primaryEndpoint = servingEndpoints[0];
         updateConfig({
           productionPortTouched: true,
@@ -365,7 +370,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
           <div className="relative p-3 bg-background rounded-xl group">
             <div className="flex items-center gap-3">
               {field.icon}
-              <p className="min-w-0 flex-1 truncate pe-8 font-mono text-sm text-foreground">{displayValue || field.placeholder}</p>
+              <p className="min-w-0 flex-1 truncate pe-8 font-mono text-sm text-foreground">{displayValue || "—"}</p>
             </div>
             <button
               onClick={() => handleEdit(field.key, value)}
@@ -519,7 +524,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   };
 
   const renderEndpointTargetInputs = () => {
-    if (mode !== 'simple') {
+    if (mode !== 'simple' || surface === "settings") {
       return null;
     }
 
@@ -584,14 +589,14 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   if (mode === 'simple') {
     return (
       <div className="@container/build-settings bg-card rounded-2xl">
-        <CommandEnvironmentNotice commands={buildData ?? {}} migrateDraft={(commands, variables) => {
+        {surface === "deploy" && <CommandEnvironmentNotice commands={buildData ?? {}} migrateDraft={(commands, variables) => {
           const existing = config.envVars ?? [];
           for (const [key, value] of Object.entries(variables)) {
             const row = existing.find((item: { key: string }) => item.key === key);
             if (row && row.value !== value) throw new Error(`Environment already has a different or masked value for ${key}. Resolve it before migrating.`);
           }
           updateConfig({ options: { ...config.options, ...commands }, envVars: [...existing, ...Object.entries(variables).filter(([key]) => !existing.some((row: { key: string }) => row.key === key)).map(([key, value]) => ({ key, value, isSecret: true }))] });
-        }} />
+        }} />}
         <button
           type="button"
           aria-expanded={expanded}
@@ -603,9 +608,9 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
               <UiIcon name="sliders" className="size-[18px] text-warning" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">{bs.deployConfig}</p>
+              <p className="text-sm font-semibold text-foreground">{surface === "settings" ? t.projectSettings.build.runtime.title : bs.deployConfig}</p>
               <p className="text-xs text-muted-foreground">
-                {config?.framework
+                {surface === "settings" ? t.projectSettings.build.runtime.description : config?.framework
                   ? interpolate(bs.defaultsApplied, { framework: config.framework })
                   : bs.configureOptions}
               </p>

@@ -80,7 +80,11 @@ export function MigrationRunList({
 
   /** The "A → B" line, which is the only part that depends on where you're standing. */
   const route = (run: MigrationRun): { from: string; to: string } | null => {
-    const name = (id?: string | null) => (id ? (serverNames[id] ?? tab.crossServer) : tab.crossServer);
+    const name = (id?: string | null) => id ? (serverNames[id] ?? tab.crossServer) : tab.crossServer;
+    if (run.mode === "provider_import")return {
+        from: run.inputSnapshot?.provider === "railway" ? "Railway" : "Vercel",
+        to: name(run.targetServerId),
+      };
     if (viewpoint.kind === "project") {
       // Same-server runs can't happen for a project move (it's refused up front), so there is
       // no in-place case to special-case here.

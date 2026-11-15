@@ -59,7 +59,7 @@ describe("ProjectMigrationCard first paint", () => {
 
   it("says Cloud is out of scope instead of silently offering only servers", () => {
     // Otherwise a missing Cloud option reads as a bug rather than a boundary.
-    expect(text(render())).toContain("Openship Cloud");
+    expect(text(render())).toContain("OpenShip Cloud");
   });
 
   it("renders no confirm dialog until a plan has been fetched", () => {

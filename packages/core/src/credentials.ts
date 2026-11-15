@@ -31,7 +31,7 @@
 import { normalizeRegistryHost } from "./image-ref";
 
 /** What a credential is FOR. Consumers ask by capability, never by provider id. */
-export type CredentialCapability = "image-pull" | "dns";
+export type CredentialCapability = "image-pull" | "dns" | "migration";
 
 export type CredentialFieldType = "text" | "secret" | "select";
 
@@ -40,6 +40,8 @@ export interface CredentialField {
   readonly key: string;
   readonly label: string;
   readonly type: CredentialFieldType;
+  /** Input appearance only; secret fields still use encrypted storage. */
+  readonly inputType?: "text" | "password";
   readonly required?: boolean;
   readonly placeholder?: string;
   /** One line under the input. Keep it about what to paste, not marketing. */
@@ -81,6 +83,8 @@ export interface CredentialProvider {
   readonly fields: readonly CredentialField[];
   /** One sentence in the picker: what holding this lets Openship do. */
   readonly summary: string;
+/** Advertised by the instance only when its OAuth application is configured. */
+  readonly authorization?: { readonly available: boolean };
 }
 
 /**
@@ -91,6 +95,66 @@ export interface CredentialProvider {
  * compile error too.
  */
 export const CREDENTIAL_PROVIDERS = [
+  {
+    id: "railway",
+    label: "Railway",
+    capability: "migration",
+    icon: "railway",
+    summary: "Import projects, services and persistent data from Railway.",
+    selector: null,
+    fields: [
+      {
+        key: "apiToken",
+        label: "API token",
+        type: "secret",
+        inputType: "text",
+        required: true,
+        help: "Use a workspace token, or a project token for one environment.",
+      },
+      {
+        key: "tokenType",
+        label: "Token scope",
+        type: "select",
+        required: true,
+        options: [
+          { value: "workspace", label: "Workspace" },
+          { value: "account", label: "Account" },
+          { value: "project", label: "Project environment" },
+        ],
+      },
+      {
+        key: "workspaceId",
+        label: "Workspace ID",
+        type: "text",
+        help: "Required for a workspace token. Find it in Railway workspace settings.",
+      },
+    ],
+  },
+  {
+    id: "vercel",
+    label: "Vercel",
+    capability: "migration",
+    icon: "vercel",
+    summary:
+      "Import applications and configuration from Vercel, with a review of linked data services.",
+    selector: null,
+    fields: [
+      {
+        key: "apiToken",
+        label: "Access token",
+        type: "secret",
+        inputType: "text",
+        required: true,
+        help: "Create a token with access to the projects you want to import.",
+      },
+      {
+        key: "teamId",
+        label: "Team ID",
+        type: "text",
+        help: "For team projects, use the team ID from Vercel team settings.",
+      },
+    ],
+  },
   {
     id: "docker-registry",
     label: "Container registry",
@@ -134,8 +198,30 @@ export const CREDENTIAL_PROVIDERS = [
         key: "apiToken",
         label: "API token",
         type: "secret",
+        inputType: "text",
         required: true,
-        help: "A token with Zone:Read and DNS:Edit on the zones you want Openship to manage.",
+        placeholder: "cfut_…",
+        help: "A token with Zone:Read and DNS:Edit on the zones you want Openship to manage. Create it under My Profile → API Tokens.",
+      },
+    ],
+  },
+  {
+    id: "digitalocean",
+    label: "DigitalOcean",
+    capability: "dns",
+    icon: "digitalocean",
+    summary: "Let Openship write the DNS records a custom domain needs on DigitalOcean DNS.",
+    // Org-wide, like Cloudflare: the token addresses every domain the account hosts.
+    selector: null,
+    fields: [
+      {
+        key: "apiToken",
+        label: "API token",
+        type: "secret",
+        inputType: "text",
+        required: true,
+        placeholder: "dop_v1_…",
+        help: "A custom-scoped token with domain read, create, update and delete. Create it under API → Tokens.",
       },
     ],
   },

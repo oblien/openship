@@ -38,6 +38,10 @@ const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn(), listByDeployment
 const resolveUpstreamDrift = vi.hoisted(() => vi.fn());
 const redeployBuildSession = vi.hoisted(() => vi.fn());
 const triggerDeployment = vi.hoisted(() => vi.fn());
+const withRuntime = vi.hoisted(() => vi.fn());
+vi.mock("@repo/platform/engine/lib/deployment-runtime", async original => ({
+  ...await original<object>(), withDeploymentRuntime: withRuntime,
+}));
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
@@ -152,6 +156,7 @@ beforeEach(() => {
     fn.mockReset();
   }
   resolveUpstreamDrift.mockReset();
+  withRuntime.mockReset().mockRejectedValue(new Error("runtime unavailable"));
   redeployBuildSession.mockReset();
   triggerDeployment.mockReset().mockResolvedValue({ deployment: { id: "dep_updated" } });
   updateStatusRepo.upsert.mockResolvedValue(undefined);
@@ -327,6 +332,33 @@ describe("mixed local and registry image cohorts", () => {
     const [item] = await listOrganizationUpdates(ctx, { behindOnly: true });
     expect(item.currentLabel).toBe("16-alpine@111111111111");
     expect(item.latestLabel).toBe("16-alpine@222222222222");
+  });
+
+  it("keeps unknown images visible in the filtered feed without claiming an update", async () => {
+    setupImageProject();
+    serviceRepo.listByProject.mockResolvedValue([services[0]]);
+    const items = await listOrganizationUpdates(ctx, { behindOnly: true });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ behind: false, unverified: true,
+      detail: { services: [expect.objectContaining({ unknown: true })] },
+    });
+    expect(withRuntime).not.toHaveBeenCalled();
+  });
+
+  it("returns the unknown row when runtime resolution stalls instead of dropping it", async () => {
+    vi.useFakeTimers();
+    try {
+    setupImageProject();
+    serviceRepo.listByProject.mockResolvedValue([services[0]]);
+    serviceRepo.listByDeployment.mockResolvedValue([{
+      serviceId: "svc_app", imageRef: services[0].image, imageDigest: null, containerId: "container-app",
+    }]);
+    withRuntime.mockReturnValue(new Promise(() => {}));
+    const pending = listOrganizationUpdates(ctx, { behindOnly: true });
+    await vi.advanceTimersByTimeAsync(3_100);
+    expect(await pending).toEqual([expect.objectContaining({ behind: false, unverified: true })]);
+    expect(withRuntime).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
   });
 
   it("does not start a deployment when no newer image can be confirmed", async () => {

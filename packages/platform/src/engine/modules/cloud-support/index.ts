@@ -9,6 +9,7 @@ export const cloudSupport = new CloudSupportService({
   enabled: () => env.CLOUD_MODE,
   repo: repos.cloudSupport,
   send: sendMail,
+  contactEmail: () => env.CONTACT_EMAIL,
 });
 
 export function deliverCloudSupport() {

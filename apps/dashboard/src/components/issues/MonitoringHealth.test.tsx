@@ -98,7 +98,7 @@ describe("automatic monitoring controls", () => {
     await render();
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.scan).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Keep Openship running");
+    expect(container.textContent).toContain("Keep OpenShip running");
     expect(container.textContent).toContain("Cloud workloads are excluded");
     const details = container.querySelector("details")!;
     expect(details.open).toBe(false);

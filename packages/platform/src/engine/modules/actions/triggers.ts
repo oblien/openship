@@ -40,6 +40,19 @@ export async function enqueueActionWebhook(
       owner,
     );
     if (installation?.installationId !== installationId) continue;
+    // GitHub owns these runs and the reconciler polls them independently. A
+    // webhook only needs to request an earlier poll; persisting its full body
+    // once per imported workflow turns busy repositories into an unbounded
+    // duplicate inbox. workflow_run identifies the exact workflow to refresh.
+    if (workflow.controller === "github") {
+      if (eventName === "workflow_run") {
+        const workflowId = record(event.workflow_run).workflow_id;
+        if (String(workflowId) === workflow.githubWorkflowId)
+          await repos.actions.requestGitHubSync(workflow.organizationId, workflow.id);
+      }
+      continue;
+    }
+    if (eventName === "workflow_run" || eventName === "workflow_job") continue;
     await repos.actions.enqueueDelivery({
       organizationId: workflow.organizationId,
       workflowId: workflow.id,

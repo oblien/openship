@@ -19,7 +19,7 @@
   "actionAdopt": "重新指向",
   "actionInSync": "已就位",
   "actionConflict": "冲突",
-  "conflictNote": "非 Openship 管理 — 请删除它或手动设置此记录。",
+  "conflictNote": "非 OpenShip 管理 — 请删除它或手动设置此记录。",
   "outcomeApplied": "已应用",
   "outcomeSkipped": "已跳过",
   "outcomeFailed": "失败",

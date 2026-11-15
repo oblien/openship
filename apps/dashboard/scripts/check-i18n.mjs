@@ -14,6 +14,15 @@ import { fileURLToPath } from "node:url";
 
 const SOURCE_LOCALE = "en";
 
+// These display names intentionally stay English in every locale.
+const BRAND_NAMES = new Set([
+  "OpenShip",
+  "OpenShip Cloud",
+  "OpenShip Desktop",
+  "OpenShip Manage",
+  "Ruby on Rails",
+]);
+
 /** Absolute path to the locales dir, resolved relative to this script. */
 export function defaultLocalesDir() {
   return fileURLToPath(new URL("../src/i18n/locales", import.meta.url));
@@ -56,7 +65,12 @@ function readJson(file) {
  * English sentence, so the UI silently renders English and every test stays green.
  */
 function looksTranslatable(value) {
-  return typeof value === "string" && value.trim().length > 3 && /\s/.test(value.trim());
+  return (
+    typeof value === "string" &&
+    value.trim().length > 3 &&
+    /\s/.test(value.trim()) &&
+    !BRAND_NAMES.has(value.trim())
+  );
 }
 
 /**
@@ -98,7 +112,8 @@ export function checkI18nParity(localesDir = defaultLocalesDir()) {
       if (fs.existsSync(file)) localeEntries = leafEntries(readJson(file));
       const localeKeys = new Set(Object.keys(localeEntries));
       for (const k of base) if (!localeKeys.has(k)) missing.push({ locale, namespace: ns, key: k });
-      for (const k of localeKeys) if (!baseSet.has(k)) extra.push({ locale, namespace: ns, key: k });
+      for (const k of localeKeys)
+        if (!baseSet.has(k)) extra.push({ locale, namespace: ns, key: k });
       // Present, but still the English sentence — invisible to the two checks above.
       for (const k of localeKeys) {
         if (!baseSet.has(k)) continue;
@@ -189,12 +204,14 @@ if (isMain()) {
     }
     if (r.missing.length) {
       console.log("MISSING (key → locales that lack it):");
-      for (const [id, locs] of group(r.missing)) console.log(`  ${id}  [${[...locs].sort().join(",")}]`);
+      for (const [id, locs] of group(r.missing))
+        console.log(`  ${id}  [${[...locs].sort().join(",")}]`);
       console.log("");
     }
     if (r.extra.length) {
       console.log("EXTRA (stale locale keys not in en):");
-      for (const [id, locs] of group(r.extra)) console.log(`  ${id}  [${[...locs].sort().join(",")}]`);
+      for (const [id, locs] of group(r.extra))
+        console.log(`  ${id}  [${[...locs].sort().join(",")}]`);
       console.log("");
     }
   } else {

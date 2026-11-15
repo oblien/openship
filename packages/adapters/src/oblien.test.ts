@@ -7,7 +7,7 @@ describe("Oblien SDK transport", () => {
       status: 429, headers: { "Retry-After": retryAfter },
     }));
     vi.stubGlobal("fetch", fetcher);
-    const error = await new Oblien({ token: "test" }).workspaces.create({ wait_ready: false }).catch(error => error);
+    const error = await new Oblien({ token: "test" }).vms.create({ wait_ready: false }).catch(error => error);
     expect(error).toMatchObject({ status: 429, code: "OBLIEN_RATE_LIMITED" });
     expect(error.details.retryAfterSeconds).toBeGreaterThan(0);
     expect(error.details.retryAfterSeconds).toBeLessThanOrEqual(30);
@@ -17,7 +17,7 @@ describe("Oblien SDK transport", () => {
   });
   it.each(["invalid", "-1", "99999999999999999999999"])("ignores invalid Retry-After %s", async (retryAfter) => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 503, headers: { "Retry-After": retryAfter } })));
-    const error = await new Oblien({ token: "test" }).workspaces.get("ws").catch(error => error);
+    const error = await new Oblien({ token: "test" }).vms.get("ws").catch(error => error);
     expect(error.status).toBe(503);
     expect(error.details).toBeUndefined();
   });
@@ -30,7 +30,7 @@ describe("Oblien SDK transport", () => {
     vi.stubGlobal("fetch", fetcher);
     const choices = await new Oblien({ token: "fixture-token" }).listOutboundIps();
     expect(choices).toEqual([{ ip: "8.8.4.4", countryCode: "US" }, { ip: "1.1.1.1", countryCode: null }]);
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://api.oblien.com/zone/mine");
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://api.oblien.com/v1/zone/mine");
     expect(JSON.stringify(choices)).not.toMatch(/pool-user|pool-password|private-id/);
   });
   it("rejects an unreadable pool instead of presenting a successful empty picker", async () => {
@@ -40,13 +40,13 @@ describe("Oblien SDK transport", () => {
   it("propagates an HTTP quota refusal even without success:false", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "NAMESPACE_LIMIT_REACHED" }, { status: 409 })));
     const client = new Oblien({ token: "scoped-test-token" });
-    const error = await client.workspaces.create({ namespace: "tenant-a", wait_ready: false }).catch(error => error);
+    const error = await client.vms.create({ namespace: "tenant-a", wait_ready: false }).catch(error => error);
     expect(error).toMatchObject({ status: 409, code: "NAMESPACE_LIMIT_REACHED" });
     expect(cloudWorkspaceCreationFailure(error)).toMatchObject({ capacityRejected: true, rejected: true });
   });
   it("rejects an error HTTP status even when a payload claims success", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, workspace: { id: "not-created" } }, { status: 503 })));
-    await expect(new Oblien({ token: "test" }).workspaces.create({ wait_ready: false })).rejects.toMatchObject({ status: 503 });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ success: true, vm: { id: "not-created" } }, { status: 503 })));
+    await expect(new Oblien({ token: "test" }).vms.create({ wait_ready: false })).rejects.toMatchObject({ status: 503 });
   });
   it.each(["NAMESPACE_LIMIT_REACHED", "SANDBOX_LIMIT_REACHED", "POOL_LIMIT_REACHED"])(
     "normalizes the provider's HTTP 200 %s refusal",
@@ -56,31 +56,31 @@ describe("Oblien SDK transport", () => {
         vi.fn(async () => Response.json({ valid: false, error: "capacity exceeded", code })),
       );
       await expect(
-        new Oblien({ token: "test" }).workspaces.create({ wait_ready: false }),
+        new Oblien({ token: "test" }).vms.create({ wait_ready: false }),
       ).rejects.toMatchObject({ status: 409, code });
     },
   );
   it("keeps official request formatting and never follows authenticated redirects", async () => {
-    const fetcher = vi.fn(async () => Response.json({ success: true, workspace: { id: "ws-a", namespace: "tenant-a" } }));
+    const fetcher = vi.fn(async () => Response.json({ success: true, vm: { id: "ws-a", namespace: "tenant-a" } }));
     vi.stubGlobal("fetch", fetcher);
     const client = new Oblien({ clientId: "test-owner", clientSecret: "test-secret" });
-    await client.workspaces.create({ namespace: "tenant-a", cpus: 2, wait_ready: false });
+    await client.vms.create({ namespace: "tenant-a", cpus: 2, wait_ready: false });
     const [url, init] = fetcher.mock.calls[0]! as unknown as [URL, RequestInit];
-    expect(url.pathname).toBe("/workspace"); expect(init.redirect).toBe("error"); expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(url.pathname).toBe("/v1/vms"); expect(init.redirect).toBe("error"); expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.parse(init.body as string)).toMatchObject({ namespace: "tenant-a", config: { cpus: 2 } });
   });
   it("tracks token refresh and authentication restore without mixing scopes", async () => {
     const headers: Headers[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (_url, init) => { headers.push(new Headers(init.headers)); return Response.json({ success: true, workspaces: [] }); }));
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => { headers.push(new Headers(init.headers)); return Response.json({ success: true, vms: [] }); }));
     const client = new Oblien({ clientId: "test-owner", clientSecret: "test-secret" });
-    await client.workspaces.list(); client.setToken("namespace-token"); await client.workspaces.list(); client._http.restoreAuth(); await client.workspaces.list();
+    await client.vms.list(); client.setToken("namespace-token"); await client.vms.list(); client._http.restoreAuth(); await client.vms.list();
     expect(headers[0]!.get("X-Client-ID")).toBe("test-owner");
     expect(headers[1]!.get("Authorization")).toBe("Bearer namespace-token"); expect(headers[1]!.has("X-Client-Secret")).toBe(false);
     expect(headers[2]!.get("X-Client-ID")).toBe("test-owner"); expect(headers[2]!.has("Authorization")).toBe(false);
   });
   it("does not expose provider error details or tokens", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "scope_denied", message: "private-secret", details: { token: "private-secret" } }, { status: 403 })));
-    const error = await new Oblien({ token: "test" }).workspaces.get("ws-b").catch(error => error);
+    const error = await new Oblien({ token: "test" }).vms.get("ws-b").catch(error => error);
     expect(error.message).not.toContain("private-secret"); expect(error.details).toBeUndefined(); expect(error.status).toBe(403);
     expect(cloudWorkspaceCreationFailure(error)).toMatchObject({ capacityRejected: false, rejected: true });
   });
@@ -108,7 +108,7 @@ describe("Oblien SDK transport", () => {
         ),
       ),
     );
-    const error = await new Oblien({ token: "test" }).workspaces
+    const error = await new Oblien({ token: "test" }).vms
       .create({ wait_ready: false })
       .catch((error) => error);
     expect(error).toMatchObject({
@@ -159,7 +159,7 @@ describe("Oblien SDK transport", () => {
         ),
       ),
     );
-    const error = await new Oblien({ token: "test" }).workspaces
+    const error = await new Oblien({ token: "test" }).vms
       .create({ wait_ready: false })
       .catch((error) => error);
     expect(error.details.violations).toEqual([
@@ -212,7 +212,7 @@ describe("Oblien SDK transport", () => {
         ),
       ),
     );
-    const error = await new Oblien({ token: "test" }).workspaces
+    const error = await new Oblien({ token: "test" }).vms
       .create({ wait_ready: false })
       .catch((error) => error);
     expect(error.details).toBeUndefined();
@@ -228,7 +228,7 @@ describe("Oblien SDK transport", () => {
             code: "CREATE_FAILED",
             message: "private-account-data",
             details: {
-              workspace_id: "ws-failed",
+              vm_id: "ws-failed",
               token: "private-secret",
               workspace: { env: { SECRET: "private-secret" } },
             },
@@ -237,13 +237,13 @@ describe("Oblien SDK transport", () => {
         ),
       ),
     );
-    const error = await new Oblien({ token: "test" }).workspaces
+    const error = await new Oblien({ token: "test" }).vms
       .create({ wait_ready: false })
       .catch((error) => error);
     expect(error).toMatchObject({
       status: 422,
       code: "CREATE_FAILED",
-      details: { workspace_id: "ws-failed" },
+      details: { vm_id: "ws-failed" },
     });
     expect(cloudWorkspaceCreationFailure(error)).toEqual({ workspaceId: "ws-failed", capacityRejected: false, rejected: false });
     expect(JSON.stringify(error)).not.toContain("private-");
@@ -257,7 +257,7 @@ describe("Oblien SDK transport", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       error: code, message: "private-account-data", details: { violations: ["private-namespace-name"] },
     }, { status: 400 })));
-    const error = await new Oblien({ token: "scoped-test-token" }).workspaces.get("ws-a").catch(error => error);
+    const error = await new Oblien({ token: "scoped-test-token" }).vms.get("ws-a").catch(error => error);
     expect(error).toMatchObject({ status: 400, code });
     expect(error.message).toContain(description);
     expect(error.message).not.toContain("private-");
@@ -272,7 +272,7 @@ describe("Oblien SDK transport", () => {
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
     const controller = new AbortController();
     const reason = new Error("Deployment cancelled"); controller.abort(reason);
-    await expect(new Oblien({ token: "test" }).workspaces.create({ wait_ready: false }, { signal: controller.signal })).rejects.toBe(reason);
+    await expect(new Oblien({ token: "test" }).vms.create({ wait_ready: false }, { signal: controller.signal })).rejects.toBe(reason);
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("preserves SDK cancellation during a request instead of returning a retryable provider error", async () => {
@@ -283,7 +283,7 @@ describe("Oblien SDK transport", () => {
     })));
     const controller = new AbortController();
     const reason = new Error("Deployment cancelled");
-    const pending = new Oblien({ token: "test" }).workspaces.create({ wait_ready: false }, { signal: controller.signal });
+    const pending = new Oblien({ token: "test" }).vms.create({ wait_ready: false }, { signal: controller.signal });
     const result = expect(pending).rejects.toBe(reason);
     controller.abort(reason);
     await result;

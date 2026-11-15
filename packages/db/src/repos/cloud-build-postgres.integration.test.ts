@@ -3,7 +3,7 @@
  * Never uses DATABASE_URL/PG* credentials: owns a fresh /tmp cluster and stops it.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import * as schema from "../schema";
 import { createEncryption } from "../encryption";
-import { createAdvisoryLocks } from "../advisory-lock-factory";
+import { createAdvisoryLocks, hashStringToInt } from "../advisory-lock-factory";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createCloudBuildActivityRepo } from "./cloud-build-activity.repo";
 import { createCloudWorkspaceRepo } from "./cloud-workspace.repo";
@@ -85,6 +85,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL Cloud build concurrency", () => {
   let root: string | undefined;
   let startAttempted = false;
   let observer: Client | undefined;
+  let databaseConfig: ClientConfig;
   const clients: Client[] = [];
   const replicas: ReturnType<typeof replica>[] = [];
   let backendPids: number[] = [];
@@ -141,6 +142,7 @@ describe.skipIf(!enabled)("isolated PostgreSQL Cloud build concurrency", () => {
       connectionTimeoutMillis: 5000,
       options: "-c statement_timeout=8000 -c lock_timeout=5000",
     };
+    databaseConfig = config;
     observer = new Client({ ...config, application_name: "cloud-queue-observer" });
     await observer.connect();
     await migrate(drizzle(observer, { schema }), {
@@ -222,6 +224,103 @@ describe.skipIf(!enabled)("isolated PostgreSQL Cloud build concurrency", () => {
     }
   }
   beforeEach(fixtures);
+
+  async function claimSshBuild() {
+    await clients[0].query("UPDATE project SET workspace_id = NULL WHERE id = 'a'");
+    expect(await replicas[0].deployment.claimBuildExecution({
+      deploymentId: "dep-a", buildSessionId: "session-a", projectId: "a",
+      organizationId: "org", executionFenced: true,
+    })).toBe("claimed");
+    await clients[0].query("UPDATE deployment SET status = 'cancelled' WHERE id = 'dep-a'");
+    await clients[0].query("UPDATE build_session SET status = 'cancelled', duration_ms = 1234 WHERE id = 'session-a'");
+  }
+
+  async function recoverSshBuild(replicaIndex = 1) {
+    const replica = replicas[replicaIndex];
+    const ownership = await replica.locks.tryAcquireAdvisoryLock("cloud:build-execution:dep-a");
+    if (!ownership) return false;
+    try {
+      return await replica.deployment.recoverFencedBuildExecution({
+        deploymentId: "dep-a", buildSessionId: "session-a", projectId: "a", organizationId: "org",
+      });
+    } finally {
+      await ownership.release();
+    }
+  }
+
+  it("keeps a live SSH worker on another replica blocking deletion until it releases ownership", async () => {
+    await claimSshBuild();
+    const ownership = await replicas[0].locks.tryAcquireAdvisoryLock("cloud:build-execution:dep-a");
+    expect(ownership).not.toBeNull();
+    try {
+      expect(await recoverSshBuild()).toBe(false);
+      expect(await replicas[1].deployment.hasLiveBuildExecution("dep-a", "a")).toBe(true);
+      expect(await replicas[1].deployment.deleteDeployment("dep-a")).toBe(false);
+    } finally {
+      await ownership?.release();
+    }
+    expect(await recoverSshBuild()).toBe(true);
+    expect(await replicas[1].deployment.listInFlightByProject("a")).toEqual([]);
+    expect(await replicas[1].deployment.findBuildSession("session-a")).toMatchObject({ status: "cancelled", durationMs: 1234, finishedAt: expect.any(Date) });
+  });
+
+  it("recovers after an owning process is killed, without guessing from session age", async () => {
+    await claimSshBuild();
+    // A real process and PostgreSQL session, independent of either replica.
+    // Only the fresh, isolated cluster's explicit credentials enter this child.
+    const worker = spawn(process.execPath, ["--input-type=module", "-e", `
+      import pg from 'pg';
+      let input = '';
+      for await (const chunk of process.stdin) input += chunk;
+      const { config, key } = JSON.parse(input);
+      const client = new pg.Client(config);
+      await client.connect();
+      await client.query('SELECT pg_advisory_lock($1)', [key]);
+      process.stdout.write('OWNED\\n');
+      await new Promise(() => {});
+    `], { stdio: ["pipe", "pipe", "pipe"] });
+    const exit = new Promise<void>(resolve => worker.once("exit", () => resolve()));
+    let output = "";
+    let errors = "";
+    worker.stderr.on("data", chunk => { errors += chunk; });
+    try {
+      worker.stdin.end(JSON.stringify({ config: databaseConfig, key: hashStringToInt("cloud:build-execution:dep-a") }));
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error(`Worker did not acquire ownership: ${errors}`)), 5000);
+        worker.once("error", error => { clearTimeout(timeout); reject(error); });
+        worker.stdout.on("data", chunk => {
+          output += chunk;
+          if (output.includes("OWNED\n")) { clearTimeout(timeout); resolve(); }
+        });
+      });
+      expect(await recoverSshBuild()).toBe(false);
+      worker.kill("SIGKILL");
+      await exit;
+      let recovered = false;
+      const deadline = Date.now() + 3500;
+      while (!recovered && Date.now() < deadline) {
+        recovered = await recoverSshBuild();
+        if (!recovered) await delay(10);
+      }
+      expect(recovered).toBe(true);
+      expect(await replicas[1].deployment.hasLiveBuildExecution("dep-a", "a")).toBe(false);
+      expect(await replicas[1].deployment.findById("dep-a")).toMatchObject({ status: "cancelled" });
+      expect(await replicas[1].deployment.findBuildSession("session-a")).toMatchObject({ status: "cancelled", durationMs: 1234, finishedAt: expect.any(Date) });
+      expect(await replicas[1].deployment.deleteDeployment("dep-a")).toBe(true);
+    } finally {
+      if (worker.exitCode === null && worker.signalCode === null) worker.kill("SIGKILL");
+      await exit;
+    }
+  });
+
+  it("lets concurrent recovery replicas acknowledge an abandoned SSH session only once", async () => {
+    await claimSshBuild();
+    const outcomes = await Promise.all([recoverSshBuild(0), recoverSshBuild(1)]);
+    expect(outcomes.filter(Boolean)).toHaveLength(1);
+    const finished = await replicas[0].deployment.findBuildSession("session-a");
+    expect(await recoverSshBuild()).toBe(false);
+    expect(await replicas[0].deployment.findBuildSession("session-a")).toEqual(finished);
+  });
 
   async function waitForBlocked(pids: number[], waitEvent?: string) {
     const deadline = Date.now() + 3500;

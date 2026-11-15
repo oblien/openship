@@ -1,7 +1,8 @@
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { cache } from "react";
-import { CLOUD_API_URL, pricingUi, resolveStandard } from "@repo/core";
+import { CLOUD_API_URL, pricingUi, resolveStandard, type AppLocale } from "@repo/core";
 import { BillingPlansSchema, parseInput, type BillingPlans } from "@repo/contracts";
+import type { Copy } from "@/i18n/copy";
 
 export const UI = pricingUi("en");
 export const STANDARD = resolveStandard("en");
@@ -19,10 +20,10 @@ export interface CloudPricing {
 /** A single public catalog feeds checkout, the dashboard, and marketing.
  * React cache shares a snapshot between page and JSON-LD in each render.
  * A failed or older API never falls back to unrelated, hardcoded Cloud prices. */
-export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
+export const getCloudPricing = cache(async (locale: AppLocale = "en"): Promise<CloudPricing> => {
   try {
     const response = await fetch(
-      `${CLOUD_API_URL.replace(/\/$/, "")}/api/billing/plans?locale=en`,
+      `${CLOUD_API_URL.replace(/\/$/, "")}/api/billing/plans?locale=${locale}`,
       {
         next: { revalidate: 60 },
         signal: AbortSignal.timeout(10_000),
@@ -32,7 +33,10 @@ export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
     const body = await response.json();
     const data = parseInput(BillingPlansSchema, body.data);
     const tiers = data.plans.filter(
-      (plan): plan is PricedPlan => plan.price.monthly !== null && plan.price.monthly > 0 && plan.availableForPurchase !== false,
+      (plan): plan is PricedPlan =>
+        plan.price.monthly !== null &&
+        plan.price.monthly > 0 &&
+        plan.availableForPurchase !== false,
     );
     if (data.provider !== "oblien") throw new Error("Cloud plans unavailable");
     return {
@@ -44,7 +48,12 @@ export const getCloudPricing = cache(async (): Promise<CloudPricing> => {
     };
   } catch (error) {
     reportCaughtError(error, "web/lib/pricing");
-    return { available: false, annual: { enabled: false, monthsFree: 0 }, tiers: [], customTiers: [] };
+    return {
+      available: false,
+      annual: { enabled: false, monthsFree: 0 },
+      tiers: [],
+      customTiers: [],
+    };
   }
 });
 
@@ -64,17 +73,38 @@ export function chooseLabel(name: string): string {
   return UI.ctaChoose.replace(/\{name\}/g, name);
 }
 
+export function cloudPlanSummary(plan: CloudPlan, copy: Copy): string {
+  const projects = plan.limits.maxProjects;
+  return projects == null
+    ? copy("Shared CPU, RAM and storage for your projects.")
+    : projects === 1
+      ? copy("Shared CPU, RAM and storage for up to one project.")
+      : copy("Shared CPU, RAM and storage for up to {count} projects.", { count: projects });
+}
+
 export function priceParts(plan: CloudPlan, interval: "monthly" | "annual" = "monthly") {
   const price = plan.price[interval];
   return {
-    amount: price === null ? UI.custom : price === 0 ? UI.free : money(interval === "annual" ? price / 12 : price),
-    per: price !== null && price > 0 ? UI.perMonth : null,
+    amount: price === null ? UI.custom : price === 0 ? UI.free : money(price),
+    per: price !== null && price > 0 ? (interval === "annual" ? UI.perYear : UI.perMonth) : null,
   };
 }
 export function cloudFrom(pricing: CloudPricing): string | null {
-  return pricing.tiers.length
-    ? money(Math.min(...pricing.tiers.map((plan) => plan.price.monthly)))
-    : null;
+  const plan = startingCloudPlan(pricing);
+  return plan ? money(plan.price.monthly) : null;
+}
+export function startingCloudPlan(
+  pricing: CloudPricing,
+  interval: "monthly" | "annual" = "monthly",
+): PricedPlan | null {
+  if (!pricing.available) return null;
+  return pricing.tiers.reduce<PricedPlan | null>(
+    (lowest, plan) =>
+      plan.price[interval] != null && (!lowest || plan.price[interval]! < lowest.price[interval]!)
+        ? plan
+        : lowest,
+    null,
+  );
 }
 export function paidLadder(pricing: CloudPricing): string {
   return pricing.tiers

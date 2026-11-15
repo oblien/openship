@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
@@ -29,7 +29,10 @@ const state = vi.hoisted(() => ({
       },
     ],
   },
-  servicesData: { isLoading: false, services: [] },
+  servicesData: {
+    isLoading: false,
+    services: [] as Array<{ id: string; name: string; kind: "compose"; image: string; exposed: boolean }>,
+  },
   roles: {
     data: null as import("@repo/contracts").ProjectRuntimeRoles | null,
     loading: false,
@@ -61,8 +64,8 @@ vi.mock("@/components/i18n-provider", async (original) => ({
   useI18n: () => ({ t: baseDictionary }),
 }));
 vi.mock("./logs/TerminalLogs", () => ({
-  TerminalLogs: ({ streamTarget }: { streamTarget: string }) => (
-    <output data-stream={streamTarget}>Terminal output</output>
+  TerminalLogs: ({ streamTarget, title }: { streamTarget: string; title?: ReactNode }) => (
+    <>{title}<output data-stream={streamTarget}>Terminal output</output></>
   ),
 }));
 vi.mock("./logs/ServerLogs", () => ({
@@ -82,6 +85,7 @@ beforeEach(() => {
   };
   vi.clearAllMocks();
   state.searchParams = new URLSearchParams();
+  state.servicesData.services = [];
   state.roles.data = null;
   state.roles.deploymentId = null;
   state.roles.error = null;
@@ -103,6 +107,44 @@ const clearButton = () =>
   )!;
 
 describe("project log source controls", () => {
+  it("keeps Project runtime separate from a Redis service added to a Dockerfile app", async () => {
+    state.project = {
+      name: "NestJS",
+      framework: "docker",
+      projectType: "docker",
+      hasServer: true,
+      deployTarget: "server",
+    };
+    await act(async () => root.render(<LogsSettings />));
+    expect(host.querySelector("[data-stream]")?.getAttribute("data-stream")).toBe(
+      "projects/project/logs/stream",
+    );
+
+    state.servicesData.services = [
+      { id: "redis", name: "Redis", kind: "compose", image: "redis:7", exposed: false },
+    ];
+    await act(async () => root.render(<LogsSettings />));
+    const picker = host.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!;
+    expect(picker.textContent).toContain(baseDictionary.projectSettings.logs.projectRuntime);
+    await act(async () => picker.click());
+    const redis = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent?.includes("Redis"),
+    )!;
+    await act(async () => redis.click());
+    expect(host.querySelector("[data-stream]")?.getAttribute("data-stream")).toBe(
+      "projects/project/services/redis/logs/stream",
+    );
+
+    await act(async () => picker.click());
+    const application = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (option) => option.textContent?.includes(baseDictionary.projectSettings.logs.projectRuntime),
+    )!;
+    await act(async () => application.click());
+    expect(host.querySelector("[data-stream]")?.getAttribute("data-stream")).toBe(
+      "projects/project/logs/stream",
+    );
+  });
+
   function roleProject() {
     state.project = {
       name: "Example",

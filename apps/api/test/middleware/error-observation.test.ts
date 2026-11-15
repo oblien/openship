@@ -11,10 +11,6 @@ import {
 import { observeRequestErrors } from "../../src/middleware/error-observation";
 import { handleApiError } from "../../src/middleware/error-handler";
 
-vi.mock("@repo/platform/engine/modules/cloud-analytics/index", () => ({
-  cloudAnalytics: { enabled: () => false },
-}));
-
 const events: ErrorEvent[] = [];
 beforeEach(async () => {
   await errorReporter.flush();

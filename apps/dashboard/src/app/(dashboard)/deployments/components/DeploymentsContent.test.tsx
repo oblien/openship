@@ -65,6 +65,7 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function render(projectId: string | undefined = "project") {
@@ -195,4 +196,66 @@ it("can select a project whose history is older than the first page", async () =
   expect(h.all.mock.lastCall?.[0]).toMatchObject({ projectId: "old-project", page: 1 });
   expect(container.textContent).toContain("1–1 of 1 deployments");
   expect(container.textContent).toContain("Older project");
+});
+
+it("refreshes running rows without replacing them with skeletons, then stops polling", async () => {
+  vi.useFakeTimers();
+  const response = pageResponse(1, 1);
+  h.project.mockResolvedValueOnce({ ...response, data: [{ ...response.data[0], status: "building", isActive: false }] });
+  await render();
+  expect(container.textContent).toContain("Building");
+  let finish!: (value: ReturnType<typeof pageResponse>) => void;
+  h.project.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+  expect(h.project).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Release 1");
+  expect(container.textContent).toContain("Building");
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(h.project).toHaveBeenCalledTimes(2);
+  await act(async () => finish(response));
+  expect(container.textContent).toContain("Deployed");
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(h.project).toHaveBeenCalledTimes(2);
+});
+
+it("refreshes settled history once on return and deduplicates browser resume events", async () => {
+  vi.useFakeTimers();
+  await render();
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(h.project).toHaveBeenCalledTimes(1);
+  const updated = pageResponse(1, 1);
+  updated.data[0]!.commitMessage = "Completed while away";
+  h.project.mockResolvedValueOnce(updated);
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(h.project).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Completed while away");
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(h.project).toHaveBeenCalledTimes(2);
+});
+
+it("does not poll or refresh history while hidden or offline", async () => {
+  vi.useFakeTimers();
+  const response = pageResponse(1, 1);
+  h.project.mockResolvedValueOnce({ ...response, data: [{ ...response.data[0], status: "queued" }] });
+  await render();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(h.project).toHaveBeenCalledTimes(1);
+  visibility.mockReturnValue("visible");
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(h.project).toHaveBeenCalledTimes(1);
+  online.mockReturnValue(true);
+  await act(async () => window.dispatchEvent(new Event("online")));
+  expect(h.project).toHaveBeenCalledTimes(2);
 });

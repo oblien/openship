@@ -13,6 +13,7 @@
  */
 
 // Types
+export { CommandSourceBackupExecutor } from "./executors/command-source";
 export { uploadIncrementalArtifact, headBackupArtifact, openBackupArtifact } from "./common/incremental";
 export type { RecordedBackupArtifact } from "./common/incremental";
 export type {

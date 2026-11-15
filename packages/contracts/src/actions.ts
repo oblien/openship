@@ -210,6 +210,7 @@ export const ActionWorkflowSchema = Type.Object(
     variables: strings,
     plan: ActionPlanSchema,
     lastError: nullable(Type.String()),
+    latestRunStatus: Type.Optional(Type.Union([ActionStatusSchema, Type.Null()])),
     secretNames: Type.Array(Type.String()),
     enabled: Type.Boolean(),
     allowForks: Type.Boolean(),

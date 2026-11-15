@@ -35,7 +35,7 @@ export function readServerResources(
     : null;
 }
 
-/** Monthly configuration and the prepaid estimator share resource controls and validation. */
+/** Preset and custom plans share resource controls and validation. */
 export function ServerResourceInputs({
   ranges,
   values,

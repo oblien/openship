@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  MAIL_CONTAINER_MOUNTS,
   MAIL_DB_DEFAULT_PORT,
   MAIL_DB_FALLBACK_PORT,
   MAIL_DB_PORT_RANGE_MAX,
   MAIL_DB_INTERNAL_PORT,
+  MAIL_HOST_STATE_DIR,
   resolveMailDbPort,
 } from "./mail-container";
 
@@ -16,6 +18,39 @@ afterEach(() => {
   } else {
     process.env.OPENSHIP_MAIL_DB_PORT = originalEnv;
   }
+});
+
+describe("MAIL_CONTAINER_MOUNTS", () => {
+  const byContainer = (path: string) => MAIL_CONTAINER_MOUNTS.find((m) => m.container === path);
+
+  it("persists the mail logs across container recreates (issue #1701)", () => {
+    // rsyslog writes mail.log, dovecot/*.log and fail2ban.log to /var/log, and
+    // supervisord writes its per-program logs to /var/log/supervisor — none of
+    // it reaches `docker logs`, so a recreate on an ephemeral layer loses it.
+    const mount = byContainer("/var/log");
+    expect(mount).toBeDefined();
+    expect(mount?.host).toBe(`${MAIL_HOST_STATE_DIR}/logs`);
+    // Pure data — nothing to seed; the entrypoint pre-creates the files it needs.
+    expect(mount?.seed).toBeFalsy();
+  });
+
+  it("persists fail2ban's own ban database across container recreates (issue #1701)", () => {
+    // The SQLite database fail2ban restores bans from (default
+    // /var/lib/fail2ban/fail2ban.sqlite3) — without this mount every update
+    // starts from an empty database ("New database created").
+    const mount = byContainer("/var/lib/fail2ban");
+    expect(mount).toBeDefined();
+    expect(mount?.host).toBe(`${MAIL_HOST_STATE_DIR}/fail2ban`);
+    expect(mount?.seed).toBeFalsy();
+  });
+
+  it("does not bind-mount /etc/fail2ban wholesale (issue #1701)", () => {
+    // The entrypoint rewrites files there on every boot, and a seed-once mount
+    // would hide later image changes — the same trap as #392's bind-mounted
+    // master.cf. Operator ignoreip goes through OPENSHIP_MAIL_F2B_IGNOREIP,
+    // rendered into a jail.d override by the entrypoint, instead.
+    expect(byContainer("/etc/fail2ban")).toBeUndefined();
+  });
 });
 
 describe("resolveMailDbPort", () => {

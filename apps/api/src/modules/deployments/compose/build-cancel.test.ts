@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 // Same stubs as build.service.test.ts: the DB row read and the SSE broadcast are
 // side effects this contract doesn't depend on (and importing the real @repo/db
 // would risk the PGlite single-instance lock).
-const { listByProjectMock } = vi.hoisted(() => ({ listByProjectMock: vi.fn() }));
+const { listByProjectMock, getEnvMapMock } = vi.hoisted(() => ({
+  listByProjectMock: vi.fn(), getEnvMapMock: vi.fn(async () => ({})),
+}));
 vi.mock("@repo/db", () => ({
-  repos: { service: { listByProject: listByProjectMock } },
+  repos: { project: { getEnvMap: getEnvMapMock }, service: { listByProject: listByProjectMock } },
 }));
 vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),

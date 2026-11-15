@@ -51,6 +51,7 @@ export interface BuildMessage extends SSEMessage {
   error?: string;
   phase?: string;
   currentStep?: number;
+  verification?: import("@repo/core").DeploymentVerification;
   progress?: number;
   eventId?: number;
   exitCode?: number;
@@ -75,7 +76,7 @@ export interface BuildMessageCallbacks {
   ) => void;
   onCanceled?: (message?: string) => void;
   onPhaseChange?: (phase: string) => void;
-  onProgress?: (currentStep: number, progress: number) => void;
+  onProgress?: (currentStep: number, progress: number, verification?: import("@repo/core").DeploymentVerification) => void;
   onReconnected?: () => void;
   onContainerExit?: (exitCode: number, message?: string) => void;
   onPrompt?: (prompt: {
@@ -205,7 +206,8 @@ export const createBuildMessageProcessor = (
 
         case "progress":
           if (message.currentStep !== undefined && message.progress !== undefined) {
-            callbacks.onProgress?.(message.currentStep, message.progress);
+            if (message.verification) callbacks.onProgress?.(message.currentStep, message.progress, message.verification);
+            else callbacks.onProgress?.(message.currentStep, message.progress);
           }
           // Also write log if it exists
           if (message.data && rawBytes) {

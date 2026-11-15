@@ -20,6 +20,7 @@ import {
   classifyProxy,
   describeContainerById,
   EDGE_CONTAINER_NAME,
+  EDGE_TRANSITION_PREFIX,
   isOurEdgeContainer,
   mayStopUnitForEdgeTakeover,
   resolveContainerPublishingPort,
@@ -363,7 +364,7 @@ export async function detectEdgeContainer(
   const absent = { name: null, running: false, image: null, exists: false };
   for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const [name, image, state] = line.split("\t");
-    if (!name) continue;
+    if (!name || name.startsWith(EDGE_TRANSITION_PREFIX)) continue;
     if (isOurEdgeContainer(name, image)) {
       return { name, image: image || null, running: state === "running", exists: true };
     }
@@ -386,7 +387,7 @@ async function probeOurEdgeContainer(executor: CommandExecutor): Promise<string 
   if (!all) return null;
   for (const line of all.split("\n").map((l) => l.trim()).filter(Boolean)) {
     const [name, image] = line.split("\t");
-    if (name && isOurEdgeContainer(name, image)) return name;
+    if (name && !name.startsWith(EDGE_TRANSITION_PREFIX) && isOurEdgeContainer(name, image)) return name;
   }
   return null;
 }

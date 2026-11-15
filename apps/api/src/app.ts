@@ -1,6 +1,6 @@
 import { chatAppRoutes } from "./modules/chat-apps/chat-apps.routes";
-import { referralRoutes } from "./modules/affiliates/referral.routes";
-import { affiliateRoutes } from "./modules/affiliates/affiliate.routes";
+import { referralRoutes } from "./modules/referrals/referral.routes";
+import { referralProgramRoutes, legacyReferralProgramRoutes } from "./modules/referrals/referral-program.routes";
 import { actionRoutes } from "./modules/actions/action.routes";
 import { actionRuntimeRoutes, actionTwirpRoutes } from "./modules/actions/action-runtime.routes";
 import { actionOidcRoutes } from "./modules/actions/action-oidc.routes";
@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
+import { publicContactOrigin } from "./modules/cloud-support/contact-origin";
 import { handleApiError } from "./middleware/error-handler";
 import { observeRequestErrors } from "./middleware/error-observation";
 import { authRouteLimiter, floodGuard } from "./middleware/rate-limiter";
@@ -22,6 +23,7 @@ import {
   registerControllerLifecycle,
 } from "./modules/system/instance/controller-state";
 import { resumeControllerSockets } from "./lib/ws";
+import { resumeControllerStreams } from "./lib/sse";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 import { instanceAuthorityGuard } from "./modules/system/instance/authority-guard";
 import { quiesceController } from "./modules/system/instance/quiescence";
@@ -136,7 +138,7 @@ app.use("*", observeRequestErrors);
 app.use(
   "*",
   cors({
-    origin: trustedOrigins,
+    origin: (origin, c) => trustedOrigins.includes(origin) || publicContactOrigin(c.req.path, origin) ? origin : undefined,
     credentials: true,
     exposeHeaders: ["X-Request-ID"],
   }),
@@ -228,7 +230,9 @@ app.route("/api/mcp", mcpRoutes);
 app.route("/api/assistant", assistantRoutes);
 app.route("/api/chat-apps", chatAppRoutes);
 app.route("/api/billing", billingPlansRoutes);
-app.route("/api/affiliates", affiliateRoutes);
+app.route("/api/referral-program", referralProgramRoutes);
+// Existing SDKs use the same handlers; new clients use /api/referral-program.
+app.route("/api/affiliates", legacyReferralProgramRoutes);
 app.route("/api/referrals", referralRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);
@@ -353,8 +357,6 @@ if (env.CLOUD_MODE) {
   app.route("/api/diagnostics", diagnosticsRoutes);
   const { cloudSupportRoutes } = await import("./modules/cloud-support/cloud-support.routes");
   app.route("/api/cloud/support", cloudSupportRoutes);
-  const { cloudAnalyticsRoutes } = await import("./modules/cloud-analytics/cloud-analytics.routes");
-  app.route("/api/cloud/telemetry", cloudAnalyticsRoutes);
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
 
@@ -409,6 +411,7 @@ async function startControllerBackground(): Promise<void> {
   backgroundStarted = true;
   try {
     resumeControllerSockets();
+    resumeControllerStreams();
     // ─── Backup job runner + boot reconcile ─────────────────────────────
     //
     // One JobRunner powers all backup work — BullMQ when Redis is
@@ -475,6 +478,8 @@ async function startControllerBackground(): Promise<void> {
         processRun: (runId) => backupOrchestrator.execute(runId),
         processRecurring: runScheduledJob,
       });
+      // Earlier releases persisted a separate product-telemetry delivery schedule.
+      await runner.removeRecurring("cloud-analytics:deliver");
       console.log(`[boot] backup runner: ${runner.describe()}`);
       (await import("@repo/platform/engine/modules/actions/lifecycle")).startActionController();
       (await import("@repo/platform/engine/modules/ingress/lifecycle")).startIngressController();
@@ -534,14 +539,6 @@ async function startControllerBackground(): Promise<void> {
             errorDiagnostics.warn(
               "api/app",
               "[cloud-support] Background delivery could not start; requests remain saved.",
-            ),
-          );
-        void import("@repo/platform/engine/modules/cloud-analytics/index")
-          .then(({ startCloudAnalytics }) => startCloudAnalytics())
-          .catch(() =>
-            errorDiagnostics.warn(
-              "api/app",
-              "[cloud-analytics] Background delivery could not start.",
             ),
           );
         void import("@repo/platform/engine/lib/oblien-client")

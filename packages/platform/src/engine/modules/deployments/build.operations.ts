@@ -113,7 +113,7 @@ export const buildDependencies: BuildDependencies = {
       if (!isAcceptedDeploymentResult(body)) throw new AppError("Invalid cloud build response", 502, "INVALID_CLOUD_RESPONSE");
       return body;
     }
-    await (await import("./host-mount-policy")).assertHostMountWriteAccess(ctx, input);
+    await (await import("./host-mount-policy")).assertHostMountWriteAccess(ctx, input, input.projectId);
     const service = await import("./build.service");
     return service.requestBuildAccess(ctx, input);
   },

@@ -1,6 +1,6 @@
 {
   "title": "モニタリング",
-  "subtitle": "プロジェクト・サーバー・ドメイン全体でOpenshipが検出した問題の一覧です。",
+  "subtitle": "プロジェクト・サーバー・ドメイン全体でOpenShipが検出した問題の一覧です。",
   "tabs": {
     "open": "概要",
     "health": "ヘルス",
@@ -23,7 +23,7 @@
     "clear": "フィルターをクリア"
   },
   "scopes": {
-    "platform": "Openship",
+    "platform": "OpenShip",
     "server": "サーバー",
     "project": "プロジェクト",
     "domain": "ドメイン"
@@ -106,12 +106,12 @@
     "offlineHint": "表示されている状態は古い可能性があります。再接続して更新してください。",
     "retryStatus": "状態を再取得",
     "recheck": "再確認",
-    "unknownHealth": "Openshipがこのサーバーに接続するまで、コンテナの状態は不明です。",
-    "monitoringHint": "Openship は対象のサーバーに接続できません。現在の稼働状態は不明です。",
+    "unknownHealth": "OpenShipがこのサーバーに接続するまで、コンテナの状態は不明です。",
+    "monitoringHint": "OpenShip は対象のサーバーに接続できません。現在の稼働状態は不明です。",
     "details": "技術的な詳細",
     "mailTitle": "メールの状態を取得できません",
-    "mailHint": "Openship はこのメールサーバーの状態を確認できませんでした。サーバーは稼働している可能性があります。接続を確認して再試行してください。",
-    "apiTitle": "Openship に接続できません",
+    "mailHint": "OpenShip はこのメールサーバーの状態を確認できませんでした。サーバーは稼働している可能性があります。接続を確認して再試行してください。",
+    "apiTitle": "OpenShip に接続できません",
     "apiHint": "ステータスの更新が遅れる場合があります。"
   },
   "actionLabels": {
@@ -154,7 +154,7 @@
     "requestTimeout": "リクエストがタイムアウトしました。サーバーの応答に時間がかかりすぎています。",
     "requestCancelled": "リクエストがキャンセルされました。",
     "requestFailed": "リクエストが失敗しました。",
-    "networkUnreachable": "Openship に接続できません。接続とサーバーの状態を確認してください。",
+    "networkUnreachable": "OpenShip に接続できません。接続とサーバーの状態を確認してください。",
     "hostUnreachable": "ホストに到達できません",
     "sshConnectionRefused": "SSH 接続が拒否されました"
   },
@@ -170,7 +170,7 @@
       "descCannotManage": "インスタンス管理者が自動チェックを有効にできます。",
       "scheduleEveryMinute": "毎分",
       "scheduleCustom": "カスタムスケジュール",
-      "runsWhileOpen": "Openshipを実行し続けてください",
+      "runsWhileOpen": "OpenShipを実行し続けてください",
       "runsInBackground": "バックグラウンドで実行",
       "saving": "保存中…",
       "disable": "監視を無効化",

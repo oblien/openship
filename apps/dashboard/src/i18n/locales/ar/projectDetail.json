@@ -97,11 +97,11 @@
       "serviceCountOne": "{count} خدمة",
       "serviceCountOther": "{count} خدمات",
       "searchPlaceholder": "ابحث بالاسم أو الصورة أو الوسم…",
-      "cloudConnectHint": "اربط Openship Cloud لتصفّح كتالوج الخدمات السحابية. لا يزال بإمكانك إضافة أي صورة يدويًا.",
+      "cloudConnectHint": "اربط OpenShip Cloud لتصفّح كتالوج الخدمات السحابية. لا يزال بإمكانك إضافة أي صورة يدويًا.",
       "noMatchesTitle": "لا توجد نتائج",
       "noMatchesBody": "جرّب فئة أو مصطلح بحث مختلف - أو اختر صورة مخصّصة من الشريط الجانبي.",
       "localImages": "الصور المحلية",
-      "openshipCloud": "Openship Cloud",
+      "openshipCloud": "OpenShip Cloud",
       "localDocker": "Docker المحلي",
       "customEntryName": "صورة مخصّصة",
       "customEntryDescription": "اسحب أي صورة Docker عامة أو خاصة عبر الوسم.",
@@ -134,7 +134,7 @@
         "other": "أخرى"
       },
       "cloudConnectTitle": "هل تحتاج إلى قواعد بيانات مدارة أو تخزين كائنات؟",
-      "cloudConnectBody": "قم بتوصيل Openship Cloud لتوفير Postgres بدون خادم وRedis ومجموعات متوافقة مع S3 بجانب هذا المشروع.",
+      "cloudConnectBody": "قم بتوصيل OpenShip Cloud لتوفير Postgres بدون خادم وRedis ومجموعات متوافقة مع S3 بجانب هذا المشروع.",
       "cloudConnectButton": "استكشاف إضافات Cloud",
       "repositorySource": {
         "catalog": "الكتالوج",
@@ -200,7 +200,7 @@
           "reviewFailed": "تعذرت مراجعة الإعدادات المشتركة. لم تُحفظ تغييراتك."
         },
         "helpTitle": "كيف تعمل متغيرات البيئة",
-        "description": "تُحفظ في Openship. تتيح عملية الحفظ مراجعة التغييرات المشتركة عند توفر مصدر للمشروع. تتقدم تجاوزات الخدمة على قيم Compose والمشروع.",
+        "description": "تُحفظ في OpenShip. تتيح عملية الحفظ مراجعة التغييرات المشتركة عند توفر مصدر للمشروع. تتقدم تجاوزات الخدمة على قيم Compose والمشروع.",
         "sources": {
           "service": "تجاوز خاص بالخدمة",
           "compose": "Compose",
@@ -424,7 +424,7 @@
     "connection": {
       "terminal": "الطرفية",
       "statusTitle": "حالة الخدمة غير متاحة",
-      "statusHint": "تعذّر على Openship التأكد من الحالة الحالية. قد تكون خدمتك ما زالت تعمل.",
+      "statusHint": "تعذّر على OpenShip التأكد من الحالة الحالية. قد تكون خدمتك ما زالت تعمل.",
       "checkingTitle": "جارٍ التحقق من الخدمة",
       "checkingHint": "ننتظر استجابة من الخادم. يمكنك محاولة فتح الطرفية الآن.",
       "startingTitle": "بانتظار الخدمة",
@@ -449,7 +449,7 @@
       "errorTitle": "الطرفية غير متاحة",
       "errors": {
         "auth": "تعذّر التحقق من صلاحية وصولك. سجّل الدخول مجددًا أو تحقّق من أذوناتك.",
-        "connect": "تعذّر على Openship الوصول إلى طرفية الخدمة. أعد المحاولة بعد عودة اتصال الخادم.",
+        "connect": "تعذّر على OpenShip الوصول إلى طرفية الخدمة. أعد المحاولة بعد عودة اتصال الخادم.",
         "notFound": "هذه الخدمة غير متاحة أو لا تملك صلاحية الوصول إليها.",
         "notDeployed": "لا توجد حاوية قيد التشغيل للاتصال بها. تحقّق من حالة الخدمة وأعد المحاولة.",
         "notSupported": "بيئة تشغيل هذه الخدمة لا تدعم طرفية تفاعلية.",

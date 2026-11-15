@@ -68,7 +68,7 @@ export function applyAppearance(preferences: AppearancePreferences, mode: ThemeM
     const key = `${custom!.id}:${font.role}:${font.data}`;
     if (fontFaces.has(key)) continue;
     const face = new FontFace(
-      `Openship-${custom!.id}-${font.role}`,
+      `OpenShip-${custom!.id}-${font.role}`,
       `url(data:font/woff2;base64,${font.data})`,
     );
     fontFaces.set(key, face);

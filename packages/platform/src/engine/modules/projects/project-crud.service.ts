@@ -32,12 +32,14 @@ import {
   validateReleaseRepository,
   validateReleaseVersionUrl,
   isBehind,
+  digestSha,
   GITHUB_REPO,
   normalizeRollbackWindow,
   normalizeAliasStrict,
   aliasConflictsWithSiblings,
   normalizeFramework,
   isServicesFramework,
+  missingBuildCommands,
   resolveWorkload,
   resolveGitHubDeploymentChecks,
   toWorkloadType,
@@ -85,6 +87,9 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { markRoutingWarning, syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
+import { projectToClass } from "../deployments/deployment-class";
+import { isMultiServiceProject } from "../deployments/compose/project-services";
+import { isMaterializedAppRow } from "../services/materialized-app-row";
 import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
@@ -104,6 +109,45 @@ import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../li
 import { requireOrgServer } from "../../lib/server-target";
 import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
+
+/**
+ * Reject explicitly blank required commands before saving the rest of an edit.
+ * Unrelated edits to an incomplete draft remain possible. Service-first projects
+ * validate their own recipes at deployment; adding a sidecar does not exempt the app.
+ */
+async function assertBuildCommandUpdate(
+  project: Project,
+  changes: Record<string, unknown>,
+  incomingCommandOwner?: "project" | "services",
+) {
+  if (changes.installCommand === undefined && changes.startCommand === undefined) return;
+  const next = { ...project, ...changes };
+  if (incomingCommandOwner === "services" || isMultiServiceProject(next)) return;
+  const missing = missingBuildCommands({
+    ...next,
+    ...projectToClass(next),
+    hasBuild: next.hasBuild ?? true,
+  }).filter((field) => changes[field] !== undefined);
+  if (!missing.length) return;
+  // An authoritative incoming app list replaces the saved monorepo topology.
+  if (incomingCommandOwner === undefined) {
+    const services = await repos.service.listByProject(project.id);
+    if (
+      services.some(
+        (service) =>
+          service.enabled !== false &&
+          service.kind === "monorepo" &&
+          !isMaterializedAppRow(project, service),
+      )
+    ) return;
+  }
+  const fields = missing.map((field) =>
+    field === "installCommand" ? "Install command" : "Start command",
+  );
+  throw new ValidationError(
+    `${fields.join(" and ")} cannot be empty for this build configuration. Enter the required commands in Configuration before saving.`,
+  );
+}
 
 /** A retention edit and its cleanup share the admission lock. A concurrent
  * increase/pin must not race a sweep operating on the previous policy. */
@@ -1630,6 +1674,15 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
 
+    let incomingCommandOwner: "project" | "services" | undefined;
+    if (data.projectType === "monorepo" && data.monorepoApps?.length) {
+      incomingCommandOwner = data.monorepoApps.some((app) => app.enabled !== false)
+        ? "services" : "project";
+    } else if (data.projectType === "services" && data.services?.length) {
+      incomingCommandOwner = "services";
+    }
+    await assertBuildCommandUpdate(project, update, incomingCommandOwner);
+
     // Validate explicit route changes before saving any of the accompanying
     // field edits. In particular, ensure must not silently accept a refused URL.
     const nextRoutes = data.publicEndpoints !== undefined || update.slug !== undefined || update.port !== undefined
@@ -1851,6 +1904,7 @@ async function updateProjectUnlocked(
   }
   Object.assign(update, runtimeProjectUpdate(p, update));
   assertRuntimeVersionTarget({ ...p, ...update });
+  await assertBuildCommandUpdate(p, update);
   // A rename changes the DISPLAY NAME only — `slug` is deliberately NOT
   // recomputed. The slug is this project's infrastructure identity, not a label:
   // it names the `openship-<slug>` docker network, the `openship-<slug>-<svc>`
@@ -2533,7 +2587,7 @@ export async function evaluateDrift(
   ]);
   // Use the deployment admission query, including a worker still finishing after
   // cancellation/cutover. A terminal-looking row alone cannot re-enable Update.
-  const active = inFlight[0];
+  const active = inFlight.at(0);
   const inProgressDeploymentId = active?.id ?? null;
 
   if (upstream.mode === "commit" && deployed.mode === "commit") {
@@ -2598,10 +2652,12 @@ export async function evaluateDrift(
       const latestDigest = Object.hasOwn(upstream.digestByRef, ref)
         ? upstream.digestByRef[ref]
         : null;
+      const deployedDigest = running?.digest ||
+        (running?.ref?.includes("@sha256:") ? digestSha(running.ref) : undefined);
       const current: UpdatableIdentity = {
         kind: "image",
         ref: running?.ref ?? ref,
-        digest: running?.digest,
+        digest: deployedDigest,
       };
       const latest: UpdatableIdentity = {
         kind: "image",
@@ -2612,10 +2668,11 @@ export async function evaluateDrift(
         serviceId: svc.id,
         name: svc.name,
         ref,
-        deployedDigest: running?.digest ?? null,
+        deployedDigest: deployedDigest ?? null,
         latestDigest,
         // Fail-soft: a digest we couldn't resolve is not evidence of drift.
         behind: latestDigest ? isBehind(current, latest) : false,
+        unknown: !deployedDigest || !latestDigest,
       };
     });
     return {
@@ -2624,6 +2681,7 @@ export async function evaluateDrift(
       behind: services.some((s) => s.behind),
       latestInProgress: active?.trigger === "update",
       inProgressDeploymentId,
+      unverified: services.some((s) => s.unknown),
       services,
     };
   }
@@ -2815,6 +2873,7 @@ export async function updateOptions(
 
   Object.assign(update, runtimeProjectUpdate(p, options));
   assertRuntimeVersionTarget({ ...p, ...update });
+  await assertBuildCommandUpdate(p, update);
 
   // Persist the canonical config FIRST, then reconcile routes (best-effort) on a
   // port change. Ordering the project write before route-sync means a route-sync

@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const { listQueued } = vi.hoisted(() => ({ listQueued: vi.fn() }));
-vi.mock("@repo/db", () => ({ repos: { backupRun: { listQueued } } }));
+vi.mock("@repo/db", () => ({
+  repos: { backupRun: { listQueued } },
+  withAdvisoryLock: (_key: string, fn: () => Promise<unknown>) => fn(),
+}));
 import { InProcessJobRunner } from "../src/engine/lib/job-runner/in-process";
 import { deferBackgroundWork, drainBackgroundWork } from "../src/engine/lib/background-work";
+import { setDiagnosticTelemetry, type DiagnosticTelemetry } from "@repo/core/diagnostics";
+import { currentErrorContext, withErrorContext } from "@repo/core/diagnostics/node";
+import { withBackupDestinationLock } from "../src/engine/modules/backups/backup-lock";
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -11,7 +17,20 @@ function deferred<T = void>() {
   return { promise, resolve };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-12T00:00:00Z")); listQueued.mockReset().mockResolvedValue([]); });
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); setDiagnosticTelemetry(undefined); });
+
+it("carries a queued trace parent while clearing the originating request's tenant frame", async () => {
+  const parent = `00-${"a".repeat(32)}-${"b".repeat(16)}-01`;
+  const start = vi.fn(() => ({ correlation: { traceId: "a".repeat(32), spanId: "c".repeat(16) }, run: <T>(fn: () => T) => fn(), end() {} }));
+  setDiagnosticTelemetry({ start, traceparent: () => parent } as unknown as DiagnosticTelemetry);
+  const runner = new InProcessJobRunner();
+  const run = vi.fn(async () => { expect(currentErrorContext().organizationId).toBeUndefined(); });
+  await runner.start({ processRun: run });
+  await withErrorContext({ requestId: "request-a", organizationId: "org-a" }, () => runner.enqueueRun("backup-a"));
+  await runner.shutdown(Infinity);
+  expect(run).toHaveBeenCalledExactlyOnceWith("backup-a");
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ runId: "backup-a" }), expect.objectContaining({ parent, root: true, kind: "consumer" }));
+});
 
 it("drains accepted queued runs even when shutdown wins the setImmediate race", async () => {
   const runner = new InProcessJobRunner();
@@ -102,4 +121,27 @@ it("does not fire a distant cron date when its timeout exceeds Node's timer rang
   await vi.advanceTimersByTimeAsync(2000);
   expect(onTick).not.toHaveBeenCalled();
   await runner.shutdown(Infinity);
+});
+
+it("serializes execution per destination across concurrent runs", async () => {
+  const events: string[] = [];
+  const d1 = deferred();
+
+  const run1 = withBackupDestinationLock("dest-a", async () => {
+    events.push("d1-start");
+    await d1.promise;
+    events.push("d1-end");
+  });
+
+  const run2 = withBackupDestinationLock("dest-a", async () => {
+    events.push("d2-start");
+    events.push("d2-end");
+  });
+
+  await vi.advanceTimersByTimeAsync(1);
+  expect(events).toEqual(["d1-start"]);
+
+  d1.resolve();
+  await Promise.all([run1, run2]);
+  expect(events).toEqual(["d1-start", "d1-end", "d2-start", "d2-end"]);
 });

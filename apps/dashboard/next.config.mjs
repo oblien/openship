@@ -25,6 +25,9 @@ const nextConfig = {
   turbopack: {
     root: path.resolve(__dirname, "../.."),
   },
+  async redirects() {
+    return [{ source: "/affiliates/:path*", destination: "/referrals/:path*", permanent: true }];
+  },
   async headers() {
     // The control plane is never embedded, including login and OAuth consent.
     // Keep this at the Next.js boundary so redirects and paths excluded from
@@ -65,6 +68,10 @@ const nextConfig = {
           destination: "/api/proxy/.well-known/oauth-protected-resource/:path*",
         },
         { source: "/api/auth/:path*", destination: "/api/proxy/api/auth/:path*" },
+        {
+          source: "/api/github/connect/redirect",
+          destination: "/api/proxy/api/github/connect/redirect",
+        },
         { source: "/api/mcp", destination: "/api/proxy/api/mcp" },
         { source: "/api/actions/runtime/:path*", destination: "/api/proxy/api/actions/runtime/:path*" },
         { source: "/twirp/:path*", destination: "/api/proxy/twirp/:path*" },

@@ -173,10 +173,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       hostDomain={deploymentInfo.hostDomain}
     >
       <div className="flex flex-col h-dvh">
-        {/* Update + platform-status surface — full app width, ABOVE the sidebar.
-            Renders nothing unless there's an advisory / platform notice (SaaS:
-            partial outage, maintenance) / available update / what's-new, so it
-            adds no chrome when idle. */}
+        {/* Full-width update surface. Managed Cloud shows workload security;
+            Desktop and self-hosted also show installation updates, operator
+            notices and what's new. Empty state adds no chrome. */}
         <UpdateCenter />
         <DashboardShell>{children}</DashboardShell>
       </div>

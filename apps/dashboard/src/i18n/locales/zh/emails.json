@@ -1,7 +1,7 @@
 {
   "cloudClient": {
     "title": "电子邮件",
-    "subtitle": "通过 Openship Webmail 使用现有邮箱。",
+    "subtitle": "通过 OpenShip Webmail 使用现有邮箱。",
     "connectTitle": "连接邮件服务器",
     "description": "连接任意 IMAP/SMTP 服务器。邮箱和邮件收发仍由你的服务商管理。",
     "connectAction": "连接现有邮件服务器",
@@ -11,8 +11,8 @@
   "cloudComingSoon": {
     "title": "托管邮件",
     "badge": "即将推出",
-    "description": "Openship Cloud 托管邮件即将推出。Cloud 服务器套餐用于托管应用，不会创建邮件服务器。",
-    "selfHosted": "您可以通过自托管 Openship 在自己的服务器上运行邮件服务。"
+    "description": "OpenShip Cloud 托管邮件即将推出。Cloud 服务器套餐用于托管应用，不会创建邮件服务器。",
+    "selfHosted": "您可以通过自托管 OpenShip 在自己的服务器上运行邮件服务。"
   },
   "page": {
     "title": "邮件服务器",
@@ -37,7 +37,7 @@
   },
   "adopt": {
     "title": "采用已有邮件服务器",
-    "intro": "已经在你的某台服务器上用 Openship 搭建过邮件服务器？选择它并扫描——如果检测到邮件堆栈，它会被重新采用到仪表盘中，无需重新安装，也不会改动你的数据。",
+    "intro": "已经在你的某台服务器上用 OpenShip 搭建过邮件服务器？选择它并扫描——如果检测到邮件堆栈，它会被重新采用到仪表盘中，无需重新安装，也不会改动你的数据。",
     "scanning": "正在扫描…",
     "scan": "扫描服务器",
     "detected": "已检测到邮件服务器",

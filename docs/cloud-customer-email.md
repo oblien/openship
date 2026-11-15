@@ -1,12 +1,13 @@
 # Cloud customer emails
 
-OpenShip Cloud sends three independent transactional messages:
+OpenShip Cloud sends four independent transactional messages:
 
-| Trigger                                                        | Message                                                                                     | Sender                                                                            |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| A new signup verifies its email                                | Welcome, workspace link, optional Cloud plans link, and an invitation to ask for help       | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
-| A server subscription or managed-service purchase is confirmed | Purchase welcome, setup link, and support guidance                                          | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
-| A payment or renewal is confirmed                              | Separate invoice/receipt notice with the amount, payment reference, and scoped billing link | `SMTP_BILLING_FROM` when configured, otherwise `SMTP_FROM`                        |
+| Trigger                                                        | Message                                                                                                 | Sender                                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A new signup verifies its email                                | Welcome, workspace link, optional Cloud plans link, and an invitation to ask for help                   | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
+| A server subscription or managed-service purchase is confirmed | Purchase welcome, setup link, and support guidance                                                      | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
+| A payment or renewal is confirmed                              | Separate invoice/receipt notice with the amount, payment reference, and scoped billing link             | `SMTP_BILLING_FROM` when configured, otherwise `SMTP_FROM`                        |
+| Subscription cancellation is confirmed                         | Cancellation confirmation, scheduled end date when applicable, and an invitation to reply with feedback | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
 
 The billing provider remains the invoice issuer. OpenShip does not create a second
 tax invoice or invent invoice numbers. The email links to Payments & invoices,
@@ -20,15 +21,25 @@ Actions funding remains on its independent payment-reconciliation path.
   remain queued without delivery attempts until the address is verified. OAuth
   signups with a verified address use the same path. Desktop identities and local
   mirrors do not enqueue welcome mail.
-- Payment mail is prepared only downstream of HMAC verification, persisted
+- Billing mail is prepared only downstream of HMAC verification, persisted
   namespace ownership and entitlement synchronization. Its outbox rows commit with
   the webhook checkpoint. Browser checkout-return parameters never send mail.
-- The organization owner receives purchase and invoice mail. Delivery checks their
+- The organization owner receives purchase, invoice and cancellation mail. Delivery checks their
   current verified email and owner membership again, so a departed owner does not
   receive new billing details. Customer deletion cascades to private mail records.
 - Each account gets one signup welcome. Each independent billing namespace gets
   one purchase welcome. Each payment gets one invoice/receipt notice, including
   renewals. Repeated webhooks do not recreate those messages.
+- Cancellation mail uses the provider's current subscription, not event claims.
+  `subscription.updated` and `subscription.canceled` queue one confirmation per
+  namespace and provider cancellation timestamp; the eventual period-end event
+  does not repeat the feedback request. Delivery rechecks the subscription:
+  resumed, replaced or missing cancellations are suppressed, and a delayed
+  message reflects the current end date or says the subscription has ended.
+  Missing or invalid cancellation dates do not produce an invented confirmation.
+- Cancellation emails identify the affected Cloud workspace or managed service,
+  link to its scoped billing page, and do not imply sibling subscriptions have
+  ended. They do not change access, provisioning, renewal or cancellation policy.
 - Migration creates an empty outbox; it does not email existing accounts in bulk.
   Private delivery records are excluded from instance exports and transfers.
 
@@ -36,8 +47,8 @@ Actions funding remains on its independent payment-reconciliation path.
 
 The SaaS worker runs at startup and every minute as `cloud-customer-email:deliver`.
 It uses the existing SMTP transport and defaults to its configured `SMTP_FROM`
-address for all three messages. A working no-reply SMTP account is sufficient;
-separate Support credentials are not required. Welcome replies still go to
+address for all messages. A working no-reply SMTP account is sufficient;
+separate Support credentials are not required. Welcome and cancellation replies go to
 `support@openship.io` through `Reply-To`.
 
 To use distinct senders, set `SMTP_SUPPORT_FROM` and/or `SMTP_BILLING_FROM` only
@@ -57,6 +68,11 @@ SMTP is an at-least-once transport: a process crash after server acceptance but
 before the database acknowledgement can cause a retry. Every retry retains the
 same Message-ID; event deduplication and leases prevent ordinary duplicate sends.
 Operators should inspect failed deliveries before requeuing them.
+
+Cancellation verification failures use the same bounded retry policy as SMTP
+failures; they do not send an unverified goodbye. The migration only adds the
+payload column and allowed message kind. It preserves existing delivery records
+and does not send retrospective cancellation emails in bulk.
 
 For a missing welcome, inspect the `signup:<user-id>` outbox row and the
 `cloud-customer-email:deliver` job. Verified Google signups are eligible immediately,

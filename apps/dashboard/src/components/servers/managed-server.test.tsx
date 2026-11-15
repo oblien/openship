@@ -8,6 +8,7 @@ import { baseDictionary } from "@/i18n";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { AppDestinationPicker, type AppDestination } from "@/components/deploy/AppDestinationPicker";
 import ServerSelector from "@/components/shared/ServerSelector";
+import { PlatformImportServices } from "@/components/migration/PlatformImportServices";
 import { BillingLink, BillingWorkspaceProvider, workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
 import { ApiError } from "@/lib/api/client";
 import { ServerUsage } from "./ServerUsage";
@@ -82,15 +83,105 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("selects the only server without provisioning anything on render", async () => {
+it("keeps the only selected server in the shared picker with Add server inside its menu", async () => {
   const change = vi.fn();
   await render(<ServerSelector forDeployment onSelect={change} />);
   expect(change).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: server.id }));
   expect(host.textContent).toContain("Production");
-  expect(host.querySelector('[role="combobox"]')).toBeNull();
+  const trigger = host.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]');
+  expect(trigger).not.toBeNull();
+  expect(document.body.textContent).not.toContain(copy.newProjectServer);
   expect(h.ensure).not.toHaveBeenCalled();
   expect(h.add).not.toHaveBeenCalled();
+  await act(async () => trigger!.click());
+  expect(document.querySelector('[role="listbox"]')?.textContent).toContain("Production");
+  const add = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent?.trim() === copy.newProjectServer,
+  );
+  expect(add).toBeDefined();
+  await act(async () => add!.click());
+  expect(h.add).toHaveBeenCalledOnce();
+  expect(document.querySelector('[role="listbox"]')).toBeNull();
+  expect(change).toHaveBeenCalledTimes(1);
+  expect(h.ensure).not.toHaveBeenCalled();
 });
+
+it.each(["railway", "vercel"] as const)(
+  "changes the %s import destination through the real shared picker",
+  async (provider) => {
+    const connected: ServerDetail = {
+      ...server,
+      id: "connected-server",
+      name: "SSH destination",
+      managed: undefined,
+      connection: "ssh",
+      sshHost: "192.0.2.10",
+      sshUser: "deploy",
+      sshPort: 22,
+    };
+    h.list.mockResolvedValue({ servers: [connected, server] });
+    const target = vi.fn(),
+      review = vi.fn();
+    function Import() {
+      const [id, setId] = useState(connected.id);
+      const [ready, setReady] = useState(false);
+      return (
+        <PlatformImportServices
+          discovery={{
+            provider,
+            draftId: "draft",
+            projectName: "Waypoint",
+            environmentName: "Production",
+            warnings: [],
+            services: [
+              {
+                id: "web",
+                name: "web",
+                kind: "app",
+                image: "nginx:alpine",
+                variables: [],
+                volumes: [],
+                domains: [],
+                warnings: [],
+                blockers: [],
+              },
+            ],
+          }}
+          choices={{ web: { id: "web", name: "web", selected: true, data: "empty" } }}
+          busy={false}
+          targetId={id}
+          targetReady={ready}
+          projectName="Waypoint"
+          onProjectName={() => {}}
+          onChoose={() => {}}
+          onTargetReady={setReady}
+          onTarget={(next, name) => {
+            setId(next);
+            target(next, name);
+          }}
+          onReview={() => review(id)}
+        />
+      );
+    }
+    await render(<Import />);
+    expect(button("Check import").disabled).toBe(false);
+    const trigger = host.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!;
+    expect(trigger.textContent).toContain(connected.name);
+    await act(async () => trigger.click());
+    const destination = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => node.textContent?.includes(server.name ?? server.id),
+    );
+    expect(destination).toBeDefined();
+    await act(async () => destination!.click());
+    expect(target).toHaveBeenCalledExactlyOnceWith(server.id, server.name);
+    expect(trigger.textContent).toContain(server.name);
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    await act(async () => button("Check import").click());
+    expect(review).toHaveBeenCalledExactlyOnceWith(server.id);
+    expect(h.add).not.toHaveBeenCalled();
+    expect(h.ensure).not.toHaveBeenCalled();
+  },
+);
 it.each([true, false])("uses an acquired server for catalog apps (self-hosted: %s)", async selfHosted => {
   const changed = vi.fn(), ready = vi.fn();
   function Picker() {

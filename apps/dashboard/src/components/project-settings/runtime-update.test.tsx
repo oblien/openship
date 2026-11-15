@@ -324,6 +324,42 @@ it("keeps security patches off by default and sends the reviewed advisory throug
   expect(h.push).toHaveBeenCalledWith("/build/security-deployment");
 });
 
+it("shows the runtime version change and submits that exact patch review", async () => {
+  const result = await h.security();
+  const reviewId = "a".repeat(64);
+  result.data.findings[0] = {
+    ...result.data.findings[0],
+    serviceId: null,
+    evidence: ["bun 1.3.1"],
+    runtimePatch: {
+      reviewId,
+      runtime: "bun",
+      currentVersion: "1.3.1",
+      targetVersion: "1.4.4",
+      buildImage: "oven/bun:1.4.4-alpine",
+      runtimeImage: "oven/bun:1.4.4-alpine",
+    },
+  };
+  h.security.mockResolvedValue(result);
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  const copy = baseDictionary.projectSettings.securityAdvisories;
+  expect(element.textContent).toContain("Bun 1.3.1 → 1.4.4");
+  expect(element.textContent).toContain("oven/bun:1.4.4-alpine");
+  expect(element.textContent).toContain(copy.bunRuntimePatchDescription);
+  expect(
+    [...element.querySelectorAll("button")].some((item) => item.textContent === c.refresh),
+  ).toBe(false);
+  await click(copy.applyPatch);
+  expect(h.applySecurity).toHaveBeenCalledExactlyOnceWith("project-a", {
+    advisoryId: "patch-node",
+    deploymentId: "deployed-a",
+    serviceId: null,
+    runtimePatchId: reviewId,
+  });
+  expect(h.update).not.toHaveBeenCalled();
+  expect(h.push).toHaveBeenCalledWith("/build/security-deployment");
+});
+
 it("explains a required runtime major upgrade and opens the existing configuration path", async () => {
   const result = await h.security();
   result.data.findings[0] = {

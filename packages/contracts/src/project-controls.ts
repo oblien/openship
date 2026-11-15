@@ -304,6 +304,7 @@ export const ProjectDriftSchema = Type.Union([
   Type.Object({
     ...driftBase,
     mode: Type.Literal("image"),
+    unverified: Type.Optional(Type.Boolean()),
     services: Type.Array(
       Type.Object({
         serviceId: Type.String(),
@@ -312,6 +313,7 @@ export const ProjectDriftSchema = Type.Union([
         deployedDigest: nullableString,
         latestDigest: nullableString,
         behind: Type.Boolean(),
+        unknown: Type.Optional(Type.Boolean()),
       }),
     ),
   }),

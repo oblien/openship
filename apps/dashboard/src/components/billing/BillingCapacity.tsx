@@ -6,7 +6,7 @@ import { PLANS, planServiceResources, formatCpuCores, formatMemoryMb } from "@re
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import { formatBillingNumber, formatMilliCredits } from "@/lib/billing-usage";
-import { cloudUsagePercent, hasUnlimitedCloudCredits, isNewCloudCustomer } from "@/lib/billing-presentation";
+import { cloudUsagePercent, hasUnlimitedCloudCredits, isMonthlyCloudPlan, isNewCloudCustomer } from "@/lib/billing-presentation";
 import { ResourceLabel, ResourceMeter, ResourceRing } from "./ResourceMeter";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -15,7 +15,7 @@ import { CloudActivationSteps } from "./CloudActivationSteps";
 export type { BillingState };
 
 /** Provider allocations and host measurements remain separate from metered consumption. */
-export function BillingCapacity({ state }: { state: BillingState }) {
+export function BillingCapacity({ state, embedded = false }: { state: BillingState; embedded?: boolean }) {
   const { t, locale } = useI18n();
   const copy = t.billing.resourcesGuide;
   const limits = state.plan?.limits ?? PLANS[state.tier].limits;
@@ -42,7 +42,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
     },
     {
       label: copy.buildTime,
-      hint: state.compute?.billingMode === "monthly" ? t.billing.compute.buildHint : copy.buildHint,
+      hint: isMonthlyCloudPlan(state) ? t.billing.compute.buildHint : copy.buildHint,
       meter: buildMeter,
       unit: t.billing.header.min,
       Icon: "clock" as const,
@@ -65,7 +65,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
   if (state.tier === "free")
     return (
       <>
-        {isNewCloudCustomer(state) ? <CloudActivationSteps /> : state.workspace?.serverId && (
+        {isNewCloudCustomer(state) ? <CloudActivationSteps /> : !embedded && state.workspace?.serverId && (
           <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-5">
             <p className="text-sm font-medium">{state.workspace.name || t.servers.resources.space}</p>
             <Button asChild variant="secondary" size="sm"><Link href={cloudSpaceHref(state.workspace.serverId)}>{t.billing.workspaces.openWorkspace}</Link></Button>
@@ -102,7 +102,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
               {t.billing.resourceOverview.overviewHint}
             </p>
           </div>
-          {state.workspace?.serverId ? (
+          {!embedded && state.workspace?.serverId ? (
             <Button asChild variant="secondary" size="sm">
               <Link href={cloudSpaceHref(state.workspace.serverId)}>
                 {t.billing.workspaces.openWorkspace}
@@ -143,7 +143,7 @@ export function BillingCapacity({ state }: { state: BillingState }) {
             })}
           </p>
         )}
-        {!state.compute && <details className="group mt-4 rounded-xl bg-muted/35 p-3">
+        {!state.compute && !isMonthlyCloudPlan(state) && <details className="group mt-4 rounded-xl bg-muted/35 p-3">
           <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
             <ResourceRing large label={copy.usageAllowance} used={percent} max={100}>
               <span className="text-sm font-medium tabular-nums">

@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import * as schema from "../schema";
 import { dockerMigrationRun } from "../schema";
+import type { DockerMigrationRecovery } from "../schema/docker-migration";
 import { createDockerMigrationRunRepo } from "./docker-migration.repo";
 
 const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
@@ -44,6 +45,7 @@ async function addRun(
     finishedAt?: Date | null;
     executionStartedAt?: Date | null;
     executionFinishedAt?: Date | null;
+    recovery?: DockerMigrationRecovery;
   },
 ) {
   await ctx.db.insert(dockerMigrationRun).values({
@@ -54,6 +56,7 @@ async function addRun(
     projectName: run.projectId ?? "unnamed",
     status: run.status,
     mode: run.mode ?? "project_move",
+    recovery: run.recovery,
     projectId: run.projectId ?? null,
     finishedAt: run.finishedAt ?? null,
     executionStartedAt: run.executionStartedAt ?? null,
@@ -74,6 +77,132 @@ describe("findActiveForProject", () => {
   it("finds the run whose subject IS the project", async () => {
     await addRun(ctx, { id: "r1", status: "moving_data", projectId: "p1" });
     expect((await ctx.repo.findActiveForProject("p1"))?.id).toBe("r1");
+  });
+
+  it("finds every provider-import project and retains its guard until remote cleanup completes", async () => {
+    const providerImport = {
+      planId: "plan",
+      planEnc: "encrypted",
+      connectionId: "connection",
+      projects: { app: "app-project", db: "db-project" },
+      completed: [],
+      cleanupPending: true,
+    };
+    await addRun(ctx, {
+      id: "import",
+      mode: "provider_import",
+      status: "failed",
+      projectId: "app-project",
+      recovery: { providerImport },
+    });
+    expect((await ctx.repo.findActiveForProject("db-project"))?.id).toBe("import");
+    const active = await ctx.repo.findActiveForProjects(["app-project", "db-project", "unrelated"]);
+    expect([...active.keys()].sort()).toEqual(["app-project", "db-project"]);
+    expect(await ctx.repo.usesConnection("org1", "connection")).toBe(true);
+    expect(await ctx.repo.usesConnection("another", "connection")).toBe(false);
+    expect((await ctx.repo.findByImportPlan("org1", "plan"))?.id).toBe("import");
+    expect(await ctx.repo.findByImportPlan("another", "plan")).toBeUndefined();
+    await ctx.repo.updateRecovery("import", {
+      providerImport: {
+        ...providerImport,
+        cleanupPending: false,
+        sshPrivateKeyEnc: "pending grant",
+      },
+    });
+    expect(await ctx.repo.usesConnection("org1", "connection")).toBe(true);
+    await ctx.repo.updateRecovery("import", {
+      providerImport: { ...providerImport, cleanupPending: false },
+    });
+    expect(await ctx.repo.findActiveForProject("db-project")).toBeNull();
+    expect(await ctx.repo.usesConnection("org1", "connection")).toBe(false);
+  });
+
+  it("atomically parks a verified import or preserves cleanup when cancellation wins", async () => {
+    const providerImport = {
+      planId: "plan",
+      planEnc: "encrypted",
+      connectionId: "connection",
+      projects: { app: "app-project" },
+      completed: ["app"],
+      cleanupPending: true,
+    };
+    for (const id of ["cancel-first", "ready-first", "pending-key"]) {
+      await addRun(ctx, {
+        id,
+        mode: "provider_import",
+        status: id === "ready-first" ? "moving_data" : "verifying",
+        recovery: { worker: "initial", providerImport },
+      });
+    }
+    expect(await ctx.repo.requestCancel("cancel-first", "org1")).toBe(true);
+    expect(await ctx.repo.markProviderImportReady("cancel-first")).toBe(false);
+    expect((await ctx.repo.findById("cancel-first"))?.recovery.providerImport).toEqual(
+      providerImport,
+    );
+
+    expect(await ctx.repo.markProviderImportReady("ready-first")).toBe(true);
+    expect(await ctx.repo.requestCancel("ready-first", "org1")).toBe(false);
+    expect(await ctx.repo.findById("ready-first")).toMatchObject({
+      status: "awaiting_cutover",
+      recovery: {
+        worker: "initial",
+        providerImport: { ...providerImport, cleanupPending: false, planEnc: "" },
+      },
+    });
+
+    await ctx.repo.updateRecovery("pending-key", {
+      providerImport: { ...providerImport, sshPrivateKeyEnc: "pending grant" },
+    });
+    expect(await ctx.repo.markProviderImportReady("pending-key")).toBe(false);
+    expect((await ctx.repo.findById("pending-key"))?.recovery.providerImport?.planEnc).toBe(
+      "encrypted",
+    );
+  });
+
+  it("reserves a Railway environment across credentials and destinations until recovery finishes", async () => {
+    const request = (id: string, organizationId = "org1", environmentId = "production") => ({
+      id,
+      organizationId,
+      projectName: "Railway project",
+      mode: "provider_import",
+      inputSnapshot: {
+        provider: "railway",
+        source: { projectId: "railway-project", environmentId, connectionId: id },
+      },
+      recovery: {
+        providerImport: {
+          planId: id,
+          planEnc: "encrypted",
+          connectionId: id,
+          projects: {},
+          completed: [],
+          sourceCleanupPending: true,
+        },
+      },
+    });
+    const admissions = await Promise.allSettled([
+      ctx.repo.create(request("first")),
+      ctx.repo.create(request("second", "org2")),
+    ]);
+    expect(admissions.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(admissions.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { code: "IMPORT_SOURCE_BUSY" },
+    });
+    const winner = admissions.find(
+      (result) => result.status === "fulfilled",
+    ) as PromiseFulfilledResult<Awaited<ReturnType<typeof ctx.repo.create>>>;
+    const id = winner.value!.id;
+    await ctx.repo.transition(id, "failed", { finishedAt: new Date() });
+    await expect(ctx.repo.create(request("retry"))).rejects.toMatchObject({
+      code: "IMPORT_SOURCE_BUSY",
+    });
+    await expect(
+      ctx.repo.create(request("other-environment", "org1", "staging")),
+    ).resolves.toMatchObject({ id: "other-environment" });
+    await ctx.repo.updateRecovery(id, {
+      providerImport: { ...winner.value!.recovery.providerImport!, sourceCleanupPending: false },
+    });
+    await expect(ctx.repo.create(request("retry"))).resolves.toMatchObject({ id: "retry" });
   });
 
   it("finds a DUPLICATE's run from the source project in the snapshot", async () => {

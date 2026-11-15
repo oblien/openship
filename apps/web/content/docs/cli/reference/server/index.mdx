@@ -32,7 +32,7 @@ openship server [options] [command]
 | [`infrastructure <id>`](/docs/cli/reference/server#openship-server-infrastructure) | Read network, compute-cluster and shared-storage membership |
 | [`deletion-preview <id>`](/docs/cli/reference/server#openship-server-deletion-preview) | Inspect workloads and retained data before removing a server |
 | [`scan-ports <id>`](/docs/cli/reference/server#openship-server-scan-ports) | Inspect listening ports on this server |
-| [`configure <id> <file>`](/docs/cli/reference/server#openship-server-configure) | Change a server's name or connection settings; omitted fields are preserved |
+| [`configure <id> <file>`](/docs/cli/reference/server#openship-server-configure) | Change a server's name, connection settings or build-cache budget; omitted fields are preserved |
 | [`exec [options] <id> <command>`](/docs/cli/reference/server#openship-server-exec) | Execute a bounded command through the server's authorized connection |
 | [`network-settings`](/docs/cli/reference/server#openship-server-network-settings) | Inspect or change this server's Internet-access policy |
 | [`list\|ls`](/docs/cli/reference/server#openship-server-list) | List servers in the active organization |
@@ -88,7 +88,7 @@ openship server check [options] <serverId>
 
 ## openship server configure
 
-Change a server's name or connection settings; omitted fields are preserved
+Change a server's name, connection settings or build-cache budget; omitted fields are preserved
 
 ```text
 openship server configure [options] <id> <file>

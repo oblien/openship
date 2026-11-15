@@ -34,6 +34,8 @@ vi.mock("@repo/db", () => ({
 
 vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
   resolveProjectTrafficSources: vi.fn(async () => h.sources),
+}));
+vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   fetchMgmt: vi.fn(async (_serverId: string, path: string) => {
     for (const [prefix, value] of h.mgmt) {
       if (path.startsWith(prefix)) return value;

@@ -45,7 +45,7 @@ export function BillingComputeCoverage({ state }: { state: BillingState }) {
         </summary>
         <div className="mt-3 space-y-3 text-sm text-muted-foreground">
           {compute.savings && <div>
-            <p className="font-medium text-foreground">{copy.paygComparison}: <bdi>{money(compute.savings.usageBeforeCap)}</bdi></p>
+            <p className="font-medium text-foreground">{copy.usageComparison}: <bdi>{money(compute.savings.usageBeforeCap)}</bdi></p>
             <p className="mt-1 text-xs">{copy.comparisonHint}</p>
           </div>}
           <div>

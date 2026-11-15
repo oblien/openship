@@ -34,7 +34,7 @@
 </p>
 
 <p align="center">
-  <img src="../screenshots/screen.png" alt="Openship kontrol paneli" width="800" />
+  <img src="../../apps/web/public/screenshots/tr/deploy.webp" alt="Openship kontrol paneli" width="800" />
 </p>
 
 ---

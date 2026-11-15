@@ -28,19 +28,19 @@ const CATALOG: Record<string, string> = {
   "@trpc/tanstack-react-query": "^11.4.4",
 
   // Auth - same as the rest of openship
-  "better-auth": "^1.5.4",
+  "better-auth": "1.7.15",
 
   // ORM - pinned to match openship's packages/db + packages/db-email
   "drizzle-orm": "^0.45.1",
   "drizzle-kit": "^0.31.9",
 
   // UI - same as openship's dashboard
-  react: "^19.1.0",
-  "react-dom": "^19.1.0",
+  react: "~19.2.9",
+  "react-dom": "~19.2.9",
   typescript: "^5.9.3",
 
   // Validation - same as openship's packages/core
-  zod: "^4.3.6",
+  zod: "^4.6.7",
 
   // Cloudflare Workers tooling
   wrangler: "^4.40.0",

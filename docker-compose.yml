@@ -151,6 +151,7 @@ services:
     ports:
       - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${WEB_PORT:-3000}:${WEB_PORT:-3000}"
     environment:
+      CONTACT_TURNSTILE_SITE_KEY: ${CONTACT_TURNSTILE_SITE_KEY:-}
       NODE_ENV: production
       PORT: "${WEB_PORT:-3000}"
 

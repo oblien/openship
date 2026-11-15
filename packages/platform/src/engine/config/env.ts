@@ -166,13 +166,14 @@ const envSchema = z.object({
 
   /* ---------- Mode ---------- */
   CLOUD_MODE: envBool("false"),
-  /** Optional product analytics. Production SaaS only; never enabled locally. */
-  POSTHOG_ENABLED: envBool("false"),
-  POSTHOG_PROJECT_KEY: z.string().optional(),
-  POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
-  /** Internal/demo workspaces and users, excluded on both ingestion paths. */
-  POSTHOG_EXCLUDED_ORGANIZATION_IDS: z.string().optional(),
-  POSTHOG_EXCLUDED_USER_IDS: z.string().optional(),
+  /** Cloud control-plane telemetry. Credentials are never sent to browsers or native workers. */
+  OPENSHIP_BYTESMAP_ENABLED: envBool("false"),
+  OPENSHIP_BYTESMAP_ENDPOINT: z.string().optional(),
+  OPENSHIP_BYTESMAP_DATASET: z.string().optional(),
+  OPENSHIP_BYTESMAP_TOKEN: z.string().optional(),
+  // Validate optional telemetry only after the Cloud/enable guards; it cannot block local startup.
+  OPENSHIP_BYTESMAP_SAMPLE_RATE: z.string().optional(),
+  OPENSHIP_BYTESMAP_ENVIRONMENT: z.string().optional(),
   /**
    * MASTER switch for the whole Openship Cloud billing feature (subscriptions,
    * top-ups). OFF by default → the billing state reports
@@ -184,8 +185,8 @@ const envSchema = z.object({
    * "coming soon" surface and live usage/capacity.
    */
   BILLING_ENABLED: envBool("false"),
-  AFFILIATES_ENABLED: envBool("false"),
-  OBLIEN_AFFILIATE_NAMESPACE: z.string().max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).default("openship"),
+  REFERRALS_ENABLED: z.preprocess(value => value ?? process.env.AFFILIATES_ENABLED, envBool("false")),
+  REFERRAL_NAMESPACE: z.string().max(128).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).default(process.env.OBLIEN_AFFILIATE_NAMESPACE ?? "openship"),
   /**
    * Sub-switch for one-time credit top-ups WITHIN billing. Top-ups are
    * available only when BILLING_ENABLED is also on. OFF by default → the state
@@ -324,6 +325,10 @@ const envSchema = z.object({
   /** Optional Cloud customer aliases authorized by the same SMTP credentials.
    * Unset/blank aliases use the transport's configured sender. */
   SMTP_SUPPORT_FROM: z.string().trim().optional(),
+  /** Public contact intake fails closed until a production Turnstile widget is configured. */
+  CONTACT_TURNSTILE_SECRET: z.string().trim().optional(),
+  CONTACT_TURNSTILE_HOSTNAMES: z.string().default("openship.io,www.openship.io"),
+  CONTACT_EMAIL: z.string().email().default("contact@openship.io"),
   SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */
@@ -370,8 +375,8 @@ const envSchema = z.object({
   OBLIEN_CLIENT_ID: z.string().optional(),
   OBLIEN_CLIENT_SECRET: z.string().optional(),
   /** Control-plane endpoint. Override only for an Oblien staging installation. */
-  OBLIEN_API_URL: z.url().default("https://api.oblien.com"),
-  OBLIEN_RUNTIME_URL: z.url().default("https://workspace.oblien.com"),
+  OBLIEN_API_URL: z.url().optional(),
+  OBLIEN_RUNTIME_URL: z.url().default("https://vm.oblien.com"),
   /** Optional published software preset for NEW managed Docker workspaces. */
   OBLIEN_DOCKER_PRESET: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional(),
   /**

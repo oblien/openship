@@ -1,0 +1,245 @@
+/* Feature pages share the homepage container, theme tokens and artwork family.
+   Layout conventions and the SVG generation workflow live in docs/illustrations.md. */
+.ft-category-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 32px;
+  padding-block: 20px;
+  border-block: 1px solid var(--th-divider);
+}
+.ft-category-nav a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-block: 4px;
+  color: var(--th-text-body);
+  font-size: 14px;
+}
+.ft-category-nav a:hover {
+  color: var(--th-text-heading);
+}
+.ft-category-nav span {
+  color: var(--th-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Feature details keep prose and capabilities open on the page. */
+.ft-detail-intro {
+  padding-top: 130px;
+  padding-bottom: 56px;
+}
+.ft-back,
+.ft-guide-link,
+.ft-related header a {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.ft-back {
+  color: var(--th-text-body);
+  font-size: 13px;
+}
+.ft-back:hover,
+.ft-guide-link:hover,
+.ft-related header a:hover {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.ft-detail-lead {
+  max-width: 900px;
+  margin-top: 44px;
+}
+.ft-detail-lead--with-shot {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 64px;
+  max-width: none;
+}
+.ft-detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.ft-detail-heading > div {
+  min-width: 0;
+}
+.ft-detail-heading .ft-detail-illustration {
+  width: 80px;
+  height: 64px;
+}
+.ft-detail-title {
+  margin-top: 10px;
+  font-size: clamp(32px, 4vw, 56px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+.ft-detail-summary {
+  max-width: 70ch;
+  margin-top: 28px;
+  color: var(--th-text-body);
+  font-size: 18px;
+  line-height: 1.75;
+}
+.ft-availability {
+  max-width: 78ch;
+  margin-top: 18px;
+  color: var(--th-text-body);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.ft-guide-link {
+  margin-top: 26px;
+}
+.ft-detail-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 96px;
+  padding-block: 48px;
+  border-top: 1px solid var(--th-divider);
+}
+.ft-detail-content h2,
+.ft-related h2 {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+.ft-prose p {
+  max-width: 65ch;
+  margin-top: 22px;
+  color: var(--th-text-body);
+  font-size: 16px;
+  line-height: 1.8;
+}
+.ft-capabilities ul {
+  display: grid;
+  gap: 26px;
+  margin-top: 26px;
+  padding: 0;
+  list-style: none;
+}
+.ft-capabilities li {
+  display: flex;
+  align-items: start;
+  gap: 14px;
+}
+.ft-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  color: var(--th-text-muted);
+}
+.ft-capabilities h3 {
+  font-size: 15px;
+  font-weight: 500;
+}
+.ft-capabilities p {
+  margin-top: 6px;
+  color: var(--th-text-body);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.ft-related {
+  padding-top: 40px;
+  padding-bottom: 48px;
+}
+.ft-related header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.ft-related header a {
+  color: var(--th-text-body);
+  font-size: 13px;
+}
+.ft-related .marketing-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.ft-shot {
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--th-bg-card);
+}
+.ft-shot-bar {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px;
+  background: var(--th-sf-04);
+}
+.ft-shot-bar span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--th-on-16);
+}
+.ft-shot-body {
+  position: relative;
+  aspect-ratio: 16 / 10;
+}
+.ft-shot-img {
+  object-fit: cover;
+  object-position: top center;
+}
+@media (max-width: 1100px) {
+  .ft-detail-lead--with-shot {
+    gap: 32px;
+  }
+  .ft-detail-content {
+    gap: 48px;
+  }
+  .ft-related .marketing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 800px) {
+  .ft-detail-lead--with-shot,
+  .ft-detail-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ft-detail-content {
+    gap: 36px;
+    padding-block: 36px;
+  }
+  .ft-detail-summary {
+    font-size: 16px;
+  }
+}
+@media (max-width: 560px) {
+  .ft-category-nav {
+    gap: 10px 22px;
+    padding-block: 16px;
+  }
+  .ft-related .marketing-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ft-detail-intro {
+    padding-top: 108px;
+    padding-bottom: 36px;
+  }
+  .ft-detail-lead {
+    margin-top: 32px;
+  }
+  .ft-detail-heading {
+    gap: 16px;
+  }
+  .ft-detail-heading .ft-detail-illustration {
+    width: 60px;
+    height: 48px;
+  }
+  .ft-detail-title {
+    font-size: 32px;
+  }
+  .ft-related {
+    padding-block: 24px;
+  }
+}

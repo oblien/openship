@@ -11,7 +11,8 @@ The shared singleton starts disabled. The SaaS API enables it from `CLOUD_MODE` 
 instance configuration bootstrap, then installs its database destination. The SaaS dashboard enables
 browser collection only when the API serving it positively reports Cloud mode. Unknown mode fails
 closed. Signing into Cloud, changing organizations, or connecting Desktop to a remote instance does
-not enable collection on a local installation. There is no diagnostics vendor SDK or extra Redis queue.
+not enable collection on a local installation. The base reporter needs no exporter SDK or extra Redis queue;
+the optional BytesMap Cloud observer uses the official OpenTelemetry SDK.
 
 Disabled `reportError()` and `reportCaughtError()` calls do not inspect the error, enqueue events or
 invoke a configured destination. Explicit `diagnostics.warn()` / `diagnostics.error()` calls and fatal
@@ -24,6 +25,13 @@ logs. OpenResty, Docker, SSH, database engines and the separately deployed webma
 their own internal logs; errors that reach an Openship control-plane adapter are observed here.
 
 ## Cloud database destination
+
+OpenShip Cloud can additionally export the same accepted sanitized snapshots,
+correlated traces and operational facts to BytesMap. See
+[BytesMap Cloud observability](bytesmap-cloud-observability.md) for the explicit
+Cloud gate, dataset/dashboard setup, sampling and bounded delivery. This observer
+runs once per accepted snapshot and remains independent of database sink retries
+or local fallback; it does not capture the original error again.
 
 [`apps/api/src/lib/cloud-error-destination.ts`](../apps/api/src/lib/cloud-error-destination.ts) owns
 both table creation and the single batched insert. SaaS startup creates `cloud_error_event` in the

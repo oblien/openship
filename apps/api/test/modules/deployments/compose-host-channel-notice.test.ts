@@ -69,6 +69,7 @@ vi.mock("@repo/db", () => ({
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
+      setVerification: vi.fn(async () => true),
       findById: async (id: string) => h.deploymentById.get(id) ?? h.previousDeployment,
     },
     project: {
@@ -249,7 +250,7 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
   const configurations: Array<Record<string, any>> = [];
   const publishRoute = vi.fn(async () => undefined);
   const pullImage = vi.fn(async () => undefined);
-  const resolveRoutingTarget = vi.fn(async (id: string, port: number) => ({ workspace: "shared-vm",
+  const resolveRoutingTarget = vi.fn(async (id: string, port: number) => ({ vm: "shared-vm",
     port: id === "web-container" ? (port === 8080 ? 30001 : 30002) : 30003 }));
   const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
     name: "docker", workspaceId: "shared-vm", projectId: "p1", unsupportedComposeKeys: new Set(),
@@ -313,8 +314,8 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
     serviceId: "svc-api", allocatedResources: { containerId: "api-container", cpuCores: 2, memoryMb: 2048 },
   }));
   expect(publishRoute).toHaveBeenCalledWith("app.opsh.io", 30001, false, expect.objectContaining({ routes: [
-    { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30003 } },
-    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: "shared-vm", port: 30001 } },
+    { match: { path: "/api/", type: "prefix" }, action: { kind: "proxy", vm: "shared-vm", port: 30003 } },
+    { match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: "shared-vm", port: 30001 } },
   ] }));
 });
 
@@ -473,7 +474,7 @@ describe("compose deploy — host channel unavailable", () => {
     await f.run();
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).not.toHaveBeenCalled();
     expect(f.activate).toHaveBeenCalledOnce();
@@ -492,7 +493,7 @@ describe("compose deploy — host channel unavailable", () => {
     await expect(f.run()).rejects.toThrow("registry unavailable");
     expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
       deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
-      startedAt: new Date(start.getTime() + 10_000),
+      startedAt: start,
     });
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(
       dep.id, new Date(start.getTime() + 20_000),
@@ -895,9 +896,11 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.pull).toHaveBeenCalledTimes(1);
     expect(f.activate).not.toHaveBeenCalled();
     expect(f.runtime.destroy).not.toHaveBeenCalled();
-    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ serviceId: "svc-db", startedAt: expect.any(Date) }),
-    );
+    // Both image requests were admitted before cancellation. Neither may activate;
+    // each attempted service keeps its own timing instead of inheriting a sibling's.
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledTimes(2);
+    expect(h.startServiceDeploymentTiming.mock.calls.map(([input]) => input.serviceId).sort())
+      .toEqual(["svc-api", "svc-db"]);
     expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(dep.id, expect.any(Date));
   });
 
@@ -1596,7 +1599,8 @@ describe("compose deploy — host channel unavailable", () => {
     expect(base.deployServiceWorkload).not.toHaveBeenCalled();
   });
 
-  it("refuses ambiguous duplicate containers before repairing or activating anything", async () => {
+  it.each([null, "server-original"])("refuses ambiguous duplicate containers on %s before repairing or activating anything", async (serverId) => {
+    h.previousDeployment.meta = { serverId };
     const base = startingRuntime();
     const liveContainer = (id: string, name: string) => ({
       id,
@@ -1662,11 +1666,18 @@ describe("compose deploy — host channel unavailable", () => {
         {
           executor: {} as CommandExecutor,
           hostPortTarget: localHostPortTarget,
+          serverId: serverId ?? undefined,
         },
       ),
-    ).rejects.toThrow(
-      /more than one container matching active service "api".*no service activation/i,
-    );
+    ).rejects.toMatchObject({
+      code: "SERVICE_CONTAINER_CONFLICT",
+      message: expect.stringMatching(/more than one container matching active service "api".*no service activation/i),
+      details: {
+        projectId: "p1", serviceId: "svc-api", serviceName: "api",
+        containerNames: ["openship-app-api-a", "openship-app-api-b"],
+        serverId, workspaceId: null,
+      },
+    });
 
     expect(h.updateServiceDeployment).not.toHaveBeenCalled();
     expect(h.allocateAndReservePinnedHostPort).not.toHaveBeenCalled();
@@ -2703,11 +2714,12 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.convergeTargetHostPortClaimsUnlocked).not.toHaveBeenCalled();
   });
 
-  it("retains every claim while a started service has an indeterminate outcome", async () => {
+  it.each(["Channel open failure: connection lost", "database unavailable"])("retains a released runtime and claims when publication is indeterminate (%s)", async failure => {
     h.upsertServiceDeployment
-      .mockRejectedValueOnce(new Error("Channel open failure: connection lost"))
+      .mockRejectedValueOnce(new Error(failure))
       .mockResolvedValueOnce(undefined);
     const { logger } = recordingLogger();
+    const runtime = startingRuntime();
 
     const result = await deployComposeServices(
       {
@@ -2716,7 +2728,7 @@ describe("compose deploy — host channel unavailable", () => {
         routeStrategy: "loopback-port",
       } as unknown as Project,
       dep,
-      startingRuntime(),
+      runtime,
       logger,
       {
         executor: { exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "" })) } as never,
@@ -2736,6 +2748,7 @@ describe("compose deploy — host channel unavailable", () => {
     );
 
     expect(result.status).toBe("reconciling");
+    expect(runtime.destroy).not.toHaveBeenCalled();
     expect(h.allocateAndReservePinnedHostPort).toHaveBeenCalled();
     expect(h.releaseNewPinnedHostPortClaims).not.toHaveBeenCalled();
     expect(h.convergeTargetHostPortClaims).not.toHaveBeenCalled();

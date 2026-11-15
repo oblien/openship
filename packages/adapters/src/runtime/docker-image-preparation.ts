@@ -19,7 +19,7 @@ export interface DockerImagePreparationOptions {
 
 interface ImageInspection {
   Id: string;
-  RepoDigests?: string[];
+  RepoDigests?: string[] | null;
 }
 
 function repository(ref: string): string {
@@ -38,11 +38,11 @@ function repository(ref: string): string {
 
 export function matchingRegistryDigest(
   ref: string,
-  digests: readonly string[] = [],
+  digests: readonly string[] | null = [],
 ): string | undefined {
   if (/^sha256:[a-f0-9]{64}$/.test(ref)) return undefined;
   const expected = repository(ref);
-  return digests.find(
+  return digests?.find(
     (digest) => /@sha256:[a-f0-9]{64}$/.test(digest) && repository(digest) === expected,
   );
 }

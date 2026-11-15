@@ -212,6 +212,82 @@ it("saves a custom connection once and selects the model returned by the API", a
   expect(onUse).toHaveBeenCalledExactlyOnceWith("codex", "openship-team/team-coder");
   expect(inputs.every((input) => input.value === "")).toBe(true);
 });
+
+async function renderCustom(agent?: AssistantProviderInfo) {
+  await act(async () =>
+    root.render(
+      <AgentConnections
+        agents={agent ? [agent] : []}
+        selected="custom"
+        onSelect={() => {}}
+        onRefresh={refresh}
+        loading={!agent}
+        error={null}
+      />,
+    ),
+  );
+}
+const customPanel = () => host.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')!;
+const customButton = (label: string) =>
+  [...customPanel().querySelectorAll("button")].find((b) => b.textContent?.trim() === label)!;
+
+it("uses the existing setup job for a custom API and preserves its draft through installation", async () => {
+  await renderCustom({ ...info, setup: { state: "required" } });
+  expect(customPanel().textContent).not.toContain("Update");
+  expect(setup).not.toHaveBeenCalled();
+  const inputs = [...customPanel().querySelectorAll("input")];
+  const values = ["Team gateway", "https://example.com/v1", "team-coder", "synthetic-key"];
+  for (const [index, input] of inputs.entries()) await fill(input, values[index]);
+  expect(customButton("Save connection").disabled).toBe(true);
+  await act(async () => {
+    customPanel()
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(customApi).not.toHaveBeenCalled();
+  await act(async () => customButton("Set up Codex").click());
+  expect(setup).toHaveBeenCalledExactlyOnceWith("codex");
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(customApi).not.toHaveBeenCalled();
+
+  await renderCustom({ ...info, setup: { state: "installing" } });
+  expect(customButton("Setting up…").disabled).toBe(true);
+  await act(async () => vi.advanceTimersByTime(2000));
+  expect(refresh).toHaveBeenCalledTimes(2);
+  expect(setup).toHaveBeenCalledOnce();
+
+  await renderCustom({ ...info, available: true, customApiAvailable: true });
+  expect(inputs.map((input) => input.value)).toEqual(values);
+  expect(customButton("Save connection").disabled).toBe(false);
+  customApi.mockResolvedValue({ model: "openship-team/team-coder" });
+  await act(async () => customButton("Save connection").click());
+  expect(customApi).toHaveBeenCalledExactlyOnceWith({
+    name: values[0],
+    baseUrl: values[1],
+    model: values[2],
+    apiKey: values[3],
+  });
+  expect(auth.begin).not.toHaveBeenCalled();
+  expect(inputs.every((input) => input.value === "")).toBe(true);
+});
+
+it("does not label loading or an uninstalled local agent as an outdated runtime", async () => {
+  await renderCustom();
+  expect(customPanel().textContent).toContain("Checking your connection");
+  expect(customPanel().textContent).not.toContain("Update");
+  await renderCustom(info);
+  expect(customPanel().textContent).toContain("Install Codex on your assistant host");
+  expect(customPanel().textContent).not.toContain("Update");
+  expect(customButton("Save connection").disabled).toBe(true);
+  expect(setup).not.toHaveBeenCalled();
+});
+
+it("reserves the update hint for an available agent that lacks custom API support", async () => {
+  await renderCustom({ ...info, available: true, customApiAvailable: false });
+  expect(customPanel().textContent).toContain("Update OpenShip and reconnect");
+  expect(customButton("Save connection").disabled).toBe(true);
+  expect(setup).not.toHaveBeenCalled();
+});
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();

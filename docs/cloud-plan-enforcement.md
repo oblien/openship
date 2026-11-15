@@ -12,7 +12,7 @@ Cloud quota gates.
 | Scale   | $119          | 8 vCPU | 32 GB | 600 GB | 50            | 100              | 20                      |
 
 Annual charges are $120, $240, $468 and $1,188 respectively, paid upfront.
-Their displayed monthly equivalents are $10, $20, $39 and $99. Both intervals
+Yearly prices display these full annual amounts per year. Both intervals
 use the same capacity and application limits. Catalog changes do not rewrite
 existing paid subscription terms or their renewal prices.
 

@@ -1,7 +1,7 @@
 import { listRouteProtection, changeRouteProtection } from "../../lib/route-protection";
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
-import { AppError, NotFoundError, isWildcardHostname, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
+import { AppError, NotFoundError, isWildcardHostname, normalizeCustomHostname, normalizeResponsePath, safeErrorMessage, type RouteRuleSpec } from "@repo/core";
 import { OperationError, type ProjectRoutingSchemas } from "@repo/contracts";
 import { repos } from "@repo/db";
 import type { ResourceServices } from "../../../resource-operations";
@@ -15,6 +15,7 @@ import { domainDependencies } from "../domains/domain.operations";
 import type { AddDomainResult } from "../domains/domain.service";
 import { HEALTH_WATCH_JOB, healthWatchActive } from "../monitoring/health-watch-policy";
 import { isCustomerProject } from "../billing/management.service";
+import { resolveProjectDeployTarget } from "./project-deploy-target";
 
 async function localProject(ctx: ExecutionContext, id: string) {
   if (env.CLOUD_MODE && !await isCustomerProject(ctx.organizationId, id)) throw new NotFoundError("Operation");
@@ -27,11 +28,30 @@ async function ownedDomain(projectId: string, domainId?: string | null) {
   const domain = await repos.domain.findById(domainId);
   if (!domain || domain.projectId !== projectId)
     throw new AppError("domainId does not belong to this project", 400, "INVALID_DOMAIN");
+  return domain;
+}
+async function responseScope(project: Awaited<ReturnType<typeof localProject>>, input: {
+  domainId?: string | null; pathPrefix?: string | null; spec: RouteRuleSpec; enabled?: boolean;
+}) {
+  const domain = await ownedDomain(project.id, input.domainId);
+  if (!input.spec.response) return normalizePathPrefix(input.pathPrefix);
+  if (!domain) throw new AppError("Choose a domain for the static response.", 400, "INVALID_DOMAIN");
+  const path = normalizeResponsePath(input.pathPrefix ?? "/");
+  if (input.enabled !== false) {
+    const target = await resolveProjectDeployTarget(project);
+    if (project.workspaceId || project.clusterId || target.deployTarget === "cloud" ||
+        domain.externalIngress || domain.domainType === "free" || domain.redirectTo ||
+        (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none"))
+      throw new AppError("Static responses require a domain served by the OpenShip edge. Cloud, external ingress, cluster, and redirect-only domains are not supported.", 400, "EDGE_RESPONSE_UNSUPPORTED");
+  }
+  return path === "/" ? null : path;
 }
 async function repush(projectId: string) {
-  if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none") return;
-  await pushProjectRulesResolved(projectId).catch(error =>
-    errorDiagnostics.warn("platform/engine/modules/projects/project-routing.operations", `[route-rules] push failed: ${safeErrorMessage(error)}`, error));
+  if (process.env.OPENSHIP_NATIVE === "true" && process.env.OPENSHIP_NATIVE_ROUTING === "none") return false;
+  return pushProjectRulesResolved(projectId).catch(error => {
+    errorDiagnostics.warn("platform/engine/modules/projects/project-routing.operations", `[route-rules] push failed: ${safeErrorMessage(error)}`, error);
+    return false;
+  });
 }
 function record(ctx: ExecutionContext, projectId: string, operation: string, ruleId: string) {
   audit.recordAsync(operationAuditContext(ctx), {
@@ -52,40 +72,46 @@ export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSch
     return repos.routeRule.listByProject(id);
   },
   async createRouteRule(ctx, id, input) {
-    await localProject(ctx, id);
-    await ownedDomain(id, input.domainId);
+    const project = await localProject(ctx, id);
+    const spec = sanitizeSpec(input.spec);
+    const pathPrefix = await responseScope(project, { ...input, spec });
     const rule = await repos.routeRule.create({
       organizationId: ctx.organizationId, projectId: id, domainId: input.domainId ?? null,
-      pathPrefix: normalizePathPrefix(input.pathPrefix), spec: sanitizeSpec(input.spec), enabled: input.enabled ?? true,
+      pathPrefix, spec, enabled: input.enabled ?? true,
     });
-    await repush(id);
+    const edgeApplied = await repush(id);
     record(ctx, id, "routeRule.create", rule.id);
-    return rule;
+    return { ...rule, edgeApplied: edgeApplied === true };
   },
   async updateRouteRule(ctx, id, input) {
-    await localProject(ctx, id);
+    const project = await localProject(ctx, id);
     const existing = await repos.routeRule.get(input.ruleId);
     if (!existing || existing.projectId !== id || existing.organizationId !== ctx.organizationId)
       throw new NotFoundError("Rule", input.ruleId);
-    await ownedDomain(id, input.domainId);
+    const spec = input.spec === undefined ? existing.spec : sanitizeSpec(input.spec);
+    const pathPrefix = await responseScope(project, {
+      domainId: input.domainId === undefined ? existing.domainId : input.domainId,
+      pathPrefix: input.pathPrefix === undefined ? existing.pathPrefix : input.pathPrefix,
+      enabled: input.enabled ?? existing.enabled, spec,
+    });
     const patch: Parameters<typeof repos.routeRule.update>[1] = {};
     if (input.domainId !== undefined) patch.domainId = input.domainId;
-    if (input.pathPrefix !== undefined) patch.pathPrefix = normalizePathPrefix(input.pathPrefix);
-    if (input.spec !== undefined) patch.spec = sanitizeSpec(input.spec);
+    if (input.pathPrefix !== undefined || spec.response) patch.pathPrefix = pathPrefix;
+    if (input.spec !== undefined) patch.spec = spec;
     if (input.enabled !== undefined) patch.enabled = input.enabled;
     await repos.routeRule.update(input.ruleId, patch);
-    await repush(id);
+    const edgeApplied = await repush(id);
     const rule = await repos.routeRule.get(input.ruleId);
     if (!rule || rule.projectId !== id) throw new NotFoundError("Rule", input.ruleId);
     record(ctx, id, "routeRule.update", rule.id);
-    return rule;
+    return { ...rule, edgeApplied: edgeApplied === true };
   },
   async removeRouteRule(ctx, id, ruleId) {
     await localProject(ctx, id);
     await repos.routeRule.removeForProject(id, ruleId);
-    await repush(id);
+    const edgeApplied = await repush(id);
     record(ctx, id, "routeRule.remove", ruleId);
-    return { success: true };
+    return { success: true, edgeApplied: edgeApplied === true };
   },
   async getIncidents(ctx, id) {
     const project = await localProject(ctx, id);

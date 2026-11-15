@@ -117,7 +117,7 @@ function SwarmCard({ serverId, connected }: { serverId: string; connected: boole
         <>
           <p className="text-sm text-muted-foreground">
             {value.nodeCount ?? "Unknown"} nodes · {value.managerCount ?? "Unknown"} managers.
-            Deploy new projects through Openship. Existing stacks stay under their current
+            Deploy new projects through OpenShip. Existing stacks stay under their current
             management.
           </p>
           {!connected && (

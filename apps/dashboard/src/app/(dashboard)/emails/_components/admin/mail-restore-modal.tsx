@@ -12,7 +12,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *   mode "in_place"  → restore the backup onto THIS mail server.
  *   mode "to_fork"   → migrate: restore onto a DIFFERENT mail server.
  *
- * Both are destructive on the target: its accounts are TRUNCATED before the
+ * Both are destructive on the target: the database and mail stores are replaced as the
  * backup's data loads.
  */
 
@@ -92,14 +92,14 @@ function MailRestoreContent({
       .then(({ servers }) =>
         setTargets(
           servers
-            .filter((s) => s.id !== sourceServerId && s.completed)
+            .filter((s) => s.id !== sourceServerId && s.completed && s.domain === domain)
             .map((s) => ({ id: s.id, name: s.name, host: s.host, domain: s.domain, completed: s.completed })),
         ),
       )
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/mail-restore-modal");
       });
-  }, [mode, sourceServerId]);
+  }, [mode, sourceServerId, domain]);
 
   const canStart =
     confirmText.trim() === domain && (mode === "in_place" || !!targetId);

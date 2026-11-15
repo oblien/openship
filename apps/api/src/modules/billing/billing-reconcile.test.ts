@@ -37,7 +37,7 @@ import {
   complimentaryCloudPlan,
 } from "@repo/platform/engine/modules/billing/billing-catalog";
 import { planGrantPeriod } from "@repo/platform/engine/modules/billing/billing-plan-grants";
-import { monthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
+import { monthlyCloudBilling, unpaidMonthlyCloudBilling } from "../../../test/helpers/monthly-cloud-offer";
 
 const entitlement = () => ({
   success: true as const, namespace: "os-customer", tierId: "pro", status: "active" as const,
@@ -115,6 +115,39 @@ describe("Oblien-managed entitlements", () => {
     const state = useMonthly();
     h.balance.mockResolvedValue({ ...state.balance, billingMode: "payg" });
     await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
+  });
+  it.each(["active", "past_due"] as const)("allows billing recovery during a %s unpaid renewal without granting compute or credits", async status => {
+    const state = unpaidMonthlyCloudBilling();
+    state.subscription.status = status;
+    h.entitlement.mockResolvedValue(state.entitlement);
+    h.subscription.mockResolvedValue({ namespace: state.entitlement.namespace, subscription: state.subscription });
+    h.balance.mockResolvedValue(state.balance);
+    const result = await syncOblienEntitlement("org_1", { syncResourceLimits: false });
+    expect(result).toMatchObject({ tier: "pro", subscription: { status }, entitlement: { status: "canceled", computeCovered: false } });
+    await expect(assertNamespaceHasQuota("org_1")).resolves.toBeUndefined();
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ statusCode: 402, code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.mirror).toHaveBeenCalledWith("workspace_1", "org_1", "os-customer", {
+      planTierId: "pro", subscriptionStatus: "canceled",
+      currentPeriodStart: new Date(state.entitlement.periodStart!),
+      currentPeriodEnd: new Date(state.entitlement.periodEnd!),
+    });
+    // A newer balance response alone must not turn old, uncovered capacity into
+    // paid compute. Both authoritative reads must confirm the funded month.
+    h.balance.mockResolvedValue({ ...state.balance, blocking: false, computeCovered: true });
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ statusCode: 402, code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.limits).not.toHaveBeenCalled();
+    expect(h.setQuota).not.toHaveBeenCalled();
+    expect(h.resetQuota).not.toHaveBeenCalled();
+    // Paying the existing renewal restores the provider's funded month; the
+    // normal strict validation and compute gate must accept that transition.
+    state.subscription.status = "active";
+    state.entitlement.status = "active";
+    state.entitlement.periodStart = state.entitlement.capacity!.periodStart = state.subscription.periodStart!;
+    state.entitlement.periodEnd = state.entitlement.capacity!.periodEnd = state.subscription.periodEnd!;
+    state.entitlement.capacity!.status = "active";
+    state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = true;
+    h.balance.mockResolvedValue({ ...state.balance, blocking: false, computeCovered: true, paidThrough: state.subscription.periodEnd });
+    await expect(assertCloudCanSpend("org_1")).resolves.toBeUndefined();
   });
   it("keeps complimentary Pro through provider reconciliation while enforcing the real credit balance", async () => {
     const createdAt = new Date(Date.now() - 86_400_000);

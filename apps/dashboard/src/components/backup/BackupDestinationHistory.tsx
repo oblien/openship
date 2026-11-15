@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { isPayloadKind, payloadSpec } from "@repo/core";
 import type { BackupDestinationRun } from "@repo/contracts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -20,7 +21,13 @@ const PAGE_SIZE = 10;
 // including ones outside the page currently being viewed.
 const noSeparatePoll = () => false;
 
-export function BackupDestinationHistory({ refreshKey }: { refreshKey: unknown }) {
+export function BackupDestinationHistory({
+  refreshKey,
+  hideWhenEmpty = false,
+}: {
+  refreshKey: unknown;
+  hideWhenEmpty?: boolean;
+}) {
   const { t, locale } = useI18n();
   const b = t.projectSettings.backup;
   const m = t.misc.backups;
@@ -76,6 +83,20 @@ export function BackupDestinationHistory({ refreshKey }: { refreshKey: unknown }
     }
   };
 
+  // A fresh workspace has one setup prompt. Retained history, failures, open
+  // details and pagination remain visible even if all destinations were removed.
+  if (
+    hideWhenEmpty &&
+    data?.runs.length === 0 &&
+    !data.nextCursor &&
+    cursors.length === 1 &&
+    error == null &&
+    !actionError &&
+    !details &&
+    !restore
+  )
+    return null;
+
   return (
     <>
       <section aria-label={b.recent.title} className="min-w-0 overflow-hidden rounded-2xl bg-card">
@@ -112,11 +133,12 @@ export function BackupDestinationHistory({ refreshKey }: { refreshKey: unknown }
             ))}
           </div>
         ) : data && data.runs.length === 0 ? (
-          <div className="flex items-center gap-4 px-5 py-8">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
-              <Icon name="database-backup" className="size-5" />
-            </div>
-            <div>
+          <div className="flex flex-col items-center gap-4 px-5 pb-8 pt-4 text-center sm:flex-row sm:text-start">
+            <FeatureIllustration
+              name="backups-restore"
+              className="illustration-color h-auto w-16"
+            />
+            <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">{b.recent.empty}</p>
               <p className="mt-1 text-sm text-muted-foreground">{m.historyEmptyHint}</p>
             </div>

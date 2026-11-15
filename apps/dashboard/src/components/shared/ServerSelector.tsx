@@ -8,7 +8,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { systemApi, type ServerInfo } from "@/lib/api/system";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
-import { ServerPicker, ServerRowContent } from "@/components/shared/ServerPicker";
+import { ServerPicker } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
 import { usePlatform } from "@/context/PlatformContext";
 import { settingsApi } from "@/lib/api/settings";
@@ -297,24 +297,16 @@ export function ServerSelectorView({
       ) : automaticCloud ? (
         <ServerSummary name={t.deploy.targetStep.options.cloud} description={managedCopy.defaultHint} />
       ) : rows.length > 0 ? (
-        <>
-          {rows.length === 1 && effective === rows[0]!.id ? (
-            <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-4 py-3">
-              <ServerRowContent server={rows[0]!} active />
-            </div>
-          ) : (
-            <ServerPicker
-              label={fieldLabel}
-              showLabel={false}
-              selectedId={effective}
-              servers={rows}
-              disabled={disabled}
-              onSelect={server => select(server.id)}
-              onAddServer={canAddServer && !disabled && !disabledReason ? addServer : undefined}
-              addServerLabel={addLabel}
-            />
-          )}
-        </>
+        <ServerPicker
+          label={fieldLabel}
+          showLabel={false}
+          selectedId={effective}
+          servers={rows}
+          disabled={disabled}
+          onSelect={server => select(server.id)}
+          onAddServer={canAddServer && !disabled && !disabledReason ? addServer : undefined}
+          addServerLabel={addLabel}
+        />
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 p-4">
           <p className="min-w-0 text-sm text-muted-foreground">
@@ -342,7 +334,7 @@ export function ServerSelectorView({
                 {restrictedSource ? t.migration.sources.hint : forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
               </p>
             )}
-            {canAddServer && (automaticCloud || rows.length === 1) && (
+            {canAddServer && automaticCloud && (
               <Button type="button" variant="secondary" size="sm" onClick={addServer}>
                 <Icon name="plus" className="size-3.5" aria-hidden />
                 {addLabel}

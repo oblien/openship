@@ -76,6 +76,8 @@ export function serviceCanStartWithoutBuild(
 
 export interface Service {
   id: string;
+  /** Server-resolved primary application; never infer ownership from its name. */
+  applicationMode?: "project" | "service";
   /** Discriminator. "compose" (default) or "monorepo" sub-app. */
   kind?: "compose" | "monorepo";
   name: string;

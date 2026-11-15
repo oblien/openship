@@ -1,10 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { AsyncLocalStorage } from "node:async_hooks";
 import { AppError } from "@repo/core";
 import { repos, type CloudBuildActivity, type CloudBuildActivityIdentity } from "@repo/db";
 import { withManagedCommandTracking } from "@repo/adapters";
 import { env } from "../config/env";
 import { createProvisionLock, tryWithProvisionLock } from "./provision-lock";
+import {
+  withDeploymentExecutionOwnership,
+  tryWithDeploymentExecutionOwnership,
+  runOutsideDeploymentExecutionOwnership,
+} from "./deployment-execution-ownership";
+
+export {
+  withDeploymentExecutionOwnership as withCloudBuildExecutionOwnership,
+  deploymentExecutionLockKey as cloudBuildActivityLockKey,
+} from "./deployment-execution-ownership";
 import { cloudBuildActivityContext } from "./cloud-build-activity-context";
 import { isCloudWorkspaceActivityHeld, withCloudWorkspaceActivity } from "./cloud-workspace-lock";
 import { verifyCloudBuildWorkerStopped } from "./cloud-build-worker-recovery";
@@ -38,58 +47,9 @@ export interface CloudBuildActivityOptions {
   verifyQuiescence?: () => Promise<void>;
 }
 
-const executionOwnership = new AsyncLocalStorage<{
-  deploymentId: string;
-  active: boolean;
-  recovering: boolean;
-}>();
-
 /** Detached workers must acquire their own activity even while the parent is live. */
 export function runOutsideCloudBuildActivity<T>(work: () => T): T {
-  return executionOwnership.exit(() => cloudBuildActivityContext.exit(work));
-}
-
-/** Global deployment identity prevents a changed destination acquiring another owner. */
-export const cloudBuildActivityLockKey = (deploymentId: string) =>
-  `cloud:build-execution:${deploymentId}`;
-
-async function inExecutionOwnership<T>(
-  deploymentId: string,
-  work: () => Promise<T>,
-  recovering = false,
-): Promise<T> {
-  const state = { deploymentId, active: true, recovering };
-  try {
-    return await executionOwnership.run(state, work);
-  } finally {
-    state.active = false;
-  }
-}
-
-/** Wrap the ENTIRE worker, including backups and final lease acknowledgement.
- * The pipeline must recheck durable cancellation immediately after admission,
- * before backups: recovery may have won before this delayed worker acquired it.
- * Same-execution nested shared admission reuses ownership without another mutex. */
-export async function withCloudBuildExecutionOwnership<T>(
-  deploymentId: string,
-  work: () => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const inherited = executionOwnership.getStore();
-  if (inherited) {
-    if (!inherited.active || inherited.recovering || inherited.deploymentId !== deploymentId)
-      throw new AppError(
-        "Cloud build execution ownership cannot be inherited by this worker",
-        409,
-        "CLOUD_BUILD_EXECUTION_OWNERSHIP_CHANGED",
-      );
-    signal?.throwIfAborted();
-    return work();
-  }
-  return createProvisionLock(cloudBuildActivityLockKey(deploymentId)).run(async () => {
-    signal?.throwIfAborted();
-    return inExecutionOwnership(deploymentId, work);
-  }, signal);
+  return runOutsideDeploymentExecutionOwnership(() => cloudBuildActivityContext.exit(work));
 }
 
 function assertFreshContext() {
@@ -171,7 +131,7 @@ export async function withCloudBuildActivity<T>(
       409,
       "CLOUD_BUILD_ACTIVITY_NESTED",
     );
-  return withCloudBuildExecutionOwnership(
+  return withDeploymentExecutionOwnership(
     input.deploymentId,
     () =>
       createProvisionLock(`cloud:build-project:${input.projectId}`).run(async () => {
@@ -256,78 +216,68 @@ export async function recoverCloudBuildActivity(
       409,
       "CLOUD_BUILD_ACTIVITY_NESTED",
     );
-  if (executionOwnership.getStore()?.active) return false;
   return (
-    (await tryWithProvisionLock(cloudBuildActivityLockKey(input.deploymentId), () =>
-      inExecutionOwnership(
-        input.deploymentId,
-        () =>
-          tryWithProvisionLock(`cloud:build-project:${input.projectId}`, async () => {
-            const previous = await repos.cloudBuildActivity.find(input);
-            if (!previous) return false;
-            if (previous.finishedAt) {
-              await options.onFinished?.();
-              return true;
-            }
-            if (!previous.ownerToken) {
-              if (previous.commands.length)
-                throw new AppError(
-                  "An unactivated build has unresolved commands",
-                  503,
-                  "CLOUD_COMMAND_EXIT_UNCONFIRMED",
-                );
-              await cleanup({ activated: false });
-              if (await repos.cloudBuildActivity.cancelReservation(input)) return true;
-              // A callback may atomically cancel the reservation with its DB state write.
-              return !!(await repos.cloudBuildActivity.find(input))?.finishedAt;
-            }
-            const ownerToken = randomUUID();
-            const row = await repos.cloudBuildActivity.takeRecoveryOwnership(input, ownerToken);
-            if (!row) return false;
-            // Do not route recovery through a new provider binding after reassignment.
-            const binding = await repos.cloudDockerWorkspace.find(
-              { ownerWorkspaceId: input.workspaceId },
-              input.organizationId,
+    (await tryWithDeploymentExecutionOwnership(input.deploymentId, () =>
+      tryWithProvisionLock(`cloud:build-project:${input.projectId}`, async () => {
+        const previous = await repos.cloudBuildActivity.find(input);
+        if (!previous) return false;
+        if (previous.finishedAt) {
+          await options.onFinished?.();
+          return true;
+        }
+        if (!previous.ownerToken) {
+          if (previous.commands.length)
+            throw new AppError(
+              "An unactivated build has unresolved commands",
+              503,
+              "CLOUD_COMMAND_EXIT_UNCONFIRMED",
             );
-            if (binding?.workspaceId !== row.providerWorkspaceId)
-              throw new AppError(
-                "The build's Cloud server binding changed",
-                409,
-                "CLOUD_SERVER_IDENTITY_MISMATCH",
+          await cleanup({ activated: false });
+          if (await repos.cloudBuildActivity.cancelReservation(input)) return true;
+          // A callback may atomically cancel the reservation with its DB state write.
+          return !!(await repos.cloudBuildActivity.find(input))?.finishedAt;
+        }
+        const ownerToken = randomUUID();
+        const row = await repos.cloudBuildActivity.takeRecoveryOwnership(input, ownerToken);
+        if (!row) return false;
+        // Do not route recovery through a new provider binding after reassignment.
+        const binding = await repos.cloudDockerWorkspace.find(
+          { ownerWorkspaceId: input.workspaceId },
+          input.organizationId,
+        );
+        if (binding?.workspaceId !== row.providerWorkspaceId)
+          throw new AppError(
+            "The build's Cloud server binding changed",
+            409,
+            "CLOUD_SERVER_IDENTITY_MISMATCH",
+          );
+        await tracked(
+          row,
+          async () => {
+            if (row.commands.length) {
+              const { openCloudWorkspaceExecutor } = await import("./cloud-workspace-host");
+              const executor = await openCloudWorkspaceExecutor(
+                input.organizationId,
+                input.workspaceId,
               );
-            await tracked(
-              row,
-              async () => {
-                if (row.commands.length) {
-                  const { openCloudWorkspaceExecutor } = await import("./cloud-workspace-host");
-                  const executor = await openCloudWorkspaceExecutor(
-                    input.organizationId,
-                    input.workspaceId,
-                  );
-                  try {
-                    for (const command of row.commands) {
-                      await executor.recoverCommand(command);
-                      await repos.cloudBuildActivity.completeCommand(
-                        input,
-                        ownerToken,
-                        command.marker,
-                      );
-                    }
-                  } finally {
-                    await executor.dispose();
-                  }
+              try {
+                for (const command of row.commands) {
+                  await executor.recoverCommand(command);
+                  await repos.cloudBuildActivity.completeCommand(input, ownerToken, command.marker);
                 }
-                await (options.verifyQuiescence ?? verifyCloudBuildWorkerStopped)();
-                await cleanup({ activated: true });
-              },
-              options,
-            );
-            // A cleanup failure retains the activity even if no command remains.
-            await repos.cloudBuildActivity.finish(input, ownerToken);
-            return true;
-          }),
-        true,
-      ),
+              } finally {
+                await executor.dispose();
+              }
+            }
+            await (options.verifyQuiescence ?? verifyCloudBuildWorkerStopped)();
+            await cleanup({ activated: true });
+          },
+          options,
+        );
+        // A cleanup failure retains the activity even if no command remains.
+        await repos.cloudBuildActivity.finish(input, ownerToken);
+        return true;
+      }),
     )) === true
   );
 }

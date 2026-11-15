@@ -1,15 +1,18 @@
-import { ValidationError, type SecurityImageEvidence } from "@repo/core";
+import { ValidationError, type SecurityAdvisory } from "@repo/core";
 import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import type { ProjectSecurityResult } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { planProjectRuntimeUpdate, RuntimeSourceRedeployRequired } from "./runtime-update";
+import type { SecurityInventory } from "./security-inventory";
+import { planSecurityRuntimePatch, RuntimeImageChangeRequired } from "./security-runtime-patch";
 
 /** Use the deployment preflight before presenting an actionable security refresh. */
 export async function annotateSecurityRefreshAvailability(
   ctx: ExecutionContext,
   result: ProjectSecurityResult,
-  images: readonly SecurityImageEvidence[] = [],
+  inventory: SecurityInventory | undefined,
+  advisories: readonly SecurityAdvisory[],
   refresh = false,
 ): Promise<void> {
   const scopes = new Map<string | null, Promise<void>>();
@@ -29,9 +32,26 @@ export async function annotateSecurityRefreshAvailability(
     }
     try {
       await check;
+      const advisory = advisories.find((item) => item.id === finding.id);
+      if (inventory && advisory) {
+        const patch = await planSecurityRuntimePatch(
+          ctx,
+          result.projectId,
+          finding.serviceId,
+          advisory,
+          inventory,
+          refresh,
+        );
+        if (patch) {
+          finding.runtimePatch = patch;
+          continue;
+        }
+      }
       // A prebuilt image cannot acquire a patched interpreter by restarting the
       // exact same artifact. Never advertise that no-op as security remediation.
-      const image = images.find((i) => i.serviceId === finding.serviceId && i.role === "image");
+      const image = inventory?.images.find(
+        (i) => i.serviceId === finding.serviceId && i.role === "image",
+      );
       if (image?.digest) {
         const latest = await resolveLatestImageDigest(image.ref, { refresh });
         if (!latest)
@@ -50,6 +70,7 @@ export async function annotateSecurityRefreshAvailability(
       if (error instanceof ValidationError) {
         finding.refreshBlockedReason = error.message;
         if (error instanceof RuntimeSourceRedeployRequired) finding.sourceRedeployRequired = true;
+        if (error instanceof RuntimeImageChangeRequired) finding.imageChangeRequired = true;
       } else {
         reportCaughtError(error, "updates/security-refresh-availability");
         finding.refreshBlockedReason =

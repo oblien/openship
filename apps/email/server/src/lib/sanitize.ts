@@ -44,7 +44,19 @@ const ALLOWED_TAGS = [
  * closes the known payload, this closes the class.
  */
 function normalizeToSpecTree(input: string): string {
-  return cheerio.load(input, null, false).html();
+  const $ = cheerio.load(input);
+  const body = $('body');
+  let content = body.html() ?? '';
+
+  // The read pane renders a fragment inside a shadow root. Keep the document's
+  // inherited colors/background on ordinary wrappers before dropping html/body;
+  // otherwise a dark email loses its canvas, or a light email inherits the UI's
+  // white text. These styles still pass through the sanitizer and image blocker.
+  for (const element of [body, $('html')]) {
+    const style = element.attr('style');
+    if (style) content = $('<div>').attr('style', style).html(content).toString();
+  }
+  return content;
 }
 
 export function sanitizeMailHtml(input: string): string {

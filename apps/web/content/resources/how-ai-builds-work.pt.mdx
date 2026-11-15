@@ -1,0 +1,53 @@
+---
+title: "Como funcionam os builds de IA em OpenShip"
+description: "Uma visão geral de como OpenShip usa IA para detectar estruturas, gerar configurações e otimizar compilações automaticamente."
+date: "2026-03-08"
+category: "Engineering"
+author: "OpenShip Team"
+---
+
+Quando você executa `openship deploy`, muitas coisas acontecem antes de seu aplicativo ser lançado. Veja como funciona o sistema de construção de IA.
+
+## Etapa 1: detecção de estrutura
+
+OpenShip verifica seu projeto em busca de sinais:
+
+- `package.json` scripts e dependências
+- Arquivos de configuração (`next.config.js`, `nuxt.config.ts`, `Cargo.toml`, etc.)
+- Dockerpresença de arquivo
+- Padrões de estrutura de diretório
+
+Isso produz uma correspondência de estrutura com pontuação de confiança. Se OpenShip detectar Next.js com 95% de confiança, ele usará o pipeline de compilação Next.js. Se houver um arquivo Docker, ele o usará diretamente.
+
+## Etapa 2: geração de configuração
+
+Com base na estrutura detectada, OpenShip gera:
+
+- **Comando de construção** - `npm run build`, `go build`, etc.
+- **Comando de início** - `npm start`, `./server`, etc.
+- **Mapeamento de portas** - Detecta em qual porta seu aplicativo escuta
+- **Variáveis de ambiente** - Sugere variáveis obrigatórias com base nas convenções da estrutura
+
+Você pode substituir qualquer um deles em `openship.json`.
+
+## Etapa 3: Otimização de construção
+
+A camada AI otimiza a construção:
+
+- **Cache de camadas** - As camadas de dependência são armazenadas em cache separadamente do código-fonte
+- **Compilações em vários estágios** - Imagens de produção excluem dependências de desenvolvimento
+- **Builds paralelos** - Projetos multisserviços construídos simultaneamente
+
+## Etapa 4: verificações de integridade
+
+Após a implantação, OpenShip verifica:
+
+- O contêiner foi iniciado com sucesso
+- O endpoint da verificação de integridade responde
+- SSL é provisionado e válido
+
+Se alguma verificação falhar, a implantação será revertida automaticamente.
+
+## O que vem a seguir
+
+Estamos trabalhando em diagnósticos baseados em IA. Quando uma compilação falha, OpenShip analisará o erro e sugerirá correções. Fique atento.

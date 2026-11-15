@@ -77,7 +77,7 @@
   },
   "welcome": {
     "title": "Launch your first project",
-    "subtitle": "Connect a repository or start from a template — Openship builds it, ships it, and hands you a live URL in minutes.",
+    "subtitle": "Connect a repository or start from a template — OpenShip builds it, ships it, and hands you a live URL in minutes.",
     "createProject": "Create project",
     "importGithub": "Import from GitHub",
     "tipPrefix": "Tip: press",

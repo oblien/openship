@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { MigrationRequestSchemas } from "./migration";
+import { PlatformMigrationScopedSchemas } from "./platform-migration";
 import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import { ServerDetailSchema } from "./servers";
 import type {
@@ -111,6 +112,7 @@ export const MigrationPreviewSchema = Type.Unsafe<MigrationPreview>(
 export const MigrationRunSchema = Type.Unsafe<MigrationRun>(
   Type.Object({
     id: text,
+    cancelRequested: Type.Optional(Type.Boolean()),
     status: Type.Union([
       Type.Literal("queued"),
       Type.Literal("adopting"),
@@ -129,6 +131,7 @@ export const MigrationRunSchema = Type.Unsafe<MigrationRun>(
       Type.Literal("same_server"),
       Type.Literal("project_move"),
       Type.Literal("project_copy"),
+      Type.Literal("provider_import"),
     ]),
     confirmationToken: optionalNullableText,
     projectId: optionalNullableText,
@@ -192,6 +195,7 @@ export const MigrationRevealEnvSchema = Type.Object(
   { additionalProperties: false },
 );
 export const MigrationScopedSchemas = {
+  ...PlatformMigrationScopedSchemas,
   listSources: { action: "read", output: Type.Array(ServerDetailSchema) },
   createSource: {
     action: "write",

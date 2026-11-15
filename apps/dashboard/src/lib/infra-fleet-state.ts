@@ -25,7 +25,7 @@ export interface InfraServerSummary {
   updates: number;
   /** Down but gone — the fix is the setup path, so it's not bulk-restartable. */
   missing: ("edge" | "mail")[];
-  /** No edge row at all AND projects deployed here → the edge needs installing. */
+  /** A scan confirmed the edge is absent on a server with routed projects. */
   edgeAbsent: boolean;
   /** Components mid-apply. Excluded from every other field here. */
   applying: number;
@@ -63,6 +63,9 @@ export function summarizeInfraFleet(
 ): InfraFleetState {
   const summaries = new Map<string, InfraServerSummary>();
   for (const g of groups ?? []) {
+    // An import intentionally drops this cache. An unread server is neither
+    // missing its edge nor known healthy.
+    if (g.components.length === 0) continue;
     const down: ("edge" | "mail")[] = [];
     const missing: ("edge" | "mail")[] = [];
     let updates = 0;
@@ -70,6 +73,7 @@ export function summarizeInfraFleet(
     let applyingUpdate = 0;
     let applyingDown = 0;
     for (const r of g.components) {
+      if (r.component === "edge" && r.detail?.containerMissing) continue;
       const inFlight = r.latestInProgress || live.has(applyKey(g.server.id, r.component));
       if (r.behind) {
         if (inFlight) applyingUpdate++;
@@ -79,14 +83,16 @@ export function summarizeInfraFleet(
         else (r.detail.containerMissing ? missing : down).push(r.component);
       }
     }
-    const edgeAbsent =
-      (g.server.edgeRequired ?? g.server.projectCount > 0) && !g.components.some((r) => r.component === "edge");
+    const edge = g.components.find((r) => r.component === "edge");
+    const edgeRequired = g.server.edgeRequired ?? g.server.projectCount > 0;
+    const edgeAbsent = edgeRequired && Boolean(edge?.detail?.containerMissing);
     const bucket: InfraBucket =
       down.length + missing.length > 0 || edgeAbsent || applyingDown > 0
         ? "attention"
         : updates > 0 || applyingUpdate > 0
           ? "updates"
           : "healthy";
+    if (edgeRequired && !edge && bucket === "healthy") continue;
     summaries.set(g.server.id, {
       down,
       updates,

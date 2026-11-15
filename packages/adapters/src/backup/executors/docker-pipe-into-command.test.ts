@@ -137,4 +137,20 @@ describe("DockerBackupExecutor.pipeIntoCommand completion", () => {
     expect(h.socket.destroyed).toBe(true);
     expect(body.destroyed).toBe(true);
   });
+
+  it("cancels a stalled restore without waiting for the execution ceiling", async () => {
+    const body = new PassThrough();
+    const controller = new AbortController();
+    inspect = async () => ({ Running: true });
+    const restore = makeExecutor().pipeIntoCommand(service, ["redis-cli", "--pipe"], body, {
+      signal: controller.signal,
+      timeoutMs: 60_000,
+    });
+    const result = expect(restore).rejects.toThrow(/was cancelled.*partial data/);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+    await result;
+    expect(h.socket.destroyed).toBe(true);
+    expect(body.destroyed).toBe(true);
+  });
 });

@@ -13,6 +13,27 @@ export function createRemoteMigrationOperations(http: HttpClient): MigrationOper
   const run = (id: string) => `/migration/migrations/${encodeURIComponent(id)}`;
   return Object.freeze({
     ...createRemoteScopedOperations(http, MigrationScopedSchemas, {
+      platformProjects: {
+        method: "GET",
+        path: () => "/migration/platforms/projects",
+        envelope: "projects",
+        redactInvalidResponse: true,
+      },
+      discoverPlatform: {
+        method: "POST",
+        path: () => "/migration/platforms/discover",
+        redactInvalidResponse: true,
+      },
+      reviewPlatform: {
+        method: "POST",
+        path: () => "/migration/platforms/review",
+        redactInvalidResponse: true,
+      },
+      importPlatform: {
+        method: "POST",
+        path: () => "/migration/platforms/import",
+        redactInvalidResponse: true,
+      },
       listSources: {
         method: "GET",
         path: () => "/migration/sources",

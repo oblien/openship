@@ -129,7 +129,7 @@ const MCP_CLIENTS: McpClientDef[] = [
       code: `codex mcp add openship --url ${e}\ncodex mcp login openship`,
       note:
         "Local Codex surfaces (CLI, desktop app, IDE extension) share one MCP config, so this " +
-        "registers Openship for all of them — restart any that were already running. Hosted " +
+        "registers OpenShip for all of them — restart any that were already running. Hosted " +
         "Codex tasks are separate: they only reach this endpoint if that environment can.",
     }),
   },
@@ -208,7 +208,7 @@ const MCP_CLIENTS: McpClientDef[] = [
   },
 ];
 
-/** Client picker: pick your agent, get the exact command/config to add Openship,
+/** Client picker: pick your agent, get the exact command/config to add OpenShip,
  *  pre-filled with this instance's endpoint. */
 function McpClientSetup({ endpoint }: { endpoint: string }) {
   const { t } = useI18n();

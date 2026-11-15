@@ -296,13 +296,17 @@ comparing each field against the previously imported version:
 | removed from the repo | no | removes it only if it has no saved environment |
 | removed from the repo | yes | keeps it until you explicitly delete it |
 
-Routine Compose changes do not require **Accept upstream** or **Keep mine** before redeploying.
+When the Compose file changes, a deploy is blocked until the new source is reviewed
+(`COMPOSE_REVIEW_REQUIRED`, HTTP 409). Review the changed services in **Configure** and redeploy
+from the dashboard. Automated callers can accept the current source for one deploy instead:
+pass `--accept-compose-changes` to `openship deploy`, or set `acceptComposeChanges: true` in an
+incoming webhook's `actionConfig`. Acceptance applies only to the source scanned for that deploy;
+it never accepts a different revision.
 Saved project and service environment values remain in place. A key omitted from the repo is retained
 as a local override, and an unresolved expression cannot replace the only saved value for that key.
 Remove a saved variable explicitly from the environment editor when you no longer need it.
 
-If an older version left a pending review, the next deploy reconciles it automatically. The legacy
-resolution actions remain available: **Accept upstream** applies source configuration while preserving
+If an older version left a pending review, resolve it from its banner: **Accept upstream** applies source configuration while preserving
 saved environment values; **Keep mine** retains the current configuration.
 
 <Tabs items={['Dashboard', 'CLI']}>

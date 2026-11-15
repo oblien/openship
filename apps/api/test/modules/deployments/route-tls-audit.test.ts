@@ -271,6 +271,34 @@ describe("deployment TLS observations and persisted certificate state", () => {
     },
   );
 
+  it("checks independent hostnames concurrently without skipping failed evidence", async () => {
+    const routes = ["slow", "fast", "third", "fourth", "fifth"].map(name => ({ ...route, hostname: `${name}.example.com` }));
+    for (const entry of routes) await repos.domain.create({
+      projectId, hostname: entry.hostname, domainType: "custom", verified: true,
+      verificationToken: "test", sslStatus: "error",
+    });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let concurrent = 0, peak = 0;
+    vi.mocked(ssl.verifyCert).mockImplementation(async host => {
+      peak = Math.max(peak, ++concurrent);
+      try {
+        await gate;
+        if (host === routes[0]!.hostname) throw new Error("target unreachable");
+        return { ...activeCert, domain: host };
+      } finally { concurrent--; }
+    });
+    const audit = auditRoutedDomainTls({ projectId, routes, routeWarnings: [], ssl, log: () => {} });
+    try {
+      await vi.waitFor(() => expect(ssl.verifyCert).toHaveBeenCalledTimes(4));
+      expect(peak).toBe(4);
+    } finally { release(); }
+    const warnings = await audit;
+    expect(ssl.verifyCert).toHaveBeenCalledTimes(5);
+    expect(warnings).toEqual([`${routes[0]!.hostname}: HTTPS status could not be confirmed: target unreachable`]);
+    expect(ssl.provisionCert).not.toHaveBeenCalled();
+  });
+
   it("does not add a speculative TLS warning for a host whose route update already failed", async () => {
     await domain("provisioning");
     vi.mocked(ssl.verifyCert).mockRejectedValue(new Error("connect ENETUNREACH 192.0.2.20:22"));

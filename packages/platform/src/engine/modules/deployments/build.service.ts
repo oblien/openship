@@ -82,7 +82,10 @@ import {
   type ProjectInfo,
   type ProjectSourceEnv,
 } from "./prepare.service";
-import { assertComposeReviewed } from "./compose-review";
+import {
+  assertComposeReviewed,
+  resolveComposeReviewedRevision,
+} from "./compose-review";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 import { getFolderSession } from "../projects/folder/session-store";
 import {
@@ -908,6 +911,8 @@ async function reconcileComposeSource(
   options: {
     changedPaths?: string[] | null;
     composeRevision?: string;
+    /** Accept the current Compose source as reviewed for this deploy only (derived from the scanned source; see resolveComposeReviewedRevision). */
+    acceptComposeChanges?: boolean;
     interpolationEnv?: Record<string, string>;
   } = {},
 ): Promise<ProjectInfo | undefined> {
@@ -989,7 +994,15 @@ async function reconcileComposeSource(
         `The configured compose path "${project.composePath ?? "repository root"}" contains no services.`,
       );
     }
-    assertComposeReviewed(project.id, composeRows, services, options.composeRevision);
+    assertComposeReviewed(
+      project.id,
+      composeRows,
+      services,
+      resolveComposeReviewedRevision(project.id, services, {
+        composeRevision: options.composeRevision,
+        acceptComposeChanges: options.acceptComposeChanges,
+      }),
+    );
     await repos.service.reconcileFromCompose(project.id, services);
     return info;
   } catch (err) {
@@ -1401,11 +1414,10 @@ export async function checkNoActiveBuild(projectId: string) {
   // its claimed build worker is still unwinding. Status-only history paging can
   // neither prove worker completion nor guarantee the active row is on page 1.
   const [active] = await repos.deployment.listInFlightByProject(projectId);
-  if (active && !["queued", "building", "deploying"].includes(active.status) &&
-      (active.meta as { managedWorkspaceId?: string } | null)?.managedWorkspaceId) {
+  if (active && !["queued", "building", "deploying"].includes(active.status)) {
     const project = await repos.project.findById(projectId);
-    const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
-    if (project && await recoverManagedDeploymentExecution(active, project)) return;
+    const { recoverDeploymentExecution } = await import("./deployment-recovery");
+    if (project && await recoverDeploymentExecution(active, project)) return;
   }
   if (active) {
     const cancelling = active.status === "cancelled";
@@ -1434,8 +1446,6 @@ async function createQueuedDeploymentUnlocked(opts: {
   /** Internal, reviewed resource edit committed with deployment admission. */
   roleChanges?: import("@repo/db").DeploymentRoleChanges;
   resourceChanges?: DeploymentResourceChanges;
-  /** Attribution only; ownership/authorization still comes from organizationId. */
-  analyticsActor?: Pick<RequestContext, "userId" | "source">;
   projectId: string;
   /** Org that owns this deployment. Pass project.organizationId — the
    *  scoping key for the row. (Actor attribution lives on the audit
@@ -1654,8 +1664,6 @@ async function createQueuedDeploymentUnlocked(opts: {
       errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[build] supersede pending decisions for ${opts.projectId} failed:`, err),
     );
 
-  const { cloudAnalytics } = await import("../cloud-analytics");
-  await cloudAnalytics.record({ ...opts.analyticsActor, organizationId: opts.organizationId }, "cloud_deployment_started", { project_id: opts.projectId, deployment_id: dep.id }, `deployment-started:${dep.id}`);
   return dep;
 }
 
@@ -2273,7 +2281,6 @@ export async function requestBuildAccess(
   );
 
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch: snapshot.branch,
@@ -2454,10 +2461,10 @@ export async function cancelBuildSession(
   // an immediate redeploy while the old worker may still touch the target host.
   let quiescent = await waitForDeploymentQuiescence(dep.id, dep.projectId);
   let recoveryWarning: string | undefined;
-  if (!quiescent && project.workspaceId) {
+  if (!quiescent) {
     try {
-      const { recoverManagedDeploymentExecution } = await import("./deployment-recovery");
-      quiescent = await recoverManagedDeploymentExecution({ ...dep, status: "cancelled" }, project);
+      const { recoverDeploymentExecution } = await import("./deployment-recovery");
+      quiescent = await recoverDeploymentExecution({ ...dep, status: "cancelled" }, project);
     } catch (error) {
       recoveryWarning = safeErrorMessage(error);
       errorDiagnostics.warn("platform/engine/modules/deployments/build.service", `[CANCEL] ${dep.id}: recovery pending: ${recoveryWarning}`, error);
@@ -2646,7 +2653,6 @@ export async function redeployBuildSession(
   // Service-scoped rows stay out of this flat capture: the compose deployer
   // reads them live per service and applies them after compose inline env.
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch,
@@ -2775,6 +2781,15 @@ export interface DeploymentTriggerInput {
      * file wasn't among them. Absent on manual triggers → reconcile runs.
      */
     changedPaths?: string[] | null;
+    /**
+     * Accept the current Compose source as reviewed for THIS deployment only.
+     * Set by the CLI `--accept-compose-changes` flag and by incoming webhooks
+     * whose saved action config opts in. The gate derives the revision from
+     * the source scanned for this deploy, so it clears for exactly what is
+     * being deployed — it never accepts a different revision, and dashboard
+     * deploys keep requiring an explicit in-app review.
+     */
+    acceptComposeChanges?: boolean;
     /**
      * Smart per-service routing for a MANUAL multi-service redeploy: trace the
      * files changed between the active deployment's commit and the new HEAD and
@@ -2993,6 +3008,7 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
     const sourceRef = requestedCommitSha ?? branch;
     let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
+      acceptComposeChanges: data.acceptComposeChanges,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),
     });
     sourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, sourceRef);
@@ -3269,7 +3285,6 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
   }
 
   const dep = await createQueuedDeployment({
-    analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
     organizationId: project.organizationId,
     branch,

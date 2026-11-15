@@ -13,11 +13,11 @@ describe("environmentErrorMessage", () => {
     const err = new ApiError(400, "Bad Request", {
       success: false,
       error:
-        "Connect Openship Cloud to use a free subdomain — free *.opsh.io domains route " +
-        "through the Openship Cloud edge. Add a custom domain instead, or connect Cloud in Settings.",
+        "Connect OpenShip Cloud to use a free subdomain — free *.opsh.io domains route " +
+        "through the OpenShip Cloud edge. Add a custom domain instead, or connect Cloud in Settings.",
     });
     const msg = environmentErrorMessage(err, "fallback");
-    expect(msg).toContain("Connect Openship Cloud");
+    expect(msg).toContain("Connect OpenShip Cloud");
     // The old code rendered ApiError.message, which is this and nothing else.
     expect(msg).not.toBe("API 400: Bad Request");
     expect(msg).not.toContain("API 400");

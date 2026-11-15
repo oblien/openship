@@ -8,7 +8,6 @@ import { getAuthMode } from "../../lib/auth-mode";
 import { resolveProductMode } from "../../lib/product-mode";
 import { resolveHostControlEnabled } from "../../lib/host-control";
 import { configuredAuthProviders } from "../../lib/auth-providers";
-import { getCloudAnalyticsConfig } from "../cloud-analytics/config";
 
 /**
  * Best-effort friendly name for the local machine. On macOS with Bonjour
@@ -62,7 +61,6 @@ export async function getSystemInfo(): Promise<SystemInfo> {
   // itself required no login at all. This is the value that decides which login
   // flow the dashboard draws, so it has to agree with the API's real behaviour.
   const authMode = await getAuthMode();
-  const analyticsConfig = getCloudAnalyticsConfig();
 
   // productMode decides which SHELL the dashboard draws (full platform vs the
   // Openship Mail rail). Resolved here rather than from the raw env var below so
@@ -91,7 +89,6 @@ export async function getSystemInfo(): Promise<SystemInfo> {
 
   return {
     selfHosted: !env.CLOUD_MODE,
-    ...(analyticsConfig && { cloudAnalytics: { dashboardOrigin: analyticsConfig.dashboardOrigin } }),
     deployMode: env.DEPLOY_MODE,
     // Server-host ("VPS") mode: OpenShip is installed ON a server (docker/bare
     // self-host, not the desktop app, not cloud SaaS). In this mode the host is

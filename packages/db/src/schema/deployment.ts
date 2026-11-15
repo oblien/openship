@@ -270,6 +270,9 @@ export const buildSession = pgTable(
     /** Build duration in milliseconds */
     durationMs: integer("duration_ms"),
 
+    /** True only when kickoff holds the cross-process execution fence through
+     * completion. Legacy workers remain untracked during rolling upgrades. */
+    executionFenced: boolean("execution_fenced").notNull().default(false),
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -278,6 +281,9 @@ export const buildSession = pgTable(
     // The build-minute allowance windows on started_at and joins to deployment by
     // organization; the plan gate runs that query on every deploy, so both sides of
     // the join need covering (see migration 0107).
+    index("idx_build_session_recoverable_execution")
+      .on(t.id)
+      .where(sql`${t.executionFenced} AND ${t.startedAt} IS NOT NULL AND ${t.finishedAt} IS NULL`),
     index("idx_build_session_started_at").on(t.startedAt),
     index("idx_build_session_live_project_deployment")
       .on(t.projectId, t.deploymentId)

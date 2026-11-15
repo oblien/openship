@@ -211,7 +211,7 @@ describe("Cloud relays cannot substitute Cloud feature access for host administr
 
   it.each([
     ["preflight", {}],
-    ["pages", { workspace_id: "vm-own", path: "/private", name: "export", slug: "export" }],
+    ["pages", { vm_id: "vm-own", path: "/private", name: "export", slug: "export" }],
     ["pages/enable", { slug: "own-page" }],
     ["pages/disable", { slug: "own-page" }],
     ["pages/delete", { slug: "own-page" }],

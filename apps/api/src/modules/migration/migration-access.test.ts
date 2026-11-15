@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   get: vi.fn(), ssh: vi.fn(), retain: vi.fn(), release: vi.fn(),
-  managedExecutor: vi.fn(), managedRuntime: vi.fn(), activity: vi.fn(),
+  managedExecutor: vi.fn(), managedRuntime: vi.fn(), activity: vi.fn(), prepareHost: vi.fn(),
 }));
 vi.mock("@repo/db", async original => ({ ...(await original<Record<string, unknown>>()),
   repos: { server: { getInOrganization: h.get } },
@@ -16,8 +16,9 @@ vi.mock("@repo/platform/engine/lib/cloud-workspace-host", () => ({
   openCloudWorkspaceExecutor: h.managedExecutor, openCloudWorkspaceDockerRuntime: h.managedRuntime,
 }));
 vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({ withCloudWorkspaceActivity: h.activity }));
+vi.mock("@repo/platform/engine/lib/cloud-docker-workspace", () => ({ ensureCloudWorkspaceHost: h.prepareHost }));
 import { assertMigrationEndpoints } from "@repo/platform/engine/modules/migration/migration-access";
-import { createMigrationDockerRuntime, openMigrationTransferEndpoints, withMigrationActivity } from "@repo/platform/engine/modules/migration/migration-runtime";
+import { createMigrationDockerRuntime, openMigrationTransferEndpoints, prepareMigrationTarget, withMigrationActivity } from "@repo/platform/engine/modules/migration/migration-runtime";
 import { acquireServerExecution, openServerShell } from "@repo/platform/engine/lib/server-execution";
 import { assertDeploymentServer } from "@repo/platform/engine/modules/system/server-access";
 
@@ -38,6 +39,30 @@ beforeEach(() => {
 });
 
 describe("Cloud migration endpoint isolation", () => {
+  it("prepares only the owned target under the normal managed host admission", async () => {
+    const signal = new AbortController().signal;
+    const onProgress = vi.fn();
+    let admitted = false;
+    h.activity.mockImplementationOnce(async (_id, work) => {
+      admitted = true;
+      try { return await work(); } finally { admitted = false; }
+    });
+    h.prepareHost.mockImplementationOnce(async () => { expect(admitted).toBe(true); });
+    await prepareMigrationTarget("org-a", "managed-a", "run", { signal, onProgress });
+    expect(h.activity).toHaveBeenCalledWith("workspace-a", expect.any(Function), signal, { scope: "migration:run" });
+    expect(h.prepareHost).toHaveBeenCalledWith({ organizationId: "org-a", ownerWorkspaceId: "workspace-a", signal, onProgress });
+    expect(admitted).toBe(false);
+    expect(h.ssh).not.toHaveBeenCalled();
+  });
+
+  it("rejects foreign and migration-only targets before preparing a host", async () => {
+    const options = { onProgress: vi.fn() };
+    await expect(prepareMigrationTarget("org-a", "managed-b", "run", options)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(prepareMigrationTarget("org-a", "external-a", "run", options)).rejects.toThrow(/migration/i);
+    expect(h.activity).not.toHaveBeenCalled();
+    expect(h.prepareHost).not.toHaveBeenCalled();
+  });
+
   it("checks both organizations before acquiring either endpoint", async () => {
     await expect(openMigrationTransferEndpoints("external-a", "managed-b", "org-a")).rejects.toMatchObject({ statusCode: 404 });
     expect(h.ssh).not.toHaveBeenCalled();

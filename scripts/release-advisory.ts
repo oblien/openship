@@ -15,8 +15,8 @@ export function buildReleaseAdvisory(
     severity: "recommended",
     announce: true,
     affects: `<${version}`,
-    title: `Update to Openship ${version}`,
-    message: `Openship ${version} is available. See the release notes for what's new — updating is recommended.`,
+    title: `Update to OpenShip ${version}`,
+    message: `OpenShip ${version} is available. See the release notes for what's new — updating is recommended.`,
     action: { label: "Update now", kind: "update" },
   };
   return {

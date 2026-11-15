@@ -202,6 +202,13 @@
     "pageOf": "Página {page} de {total}",
     "range": "Implantações {from}–{to} de {total}"
   },
+  "containerConflict": {
+    "title": "Resolver contêineres duplicados",
+    "description": "Inspecione os contêineres e seus volumes montados no servidor de destino. Mantenha o contêiner correto e seus dados, remova apenas uma duplicata confirmada como não utilizada e implante novamente. Em caso de dúvida sobre qual manter, contate o suporte com esta referência da implantação.",
+    "containers": "Contêineres correspondentes",
+    "reviewServer": "Revisar servidor",
+    "reference": "Referência da implantação"
+  },
   "resourceGuidance": {
     "label": "Orientações sobre recursos da implantação",
     "reviewCapacity": "Revisar capacidade",

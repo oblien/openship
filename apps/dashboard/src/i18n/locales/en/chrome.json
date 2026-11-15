@@ -18,7 +18,7 @@
     "switchOrganization": "Switch organization",
     "current": "Current",
     "cloudLabel": "Cloud: {email}",
-    "linkedToCloud": "Linked to Openship Cloud as {email}",
+    "linkedToCloud": "Linked to OpenShip Cloud as {email}",
     "backToSetup": "Back to setup",
     "personal": "Personal"
   },
@@ -34,7 +34,7 @@
     "newLocation": "New location",
     "switchBackPrompt": "Need single-user mode back on this machine?",
     "switchBackAction": "Switch back to single user",
-    "cloudTitle": "This instance moved to Openship Cloud",
+    "cloudTitle": "This instance moved to OpenShip Cloud",
     "cloudBody": "Your team now collaborates at the URL below. This local instance no longer holds your projects, settings, or deployments — open the cloud dashboard to continue.",
     "cloudCta": "Open cloud dashboard",
     "tunneledTitle": "Your openship is now reachable via the tunnel",
@@ -61,7 +61,7 @@
   },
   "apiDown": {
     "title": "Can't reach the API",
-    "description": "The dashboard is running, but it can't talk to the Openship API — so there's nothing to show yet. Your deployments keep running regardless.",
+    "description": "The dashboard is running, but it can't talk to the OpenShip API — so there's nothing to show yet. Your deployments keep running regardless.",
     "hintStatus": "Check that the API is up: run `openship status` on the host.",
     "hintStart": "Not running? Start it with `openship up`.",
     "hintRemote": "Managing a remote box? Confirm its URL and that the API port is reachable from here.",

@@ -11,7 +11,11 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { OpenStripePortalButton } from "@/app/(dashboard)/billing/_components/OpenStripePortalButton";
 import { SubscriptionChangeStatus } from "./SubscriptionChangeStatus";
 
-export function BillingSubscriptionControls({ state }: { state: BillingState }) {
+export function BillingSubscriptionControls({ state, allowCancellation = true, onUpdated }: {
+  state: BillingState;
+  allowCancellation?: boolean;
+  onUpdated?: () => void;
+}) {
   const { t, locale } = useI18n();
   const router = useRouter();
   const [subscription, setSubscription] = useState(state.subscription);
@@ -29,7 +33,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
   const ending = subscription.cancelAtPeriodEnd;
   const canManage =
     !ended && !subscription.pendingChange &&
-    (ending ? state.capabilities?.resumption === true : state.capabilities?.cancellation === true);
+    (ending ? state.capabilities?.resumption === true : allowCancellation && state.capabilities?.cancellation === true);
   const end = subscription.currentPeriod.end;
   const endDate = end
     ? new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(end))
@@ -56,6 +60,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
           : await billingApi.resumeSubscription(state.workspace?.id);
       setSubscription(result.subscription);
       setConfirming(false);
+      onUpdated?.();
       router.refresh();
     } catch (err) {
       setError(getApiErrorMessage(err, copy.error));
@@ -80,7 +85,7 @@ export function BillingSubscriptionControls({ state }: { state: BillingState }) 
           {error}
         </p>
       )}
-      {confirming ? (
+      {confirming && allowCancellation ? (
         <div className="mt-4 space-y-3 rounded-xl bg-muted/35 p-3">
           <p className="text-sm text-muted-foreground">{copy.cancelNotice}</p>
           <div className="flex flex-wrap gap-2">

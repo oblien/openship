@@ -42,7 +42,7 @@ export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  annotations: { readOnlyHint: boolean; destructiveHint: boolean };
+  annotations: { readOnlyHint: boolean; destructiveHint: boolean; openWorldHint: boolean };
   // Dispatch metadata (not sent to the client):
   method: string;
   path: string; // full path with :params, e.g. /api/projects/:id
@@ -184,9 +184,12 @@ function inputSchema(
 function annotationsFor(route: RegisteredRoute): {
   readOnlyHint: boolean;
   destructiveHint: boolean;
+  openWorldHint: boolean;
 } {
   const spec = route.spec;
-  if (isPublicSpec(spec)) return { readOnlyHint: true, destructiveHint: false };
+  if (isPublicSpec(spec)) {
+    return { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
+  }
   const parsed = parsePermissionTag(spec.tag);
   const readOnlyHint = route.method === "GET" || spec.readOnly === true;
   const destructiveHint =
@@ -195,7 +198,7 @@ function annotationsFor(route: RegisteredRoute): {
       (route.method === "DELETE" ||
         parsed.action === "admin" ||
         /delete|teardown|destroy|remove|wipe|revoke/i.test(route.path)));
-  return { readOnlyHint, destructiveHint };
+  return { readOnlyHint, destructiveHint, openWorldHint: spec.mcp?.openWorld ?? true };
 }
 
 let cached: McpToolDef[] | null = null;
@@ -419,6 +422,7 @@ export function toClientTool(t: McpToolDef) {
     annotations: {
       readOnlyHint: t.annotations.readOnlyHint,
       destructiveHint: t.annotations.destructiveHint,
+      openWorldHint: t.annotations.openWorldHint,
     },
   };
 }

@@ -112,3 +112,45 @@ describe("clamd's start is not terminal", () => {
     expect(programBlock("clamav-daemon")).toContain("command=/usr/sbin/clamd");
   });
 });
+
+describe("operator fail2ban ignoreip survives a recreate (issue #1701)", () => {
+  it("renders OPENSHIP_MAIL_F2B_IGNOREIP into a jail.d override on every boot", () => {
+    // The entrypoint reads the operator value from the engine env-file and writes
+    // /etc/fail2ban/jail.d/openship-ignoreip.local before supervisord starts
+    // fail2ban — so an update, which wipes /etc/fail2ban, re-renders it.
+    expect(ENTRYPOINT).toContain("OPENSHIP_MAIL_F2B_IGNOREIP");
+    expect(ENTRYPOINT).toContain("/etc/fail2ban/jail.d/openship-ignoreip.local");
+  });
+
+  it("renders the baked ignoreip from jail.local, never a hardcoded copy", () => {
+    // A bare [DEFAULT] override in jail.d would REPLACE jail.local's ignoreip,
+    // dropping the image defaults (127.0.0.0/8 …) and letting fail2ban ban
+    // localhost. The render must read the live baked line and append to it, so
+    // it also follows image-default changes on update.
+    expect(ENTRYPOINT).toMatch(/ignoreip.*jail\.local/);
+    // And the entrypoint must not carry its own copy of the default ranges.
+    expect(ENTRYPOINT).not.toContain("172.16.0.0/12");
+  });
+
+  it("does not bind-mount /etc/fail2ban wholesale", () => {
+    // The entrypoint rewrites files there on every boot; a seed-once mount would
+    // hide later image changes — the same trap as #392's bind-mounted master.cf.
+    expect(MAIL_CONTAINER_MOUNTS.some((m) => m.container === "/etc/fail2ban")).toBe(false);
+  });
+});
+
+describe("persisted mail logs are rotated (issue #1701)", () => {
+  it("runs cron inside the engine so logrotate's daily job fires", () => {
+    // The rotation configs already ship in the image (rsyslog's, fail2ban's, and
+    // iRedMail's dovecot/iredapd ones) — what was missing was anything to RUN
+    // logrotate: cron is installed but no supervisord program started it.
+    expect(programBlock("cron")).toContain("command=/usr/sbin/cron -f");
+  });
+
+  it("installs logrotate in the image and gates the build on it", () => {
+    // logrotate is only a Recommends of rsyslog, so the Dockerfile must install
+    // it explicitly; the smoke test is the build-time gate for the binary.
+    expect(DOCKERFILE).toContain("logrotate");
+    expect(DOCKERFILE).toContain("/usr/sbin/logrotate");
+  });
+});

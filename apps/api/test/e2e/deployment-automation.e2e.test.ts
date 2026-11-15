@@ -5,14 +5,13 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { getStackDefaults } from "@repo/core";
+import { getStackDefaults, UNLIMITED_RESOURCES } from "@repo/core";
 import {
   DockerRuntime,
   BuildLogger,
   DEFAULT_RESOURCE_CONFIG,
   type BuildConfig,
 } from "@repo/adapters";
-import { generateDockerfile } from "../../../../packages/adapters/src/runtime/docker-build-plan";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
 
 const exec = promisify(execFile);
@@ -38,13 +37,26 @@ describeDockerE2E("managed deployment output and build environment", () => {
     await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
     await runtime?.dispose();
   });
+  async function buildConfig(config: BuildConfig) {
+    const logs: string[] = [];
+    const result = await runtime.build(
+      config,
+      new BuildLogger((entry) => logs.push(entry.message)),
+    );
+    expect(result.status, logs.join("\n")).toBe("deploying");
+    expect(result.imageRef).toBeTruthy();
+    images.push(result.imageRef!);
+    return { image: result.imageRef!, config, output: logs.join("\n") };
+  }
   async function build(files: Record<string, string>, input: Partial<BuildConfig>) {
     const dir = await mkdtemp(join(tmpdir(), "openship-automation-e2e-"));
     dirs.push(dir);
-    const image = `openship-automation-e2e:${randomUUID()}`;
-    images.push(image);
     const defaults = getStackDefaults("nextjs", "bun");
     const config = {
+      localPath: dir,
+      repoUrl: "",
+      branch: "main",
+      slug: "automation-e2e",
       stack: "nextjs",
       buildImage: defaults.buildImage,
       runtimeImage: defaults.runtimeImage,
@@ -63,23 +75,18 @@ describeDockerE2E("managed deployment output and build environment", () => {
       buildCache: true,
       projectId: "preview-e2e",
       sessionId: randomUUID(),
-      resources: DEFAULT_RESOURCE_CONFIG,
+      // Match native builds' default; runtime-container limits are separate.
+      resources: UNLIMITED_RESOURCES,
       ...input,
     } as BuildConfig;
     for (const [file, content] of Object.entries({
       ...files,
       ".fixture-id": randomUUID(),
-      Dockerfile: generateDockerfile(config),
     })) {
       await mkdir(dirname(join(dir, file)), { recursive: true });
       await writeFile(join(dir, file), content);
     }
-    const result = await exec("docker", ["build", "--progress=plain", "-t", image, dir], {
-      env: dockerEnv,
-      timeout: 600_000,
-      maxBuffer: 20 * 1024 * 1024,
-    });
-    return { image, dir, config, output: result.stdout + result.stderr };
+    return buildConfig(config);
   }
   it("builds a Bun workspace, starts Next standalone through the real runtime and serves public/static assets", async () => {
     const result = await build(
@@ -105,9 +112,9 @@ describeDockerE2E("managed deployment output and build environment", () => {
           },
           dependencies: {
             "@fixture/shared": "workspace:*",
-            next: "16.1.6",
-            react: "19.2.4",
-            "react-dom": "19.2.4",
+            next: "16.4.6",
+            react: "19.2.9",
+            "react-dom": "19.2.9",
           },
         }),
         "apps/web/next.config.js":
@@ -163,14 +170,8 @@ describeDockerE2E("managed deployment output and build environment", () => {
     const asset = html.match(/src="([^" ]*\/_next\/static\/[^" ]+\.js)"/)?.[1];
     expect(asset).toBeTruthy();
     expect((await fetch(url + asset)).status).toBe(200);
-    const warm = await exec(
-      "docker",
-      ["build", "--progress=plain", "-t", result.image, result.dir],
-      { env: dockerEnv, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 },
-    );
-    const logger = new BuildLogger();
-    logger.observeBuildOutput(warm.stdout + warm.stderr);
-    expect(logger.cacheSummary()).toMatch(/[1-9]\d* hit/);
+    const warm = await buildConfig({ ...result.config, sessionId: randomUUID() });
+    expect(warm.output).toContain("CACHED");
     const application = runtime.docker.getContainer(deploy.containerId!);
     await application.stop({ t: 10 });
     expect([0, 143]).toContain((await application.inspect()).State.ExitCode);

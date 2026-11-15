@@ -1,0 +1,57 @@
+---
+title: "Plateformes auto-hébergées et plates-formes gérées : la répartition des coûts réels"
+description: "Nous avons comparé le coût réel d'exécution d'une application de production Next.js sur Vercel, AWS et une configuration auto-hébergée OpenShip. Les chiffres pourraient vous surprendre."
+date: "2026-03-05"
+category: "Guide"
+author: "OpenShip Team"
+---
+
+"Utilisez simplement Vercel" est un bon conseil, jusqu'à ce que votre facture arrive. Nous avons exécuté la même application Next.js sur trois configurations et suivi chaque coût pendant 30 jours.
+
+## L'application de test
+
+Une application de production Next.js 15 avec :
+- ~50 itinéraires, ISR activé
+- Base de données Postgres
+- Redis pour la mise en cache
+- ~100K visiteurs mensuels
+- ~500 Go de bande passante/mois
+
+## Les résultats
+
+| | Vercel Pro | AWS (ECS + RDS) | OpenShip (auto-hébergé) |
+|---|---|---|---|
+| Calculer | 150 $/mois | 85 $/mois | 24 $/mois |
+| Base de données | 50 $/mois (Néon) | 45 $/mois | Inclus |
+| Bande passante | 120 $/mois | 45 $/mois | Inclus |
+| SSL/Domaines | Inclus | 1 $/mois | Inclus |
+| **Total** | **320$/mois** | **176 $/mois** | **24 $/mois** |
+
+La configuration auto-hébergée OpenShip s'exécute sur un seul VPS Hetzner (CPX31 : 4 vCPU, 8 Go de RAM, 160 Go de SSD).
+
+## Les compromis
+
+Les plateformes gérées vous offrent zéro opération. Vous poussez le code, il se déploie. C'est une vraie valeur.
+
+Mais OpenShip réduit considérablement l'écart :
+- **AI gère la configuration** - La détection de build, la génération de Dockerfichiers et SSL sont automatiques.
+- **Déploiements en une seule commande** - `openship deploy` est tout aussi rapide.
+- **Surveillance intégrée** - Journaux, métriques et alertes prêts à l'emploi.
+
+Le compromis restant est la maintenance du serveur : mises à jour du système d'exploitation, espace disque, surveillance de la disponibilité. Pour la plupart des équipes, cela représente quelques heures par mois.
+
+## Quand s'auto-héberger
+
+L'auto-hébergement a du sens lorsque :
+- Votre facture mensuelle dépasse ~ 100 $ sur les plateformes gérées
+- Vous avez besoin de souveraineté ou de conformité des données
+- Vous voulez une tarification prévisible et forfaitaire
+- Vous déployez plusieurs applications (le coût reste le même)
+
+## Essayez-le
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+Votre serveur, vos données, votre facture.

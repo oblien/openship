@@ -39,7 +39,7 @@ describe("billing sidebar", () => {
   it("shows the paid plan's live price with access to the full comparison", () => {
     const html = render(<BillingSidebar state={state("starter")} />);
     const out = text(html);
-    expect(out).toContain("Current plan");
+    expect(html).toContain('aria-label="Current plan"');
     expect(out).toContain("Live Cloud plan");
     expect(out).toContain("$17");
     expect(html).toContain('href="/billing/plans"');
@@ -48,7 +48,7 @@ describe("billing sidebar", () => {
 
   it("keeps the no-plan promotion visible when the provider has no free product", () => {
     const out = render(<BillingSidebar state={state("free")} />);
-    expect(text(out)).toContain("Launch on Openship Cloud");
+    expect(text(out)).toContain("Launch on OpenShip Cloud");
     expect(out).toContain("/billing/plans");
     expect(text(out)).not.toContain("Unlimited");
   });

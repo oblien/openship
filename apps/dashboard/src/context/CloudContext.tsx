@@ -48,7 +48,7 @@ interface CloudUser {
 }
 
 interface CloudState {
-  /** Whether connected to Openship Cloud */
+  /** Whether connected to OpenShip Cloud */
   connected: boolean;
   /** Cloud user info (available when connected) */
   cloudUser: CloudUser | null;
@@ -399,7 +399,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         // served over private-LAN HTTP, where browser security APIs differ
         // from HTTPS. Keep the window open with an actionable local error if
         // setup still fails after the PKCE fallback.
-        errorDiagnostics.error("dashboard/context/CloudContext", "Unable to prepare Openship Cloud sign-in", error);
+        errorDiagnostics.error("dashboard/context/CloudContext", "Unable to prepare OpenShip Cloud sign-in", error);
         handle.navigate(`${window.location.origin}/cloud-connect-callback?setup_error=pkce`);
       });
     handle.onClose(() => checkStatus());
@@ -459,7 +459,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
             {/* Title */}
             <h2 className="text-lg font-semibold text-foreground">
-              {modalLoc?.title ?? "Connect Openship Cloud"}
+              {modalLoc?.title ?? "Connect OpenShip Cloud"}
             </h2>
             {modalFeature.description ? (
               <div className="mt-1 space-y-1.5 text-sm leading-relaxed">
@@ -470,7 +470,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
                 {interpolate(
                   modalLoc?.requiresConnection ??
-                    "{feature} requires an Openship Cloud connection. Connect your account to unlock:",
+                    "{feature} requires an OpenShip Cloud connection. Connect your account to unlock:",
                   { feature: modalFeature.feature }
                 )}
               </p>
@@ -510,7 +510,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
                 )}
                 {connecting
                   ? (modalLoc?.waitingSignIn ?? "Waiting for sign in…")
-                  : (modalFeature.ctaLabel ?? modalLoc?.connect ?? "Connect to Openship Cloud")}
+                  : (modalFeature.ctaLabel ?? modalLoc?.connect ?? "Connect to OpenShip Cloud")}
               </Button>
               <Button
                 variant="ghost"

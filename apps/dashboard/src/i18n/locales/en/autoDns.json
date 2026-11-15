@@ -19,7 +19,7 @@
   "actionAdopt": "Repoint",
   "actionInSync": "In place",
   "actionConflict": "Conflict",
-  "conflictNote": "Not managed by Openship — remove it or set this record manually.",
+  "conflictNote": "Not managed by OpenShip — remove it or set this record manually.",
   "outcomeApplied": "Applied",
   "outcomeSkipped": "Skipped",
   "outcomeFailed": "Failed",

@@ -115,6 +115,18 @@ export class PkCollisionError extends Error {
   }
 }
 
+/** The archive is valid, but the destination has not applied its schema upgrades. */
+export class RestoreSchemaError extends Error {
+  readonly code = "DESTINATION_SCHEMA_MISMATCH" as const;
+  constructor(cause: unknown) {
+    super(
+      "The destination database is missing required fields. Update and restart Openship to apply its database migrations, then retry the import.",
+      { cause },
+    );
+    this.name = "RestoreSchemaError";
+  }
+}
+
 /**
  * Extract the underlying Postgres driver error (with its `.code`) from a
  * thrown error. Drizzle wraps the driver error in a `DrizzleQueryError`, so
@@ -947,11 +959,9 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_support_ticket:
     "Private Cloud support requests; never export one customer's correspondence to another installation",
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
+  cloud_support_block:
+    "Private Cloud operator abuse rules and sender/IP data; never transfer to another installation",
   cloud_customer_email: "Private Cloud onboarding and invoice delivery state; never transfer or replay on another installation",
-  cloud_analytics_event:
-    "Cloud-only telemetry delivery and deduplication; never migrate into a local installation",
-  cloud_analytics_checkout: "Cloud-only analytics checkout correlation",
-  cloud_analytics_workspace: "Cloud-only analytics subscription snapshots",
   platform_instance:
     "the receiving installation retains its own identity and encryption-key binding",
   // Ephemeral / in-flight — re-created on demand, meaningless on another host.
@@ -1987,6 +1997,7 @@ export async function restoreSubgraphInTransaction(
       // target" from a real server fault. The code lives on the driver
       // error, which Drizzle wraps — resolve it through the cause chain.
       const pg = resolvePgError(err);
+      if (pg?.code === "42703") throw new RestoreSchemaError(err);
       if (pg?.code === "23505") {
         throw new PkCollisionError(spec.sqlName, pg);
       }

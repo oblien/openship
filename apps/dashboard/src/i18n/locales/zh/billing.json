@@ -1,6 +1,6 @@
 {
   "home": {
-    "label": "Openship Cloud",
+    "label": "OpenShip Cloud",
     "title": "准备好上线了吗？",
     "plansAndBilling": "套餐与账单",
     "description": "托管构建与部署，助力项目持续成长。",
@@ -21,7 +21,7 @@
   },
   "capacity": {
     "title": "容量与用量",
-    "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",
+    "subtitle": "您套餐包含的容量以及已用量。实时数据从 OpenShip Cloud 同步。",
     "routes": "免费路由",
     "runningServices": "运行中的服务",
     "projects": "项目",
@@ -61,30 +61,30 @@
   },
   "unavailable": {
     "notConnected": {
-      "title": "连接到 Openship Cloud 以管理账单",
-      "description": "您的本地实例尚未连接到 Openship Cloud。连接后即可查看订阅状态、用量、账单和充值。",
-      "connect": "连接到 Openship Cloud",
+      "title": "连接到 OpenShip Cloud 以管理账单",
+      "description": "您的本地实例尚未连接到 OpenShip Cloud。连接后即可查看订阅状态、用量、账单和充值。",
+      "connect": "连接到 OpenShip Cloud",
       "connecting": "正在等待登录…"
     },
     "sessionExpired": {
-      "title": "您的 Openship Cloud 会话已过期",
-      "description": "您仍处于关联状态，但 Openship Cloud 签发的会话令牌已失效。重新连接即可刷新，无需先断开连接。",
-      "reconnect": "重新连接到 Openship Cloud",
+      "title": "您的 OpenShip Cloud 会话已过期",
+      "description": "您仍处于关联状态，但 OpenShip Cloud 签发的会话令牌已失效。重新连接即可刷新，无需先断开连接。",
+      "reconnect": "重新连接到 OpenShip Cloud",
       "connecting": "正在等待登录…"
     },
     "unreachable": {
-      "title": "无法连接到 Openship Cloud 账单服务",
+      "title": "无法连接到 OpenShip Cloud 账单服务",
       "description": "您的云会话可能已过期，或云服务暂时不可用。请重试，或从“设置 → 云”重新连接。",
       "tryAgain": "重试",
       "reconnect": "重新连接"
     },
     "notEnabled": {
       "title": "Cloud 购买功能尚未开放",
-      "description": "Openship 尚未启用订阅和积分购买。请稍后重试。"
+      "description": "OpenShip 尚未启用订阅和积分购买。请稍后重试。"
     },
     "notConfigured": {
       "title": "Cloud 账单设置尚未完成",
-      "description": "Openship 需要完成账单设置。请联系 Openship 支持团队。"
+      "description": "OpenShip 需要完成账单设置。请联系 OpenShip 支持团队。"
     },
     "forbidden": {
       "title": "你无权访问账单",
@@ -97,7 +97,7 @@
     },
     "loadFailed": {
       "title": "无法加载账单",
-      "description": "账单功能暂时不可用。请重试。如果问题仍然存在，请联系 Openship 支持团队。"
+      "description": "账单功能暂时不可用。请重试。如果问题仍然存在，请联系 OpenShip 支持团队。"
     }
   },
   "plansRoute": {
@@ -246,8 +246,8 @@
     "weekTick": "第 {n} 周"
   },
   "layout": {
-    "title": "账单与用量",
-    "subtitle": "管理您的订阅、用量和付款方式。",
+    "title": "套餐与账单",
+    "subtitle": "管理您的 Cloud 空间和已连接服务器套餐。",
     "getServer": "购买服务器"
   },
   "sidebar": {
@@ -409,7 +409,7 @@
     "planRequired": "需要订阅计划",
     "savedCredits": "保留的用量余额",
     "savedCreditsHint": "预付用量保留在此工作区中。选择套餐即可用于 Cloud 部署。",
-    "offerTitle": "在 Openship Cloud 上线",
+    "offerTitle": "在 OpenShip Cloud 上线",
     "offerLabel": "开始部署",
     "offerDescription": "为项目提供托管资源。",
     "startingWith": "从 {name} 开始",
@@ -450,7 +450,7 @@
     "diskHint": "应用磁盘的读写数据量，不是已占用的存储容量。",
     "transfer": "应用数据传输",
     "transferHint": "应用的入站和出站数据。Edge 分发流量单独显示。",
-    "edgeTitle": "Openship Edge",
+    "edgeTitle": "OpenShip Edge",
     "bandwidth": "Edge 流量",
     "bandwidthHint": "工作空间所有 Edge 路由的入站和出站流量。此月度额度独立于计算额度。达到上限后路由暂停，直到重置或升级。",
     "requests": "Edge 请求",
@@ -537,7 +537,7 @@
   "workspaces": {
     "title": "云空间",
     "singular": "云空间",
-    "description": "选择套餐即可部署。Openship 管理服务器，项目共享 CPU、内存和存储。",
+    "description": "选择套餐即可部署。OpenShip 管理服务器，项目共享 CPU、内存和存储。",
     "loading": "正在加载云空间…",
     "choose": "选择服务器",
     "chooseBilling": "选择云空间以查看其账单。",
@@ -559,7 +559,7 @@
     "create": "添加云空间",
     "mode": "项目隔离",
     "createHint": "创建服务器免费。接下来选择套餐，完成付款后才开始计费。",
-    "cloudOnly": "托管服务器适用于 Openship Cloud。请使用“服务器”管理自托管基础设施。",
+    "cloudOnly": "托管服务器适用于 OpenShip Cloud。请使用“服务器”管理自托管基础设施。",
     "projectCount": "{count} 个项目",
     "noProjects": "此服务器中尚无项目。",
     "liveUsage": "实时用量",
@@ -616,7 +616,7 @@
     "plan": "服务器套餐",
     "actions": "服务器操作",
     "changePlan": "更改套餐",
-    "managedBy": "由 Openship Cloud 管理",
+    "managedBy": "由 OpenShip Cloud 管理",
     "network": {
       "title": "网络",
       "description": "此托管服务器的提供商设置。",
@@ -668,6 +668,7 @@
     "diskGrowth": "现有磁盘可以扩容。缩减存储需要将数据迁移到新服务器。",
     "range": "{min} 至 {max} {unit}",
     "monthlyTotal": "每月总计",
+    "yearlyTotal": "年度总额",
     "choose": "选择自定义",
     "updating": "正在更新价格",
     "invalid": "请为每项资源输入有效范围内的数值。",
@@ -679,6 +680,7 @@
     "extraMemory": "额外内存",
     "extraDisk": "额外存储",
     "rates": "额外资源月费：{cpu}/vCPU、{memory}/GB 内存、{disk}/GB 存储。仅对超出所选套餐的部分收费。",
+    "yearlyRates": "年度额外资源费用：{cpu}/vCPU、{memory}/GB 内存、{disk}/GB 存储。仅对超出所选套餐的资源收费。",
     "applyNotice": "升级在付款后生效。费用更低的变更从续费时开始。",
     "resizeTitle": "应用已订阅的资源",
     "resizeDescription": "你的套餐已更改。重启此服务器之前，请查看新容量及受影响的项目。",
@@ -723,57 +725,7 @@
     "manage": "管理你的服务器",
     "manageDescription": "连接自己的服务器，管理部署、域名、监控和备份。",
     "mode": "计费方式",
-    "monthly": "云套餐",
-    "payg": "预付按量计费",
-    "title": "预付费托管",
-    "description": "选择资源等级、添加额度，并按服务器用量付费。",
-    "rates": "资源用量",
-    "cpuUnit": "每个活跃vCPU小时",
-    "memoryUnit": "每 GiB 小时",
-    "diskUnit": "每 GiB 月",
-    "transfer": "数据传输",
-    "transferUnit": "每 GiB",
-    "compareMonthly": "比较包月主机",
-    "preview": "价格预览",
-    "ratesUnavailable": "暂时无法获取按量价格。您仍可比较包月主机。",
-    "packages": "积分包",
-    "packagesHint": "在您的按量主机之间共享。",
-    "conversion": "{credits} 积分 = {amount}",
-    "credits": "{amount} 积分",
-    "sizeHosts": "服务器资源",
-    "sizeHint": "选择资源，预估一台服务器的每小时费用。",
-    "activityHint": "1 vCPU小时指1个vCPU以100%活跃率运行1个实际小时。预留内存和存储仍会持续计费。",
-    "invalid": "请检查 CPU、内存和存储的范围。",
-    "ratesDetails": "资源单价与计费详情",
-    "extras": "可选托管代理：{amount}/GiB，单独计费。应用的公共路由不属于此项。",
-    "retentionHint": "暂停不会停止内存计费。保留的存储在删除前仍会计费。",
-    "estimate": "预计每小时费用",
-    "packageSummary": "预付 {amount} · {credits} 积分",
-    "runtime": "余额可用时长",
-    "addCredits": "充值 {amount} 积分",
-    "previewHint": "仅供预览，尚未开放购买。",
-    "hourlyBasis": "每实际运行小时 · 一台服务器",
-    "cpuFormula": "{cpu} vCPU × {percent}% = {hours} vCPU小时",
-    "cpuHours": "{amount} vCPU小时",
-    "gibHours": "{amount} GiB小时",
-    "rangeMinimum": "CPU满载 · 100%",
-    "rangeMaximum": "CPU空闲 · 0%",
-    "rangeHint": "按所显示的使用单价估算，包含内存和存储费用。",
-    "perHour": "/ 小时",
-    "creditsPerHour": "{amount}额度/小时",
-    "hourlyHint": "每台服务器 · CPU 使用率 100%",
-    "tiers": {
-      "label": "资源等级",
-      "name": "等级 {level}",
-      "servers": "服务器",
-      "unlock": "累计购买 {amount} 额度后解锁",
-      "hint": "所有按量付费服务器共享的资源池上限。",
-      "exceeded": "此配置超出了{tier}的限制，请减少资源以满足限制。",
-      "choose": "查看{tier}",
-      "fundingHint": "购买额度可解锁等级，消耗余额不会降低等级。",
-      "packageUnlock": "此套餐可解锁{tier}",
-      "packageTooSmall": "{tier}需要累计购买 {amount} 的额度。"
-    }
+    "monthly": "云套餐"
   },
   "compute": {
     "title": "月度保障",
@@ -791,14 +743,13 @@
     "recovery": "请检查续订或付款以恢复计算访问。",
     "storageDue": "保留存储待付款金额：{amount}",
     "details": "用量、流量和存储条款",
-    "paygComparison": "按按量付费单价计算的已记录用量",
+    "usageComparison": "已记录的资源用量",
     "comparisonHint": "仅用于用量对比，不代表现金节省或额外费用。",
     "proxyTransfer": "托管代理流量",
     "transferRemaining": "可用 {amount} GiB",
     "proxyHint": "涵盖 Git 克隆、软件包下载和其他托管互联网流量。应用的公共路由流量单独计算。",
     "transferRecovery": "当前无可用代理流量。请联系支持添加；已付款的计算保障不受影响。",
     "retention": "计算到期后，保留存储按 {amount}/GiB·月收费，直到删除。磁盘至少保留 {days} 天，不会自动删除。",
-    "paygMetering": "按量付费计量活跃 CPU、运行或暂停时预留的内存，以及仍被保留的已分配存储。",
     "buildHint": "构建在此服务器上运行，与应用共享资源。",
     "usageIncluded": "资源活动已包含在已付款服务器中，不消耗计算积分。"
   },
@@ -862,7 +813,7 @@
     "priority": "优先",
     "email": "电子邮件支持",
     "prioritySupport": "优先支持",
-    "description": "部署和更新应用、监控运行状态并备份数据。通过 Openship 管理您自己的服务器。",
+    "description": "部署和更新应用、监控运行状态并备份数据。通过 OpenShip 管理您自己的服务器。",
     "basicDescription": "适合日常应用和个人项目。",
     "priorityDescription": "适合需要优先支持的生产应用。",
     "serversIncluded": "{count} 台已连接服务器",
@@ -884,5 +835,40 @@
       "backups": "定时备份和恢复",
       "automation": "API、SDK 和 CLI 访问"
     }
+  },
+  "hub": {
+    "addPlan": "添加套餐",
+    "addHint": "选择 Cloud 资源或管理您自己的服务器。",
+    "viewPlan": "查看套餐",
+    "active": "已启用",
+    "inactive": "未启用",
+    "management": "服务器管理",
+    "paymentPending": "等待付款",
+    "paymentRequired": "付款需要处理",
+    "reviewPayment": "查看付款",
+    "paymentNotice": "请查看此套餐已保存的付款。仅在付款确认后更新访问权限。"
+  },
+  "managementDetail": {
+    "servers": "此套餐中的服务器",
+    "description": "由您的 OpenShip Manage 套餐管理的服务器。",
+    "empty": "尚未连接服务器",
+    "emptyHint": "连接您自己的服务器，以便通过 OpenShip 部署应用并进行管理。",
+    "addServer": "添加服务器",
+    "addSlots": "增加服务器名额",
+    "additionalServers": "新增服务器数量",
+    "unitPrice": "每台新增服务器每月 {price}",
+    "slotHint": "支持套餐保持不变。请先确认应付金额再继续。",
+    "currentTotal": "当前每月总额",
+    "newTotal": "新的每月总额",
+    "dueNow": "本次应付",
+    "checkingPrice": "正在核对价格…",
+    "refreshPrice": "刷新价格",
+    "checkout": "继续付款",
+    "confirmAddition": "确认变更",
+    "selectedPlan": "所选套餐",
+    "monthlyChange": "预计每月费用变动",
+    "processing": "正在更新…",
+    "effective": "于 {date} 生效",
+    "totalSlots": "共 {count} 个服务器名额"
   }
 }

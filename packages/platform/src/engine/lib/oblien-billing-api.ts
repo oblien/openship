@@ -1,8 +1,9 @@
-import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { diagnosticTraceparent, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import { z } from "zod";
 import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
-import { Oblien } from "@repo/adapters";
+import { Oblien, oblienApiBaseUrl, oblienApiUrl, toOblienVmOffer, toOblienVmPolicy, cloudBillingContract } from "@repo/adapters";
 import { isDeepStrictEqual } from "node:util";
 import { computeBillingModeSchema, oblienCapacityCatalogSchema, oblienCapacityPoolSchema, oblienNamespaceCapacitySchema } from "./oblien-capacity";
 
@@ -196,7 +197,7 @@ export type OblienPlanChangeQuote = z.infer<typeof oblienPlanChangeQuoteSchema>;
 export type OblienPlanChange = z.infer<typeof oblienPlanChangeSchema>;
 
 const policySchema = z.object({
-  success: z.literal(true), service: z.literal("workspace_vm"),
+  success: z.literal(true), service: z.literal("vm_compute"),
   quotaLimit: allowance, overdraft: amount.nonnegative(),
   onOverdraftAction: z.enum(["stop_workspaces", "block"]), suspendThreshold: allowance,
 });
@@ -230,6 +231,20 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
   const monthly = subscription?.offer?.billingMode === "monthly";
   const expectedTier = monthly ? "capacity" : subscription?.tierId ?? "free";
   const capacity = entitlement.capacity;
+  // Stripe can advance an active subscription's period while its renewal invoice
+  // is still a draft, before attempting payment. An overdue renewal has the same
+  // period split: expired capacity describes the last funded month. Accept this
+  // uncovered state for billing/management reads without granting compute or
+  // inventing a grace period; billable work still requires provider coverage.
+  const unpaidRenewal = monthly && subscription &&
+    ["active", "past_due", "unpaid", "paused", "canceled"].includes(subscription.status) &&
+    entitlement.status !== "active" && entitlement.computeCovered === false &&
+    capacity?.computeCovered === false && capacity.status === "expired" &&
+    entitlement.periodStart !== null && entitlement.periodEnd !== null &&
+    subscription.periodStart !== null && subscription.periodEnd !== null &&
+    Date.parse(entitlement.periodStart) < Date.parse(entitlement.periodEnd) &&
+    Date.parse(entitlement.periodEnd) <= Date.parse(subscription.periodStart) &&
+    Date.parse(subscription.periodStart) < Date.parse(subscription.periodEnd);
   if ((entitlement.tierId ?? "free") !== expectedTier ||
       (monthly && (!capacity || capacity.namespace !== entitlement.namespace || capacity.provider !== "stripe" ||
         capacity.billingMode !== "monthly" || entitlement.billingMode !== "monthly" ||
@@ -237,8 +252,8 @@ export function assertOblienEntitlementMatchesSubscription(entitlement: OblienEn
         !isDeepStrictEqual(capacity.capacity, subscription!.offer!.capacity) ||
         timestamp(capacity.periodStart) !== timestamp(entitlement.periodStart) || timestamp(capacity.periodEnd) !== timestamp(entitlement.periodEnd))) ||
       (!subscription && (entitlement.periodStart !== null || entitlement.periodEnd !== null)) ||
-      (subscription && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
-      (subscription && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodStart) !== timestamp(entitlement.periodStart)) ||
+      (subscription && !unpaidRenewal && timestamp(subscription.periodEnd) !== timestamp(entitlement.periodEnd)) ||
       (!monthly && entitlement.status === "active" && subscription && !["active", "trialing"].includes(subscription.status))) {
     throw new AppError("Cloud billing returned an entitlement that does not match this organization's subscription", 502, "OBLIEN_ENTITLEMENT_MISMATCH");
   }
@@ -288,8 +303,8 @@ const PROVIDER_FAILURES = new Set([
 
 export class OblienBillingApi {
   /** Uses the same authenticated, bounded provider transport as checkout. */
-  affiliateRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
-    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid affiliate endpoint");
+  referralRequest(method: "GET" | "POST", path: string, input: Record<string, unknown>) {
+    if (!/^\/billing\/affiliates\/reseller\/[a-z0-9/-]+$/i.test(path)) throw new Error("Invalid referral endpoint");
     return this.request<unknown>({ method, path, ...(method === "GET" ? { query: Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])) } : { body: input }) });
   }
   private readonly baseUrl: string;
@@ -300,11 +315,7 @@ export class OblienBillingApi {
     clientId?: string; clientSecret?: string; baseUrl?: string;
     fetch?: typeof fetch; timeoutMs?: number;
   } = {}) {
-    const url = new URL(options.baseUrl ?? "https://api.oblien.com");
-    if (url.username || url.password || url.search || url.hash ||
-      (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) {
-      throw new Error("Oblien API URL must use HTTPS (HTTP is allowed for localhost tests)");
-    }
+    const url = oblienApiBaseUrl(options.baseUrl);
     this.baseUrl = url.toString().replace(/\/+$/, "");
     this.fetcher = options.fetch ?? fetch;
     // The SDK has no client-wide fetch/timeout option. Replace this transport
@@ -315,15 +326,21 @@ export class OblienBillingApi {
     this.billing = client.billing;
   }
 
-  private async request<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
+  private request<T>(input: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
+    return withDiagnosticSpan({ kind: "operation", component: "oblien-billing", operation: "oblien.billing", method: input.method }, () => this.requestBilling<T>(input), { kind: "client" });
+  }
+
+  private async requestBilling<T>({ method, path, body, query }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> {
     const meteredPricing = method === "GET" && path === "/pricing/calculator";
     if (!path.startsWith("/billing/") && !meteredPricing) throw new Error("Billing transport only accepts billing routes");
-    const url = new URL(`${this.baseUrl}${path}`);
+    const url = oblienApiUrl(oblienApiBaseUrl(this.baseUrl), path);
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
     const publicRead = meteredPricing || (method === "GET" && (path === "/billing/catalog" || path === "/billing/capacity/catalog"));
     const headers: Record<string, string> = { Accept: "application/json" };
+    const parent = diagnosticTraceparent();
+    if (parent) headers.traceparent = parent;
     if (!publicRead) {
       if (!this.options.clientId || !this.options.clientSecret) {
         throw new AppError("Cloud billing is not configured", 503, "BILLING_NOT_CONFIGURED");
@@ -369,8 +386,8 @@ export class OblienBillingApi {
       });
       const known: Record<string, string> = {
         affiliate_unavailable: "This referral code is no longer available or does not apply to your purchase. Remove it or choose an eligible Cloud plan.",
-        affiliate_paused: "Affiliate access is paused. Contact support.",
-        affiliate_not_found: "This affiliate record was not found for your account.",
+        affiliate_paused: "Referral access is paused. Contact support.",
+        affiliate_not_found: "This referral record was not found for your account.",
         affiliate_payout_minimum: "The payout amount is below your minimum. Refresh your balance to see the current minimum.",
         affiliate_payout_balance: "Your available earnings changed. Refresh your balance before requesting a payout.",
         affiliate_payout_funding: "Payout funding is temporarily unavailable. Contact support.",
@@ -446,7 +463,7 @@ export class OblienBillingApi {
           ...(Object.keys(diagnostic).length ? { details: diagnostic } : {}),
         });
     }
-    return payload as T;
+    return cloudBillingContract(payload) as T;
   }
 
   private async validate<T>(response: Promise<unknown>, schema: z.ZodType<T>, slug?: string): Promise<T> {
@@ -592,7 +609,7 @@ export class OblienBillingApi {
 
   /** Mode A only: the complimentary-plan service owns these explicit grants. */
   setPolicy(slug: string, input: Pick<OblienBillingPolicy, "quotaLimit" | "overdraft" | "suspendThreshold" | "onOverdraftAction">) {
-    return this.validate(this.billing.setPolicy(slug, input), policySchema.extend({ namespace }), slug);
+    return this.validate(this.billing.setPolicy(slug, toOblienVmPolicy(input)), policySchema.extend({ namespace }), slug);
   }
 
   resetQuota(slug: string, periodEnd: string) {
@@ -621,9 +638,10 @@ export class OblienBillingApi {
 
   async previewPlanChange(slug: string, input: OblienPlanChangeInput) {
     const request = oblienPlanChangeInputSchema.parse(input);
+    const offer = toOblienVmOffer(request.offer);
     const result = await this.validate(request.offer.billingMode === "service"
-      ? this.request({ method: "POST", path: "/billing/subscription/changes/preview", body: { namespace: slug, ...request } })
-      : this.billing.previewPlanChange(slug, { ...request, offer: { ...request.offer, billingMode: request.offer.billingMode } }), z.object({
+      ? this.request({ method: "POST", path: "/billing/subscription/changes/preview", body: { namespace: slug, ...request, offer } })
+      : this.billing.previewPlanChange(slug, { ...request, offer: { ...offer, billingMode: request.offer.billingMode } }), z.object({
       success: z.literal(true), namespace, quote: oblienPlanChangeQuoteSchema,
     }), slug);
     if (result.quote.namespace !== slug || result.quote.billingInterval !== input.billingInterval)
@@ -671,9 +689,10 @@ export class OblienBillingApi {
     // and this saved namespace offer before creating the Stripe session.
     const parsed = oblienCheckoutInputSchema.parse(input);
     const request = { ...parsed, allowPromotionCodes: parsed.offer?.unitAmount !== 0 };
+    const offer = request.offer ? toOblienVmOffer(request.offer) : undefined;
     const result = await this.validate((request.offer?.billingMode === "service" || (request.kind === "subscription" && !!request.affiliateBuyer))
-      ? this.request({ method: "POST", path: "/billing/checkout", body: request })
-      : this.billing.checkout({ ...request, offer: request.offer ? { ...request.offer, billingMode: request.offer.billingMode === "monthly" ? "monthly" : request.offer.billingMode === "payg" ? "payg" : undefined } : undefined }), checkoutSchema);
+      ? this.request({ method: "POST", path: "/billing/checkout", body: { ...request, offer } })
+      : this.billing.checkout({ ...request, offer: offer ? { ...offer, billingMode: request.offer?.billingMode === "monthly" ? "monthly" : request.offer?.billingMode === "payg" ? "payg" : undefined } : undefined }), checkoutSchema);
     this.validateCheckoutUrl(result.url);
     return result;
   }
@@ -682,6 +701,7 @@ export class OblienBillingApi {
     const url = new URL(value);
     if (url.hostname === "api.oblien.com") {
       this.validateHostedUrl(value, "api.oblien.com");
+      // This is the hosted browser page, not a versioned control-plane endpoint.
       if (url.pathname === "/billing/pay" && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
       throw new AppError("Cloud billing returned an invalid hosted URL", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
     }

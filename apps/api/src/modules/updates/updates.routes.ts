@@ -14,6 +14,48 @@ const r = secureRouter(new Hono(), {
   module: "updates",
   basePath: "/api/updates",
 });
+r.post(
+  "/:projectId/runtime/source",
+  {
+    tag: "project:read",
+    readOnly: true,
+    ids: { project: "projectId" },
+    body: UpdateProjectSchemas.runtimeSource.input,
+    mcp: {
+      description:
+        "Read literal Dockerfile or Compose image references from the deployment branch. Requires repository source access.",
+    },
+  },
+  ctrl.runtimeSource,
+);
+r.post(
+  "/:projectId/runtime/source/preview",
+  {
+    tag: "project:read",
+    readOnly: true,
+    ids: { project: "projectId" },
+    body: UpdateProjectSchemas.previewRuntimeSource.input,
+    mcp: {
+      description:
+        "Preview one source image change against an exact Git commit. Does not write or deploy.",
+    },
+  },
+  ctrl.previewRuntimeSource,
+);
+r.post(
+  "/:projectId/runtime/source/publish",
+  {
+    tag: "project:write",
+    ids: { project: "projectId" },
+    auditHandledByOperation: true,
+    body: UpdateProjectSchemas.publishRuntimeSource.input,
+    mcp: {
+      description:
+        "Create a draft GitHub PR for a reviewed source image change. Requires project write and repository/file write access. Never merges or deploys.",
+    },
+  },
+  ctrl.publishRuntimeSource,
+);
 r.get(
   "/security/policy",
   {

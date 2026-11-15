@@ -4,45 +4,53 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment } from "@/context/deployment/types";
 import DeploymentProcessing from "@/components/import-project/DeploymentProcessing";
 import ComposeDeploymentProcessing from "@/components/import-project/ComposeDeploymentProcessing";
 import BuildSkeleton from "@/components/import-project/BuildSkeleton";
-import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
-import { BUILD_SESSION_ERROR_FALLBACK } from "@/context/deployment/load-session";
+import { BUILD_SESSION_ERROR_FALLBACK, type BuildSessionLoadResult } from "@/context/deployment/load-session";
 import { ResourceNotFound } from "@/components/resource-not-found";
 import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { cloudDeployFailure, cloudDeployCapacityFailure } from "@/lib/cloud-deploy-pricing";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
 
 const BuildPage: React.FC = () => {
   const params = useParams();
+  const scope = useCloudResourceKey();
+  const deploymentId = params.id as string;
+  return <BuildSessionPage key={`${scope}:${deploymentId}`} deploymentId={deploymentId} />;
+};
+
+const BuildSessionPage: React.FC<{ deploymentId: string }> = ({ deploymentId }) => {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { isLoggedIn } = useAuth();
-  const deploymentId = params.id as string;
   const { state, config, connectToBuild, loadBuildSession, redeploy, maybeOpenCredentialModal } = useDeployment();
+  const loadSessionRef = useRef(loadBuildSession);
+  loadSessionRef.current = loadBuildSession;
+  const redeployRequested = searchParams.get("redeploy");
   const { t } = useI18n();
   const showCloudPricing = useCloudDeployPricing(config.workspaceId);
-  const initializedDeploymentRef = useRef<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [notFound, setNotFound] = useState(false);
   /** Load failure that is NOT a missing deployment — a hydration exception,
    *  5xx, or network error while the deployment usually exists (#604). Rendered
    *  as an error state with a retry, never as "not found". */
   const [loadError, setLoadError] = useState<string | null>(null);
-  /** Bumped by the error state's retry so the init effect re-runs for the same
-   *  deployment id (the `initializedDeploymentRef` guard alone would ignore it). */
+  /** Explicit retry reloads this attempt without changing its URL. */
   const [loadRetryNonce, setLoadRetryNonce] = useState(0);
   /** Ref tracking which (deploymentId × errorCode) tuple already opened
    *  the modal — prevents reopening on every re-render. */
   const shownModalRef = useRef<string | null>(null);
+  const acceptLoadResult = useCallback((result: BuildSessionLoadResult) => {
+    if (result.success) setHydrated(true);
+    else if (!result.superseded) {
+      if (result.notFound) setNotFound(true);
+      else setLoadError(result.error || BUILD_SESSION_ERROR_FALLBACK);
+    }
+  }, []);
 
-  const loggedInRef = useRef(false);
-  useEffect(() => {
-    loggedInRef.current = isLoggedIn;
-  }, [isLoggedIn]);
   // Initialize build session
   useEffect(() => {
     if (!deploymentId) {
@@ -50,95 +58,68 @@ const BuildPage: React.FC = () => {
       return;
     }
 
-    if (initializedDeploymentRef.current === deploymentId) return;
-    initializedDeploymentRef.current = deploymentId;
-
+    let cancelled = false;
     const initialize = async () => {
-      // Coming from deploy page with fresh deployment.
-      //
-      // `requestBuildAccess` on the server now calls `kickoffBuild` for us
-      // (mirroring the redeploy path), so the build is already running by
-      // the time we land here. We attach via GET /:id/stream
-      // (`startBuild = false`) instead of POSTing /:id/build — same path as
-      // the page-refresh codepath. The previous start-build round-trip was
-      // racy: if the POST stalled or transiently failed (common during
-      // cloud-workspace provisioning), the reconnect gate
-      // (`hasConnected || !lastStartBuild`) refused to retry and the user
-      // saw an empty terminal until they hit refresh. Same fix as
-      // handleRedeploy below.
-      if (state.deploymentId === deploymentId && state.isDeploying) {
-        await connectToBuild(deploymentId, false);
-        return;
-      }
-      const result = await loadBuildSession(deploymentId);
-      if (!result.success && !result.superseded) {
-        // Only the server saying "this doesn't exist" (soft-failed status or
-        // HTTP 404) renders the not-found screen. Anything else — a throw while
-        // hydrating a successful response, a 5xx, a network blip — keeps the
-        // deployment one retry away instead of presenting it as deleted (#604).
-        if (result.notFound) {
-          setNotFound(true);
-        } else {
-          setLoadError(result.error || BUILD_SESSION_ERROR_FALLBACK);
-        }
-      }
+      // The context can outlive a page visit. Read the authoritative snapshot
+      // once on entry, then let loadBuildSession resume the existing stream.
+      const result = await loadSessionRef.current(deploymentId);
+      if (!cancelled) acceptLoadResult(result);
     };
 
-    if (!searchParams.get("redeploy")) {
+    if (!redeployRequested || loadRetryNonce > 0) {
       void initialize();
     }
+    return () => { cancelled = true; };
   }, [
     deploymentId,
-    state.deploymentId,
-    state.isDeploying,
-    connectToBuild,
-    loadBuildSession,
     router,
-    searchParams,
+    redeployRequested,
     loadRetryNonce,
+    acceptLoadResult,
   ]);
 
-  // Retry a failed (non-not-found) load: clear the error, release the init
-  // guard, and re-run the effect via the nonce.
+  // Retry a failed (non-not-found) load.
   const retryLoadSession = useCallback(() => {
     setLoadError(null);
-    initializedDeploymentRef.current = null;
     setLoadRetryNonce((n) => n + 1);
   }, []);
 
   // Handle redeploy with URL update.
   //
-  // `redeployBuildSession` on the server already calls `kickoffBuild`
-  // for us (see build.service.ts:1050), so the build is running by the
-  // time the response lands here. We attach via GET /:id/stream
-  // (`startBuild = false`) instead of re-POSTing /:id/build, mirroring
-  // the page-refresh codepath. The previous start-build round-trip was
-  // racy: if the POST stalled or transiently failed, the reconnect gate
-  // (`hasConnected || !lastStartBuild`) refused to retry and the user
-  // saw an empty terminal until they hit refresh.
+  // The server already starts an accepted retry. A new attempt follows the
+  // snapshot/resume path on entry; only a same-id retry reconnects in place.
   const handleRedeploy = useCallback(async (options?: { reuseBuild?: boolean }): Promise<string | null> => {
     const newDeploymentId = await redeploy(deploymentId, options);
 
     if (newDeploymentId) {
-      initializedDeploymentRef.current = newDeploymentId;
-      void connectToBuild(newDeploymentId, false);
+      setHydrated(true);
       if (newDeploymentId !== deploymentId) {
         router.replace(`/build/${newDeploymentId}`, { scroll: false });
-      }
+      } else void connectToBuild(newDeploymentId, false);
     }
     // Return the id so the Redeploy button can hold its loading state until
     // navigation (success) and only re-enable itself on failure (null).
     return newDeploymentId;
   }, [redeploy, deploymentId, router, connectToBuild]);
 
-  const redeployTriggeredRef = useRef(false);
+  const redeployHandlerRef = useRef(handleRedeploy);
+  redeployHandlerRef.current = handleRedeploy;
+  const redeployAttemptRef = useRef<Promise<string | null> | null>(null);
 
   useEffect(() => {
-    if (searchParams.get("redeploy") && !redeployTriggeredRef.current) {
-      redeployTriggeredRef.current = true;
-      handleRedeploy();
+    let cancelled = false;
+    if (redeployRequested) {
+      const attempt = redeployAttemptRef.current ??= redeployHandlerRef.current();
+      void attempt.then(async (id) => {
+        if (id || cancelled) return;
+        // Admission can reject the deep-link retry. Keep its original attempt
+        // available instead of leaving the page on a loading skeleton.
+        const result = await loadSessionRef.current(deploymentId);
+        if (!cancelled) acceptLoadResult(result);
+      });
     }
-  }, [searchParams, handleRedeploy]);
+    return () => { cancelled = true; };
+  }, [redeployRequested, deploymentId, acceptLoadResult]);
 
   // ── Clone-credential recovery modal ─────────────────────────────────
   // When the build fails because no GitHub clone token could be minted
@@ -147,7 +128,7 @@ const BuildPage: React.FC = () => {
   // GitHub session instead of staring at a "Deployment Failed" toast
   // with no next step.
   useEffect(() => {
-    if (!state.deploymentFailed || !state.errorCode) return;
+    if (!hydrated || state.deploymentId !== deploymentId || !state.deploymentFailed || !state.errorCode) return;
     // Capacity diagnosis remains visible in the build view; pricing opens on click.
     if (config.deployTarget === "cloud" && state.errorDetails?.workspaceId && cloudDeployCapacityFailure(state)) return;
     // De-dupe — same deployment + same code shouldn't reopen the modal on every
@@ -166,7 +147,7 @@ const BuildPage: React.FC = () => {
       onResolved: () => void handleRedeploy(),
     });
     if (opened) shownModalRef.current = key;
-  }, [state.deploymentFailed, state.errorCode, state.errorDetails, state.projectId, config.deployTarget, deploymentId, maybeOpenCredentialModal, handleRedeploy, showCloudPricing]);
+  }, [hydrated, state.deploymentId, state.deploymentFailed, state.errorCode, state.errorDetails, state.projectId, config.deployTarget, deploymentId, maybeOpenCredentialModal, handleRedeploy, showCloudPricing]);
 
   if (loadError) {
     return (
@@ -231,7 +212,7 @@ const BuildPage: React.FC = () => {
     );
   }
 
-  if (!state.deploymentId) {
+  if (!hydrated || state.deploymentId !== deploymentId) {
     return <BuildSkeleton />;
   }
 

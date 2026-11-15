@@ -1,10 +1,170 @@
 # Changelog
 
-All notable changes to Openship. Versions follow [semver](https://semver.org);
+All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
 ## Unreleased
+
+### Cloud billing
+
+- Open checkout only when its payment URL is ready, with a visible fallback button.
+  Recover unfinished Cloud purchases when reopening setup instead of creating duplicate
+  unpaid spaces. Show pending-plan warnings in the Plans & billing sidebar entry.
+
+### Backups
+
+- Back up verified existing empty Docker volumes and bind directories without blocking
+  populated sibling sources. Reject missing sources before capture and preserve failures
+  for unavailable backing storage (#1767).
+
+### CLI
+
+- Run the container-to-host connectivity probe with Node.js, matching the API image,
+  so `openship up` and `openship doctor` can diagnose the host channel without Bun.
+
+### Instance relocation
+
+- Fence event-stream admission while moving the controller so a late subscriber cannot
+  keep the source draining indefinitely. Restore stream access when the controller resumes,
+  and link server preparation to its build view while deployment reads remain available.
+
+## 0.9.12
+
+**Critical update** for build-secret protection, database upgrade repairs and
+backup/restore reliability. Includes all changes since 0.9.11, with reviewed
+source-image update PRs, platform imports, mail improvements and a translated
+website.
+
+### Build security
+
+- Pass generated Docker build environments through temporary BuildKit secrets instead of
+  embedding values in Dockerfiles or image history. Mask configured values in streamed
+  logs, error summaries and failure notifications, including split and multiline output.
+  Preserve Cloud worker limits, parallel server builds and cleanup after cancellation.
+- Attribute REST audit events to the personal access token used, and audit token
+  reads through the existing authorization path.
+- Preserve private edge-vhost permissions and verify access with unprivileged
+  workers. Keep tunnel hostnames out of unsupported password-protection flows.
+
+### Runtime and source updates
+
+- Keep image services with missing deployment digests visible as unverified. Inspect the
+  running image through the existing deployment runtime to detect moved tags, with bounded
+  reads and no deployment-row writes. Show unavailable update status without an update badge.
+- Propose Dockerfile and Compose image changes through reviewed GitHub pull
+  requests. Check repository access first and guide users to reconnect or update
+  their GitHub installation when the required permissions are missing.
+- Apply security fixes to managed runtime versions instead of repeatedly refreshing
+  an unchanged image. Distinguish a runtime that is absent from a failed probe.
+
+### Deployments and infrastructure
+
+- Allow webhook and CLI deployments to approve reviewed Compose source changes
+  through the shared approval flow.
+- Keep branch and Compose-path controls available after an unsuccessful first
+  scan, reject blank required build commands, and offer Static Site for folder uploads.
+- Keep token-authenticated repository clones on HTTPS even when a server's global
+  Git configuration rewrites GitHub URLs to SSH.
+- Recover orphaned builds through shared worker ownership, preserve application
+  runtime/log access when adding services, and scope shared image-export paths.
+- Scale managed build-cache budgets with available disk and expose server cache
+  settings. Improve local image exports without sharing another build's output.
+- Let edge upgrades finish safely after an SSH disconnect. Preserve owned mounts
+  in imported Cloud workloads and explain host paths that cannot be imported safely.
+- Support hosted Jobs on Manage-connected SSH servers. Match BullMQ repeatable
+  jobs by name so changing a cron schedule removes the previous schedule.
+- Accept bounded YAML aliases in imported GitHub workflows, show the latest run
+  for every workflow, and avoid duplicate GitHub-owned workflow webhook payloads.
+- Recover failed installed-CLI updates and verify release installation and updates
+  on disposable VPS instances before publishing images and packages.
+
+### Domains
+
+- Configure static HTML, JSON or text responses on a domain through its normal
+  route editor, including maintenance and verification responses without an app container.
+- Avoid rewriting unchanged edge route files and repeating remote reads during a
+  registration. Preserve exact file contents and permissions while retaining route
+  validation, reloads, certificate activation and transactional rollback.
+
+- **DigitalOcean DNS** — connect a DigitalOcean token in Settings → Connections to preview
+  and apply a custom domain's records and issue DNS-verified HTTPS automatically, as with
+  Cloudflare. Each record OpenShip creates is paired with an `_openship-owner` TXT marker,
+  so removing a domain deletes only OpenShip's own records.
+
+### Imports, backups and database upgrades
+
+- Improve platform imports, including Railway and Vercel setup, source and
+  destination review, progress reporting and cancellation.
+- Keep migration environment fields visible while entering missing secrets, with
+  a plain section heading instead of a nested disclosure that collapses during editing.
+- Preserve source project boundaries during platform imports: one project contains
+  its native services, private DNS, encrypted service environments and separate volumes.
+  Keep service environment values scoped correctly during source builds too.
+- Carry imported custom domains and aliases through the existing migration routing
+  flow, pending normal verification. Show DNS cutover guidance and replacement
+  notices for Railway and Vercel URLs in review and saved migration progress.
+- Restore portable instance exports with their server credentials and workspace
+  ownership. Normalize restored data for the destination schema and keep the
+  instance import and server selection views consistent.
+- Repair missing workspace and security-advisory fields on upgrades, including
+  databases whose earlier migrations were already marked as applied.
+- Serialize backup execution per destination to prevent connection exhaustion.
+  Recover orphaned Cloud backup activities through the existing ownership checks.
+- Complete local mail backups and portable restores through the shared backup
+  orchestration, including target-server mail configuration and real mail round trips.
+- Prevent browser autofill of backup destination credentials and keep destination
+  menus visible outside their cards.
+
+### Mail
+
+- Preserve mail logs and Fail2ban ban history across engine updates, and remove
+  Dovecot's stale PID file before startup.
+- List all signed-in mailboxes and keep account menus usable when they overflow.
+- Correct webmail message colors in light/dark themes and when printing, and
+  refresh security dependencies.
+- Protect support intake and add mailbox sender blocking.
+
+### Assistants
+
+- Reuse managed agent setup for custom API connections and report the actual
+  runtime setup state.
+- Find agent CLIs installed outside the macOS GUI PATH, restore public BuildKit
+  pulls, and correct scoped Claude startup.
+- Allow reviewed repository patches to delete regular files through the existing
+  review and validation flow.
+- Add OpenShip plugins for Codex and Claude Code.
+
+### Dashboard, billing and website
+
+- Keep the shared destination dropdown available with one server or Cloud plan,
+  with Add server in its menu across deployment and migration flows.
+- Refresh deployment state after navigation and browser resume. Unify project
+  settings and shared environment controls with the existing service views.
+- Keep plan overview, usage and payments together under Plans & billing, align
+  Cloud plan presentation across the website and dashboard, and retain payment
+  recovery for expired renewals.
+- Improve deployment, verification and cancellation emails, and standardize the
+  Referral experience.
+- Translate website content into the existing supported languages, with localized
+  URLs, navigation and product screenshots. Correct Arabic layout and preserve
+  English framework names. Documentation remains in English.
+- Add migration guidance for teams moving an existing app, group website
+  navigation, and provide a direct Start on Cloud action.
+- Use the BytesMap SDK for unified Cloud telemetry and remove PostHog.
+
+### Upgrade notes
+
+- Update the API (including all replicas), dashboard and Desktop app together.
+  This release includes control-plane database migrations; keep a current
+  instance/database backup before upgrading.
+- Build-secret protection applies to new builds. Rebuild older application images
+  to use the updated build flow; upgrading does not rewrite existing images.
+- Dockerfile and Compose image pins remain controlled by the repository. Review
+  and merge a source-update PR when the fix requires a source change, then deploy
+  that revision. Refreshing an unchanged pin does not change its runtime version.
+- Update the mail engine as well to receive mail startup, log persistence and
+  restore fixes.
 
 ## 0.9.11
 

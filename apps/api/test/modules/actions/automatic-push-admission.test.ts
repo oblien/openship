@@ -37,7 +37,7 @@ async function fixture() {
   const state = { head: sha("b"), failAfterInsert: false, kickoffs: 0 };
   const queue = (
     revision = state.head,
-    options: { forceAll?: boolean; receivedAt?: Date; expected?: string | null } = {},
+    options: { forceAll?: boolean; acceptComposeChanges?: boolean; receivedAt?: Date; expected?: string | null } = {},
   ) =>
     repos.actions.queueActionDeployment(
       {
@@ -53,6 +53,7 @@ async function fixture() {
           kind: "push",
           repository: "acme/app",
           forceAll: options.forceAll,
+          acceptComposeChanges: options.acceptComposeChanges,
           smartRoute: true,
         },
       },
@@ -148,6 +149,15 @@ async function fixture() {
 }
 
 describe("automatic pushes share durable deployment admission", () => {
+  it("does not carry Compose acceptance from a superseded push into a newer unapproved revision", async () => {
+    const f = await fixture();
+    const active = (await f.create())!;
+    const approved = (await f.queue(sha("b"), { acceptComposeChanges: true, expected: active.id }))!;
+    const latest = (await f.queue(sha("c"), { expected: active.id }))!;
+    expect(await f.current(approved.id)).toMatchObject({ status: "superseded" });
+    expect((await f.current(latest.id))?.intent.acceptComposeChanges).not.toBe(true);
+  });
+
   it("keeps the latest push, preserves force-deploy intent, and deploys it once after the old build", async () => {
     const f = await fixture();
     const active = (await f.create())!;

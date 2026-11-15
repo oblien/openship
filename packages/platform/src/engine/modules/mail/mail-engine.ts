@@ -44,6 +44,7 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
 import { dirname } from "node:path/posix";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   detectMailEngine,
@@ -51,6 +52,7 @@ import {
   MAIL_DB_CONTAINER,
   MAIL_DB_NAME,
   MAIL_HOST_PATHS,
+  MAIL_CONTAINER_MOUNTS,
   privilegedExecutor,
   type CommandExecutor,
   type MailEngineFlavor,
@@ -62,6 +64,16 @@ import { MailRequestSchemas, parseInput } from "@repo/contracts";
 import { sshManager } from "../../lib/ssh-manager";
 
 export type { MailEngineFlavor, MailEngineProbe };
+
+/** Resolve a mail engine path through the same mount map used by installation. */
+export function mailHostPath(flavor: MailEngineFlavor, path: string): string {
+  if (flavor === "host") return path;
+  const mount = MAIL_CONTAINER_MOUNTS.find(
+    (entry) => path === entry.container || path.startsWith(`${entry.container}/`),
+  );
+  if (!mount) throw new Error(`No mail host mount for ${path}`);
+  return `${mount.host}${path.slice(mount.container.length)}`;
+}
 
 /** Either a server id (we acquire the executor) or an executor already in hand. */
 export type MailTarget = string | CommandExecutor;
@@ -513,8 +525,8 @@ export function mailPsqlCommand(flavor: MailEngineFlavor, sql: string): string {
  * Run a command where Postfix/Dovecot and their config live — `postmap`,
  * `postconf`, `postfix reload`. On a legacy box that's the host itself.
  */
-export function mailEngineCommand(flavor: MailEngineFlavor, cmd: string): string {
-  return flavor === "container" ? `docker exec ${MAIL_CONTAINER} ${cmd}` : cmd;
+export function mailEngineCommand(flavor: MailEngineFlavor, cmd: string, options: { stdin?: boolean } = {}): string {
+  return flavor === "container" ? `docker exec${options.stdin ? " -i" : ""} ${MAIL_CONTAINER} ${cmd}` : cmd;
 }
 
 /**
@@ -549,15 +561,15 @@ export async function resolveMailFlavor(target: MailTarget): Promise<MailEngineF
   });
 }
 
-export function mailPgDumpToStdout(flavor: MailEngineFlavor, args: string): string {
+export function mailPgDumpToStdout(flavor: MailEngineFlavor, args: string, database: string = MAIL_DB_NAME): string {
   return flavor === "container"
-    ? `docker exec ${MAIL_DB_CONTAINER} pg_dump -U postgres -d ${MAIL_DB_NAME} ${args}`
-    : `sudo -u postgres pg_dump -d ${MAIL_DB_NAME} ${args}`;
+    ? `docker exec ${MAIL_DB_CONTAINER} pg_dump -U postgres -d ${sq(database)} ${args}`
+    : `sudo -u postgres pg_dump -d ${sq(database)} ${args}`;
 }
 
 /** psql reading SQL from STDIN, so the caller redirects a host-side file into it. */
-export function mailPsqlFromStdin(flavor: MailEngineFlavor): string {
-  const flags = `-d ${MAIL_DB_NAME} -v ON_ERROR_STOP=1 -f -`;
+export function mailPsqlFromStdin(flavor: MailEngineFlavor, options: { singleTransaction?: boolean; database?: string } = {}): string {
+  const flags = `-d ${sq(options.database ?? MAIL_DB_NAME)}${options.singleTransaction ? " --single-transaction" : ""} -v ON_ERROR_STOP=1 -f -`;
   return flavor === "container"
     ? `docker exec -i ${MAIL_DB_CONTAINER} psql -U postgres ${flags}`
     : `sudo -u postgres psql ${flags}`;
@@ -779,11 +791,59 @@ export function mailUnitActionCommand(
   action: "start" | "stop" | "restart",
 ): string {
   if (flavor === "container") {
+    if (unit === "postfix" && action !== "start") {
+      // start-fg keeps a shell above Postfix's master. Stopping that shell
+      // through Supervisor can leave master and its queue writers alive.
+      // Disable automatic restarts first, then let Postfix stop its own tree.
+      const stop = `supervisorctl stop ${sq(unit)}\nif postfix status >/dev/null 2>&1; then postfix stop; fi`;
+      return mailEngineCommand(flavor, `sh -ec ${sq(
+        action === "restart" ? `${stop}\nsupervisorctl start ${sq(unit)}` : stop,
+      )}`);
+    }
     return key === "postgresql"
       ? `docker ${action} ${sq(MAIL_DB_CONTAINER)}`
       : `docker exec ${sq(MAIL_CONTAINER)} supervisorctl ${action} ${sq(unit)}`;
   }
   return `systemctl --no-block ${action} ${sq(unit)}`;
+}
+
+/** A consistent mail snapshot needs its writers stopped, not its PostgreSQL
+ * process. Reuse the normal unit matrix and prove each transition completed. */
+export async function pauseMailDaemons(exec: CommandExecutor, flavor: MailEngineFlavor) {
+  const { engineExec } = await resolveMailMutationAccess(exec, flavor, []);
+  const stopped: string[] = [];
+  const status = async (unit: string) => parseMailUnitProbe(
+    flavor, unit, unit, await engineExec.exec(mailUnitProbeCommand(flavor, unit, unit)),
+  ).status;
+  const waitFor = async (unit: string, wanted: "active" | "inactive") => {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if (await status(unit) === wanted) return;
+      await delay(100);
+    }
+    throw new Error(`Mail ${unit} did not become ${wanted}`);
+  };
+  const resume = async () => {
+    for (const unit of [...stopped].reverse()) {
+      await engineExec.exec(mailUnitActionCommand(flavor, unit, unit, "start"));
+      await waitFor(unit, "active");
+      stopped.splice(stopped.indexOf(unit), 1);
+    }
+  };
+  try {
+    for (const unit of ["postfix", "dovecot", "amavis", "iredapd", ...(flavor === "host" ? ["amavisd"] : [])]) {
+      const current = await status(unit);
+      if (current === "missing" || current === "inactive") continue;
+      if (current !== "active") throw new Error(`Mail ${unit} has an unknown or unhealthy state; cannot safely capture it`);
+      stopped.push(unit);
+      await engineExec.exec(mailUnitActionCommand(flavor, unit, unit, "stop"));
+      await waitFor(unit, "inactive");
+    }
+    return { resume, get stopped() { return stopped.length > 0; } };
+  } catch (error) {
+    await resume();
+    throw error;
+  }
 }
 
 /**

@@ -478,7 +478,7 @@ async function applyAuthedRequest(
       scopeMode: fixedScope ? "fixed" : "resource",
       clientIp,
       userAgent,
-      traceId: c.get("diagnosticRequestId") ?? randomUUID(),
+      traceId: c.get("diagnosticTraceId") ?? c.get("diagnosticRequestId") ?? randomUUID(),
       hono: c,
     }),
   );

@@ -18,6 +18,8 @@ local cjson = require "cjson.safe"
 local lrucache = require "resty.lrucache"
 
 local M = {}
+M.static_responses = true
+M.response_methods = { GET=true, HEAD=true, POST=true, PUT=true, PATCH=true, DELETE=true, OPTIONS=true }
 
 local cache = lrucache.new(1024) -- compiled rules, per worker, ~1024 hosts
 
@@ -104,6 +106,87 @@ local function to_set(list, lower)
     return any and set or nil
 end
 
+-- Response validation runs at management writes and on a worker cache miss,
+-- never for each request. Keep these bounds aligned with core/edge-response.ts.
+local managed_headers = { ["content-type"]=true, ["content-length"]=true, ["content-encoding"]=true,
+    ["transfer-encoding"]=true, connection=true, ["keep-alive"]=true,
+    ["proxy-authenticate"]=true, ["proxy-authorization"]=true, te=true, trailer=true,
+    upgrade=true, ["x-accel-redirect"]=true }
+local token = "[!#$%%&'*+%.%^_`|~0-9A-Za-z%-]+"
+M.max_responses = 64
+
+local function reserved_path(path)
+    return path == "/_openship" or string.sub(path, 1, 11) == "/_openship/"
+        or path == "/.openship" or string.sub(path, 1, 11) == "/.openship/"
+        or path == "/.well-known/acme-challenge" or string.sub(path, 1, 28) == "/.well-known/acme-challenge/"
+end
+M.reserved_path = reserved_path
+
+local function compile_response(e)
+    if type(e) ~= "table" or type(e.spec) ~= "table" then return nil end
+    local spec, path = e.spec, e.pathPrefix
+    if path == nil or path == cjson.null then path = "/" end
+    if type(path) ~= "string" or #path > 512 or string.sub(path, 1, 1) ~= "/"
+        or string.find(path, "[%z\1-\32\127?#%%\\]") or string.find(path, "//", 1, true)
+        or string.find(path .. "/", "/./", 1, true) or string.find(path .. "/", "/../", 1, true)
+        or reserved_path(path) then return nil end
+    -- Policies are separate entries, selected independently of response matches.
+    if spec.access or spec.ban or spec.hotlink or spec.rateLimit or spec.block then return nil end
+    local response = spec.response
+    if type(response) ~= "table" or type(response.status) ~= "number"
+        or response.status < 200 or response.status > 599 or response.status % 1 ~= 0
+        or type(response.body) ~= "string" or #response.body > 65536
+        or type(response.contentType) ~= "string" or #response.contentType > 256
+        or string.find(response.contentType, "[%z\1-\31\127]")
+        or (response.match ~= "exact" and response.match ~= "prefix") then return nil end
+    local suffix = string.match(response.contentType, "^" .. token .. "/" .. token .. "(.*)$")
+    if not suffix or (suffix ~= "" and not string.match(suffix, "^ *;")) then return nil end
+    if (response.status == 204 or response.status == 205 or response.status == 304)
+        and response.body ~= "" then return nil end
+    if type(response.headers) ~= "table" or type(response.methods) ~= "table"
+        or #response.methods > 7 then return nil end
+    local headers, seen, count, size = {}, {}, 0, 0
+    for name, value in pairs(response.headers) do
+        if type(name) ~= "string" or #name == 0 or #name > 128
+            or not string.match(name, "^" .. token .. "$")
+            or managed_headers[string.lower(name)] or seen[string.lower(name)]
+            or type(value) ~= "string" or #value > 2048
+            or string.find(value, "[%z\1-\31\127]") then return nil end
+        count, size = count + 1, size + #name + #value
+        if count > 32 or size > 8192 then return nil end
+        seen[string.lower(name)], headers[name] = true, value
+    end
+    local methods = {}
+    for i, method in pairs(response.methods) do
+        if type(i) ~= "number" or i < 1 or i > #response.methods or i % 1 ~= 0
+            or type(method) ~= "string" or not M.response_methods[method] then return nil end
+        methods[method] = true
+    end
+    return { path=path, boundary=string.sub(path, -1) == "/" and path or path .. "/",
+        match=response.match, status=response.status, body=response.body,
+        contentType=response.contentType, headers=headers,
+        methods=#response.methods > 0 and methods or nil }
+end
+
+function M.valid_responses(entries)
+    if #entries > M.max_responses then return false end
+    local seen = {}
+    for _, e in ipairs(entries) do
+        local r = compile_response(e)
+        if not r then return false end
+        local key = r.match .. ":" .. r.path
+        if seen[key] then return false end
+        seen[key] = true
+    end
+    return true
+end
+
+function M.response_revision(raw)
+    local hash = require("resty.sha256"):new()
+    if not hash or not hash:update(raw) then return nil end
+    return hash:final()
+end
+
 -- Compile one RouteRuleSpec into a fast-match shape.
 local function compile_spec(spec)
     if type(spec) ~= "table" then return { blockStatus = 403 } end
@@ -148,6 +231,9 @@ local function compile_spec(spec)
     end
 
     out.blockStatus = (type(spec.block) == "table" and tonumber(spec.block.status)) or 403
+    -- Response entries can never become empty policies, including malformed
+    -- entries left by an interrupted upgrade or an invalid management payload.
+    out.isResponse = spec.response ~= nil
     return out
 end
 
@@ -175,6 +261,60 @@ function M.get(host, raw)
     local parsed = parse(raw)
     cache:set(host, { raw = raw, parsed = parsed })
     return parsed
+end
+
+-- Only the 32-byte revision is read from shared memory on a warm request.
+-- Bodies are fetched/decoded once per configuration change per worker. Keep a
+-- separate cache so response bodies cannot displace compiled access policies.
+local responses_cache = lrucache.new(128)
+local response_cache_bytes = 0
+local response_cache_budget = 8 * 1024 * 1024
+local function response_index(host, revision, dict)
+    local hit = responses_cache:get(host)
+    if hit and hit.revision == revision then return hit end
+    local raw = dict:get("responses:" .. host)
+    -- A concurrent management write may have changed the body after we read
+    -- its revision. Never cache that body under a different revision.
+    if not raw or M.response_revision(raw) ~= revision then return nil end
+    local entries = cjson.decode(raw)
+    local index = { revision=revision, exact={}, prefixes={}, bytes=#raw }
+    if type(entries) == "table" and #entries <= M.max_responses then
+        for _, e in ipairs(entries) do
+            local r = compile_response(e)
+            if r then
+                if r.match == "exact" then index.exact[r.path] = r
+                else index.prefixes[#index.prefixes + 1] = r end
+            end
+        end
+        table.sort(index.prefixes, function(a, b) return #a.path > #b.path end)
+    end
+    -- Conservatively count even evicted entries until the next flush. This
+    -- bounds retained response payloads without running an eviction scan.
+    response_cache_bytes = response_cache_bytes - (hit and hit.bytes or 0) + #raw
+    if response_cache_bytes > response_cache_budget then
+        responses_cache:flush_all()
+        response_cache_bytes = #raw
+    end
+    responses_cache:set(host, index)
+    return index
+end
+
+local function accepts_method(r, method)
+    return not r.methods or r.methods[method] or method == "HEAD" and r.methods.GET
+end
+
+function M.response_for(host, revision, dict, uri, method)
+    if not M.response_methods[method] or reserved_path(uri) then return nil end
+    local index = response_index(host, revision, dict)
+    if not index then return nil end
+    local exact = index.exact[uri]
+    if exact and accepts_method(exact, method) then return exact end
+    for _, r in ipairs(index.prefixes) do
+        local path = r.path
+        local boundary = r.boundary
+        if (path == "/" or uri == path or string.sub(uri, 1, #boundary) == boundary)
+            and accepts_method(r, method) then return r end
+    end
 end
 
 return M

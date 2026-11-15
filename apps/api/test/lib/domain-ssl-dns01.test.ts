@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Domain } from "@repo/db";
 import type { SslProvider } from "@repo/adapters";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   domains: new Map<string, Record<string, unknown>>(),
   updateSsl: vi.fn(),
   recordSslFailure: vi.fn(),
+  markCredentialInvalid: vi.fn(async () => {}),
   markVerifiedActive: vi.fn(),
   disposePlatform: vi.fn(),
   provisionCert: vi.fn(async (domain: string, _opts?: unknown) => ({
@@ -98,6 +99,7 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
 
 vi.mock("@repo/platform/engine/modules/dns/dns-credential.service", () => ({
   resolveDnsManager: vi.fn(async () => h.dnsManagerResult),
+  markCredentialInvalid: h.markCredentialInvalid,
 }));
 
 import {
@@ -106,6 +108,7 @@ import {
   createDnsHookScripts,
 } from "@repo/platform/engine/lib/domain-ssl";
 import { createTrackedSslProvider } from "@repo/platform/engine/lib/routing-domains";
+import { resolveDnsProvider } from "@repo/platform/engine/modules/dns/registry";
 
 function domain(hostname: string, extra: Record<string, unknown> = {}) {
   h.domains.set(hostname, {
@@ -225,6 +228,211 @@ else:
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  const compactRecord =
+    '{"domain_record":{"id":28448433,"type":"TXT","name":"x","data":"y","ttl":30}}';
+  // How a pretty-printing proxy or a future API change could return the same record.
+  const multilineRecord = `{
+  "domain_record": {
+    "id": 28448433,
+    "type": "TXT",
+    "name": "x",
+    "data": "y",
+    "ttl": 30
+  }
+}`;
+
+  it.each([
+    ["app.example.com", "_acme-challenge.app", "compact", compactRecord],
+    ["*.example.com", "_acme-challenge", "compact", compactRecord],
+    ["app.example.com", "_acme-challenge.app", "multiline", multilineRecord],
+  ])(
+    "the DigitalOcean hook writes %s's challenge as %s and cleans up its %s record",
+    (certbotDomain, name, _format, response) => {
+      const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
+      try {
+        const hooks = createDnsHookScripts({
+          credentialId: "cred_do",
+          provider: {
+            name: "digitalocean",
+            descriptor: { name: "digitalocean", displayName: "DigitalOcean", description: "" },
+          },
+          zone: { id: "example.com", name: "example.com", status: "active" },
+          credentials: { apiToken: "dop_v1_abc123" },
+        } as never);
+        const auth = join(dir, "auth.sh");
+        const cleanup = join(dir, "cleanup.sh");
+        const payload = join(dir, "payload.json");
+        const calls = join(dir, "curl-calls");
+        const responseFile = join(dir, "response.json");
+        writeFileSync(auth, hooks.authHookScript);
+        writeFileSync(cleanup, hooks.cleanupHookScript);
+        writeFileSync(responseFile, response);
+        writeFileSync(
+          join(dir, "curl"),
+          `#!/bin/sh
+printf '%s\\n' "$*" >> "$CURL_CALLS"
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--data" ]; then
+    printf '%s' "$arg" > "$CAPTURE_PAYLOAD"
+    cat "$RESPONSE_FILE"
+    exit 0
+  fi
+  prev="$arg"
+done
+case "$*" in *DELETE*) exit 0 ;; esac
+printf '%s' '{"Answer":[{"type":16,"data":"\\"test_validation\\""}]}'
+`,
+          { mode: 0o700 },
+        );
+        const env = {
+          ...process.env,
+          PATH: `${dir}:/usr/bin:/bin`,
+          CAPTURE_PAYLOAD: payload,
+          CURL_CALLS: calls,
+          RESPONSE_FILE: responseFile,
+          CERTBOT_DOMAIN: certbotDomain,
+          CERTBOT_VALIDATION: "test_validation",
+          OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+        };
+        execFileSync("/bin/sh", [auth], { timeout: 5000, env });
+        expect(JSON.parse(readFileSync(payload, "utf8"))).toEqual({
+          type: "TXT",
+          name,
+          data: "test_validation",
+          ttl: 30,
+        });
+        expect(readFileSync(join(dir, "record-id"), "utf8").trim()).toBe("28448433");
+
+        execFileSync("/bin/sh", [cleanup], { timeout: 5000, env });
+        const deletes = readFileSync(calls, "utf8")
+          .split("\n")
+          .filter((line) => line.includes("DELETE"));
+        expect(deletes).toHaveLength(1);
+        expect(deletes[0]).toContain(
+          "https://api.digitalocean.com/v2/domains/example.com/records/28448433",
+        );
+        expect(existsSync(join(dir, "record-id"))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    '{"id":"unauthorized","message":"dop_v1_abc123 upstream-private-details"}',
+    '{"domain_record":{"id":123.5}}',
+    '{"domain_record":{"id":true}}',
+    '{"domain_record":{"id":0}}',
+    '{"domain_record":{"id":"123"}}',
+    '{"domain_record":{"nested":{"id":123}}}',
+  ])("refuses an invalid DigitalOcean response without leaking it: %s", (response) => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
+    try {
+      const hooks = createDnsHookScripts({
+        credentialId: "cred_do",
+        provider: {
+          name: "digitalocean",
+          descriptor: { name: "digitalocean", displayName: "DigitalOcean", description: "" },
+        },
+        zone: { id: "example.com", name: "example.com", status: "active" },
+        credentials: { apiToken: "dop_v1_abc123" },
+      } as never);
+      const auth = join(dir, "auth.sh");
+      writeFileSync(auth, hooks.authHookScript);
+      writeFileSync(
+        join(dir, "curl"),
+        `#!/bin/sh\ncat "$RESPONSE_FILE"\n`,
+        { mode: 0o700 },
+      );
+      writeFileSync(join(dir, "response.json"), response);
+      let failure: unknown;
+      try {
+        execFileSync("/bin/sh", [auth], {
+          timeout: 5000,
+          stdio: "pipe",
+          env: {
+            ...process.env,
+            PATH: `${dir}:/usr/bin:/bin`,
+            RESPONSE_FILE: join(dir, "response.json"),
+            CERTBOT_DOMAIN: "app.example.com",
+            CERTBOT_VALIDATION: "test_validation",
+            OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+          },
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeDefined();
+      const stderr = String((failure as { stderr: Buffer }).stderr);
+      expect(stderr).toContain("DigitalOcean rejected");
+      expect(stderr).not.toContain("dop_v1_abc123");
+      expect(stderr).not.toContain("upstream-private-details");
+      expect(existsSync(join(dir, "record-id"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a missing JSON parser before creating a DigitalOcean challenge", () => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-do-hook-"));
+    try {
+      const hooks = createDnsHookScripts({
+        credentialId: "cred_do", provider: resolveDnsProvider("digitalocean"),
+        zone: { id: "example.com", name: "example.com", status: "active" },
+        credentials: { apiToken: "test-token" },
+      });
+      const auth = join(dir, "auth.sh");
+      const called = join(dir, "called");
+      writeFileSync(auth, hooks.authHookScript);
+      writeFileSync(join(dir, "python3"), "#!/bin/sh\nexit 127\n", { mode: 0o700 });
+      writeFileSync(join(dir, "curl"), '#!/bin/sh\ntouch "$CURL_CALLED"\n', { mode: 0o700 });
+      expect(() => execFileSync("/bin/sh", [auth], { timeout: 5000, stdio: "pipe", env: {
+        ...process.env, PATH: `${dir}:/usr/bin:/bin`, CURL_CALLED: called,
+        CERTBOT_DOMAIN: "app.example.com", CERTBOT_VALIDATION: "test_validation",
+        OPENSHIP_DNS_RECORD_FILE: join(dir, "record-id"),
+      } })).toThrow();
+      expect(existsSync(called)).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it.each(["cloudflare", "digitalocean"] as const)("%s cleanup rejects a record ID containing URL syntax", (provider) => {
+    const dir = mkdtempSync(join(tmpdir(), "openship-cleanup-hook-"));
+    try {
+      const hooks = createDnsHookScripts({
+        credentialId: "cred_1", provider: resolveDnsProvider(provider),
+        zone: { id: provider === "digitalocean" ? "example.com" : "zone_123", name: "example.com", status: "active" },
+        credentials: { apiToken: "test-token" },
+      });
+      const cleanup = join(dir, "cleanup.sh");
+      const recordFile = join(dir, "record-id");
+      const called = join(dir, "called");
+      writeFileSync(cleanup, hooks.cleanupHookScript);
+      writeFileSync(recordFile, "../another-zone/records/123?force=true");
+      writeFileSync(join(dir, "curl"), '#!/bin/sh\ntouch "$CURL_CALLED"\n', { mode: 0o700 });
+      execFileSync("/bin/sh", [cleanup], { timeout: 5000, env: {
+        ...process.env, PATH: `${dir}:/usr/bin:/bin`, CURL_CALLED: called,
+        OPENSHIP_DNS_RECORD_FILE: recordFile,
+      } });
+      expect(existsSync(called)).toBe(false);
+      expect(existsSync(recordFile)).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("refuses a DigitalOcean zone that is not a plain domain name", () => {
+    expect(() =>
+      createDnsHookScripts({
+        credentialId: "cred_do",
+        provider: {
+          name: "digitalocean",
+          descriptor: { name: "digitalocean", displayName: "DigitalOcean", description: "" },
+        },
+        zone: { id: "example.com$(id)", name: "example.com", status: "active" },
+        credentials: { apiToken: "dop_v1_abc123" },
+      } as never),
+    ).toThrow("invalid zone identifier");
+  });
+
   it("reuses a valid wildcard certificate without requiring DNS credentials for a new order", async () => {
     h.dnsManagerResult = { status: "none" } as unknown as typeof h.dnsManagerResult;
     domain("*.example.com", { sslChallenge: "dns-01" });
@@ -293,7 +501,7 @@ else:
     domain("*.example.com", { sslChallenge: "dns-01" });
 
     await expect(manageDomainSsl("*.example.com", { action: "provision" })).rejects.toThrow(
-      /connected DNS provider.*Settings → DNS.*Manual TXT/,
+      /connected DNS provider.*Settings → Connections.*Manual TXT/,
     );
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(h.recordSslFailure).toHaveBeenCalledWith(
@@ -307,6 +515,7 @@ else:
     h.dnsManagerResult = {
       status: "unauthorized",
       credentialId: "cred_1",
+      provider: "cloudflare",
       reason: "Invalid token",
     } as unknown as typeof h.dnsManagerResult;
     domain("app.example.com", { sslChallenge: "dns-01" });
@@ -314,6 +523,8 @@ else:
     await expect(manageDomainSsl("app.example.com", { action: "provision" })).rejects.toThrow(
       /DNS provider credential rejected: Invalid token/,
     );
+    // Marked like every other rejection, so the dashboard shows it needs reconnecting.
+    expect(h.markCredentialInvalid).toHaveBeenCalledWith(expect.any(String), "cred_1");
     expect(h.provisionCert).not.toHaveBeenCalled();
     expect(h.recordSslFailure).toHaveBeenCalledWith(
       "dom_app.example.com",

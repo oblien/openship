@@ -29,7 +29,7 @@ export interface OblienEventEnvelope {
   namespace?: string;
   data?: {
     namespace?: string;
-    workspace_id?: string;
+    vm_id?: string;
     period_end?: string;
     [key: string]: unknown;
   };

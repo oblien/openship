@@ -6,6 +6,8 @@ import { env } from "../../config/env";
 
 type SourceService = Parameters<typeof toComposeSpec>[0] & { name: string; kind?: string | null };
 
+export type { SourceService };
+
 // Compare authored configuration, not the values produced by interpolation in
 // this request. Editing project env must not look like editing the Compose file.
 function sourceSpec(value: Parameters<typeof toComposeSpec>[0]) {
@@ -81,6 +83,23 @@ export function composeSourceChanges(rows: readonly Service[], services: readonl
       .map((s) => s.name),
     removed: existing.filter((s) => s.importedSpec && !names.has(s.name)).map((s) => s.name),
   };
+}
+
+/**
+ * Resolve the revision a deploy may pass the Compose review gate with. An
+ * explicit acceptance derives the revision from the source being deployed, so
+ * the gate clears for exactly what was scanned — the caller cannot clear it
+ * for a different revision. A caller that already holds a revision (dashboard
+ * deploys) keeps passing it through. Without either, nothing is resolved and
+ * the gate still refuses unreviewed changes.
+ */
+export function resolveComposeReviewedRevision(
+  projectId: string,
+  source: readonly SourceService[],
+  options: { composeRevision?: string; acceptComposeChanges?: boolean } = {},
+): string | undefined {
+  if (options.acceptComposeChanges) return composeSourceRevision(projectId, source);
+  return options.composeRevision;
 }
 
 export function assertComposeReviewed(

@@ -91,7 +91,7 @@ export async function listImages(
   if (hit) return hit;
 
   const client = await getClientForOrg(organizationId);
-  const response = await client.workspaces.images.list(params);
+  const response = await client.vms.images.list(params);
   const images = normalizeImages(response);
   await store.set(key, images, CACHE_TTL_S);
   return images;

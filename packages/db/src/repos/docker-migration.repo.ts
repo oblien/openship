@@ -9,6 +9,7 @@ import type { Database } from "../client";
 import { cloudWorkspace, dockerMigrationRun, project, service, servers } from "../schema";
 import { AppError } from "@repo/core";
 import { withProjectWorkAdmission } from "./project-work-admission";
+import { hashStringToInt } from "../advisory-lock-factory";
 import type { DockerMigrationRecovery } from "../schema/docker-migration";
 
 export type DockerMigrationRun = typeof dockerMigrationRun.$inferSelect;
@@ -64,11 +65,12 @@ const SOURCE_PROJECT_PATH_KEYS = ["projectMove", "projectId"] as const;
 /** The same path in Postgres' `#>>` notation. */
 const SOURCE_PROJECT_PATH = `{${SOURCE_PROJECT_PATH_KEYS.join(",")}}`;
 
-/** SQL predicate: this run is about `projectId`, as subject OR as a duplicate's source. */
-function runTouchesProject(projectId: string) {
+/** One predicate for subjects, duplicate sources and every project in a provider import. */
+function runTouchesProjects(projectIds: string[]) {
   return or(
-    eq(dockerMigrationRun.projectId, projectId),
-    sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH} = ${projectId}`,
+    inArray(dockerMigrationRun.projectId, projectIds),
+    inArray(sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH}`, projectIds),
+    sql`EXISTS (SELECT 1 FROM jsonb_each_text(coalesce(${dockerMigrationRun.recovery} #> '{providerImport,projects}', '{}'::jsonb)) AS imported WHERE ${inArray(sql`imported.value`, projectIds)})`,
   );
 }
 
@@ -78,9 +80,11 @@ function runProjectIds(row: DockerMigrationRun): string[] {
   for (const key of SOURCE_PROJECT_PATH_KEYS) {
     node = node && typeof node === "object" ? (node as Record<string, unknown>)[key] : undefined;
   }
-  return [row.projectId, typeof node === "string" ? node : null].filter((id): id is string =>
-    Boolean(id),
-  );
+  return [
+    row.projectId,
+    typeof node === "string" ? node : null,
+    ...Object.values(row.recovery.providerImport?.projects ?? {}),
+  ].filter((id): id is string => Boolean(id));
 }
 
 const TERMINAL_MIGRATION_STATUSES: DockerMigrationStatus[] = ["succeeded", "failed", "rolled_back"];
@@ -101,6 +105,9 @@ export const activeMigration = or(
   // trust or stopped target containers still require recovery.
   sql`coalesce(${dockerMigrationRun.recovery}->>'transferRunTag', '') <> ''`,
   sql`jsonb_array_length(coalesce(${dockerMigrationRun.recovery}->'targetRunningContainerIds', '[]'::jsonb)) > 0`,
+  sql`coalesce(${dockerMigrationRun.recovery} #>> '{providerImport,sshPrivateKeyEnc}', '') <> ''`,
+  sql`${dockerMigrationRun.recovery} #>> '{providerImport,cleanupPending}' = 'true'`,
+  sql`${dockerMigrationRun.recovery} #>> '{providerImport,sourceCleanupPending}' = 'true'`,
 );
 
 export function createDockerMigrationRunRepo(db: Database) {
@@ -117,6 +124,24 @@ export function createDockerMigrationRunRepo(db: Database) {
      */
     async create(data: NewDockerMigrationRun): Promise<DockerMigrationRun | undefined> {
       return withProjectWorkAdmission(db, data.projectId, data.organizationId, async (tx) => {
+        if (data.mode === "provider_import" && data.inputSnapshot?.provider === "railway") {
+          const source = data.inputSnapshot.source as { projectId?: string; environmentId?: string } | undefined;
+          if (!source?.projectId || !source.environmentId)
+            throw new AppError("The Railway source identity is missing. Review the import again.", 409, "IMPORT_SOURCE_MISSING");
+          // Credentials and destinations can differ while referring to the same
+          // provider environment. Reserve that source atomically across tenants
+          // before any worker can pause it; never reveal the competing run.
+          await tx.execute(sql`select pg_advisory_xact_lock(${hashStringToInt(`railway-import:${source.projectId}:${source.environmentId}`)})`);
+          const [active] = await tx.select({ id: dockerMigrationRun.id }).from(dockerMigrationRun).where(and(
+            activeMigration,
+            eq(dockerMigrationRun.mode, "provider_import"),
+            sql`${dockerMigrationRun.inputSnapshot}->>'provider' = 'railway'`,
+            sql`${dockerMigrationRun.inputSnapshot} #>> '{source,projectId}' = ${source.projectId}`,
+            sql`${dockerMigrationRun.inputSnapshot} #>> '{source,environmentId}' = ${source.environmentId}`,
+          )).limit(1);
+          if (active)
+            throw new AppError("Finish this Railway environment's current import or recovery before starting another.", 409, "IMPORT_SOURCE_BUSY");
+        }
         // Lifecycle requests lock these same rows. A queued/parked migration
         // reserves both hosts before any project or remote command exists.
         const endpoints = await tx.select({ workspaceId: servers.workspaceId }).from(servers)
@@ -167,6 +192,76 @@ export function createDockerMigrationRunRepo(db: Database) {
       return db.query.dockerMigrationRun.findFirst({
         where: eq(dockerMigrationRun.id, id),
       });
+    },
+
+    async findByImportPlan(
+      organizationId: string,
+      planId: string,
+    ): Promise<DockerMigrationRun | undefined> {
+      return db.query.dockerMigrationRun.findFirst({
+        where: and(
+          eq(dockerMigrationRun.organizationId, organizationId),
+          sql`${dockerMigrationRun.recovery} #>> '{providerImport,planId}' = ${planId}`,
+        ),
+      });
+    },
+
+    /** Park the verified import and release its cleanup plan in one write. The
+     * cancellation request competes on the same row, so exactly one can win. */
+    async markProviderImportReady(id: string): Promise<boolean> {
+      const rows = await db.update(dockerMigrationRun).set({
+        status: "awaiting_cutover",
+        lastEventAt: new Date(),
+        recovery: sql`jsonb_set(${dockerMigrationRun.recovery}, '{providerImport}', (${dockerMigrationRun.recovery}->'providerImport') || '{"cleanupPending":false,"planEnc":""}'::jsonb)`,
+      }).where(and(
+        eq(dockerMigrationRun.id, id),
+        eq(dockerMigrationRun.mode, "provider_import"),
+        inArray(dockerMigrationRun.status, ["moving_data", "verifying"]),
+        isNull(dockerMigrationRun.finishedAt),
+        sql`${dockerMigrationRun.recovery} ? 'providerImport'`,
+        sql`coalesce(${dockerMigrationRun.recovery}->>'cancelRequested', 'false') <> 'true'`,
+        sql`coalesce(${dockerMigrationRun.recovery} #>> '{providerImport,sshPrivateKeyEnc}', '') = ''`,
+        sql`coalesce(${dockerMigrationRun.recovery} #>> '{providerImport,sourceCleanupPending}', 'false') <> 'true'`,
+      )).returning();
+      return rows.length > 0;
+    },
+
+    async usesConnection(organizationId: string, connectionId: string): Promise<boolean> {
+      return !!(await db.query.dockerMigrationRun.findFirst({
+        where: and(
+          eq(dockerMigrationRun.organizationId, organizationId),
+          activeMigration,
+          sql`${dockerMigrationRun.recovery} #>> '{providerImport,connectionId}' = ${connectionId}`,
+        ),
+      }));
+    },
+
+    async bindImportedProject(
+      id: string,
+      organizationId: string,
+      sourceId: string,
+      projectId: string,
+    ): Promise<boolean> {
+      const bound = await withProjectWorkAdmission(db, projectId, organizationId, async (tx) => {
+        const [row] = await tx
+          .update(dockerMigrationRun)
+          .set({
+            projectId: sql`coalesce(${dockerMigrationRun.projectId}, ${projectId})`,
+            recovery: sql`jsonb_set(${dockerMigrationRun.recovery}, '{providerImport,projects}', coalesce(${dockerMigrationRun.recovery} #> '{providerImport,projects}', '{}'::jsonb) || ${JSON.stringify({ [sourceId]: projectId })}::jsonb)`,
+            lastEventAt: new Date(),
+          })
+          .where(
+            and(
+              eq(dockerMigrationRun.id, id),
+              eq(dockerMigrationRun.organizationId, organizationId),
+              inArray(dockerMigrationRun.status, IN_FLIGHT_MIGRATION_STATUSES),
+              isNull(dockerMigrationRun.finishedAt),
+            ),
+          )
+          .returning();
+        return !!row;
+      });
+      return bound === true;
     },
 
     /**
@@ -311,7 +406,7 @@ export function createDockerMigrationRunRepo(db: Database) {
       return db.query.dockerMigrationRun.findMany({
         where: and(
           eq(dockerMigrationRun.organizationId, organizationId),
-          runTouchesProject(projectId),
+          runTouchesProjects([projectId]),
         ),
         orderBy: (t, { desc }) => [desc(t.startedAt)],
         limit: opts?.limit ?? 50,
@@ -453,7 +548,7 @@ export function createDockerMigrationRunRepo(db: Database) {
      */
     async findActiveForProject(projectId: string): Promise<DockerMigrationRun | null> {
       const rows = await db.query.dockerMigrationRun.findMany({
-        where: and(runTouchesProject(projectId), activeMigration),
+        where: and(runTouchesProjects([projectId]), activeMigration),
         orderBy: (t, { desc }) => [desc(t.startedAt)],
         limit: 1,
       });
@@ -472,18 +567,7 @@ export function createDockerMigrationRunRepo(db: Database) {
       const byProject = new Map<string, DockerMigrationRun>();
       if (projectIds.length === 0) return byProject;
       const rows = await db.query.dockerMigrationRun.findMany({
-        where: and(
-          or(
-            inArray(dockerMigrationRun.projectId, projectIds),
-            // `inArray` over the extracted path, not a hand-written `= ANY(...)`: it renders a
-            // bound list drizzle already knows how to parameterise for both Postgres and PGlite.
-            inArray(
-              sql`${dockerMigrationRun.inputSnapshot} #>> ${SOURCE_PROJECT_PATH}`,
-              projectIds,
-            ),
-          ),
-          activeMigration,
-        ),
+        where: and(runTouchesProjects(projectIds), activeMigration),
         orderBy: (t, { desc }) => [desc(t.startedAt)],
       });
       // Filled per project id ASKED FOR, not per row: a duplicate's row answers for two

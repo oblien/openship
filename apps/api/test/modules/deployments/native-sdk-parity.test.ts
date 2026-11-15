@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import type { VerifiedIdentity } from "@repo/platform";
-import { ENV_MASK, type AppTemplate } from "@repo/core";
+import { ENV_MASK, normalizeEdgeResponse, type AppTemplate } from "@repo/core";
 import type { BackupDestination as StoredBackupDestination } from "@repo/db";
 import type { ProjectInfo } from "@repo/platform/engine/modules/deployments/prepare.service";
 import { alice, storedDeployment } from "../../../../../packages/platform/test/fixtures";
@@ -1890,9 +1890,10 @@ describe("domain and DNS HTTP/native parity", () => {
     await expect(remote().domains.uploadCert("domain-a", input)).rejects.toMatchObject({ status: 404 });
     expect(h.domainUpload).toHaveBeenCalledTimes(2);
   });
-  it("enforces administrator membership on both credential writes and never audits tokens", async () => {
-    h.dnsAdd.mockResolvedValue(dnsCredentialFixture());
-    const input = { provider: "cloudflare" as const, name: "Production", apiToken: "never-audit-dns-token" };
+  it.each(["cloudflare", "digitalocean"] as const)("enforces administrator membership on %s credential writes and never audits tokens", async (provider) => {
+    h.env.CLOUD_MODE = true;
+    h.dnsAdd.mockResolvedValue({ ...dnsCredentialFixture(), provider });
+    const input = { provider, name: "Production", apiToken: "never-audit-dns-token" };
     const local = await native();
     h.members.set("org-a:alice", { id: "member-a", role: "member" });
     for (const dns of [remote().dns, local.dns]) {
@@ -1909,6 +1910,9 @@ describe("domain and DNS HTTP/native parity", () => {
 });
 
 describe("project routing HTTP/native parity", () => {
+  beforeEach(() => {
+    for (const id of ["project-a", "project-b", "project-sibling"]) h.projects.set(id, { ...h.projects.get(id)!, id });
+  });
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
   const rule = { id: "rule-a", organizationId: "org-a", projectId: "project-a", domainId: "domain-a", pathPrefix: "/api", spec: { access: { methods: ["GET"] } }, enabled: true, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" };
   it("retains the sanitizer, project/domain checks, edge push, and one audit per facade", async () => {
@@ -1934,6 +1938,41 @@ describe("project routing HTTP/native parity", () => {
     }
     expect(h.ruleUpdate).not.toHaveBeenCalled();
     for (const args of h.ruleRemove.mock.calls) expect(args).toEqual(["project-sibling", rule.id]);
+  });
+  it("validates domain responses in both facades and distinguishes persistence from edge application", async () => {
+    const local = await native();
+    h.ruleCreate.mockImplementation(async data => ({ ...rule, ...data }));
+    const input = { domainId: "domain-a", pathPrefix: "/status", spec: { response: normalizeEdgeResponse({ body: "ready", headers: { "Cache-Control": "no-store" } }) } };
+    for (const projects of [remote().projects, local.projects]) {
+      h.rulePush.mockResolvedValue(true);
+      expect(await projects.createRouteRule("project-a", input)).toMatchObject({ domainId: "domain-a", pathPrefix: "/status", edgeApplied: true, spec: { response: { match: "exact", status: 200, body: "ready", headers: { "cache-control": "no-store" } } } });
+      h.rulePush.mockResolvedValue(false);
+      expect(await projects.createRouteRule("project-a", input)).toMatchObject({ edgeApplied: false });
+      for (const invalid of [
+        { ...input, domainId: null },
+        { ...input, domainId: "domain-b" },
+        { ...input, pathPrefix: "/_openship/auth" },
+        { ...input, spec: { response: { ...input.spec.response, headers: { "X-Test": "ok\r\nInjected: yes" } } } },
+        { ...input, spec: { ...input.spec, access: { methods: ["GET"] } } },
+      ]) await expect(projects.createRouteRule("project-a", invalid)).rejects.toMatchObject({ statusCode: 400 });
+    }
+    expect(h.ruleCreate).toHaveBeenCalledTimes(4);
+  });
+  it("refuses unsupported edge targets and prevents changing a response to a foreign domain", async () => {
+    const local = await native();
+    const input = { domainId: "domain-a", spec: { response: normalizeEdgeResponse({ body: "ready" }) } };
+    for (const projects of [remote().projects, local.projects]) {
+      h.domains.set("domain-a", { projectId: "project-a", externalIngress: true });
+      await expect(projects.createRouteRule("project-a", input)).rejects.toMatchObject({ code: "EDGE_RESPONSE_UNSUPPORTED" });
+      h.domains.set("domain-a", { projectId: "project-a" });
+      h.projects.set("project-a", { id: "project-a", organizationId: "org-a", workspaceId: "workspace" });
+      await expect(projects.createRouteRule("project-a", input)).rejects.toMatchObject({ code: "EDGE_RESPONSE_UNSUPPORTED" });
+      h.projects.set("project-a", { id: "project-a", organizationId: "org-a" });
+      h.ruleGet.mockResolvedValue({ ...rule, spec: input.spec });
+      await expect(projects.updateRouteRule("project-a", { ruleId: rule.id, domainId: "domain-b" })).rejects.toMatchObject({ code: "INVALID_DOMAIN" });
+    }
+    expect(h.ruleCreate).not.toHaveBeenCalled();
+    expect(h.ruleUpdate).not.toHaveBeenCalled();
   });
   it("connects a primary domain through the same domain operation and retains legacy errors", async () => {
     h.domainCreate.mockResolvedValue({ domain: domainFixture(), records: { mode: "external", records: [] }, wwwError: "sibling is already owned" });
@@ -1964,6 +2003,22 @@ describe("project routing HTTP/native parity", () => {
 
 describe("provider credential HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
+  it("exposes DigitalOcean through Connections with tenant scoping and secret-free audit", async () => {
+    h.env.CLOUD_MODE = true;
+    const credential = { ...credentialFixture(), provider: "digitalocean", providerLabel: "DigitalOcean", selector: null, publicFields: {}, secretsMasked: { apiToken: credentialFixture().secretsMasked.secret! } };
+    h.credentialCreate.mockResolvedValue(credential);
+    const local = await native();
+    const input = { provider: "digitalocean", name: "Production DNS", values: { apiToken: "do-not-audit-dns-token" } };
+    for (const credentials of [local.credentials, remote().credentials]) {
+      expect(await credentials.listProviders()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "digitalocean", capability: "dns" }),
+      ]));
+      expect(await credentials.create(input)).toEqual(credential);
+    }
+    expect(h.credentialCreate).toHaveBeenCalledWith("org-a", input);
+    expect(h.audit).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(h.audit.mock.calls)).not.toContain(input.values.apiToken);
+  });
   it("shares verification, tenant arguments, masking and secret-free audit", async () => {
     const credential = credentialFixture();
     h.credentialCreate.mockResolvedValue(credential);
@@ -2364,6 +2419,62 @@ describe("server HTTP/native parity", () => {
     expect(h.audit.mock.calls.at(-1)?.[0]).toMatchObject({ after: { gpuOverride: "yes" } });
     await local.servers.update("server-a", { sshHost: "gpu.example.com" });
     expect(h.serverInvalidate).toHaveBeenCalledExactlyOnceWith("server-a");
+  });
+
+  it("updates the build-cache budget through HTTP/native and validates its bounds", async () => {
+    const local = await native();
+    const budget = 24 * 1024 ** 3;
+    for (const servers of [local.servers, remote().servers]) {
+      await expect(
+        servers.update("server-a", { buildCacheBudgetBytes: budget }),
+      ).resolves.toMatchObject({ buildCacheBudgetBytes: budget });
+      await expect(
+        servers.update("server-a", { buildCacheBudgetBytes: 1024 }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    }
+    expect(h.serverInvalidate).not.toHaveBeenCalled();
+    expect(h.audit.mock.calls.at(-1)?.[0]).toMatchObject({
+      after: { buildCacheBudgetBytes: budget },
+    });
+  });
+
+  it("keeps the build-cache budget to server admins on remote deployment servers", async () => {
+    const budget = 24 * 1024 ** 3;
+    h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    h.grants.set("org-a:alice:server:server-a", { permissions: ["write"] });
+    const writer = await native();
+    for (const servers of [writer.servers, remote().servers]) {
+      expect((await servers.get("server-a")).capabilities).toMatchObject({
+        buildCacheBudget: false,
+      });
+      await expect(servers.update("server-a", { name: "Renamed" })).resolves.toMatchObject({
+        name: "Renamed",
+      });
+      await expect(
+        servers.update("server-a", { buildCacheBudgetBytes: budget }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    }
+    h.grants.set("org-a:alice:server:server-a", { permissions: ["admin"] });
+    const admin = await native();
+    for (const servers of [admin.servers, remote().servers]) {
+      expect((await servers.get("server-a")).capabilities).toMatchObject({
+        buildCacheBudget: true,
+      });
+    }
+    // The local row builds through the host daemon's native cache and migration sources never
+    // build, so a budget would do nothing on either.
+    const unsupportedRows = [{ isLocal: true }, { isLocal: false, purpose: "migration_source" }];
+    for (const unsupported of unsupportedRows) {
+      Object.assign(h.servers.get("server-a")!, unsupported);
+      for (const servers of [admin.servers, remote().servers]) {
+        const view = await servers.get("server-a");
+        expect(view).not.toHaveProperty("buildCacheBudgetBytes");
+        expect(view.capabilities).toMatchObject({ buildCacheBudget: false });
+        await expect(
+          servers.update("server-a", { buildCacheBudgetBytes: budget }),
+        ).rejects.toMatchObject({ code: "BUILD_CACHE_BUDGET_UNSUPPORTED" });
+      }
+    }
   });
 
   it("requires server admin for execution and rate-limit writes, beyond a write grant", async () => {

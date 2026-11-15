@@ -49,9 +49,9 @@ describe("IssuesCard", () => {
   it("presents unavailable monitoring as a connection notice with no repair action", () => {
     const issue: SystemIssue = {
       id: "platform:monitoring-offline", kind: "monitoring_offline", severity: "action_required",
-      scope: "platform", source: "component", title: "Openship", message: "Current health is unknown",
+      scope: "platform", source: "component", title: "OpenShip", message: "Current health is unknown",
       details: { affectedServers: [{ name: "Mail", reason: "connect ENETUNREACH 192.0.2.1:22" }] },
-      target: { id: "observer", name: "Openship", scope: "platform", href: "/monitoring" }, resolveWith: [],
+      target: { id: "observer", name: "OpenShip", scope: "platform", href: "/monitoring" }, resolveWith: [],
     };
     const html = issues([issue]);
     expect(html).toContain("Connection interrupted");

@@ -27,6 +27,9 @@ export function ContainerStatusRow({
   const fix = useInfraFix();
   const { t } = useI18n();
   const c = t.servers.containers;
+  if (row.component === "edge" && row.detail?.containerMissing) {
+    return <EdgeInstallRow serverId={serverId} onInstalled={onApplied} />;
+  }
   const label = row.component === "mail" ? c.componentMail : c.componentEdge;
   const busy = row.latestInProgress;
   const down = Boolean(row.detail?.down);
@@ -113,8 +116,8 @@ export function ContainerStatusRow({
 }
 
 /**
- * Absent-edge affordance: there is no {@link ServerContainerStatus} row when a
- * server has no edge at all, so the group-level view renders this instead — a
+ * Confirmed-absence affordance: the cached edge row records containerMissing,
+ * so the shared row renders this instead — a
  * one-click **Install** that runs the SAME first-install path (install + 80/443
  * takeover consent). `emphasize` styles it as an alarm (the server hosts projects
  * so it's a real issue); otherwise it's a quiet offer.

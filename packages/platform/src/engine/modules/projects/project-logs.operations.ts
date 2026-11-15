@@ -13,7 +13,8 @@ import { getAdminOblienClient } from "../../lib/oblien-user-client";
 import { cloudClient } from "../../lib/cloud/client";
 import { getOpenRestyPaths } from "../../lib/openresty-paths";
 import { sshManager } from "../../lib/ssh-manager";
-import { resolveProjectTrafficSource, resolveProjectTrafficSources, fetchMgmt, mgmtStream, probeMgmt, type ProjectTrafficSource } from "../../lib/project-analytics";
+import { resolveProjectTrafficSource, resolveProjectTrafficSources, type ProjectTrafficSource } from "../../lib/project-analytics";
+import { fetchMgmt, mgmtStream, probeMgmt } from "../../lib/edge-management";
 import * as projectService from "./project.service";
 
 // Owned by the HTTP process or an isolated native worker, never shared between installations.

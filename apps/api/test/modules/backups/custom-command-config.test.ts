@@ -21,7 +21,7 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import { PassThrough, Readable } from "node:stream";
 import { createHash } from "node:crypto";
 
-import { buildMailBackupPayload } from "../../../src/modules/mail/admin/backup-plan";
+import { buildMailBackupPayload } from "@repo/platform/engine/modules/mail/backup-plan";
 
 const h = vi.hoisted(() => ({
   /** payloadConfig the policy under test carries. */
@@ -142,6 +142,15 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
   resolveDeploymentPlatform: async () => ({ platform: { runtime: { name: "bare" } } }),
 }));
 vi.mock("@repo/platform/engine/lib/encryption", () => ({ decryptEnvMap: (v: unknown) => v }));
+// This suite verifies the generic producer/manifest boundary. The mail lifecycle
+// has its own real-host round trip; keep its private staging out of this fixture.
+vi.mock("@repo/platform/engine/modules/mail/backup-lifecycle", () => ({
+  prepareMailBackup: async () => ({
+    payload: { payloadConfig: h.payloadConfig },
+    metadata: { version: 2, domain: "mail.example.com", messageData: true, keys: true },
+    cleanup: async () => {},
+  }),
+}));
 vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: () => {} },
 }));

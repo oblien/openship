@@ -14,7 +14,7 @@ import { disposeRuntime, resolveDeploymentRuntimeForRead } from "../../lib/deplo
 import { liveContainerIdWithRuntime, livePrimaryContainerId } from "../services/service-container";
 import { mapWithLimit } from "../../lib/map-with-limit";
 import { getProjectRuntimeImages } from "./runtime-image-check";
-import { parseRuntimeProbe, runtimeVersionProbe } from "./runtime-probes";
+import { hasNoApplicableRuntime, parseRuntimeProbe, runtimeVersionProbe } from "./runtime-probes";
 import { assertSecurityChecksEnabled } from "./security-check-policy";
 import { nextSecurityInspection, securityObservationDue } from "./security-freshness";
 
@@ -41,11 +41,13 @@ function runtimeRules(advisories: readonly SecurityAdvisory[]) {
 export function securityProbeKey(advisories: readonly SecurityAdvisory[]): string {
   return createHash("sha256")
     .update(
-      JSON.stringify(
-        runtimeRules(advisories)
+      JSON.stringify({
+        // Invalidate observations made before absent runtimes had explicit evidence.
+        probeVersion: 2,
+        rules: runtimeRules(advisories)
           .map((rule) => JSON.stringify(rule))
           .sort(),
-      ),
+      }),
     )
     .digest("hex");
 }
@@ -185,7 +187,8 @@ async function readSecurityInventory(
           const output = await executor.exec(runtimeVersionProbe(runtimes), { timeout: 10_000 });
           const observations = parseRuntimeProbe(output.slice(0, 16_384), scope.id);
           inventory.runtimes.push(...observations);
-          if (!observations.length) inventory.unknownServices.push(scope.id);
+          if (!observations.length && !hasNoApplicableRuntime(output))
+            inventory.unknownServices.push(scope.id);
         } catch (error) {
           reportCaughtError(error, "platform/updates/security-inventory.inspect");
           inventory.unknownServices.push(scope.id);

@@ -2,7 +2,6 @@ import type { CommandExecutor } from "../types";
 import { diagnostics } from "@repo/core/diagnostics";
 import { sq } from "./build-pipeline";
 
-export const SOFTWARE_CACHE_ROOT = "/opt/oblien/build-cache";
 const digestPattern = /^sha256:[a-f0-9]{64}$/;
 interface SoftwareImage {
   path: string;
@@ -62,10 +61,14 @@ export function softwareImageCandidates(raw: string): Array<SoftwareImage & { re
   });
 }
 
-export function readSoftwareCacheCommand(dockerfile: string): string {
-  return `python3 - ${sq(dockerfile)} <<'OPENSHIP_CACHE_PY'
+export function readSoftwareCacheCommand(dockerfile: string, root: string): string {
+  // Provider/operator configuration, never a repository's build argument.
+  // Keep the path unambiguous both in Python and in Buildx's OCI context URL.
+  if (!/^\/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)*[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(root))
+    throw new Error("Public image cache requires an absolute, normalized directory path");
+  return `python3 - ${sq(dockerfile)} ${sq(root)} <<'OPENSHIP_CACHE_PY'
 import json, os, subprocess, sys
-root = '${SOFTWARE_CACHE_ROOT}'
+root = sys.argv[2]
 mount = subprocess.run(['findmnt', '-rn', '--mountpoint', root, '-o', 'OPTIONS'], capture_output=True, text=True)
 if mount.returncode == 0 and 'ro' in mount.stdout.strip().split(','):
     def bounded(path, limit):
@@ -101,10 +104,15 @@ export async function readSoftwareCache(
   executor: CommandExecutor,
   dockerfile: string,
   signal?: AbortSignal,
+  root?: string,
 ): Promise<{ args: string; unavailable: boolean }> {
+  signal?.throwIfAborted();
+  // Ordinary Docker hosts have no public software attachment. Absence of this
+  // optional capability is not a cache failure and needs no filesystem probe.
+  if (root === undefined) return { args: "", unavailable: false };
   try {
     signal?.throwIfAborted();
-    const raw = await executor.exec(readSoftwareCacheCommand(dockerfile), { timeout: 5_000 });
+    const raw = await executor.exec(readSoftwareCacheCommand(dockerfile, root), { timeout: 5_000 });
     if (!raw.trim()) return { args: "", unavailable: true };
     const candidates = softwareImageCandidates(raw);
     const args: string[] = [];
@@ -116,7 +124,7 @@ export async function readSoftwareCache(
       );
       if (current.trim() === entry.sourceDigest)
         args.push(
-          ` --build-context ${sq(`${entry.reference}=oci-layout://${SOFTWARE_CACHE_ROOT}/${entry.path}@${entry.digest}`)}`,
+          ` --build-context ${sq(`${entry.reference}=oci-layout://${root}/${entry.path}@${entry.digest}`)}`,
         );
     }
     signal?.throwIfAborted();

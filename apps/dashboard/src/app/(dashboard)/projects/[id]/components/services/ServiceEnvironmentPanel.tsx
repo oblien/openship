@@ -2,7 +2,7 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { looksLikeSecretKey } from "@repo/core";
 import type {
   ServiceEnvironment,
@@ -10,9 +10,8 @@ import type {
   MergeServiceEnvVarsInput,
 } from "@repo/contracts";
 import Link from "next/link";
-import EnvironmentVariables, {
-  type EnvironmentVariableRow,
-} from "@/components/import-project/EnvironmentVariables";
+import type { EnvironmentVariableRow } from "@/components/import-project/EnvironmentVariables";
+import { EnvironmentPanel } from "@/components/project-settings/EnvironmentPanel";
 import type { EnvironmentVariableMeta } from "@/components/import-project/environment-resolution";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/components/i18n-provider";
@@ -51,8 +50,6 @@ export function ServiceEnvironmentPanel({
   const { t } = useI18n();
   const copy = t.projectDetail.services.detail;
   const labels = copy.environmentState;
-  const helpId = useId();
-  const [helpOpen, setHelpOpen] = useState(false);
   const { showToast } = useToast();
   const [state, setState] = useState<ServiceEnvironment | null>(null);
   const [rows, setRows] = useState<EnvironmentVariableRow[]>([]);
@@ -177,9 +174,11 @@ export function ServiceEnvironmentPanel({
   const save = async () => {
     if (!state || mutation.current || busy || !dirty) return;
     const input = { environment: state.environment, ...serviceEnvironmentChanges(baseline, rows) };
-    const inherited = input.upserts.some((edit) => state.variables.some((row) =>
-      row.key === edit.key && (row.source === "project" || row.source === "compose"),
-    ));
+    const inherited = input.upserts.some((edit) =>
+      state.variables.some(
+        (row) => row.key === edit.key && (row.source === "project" || row.source === "compose"),
+      ),
+    );
     if (inherited) {
       mutation.current = true;
       setReviewing(true);
@@ -270,75 +269,91 @@ export function ServiceEnvironmentPanel({
   );
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border/50 px-5 py-3">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-sm font-medium text-foreground">
-            {t.importProject.environmentVariables.title}
-          </h3>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 shrink-0"
-            aria-label={labels.helpTitle}
-            title={labels.helpTitle}
-            aria-expanded={helpOpen}
-            aria-controls={helpId}
-            onClick={() => setHelpOpen((open) => !open)}
-          >
-            <UiIcon name="info" className="size-4" />
-          </Button>
-        </div>
-        <div className="ms-auto flex max-w-full flex-wrap items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void save()}
-            aria-label={copy.saveEnvironment}
-            disabled={loading || !!error || busy || !dirty}
-          >
-            {saving || reviewing ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="save" />}
-            {t.projectSettings.settingSection.save}
-          </Button>
-          {state?.status === "not-deployed" && onDeploy && (
+    <>
+      <EnvironmentPanel
+        description={labels.description}
+        actions={
+          <>
             <Button
+              variant="outline"
               size="sm"
-              disabled={dirty || busy || loading || checking || !service.enabled}
-              title={dirty ? copy.environmentApply.saveFirst : undefined}
-              onClick={onDeploy}
+              onClick={() => void save()}
+              aria-label={copy.saveEnvironment}
+              disabled={loading || !!error || busy || !dirty}
             >
-              <UiIcon name="rocket" />
-              {deployLabel ?? copy.redeploy}
+              {saving || reviewing ? (
+                <UiIcon name="spinner" className="animate-spin" />
+              ) : (
+                <UiIcon name="save" />
+              )}
+              {t.projectSettings.settingSection.save}
             </Button>
-          )}
-          {(state?.status === "pending" || applying || dirty) && (
-            <Button
-              size="sm"
-              title={needsRecoveryReview ? labels.recoveryHint : applyHint}
-              disabled={
-                !service.enabled ||
-                state?.status !== "pending" ||
-                checking ||
-                loading ||
-                !!error ||
-                busy ||
-                dirty ||
-                needsRecoveryReview
+            {state?.status === "not-deployed" && onDeploy && (
+              <Button
+                size="sm"
+                disabled={dirty || busy || loading || checking || !service.enabled}
+                title={dirty ? copy.environmentApply.saveFirst : undefined}
+                onClick={onDeploy}
+              >
+                <UiIcon name="rocket" />
+                {deployLabel ?? copy.redeploy}
+              </Button>
+            )}
+            {(state?.status === "pending" || applying || dirty) && (
+              <Button
+                size="sm"
+                title={needsRecoveryReview ? labels.recoveryHint : applyHint}
+                disabled={
+                  !service.enabled ||
+                  state?.status !== "pending" ||
+                  checking ||
+                  loading ||
+                  !!error ||
+                  busy ||
+                  dirty ||
+                  needsRecoveryReview
+                }
+                onClick={async () => {
+                  await onApply();
+                  if (alive.current) await load();
+                }}
+              >
+                {applying ? (
+                  <UiIcon name="spinner" className="animate-spin" />
+                ) : (
+                  <UiIcon name="refresh" />
+                )}
+                {applying ? copy.environmentApply.applying : copy.environmentApply.title}
+              </Button>
+            )}
+          </>
+        }
+        editor={
+          state
+            ? {
+                envVars: rows,
+                envMeta: metadata,
+                onEnvVarsChange: (next) => {
+                  if (!busy && !loading && !error) setRows(next);
+                },
+                isEditingMode: !busy && !loading && !error,
+                setIsEditingMode: () => {},
+                isSaving: busy,
+                onReveal: async (keys) => {
+                  const response = await servicesApi.revealEnv(
+                    projectId,
+                    service.id,
+                    keys,
+                    state.environment,
+                    { source: "effective" },
+                  );
+                  if (!response.success) throw new Error(labels.loadFailed);
+                  return response.environment;
+                },
               }
-              onClick={async () => {
-                await onApply();
-                if (alive.current) await load();
-              }}
-            >
-              {applying ? <UiIcon name="spinner" className="animate-spin" /> : <UiIcon name="refresh" />}
-              {applying ? copy.environmentApply.applying : copy.environmentApply.title}
-            </Button>
-          )}
-        </div>
-      </div>
-      <div className="px-5 pt-4 text-xs text-muted-foreground space-y-2">
-        <p id={helpId} hidden={!helpOpen}>{labels.description}</p>
+            : undefined
+        }
+      >
         {alsoSaved.length > 0 && (
           <div role="status" className="space-y-1">
             <p>{labels.shared.saved}</p>
@@ -433,44 +448,23 @@ export function ServiceEnvironmentPanel({
             </>
           )
         )}
-      </div>
-      {state && (
-        <EnvironmentVariables
-          mode="settings"
-          hideTitle
-          envVars={rows}
-          envMeta={metadata}
-          onEnvVarsChange={setRows}
-          isEditingMode={!busy && !loading && !error}
-          setIsEditingMode={() => {}}
-          showSettingsActions={false}
-          showSecretToggle
-          borderless
-          onReveal={async (keys) => {
-            const response = await servicesApi.revealEnv(
-              projectId,
-              service.id,
-              keys,
-              state.environment,
-              { source: "effective" },
-            );
-            if (!response.success) throw new Error(labels.loadFailed);
-            return response.environment;
-          }}
-        />
-      )}
+      </EnvironmentPanel>
       {review && (
         <SharedEnvironmentReview
           review={review.data}
           serviceName={service.name}
           saving={saving}
-          onClose={() => { if (!saving) setReview(null); }}
-          onSave={(keys) => void persist({
-            ...review.input,
-            ...(keys.length ? { shared: { keys, revision: review.data.revision } } : {}),
-          })}
+          onClose={() => {
+            if (!saving) setReview(null);
+          }}
+          onSave={(keys) =>
+            void persist({
+              ...review.input,
+              ...(keys.length ? { shared: { keys, revision: review.data.revision } } : {}),
+            })
+          }
         />
       )}
-    </div>
+    </>
   );
 }

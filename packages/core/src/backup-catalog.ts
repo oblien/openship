@@ -352,7 +352,7 @@ export const BACKUP_PAYLOADS: Record<PayloadKind, BackupPayloadSpec> = {
     label: "PostgreSQL",
     method: "pg_dump",
     shape: "database",
-    images: { names: ["postgres", "postgis/postgis"] },
+    images: { names: ["postgres", "postgis/postgis", "railwayapp-templates/postgres-ssl"] },
     restoreNeedsLiveContainer: true,
     restoreAppliesAfterBounce: false,
     restoreTimeoutMs: HOUR_MS,
@@ -717,7 +717,7 @@ export function validatePolicyPayload(
     if (cfg[key] !== undefined && typeof cfg[key] !== "boolean") return `Backup option "${key}" must be true or false.`;
   }
   for (const key of ["sourceIds", "exclude"]) {
-    if (cfg[key] !== undefined && (!Array.isArray(cfg[key]) || !(cfg[key] as unknown[]).every(value => typeof value === "string" && value.trim()))) {
+    if (cfg[key] !== undefined && (!Array.isArray(cfg[key]) || !(cfg[key] as unknown[]).every((value ) => typeof value === "string" && value.trim()))) {
       return `Backup option "${key}" must be a list of non-empty strings.`;
     }
   }

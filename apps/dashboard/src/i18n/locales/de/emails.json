@@ -1,7 +1,7 @@
 {
   "cloudClient": {
     "title": "E-Mails",
-    "subtitle": "Nutze deine vorhandenen Postfächer mit Openship Webmail.",
+    "subtitle": "Nutze deine vorhandenen Postfächer mit OpenShip Webmail.",
     "connectTitle": "Mailserver verbinden",
     "description": "Verbinde einen beliebigen IMAP/SMTP-Server. Postfächer und E-Mail-Zustellung bleiben bei deinem Anbieter.",
     "connectAction": "Vorhandenen Mailserver verbinden",
@@ -11,8 +11,8 @@
   "cloudComingSoon": {
     "title": "Verwaltete E-Mail",
     "badge": "Demnächst",
-    "description": "Verwaltete E-Mail auf Openship Cloud kommt demnächst. Cloud-Server-Tarife dienen dem Hosting von Anwendungen und stellen keinen Mailserver bereit.",
-    "selfHosted": "E-Mail auf Ihrem eigenen Server ist mit einer selbst gehosteten Openship-Installation verfügbar."
+    "description": "Verwaltete E-Mail auf OpenShip Cloud kommt demnächst. Cloud-Server-Tarife dienen dem Hosting von Anwendungen und stellen keinen Mailserver bereit.",
+    "selfHosted": "E-Mail auf Ihrem eigenen Server ist mit einer selbst gehosteten OpenShip-Installation verfügbar."
   },
   "page": {
     "title": "E-Mail-Server",
@@ -37,7 +37,7 @@
   },
   "adopt": {
     "title": "Bestehenden Mailserver übernehmen",
-    "intro": "Hast du auf einem deiner Server bereits einen Mailserver mit Openship eingerichtet? Wähle ihn aus und scanne – wird ein Mail-Stack gefunden, wird er wieder ins Dashboard übernommen, ohne neu zu installieren oder deine Daten anzutasten.",
+    "intro": "Hast du auf einem deiner Server bereits einen Mailserver mit OpenShip eingerichtet? Wähle ihn aus und scanne – wird ein Mail-Stack gefunden, wird er wieder ins Dashboard übernommen, ohne neu zu installieren oder deine Daten anzutasten.",
     "scanning": "Wird gescannt…",
     "scan": "Server scannen",
     "detected": "Mailserver erkannt",

@@ -9,15 +9,9 @@ export const STYLESHEET_PATH = "/sitemap.xsl";
 
 export type SitemapEntry = {
   loc: string;
+  alternates?: Record<string, string>;
   lastmod?: string | Date;
-  changefreq?:
-    | "always"
-    | "hourly"
-    | "daily"
-    | "weekly"
-    | "monthly"
-    | "yearly"
-    | "never";
+  changefreq?: "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never";
   priority?: number;
 };
 
@@ -41,6 +35,11 @@ export function buildUrlset(entries: SitemapEntry[]): string {
   const urls = entries
     .map((entry) => {
       const lines = [`  <url>`, `    <loc>${xmlEscape(entry.loc)}</loc>`];
+      for (const [language, href] of Object.entries(entry.alternates ?? {})) {
+        lines.push(
+          `    <xhtml:link rel="alternate" hreflang="${xmlEscape(language)}" href="${xmlEscape(href)}" />`,
+        );
+      }
       if (entry.lastmod !== undefined) {
         lines.push(`    <lastmod>${isoDate(entry.lastmod)}</lastmod>`);
       }

@@ -63,6 +63,9 @@ export function serializeServer(
     managed: cloud,
     // Managed (cloud) servers have no GPU model; everything else gets the annotation.
     ...(cloud || s.workspaceId ? {} : { gpu: serverGpu(s.gpuOverride, capacity) }),
+    // Only remote deployment servers build in managed BuildKit workers; the local row builds
+    // through the host daemon's native cache, so a budget there would have no effect.
+    ...(supportsBuildCacheBudget(s) ? { buildCacheBudgetBytes: s.buildCacheBudgetBytes ?? null } : {}),
     terminalSessionLimit: cloud ? 1 : env.TERMINAL_MAX_SESSIONS_PER_USER,
     capabilities: {
       monitor: s.purpose !== "migration_source",
@@ -73,4 +76,11 @@ export function serializeServer(
       networkSettings: !!cloud,
     },
   };
+}
+
+/** Servers whose builds use managed BuildKit caches, so a per-server budget applies. */
+export function supportsBuildCacheBudget(
+  s: Pick<NonNullable<Awaited<ReturnType<typeof repos.server.get>>>, "isLocal" | "workspaceId" | "purpose">,
+): boolean {
+  return !s.isLocal && !s.workspaceId && s.purpose !== "migration_source";
 }

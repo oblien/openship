@@ -19,7 +19,7 @@
   "actionAdopt": "Umleiten",
   "actionInSync": "Vorhanden",
   "actionConflict": "Konflikt",
-  "conflictNote": "Nicht von Openship verwaltet – entferne ihn oder setze diesen Eintrag manuell.",
+  "conflictNote": "Nicht von OpenShip verwaltet – entferne ihn oder setze diesen Eintrag manuell.",
   "outcomeApplied": "Angewendet",
   "outcomeSkipped": "Übersprungen",
   "outcomeFailed": "Fehlgeschlagen",

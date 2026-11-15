@@ -604,7 +604,7 @@ describe("shared workflow setup", () => {
       await click("Continue");
       await click("Continue");
       await click("Save 3 workflows");
-      await click(directory === ".github/workflows" ? "Commit and save" : "Save Openship copy");
+      await click(directory === ".github/workflows" ? "Commit and save" : "Save OpenShip copy");
       const inputs = h.importWorkflows.mock.calls[0]![0];
       expect(inputs.map((input: { path: string }) => input.path)).toEqual(
         files.map((file) => file.path),
@@ -814,7 +814,7 @@ describe("shared workflow setup", () => {
     );
     await preview();
     await click("Save workflow");
-    await click("Save Openship copy");
+    await click("Save OpenShip copy");
     const yaml = parse(h.save.mock.calls[0]![0].source);
     expect(yaml.on.push).toEqual({ "branches-ignore": ["feature/{a,b}/**"], tags: ["v*"] });
     expect(yaml.jobs).toEqual(parse(source).jobs);
@@ -895,7 +895,7 @@ describe("shared workflow setup", () => {
     );
     expect(h.write).not.toHaveBeenCalled();
     expect(h.save).not.toHaveBeenCalled();
-    await click("Save Openship copy");
+    await click("Save OpenShip copy");
     expect(h.write).not.toHaveBeenCalled();
     const [saved, id] = h.save.mock.calls[0]!;
     expect(id).toBe("ci");
@@ -908,7 +908,7 @@ describe("shared workflow setup", () => {
   it("requires a repository commit for GitHub-owned workflows and never saves an override", async () => {
     await repositoryWorkflow();
     await editTrigger();
-    expect(button("Save Openship copy")).toBeUndefined();
+    expect(button("Save OpenShip copy")).toBeUndefined();
     expect(h.save).not.toHaveBeenCalled();
     await click("Commit and save");
     expect(h.write).toHaveBeenCalledWith(
@@ -933,7 +933,7 @@ describe("shared workflow setup", () => {
     await fill("Repository", "acme/app");
     await preview();
     expect(button("GitHub Actions")).toBeUndefined();
-    expect(button("Openship Actions")).toBeUndefined();
+    expect(button("OpenShip Actions")).toBeUndefined();
     await click("Continue");
     await selectRunner();
     await click("Continue");
@@ -1105,7 +1105,7 @@ describe("shared workflow setup", () => {
     await preview();
     await click("Save workflow");
     expect(h.write).not.toHaveBeenCalled();
-    await click("Save Openship copy");
+    await click("Save OpenShip copy");
     expect(parse(h.save.mock.calls[0]![0].source).jobs.test.name).toBe("Unit checks");
   });
 

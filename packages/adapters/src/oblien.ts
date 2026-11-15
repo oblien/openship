@@ -1,5 +1,7 @@
 import { workspaceMetricsStream } from "./oblien-metrics";
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { oblienApiBaseUrl, oblienApiUrl } from "./oblien-contract";
+import { diagnosticTraceparent, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { withDiagnosticSpan } from "@repo/core/diagnostics/node";
 import {
   Oblien as OblienSdk, OblienError, AuthenticationError, ConflictError,
   NotFoundError, PaymentRequiredError, RateLimitError, ValidationError,
@@ -35,13 +37,13 @@ const resourceUnits = {
   cpus: "vCPU",
   memory_mb: "MB",
   disk_size_mb: "MB",
-  workspaces: "workspaces",
+  vms: "VMs",
 } as const;
 const resourceLabels = {
   cpus: "CPU",
   memory_mb: "RAM",
   disk_size_mb: "Disk",
-  workspaces: "Workspaces",
+  vms: "VMs",
 } as const;
 type CapacityViolation = {
   resource: keyof typeof resourceUnits;
@@ -90,7 +92,7 @@ function namespaceCapacityDetails(raw: unknown) {
 }
 
 function workspaceIdFromDetails(details: unknown): string | undefined {
-  const id = (details as { workspace_id?: unknown } | null)?.workspace_id;
+  const id = (details as { vm_id?: unknown } | null)?.vm_id;
   return typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id) ? id : undefined;
 }
 
@@ -139,7 +141,7 @@ function providerError(status: number, body: unknown, retryAfter: string | null 
   const retryAfterSeconds = Number.isSafeInteger(delay) && delay >= 0 && delay <= 86400 ? delay : undefined;
   const details = capacity || workspaceId || retryAfterSeconds !== undefined ? {
     ...capacity,
-    ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    ...(workspaceId ? { vm_id: workspaceId } : {}),
     ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
   } : undefined;
   const requestId =
@@ -152,7 +154,7 @@ function providerError(status: number, body: unknown, retryAfter: string | null 
       const scope =
         value.enforcementScope === "namespace_allocated_pool"
           ? "namespace total"
-          : value.resource === "workspaces"
+          : value.resource === "vms"
             ? "namespace workspace count"
             : "per workspace";
       return (
@@ -218,11 +220,7 @@ export class Oblien extends OblienSdk {
       invalidate?(rejectedToken: string): Promise<void>;
     };
   }) {
-    const base = new URL(options.baseUrl ?? "https://api.oblien.com");
-    if (base.username || base.password || base.search || base.hash ||
-        (base.protocol !== "https:" && !(base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)))) {
-      throw new Error("Oblien API URL must use HTTPS (HTTP is allowed for localhost tests)");
-    }
+    const base = oblienApiBaseUrl(options.baseUrl);
     super(options);
     const original = new Headers();
     if ("token" in options) { if (options.token) original.set("Authorization", `Bearer ${options.token}`); }
@@ -261,27 +259,29 @@ export class Oblien extends OblienSdk {
       const renewal = ensureAuth();
       if (renewal) await renewal;
       subscriptionSignal.throwIfAborted();
-      const url = new URL(`/workspace/${encodeURIComponent(workspaceId)}/stats/stream`, base);
+      const url = oblienApiUrl(base, `/vms/${encodeURIComponent(workspaceId)}/stats/stream`);
       const headers = new Headers(auth);
       headers.set("Accept", "text/event-stream");
       const response = await fetch(url, { headers, redirect: "error", signal: subscriptionSignal });
       if (response.status === 401) await invalidateRejectedToken(headers.get("Authorization"));
       return response;
     }, signal);
-    this._http.request = async <T>(request: RequestOptions): Promise<T> => {
+    this._http.request = async <T>(request: RequestOptions): Promise<T> => withDiagnosticSpan({ kind: "operation", component: "oblien", operation: "oblien.request", method: request.method }, async () => {
       request.signal?.throwIfAborted();
-      const url = new URL(request.path, base);
+      const url = oblienApiUrl(base, request.path);
       if (url.origin !== base.origin || url.username || url.password) throw new Error("Oblien request escaped its API origin");
       const renewal = ensureAuth();
       if (renewal) await renewal;
       request.signal?.throwIfAborted();
       for (const [key, value] of Object.entries(request.query ?? {})) if (value !== undefined) url.searchParams.set(key, String(value));
       const headers = new Headers(request.headers);
+      const parent = diagnosticTraceparent();
+      if (parent) headers.set("traceparent", parent);
       for (const key of ["Authorization", "X-Client-ID", "X-Client-Secret"]) headers.delete(key);
       headers.set("Accept", "application/json");
       headers.set("Content-Type", "application/json");
       for (const [key, value] of auth) headers.set(key, value);
-      const waitingCreate = request.method === "POST" && /^\/workspace\/?$/.test(url.pathname) &&
+      const waitingCreate = request.method === "POST" && /^\/vms\/?$/.test(request.path) &&
         (request.body as { wait_ready?: boolean } | undefined)?.wait_ready !== false;
       let response: Response;
       let body: unknown;
@@ -319,19 +319,16 @@ export class Oblien extends OblienSdk {
         );
       }
       return body as T;
-    };
-    // SDK 2.5 types get() as WorkloadInfo but leaves the HTTP envelope intact,
-    // unlike create() and list(). Normalize at the provider boundary so process
-    // control and server-resize recovery read the same saved workload record.
-    const getWorkload = this.workspaces.workloads.get.bind(this.workspaces.workloads);
-    this.workspaces.workloads.get = async (workspaceId, workloadId) => {
-      const response = await getWorkload(workspaceId, workloadId);
-      const workload = response.workload ?? response;
+    }, { kind: "client" });
+    // Validate the native record before process control and resize recovery.
+    const getWorkload = this.vms.workloads.get.bind(this.vms.workloads);
+    this.vms.workloads.get = async (workspaceId, workloadId) => {
+      const workload = await getWorkload(workspaceId, workloadId);
       if (!workload || typeof workload !== "object" || Array.isArray(workload) ||
           !("id" in workload) || typeof workload.id !== "string") {
         throw new OblienError("Oblien returned an invalid application process record", 502, "OBLIEN_WORKLOAD_INVALID");
       }
-      return workload as typeof response;
+      return workload;
     };
   }
 }

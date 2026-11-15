@@ -20,6 +20,12 @@ afterEach(() => {
 });
 
 describe("BuildKit session lifecycle", () => {
+  it("refuses to send a secret to a legacy builder", async () => {
+    const buildImage = vi.fn();
+    await expect(buildDockerImage({ buildImage } as unknown as Dockerode, Readable.from([]), {}, new Map([["secret", "private-value"]])))
+      .rejects.toThrow("require BuildKit");
+    expect(buildImage).not.toHaveBeenCalled();
+  });
   it.each(["end", "error", "close"])(
     "releases the reverse session when the build emits %s",
     async (event) => {

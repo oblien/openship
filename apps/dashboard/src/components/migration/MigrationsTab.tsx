@@ -8,7 +8,7 @@ import { dockerMigrationApi, type MigrationRun } from "@/lib/api/server-migratio
 import { systemApi } from "@/lib/api";
 import { useI18n } from "@/components/i18n-provider";
 import { ServerConnectionCard } from "@/app/(dashboard)/servers/[serverId]/_components/connection-card";
-import { ServerMigrationWizard } from "./ServerMigrationWizard";
+import { MigrationWizard } from "./MigrationWizard";
 // The rows themselves are shared with the project's own migration history — one list, two
 // viewpoints. See MigrationRunList.
 import { MigrationRunList, isRunInFlight } from "./MigrationRunList";
@@ -17,7 +17,7 @@ import { MigrationRunList, isRunInFlight } from "./MigrationRunList";
  * Server-detail "Migrations" tab. Two in-page states, no modals:
  *   • list  — recent runs as rows (durable server truth) like a project's
  *             deployments; "New migration" starts the flow, a row opens that run.
- *   • flow  — the SAME `ServerMigrationWizard` (variant="tab") rendered in-page:
+ *   • flow  — the SAME `MigrationWizard` (variant="tab") rendered in-page:
  *             a fresh scan-first migration when `runId` is unset, or an existing
  *             run's steps + logs when a row was clicked (incl. an ongoing one —
  *             it drops straight into the live progress, like a deployment).
@@ -88,7 +88,7 @@ export function MigrationsTab({
   // its own header rows (via onBack), so it never adds a row that pushes down.
   if (flow) {
     return (
-      <ServerMigrationWizard
+      <MigrationWizard
         variant="tab"
         serverId={serverId}
         server={server}
@@ -113,7 +113,8 @@ export function MigrationsTab({
   // start; Close returns to the now-populated list. `flow` is only used once
   // runs exist — to open a row, or to start another via "New migration".
   if (runs.length === 0) {
-    return <ServerMigrationWizard variant="tab" serverId={serverId} server={server} onClose={backToList} />;
+    return (
+      <MigrationWizard variant="tab" serverId={serverId} server={server} onClose={backToList} />);
   }
 
   // ── List ── existing runs on the left; Connection card + "New migration"

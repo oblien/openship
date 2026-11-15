@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React from 'react';
 import Link from 'next/link';
 import { useI18n } from '@/components/i18n-provider';
-import { ProjectIllustration } from '@/components/overview/ProjectIllustration';
+import { FeatureIllustration } from '@repo/ui/illustrations';
 import { usePlatform } from '@/context/PlatformContext';
 
 const EmptyState: React.FC = () => {
@@ -15,7 +15,10 @@ const EmptyState: React.FC = () => {
 
   return (
     <div className="py-16 text-center">
-      <ProjectIllustration className="relative mx-auto mb-8 h-44 w-64" />
+      <FeatureIllustration
+        name="app-catalog"
+        className="illustration-color mx-auto mb-6 h-auto w-20"
+      />
 
       <h3 className="text-2xl font-medium text-foreground/80 mb-2" style={{ letterSpacing: "-0.2px" }}>
         {emptyState.title}

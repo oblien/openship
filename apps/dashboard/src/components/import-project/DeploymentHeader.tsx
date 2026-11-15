@@ -34,7 +34,7 @@ export function DeploymentHeader({
         !state.portCheckSkipped.includes(getPortCheckTarget(check, isCompose)),
     );
   const stopping = state.isStopping || state.cancellationPending;
-  const working = stopping || deploymentStatus === "building" || deploymentStatus === "deploying";
+  const working = stopping || ["building", "deploying", "verifying"].includes(deploymentStatus);
   const status = stopping
     ? copy.stopping
     : decisionPending || requiresPortReview
@@ -47,7 +47,9 @@ export function DeploymentHeader({
             ? copy.status.readyWarnings
             : deploymentStatus === "ready"
               ? copy.status.ready
-              : t.importProject.serviceStatus[deploymentStatus];
+              : deploymentStatus === "verifying"
+                ? state.verification?.urls.length ? copy.status.liveVerifying : copy.status.verifying
+                : t.importProject.serviceStatus[deploymentStatus];
   const tone =
     decisionPending || requiresPortReview || hasWarning
       ? "bg-warning-bg text-warning"

@@ -27,9 +27,11 @@ import {
 export function ProjectStatusBadge({
   project,
   className,
+  linked = true,
 }: {
   project: ProjectStatusSource;
   className?: string;
+  linked?: boolean;
 }) {
   const { t } = useI18n();
   const status = getProjectStatus(project);
@@ -39,7 +41,7 @@ export function ProjectStatusBadge({
   const href = projectStatusHref(project);
   const classes = cn("inline-flex items-center", PROJECT_STATUS_META[status].badge, className);
 
-  if (!href) {
+  if (!href || !linked) {
     return (
       <span className={classes} {...(hint ? { title: hint } : {})}>
         {label}

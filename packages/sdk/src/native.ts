@@ -1,4 +1,4 @@
-import type { AffiliateOperations } from "@repo/contracts";
+import type { ReferralOperations } from "@repo/contracts";
 import type { ActionOperations } from "@repo/contracts";
 import { createDeploymentHandle, type DeploymentHandle } from "./deployment-handle";
 import {
@@ -101,7 +101,9 @@ export interface ScopedShip {
   readonly backupDestinations: BackupDestinationOperations;
   readonly backups: BackupOperations;
   readonly billing: BillingOperations;
-  readonly affiliates: AffiliateOperations;
+  readonly referralProgram: ReferralOperations;
+  /** @deprecated Use referralProgram. */
+  readonly affiliates: ReferralOperations;
   readonly notices: NoticeOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
@@ -535,6 +537,7 @@ function createAttachedShip<Assertion>({
           }
         },
       } satisfies BackupOperations);
+      const referralProgram = bindGroup(platform.referralProgram);
       return Object.freeze({
         organizationId,
         deployments,
@@ -550,7 +553,8 @@ function createAttachedShip<Assertion>({
         backupDestinations: bindGroup(platform.backupDestinations),
         backups,
         billing: bindGroup(platform.billing),
-        affiliates: bindGroup(platform.affiliates),
+        referralProgram,
+        affiliates: referralProgram,
         notices: bindGroup(platform.notices),
         github: bindGroup(platform.github),
         permissions: bindGroup(platform.permissions),

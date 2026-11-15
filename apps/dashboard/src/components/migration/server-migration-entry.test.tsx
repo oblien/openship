@@ -914,7 +914,7 @@ it("offers recovered projects inside discovery and keeps recovery separate from 
   await pickSource("First server");
   await act(async () => button("Scan server").click());
   expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Cards");
-  expect(container.textContent).not.toContain("Openship projects found");
+  expect(container.textContent).not.toContain("OpenShip projects found");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Recover recovered"]')!.click(),
   );

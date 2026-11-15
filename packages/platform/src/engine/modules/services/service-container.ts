@@ -5,6 +5,7 @@ import type { RuntimeAdapter } from "@repo/adapters";
 import {
   resolveDeploymentPlatform,
   resolveDeploymentRuntimeForRead,
+  type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { resolveLiveServiceState, type LiveMatchKind } from "./live-state";
 import { isRealContainerRef } from "../../lib/container-ref";
@@ -186,17 +187,29 @@ export async function liveContainerStateWithRuntime(
  */
 export async function livePrimaryContainerId(
   runtime: HostContainerLister | null | undefined,
-  dep: { id: string; projectId: string; containerId: string | null },
+  dep: { id: string; projectId: string; containerId: string | null; meta?: unknown },
 ): Promise<string | null> {
   const recorded = isRealContainerRef(dep.containerId) ? dep.containerId : null;
   const [project, rows] = await Promise.all([
     repos.project.findById(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return null; }),
     repos.service.listByDeployment(dep.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return []; }),
   ]);
-  // THIS release's own rows decide whether it was a service deploy. The project's
-  // current service list would misread a single-app release that later gained a
-  // sidecar, and answer for the sidecar.
   if (!project || rows.length === 0) return recorded;
+
+  // Starting a companion service adds a row to the active app deployment.
+  // Its presence does not make that release a service deployment: retain the
+  // independent app container unless the frozen release identifies a service
+  // pipeline or a service row owns that container. Compose releases still use
+  // live service resolution, including when their primary record is stale.
+  const snapshot = dep.meta as DeploymentMeta | null | undefined;
+  if (
+    recorded &&
+    snapshot?.serviceDeploymentMode !== "services" &&
+    !snapshot?.composeDeployment &&
+    !rows.some((row) => row.containerId === recorded)
+  ) {
+    return recorded;
+  }
 
   const [services, domainRows] = await Promise.all([
     repos.service.listByProject(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return []; }),

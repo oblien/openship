@@ -1,0 +1,82 @@
+---
+title: Referral
+description: Account-owned referral links, renewal reporting and cash payout requests.
+---
+
+Referral operations belong to the authenticated person. They do not accept a
+beneficiary, namespace or commission rate from the caller. Project and
+organization-bound credentials cannot access personal earnings. A read-only
+account credential can read but cannot join, create links or request payouts.
+
+Use a remote SDK connected to OpenShip Cloud. Desktop HTTP requests can use the
+person's linked Cloud account; a fixed native SDK scope cannot widen its local
+authority to a Cloud account. The provider extension and an enabled program are
+required; `overview()` reports `available: false` when disabled.
+
+```ts
+const overview = await client.referralProgram.overview();
+const links = await client.referralProgram.offers({ limit: 25, offset: 0 });
+const customers = await client.referralProgram.referrals({ limit: 25, offset: 0 });
+const request = await client.referralProgram.requestPayout({
+  amountCents: 5000,
+  idempotencyKey: crypto.randomUUID(),
+});
+```
+
+Amounts are integer USD cents; rates are basis points (500 means 5%). The default
+payout minimum is $50, and the actual per-user minimum is in `overview.member`.
+Save the idempotency key before requesting a payout and reuse it after an uncertain
+response. Changing the amount requires a new key. Payout requests reserve funds;
+they do not send cash. Only pending requests can be canceled by the referrer.
+Approval and external transfer recording are trusted operator actions, with no
+tenant-facing API.
+
+`createOffer` takes `policyId`, `name`, `discountBps`, `idempotencyKey`, and optional
+`planId` and `expiresAt`. The policy sets the commission allowance; the customer
+discount reduces the referrer’s share. A plan restriction uses the VM capacity
+fingerprint from the live catalog. Revoking a link prevents new reservations and
+preserves accepted checkout and subscription terms.
+
+Eligible purchases use the normal subscription endpoint with optional
+`referralCode`. Only monthly or annual Cloud VM plans at least $10 monthly
+equivalent qualify. Manage plans and credit top-ups do not. Reporting uses anonymized
+customer labels, not their email, credentials or project data.
+
+See the [referral guide](/docs/guides/referrals) for the customer workflow.
+
+{/* api-operations:start */}
+
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read your program, payout minimum, net earnings and reserved or paid totals. | `referralProgram.overview()` | `GET /api/referral-program`<br />`billing:read` |
+| Join the configured program without changing operator overrides. | `referralProgram.enroll()` | `POST /api/referral-program/enroll`<br />`billing:write` |
+| List your links and immutable discount/commission terms. | `referralProgram.offers(input?)` | `GET /api/referral-program/offers`<br />`billing:read` |
+| Create an idempotent link or code within the operator-authorized commission budget. | `referralProgram.createOffer(input)` | `POST /api/referral-program/offers`<br />`billing:write` |
+| Revoke your link for new referrals; accepted contracts retain their terms. | `referralProgram.revokeOffer(input)` | `POST /api/referral-program/offers/revoke`<br />`billing:write` |
+| List anonymized customers, renewals, paid-through dates and reward expiry. | `referralProgram.referrals(input?)` | `GET /api/referral-program/referrals`<br />`billing:read` |
+| Read invoice and commission history for one of your referrals. | `referralProgram.payments(input)` | `GET /api/referral-program/referrals/payments`<br />`billing:read` |
+| List your cash payout requests and their review status. | `referralProgram.payouts(input?)` | `GET /api/referral-program/payouts`<br />`billing:read` |
+| Save a private manual payout account; requests retain their own immutable destination snapshot. | `referralProgram.setPayoutDestination(input)` | `POST /api/referral-program/payout-destination`<br />`billing:write` |
+| Reserve earned funds for a manually reviewed payout; amount is integer USD cents. | `referralProgram.requestPayout(input)` | `POST /api/referral-program/payouts`<br />`billing:write` |
+| Cancel a pending request and release its reservation exactly once. | `referralProgram.cancelPayout(input)` | `POST /api/referral-program/payouts/cancel`<br />`billing:write` |
+
+### HTTP endpoints
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Public commercial terms for one code; no account, customer or earnings information. | HTTP only | `GET /api/referrals/:code`<br />`Handler authentication` |
+| Compatibility alias for GET /api/referral-program. New clients use the referral-program route. | HTTP only | `GET /api/affiliates`<br />`billing:read` |
+| Compatibility alias for POST /api/referral-program/enroll. New clients use the referral-program route. | HTTP only | `POST /api/affiliates/enroll`<br />`billing:write` |
+| Compatibility alias for GET /api/referral-program/offers. New clients use the referral-program route. | HTTP only | `GET /api/affiliates/offers`<br />`billing:read` |
+| Compatibility alias for POST /api/referral-program/offers. New clients use the referral-program route. | HTTP only | `POST /api/affiliates/offers`<br />`billing:write` |
+| Compatibility alias for POST /api/referral-program/offers/revoke. New clients use the referral-program route. | HTTP only | `POST /api/affiliates/offers/revoke`<br />`billing:write` |
+| Compatibility alias for GET /api/referral-program/referrals. New clients use the referral-program route. | HTTP only | `GET /api/affiliates/referrals`<br />`billing:read` |
+| Compatibility alias for GET /api/referral-program/referrals/payments. New clients use the referral-program route. | HTTP only | `GET /api/affiliates/referrals/payments`<br />`billing:read` |
+| Compatibility alias for GET /api/referral-program/payouts. New clients use the referral-program route. | HTTP only | `GET /api/affiliates/payouts`<br />`billing:read` |
+| Compatibility alias for POST /api/referral-program/payout-destination. New clients use the referral-program route. | HTTP only | `POST /api/affiliates/payout-destination`<br />`billing:write` |
+| Compatibility alias for POST /api/referral-program/payouts. New clients use the referral-program route. | HTTP only | `POST /api/affiliates/payouts`<br />`billing:write` |
+| Compatibility alias for POST /api/referral-program/payouts/cancel. New clients use the referral-program route. | HTTP only | `POST /api/affiliates/payouts/cancel`<br />`billing:write` |
+
+{/* api-operations:end */}

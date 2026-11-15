@@ -23,7 +23,7 @@ export type SignUpResultShape = {
 export type SignUpNext =
   /** Show the message; stay on the form. */
   | { kind: "error"; message: string | null }
-  /** Account exists, no session yet — the code screen, reachable unauthenticated. */
+  /** No session: privately continue by verification code or sign-in instructions. */
   | { kind: "verify"; href: string }
   /** A real session was issued; follow the post-login destination. */
   | { kind: "session"; href: string };
@@ -36,7 +36,9 @@ export function signUpNext(
     authParams?: Parameters<typeof emailVerificationHref>[1];
   },
 ): SignUpNext {
-  const verifyHref = emailVerificationHref(opts.email, opts.authParams ?? new URLSearchParams());
+  // The same response also protects an existing address from enumeration. Do
+  // not promise account creation or a code when the email contains sign-in help.
+  const verifyHref = `${emailVerificationHref(opts.email, opts.authParams ?? new URLSearchParams())}&signup=1`;
 
   if (result.error) {
     // Some deployments surface the requirement as an error instead of a null

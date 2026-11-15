@@ -18,7 +18,7 @@ import { workloadOf } from "@/context/deployment/types";
 import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import { ProjectMigrationCard } from "@/components/migration/ProjectMigrationCard";
 import { ProjectMigrationHistory } from "@/components/migration/ProjectMigrationHistory";
-import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
+import { MigrationWizard } from "@/components/migration/MigrationWizard";
 import { useAuth } from "@/context/AuthContext";
 import { ExportPanel } from "@/components/data-transfer/ExportPanel";
 import { usePlatform } from "@/context/PlatformContext";
@@ -307,7 +307,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   // by run id — so there is no second progress implementation to keep in step.
   if (sessionRunId) {
     return (
-      <ServerMigrationWizard
+      <MigrationWizard
         variant="tab"
         // A PROJECT entry point: the workload is this project's own containers, so the panel
         // must never fall through to the server scan/select flow — which is what a failed

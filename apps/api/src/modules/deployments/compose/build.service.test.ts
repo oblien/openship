@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
+import { encrypt } from "@repo/platform/engine/lib/encryption";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -12,9 +13,11 @@ import { describe, expect, it, vi } from "vitest";
 // status. Both are side effects the inline-build materialization contract does not
 // depend on — stub them so the test exercises ONLY the materialize/COPY path.
 // (Importing the real @repo/db would also risk the PGlite single-instance lock.)
-const { listByProjectMock } = vi.hoisted(() => ({ listByProjectMock: vi.fn() }));
+const { listByProjectMock, getEnvMapMock } = vi.hoisted(() => ({
+  listByProjectMock: vi.fn(), getEnvMapMock: vi.fn(async () => ({})),
+}));
 vi.mock("@repo/db", () => ({
-  repos: { service: { listByProject: listByProjectMock, startServiceDeploymentTiming: vi.fn(async () => {}) } },
+  repos: { project: { getEnvMap: getEnvMapMock }, service: { listByProject: listByProjectMock, startServiceDeploymentTiming: vi.fn(async () => {}) } },
 }));
 vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({
   broadcastServiceStatus: vi.fn(),
@@ -567,6 +570,19 @@ describe("buildComposeImages — inline catalog build materialization", () => {
  * These pin the producer side: which rows get a narrowed context, and which must not.
  */
 describe("buildComposeImages — declared build context", () => {
+  it("uses each service's encrypted saved environment for its own build", async () => {
+    getEnvMapMock.mockResolvedValueOnce({ API_SECRET: encrypt("api-only"), PORT: encrypt("3000") });
+    getEnvMapMock.mockResolvedValueOnce({ WORKER_SECRET: encrypt("worker-only"), PORT: encrypt("8000") });
+    const { captured } = await run([
+      repoService({ id: "api", name: "api", build: "." }),
+      repoService({ id: "worker", name: "worker", build: "." }),
+    ], undefined, undefined, { SHARED: "shared" });
+    expect(captured.map(({ config }) => config.envVars)).toEqual([
+      { SHARED: "shared", API_SECRET: "api-only", PORT: "3000" },
+      { SHARED: "shared", WORKER_SECRET: "worker-only", PORT: "8000" },
+    ]);
+  });
+
   it("#795 carries project env into the posted root-Dockerfile setup without duplicate service env", async () => {
     const projectEnv = {
       DATABASE_URI: "postgres://db/app",

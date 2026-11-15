@@ -28,8 +28,9 @@ function exec(files: Record<string, string>, containerFiles?: Record<string, str
     exec: vi.fn(async (cmd: string) => {
       if (cmd.startsWith("docker exec")) {
         if (cmd.includes("ls -1")) return listing(cmd, containerFiles ?? {});
+        // File reads come back framed (see exact-file-read.ts).
         const hit = Object.entries(containerFiles ?? {}).find(([p]) => cmd.includes(p));
-        return hit ? hit[1] : "";
+        return hit ? `<openship-file>${hit[1]}</openship-file>` : "";
       }
       return listing(cmd, files);
     }),

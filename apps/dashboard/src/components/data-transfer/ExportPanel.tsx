@@ -3,6 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { dataTransferApi, type ExportPreview, type ExportSelection, type TransferManifest } from "@/lib/api/data-transfer";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
@@ -15,7 +16,6 @@ import {
   TransferProjectPicker,
   TransferWarnings,
   transferButtonClass,
-  transferInputClass,
 } from "./TransferOptions";
 
 /** Shared by Project → Advanced and Settings → Instance. */
@@ -189,25 +189,27 @@ export function ExportPanel({
       </p>
       <label className="block space-y-1 text-sm font-medium text-foreground">
         {d.scopeLabel}
-        <select
+        <CustomSelect<"instance" | "projects">
           aria-label={d.scopeLabel}
           disabled={busy}
-          value={selection.scope}
-          className={transferInputClass}
-          onChange={(event) =>
+          value={selection.scope ?? "instance"}
+          variant="filled"
+          triggerClassName="bg-muted/60 hover:bg-muted"
+          options={[
+            { value: "instance", label: d.scopeInstance },
+            { value: "projects", label: d.scopeProjects },
+          ]}
+          onChange={(scope) =>
             patch({
-              scope: event.target.value as "instance" | "projects",
-              projectIds: event.target.value === "projects" ? [] : undefined,
+              scope,
+              projectIds: scope === "projects" ? [] : undefined,
               includeServers: true,
               includeDomains: true,
               includeBackups: true,
               includeIntegrations: true,
             })
           }
-        >
-          <option value="instance">{d.scopeInstance}</option>
-          <option value="projects">{d.scopeProjects}</option>
-        </select>
+        />
       </label>
       {selection.scope === "projects" && (
         <TransferProjectPicker

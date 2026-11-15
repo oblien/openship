@@ -28,6 +28,18 @@ const binding = (targetProjectId = "consumer", envKey = "DATABASE_URL", sourceSe
 });
 
 describe("shared service bindings", () => {
+  it("retains the encrypted imported template and clears it when a normal connection replaces it", async () => {
+    const imported = binding();
+    await repo.saveBindings("consumer", "production", [{
+      ...imported,
+      connection: { ...imported.connection, valueTemplateEnc: "encrypted-original-url-template" },
+    }]);
+    expect((await repo.listByTarget("consumer"))[0]?.valueTemplateEnc).toBe("encrypted-original-url-template");
+    await repo.saveBindings("consumer", "production", [imported]);
+    expect((await repo.listByTarget("consumer"))[0]?.valueTemplateEnc).toBeNull();
+    expect((await db.query.envVar.findMany())[0]?.value).toBe(imported.encryptedValue);
+  });
+
   it("connects two projects to one service without creating another service", async () => {
     await repo.saveBindings("consumer", "production", [binding()]);
     await repo.saveBindings("consumer2", "production", [binding("consumer2")]);

@@ -32,10 +32,12 @@ vi.mock("@repo/db", () => ({
 }));
 
 vi.mock("@repo/platform/engine/lib/project-analytics", () => ({
+  resolveProjectTrafficSources: vi.fn(async (id: string) => h.sourcesByProject[id] ?? []),
+}));
+vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   postEdgeMgmt: vi.fn(async (serverId: string | null, path: string, body: unknown) => {
     h.pushes.push({ serverId, path, body });
   }),
-  resolveProjectTrafficSources: vi.fn(async (id: string) => h.sourcesByProject[id] ?? []),
 }));
 
 const { pushProjectAnalyticsConfig, reconcileAnalyticsConfig } = await import(

@@ -4,7 +4,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { isInvitationClaimPath } from "@repo/core";
 
 export const DESKTOP_CLOUD_FLOW = "desktop-cloud";
-const DEFAULT_APP_NAME = "Openship Desktop";
+const DEFAULT_APP_NAME = "OpenShip Desktop";
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 
 type SearchParamsLike = {
@@ -206,8 +206,8 @@ export function getPostAuthRedirect(searchParams: SearchParamsLike) {
  *   - Must be a relative path starting with a single `/`.
  *   - Must NOT start with `//` (protocol-relative URLs).
  *   - Path must match an allowlisted auth continuation. Invitation claims are
- *     accepted only in the exact `/accept-invite/<opaque-id>` shape. App install
- *     and plan purchases also have exact paths. A pricing selection continues
+ *     accepted only in the exact `/accept-invite/<opaque-id>` shape. App installs,
+ *     plan purchases and migration entry also have exact paths. A pricing selection continues
  *     only after authentication and live offer validation. Arbitrary dashboard
  *     paths are not accepted.
  *
@@ -246,6 +246,7 @@ export function validateReturnTo(input: string | null): string | null {
     isInvitationClaim ||
     /^\/apps\/new\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathOnly) ||
     pathOnly === "/billing/plans" ||
+    pathOnly === "/library/migrate" ||
     pathOnly === "/cloud-billing" ||
     ALLOWED_PREFIXES.some((prefix) => {
       if (prefix === "/") return pathOnly === "/";

@@ -12,6 +12,7 @@ export function automaticDeploymentIntent(
     commitMessage: input.commitMessage,
     forceAll: input.forceAll,
     forcePullImages: input.forcePullImages,
+    acceptComposeChanges: input.acceptComposeChanges,
     smartRoute: true,
     ...(input.strictServiceScope ? { strictServiceScope: true, serviceIds: input.serviceIds } : {}),
     event: input.actionEvent,

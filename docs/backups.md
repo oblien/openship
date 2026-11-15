@@ -46,6 +46,54 @@ completion or disconnect removes the subscription and timer. The dashboard ticks
 elapsed time independently, updates history in place, and shows the current phase
 and transferred bytes without inventing a percentage for an unknown capture size.
 
+## Mail-server backups and migration
+
+Use **Emails → server → Backup** for mail data. It uses the same destinations,
+workers, integrity checks, retention and restore confirmation as other backups.
+New policies include message data and keys by default. Existing policies retain
+explicit exclusions; review them before relying on a backup for disaster recovery.
+
+The archive contains the complete `vmail` database schema and rows, including
+aliases, forwards, mailing lists, BCC/relay rules, quotas, and `mail_app` settings.
+The mail stack's `amavisd`, `iredapd` and `fail2ban` PostgreSQL databases are included
+when present. It never dumps unrelated databases or cluster-wide role passwords.
+With message data enabled it also captures the whole `/var/vmail` tree, Postfix's
+queued messages, and Amavis quarantine/filter data. With keys enabled it includes
+DKIM private keys and portable mail-server state, including managed mailbox and
+outbound-relay credentials. These are secrets: protect access to the destination.
+Mailbox stores must use the managed `/var/vmail` root, including bind mounts or a
+symlink at that root. A different configured root is refused before pausing mail,
+rather than reporting a full backup that omitted it.
+
+Full captures pause Postfix, Dovecot, Amavis and iRedAPD while copying the snapshot.
+Allow a maintenance window proportional to message volume and destination speed.
+Previously running daemons resume when capture succeeds or fails; daemons already
+stopped are not started. Bare installs use the existing local command transport;
+remote servers use the same flow over SSH. Local workload execution remains
+forbidden on a SaaS controller.
+
+**Restore** replaces the current server's data. **Migrate** restores to another
+registered, installed mail server with the **same primary domain**. Prepare that
+server first with a compatible PostgreSQL/mail version and the mail database roles;
+restoring does not install an operating system or daemons. The destination's engine,
+TLS installation and database-role credentials stay authoritative. Restored mailbox
+and relay credentials are encrypted for the destination controller. DKIM/DNS/relay
+setup uses the same operations as normal mail administration. The target registration
+is updated, while DNS and PTR acknowledgement is cleared for review before cutover.
+Moving mail does not automatically repoint public DNS or the instance SMTP settings.
+
+Each PostgreSQL database restores in a transaction. The complete operation spans
+multiple databases and filesystem stores, so it is not one atomic transaction.
+If a write or configuration recovery fails, the restore reports failure and leaves
+mail stopped for review/retry. Cancellation also stops the active restore command.
+Private staging files are removed after normal success/failure cleanup.
+
+Legacy archives keep their recorded restore command and their original contents;
+an old archive cannot recover messages, tables or state it never captured. Take a
+new full backup after updating. Settings → Instance export remains a control-plane
+export and does **not** include mailbox payloads by default; use the mail archive
+for mail recovery rather than treating an instance JSON export as a message backup.
+
 ## Global backup pages
 
 `/backups` shows recent runs across destinations, with service/project names,

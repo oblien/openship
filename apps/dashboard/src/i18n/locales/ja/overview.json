@@ -77,7 +77,7 @@
   },
   "welcome": {
     "title": "最初のプロジェクトを立ち上げましょう",
-    "subtitle": "リポジトリを接続するか、テンプレートから始めましょう。Openshipがビルドしてデプロイし、数分で公開URLをお渡しします。",
+    "subtitle": "リポジトリを接続するか、テンプレートから始めましょう。OpenShipがビルドしてデプロイし、数分で公開URLをお渡しします。",
     "createProject": "プロジェクトを作成",
     "importGithub": "GitHubからインポート",
     "tipPrefix": "ヒント: 押す",

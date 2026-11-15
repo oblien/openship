@@ -23,7 +23,8 @@ import { withKeyedMutex } from "@repo/platform/engine/lib/provision-lock";
 import { resolveProjectDeployTarget } from "@repo/platform/engine/modules/projects/project-deploy-target";
 import { env } from "../../config/env";
 
-/** Retention target; active build records and application storage can exceed it. */
+/** Native Docker Engine retention target; managed project caches use the disk-relative budget.
+ * Active build records and application storage can exceed it. */
 export const AUTOMATIC_BUILD_CACHE_KEEP_BYTES = DEFAULT_BUILD_CACHE_KEEP_BYTES;
 
 export interface BuildCacheTarget {
@@ -246,7 +247,7 @@ export async function runBuildCacheGcSweep(
     try {
       const result = await pruneTarget(
         target,
-        { all: true, keepStorageBytes: AUTOMATIC_BUILD_CACHE_KEEP_BYTES },
+        { all: true, keepStorageBytes: AUTOMATIC_BUILD_CACHE_KEEP_BYTES, automaticRetention: true },
         deps,
       );
       summary.cachesDeleted += result.cachesDeleted.length;

@@ -955,6 +955,37 @@ export function useDeploymentConfig() {
       errorCode?: string;
       buildInProgress?: boolean;
     }> => {
+      // The source this scan attempted, for the failure paths below. A failed
+      // scan must not leave the wizard source-less: the branch selector and
+      // compose-path rescan both read owner/repo/branch from config, so the
+      // attempted source is recorded even when prepare fails (#1666). Never
+      // clobber an identity the operator has since moved to — a scan that
+      // resolves after navigation to another project must not rewrite it.
+      let attemptedSource: { owner: string; repo: string; branch?: string } | null = null;
+      const seedAttemptedSource = () => {
+        if (!attemptedSource) return;
+        const source = attemptedSource;
+        setConfig((prev) => {
+          if (
+            (prev.owner && prev.owner !== source.owner) ||
+            (prev.repo && prev.repo !== source.repo)
+          )
+            return prev;
+          if (
+            prev.owner === source.owner &&
+            prev.repo === source.repo &&
+            prev.branch === (source.branch ?? prev.branch)
+          )
+            return prev;
+          return {
+            ...prev,
+            owner: source.owner,
+            repo: source.repo,
+            branch: source.branch ?? prev.branch,
+          };
+        });
+      };
+
       try {
         let project: PersistedProject = null;
         let projectEnvState: ProjectEnvEditState | null = null;
@@ -978,6 +1009,7 @@ export function useDeploymentConfig() {
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
         const requestedBranch = context?.branch?.trim() || projectBranch.trim() || undefined;
         const changesSavedBranch = !!project && requestedBranch !== projectBranch;
+        attemptedSource = { owner: sourceOwner, repo: sourceRepo, branch: requestedBranch };
 
         const preparedSource: PrepareProjectSource = {
           owner: sourceOwner,
@@ -991,6 +1023,7 @@ export function useDeploymentConfig() {
         const response = await deployApi.prepare({ ...preparedSource, projectId: context?.projectId, includeEnv: true });
 
         if (response?.error) {
+          seedAttemptedSource();
           return { success: false, error: response.error, errorType: "api_error" };
         }
 
@@ -1067,6 +1100,7 @@ export function useDeploymentConfig() {
         return { success: true };
       } catch (err) {
         const errorMessage = getApiErrorMessage(err, "Failed to fetch repository data");
+        seedAttemptedSource();
         return {
           success: false,
           error: errorMessage,

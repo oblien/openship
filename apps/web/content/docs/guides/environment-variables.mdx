@@ -42,6 +42,16 @@ and the **value** on the right. Type both.
 
 Add as many rows as you need. To remove one, press the trash icon at the end of its row.
 
+**Add variable** is also in the top toolbar and inserts a row at the top of a long list.
+Choose **Edit as text** to edit a `.env` draft with `KEY=value` entries, comments and quoted
+multiline values. **Apply changes** returns the validated draft to the normal editor; use its
+usual **Save** or deployment action afterward. Removing an entry removes that variable.
+
+Saved values remain masked as `••••••••`. Leave that placeholder on its original key to
+keep the stored value, or enter a replacement, including an empty value. Opening text editing
+does not reveal secrets. Connection-managed variables must remain unchanged. Invalid syntax
+or duplicate names block Apply, and Cancel discards the text draft.
+
 </Step>
 
 <Step>
@@ -89,6 +99,33 @@ never re-typed it, so it's never re-sent.
   immediately — see [Apply without a full rebuild](#apply-without-a-full-rebuild) below. Otherwise
   the new values take effect the next time you deploy.
 </Callout>
+
+## Build logs and Docker secrets
+
+Generated Docker builds pass the environment through temporary BuildKit secret
+mounts. Values are available to workspace preparation, installation and build
+commands, without embedding them in the generated Dockerfile or image history.
+BuildKit must be available on the build host. Cloud and protected SSH builds use the existing
+worker; trusted SSH servers using native BuildKit also receive secret mounts.
+Docker Engine API builds with explicit CPU/memory limits
+must use a protected server worker because the Engine API cannot enforce those
+limits under BuildKit.
+
+Deployment logs mask configured environment values before live streaming and
+storage, including values not marked secret in the editor. Failure summaries and
+notifications use the same protection. Shell-quoted, JSON-escaped and multi-line
+values are covered; an application's own encoding or transformation of a value
+cannot be reliably detected. Avoid printing credentials in application code.
+
+Repository Dockerfiles retain their existing build-argument behavior. Docker `ARG`
+and `ENV` can persist values in image metadata or layers, so they should not carry
+private runtime-only values. A framework may also intentionally bake public build
+variables into browser assets. Log masking does not make those assets private or
+change which variables your build receives.
+
+This protection applies to new builds. If an earlier build exposed credentials,
+rotate those credentials and remove the affected historical deployment logs and
+copies retained in notifications or backups.
 
 ## When your app sees these values
 

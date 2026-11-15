@@ -14,6 +14,7 @@
     "latest": "Latest version",
     "repository": "Repository",
     "notChecked": "Not checked yet",
+    "unverified": "Could not verify image update status",
     "upToDate": "Up to date",
     "updateAvailable": "Update available",
     "checkForUpdates": "Check for updates",
@@ -23,7 +24,7 @@
     "updating": "Updating…",
     "updateFailed": "Update failed",
     "toastTitle": "Source",
-    "cliManaged": "This is the Openship control plane — it updates itself. Run \"openship update\" on the host to upgrade it; there's nothing to change here."
+    "cliManaged": "This is the OpenShip control plane — it updates itself. Run \"openship update\" on the host to upgrade it; there's nothing to change here."
   },
   "releaseImageSource": {
     "validationInvalid": "Invalid release image source.",
@@ -118,7 +119,7 @@
     "installing": "Installing…",
     "advanced": "Advanced deployment options",
     "nameLabel": "Name",
-    "nameHint": "How this app appears in Openship.",
+    "nameHint": "How this app appears in OpenShip.",
     "domainTitle": "Where should it live?",
     "domainFree": "Free subdomain",
     "domainFreeHint": "A free subdomain on {domain}",
@@ -182,8 +183,8 @@
     "routePortLabel": "Port only (no domain)",
     "routePortDesc": "Reachable at the host address and port — no domain or Cloud needed.",
     "routeFreeLabel": "Free subdomain",
-    "routeFreeDesc": "A free subdomain on {domain}, routed by Openship Cloud.",
-    "routeFreeNeedsCloud": "Connect Openship Cloud to use a free subdomain.",
+    "routeFreeDesc": "A free subdomain on {domain}, routed by OpenShip Cloud.",
+    "routeFreeNeedsCloud": "Connect OpenShip Cloud to use a free subdomain.",
     "routeCustomLabel": "Your own domain",
     "routeCustomDesc": "Point a domain you own at this app.",
     "routeDomainLabel": "Domain",
@@ -278,7 +279,7 @@
     },
     "statusActive": "Active",
     "statusDisabled": "Disabled",
-    "hostedCloud": "Openship Cloud",
+    "hostedCloud": "OpenShip Cloud",
     "hostedServer": "Server",
     "hostedLocal": "Local",
     "projectStatus": {
@@ -299,7 +300,7 @@
       "currentServer": "Current server",
       "migrate": "Migrate",
       "noOtherServers": "Add a second server to move this project to one.",
-      "cloudLater": "Server to server. Moving to or from Openship Cloud isn't supported yet.",
+      "cloudLater": "Server to server. Moving to or from OpenShip Cloud isn't supported yet.",
       "startFailed": "Couldn't start the migration",
       "confirmTitle": "Move {project} to {server}",
       "confirmSubtitle": "Nothing changes until you start the move.",
@@ -347,7 +348,7 @@
       "anotherServer": "Another server",
       "targetLocal": "Local Machine",
       "targetServer": "Self-Hosted Server",
-      "targetCloud": "Openship Cloud"
+      "targetCloud": "OpenShip Cloud"
     },
     "danger": {
       "title": "Danger Zone",
@@ -531,7 +532,7 @@
     },
     "runtime": {
       "title": "Runtime configuration",
-      "description": "Read-only. Edit through the deploy wizard so each change ships as a new version.",
+      "description": "Save configuration here. Changes take effect on the next deployment.",
       "framework": "Framework",
       "packageManager": "Package manager",
       "runtimeIsolation": "Runtime isolation",
@@ -547,7 +548,11 @@
       "modeSandboxed": "Sandboxed (container)",
       "modeDirect": "Direct (host process)",
       "modeDefault": "Default (resolved at deploy)",
-      "modeStatic": "None — served as static files"
+      "modeStatic": "None — served as static files",
+      "saved": "Configuration saved. Deploy to apply your changes.",
+      "saveFailed": "Could not save configuration. Your changes are still here.",
+      "projectSettingsHint": "Shared environment and resource limits are managed in project Settings.",
+      "invalidPort": "Enter a port between 1 and 65535."
     },
     "storage": {
       "title": "Persistent storage",
@@ -587,8 +592,9 @@
       "appliesOnDeploy": "Applied on the next deploy."
     },
     "env": {
-      "title": "Project environment (build + shared runtime)",
-      "description": "Used for image builds and shared runtime input. Compose values and service runtime overrides take precedence at runtime. Secrets stay masked.",
+      "title": "Project environment",
+      "sharedTitle": "Shared project environment",
+      "description": "Shared defaults for image builds and runtime. Service values take precedence. Secrets stay masked.",
       "edit": "Edit"
     }
   },
@@ -632,7 +638,14 @@
     "linkedManaged": "via {app}",
     "linkedTitle": "Linked integration",
     "linkedBody": "This value comes from the {app} connection. Manage it from that app — changes made here won't stick.",
-    "unlink": "Remove connection"
+    "unlink": "Remove connection",
+    "reload": "Reload saved values",
+    "buildHint": "Rebuild and redeploy to apply values used during the build.",
+    "runtimeHint": "Apply uses saved runtime values and restarts without rebuilding. Rebuild to apply build-time values.",
+    "sharedHint": "These variables are shared with this project’s services. Applying may restart affected services.",
+    "firstDeployHint": "Saved variables will be used on the first deployment.",
+    "applyProject": "Apply to project",
+    "updateStarted": "Environment update started. Follow its progress in Deployments."
   },
   "gitInfo": {
     "autoDeploy": "Auto-deploy"
@@ -656,13 +669,13 @@
     },
     "appBanner": {
       "title": "GitHub App not installed",
-      "description": "Install the Openship GitHub App on your account or organization to enable auto-deploy and webhook-triggered deployments for cloud projects.",
+      "description": "Install the OpenShip GitHub App on your account or organization to enable auto-deploy and webhook-triggered deployments for cloud projects.",
       "install": "Install GitHub App"
     },
     "webhookBanner": {
       "summary": "Public endpoint required",
       "title": "Enable auto-deploy",
-      "description": "Auto-deploy needs a direct webhook endpoint. Expose this Openship API on a public URL or configure a verified webhook domain for direct delivery."
+      "description": "Auto-deploy needs a direct webhook endpoint. Expose this OpenShip API on a public URL or configure a verified webhook domain for direct delivery."
     },
     "source": {
       "title": "Source Repository",
@@ -703,7 +716,7 @@
       "active": "Active",
       "inactive": "Inactive",
       "descDirect": "Events deliver directly via {domain}",
-      "descActive": "Repository events are reaching Openship",
+      "descActive": "Repository events are reaching OpenShip",
       "descInactive": "Webhook has not been configured or is not responding"
     },
     "rollbackStrategy": {
@@ -908,10 +921,10 @@
     "cancel": "Cancel",
     "confirmDeleteEnvWipe": "Delete environment + wipe data",
     "confirmDeleteEnv": "Delete environment",
-    "recordOnlyLabel": "Remove from Openship only",
-    "recordOnlyDesc": "Keeps the app and its data running on your server — only the Openship record is removed. You can re-import it later.",
+    "recordOnlyLabel": "Remove from OpenShip only",
+    "recordOnlyDesc": "Keeps the app and its data running on your server — only the OpenShip record is removed. You can re-import it later.",
     "recordOnlyReversible": "Reversible — the app stays on your server.",
-    "recordOnlyNote": "Nothing on the server is touched — the app keeps running with its data. Only Openship's record is removed, and it can be re-imported later.",
+    "recordOnlyNote": "Nothing on the server is touched — the app keeps running with its data. Only OpenShip's record is removed, and it can be re-imported later.",
     "confirmRecordOnly": "Remove record",
     "linkedTitleOne": "{count} project is connected to this app",
     "linkedTitleOther": "{count} projects are connected to this app",
@@ -998,7 +1011,7 @@
       "includeWwwDesc": "Also generate records for www.{domain}",
       "includeWwwFallback": "yourdomain.com",
       "externalIngress": "External ingress & TLS",
-      "externalIngressDesc": "TLS terminates at your reverse proxy (Cloudflare Tunnel, Nginx Proxy Manager, or a load balancer). The domain need not point at this server, and Openship won't issue a certificate.",
+      "externalIngressDesc": "TLS terminates at your reverse proxy (Cloudflare Tunnel, Nginx Proxy Manager, or a load balancer). The domain need not point at this server, and OpenShip won't issue a certificate.",
       "dnsChallenge": "Use DNS-01 challenge",
       "dnsChallengeDesc": "Verify through a DNS provider or a temporary TXT record. Useful when port 80 is unavailable.",
       "dnsChallengeWildcardDesc": "Required for wildcard HTTPS. Use a connected DNS provider, or add a temporary TXT record during HTTPS setup.",
@@ -1164,8 +1177,8 @@
         "deployment": "This route is waiting for a deployment. Deploy the project to apply it.",
         "disabled": "This project or service is disabled. Enable it before checking the route.",
         "removing": "This domain is being removed. No verification is scheduled.",
-        "manual_certificate": "This domain uses an uploaded certificate. Upload a valid replacement, then recheck it. Openship does not renew it automatically.",
-        "managed_certificate": "TLS is managed by your external proxy or Openship Cloud. Check that provider’s configuration.",
+        "manual_certificate": "This domain uses an uploaded certificate. Upload a valid replacement, then recheck it. OpenShip does not renew it automatically.",
+        "managed_certificate": "TLS is managed by your external proxy or OpenShip Cloud. Check that provider’s configuration.",
         "route_missing": "This configured route has not been applied. Retry routing to apply it. No automatic routing retry is scheduled.",
         "manual_dns": "This certificate uses manual TXT verification. Open HTTPS setup to confirm a new TXT record, or choose a connected DNS provider for automatic renewal.",
         "managed_owner": "This hostname and its certificate are managed by the owning service. Check that service’s domain settings."
@@ -1177,8 +1190,8 @@
       "notice": "Wildcard HTTPS requires DNS verification. After saving, connect a DNS provider or add the TXT record from HTTPS setup.",
       "automatic": "Automatic provider",
       "manual": "Manual TXT",
-      "automaticHint": "Connect Cloudflare in Settings → DNS to create certificate challenges and renew HTTPS automatically.",
-      "manualHint": "Add a temporary TXT record at your DNS provider. Each renewal needs a new TXT record; Openship will show when renewal is due.",
+      "automaticHint": "Connect a DNS provider in Settings → Credentials to create certificate challenges and renew HTTPS automatically.",
+      "manualHint": "Add a temporary TXT record at your DNS provider. Each renewal needs a new TXT record; OpenShip will show when renewal is due.",
       "routing": "1. Point the domain at this server",
       "certificate": "2. Enable HTTPS",
       "startAutomatic": "Enable HTTPS automatically",
@@ -1262,6 +1275,9 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
+    "applyPatch": "Apply security patch",
+    "runtimePatchDescription": "{runtime} {current} → {target}. Saves the runtime and build images for future deployments.",
+    "bunRuntimePatchDescription": "The selected Bun version also applies to dependency installation, overriding repository version pins.",
     "checksEnabled": "Check security advisories",
     "checksDescription": "When off, pauses runtime and host inspections, new advisory alerts and security patch actions for this workspace. Existing evidence and project refresh consent are retained.",
     "checksDisabled": "Security advisory checks are disabled for this workspace.",
@@ -1333,7 +1349,7 @@
     "reviewResources": "Review affected resources ({count})",
     "openRuns": "Open server runs",
     "lastRun": "Last scan",
-    "appOpen": "Runs while Openship is open.",
+    "appOpen": "Runs while OpenShip is open.",
     "scanStates": {
       "pending": "Pending",
       "running": "Running",
@@ -1344,6 +1360,82 @@
     "reviewReboot": "Review reboot",
     "applyReboot": "Schedule reboot",
     "rebooting": "Reboot scheduled; awaiting kernel verification",
-    "rebootInterruption": "This reboots the server in one minute and interrupts all its workloads. Openship will verify the running kernel when the host reconnects."
+    "rebootInterruption": "This reboots the server in one minute and interrupts all its workloads. OpenShip will verify the running kernel when the host reconnects."
+  },
+  "sourceImageUpdate": {
+    "github_access_required": "Give this repository Contents and Pull requests read/write access in your GitHub connection. An owner may need to approve updated App permissions.",
+    "workspace_access_required": "Ask your workspace owner for write access to this project and source file.",
+    "repository_read_only": "This repository is archived or disabled. Update it in GitHub before creating a PR.",
+    "manageConnection": "Manage GitHub connection",
+    "checkAccess": "Check access again",
+    "finishPr": "Finish PR in GitHub",
+    "open": "Propose image update",
+    "title": "Update image in source",
+    "hint": "Dockerfile and Compose images belong in your repository. Review a source change and create a draft pull request.",
+    "noRepository": "This project needs a connected GitHub repository and deployment branch. Edit the image in its source, then deploy the updated version.",
+    "file": "Source file",
+    "format": "File format",
+    "browse": "Browse repository",
+    "load": "Read images",
+    "reference": "Image reference",
+    "image": "Replacement image",
+    "preview": "Review change",
+    "diff": "Source diff",
+    "review": "Review compatibility and CI before merging. This updates one reference; other stages and dependencies may need separate changes. Nothing deploys from this action.",
+    "createPr": "Create draft PR",
+    "viewPr": "Open pull request",
+    "created": "Merge the reviewed PR, then deploy its commit using your normal deployment flow. Recheck the deployed runtime to verify any advisory is resolved.",
+    "manual": "No editable literal image was found. Open the source file to update variables, inherited images or custom build logic.",
+    "working": "Working…",
+    "failed": "Could not prepare the source update."
+  },
+  "responseRoutes": {
+    "title": "Virtual routes",
+    "description": "Return content directly from the edge at a path on this domain.",
+    "add": "Add route",
+    "edit": "Edit route",
+    "staticResponse": "Static response",
+    "loading": "Loading routes",
+    "loadFailed": "Could not load virtual routes.",
+    "retry": "Retry",
+    "saveFailed": "Could not save the route.",
+    "duplicateHeader": "Each response header name must be unique.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "remove": "Remove",
+    "removeHint": "Remove this response? Requests will use the remaining domain routes.",
+    "cancel": "Cancel",
+    "close": "Close",
+    "path": "Path",
+    "match": "Match",
+    "exact": "Exact path",
+    "prefix": "Path prefix",
+    "exactHint": "Matches only this path. Query parameters are ignored.",
+    "prefixHint": "Matches this path and its children. The most specific path wins.",
+    "status": "Status code",
+    "contentType": "Content type",
+    "plainText": "Plain text",
+    "custom": "Custom",
+    "customContentType": "Custom content type",
+    "body": "Response body",
+    "bodyPlaceholder": "Enter the content to return…",
+    "bodyHint": "Literal content, up to 64 KiB.",
+    "headers": "Response headers",
+    "addHeader": "Add header",
+    "headerName": "Header name",
+    "headerValue": "Header value",
+    "removeHeader": "Remove header",
+    "methods": "Request methods",
+    "methodsHint": "Comma-separated methods. Leave empty for all methods. GET includes HEAD.",
+    "preview": "Response preview",
+    "applyHint": "Applies without redeploying the app.",
+    "save": "Save response",
+    "saved": "Saved and applied to the edge.",
+    "pending": "Saved. Edge application is pending. Update or reconnect the edge, then retry routing.",
+    "bytes": "bytes",
+    "emptyBodyHint": "This status requires an empty response body.",
+    "headersHint": "Add cache, CORS, or other response headers."
   }
 }

@@ -212,6 +212,23 @@ describe("watchContainerStability", () => {
     expect(h.samples()).toBe(1);
   });
 
+  it("does not credit time spent crash-looping before routing completed", async () => {
+    const h = harness([
+      sample({ restartCount: 8 }),
+      sample({ restartCount: 9 }),
+      sample({ restartCount: 10 }),
+      sample({ restartCount: 11 }),
+    ], { alreadyRunningMs: 60_000 });
+    await expect(h.run()).resolves.toMatchObject({ status: "crash_loop", ok: false });
+    expect(h.samples()).toBeGreaterThan(1);
+  });
+
+  it("still accepts an earlier restart once a fresh observation window proves stability", async () => {
+    const h = harness([sample({ restartCount: 1 })], { alreadyRunningMs: 60_000 });
+    await expect(h.run()).resolves.toMatchObject({ status: "stable", ok: true });
+    expect(h.elapsed()).toBe(OPTS.windowMs);
+  });
+
   it("returns as soon as a healthcheck passes", async () => {
     const h = harness([sample({ health: "starting" }), sample({ health: "healthy" })]);
     await expect(h.run()).resolves.toMatchObject({ status: "stable", ok: true });

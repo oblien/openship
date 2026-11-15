@@ -245,7 +245,7 @@ describe("Cloud personal-token onboarding", () => {
     expect(container.querySelector('[data-testid="repos"]')?.textContent).toBe("alice-repo");
     expect(container.textContent).toContain("@alice");
     expect(container.textContent).not.toContain("Other connection methods");
-    expect(container.textContent).not.toContain("Connected via Openship GitHub App");
+    expect(container.textContent).not.toContain("Connected via OpenShip GitHub App");
   });
 
   it("switches the selected owner and repository list on replacement and removes access on clear", async () => {

@@ -1,10 +1,11 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import type { LogEntry } from "@repo/adapters";
+import type { DeploymentVerification } from "@repo/core";
 import * as sessionManager from "./session-manager";
 import { loadDeployment, type DeploymentConfigSnapshot } from "./build.service";
 import { snapshotToClass } from "./deployment-class";
-import { STEP_INDEX, STEP_PROGRESS } from "./build-steps";
+import { STEP_INDEX, STEP_PROGRESS, progressForStep } from "./build-steps";
 import { isMultiServiceProject } from "./compose/index";
 import { serviceKind } from "../../lib/deployable-service";
 import { getCloudBuildQueueStatus } from "./cloud-build-queue-status";
@@ -112,7 +113,7 @@ export async function getBuildSessionStatus(deploymentId: string) {
     currentStep = undefined as unknown as number;
     progress = undefined as unknown as number;
   } else if (effectiveStatus === "ready") {
-    currentStep = 5; // past deploy → Ready terminal (steps: prepare,clone,install,build,deploy,ready)
+    currentStep = 6; // past verification → Ready
     progress = 100;
   } else {
     for (const entry of logEntries) {
@@ -120,15 +121,19 @@ export async function getBuildSessionStatus(deploymentId: string) {
         const idx = STEP_INDEX[entry.step];
         if (idx >= currentStep) {
           currentStep = idx;
-          progress = STEP_PROGRESS[entry.step];
-          // If this step completed, advance progress beyond it
-          if (entry.stepStatus === "completed") {
-            progress = STEP_PROGRESS[entry.step] + 10;
-          }
+          progress = progressForStep(entry.step, entry.stepStatus);
         }
       }
     }
     // For failed/cancelled, keep progress where it stopped
+  }
+
+  const verification = !terminalStatus && dep.status === "deploying"
+    ? (dep.meta as { verification?: DeploymentVerification } | null)?.verification
+    : undefined;
+  if (verification) {
+    currentStep = STEP_INDEX.verify;
+    progress = STEP_PROGRESS.verify;
   }
 
   // Per-phase durations for the build-phases panel. The raw log entries (before
@@ -259,6 +264,7 @@ export async function getBuildSessionStatus(deploymentId: string) {
     },
     progress,
     currentStep,
+    ...(verification ? { verification } : {}),
     phaseDurations,
     screenshots: [],
     buildDurationMs: buildSessionRow?.durationMs ?? (terminalStatus ? dep.buildDurationMs : null) ?? null,

@@ -77,7 +77,7 @@
   },
   "welcome": {
     "title": "Lance seu primeiro projeto",
-    "subtitle": "Conecte um repositório ou comece a partir de um modelo — o Openship compila, publica e entrega uma URL ativa em minutos.",
+    "subtitle": "Conecte um repositório ou comece a partir de um modelo — o OpenShip compila, publica e entrega uma URL ativa em minutos.",
     "createProject": "Criar projeto",
     "importGithub": "Importar do GitHub",
     "tipPrefix": "Dica: pressione",

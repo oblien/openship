@@ -4,6 +4,7 @@ export * from "./actions";
 export * from "./action-capabilities";
 export * from "./stacks";
 export * from "./package-manager-version";
+export * from "./runtime-image";
 export * from "./stack-roles";
 export * from "./duration";
 export * from "./volumes";
@@ -86,6 +87,7 @@ export {
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./deployment-class";
+export * from "./build-commands";
 export * from "./deployment-ownership";
 export * from "./updates";
 export * from "./proxy-settings";
@@ -141,3 +143,6 @@ export * from "./compose-interpolation";
 export * from "./service-env-layers";
 
 export * from "./locale";
+export * from "./concurrency";
+export * from "./migration-links";
+export * from "./edge-response";

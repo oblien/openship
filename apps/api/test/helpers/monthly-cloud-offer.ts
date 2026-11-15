@@ -1,6 +1,6 @@
 import type { OblienEntitlement, OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 
-/** Saved v9 terms and the SDK 2.8 capacity shape, independent of today's catalog. */
+/** OpenShip saved v9 terms, independent of today's catalog and provider wire names. */
 export function monthlyCloudBilling(organizationId = "org_1", namespace = "os-customer") {
   const periodStart = "2026-10-01T00:00:00Z";
   const periodEnd = "2026-11-01T00:00:00Z";
@@ -43,4 +43,16 @@ export function monthlyCloudBilling(organizationId = "org_1", namespace = "os-cu
     success: true, namespace, billingMode: "monthly" as const, computeCovered: true,
     blocking: false, balance: null, paidThrough: periodEnd,
   } };
+}
+
+/** Stripe's unpaid renewal and the last funded capacity describe different months. */
+export function unpaidMonthlyCloudBilling(organizationId = "org_1", namespace = "os-customer") {
+  const state = monthlyCloudBilling(organizationId, namespace);
+  state.entitlement.status = "canceled";
+  state.entitlement.computeCovered = state.entitlement.capacity!.computeCovered = false;
+  state.entitlement.capacity!.status = "expired";
+  state.subscription.status = "past_due";
+  state.subscription.periodStart = state.entitlement.periodEnd;
+  state.subscription.periodEnd = "2026-12-01T00:00:00Z";
+  return { ...state, balance: { ...state.balance, blocking: true, computeCovered: false, paidThrough: null } };
 }

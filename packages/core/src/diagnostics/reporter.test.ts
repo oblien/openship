@@ -54,7 +54,7 @@ describe("structured error reporting", () => {
   it("recognizes long and regex-shaped secrets across bounded windows", () => {
     const secret = "private-value-".repeat(1600);
     expect(redactDiagnosticText(`${secret}${secret}: not found`, 100, [secret]))
-      .toBe("[REDACTED][REDACTED]: not found");
+      .toBe("[REDACTED]: not found");
     const metacharacters = "+*.[\\$";
     expect(redactDiagnosticText(`exec ${metacharacters} failed`, 100, [metacharacters]))
       .toBe("exec [REDACTED] failed");

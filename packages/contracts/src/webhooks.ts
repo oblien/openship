@@ -8,7 +8,7 @@ const action = Type.Union([Type.Literal("deploy"), Type.Literal("job")]);
 export const IncomingWebhookSchema = Type.Object({
   id: Type.String(), projectId: Type.String(), name: Type.String(), enabled: Type.Boolean(),
   actionType: action,
-  actionConfig: Type.Object({ serviceId: Type.Optional(Type.String()), serviceIds: Type.Optional(Type.Array(Type.String())), jobKey: Type.Optional(Type.String()) }),
+  actionConfig: Type.Object({ serviceId: Type.Optional(Type.String()), serviceIds: Type.Optional(Type.Array(Type.String())), jobKey: Type.Optional(Type.String()), acceptComposeChanges: Type.Optional(Type.Boolean()) }),
   authMode: Type.Union([Type.Literal("token"), Type.Literal("hmac"), Type.Literal("none")]),
   url: Type.String(), secret: nullableString, lastFiredAt: nullableString, createdAt: Type.String(),
   requiresReauthorization: Type.Optional(Type.Boolean()),

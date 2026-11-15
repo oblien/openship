@@ -585,3 +585,10 @@ describe("confirmed Cloud subscription welcome", () => {
     expect(dialog()).toBeNull();
   });
 });
+
+it("refreshes the owning plan after verifying its checkout", async () => {
+  const resolved = vi.fn();
+  await render({ ...subscription, onResolved: resolved });
+  expect(resolved).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain(copy.active);
+});

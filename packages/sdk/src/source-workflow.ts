@@ -83,7 +83,7 @@ export async function deploySourceWorkflow(ship: { projects: ProjectOperations; 
   // the empty scan commands, but there IS a build (the image build itself).
   const repoDockerfileBuild = scan.projectType === "docker" || scan.stack === "docker";
   const ensured = await ship.projects.ensure(parseInput(EnsureProjectBody, {
-    name: scan.name || input.name || "app", projectId: input.projectId, serverId,
+    name: input.name || scan.name || "app", projectId: input.projectId, serverId,
     deploymentEnvironment: input.environment,
     gitProvider: "upload", uploadSessionId: session.sessionId,
     framework: scan.stack, projectType: scan.projectType, packageManager: scan.packageManager,

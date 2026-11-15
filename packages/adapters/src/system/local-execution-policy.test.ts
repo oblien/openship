@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
 import { LocalExecutor } from "./local-executor";
 import { hasLocalCommand, sq } from "./local-shell";
 import { createExecutor } from "./executor";
@@ -36,6 +37,8 @@ describe("Cloud cannot execute on the API host", () => {
       for (const operation of [
         () => executor.exec(command),
         () => direct.exec(command),
+        () => direct.rawExec(command),
+        () => direct.execWithInput(command, Readable.from(["private backup data"])),
         () => executor.streamExec(command, onLog),
         () => executor.streamExec(command, onLog, { signal: AbortSignal.abort() }),
         () => executor.transferIn!("/does-not-exist", path),

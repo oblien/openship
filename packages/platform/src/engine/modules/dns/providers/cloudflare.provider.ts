@@ -23,6 +23,8 @@ import {
   isOpenshipManaged,
 } from "../types";
 import { quotedDnsTxt } from "../../../lib/dns-txt";
+// The walk is most-specific-first so a Cloudflare subdomain zone wins over its parent.
+import { normalizeName, zoneCandidates } from "../names";
 
 /** Cloudflare's max page size for DNS record lists. */
 const PER_PAGE = 100;
@@ -33,16 +35,6 @@ const PER_PAGE = 100;
  * `total_pages` can't spin us forever.
  */
 const MAX_PAGES = 50;
-
-/**
- * How many domain suffixes we'll probe when looking for the zone.
- *
- * The walk is most-specific-first so a Cloudflare subdomain zone wins over its
- * parent. The cap bounds outbound calls per lookup — real hostnames are 2-5
- * labels, so it never truncates a genuine candidate, and it stops a long
- * caller-supplied name from turning one request into hundreds.
- */
-const MAX_ZONE_CANDIDATES = 8;
 
 interface CfTokenVerifyResult {
   id: string;
@@ -75,11 +67,6 @@ async function cfRequest<T>(token:string,path:string,options?:RequestInit) {
 }
 async function cfFetch<T>(token:string,path:string,options?:RequestInit):Promise<T> { return (await cfRequest<T>(token,path,options)).result; }
 
-/** Trailing dots and case are not part of a name's identity. */
-function normalizeName(name: string): string {
-  return name.trim().toLowerCase().replace(/\.+$/, "");
-}
-
 function toRecord(r: CfDnsRecordItem): DnsRecord {
   return {
     id: r.id,
@@ -92,23 +79,6 @@ function toRecord(r: CfDnsRecordItem): DnsRecord {
     ...(typeof r.priority === "number" ? { priority: r.priority } : {}),
     ...(r.comment ? { comment: r.comment } : {}),
   };
-}
-
-/**
- * Suffixes to probe for `hostname`, most specific first, bounded.
- *
- * "a.b.example.com" → ["a.b.example.com", "b.example.com", "example.com"].
- * Single-label inputs yield nothing: there is no zone to find for "localhost".
- */
-function zoneCandidates(hostname: string): string[] {
-  const parts = normalizeName(hostname).split(".").filter(Boolean);
-  const out: string[] = [];
-  for (let i = 0; i <= parts.length - 2; i++) {
-    out.push(parts.slice(i).join("."));
-  }
-  // Keep the LAST N — the apex end. A deep name's zone is near the apex, so
-  // truncating from the specific end is what preserves the real candidate.
-  return out.slice(-MAX_ZONE_CANDIDATES);
 }
 
 export const cloudflareDnsProvider: DnsProvider = {

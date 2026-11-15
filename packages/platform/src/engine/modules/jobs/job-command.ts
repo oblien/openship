@@ -33,8 +33,8 @@ import { AppError, NotFoundError, safeErrorMessage, shellQuote } from "@repo/cor
 import { OperationError } from "@repo/contracts";
 import type { LogEntry } from "@repo/adapters";
 import { withServerExecution } from "../../lib/server-execution";
-import { env } from "../../config";
 import { assertManagedServerCanWork } from "../../lib/cloud-workspace-access";
+import { assertDeploymentServer, assertServerExecution } from "../system/server-access";
 import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
 import { createJobRunRecorder } from "./job-run-recorder";
@@ -74,7 +74,7 @@ async function commandTargets(cfg: CommandConfig) {
   const ids = resolveServerIds(cfg);
   const servers = await repos.server.getMany(ids);
   const organizationId = jobTargetsOrganization(ids, servers);
-  if (!organizationId || ids.some(id => !servers.has(id) || (env.CLOUD_MODE && !servers.get(id)?.workspaceId)))
+  if (!organizationId)
     throw new NotFoundError("Job target server");
   return { organizationId, servers: ids.map(id => servers.get(id)!) };
 }
@@ -85,7 +85,11 @@ async function assertCommandTargetsReady(cfg: CommandConfig, expectedOrganizatio
   if (expectedOrganizationId && targets.organizationId !== expectedOrganizationId)
     throw new NotFoundError("Job target server");
   for (const server of targets.servers) {
-    if (!server.workspaceId) continue;
+    assertDeploymentServer(server);
+    if (!server.workspaceId) {
+      await assertServerExecution(server);
+      continue;
+    }
     try {
       await assertManagedServerCanWork(targets.organizationId, server.workspaceId);
     } catch (error) {

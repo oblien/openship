@@ -1,24 +1,11 @@
 import type { BuildConfig } from "../../types";
-import { packageManagerEnsureCommand, nodeBinDirs } from "@repo/core";
+import { managedRuntimeImage, packageManagerEnsureCommand, nodeBinDirs } from "@repo/core";
 
-import { sq } from "../build-pipeline";
+import { buildEnvMount, BUILD_ENV_SOURCE } from "../docker-build-secrets";
 import { cachedRunPrefix } from "./cache";
 import { normalizeDockerRootDirectory } from "../docker-paths";
 
 const DOCKER_BUILD_EVENT_PREFIX = "[openship-build]";
-/**
- * Project env vars that must never reach the inline `export` prefix on a RUN line.
- *
- * `PATH` is not a preference, it is a correctness gate: the prefix is emitted
- * AFTER the stage-level `ENV PATH` (see nodeBinPathEnvLine), so a project that
- * sets PATH — usually by copying a value out of another platform — silently
- * deletes `node_modules/.bin` from the lookup path and every dependency binary
- * goes back to exit 127. The image already knows its own PATH; a build step has
- * no business restating it. Applies to the JS, static, PHP-asset and
- * workspace-prepare recipes at once, since all four share buildEnvPrefix.
- */
-const INLINE_BUILD_ENV_EXCLUDES = new Set(["FORCE_COLOR", "TERM", "PATH"]);
-
 export function formatDockerBuildEvent(
   step: "clone" | "install" | "build",
   status: "running" | "completed" | "skipped",
@@ -41,27 +28,6 @@ export function normalizeRelativePath(value?: string): string {
 export function builderSourceDir(rootDirectory?: string): string {
   const normalized = normalizeDockerRootDirectory(rootDirectory);
   return normalized ? `/workspace/${normalized}` : "/workspace";
-}
-
-export function buildEnvPrefix(envVars: BuildConfig["envVars"]): string {
-  const assignments = Object.entries(envVars)
-    .filter(([key]) => !INLINE_BUILD_ENV_EXCLUDES.has(key))
-    .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-    .map(([key, value]) => `${key}=${sq(value)}`);
-
-  if (!envVars.NO_COLOR) {
-    assignments.push("NO_COLOR='1'");
-  }
-
-  if (assignments.length === 0) {
-    return "";
-  }
-
-  return `export ${assignments.join(" ")} && `;
-}
-
-export function buildRunCommand(command: string, envPrefix: string): string {
-  return `${envPrefix}${command}`;
 }
 
 export function runtimeCopyDirectives(config: BuildConfig, sourceDir: string): string[] {
@@ -104,19 +70,27 @@ export function nodeBinPathEnvLine(
   return dirs.length > 0 ? `ENV PATH="${dirs.join(":")}:$PATH"` : null;
 }
 
-/** The monorepo workspace-prepare RUN line (root `pnpm install` etc.). This is
- *  the FIRST pnpm/yarn invocation in the Dockerfile, so the corepack prelude
- *  must lead it — otherwise the build image (corepack disabled) fails with
- *  "pnpm: not found" before the per-app install line (which has its own prelude)
- *  is ever reached. */
+/** Bun is both runtime and package manager, so its explicit runtime selection
+ * also selects the build tool. Node's version must not become npm/pnpm's version. */
+function ensurePackageManager(config: BuildConfig, manager = config.packageManager): string {
+  const image =
+    config.runtimeImageOverride && manager === "bun"
+      ? managedRuntimeImage(config.runtimeImage)
+      : null;
+  return packageManagerEnsureCommand(
+    manager,
+    image?.runtime === "bun" ? image.version ?? undefined : undefined,
+  );
+}
+
+/** The workspace install runs before per-app commands and needs the same toolchain. */
 export function workspacePrepareRunLine(
   config: BuildConfig,
-  envPrefix: string,
   workspacePrepare: string,
 ): string {
-  const pmEnsure = packageManagerEnsureCommand(config.packageManager);
+  const pmEnsure = ensurePackageManager(config);
   const body = pmEnsure ? `${pmEnsure} && ${workspacePrepare}` : workspacePrepare;
-  return `${cachedRunPrefix(config)}${envPrefix}${body}`;
+  return `${cachedRunPrefix(config)}${buildEnvMount(config)}${BUILD_ENV_SOURCE}${body}`;
 }
 
 /**
@@ -127,39 +101,37 @@ export function workspacePrepareRunLine(
  */
 export function stepsRunLine(
   config: BuildConfig,
-  envPrefix: string,
   opts: { install?: boolean; build?: boolean; packageManager?: string },
 ): string | null {
   const install = opts.install ? config.installCommand : "";
   const build = opts.build ? config.buildCommand : "";
   const steps: string[] = [];
-  // Ensure the package manager exists in the image before install
-  // (corepack for pnpm/yarn; no-op for npm/bun/non-node) — fixes "pnpm: not found".
-  const pmEnsure = packageManagerEnsureCommand(opts.packageManager ?? config.packageManager);
+  // Select and verify the package manager before running project commands.
+  const pmEnsure = ensurePackageManager(config, opts.packageManager ?? config.packageManager);
   if (pmEnsure && (install || build)) {
     steps.push(pmEnsure);
   }
   if (install) {
     steps.push(`printf '${formatDockerBuildEvent("install", "running")}\\n'`);
-    steps.push(buildRunCommand(install, envPrefix));
+    steps.push(`${BUILD_ENV_SOURCE}${install}`);
     steps.push(`printf '${formatDockerBuildEvent("install", "completed")}\\n'`);
   }
   if (build) {
     steps.push(`printf '${formatDockerBuildEvent("build", "running")}\\n'`);
-    steps.push(buildRunCommand(build, envPrefix));
+    steps.push(`${BUILD_ENV_SOURCE}${build}`);
     steps.push(`printf '${formatDockerBuildEvent("build", "completed")}\\n'`);
   }
-  return steps.length > 0 ? `${cachedRunPrefix(config, opts.packageManager)}${steps.join(" && ")}` : null;
+  return steps.length > 0 ? `${cachedRunPrefix(config, opts.packageManager)}${buildEnvMount(config)}${steps.join(" && ")}` : null;
 }
 
 /** The install+build RUN line (with progress markers), or null if neither step. */
-export function installBuildRunLine(config: BuildConfig, envPrefix: string): string | null {
-  return stepsRunLine(config, envPrefix, { install: true, build: true });
+export function installBuildRunLine(config: BuildConfig): string | null {
+  return stepsRunLine(config, { install: true, build: true });
 }
 
 /** Install step only — the PHP recipe's build step runs in a separate stage. */
-export function installRunLine(config: BuildConfig, envPrefix: string): string | null {
-  return stepsRunLine(config, envPrefix, { install: true });
+export function installRunLine(config: BuildConfig): string | null {
+  return stepsRunLine(config, { install: true });
 }
 
 /** JS package managers a build command can lead with, longest-first so `pnpm`
@@ -184,10 +156,10 @@ export function assetStagePackageManager(config: BuildConfig): string {
  * Build step only, prepared for a Node stage: the corepack prelude is chosen
  * from the command itself rather than from the project's package manager.
  */
-export function buildOnlyRunLine(config: BuildConfig, envPrefix: string): string | null {
+export function buildOnlyRunLine(config: BuildConfig): string | null {
   const command = config.buildCommand?.trim() ?? "";
   const packageManager = JS_PACKAGE_MANAGERS.find((pm) =>
     new RegExp(`(^|\\s|&&\\s*)${pm}\\s`).test(command),
   );
-  return stepsRunLine(config, envPrefix, { build: true, packageManager });
+  return stepsRunLine(config, { build: true, packageManager });
 }
