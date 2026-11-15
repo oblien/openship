@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Fork CLI — build the `openship` CLI from fork main and publish it as GitHub
+# Fork CLI — build the `openship` CLI from a release tag and publish it as GitHub
 # release assets, so `openship` on our machines runs OUR SDK (folder-deploy
 # web derivation, endpoints passthrough) against the self-hosted instance.
 #
@@ -11,7 +11,7 @@
 # is home for the CLI tarball, where CI already runs (docs/fork-maintenance.md).
 #
 # Published per build (mirrors the image tag contract — moving + immutable),
-# but ONLY when the version changed vs the previous commit (dispatch overrides):
+# on a fork-v* tag push or explicit manual dispatch:
 #   release `cli-latest`      asset `openship-cli-fork.tgz`  — STABLE URL:
 #     https://github.com/liodali/openship/releases/download/cli-latest/openship-cli-fork.tgz
 #   release `cli-<ver>-<sha>` asset `openship-<ver>.tgz`     — immutable pin/rollback.
@@ -23,9 +23,8 @@
 # and the suffix is lost, this workflow re-appends `-fork.<run_number>` to
 # BOTH manifests before building (build.ts asserts they match).
 #
-# Triggers: push to main (hand pushes) + workflow_call (chained by
-# fork-sync.yml after the daily merge, same pattern as fork-images.yml) +
-# manual dispatch.
+# Triggers: fork-v* tag pushes + manual dispatch. Main branch pushes and
+# upstream sync merges do not publish artifacts.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Fork CLI build
@@ -33,68 +32,31 @@ name: Fork CLI build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-  workflow_call:
+    tags: ["fork-v*"]
 
 concurrency:
-  group: fork-cli-${{ github.ref }}
+  # All releases share cli-latest; serialize across tag/manual refs.
+  group: fork-cli-publish
   cancel-in-progress: false
 
 permissions:
   contents: write # create releases + upload assets
 
-# Publish only when the version changed vs the previous commit (upstream bump
-# merged in, or our own bump push) — re-publishing an unchanged version just
-# collides with the release a push-triggered run already made. workflow_dispatch
-# is the explicit manual override and always publishes.
 jobs:
-  gate:
-    name: Version changed?
-    runs-on: ubuntu-latest
-    outputs:
-      publish: ${{ steps.check.outputs.publish }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 2
-          ref: main
-      - name: Compare the version across the tip
-        id: check
-        run: |
-          set -eu
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "manual dispatch — publishing"
-            exit 0
-          fi
-          before="$(git show 'HEAD^:package.json' 2>/dev/null | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -n1)"
-          after="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json | head -n1)"
-          echo "before=$before after=$after"
-          if [ -n "$after" ] && [ "$before" != "$after" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "version unchanged — nothing to publish"
-          fi
-
   build:
     name: Build + publish the fork CLI
-    needs: gate
-    if: needs.gate.outputs.publish == 'true'
     # GitHub-hosted (free on this public repo; ~3 min proven). The gh/go
     # bootstrap steps no-op wherever the tools already exist, and bun comes
     # from the pinned setup, so the job runs identically anywhere.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout fork main
+      - name: Checkout release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # the release tag names the built commit
-          # `main`, not the event sha: chained from fork-sync via workflow_call,
-          # github.sha is the PRE-merge tip that triggered the sync — the CLI
-          # must be built from the merge the sync just pushed.
-          ref: main
+          # Build the tagged commit (or the selected manual-dispatch commit).
+          ref: ${{ github.sha }}
 
       - name: Read pinned Bun version
         run: echo "BUN_VERSION=$(cat .bun-version)" >> "$GITHUB_ENV"
@@ -195,11 +157,11 @@ jobs:
         run: |
           sha="$(git rev-parse --short HEAD)"
           ver="${CLI_VERSION:?}"
-          # Idempotent: a push-triggered run of the same tip may have published
-          # this exact release seconds before a chained sync run reaches here.
+          # Idempotent: a rerun may have already published this exact release.
           gh release create "cli-${ver}-${sha}" openship-cli.tgz \
+            --target "$(git rev-parse HEAD)" \
             --title "Fork CLI ${ver} (${sha})" \
-            --notes "Built from fork main ${sha}. Install: npm install -g <asset URL>. Version ${ver} is semver-equal to upstream ${ver%%-fork*} — 'openship update' will not replace it." \
+            --notes "Built from fork commit ${sha}. Install: npm install -g <asset URL>. Version ${ver} is semver-equal to upstream ${ver%%-fork*} — 'openship update' will not replace it." \
             --prerelease \
           || gh release upload "cli-${ver}-${sha}" openship-cli.tgz --clobber
 
@@ -214,7 +176,7 @@ jobs:
           gh release create cli-latest openship-cli-fork.tgz \
             --target "$sha" \
             --title "Fork CLI (latest)" \
-            --notes "Moving pointer — asset replaced on every fork main build. Install: npm install -g https://github.com/liodali/openship/releases/download/cli-latest/openship-cli-fork.tgz" \
+            --notes "Moving pointer — asset replaced on every fork release build. Install: npm install -g https://github.com/liodali/openship/releases/download/cli-latest/openship-cli-fork.tgz" \
             --prerelease \
             2>/dev/null || gh release edit cli-latest --target "$sha" --latest=false
           gh release upload cli-latest openship-cli-fork.tgz --clobber
@@ -224,7 +186,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha="$(git rev-parse --short HEAD)"
-          echo "Stable URL (tracks main):"
+          echo "Stable URL (tracks fork releases):"
           echo "  https://github.com/liodali/openship/releases/download/cli-latest/openship-cli-fork.tgz"
           echo "Immutable pin (${CLI_VERSION} @ ${sha}):"
           echo "  https://github.com/liodali/openship/releases/download/cli-${CLI_VERSION}-${sha}/openship-cli.tgz"

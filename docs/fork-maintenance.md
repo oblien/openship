@@ -7,26 +7,35 @@ the how. Created with the Option A patches (2026-10).
 
 ## The loop
 
+```text
+upstream main -> fork-sync -> guards + checks -> sync PR -> merge into fork main
+                                                              |
+                                                   push fork-v* release tag
+                                                              |
+                                            fork-images + fork-cli publication
 ```
-                ┌────────────────────────── every day (03:23 UTC) ─────────────────────────┐
-                │                                                                          │
- upstream main ─┼─► fork-sync.yml: merge ─► patch-guard ─► tsc + tests ─► push ─► images ─┼─► Gitea registry
- (oblien/openship)   (rerere replays       (7 patches      (packages/      fork main   (api, dashboard,
-                      memorized fixes)      intact?)         adapters)                  edge; version tags)
-                │                                                                          │
-                └─ conflict or guard failure → GitHub issue, nothing pushed ───────────────┘
 
- VPS: openship update → compose reconcile → pull gitea/<ns>/openship-*:<ver> → recreate
- CLI: npm install -g https://github.com/liodali/openship/releases/download/cli-latest/openship-cli-fork.tgz
+Merging or pushing to `main` runs checks but does not publish fork artifacts.
+After merging the desired release commit, create and push a release tag, for example:
+
+```sh
+git tag fork-v0.9.12-fork.1 <release-commit>
+git push origin fork-v0.9.12-fork.1
 ```
+
+Both fork publishing workflows build that exact commit, even if its package version
+matches the preceding commit. Image versions still come from `package.json`; bump
+that version when a new versioned artifact is needed. Manual dispatch remains
+available. The `fork-v` prefix avoids the upstream `v*.*.*` release workflows and
+is distinct from generated `cli-*` tags, so CLI publication cannot trigger itself.
 
 Files that make this up:
 
 | File                                | Role                                                                             |
 | ----------------------------------- | -------------------------------------------------------------------------------- |
-| `.github/workflows/fork-sync.yml`   | the worker: daily merge, guards, push, chain images + CLI                              |
-| `.github/workflows/fork-images.yml` | build `openship-api/dashboard/edge` → our registry (also on manual push to main) |
-| `.github/workflows/fork-cli.yml`    | build the `openship` CLI → GitHub release assets (also on manual push to main)   |
+| `.github/workflows/fork-sync.yml`   | the worker: weekly merge, guards, and sync PR                              |
+| `.github/workflows/fork-images.yml` | build `openship-api/dashboard/edge` → our registry (on `fork-v*` tags or manual dispatch) |
+| `.github/workflows/fork-cli.yml`    | build the `openship` CLI → GitHub release assets (on `fork-v*` tags or manual dispatch)   |
 | `scripts/fork/patch-guard.mjs`      | structural check that the nine patches survived the merge (3 Podman + fork badge + folder-deploy endpoints + hosted-only own domain + podman actions runner + self-app api domain + host-key from= own IP) |
 
 ## Where the pipeline runs
@@ -137,8 +146,8 @@ Image tags pushed by the worker:
 The CLI is a separate artifact from the images and embeds the same `packages/sdk`.
 The npm package `openship` publishes from **upstream**, so an npm-installed CLI
 runs the OLD sdk — `openship deploy --folder` loses the fork fixes. The worker
-therefore builds the CLI from fork main too (`fork-cli.yml`, chained after the
-daily merge like the images) and publishes it as **GitHub release assets**:
+therefore builds the CLI from the release commit too (`fork-cli.yml`, triggered
+by `fork-v*` tags like the images) and publishes it as **GitHub release assets**:
 
 - **`cli-latest`** (moving) — stable install URL, asset replaced every build:
 

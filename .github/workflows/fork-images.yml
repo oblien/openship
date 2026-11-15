@@ -11,17 +11,14 @@ name: Fork images
 #                            OPENSHIP_VERSION to the version of the CLI it just
 #                            installed, so the plain-version tag MUST exist in
 #                            our registry for the pull to resolve. This tag
-#                            moves when the VERSION changes — an upstream bump
-#                            merged by the sync, or our own bump push. Merges
-#                            that don't change the version don't republish
-#                            (same content, nothing to hand to update).
+#                            is published from the selected release commit.
 #   <version>-<shortsha>     immutable, for rollback pins
 #   latest                   convenience
 #
-# Triggers (all gated on the version actually changing; dispatch overrides):
-#   • workflow_dispatch  — manual, always publishes
-#   • push to main       — publishes only if the version changed vs HEAD^
-#   • workflow_call      — chained from fork-sync.yml after an upstream merge
+# Triggers:
+#   • push of fork-v* tag — publishes the tagged commit, even without a version bump
+#   • workflow_dispatch  — manual publication of the selected commit
+# Main branch pushes and upstream sync merges do not publish artifacts.
 #
 # Needs repo VARIABLES (non-secret, GitHub's ".env" for workflows — the real
 # host must not live in a committed file, this fork is public):
@@ -36,56 +33,19 @@ name: Fork images
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-  workflow_call:
+    tags: ["fork-v*"]
 
 concurrency:
-  group: fork-images-${{ github.ref }}
+  # All releases share moving image tags; serialize across tag/manual refs.
+  group: fork-images-publish
   cancel-in-progress: false
 
 permissions:
   contents: read
 
-# Publish only when it means something: the version must have CHANGED vs the
-# previous commit (an upstream version bump merged in, or our own bump push).
-# Re-publishing an unchanged version just re-tags the same content and races
-# itself (seen live: a chained sync run collided with a push-triggered run of
-# the same tip on the cli-<version>-<sha> release). workflow_dispatch is the
-# explicit manual override and always publishes.
 jobs:
-  gate:
-    name: Version changed?
-    runs-on: ubuntu-latest
-    outputs:
-      publish: ${{ steps.check.outputs.publish }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 2
-          ref: main
-      - name: Compare the version across the tip
-        id: check
-        run: |
-          set -eu
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "manual dispatch — publishing"
-            exit 0
-          fi
-          before="$(git show 'HEAD^:package.json' 2>/dev/null | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -n1)"
-          after="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json | head -n1)"
-          echo "before=$before after=$after"
-          if [ -n "$after" ] && [ "$before" != "$after" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "version unchanged — nothing to publish"
-          fi
-
   build:
     name: Build + push ${{ matrix.image }}
-    needs: gate
-    if: needs.gate.outputs.publish == 'true'
     # GitHub-hosted: this repo is public, so these runners are free, and
     # buildx + the GHA layer cache consistently land the three images in
     # ~7 minutes — the small VPS runner needed 15-25 even warm (see
@@ -105,11 +65,8 @@ jobs:
         with:
           # The rollback tag names the built commit — needs the real SHA.
           fetch-depth: 0
-          # `main`, not the event sha: when chained from fork-sync via
-          # workflow_call, github.sha is the PRE-merge tip that triggered the
-          # sync — without this, every merge publishes images of the
-          # previous commit and the merge itself is never built.
-          ref: main
+          # Build the tagged commit (or the selected manual-dispatch commit).
+          ref: ${{ github.sha }}
 
       - name: Resolve image tags
         id: tags
