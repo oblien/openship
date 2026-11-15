@@ -729,7 +729,7 @@ describe("owned native platform on Node", () => {
       await controls.setSleepMode(projectId, { sleep_mode: "always_on" });
       expect((await controls.getResources(projectId)).sleepMode).toBe("always_on");
       const bobScope = await first!.ship.scope({ identity: "bob", organizationId: first!.customer.organizationId });
-      await expect(bobScope.credentials.create({ provider: "docker-registry", name: "Not an admin", values: { secret: "value" } })).rejects.toMatchObject({ code: "INSUFFICIENT_ROLE" });
+      await expect(bobScope.credentials.create({ provider: "docker-registry", name: "Not an admin", values: { secret: "value" } })).rejects.toMatchObject({ code: "NOT_FOUND" });
       await first!.ship.operator!.setMembership({ organizationId: first!.customer.organizationId, userId: first!.bob.user.id, role: null });
       await expect(bobScope.projects.get(projects[0]!.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(bobScope.projects.setBranch(projectId, { branch: "forbidden" })).rejects.toMatchObject({ code: "NOT_FOUND" });
