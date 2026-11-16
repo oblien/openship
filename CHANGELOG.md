@@ -4,36 +4,117 @@ All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
-## Unreleased
+## 1.0.0
 
-### Authorization
+OpenShip 1.0 brings a refreshed dashboard, edge maintenance and custom pages,
+deploy links, and scheduled mail workflows. Includes every change since 0.9.12,
+with more reliable builds, imports, billing and recovery.
 
-- Require administrative authority for admin operations across HTTP, SDK, native and
-  MCP access. Ordinary organization membership no longer grants host command execution;
-  token grants remain bounded by the user's current built-in role (#1783).
+**Security update:** administrators should update all OpenShip components. This
+release closes an authorization flaw that allowed ordinary organization members
+to invoke administrative operations, including host command execution.
 
-### Cloud billing
+### Security and access
 
-- Open checkout only when its payment URL is ready, with a visible fallback button.
-  Recover unfinished Cloud purchases when reopening setup instead of creating duplicate
-  unpaid spaces. Show pending-plan warnings in the Plans & billing sidebar entry.
+- Require administrative authority across HTTP, SDK, native and MCP access.
+  Scoped tokens remain bounded by their owner's current organization role,
+  including after demotion. Preserve explicitly delegated, resource-scoped
+  administration (#1783, #1784).
+- Choose a sign-in page or the browser's native authentication prompt for
+  self-hosted hostnames. Customize sign-in HTML and session duration, revoke
+  sessions, and see enabled protection directly on domain cards.
+- Keep generated local mail credentials and runtime caches out of image build
+  contexts. Bundle the shared assistant client and its dependency patch so
+  release builds do not depend on a sibling checkout or baked development URLs.
 
-### Backups
+### Edge pages and routing
 
-- Back up verified existing empty Docker volumes and bind directories without blocking
-  populated sibling sources. Reject missing sources before capture and preserve failures
-  for unavailable backing storage (#1767).
+- Serve maintenance HTML directly from the edge while the application keeps
+  running. Restore normal routing when maintenance is disabled.
+- Upload HTML pages and assign error statuses, with server defaults and
+  project or hostname overrides. Customize unmatched-host and direct-IP pages.
+- Organize Domains & Routes into routing, access, proxy, and page controls,
+  with inline protection settings, HTML previews, and visible loading and retry states.
+- Target the correct project service and port when adding domains from the CLI.
+  Keep primary domains, aliases and www redirects consistent when editing routes.
 
-### CLI
+### Deployments, imports and recovery
 
-- Run the container-to-host connectivity probe with Node.js, matching the API image,
-  so `openship up` and `openship doctor` can diagnose the host channel without Bun.
+- Add shareable deploy links and `openship launch`, carrying the selected
+  repository and deployment intent through sign-in and installation.
+- Copy selected services to the same server or another server as independent
+  projects. Validate dependencies and port bindings, preserve separate volumes,
+  and improve restoration and rollback if a transfer fails. Keep application
+  instance scaling distinct from independent copies.
+- Import Railway projects with multiple repositories as native services and
+  project connections, preserving source ownership and private service wiring.
+- Show container ports declared with Compose `expose`, explain how to publish
+  a TCP port for a web domain, and handle protocol suffixes and port ranges.
+- Improve folder deployment names, scan errors and streamed uploads. Resolve
+  template placeholders consistently in service ports, and explain recovery
+  when duplicate containers block deployment.
+- Retain warm BuildKit caches and reduce remote cleanup overhead without
+  dropping build ownership, cancellation or capacity checks.
+- Back up verified empty Docker volumes and bind directories alongside populated
+  sources. Refuse missing sources and preserve errors for unavailable storage.
+- Fence event-stream admission while relocating the controller, restore access
+  when it resumes, and link server preparation to its deployment progress.
+- Preserve the mail host's configured ignored IP addresses when updating its engine.
 
-### Instance relocation
+### Mail and agents
 
-- Fence event-stream admission while moving the controller so a late subscriber cannot
-  keep the source draining indefinitely. Restore stream access when the controller resumes,
-  and link server preparation to its build view while deployment reads remain available.
+- Schedule messages, cancel queued mail with Undo Send, and snooze conversations.
+  Recover interrupted or temporarily failed wake-ups, including messages moved
+  or deleted before their wake-up time.
+- Connect mailbox-scoped agents and MCP clients with encrypted state, isolated
+  runtimes, scoped permissions and explicit approval for sending mail.
+- Improve the agent workspace, shared conversation rendering, connection setup,
+  and empty and error states. Add the OpenShip plugin directory submission metadata.
+
+### Cloud, billing and CLI
+
+- Move the Oblien integration to SDK 3.0.2 and the provider's native versioned
+  VM API. Preserve saved VM identities, customer metadata and purchased offers;
+  validate scoped credentials against the selected VM.
+- Recover unfinished Cloud purchases instead of creating duplicate unpaid
+  spaces. Open checkout after its payment URL is ready and retain a fallback action.
+- Keep billing accessible during pending renewals and show payment warnings in
+  Plans & billing. Align monthly and yearly pricing across the website and dashboard.
+- Recover repeated signup attempts during Cloud linking and improve first-admin
+  recovery and Compose managed-edge setup.
+- Keep the installed service's existing ports when `openship up` runs again.
+  Support CLI login through public instance URLs and use Node.js for the
+  container-to-host connectivity probe.
+- Limit the managed Cloud update banner to verified workload-security notices.
+
+### Dashboard and website
+
+- Refresh billing, monitoring, jobs, backups, connections, server and agent
+  screens with shared illustrations, compact controls and theme-aware surfaces.
+- Improve service inspectors and copy/scale flows, put actions before runtime
+  details, and replace native disclosure markers with shared icon controls.
+- Add avatar and project icon URL settings, with inline editing, previews and reset.
+- Refresh landing, Cloud, mail, download, migration and app-catalog pages;
+  improve Arabic headlines, language navigation and documentation navigation.
+- Expand product comparisons, feature pages and search discovery, and publish
+  Cloud SLA, support and privacy information.
+
+### Upgrade notes
+
+- Update the API and all its replicas, dashboard, Desktop, CLI and mail components
+  together. This release includes database migrations; retain a current instance
+  and database backup before updating.
+- Ordinary organization members no longer have implicit administrative access.
+  Review membership roles and scoped grants for integrations that perform admin actions.
+- Cloud operators must coordinate this release with the matching Oblien `/v1`
+  API, database, gateway and scoped-credential rollout. Review old unversioned
+  `OBLIEN_API_URL` and gateway overrides, and verify existing-VM access before
+  directing customers to the upgraded provider.
+- Maintenance, custom edge pages and hostname protection require the updated
+  self-hosted edge. These controls do not protect direct application ports or
+  hostnames outside their configured scope.
+- Independent service copies are separate deployments. Managed database replicas
+  and failover use their existing database scaling flows.
 
 ## 0.9.12
 
