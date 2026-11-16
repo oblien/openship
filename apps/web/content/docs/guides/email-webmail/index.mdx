@@ -5,19 +5,12 @@ description: Connect existing IMAP/SMTP mailboxes through webmail on Cloud, or r
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Most people rent their email from someone else — Gmail, Outlook, and the like. Openship lets you run the
-whole post office yourself: a real mail server on your own machine, with your own domain, that sends and
-receives mail and even gives you a webmail inbox in the browser. Think of it as the difference between renting
-a PO box and owning the building.
+On self-hosted OpenShip and Desktop, provision and manage mail servers on connected hosts. Each server
+has its own domain, mailbox, sending, DNS, and health configuration. Cloud connects existing IMAP/SMTP
+accounts through webmail rather than exposing self-hosted mail-server administration.
 
-You're not limited to one, either. Each mail server runs on its own host (one mail setup per server), and
-Openship keeps them all in a single **Mail servers** list — provision as many as you like and switch between
-them from one place. A lone server opens straight into its admin panel; once you have more than one, you land
-on the list first.
-
-This is a big, hands-on feature, so this guide stays at the map level: what each screen does and the order you
-go through them. The fiddly bits — the exact DNS records and the reverse-DNS setup — are called out where they
-happen, because the wizard walks you through those live.
+This guide follows setup, DNS verification, and mailbox access. Review deliverability and reverse DNS
+before relying on a server for production email.
 
 <Callout title="Cloud webmail and self-hosted mail servers">
 **Emails** is available on Cloud, Desktop and self-hosted Openship. On Cloud, it connects your existing
@@ -97,8 +90,7 @@ access, port 25 open, a clean server).
 ### Press Start Setup and watch it run
 
 Click **Start Setup**. Openship connects to your server and works through the install one step at a time
-(system update, mail stack, SSL, and so on), streaming the logs live — like watching the oven through the
-glass door. You don't have to do anything while it runs.
+(system update, mail stack, SSL, and so on), streaming the logs live. You don't have to do anything while it runs.
 
 Partway through, it pauses twice to wait for you. Those two pauses are the next two steps.
 

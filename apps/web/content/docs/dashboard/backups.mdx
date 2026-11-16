@@ -3,13 +3,9 @@ title: Backups
 description: The Backups page is where you register storage targets — S3 buckets, SFTP hosts, an existing server, or local disk — that your projects back up to.
 ---
 
-The **Backups** page (in the sidebar, or at `/backups`) is where you set up the *storage targets* your
-backups get written to. Openship calls these **destinations**. Think of a destination as an answer to one
-question: "when a backup runs, where do the files go?"
-
-This page manages destinations only. *When* and *what* to back up — the schedule and retention for a given
-project — lives on that project's **Backup** tab. See
-[Backups & restore](/docs/guides/backups-restore) for the full picture.
+The **Backups** page manages storage destinations: S3-compatible buckets, SFTP hosts, connected servers,
+or local disk where supported. Project backup policies select a destination and define scope, schedule,
+and retention. See [Backups and restore](/docs/guides/backups-restore) for the complete workflow.
 
 <Callout title="One-time setup, reused everywhere">
 You add a destination once here, then any project's backup policy can point at it. A destination shared by

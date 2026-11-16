@@ -5,9 +5,8 @@ description: Make Openship rebuild and ship your app automatically every time yo
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Once your app is deployed, you don't want to click "Deploy" by hand every time you change something. **Auto-deploy** fixes that: you push your code to GitHub as usual, and Openship rebuilds and ships it for you. Think of it like a doorbell — every time you push, GitHub rings the bell, and Openship answers by shipping the new version.
-
-That doorbell has a name: a **webhook**. A webhook is just a little message GitHub sends to Openship the instant you push, saying "new code is here" — so Openship can start building without you lifting a finger.
+Automatic deployment uses a GitHub push event to release the configured branch. The GitHub webhook must
+reach a supported OpenShip endpoint, and the selected project must have valid source access.
 
 <Callout title="What you need first">
 - A project that's already **linked to a GitHub repository** (see [Deploy from GitHub](/docs/guides/deploy-from-github)).

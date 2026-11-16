@@ -3,11 +3,9 @@ title: Cloud boundary
 description: How a self-hosted instance talks to Openship Cloud without leaking local identity — proxied requests carry the owner's cloud session and nothing else.
 ---
 
-When you connect the copy of Openship you run yourself to Openship Cloud, the two
-stay cleanly separated. Think of it like a border crossing between two countries:
-your instance is one side, the Cloud is the other, and every request that crosses
-shows a single passport — the organization owner's cloud session — and carries
-nothing from home. No local ID cards, no house keys, no return address.
+A connected self-hosted instance checks local access before forwarding authorized Cloud operations.
+The upstream request uses the connected Cloud identity. Local session credentials and local resource
+identifiers must not be treated as upstream authority.
 
 <Callout title="The two sides">
 - **Self-hosted instance** — the Openship you run on your own machine or server.

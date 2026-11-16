@@ -1,36 +1,50 @@
 ---
-title: Openship documentation
-description: Deploy applications, operate your infrastructure, and build integrations with Openship.
+title: Build with OpenShip
+description: Deploy applications, manage infrastructure, and run production. Start with a guide or go straight to the reference.
+full: true
 ---
 
-Openship builds and deploys applications from Git repositories, local folders, generated files, and app
-templates. Run workloads on your machine, a connected server, or Openship Cloud.
+import { ArrowRight, Server, Cloud, Monitor, GitBranch, Layers, Database, ShieldCheck, Terminal, Code2 } from 'lucide-react';
+
+<div className="docs-hero-actions">
+  <a href="/docs/getting-started/quickstart" data-docs-button="primary">Deploy your first app <ArrowRight size={16} /></a>
+  <a href="/docs/getting-started/core-concepts" data-docs-button="secondary">Understand the platform</a>
+</div>
 
 ## Start here
 
-<Cards>
-  <Card title="Deploy your first app" href="/docs/getting-started/quickstart" description="Choose an installation, connect your code, and follow a deployment." />
-  <Card title="Install Openship" href="/docs/getting-started/installation" description="Set up the desktop app, a server, or a development checkout." />
-  <Card title="Use the CLI" href="/docs/cli" description="Deploy and manage projects from a terminal or CI job." />
-  <Card title="Use Ship SDK" href="/docs/api/sdk" description="Deploy from JavaScript or TypeScript; connect to an existing API or embed the engine." />
-</Cards>
+Choose how to run the OpenShip control plane. Your applications can run on separate infrastructure.
+
+<div className="docs-setup-grid">
+  <Card icon={<Server />} title="Self-hosted" href="/docs/getting-started/installation#run-openship" description="Run the web dashboard on your infrastructure. Manage this server or connect others over SSH." />
+  <Card icon={<Cloud />} title="OpenShip Cloud" href="/docs/getting-started/installation#openship-cloud" description="Use the managed dashboard and Cloud capacity, or connect your own servers with a management plan." />
+  <Card icon={<Monitor />} title="Desktop" href="/docs/getting-started/installation#desktop-app" description="An optional local control plane. Deploy to remote infrastructure without publishing a dashboard." />
+</div>
 
 ## Find a task
 
-| Task | Read |
-| --- | --- |
-| Deploy from Git or a folder | [Deployment guides](/docs/guides#deploy) |
-| Configure domains, secrets, and storage | [Application configuration](/docs/guides#configure) |
-| Inspect logs, back up data, or fix a failure | [Operations](/docs/guides#operate) |
-| Move projects or an installation | [Migration guides](/docs/guides#move) |
-| Learn the dashboard | [Dashboard guide](/docs/dashboard) |
-| Call HTTP endpoints | [API reference](/docs/api) |
-| Connect an AI tool | [MCP guide](/docs/mcp) |
+<Cards>
+  <Card icon={<GitBranch />} title="Deploy your code" href="/docs/guides#deploy" description="Git repositories, local folders, Docker images, Compose stacks, previews, and automatic deployments." />
+  <Card icon={<Layers />} title="Configure your application" href="/docs/guides#configure" description="Domains, environment variables, routes, persistent storage, and resource limits." />
+  <Card icon={<Database />} title="Operate and recover" href="/docs/guides#operate" description="Logs, metrics, scheduled backups, restores, jobs, and server maintenance." />
+  <Card icon={<Server />} title="Move to OpenShip" href="/docs/guides#move" description="Import existing projects, move workloads between servers, and plan a controlled cutover." />
+  <Card icon={<Code2 />} title="Build an integration" href="/docs/api" description="HTTP API and TypeScript SDK. Authentication, requests, events, and complete endpoint reference." />
+  <Card icon={<Terminal />} title="Automate your workflow" href="/docs/cli" description="CLI commands for your terminal and CI. Connect AI tools through the MCP interface." />
+</Cards>
+
+<div className="docs-callout-strip">
+  <ShieldCheck size={24} aria-hidden="true" />
+  <div>
+    <p><strong>Taking a project to production?</strong></p>
+    <p>Review access, secrets, backups, capacity, and recovery before sending customer traffic.</p>
+    <a href="/docs/guides/production-readiness">Follow the production checklist →</a>
+  </div>
+</div>
 
 ## Key concepts
 
-An **organization** owns projects and grants access to its members. A **project** holds source and
-configuration. A **deployment** is one build and release of that project. A **service** is a workload
-inside a project, such as an application or database.
+A **project** connects source, configuration, and deployment history. Its **services** are the running
+applications, workers, and databases. A **deployment** releases a version to a selected destination.
 
-See [core concepts](/docs/getting-started/core-concepts) for environments, runtimes, servers, and domains.
+[Read the core concepts](/docs/getting-started/core-concepts) for organizations, environments,
+control planes, runtimes, and domains.

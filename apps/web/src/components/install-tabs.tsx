@@ -70,7 +70,7 @@ export function InstallTabs({
         ))}
       </div>
       <div className="install-command flex min-w-0 items-center gap-3 bg-neutral-950 p-5" dir="ltr">
-        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-neutral-100">
+        <code tabIndex={0} className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-neutral-100">
           <span aria-hidden="true" className="select-none text-neutral-500">{method.prompt} </span>
           <span data-install-command>{method.cmd}</span>
         </code>
