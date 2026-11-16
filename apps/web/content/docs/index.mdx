@@ -1,39 +1,45 @@
 ---
-title: Build with OpenShip
-description: Deploy applications, manage infrastructure, and run production. Start with a guide or go straight to the reference.
+title: OpenShip documentation
+description: Deploy your first application, connect your infrastructure, and keep production running.
 full: true
 ---
 
-import { ArrowRight, Server, Cloud, Monitor, GitBranch, Layers, Database, ShieldCheck, Terminal, Code2 } from 'lucide-react';
+import { Icon } from '@repo/ui/icons';
 
-<div className="docs-hero-actions">
-  <a href="/docs/getting-started/quickstart" data-docs-button="primary">Deploy your first app <ArrowRight size={16} /></a>
-  <a href="/docs/getting-started/core-concepts" data-docs-button="secondary">Understand the platform</a>
-</div>
+## Get started
 
-## Start here
-
-Choose how to run the OpenShip control plane. Your applications can run on separate infrastructure.
+Choose where to run your dashboard. Use the same platform with your own servers or managed infrastructure.
 
 <div className="docs-setup-grid">
-  <Card icon={<Server />} title="Self-hosted" href="/docs/getting-started/installation#run-openship" description="Run the web dashboard on your infrastructure. Manage this server or connect others over SSH." />
-  <Card icon={<Cloud />} title="OpenShip Cloud" href="/docs/getting-started/installation#openship-cloud" description="Use the managed dashboard and Cloud capacity, or connect your own servers with a management plan." />
-  <Card icon={<Monitor />} title="Desktop" href="/docs/getting-started/installation#desktop-app" description="An optional local control plane. Deploy to remote infrastructure without publishing a dashboard." />
+  <Card icon={<Icon name="server" />} title="Self-hosted" href="/docs/getting-started/installation#run-openship" description="Run the web dashboard on your infrastructure. Manage this server or connect others over SSH." />
+  <Card icon={<Icon name="cloud" />} title="OpenShip Cloud" href="/docs/getting-started/installation#openship-cloud" description="Use the managed dashboard and Cloud capacity, or connect your own servers with a management plan." />
+  <Card icon={<Icon name="monitor" />} title="Desktop" href="/docs/getting-started/installation#desktop-app" description="An optional local control plane. Deploy to remote infrastructure without publishing a dashboard." />
 </div>
 
-## Find a task
+## Build and operate
 
 <Cards>
-  <Card icon={<GitBranch />} title="Deploy your code" href="/docs/guides#deploy" description="Git repositories, local folders, Docker images, Compose stacks, previews, and automatic deployments." />
-  <Card icon={<Layers />} title="Configure your application" href="/docs/guides#configure" description="Domains, environment variables, routes, persistent storage, and resource limits." />
-  <Card icon={<Database />} title="Operate and recover" href="/docs/guides#operate" description="Logs, metrics, scheduled backups, restores, jobs, and server maintenance." />
-  <Card icon={<Server />} title="Move to OpenShip" href="/docs/guides#move" description="Import existing projects, move workloads between servers, and plan a controlled cutover." />
-  <Card icon={<Code2 />} title="Build an integration" href="/docs/api" description="HTTP API and TypeScript SDK. Authentication, requests, events, and complete endpoint reference." />
-  <Card icon={<Terminal />} title="Automate your workflow" href="/docs/cli" description="CLI commands for your terminal and CI. Connect AI tools through the MCP interface." />
+  <Card icon={<Icon name="git-branch" />} title="Deploy your code" href="/docs/guides#deploy" description="Git repositories, local folders, Docker images, Compose stacks, previews, and automatic deployments." />
+  <Card icon={<Icon name="layers" />} title="Configure your application" href="/docs/guides#configure" description="Domains, environment variables, routes, persistent storage, and resource limits." />
+  <Card icon={<Icon name="database" />} title="Operate and recover" href="/docs/guides#operate" description="Logs, metrics, scheduled backups, restores, jobs, and server maintenance." />
+  <Card icon={<Icon name="migration" />} title="Move to OpenShip" href="/docs/guides#move" description="Import existing projects, move workloads between servers, and plan a controlled cutover." />
+  <Card icon={<Icon name="dashboard" />} title="Use the dashboard" href="/docs/dashboard" description="Find your way around projects, services, servers, backups, and workspace settings." />
+  <Card icon={<Icon name="help-circle" />} title="Resolve an issue" href="/docs/troubleshooting" description="Diagnose deployment, networking, access, and server problems." />
+</Cards>
+
+## Developer reference
+
+<Cards>
+  <Card icon={<Icon name="code" />} title="API and TypeScript SDK" href="/docs/api" description="Authentication, requests, events, and complete endpoint reference." />
+  <Card icon={<Icon name="terminal" />} title="Command line" href="/docs/cli" description="Deploy from your terminal, automate workflows, and manage infrastructure." />
+  <Card icon={<Icon name="bot" />} title="MCP and AI tools" href="/docs/mcp" description="Connect agents to OpenShip with scoped access to your resources." />
+  <Card icon={<Icon name="book" />} title="Configuration reference" href="/docs/reference/openship-json" description="Project configuration, environment variables, deployment stages, and resource limits." />
+  <Card icon={<Icon name="network" />} title="Architecture" href="/docs/architecture/overview" description="How control planes, runtimes, data ownership, and Cloud boundaries work." />
+  <Card icon={<Icon name="shield-check" />} title="Security" href="/docs/security/permissions" description="Permissions, secrets, isolation, and the responsibilities of each deployment model." />
 </Cards>
 
 <div className="docs-callout-strip">
-  <ShieldCheck size={24} aria-hidden="true" />
+  <Icon name="shield-check" size={24} aria-hidden="true" />
   <div>
     <p><strong>Taking a project to production?</strong></p>
     <p>Review access, secrets, backups, capacity, and recovery before sending customer traffic.</p>

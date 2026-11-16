@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, LoaderCircle } from "lucide-react";
+import { Icon } from "@repo/ui/icons";
 import { reportCaughtError } from "@repo/core/diagnostics";
 
 /** Fetch only on request; the adjacent Markdown link also works without clipboard access. */
@@ -39,11 +39,11 @@ export function CopyPage({ markdownUrl }: { markdownUrl: string }) {
     }
   }
 
-  const Icon = status === "copied" ? Check : status === "loading" ? LoaderCircle : Copy;
+  const icon = status === "copied" ? "check" : status === "loading" ? "spinner" : "copy";
   return (
     <span className="docs-copy-page">
       <button type="button" onClick={copy} disabled={status === "loading"}>
-        <Icon size={14} aria-hidden="true" />
+        <Icon name={icon} size={14} className={status === "loading" ? "animate-spin" : undefined} />
         {status === "copied" ? "Copied" : status === "loading" ? "Copying…" : "Copy Markdown"}
       </button>
       <span role="status" className={status === "error" ? "docs-copy-error" : "sr-only"}>

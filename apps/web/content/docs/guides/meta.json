@@ -1,5 +1,6 @@
 {
   "title": "Task guides",
+  "icon": "book",
   "pages": [
     "index",
     "---Deploy code---",

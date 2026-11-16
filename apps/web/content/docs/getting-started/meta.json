@@ -7,5 +7,6 @@
     "core-concepts",
     "manual-installation"
   ],
-  "defaultOpen": true
+  "defaultOpen": true,
+  "collapsible": false
 }
