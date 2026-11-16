@@ -22,6 +22,8 @@ const translatedSections = new Set([
   "features",
   "apps",
   "migrate",
+  "compare",
+  "sla",
   "referrals",
   "mail",
   "download",
@@ -187,7 +189,11 @@ try {
   // These pages own their images. Inheriting the homepage's metadata can hide
   // a route's provider artwork even when its image handler itself works.
   const customPreviews = [...paths].filter(
-    (path) => path === "/pricing" || path === "/migrate" || path.startsWith("/migrate/"),
+    (path) =>
+      path === "/pricing" ||
+      path === "/migrate" ||
+      path.startsWith("/migrate/") ||
+      path.startsWith("/compare/"),
   );
   for (const path of customPreviews) {
     for (const [key, filename] of [

@@ -1,7 +1,7 @@
 /** The public Cloud commitment, shared by pricing, the homepage and terms. */
 export const CLOUD_SLA = {
   monthlyUptimePercent: 99,
-  termsHref: "/terms#uptime-sla",
+  termsHref: "/sla",
   maintenanceNoticeDays: 7,
   claimWindowDays: 30,
   claimReviewBusinessDays: 15,

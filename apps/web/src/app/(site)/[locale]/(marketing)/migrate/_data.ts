@@ -6,7 +6,7 @@ export const STARTING_POINTS: IllustratedLinkProps[] = [
     illustration: "push-to-deploy",
     title: "A Git repository",
     description: "Connect your code, review the detected build settings, and deploy your app.",
-    href: "/docs/getting-started/first-deployment",
+    href: "/migrate/from-git",
   },
   {
     illustration: "compose-multi-service",

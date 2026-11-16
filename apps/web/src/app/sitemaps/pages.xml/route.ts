@@ -1,6 +1,7 @@
 import { SITE_URL, buildUrlset, xmlResponse, type SitemapEntry } from "@/lib/sitemap-builder";
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { FEATURES } from "@/lib/features";
+import { COMPARISONS, COMPARISONS_REVIEWED_AT } from "@/lib/comparisons";
 import { MIGRATION_SOURCES } from "@/lib/migration-sources";
 import { APP_LOCALES } from "@repo/core";
 import { isLocalizedPath, languageAlternates, localizedHref } from "@/i18n/routing";
@@ -13,6 +14,14 @@ export async function GET() {
   const entries: SitemapEntry[] = [
     { loc: `${SITE_URL}/`, lastmod: now, changefreq: "daily", priority: 1.0 },
     { loc: `${SITE_URL}/pricing`, lastmod: now, changefreq: "weekly", priority: 0.95 },
+    {
+      loc: `${SITE_URL}/compare`,
+      lastmod: COMPARISONS_REVIEWED_AT,
+      changefreq: "monthly",
+      priority: 0.85,
+    },
+    { loc: `${SITE_URL}/sla`, lastmod: "2026-11-16", changefreq: "yearly", priority: 0.5 },
+    { loc: `${SITE_URL}/migrate/from-git`, changefreq: "monthly", priority: 0.8 },
     { loc: `${SITE_URL}/migrate`, lastmod: now, changefreq: "monthly", priority: 0.85 },
     { loc: `${SITE_URL}/referrals`, lastmod: now, changefreq: "monthly", priority: 0.8 },
     { loc: `${SITE_URL}/mail`, lastmod: now, changefreq: "weekly", priority: 0.9 },
@@ -28,6 +37,12 @@ export async function GET() {
     { loc: `${SITE_URL}/contact`, lastmod: now, changefreq: "monthly", priority: 0.4 },
   ];
   entries.push(
+    ...COMPARISONS.map(({ slug }) => ({
+      loc: `${SITE_URL}/compare/${slug}`,
+      lastmod: COMPARISONS_REVIEWED_AT,
+      changefreq: "monthly" as const,
+      priority: 0.8,
+    })),
     ...MIGRATION_SOURCES.map((source) => ({
       loc: `${SITE_URL}/migrate/${source.slug}`,
       changefreq: "monthly" as const,
