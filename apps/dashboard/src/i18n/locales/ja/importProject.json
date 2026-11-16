@@ -198,6 +198,9 @@
     "domain": {
       "internalService": "内部サービス",
       "noPublicPorts": "公開ポートが検出されませんでした",
+      "exposedPortsNotPublished": "コンテナポート {ports} はホストに公開されていません。",
+      "publishPortHint": "そのうち 1 つを公開する (例: 127.0.0.1:{port}:{port}) と、このサービスに公開ドメインが割り当てられます。",
+      "tcpPortRequiredHint": "公開ウェブドメインを使用するには、サービスのポート設定で TCP ポートを追加してください。",
       "publicDomain": "公開ドメイン",
       "internetEnabled": "インターネットトラフィックが有効",
       "privateByDefault": "デフォルトでプライベート",

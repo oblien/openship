@@ -1,0 +1,103 @@
+---
+title: Manual & development installation
+description: Run the published Compose stack yourself or install an isolated development build.
+---
+
+For the standard guided installation, use [Installation](/docs/getting-started/installation).
+This page covers installations where you manage the Compose configuration or build OpenShip from source.
+
+## Manual Docker Compose
+
+**Requirements:** a Linux host with Docker and Docker Compose, Git, and appropriate permissions to manage
+the host Docker daemon. The edge uses host networking.
+
+<Steps>
+<Step>
+
+### Obtain the self-hosted configuration
+
+```bash
+git clone https://github.com/oblien/openship.git
+cd openship
+cp .env.example .env
+```
+
+Use **`docker/docker-compose.yml`**. The root `docker-compose.yml` is the from-source SaaS control plane;
+it is not the self-hosted application stack.
+
+</Step>
+<Step>
+
+### Configure secrets and access
+
+Edit `.env` before starting. Set the required secrets and retain a protected copy with your recovery
+material. Pin `OPENSHIP_VERSION` to a published release for reproducible upgrades.
+
+For remote access, configure `OPENSHIP_PUBLIC_URL`. Set `TRUST_PROXY=true` when using your trusted reverse
+proxy. An incorrect public URL can allow the dashboard to load while authentication fails.
+
+</Step>
+<Step>
+
+### Start and verify
+
+```bash
+docker compose --env-file .env -f docker/docker-compose.yml up -d
+```
+
+The stack pulls published images and runs Postgres, Redis, the API (`4000`), dashboard (`3001`), and the
+OpenResty edge (`80`/`443`). Open the configured dashboard URL and create the administrator account.
+
+The API mounts the Docker socket. Treat access to the control plane as privileged host access.
+
+</Step>
+<Step>
+
+### Configure host operations
+
+Manual Compose startup does **not** provision the container-to-host SSH channel. Follow **Host operations
+from the container** in `.env.example` if you need host port takeover, the host terminal, mail, or other
+host-level operations. Verify the channel using the
+[host-channel troubleshooting guide](/docs/troubleshooting/host-channel).
+
+</Step>
+</Steps>
+
+## Update the manual stack
+
+Back up control-plane data and preserve `.env`, then change the pinned version and run:
+
+```bash
+docker compose --env-file .env -f docker/docker-compose.yml pull
+docker compose --env-file .env -f docker/docker-compose.yml up -d
+```
+
+Check service health and authentication after upgrading. Follow [updates](/docs/guides/updating) for the
+release and recovery process.
+
+To build the stack from your checkout instead of pulling releases, add
+`-f docker/docker-compose.build.yml` and use `up -d --build`.
+
+## Isolated development build
+
+A development installation builds the CLI from source and creates a separate **`openship-dev`** command.
+It requires Bun and Git, and enough CPU/memory to compile the dashboard.
+
+```bash
+curl -fsSL https://get.openship.io/dev | sh
+```
+
+Choose a branch or tag by setting `OPENSHIP_REF` on the shell running the script:
+
+```bash
+curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=my-branch sh
+```
+
+```bash
+openship-dev
+openship-dev up
+openship-dev update
+```
+
+Development installs use `~/.openship-dev`, separate configuration and data, and their own service.
+They are unverified source builds rather than signed release assets. Use a published release for production.

@@ -1,123 +1,105 @@
 ---
 title: Quickstart
-description: The fastest path from a fresh install to a live app — start Openship, open the dashboard, and deploy one thing.
+description: Connect your code, choose a destination, and verify your first deployment.
 ---
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+**You need:** an OpenShip dashboard, a Git repository or local app folder, and a deployment destination
+with enough capacity for your application.
 
-Just installed Openship? This page gets you to a live app in four short steps. Think of Openship as a
-little kitchen that runs on your own computer: you turn it on, open the door, hand it your code, and it
-cooks and serves the meal. No servers to rent, no config files to write.
-
-<Callout title="What you need">
-- A computer running macOS, Linux, or Windows.
-- Some code you want to put online — a GitHub repo, or a folder on your disk.
-- No rented server and no config files — Openship runs on the machine you're on. (On Linux it uses Docker automatically when it's installed; otherwise it runs as a single lightweight process.)
-</Callout>
+Already have a dashboard? Start at [Deploy one thing](#deploy-one-thing).
 
 <Steps>
-
 <Step>
 
-### Install the Openship CLI
+<span id="install-the-openship-cli" />
 
-The CLI is one small command-line tool. Copy the line for your system and paste it into a terminal:
+## Choose your setup
+
+Choose a control plane. This choice is separate from where your applications run.
+
+- **Managed Cloud:** [open the dashboard](https://app.openship.io). Choose Cloud capacity or connect a server with a management plan.
+- **Self-hosted web:** install the CLI below and run setup on the machine that will host OpenShip.
+- **Optional Desktop:** [download the app](/download) and complete setup. No public control-plane endpoint is required.
+
+For self-hosted web:
 
 <InstallTabs />
 
-Already have a package manager? `npm i -g openship` works too (or `pnpm`, `yarn`, `bun`) — that
-route needs **Node 22+**, since it runs on your Node rather than bringing its own.
-Full options — desktop app, cloud, Docker Compose — are on the [Installation](/docs/getting-started/installation) page.
+Package managers are also supported with Node.js 22 or newer. See [installation options](/docs/getting-started/installation).
 
 </Step>
-
 <Step>
 
-### Set up Openship
+## Set up Openship
+
+On a self-hosted installation, run the guided setup:
 
 ```bash
 openship
 ```
 
-Run **`openship`** with no arguments — the interactive setup walks you through it: your **admin login**
-(name, email, password), then whether the instance is private (this machine only) or public (your own domain + HTTPS). It deploys, installs itself as an always-on background service (back on reboot, auto-restarts), and
-prints your sign-in URL. The **API** runs on `:4000` and the **dashboard** on `:3001`. On Linux with Docker
-it brings up the full stack (Postgres, Redis, and an OpenResty edge for domains + TLS); otherwise a single
-lightweight process with a built-in database. Nothing else to set up.
+Create the administrator account and choose private access or a public hostname. The installer prints
+the dashboard URL and starts the supported background service. Linux installations with Docker use
+Compose by default; a bare installation is also supported.
 
-<Callout title="Scripting or CI? Skip the prompts" type="info">
-`openship up` runs the same install **without** the wizard (no admin is created — you register the first
-account in the dashboard). `openship up --foreground` runs it attached to your terminal (Ctrl-C to stop);
-`openship stop` stops the service.
-</Callout>
-
-<Callout title="Want the no-login, no-terminal version?" type="info">
-The [desktop app](/docs/getting-started/installation) runs Openship on your machine only while it's open,
-with no login.
-</Callout>
+Cloud and Desktop users complete setup in their dashboard instead.
 
 </Step>
-
 <Step>
 
-### Open the dashboard
+## Open the dashboard
+
+For a CLI-managed instance:
 
 ```bash
 openship open
 ```
 
-This opens the dashboard in your browser at `http://localhost:3001`. **Sign in with the admin you created
-during setup.** A CLI-managed instance always requires a login — only the
-[desktop app](/docs/getting-started/installation) runs with no login. (If you used `openship up` instead of
-the wizard, register that first account here now.)
+Sign in using the account created during setup. If the instance is on a remote server, use its configured
+public URL or a secure tunnel; `localhost` refers to the machine where the browser runs.
 
 </Step>
-
 <Step>
 
-### Deploy one thing
+## Deploy one thing
 
-In the dashboard, start a new project and point it at your code — a GitHub repository or a folder on your
-disk. Openship looks at your code, figures out what kind of app it is, and shows you a summary. For most
-apps you don't change anything: just press **Deploy**.
+1. Select **New Project** and choose a repository, local folder, or template. Connect GitHub if required.
+2. Choose the destination: a Cloud space, a connected server, or an available local runtime.
+3. Review the detected framework, working directory, build/start commands, and application port.
+4. Add required environment variables. For a multi-service application, review each service and its storage.
+5. Select **Deploy** and follow the build log.
 
-You land on the build screen, which streams the logs live — like watching the oven through the glass door.
-When it finishes, you get a link. Click it, and your app is online. 🎉
+When the release is ready, open the reported URL. Confirm the page or API works, then check runtime logs
+for startup errors. Public access requires a reachable destination and a configured route/domain.
 
 </Step>
-
 </Steps>
 
 ## CLI
 
-You can deploy without leaving the shell. First create a project in the dashboard, then from your code
-folder:
+Link a local folder to a project, then deploy and follow progress:
 
 ```bash
 cd your-project
-openship init         # pick which project this folder belongs to
-openship deploy       # build it and put it online
+openship init
+openship deploy --watch
 ```
 
-`openship init` writes a small `.openship/project.json` file so later commands know which project to act
-on. Add `--watch` to `openship deploy` to follow the build logs until it's done.
+`openship init` records the selected project in `.openship/project.json`.
+See [CLI deployment](/docs/cli/deploy) for authentication, sources, and CI examples.
 
 ## Troubleshooting
 
-<Callout title="`openship open` says the API isn't responding" type="warn">
-The platform isn't up yet. Run `openship up` first (give it a few seconds to become healthy), then try
-`openship open` again. Check its state any time with `openship status`.
-</Callout>
-
-<Callout title="The build failed" type="error">
-Open the build screen and read the last few red lines — that's the real reason. First-time failures are
-usually a missing build command, a missing environment variable, or the app listening on the wrong port.
-</Callout>
+| Symptom | Next check |
+| --- | --- |
+| Dashboard or API is unreachable | Run `openship status` and `openship doctor`; verify the configured instance URL. |
+| Repository is missing | Check [GitHub repository access](/docs/troubleshooting/github). |
+| Build or startup fails | Read the failing command and surrounding log lines. Check commands, secrets, and the listening port. |
+| Deployment is ready but the URL fails | Check the route, DNS, TLS, and [domain troubleshooting](/docs/troubleshooting/domains-ssl). |
 
 ## Related guides
 
 <Cards>
-  <Card title="Installation" href="/docs/getting-started/installation" description="Desktop app, Docker Compose, cloud, and system requirements — the full set of ways to install." />
-  <Card title="First deployment" href="/docs/getting-started/first-deployment" description="A deeper walkthrough: deploy from Git, custom domains, env vars, previews, and rollbacks." />
-  <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Connect a repo and turn on auto-deploy so every push ships automatically." />
+  <Card title="First deployment checklist" href="/docs/getting-started/first-deployment" description="Review configuration, verify the release, and prepare for your next deployment." />
+  <Card title="Production readiness" href="/docs/guides/production-readiness" description="Access, backups, capacity, monitoring, and recovery for a production service." />
 </Cards>

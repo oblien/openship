@@ -1,4 +1,12 @@
 {
-  "title": "Getting Started",
-  "pages": ["quickstart", "installation", "first-deployment", "core-concepts"]
+  "title": "Getting started",
+  "pages": [
+    "quickstart",
+    "installation",
+    "first-deployment",
+    "core-concepts",
+    "manual-installation"
+  ],
+  "defaultOpen": true,
+  "collapsible": false
 }

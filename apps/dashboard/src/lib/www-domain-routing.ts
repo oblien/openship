@@ -6,8 +6,12 @@ const hostname = (endpoint: PublicEndpoint) =>
   endpoint.domainType === "custom" ? normalizeCustomHostname(endpoint.customDomain) : "";
 
 /** The endpoint fields are the saved state; there is no separate www-mode flag. */
-export function getWwwDomainRouting(endpoints: readonly PublicEndpoint[]) {
-  const first = endpoints.find((endpoint) => hostname(endpoint));
+export function getWwwDomainRouting(endpoints: readonly PublicEndpoint[], forHostname?: string) {
+  const first = endpoints.find((endpoint) =>
+    forHostname !== undefined
+      ? hostname(endpoint) === normalizeCustomHostname(forHostname)
+      : hostname(endpoint),
+  );
   if (!first) return null;
   const apex = hostname(first).replace(/^www\./, "");
   if (!isApexDomain(apex)) return null;
@@ -29,8 +33,9 @@ export function getWwwDomainRouting(endpoints: readonly PublicEndpoint[]) {
 export function setWwwDomainRouting(
   endpoints: readonly PublicEndpoint[],
   mode: WwwDomainMode,
+  forHostname?: string,
 ): PublicEndpoint[] {
-  const pair = getWwwDomainRouting(endpoints);
+  const pair = getWwwDomainRouting(endpoints, forHostname);
   if (!pair) return [...endpoints];
   const source = pair.bare ?? pair.www!;
   const bare =
@@ -39,7 +44,9 @@ export function setWwwDomainRouting(
     pair.www ??
     createPublicEndpoint({ ...source, id: undefined, customDomain: `www.${pair.apex}` });
   const servingHost = mode === "www" ? `www.${pair.apex}` : pair.apex;
-  const servingEndpoint = [pair.bare, pair.www].find((endpoint) => endpoint && !endpoint.redirectTo);
+  const servingEndpoint = [pair.bare, pair.www].find(
+    (endpoint) => endpoint && !endpoint.redirectTo,
+  );
   const next = endpoints.filter((endpoint) => endpoint.id !== bare.id && endpoint.id !== www.id);
   const normal = (endpoint: PublicEndpoint): PublicEndpoint => ({
     ...endpoint,
@@ -53,23 +60,32 @@ export function setWwwDomainRouting(
     mode === "www" ? { ...bare, redirectTo: servingHost, redirectStatus: 301 } : normal(bare);
   const selectedWww =
     mode === "apex" ? { ...www, redirectTo: servingHost, redirectStatus: 301 } : normal(www);
-  // Primary is a serving hostname. Other domains and their targets stay intact.
-  return mode === "www"
-    ? [selectedWww, selectedBare, ...next]
-    : [selectedBare, selectedWww, ...next];
+  // Keep a secondary domain pair in place; editing it must not replace an
+  // unrelated primary. Within the pair the serving hostname comes first.
+  const index = endpoints.findIndex(
+    (endpoint) => endpoint.id === bare.id || endpoint.id === www.id,
+  );
+  next.splice(
+    index,
+    0,
+    ...(mode === "www" ? [selectedWww, selectedBare] : [selectedBare, selectedWww]),
+  );
+  return next;
 }
 
 export function toggleWwwDomainRouting(
   endpoints: readonly PublicEndpoint[],
   on: boolean,
   allowRedirects = true,
+  forHostname?: string,
 ): PublicEndpoint[] {
-  const pair = getWwwDomainRouting(endpoints);
+  const pair = getWwwDomainRouting(endpoints, forHostname);
   if (!pair || (on && pair.included)) return [...endpoints];
   if (on)
     return setWwwDomainRouting(
       endpoints,
       !allowRedirects ? "both" : pair.www && !pair.bare ? "www" : "apex",
+      forHostname,
     );
   const primary = pair.mode === "www" ? pair.www : (pair.bare ?? pair.www);
   const removed = primary?.id === pair.www?.id ? pair.bare : pair.www;

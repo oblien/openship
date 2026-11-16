@@ -1448,6 +1448,7 @@
     "headersHint": "添加缓存、CORS 或其他响应标头。"
   },
   "icon": {
+    "change": "更改图标",
     "label": "项目图标 URL",
     "hint": "使用 HTTP 或 HTTPS 图片 URL。清空后将使用默认图标。",
     "reset": "使用默认图标"

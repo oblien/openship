@@ -5,9 +5,11 @@ and a consistent type hierarchy across light, dim, and dark themes.
 
 ## Surfaces and controls
 
-Personal avatar URLs live in Settings → General → Profile. Project icon URLs live
-in the Project Info card in project Settings. Both use the shared URL editor with
-a preview and a reset action. Each project has one `iconUrl`; project, app, connection
+Personal avatar URLs live in Settings → General → Profile, with a compact 36px preview
+and Change action at rest. Project icon URLs open from **Project Info → ⋮ → Change icon**
+in a compact dialog. Both use one shared URL editor with guidance, reset, Save and Cancel.
+Save and Cancel return to the entry point; cancellation discards the draft and restores
+keyboard focus. Each project has one `iconUrl`; project, app, connection
 and deployment lists use the same renderer. Clearing the URL restores the catalog
 logo or framework/service icon. Image URLs are displayed directly by the browser
 with no referrer; the control plane does not fetch them or discover favicons.
@@ -160,7 +162,9 @@ reported current. Record image identities in deployment metadata without executi
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
 Repository-owned image changes use the shared **Propose image update** editor in saved
-project/service settings and security review. Reuse the repository file browser. Show the branch,
+project/service settings and security review. For repository-backed Compose projects, open it
+from the Project Info options menu; do not place a standalone button between settings cards.
+Reuse the repository file browser. Show the branch,
 exact source commit and a diff before **Create draft PR**; edits invalidate that review. The editor
 changes one literal Dockerfile `FROM` or Compose `image` reference, preserving the source formatting.
 Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.
@@ -1367,10 +1371,13 @@ parser and serializer; reject invalid syntax and duplicate keys instead of dropp
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
 
-Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls` for the
-wizard and Add domain form. Edit route reuses `RoutingSettingsCard` for the
-canonical target/status. Saving a service route continues through the shared
-DNS, verification, SSL and route-apply flow; a redirect hides its unused port.
+Project and Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls`
+in deployment, Add domain and saved-route editing. Offer www for each root domain,
+including multi-part suffixes, and omit it for subdomains and wildcards. Edit a
+service hostname and its www pair together; preserve other services, ports and domains.
+Keep changes as a draft until Save, then use the existing routing update and HTTPS
+verification flow without rebuilding the application. A new www hostname keeps its
+own DNS and SSL status; pending DNS must not make the existing domain look broken.
 
 ## Assistant workspace and consent
 

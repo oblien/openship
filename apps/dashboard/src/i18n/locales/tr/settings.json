@@ -1802,6 +1802,7 @@
     "previewFailed": "Önizleme kullanılamıyor. URL’nin doğrudan bir resme yöneldiğini kontrol edin."
   },
   "profile": {
+    "change": "Avatarı değiştir",
     "title": "Profil",
     "description": "Kişisel hesabınızın resmi.",
     "label": "Avatar URL’si",

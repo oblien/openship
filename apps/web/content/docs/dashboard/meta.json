@@ -1,5 +1,6 @@
 {
   "title": "Dashboard",
+  "icon": "dashboard",
   "pages": [
     "index",
     "projects",

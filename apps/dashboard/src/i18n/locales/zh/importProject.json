@@ -198,6 +198,9 @@
     "domain": {
       "internalService": "内部服务",
       "noPublicPorts": "未检测到公开端口",
+      "exposedPortsNotPublished": "容器端口 {ports} 未发布到主机。",
+      "publishPortHint": "发布其中一个（例如 127.0.0.1:{port}:{port}），即可为该服务分配公网域名。",
+      "tcpPortRequiredHint": "要使用公共网站域名，请在服务的端口设置中添加 TCP 端口。",
       "publicDomain": "公开域名",
       "internetEnabled": "已启用互联网流量",
       "privateByDefault": "默认私有",

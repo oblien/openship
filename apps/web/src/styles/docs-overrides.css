@@ -1,13 +1,907 @@
-/*
- * Docs-only overrides layered on top of fumadocs-ui/style.css.
- *
- * Fumadocs ships Tailwind v4, whose preflight defaults interactive <button>s to
- * `cursor: default` — so the sidebar's folder toggles and item rows (rendered as
- * buttons/links) lose the pointer cursor and feel unclickable. Restore it for
- * every interactive element inside the docs sidebar.
- */
-#nd-sidebar a,
-#nd-sidebar button,
-#nd-sidebar [role="button"] {
+/* Fumadocs provides behavior; the landing theme provides colors and controls. */
+:root {
+  --color-fd-background: var(--th-bg-page);
+  --color-fd-foreground: var(--th-text-title);
+  --color-fd-card: var(--th-bg-card);
+  --color-fd-card-foreground: var(--th-text-title);
+  --color-fd-popover: var(--th-bg-page);
+  --color-fd-popover-foreground: var(--th-text-title);
+  --color-fd-muted: var(--th-bg-subtle);
+  --color-fd-muted-foreground: var(--th-text-body);
+  --color-fd-secondary: var(--th-bg-card);
+  --color-fd-secondary-foreground: var(--th-text-strong);
+  --color-fd-accent: var(--th-sf-04);
+  --color-fd-accent-foreground: var(--th-text-heading);
+  --color-fd-primary: var(--th-text-heading);
+  --color-fd-primary-foreground: var(--th-bg-page);
+  --color-fd-border: var(--th-bd-subtle);
+  --color-fd-ring: var(--th-text-strong);
+  --docs-code: var(--th-bg-card);
+  --docs-surface-hover: var(--th-sf-04);
+}
+/* The landing site is light. Preserve an optional, neutral dark reading mode. */
+.dark {
+  --th-bg-page: #101010;
+  --th-bg-card: #191919;
+  --th-bg-subtle: rgba(255, 255, 255, 0.035);
+  --th-sf-04: rgba(255, 255, 255, 0.065);
+  --th-text-heading: #fff;
+  --th-text-title: rgba(255, 255, 255, 0.92);
+  --th-text-strong: rgba(255, 255, 255, 0.82);
+  --th-text-body: rgba(255, 255, 255, 0.62);
+  --th-bd-subtle: #282828;
+  --th-btn-bg: #eee;
+  --th-btn-text: #111;
+  --th-btn-bg-hover: #fff;
+  color-scheme: dark;
+}
+html {
+  scroll-padding-top: 120px;
+}
+body {
+  text-rendering: optimizeLegibility;
+}
+a,
+button,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 4px;
+}
+button:not(:disabled),
+summary,
+.docs-navigation a {
   cursor: pointer;
+}
+.openship-docs {
+  --fd-layout-width: 96rem;
+  --fd-header-height: 88px;
+}
+
+/* The header stays open; navigation uses the dashboard's inset surface. */
+#nd-subnav [data-header-body] {
+  height: 88px;
+  padding-inline: 32px;
+  gap: 20px;
+  border: 0;
+}
+#nd-subnav a {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#nd-subnav [data-search-full] {
+  max-width: 300px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fd-muted);
+  box-shadow: none;
+}
+#nd-subnav kbd {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+#nd-subnav button[aria-label="Toggle Theme"] {
+  border: 0;
+}
+.docs-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.docs-brand-mark {
+  width: 30px;
+  height: 30px;
+  border: 2.5px solid currentColor;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.docs-brand-label {
+  margin-inline-start: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--color-fd-muted-foreground);
+}
+.docs-dashboard-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-btn-text);
+}
+.docs-search {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px #0003;
+}
+.docs-search > div {
+  border: 0;
+}
+.docs-search > div:first-of-type {
+  padding: 18px;
+}
+.docs-search .docs-search-close {
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--color-fd-muted);
+}
+.docs-search-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 12px 18px;
+  color: var(--color-fd-muted-foreground);
+  font-size: 12px;
+}
+.docs-search-footer kbd {
+  margin-inline-end: 4px;
+  font-size: 11px;
+}
+#nd-sidebar,
+#nd-sidebar-mobile {
+  background: var(--color-fd-card);
+  border: 0;
+  border-radius: 24px;
+  overflow: hidden;
+  inset-block: 12px;
+}
+#nd-sidebar {
+  inset-inline-start: 12px;
+  width: calc(100% - 12px);
+  padding-block: 8px;
+}
+#nd-sidebar > * {
+  width: 100%;
+}
+#nd-sidebar-mobile {
+  inset-inline-end: 12px;
+}
+.docs-navigation {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.docs-navigation [data-icon] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.openship-docs :is(p, button, a),
+#toc-title {
+  text-transform: none;
+  letter-spacing: normal;
+}
+.docs-navigation a,
+.docs-navigation button {
+  border-radius: 12px;
+}
+.docs-navigation a[data-active="true"] {
+  background: var(--color-fd-accent);
+  color: var(--color-fd-accent-foreground);
+  font-weight: 500;
+}
+.docs-navigation [data-state]::before,
+.docs-navigation a[data-active="true"]::before {
+  display: none;
+}
+.docs-navigation p {
+  margin-top: 28px;
+  margin-bottom: 8px;
+  color: var(--color-fd-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+.docs-navigation > div:last-child {
+  border: 0;
+}
+/* A readable article, with clear hierarchy instead of bordered sections. */
+.docs-article {
+  width: 100%;
+  min-width: 0;
+  max-width: 850px;
+  margin-inline: auto;
+  padding: 36px 52px 64px;
+  gap: 0;
+}
+.docs-article-header {
+  padding-block: 16px 36px;
+}
+.docs-article-header h1 {
+  max-width: 26ch;
+  margin: 0 0 16px;
+  font-size: clamp(32px, 3vw, 44px);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.docs-heading-copy > p {
+  max-width: 60ch;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.65;
+  color: var(--color-fd-muted-foreground);
+}
+.docs-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 22px;
+}
+.docs-page-actions a,
+.docs-page-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-fd-muted-foreground);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.docs-page-actions a:hover,
+.docs-page-actions button:hover {
+  color: var(--color-fd-primary);
+}
+.docs-copy-page {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.docs-copy-error {
+  font-size: 12px;
+  color: var(--color-fd-muted-foreground);
+}
+.docs-article .prose {
+  font-size: 16px;
+  line-height: 1.8;
+  --tw-prose-body: var(--th-text-strong);
+  color: var(--th-text-strong);
+}
+.docs-article .prose > :first-child {
+  margin-top: 0;
+}
+.docs-article .prose p {
+  margin-block: 18px;
+}
+.docs-article .prose h2 {
+  margin-block: 48px 18px;
+  font-size: 27px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.03em;
+}
+.docs-article .prose h3:not(.not-prose) {
+  margin-block: 30px 12px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+.docs-article .prose :is(h2, h3, h4) {
+  scroll-margin-top: 120px;
+}
+.docs-article .prose li {
+  margin-block: 7px;
+}
+.docs-article .prose a:not([data-card]):not(.not-prose):not([data-docs-button]) {
+  color: var(--color-fd-primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.docs-article .prose code {
+  border: 0;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+.docs-article .prose pre {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.docs-article .prose pre code {
+  overflow-wrap: normal;
+  font-size: inherit;
+}
+.docs-article figure[data-rehype-pretty-code-figure] {
+  margin-block: 24px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--docs-code);
+  box-shadow: none;
+}
+.docs-article figure[data-rehype-pretty-code-figure] > div {
+  border: 0;
+}
+.docs-article .prose table {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.docs-article .prose th {
+  color: var(--color-fd-foreground);
+  background: transparent;
+  font-weight: 600;
+}
+.docs-article .prose td,
+.docs-article .prose th {
+  padding: 14px 16px;
+  vertical-align: top;
+}
+.docs-article .prose tr {
+  border-color: var(--color-fd-border);
+}
+/* Fumadocs TypeTable exposes its surface through these shared theme classes. */
+.docs-article .bg-fd-card {
+  border: 0;
+  border-radius: 16px;
+}
+.docs-article .bg-fd-card > [data-state] {
+  border: 0;
+  box-shadow: none;
+}
+
+/* One shared treatment for every task index and related-page link. */
+.docs-article .docs-links {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 28px;
+  margin-block: 24px;
+}
+.docs-article [data-card="true"] {
+  position: relative;
+  display: block;
+  grid-column: auto;
+  padding: 22px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  text-decoration: none;
+  box-shadow: none;
+}
+.docs-article [data-card="true"] h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-block: 0 8px;
+  color: var(--color-fd-foreground);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+.docs-article a[data-card="true"] h3::after {
+  content: "↗";
+  margin-inline-start: auto;
+  color: var(--color-fd-muted-foreground);
+  font-size: 17px;
+  font-weight: 400;
+}
+.docs-article [data-card="true"] > .not-prose:first-child:not(h3) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fd-muted);
+  color: var(--color-fd-foreground);
+  box-shadow: none;
+}
+.docs-article [data-card="true"] > .not-prose svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.6;
+}
+.docs-article [data-card="true"] p {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.docs-article a[data-card="true"]:hover {
+  background: var(--color-fd-muted);
+}
+.docs-article a[data-card="true"]:hover h3::after {
+  color: var(--color-fd-primary);
+}
+.docs-article .fd-steps {
+  margin-inline-start: 13px;
+  padding-inline-start: 30px;
+  border-color: var(--color-fd-border);
+}
+.docs-article .fd-step {
+  padding-bottom: 18px;
+}
+.docs-article .fd-step::before {
+  background: var(--color-fd-muted);
+  color: var(--color-fd-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 0 0 6px var(--color-fd-background);
+}
+.docs-article .docs-callout {
+  gap: 12px;
+  margin-block: 24px;
+  padding: 20px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--color-fd-muted);
+  font-size: 14px;
+  line-height: 1.75;
+}
+.docs-callout > [role="none"] {
+  display: none;
+}
+.docs-callout > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.docs-details {
+  margin-block: 20px;
+  border-radius: 16px;
+  background: var(--color-fd-muted);
+}
+.docs-details summary {
+  padding: 18px 20px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.docs-details > div {
+  padding: 0 20px 8px;
+}
+.docs-article .docs-tabs {
+  border: 0;
+  border-radius: 16px;
+  background: var(--docs-code);
+}
+.docs-tabs [role="tablist"] {
+  gap: 4px;
+  padding: 6px;
+}
+.docs-tabs [role="tab"] {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.docs-tabs [role="tab"][data-state="active"] {
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+}
+.docs-tabs [role="tabpanel"] {
+  border-radius: 0 0 12px 12px;
+  background: var(--docs-code);
+}
+
+/* Screenshots are instructional, reuse shipped assets, and open at full size. */
+.docs-screenshot {
+  margin: 28px 0;
+}
+.docs-screenshot a {
+  display: block;
+  overflow: hidden;
+  border-radius: 24px;
+  cursor: zoom-in;
+}
+.docs-screenshot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  border: 0;
+}
+.docs-screenshot .docs-screenshot-dark,
+.dark .docs-screenshot .docs-screenshot-light {
+  display: none;
+}
+.dark .docs-screenshot .docs-screenshot-dark {
+  display: block;
+}
+.docs-screenshot figcaption {
+  margin-top: 12px;
+  color: var(--color-fd-muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* The overview gives three entry paths, then an open directory of tasks. */
+.docs-overview {
+  max-width: 1180px;
+  padding-inline: 52px;
+}
+.docs-home .docs-article-header {
+  padding-block: 16px 44px;
+  max-width: 700px;
+}
+.docs-home .docs-article-header h1 {
+  max-width: none;
+  font-size: clamp(36px, 3.8vw, 52px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.12;
+}
+.docs-home .docs-heading-copy > p {
+  max-width: 50ch;
+  font-size: 18px;
+}
+.docs-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 24px;
+}
+.docs-hero-actions [data-docs-button] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 11px;
+  color: var(--color-fd-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.docs-hero-actions [data-docs-button="primary"] {
+  padding-inline: 17px;
+  border-radius: 999px;
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+}
+.docs-hero-actions [data-docs-button="primary"]:hover {
+  background: var(--th-btn-bg-hover);
+}
+.docs-hero-actions [data-docs-button="secondary"]:hover {
+  color: var(--color-fd-primary);
+}
+.docs-home .prose > h2 {
+  margin-top: 44px;
+  font-size: 27px;
+}
+.docs-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.docs-setup-grid [data-card="true"] {
+  padding: 24px;
+  background: var(--color-fd-muted);
+  border-radius: 24px;
+}
+.docs-setup-grid [data-card="true"] > .not-prose:first-child:not(h3) {
+  background: var(--color-fd-background);
+}
+.docs-setup-grid a[data-card="true"]:hover {
+  background: var(--docs-surface-hover);
+}
+.docs-home .docs-links {
+  gap: 8px 28px;
+  margin-inline: -22px;
+}
+.docs-callout-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  margin-top: 38px;
+  padding: 26px;
+  border-radius: 24px;
+  background: var(--color-fd-muted);
+}
+.docs-callout-strip > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--color-fd-primary);
+}
+.docs-callout-strip p {
+  margin: 0 0 8px !important;
+  font-size: 14px;
+}
+.docs-callout-strip a {
+  font-size: 14px;
+}
+
+/* Installation and reference code controls remain the existing components. */
+.docs-article .install-tabs {
+  border: 0;
+  overflow: hidden;
+  margin: 24px 0;
+  border-radius: 16px;
+  background: var(--docs-code);
+}
+.docs-article .install-methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+}
+.docs-article .install-methods button {
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--color-fd-muted-foreground);
+}
+.docs-article .install-methods button[aria-pressed="true"] {
+  color: var(--color-fd-foreground);
+  background: var(--color-fd-background);
+}
+.docs-article .install-command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+}
+.docs-article .install-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-fd-foreground);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.docs-article .install-command button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  color: var(--color-fd-muted-foreground);
+}
+.docs-article .install-command button:hover {
+  background: var(--color-fd-secondary);
+  color: var(--color-fd-foreground);
+}
+#nd-toc {
+  padding-top: 44px;
+  padding-inline-start: 22px;
+  font-size: 12px;
+}
+#toc-title {
+  font-size: 12px;
+  color: var(--color-fd-foreground);
+}
+#toc-title svg {
+  display: none;
+}
+#nd-toc a {
+  font-size: 12px;
+  line-height: 1.6;
+}
+[data-toc-popover] > header {
+  border: 0;
+  background: var(--color-fd-background);
+}
+.docs-page-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-block: 52px 28px;
+  font-size: 12px;
+  color: var(--color-fd-muted-foreground);
+}
+.docs-page-feedback > span {
+  margin-inline-end: auto;
+}
+.docs-page-feedback a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.docs-page-feedback a:hover {
+  color: var(--color-fd-primary);
+}
+.docs-pagination {
+  gap: 12px;
+}
+.docs-pagination > a {
+  padding: 20px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--color-fd-muted);
+}
+.docs-pagination > a:hover {
+  background: var(--docs-surface-hover);
+}
+
+@media (min-width: 768px) {
+  .openship-docs {
+    --fd-sidebar-width: 248px;
+  }
+}
+@media (min-width: 1280px) {
+  .openship-docs {
+    --fd-toc-width: 220px;
+  }
+  .openship-docs:has([data-full="true"]) {
+    --fd-toc-width: 0px;
+  }
+}
+@media (max-width: 1279px) {
+  #nd-subnav [data-header-body] {
+    padding-inline: 24px;
+    gap: 20px;
+  }
+  #nd-subnav [data-search-full] {
+    max-width: 240px;
+  }
+  .docs-brand-label {
+    display: none;
+  }
+  .docs-article {
+    padding-inline: 36px;
+  }
+  .docs-home .docs-article-header h1 {
+    max-width: none;
+  }
+  .docs-home .docs-heading-copy > p {
+    max-width: 50ch;
+  }
+}
+@media (max-width: 767px) {
+  .openship-docs {
+    --fd-header-height: 64px;
+  }
+  #nd-subnav [data-header-body] {
+    height: 64px;
+    padding-inline: 22px;
+    gap: 12px;
+  }
+  #nd-subnav [data-search-full] {
+    background: transparent;
+    width: auto;
+  }
+  .docs-brand-label {
+    display: inline;
+    font-size: 12px;
+  }
+  .docs-article {
+    padding: 24px 24px 40px;
+  }
+  .docs-article-header {
+    padding-block: 18px 30px;
+  }
+  .docs-article-header h1 {
+    font-size: 34px;
+  }
+  .docs-heading-copy > p {
+    font-size: 17px;
+  }
+  .docs-article .prose {
+    font-size: 15px;
+  }
+  .docs-article .prose h2 {
+    font-size: 23px;
+  }
+  .docs-article .prose td,
+  .docs-article .prose th {
+    min-width: 140px;
+    padding: 12px;
+  }
+  .docs-article .docs-links {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-inline: 0;
+  }
+  .docs-article [data-card="true"] {
+    padding: 20px;
+  }
+  .docs-article .docs-links [data-card="true"] {
+    padding-inline: 0;
+  }
+  .docs-article .docs-links a[data-card="true"]:hover {
+    background: transparent;
+  }
+  .docs-home .docs-article-header {
+    padding-top: 12px;
+  }
+  .docs-home .docs-article-header h1 {
+    font-size: 38px;
+    max-width: none;
+  }
+  .docs-home .docs-heading-copy > p {
+    font-size: 16px;
+  }
+  .docs-hero-actions {
+    gap: 8px 16px;
+  }
+  .docs-setup-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .docs-callout-strip {
+    padding: 20px;
+    gap: 12px;
+  }
+  .docs-page-feedback > span {
+    width: 100%;
+  }
+  .docs-brand {
+    font-size: 17px;
+  }
+}
+@media (max-width: 359px) {
+  .docs-brand-label {
+    display: none;
+  }
+  .docs-article {
+    padding-inline: 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+@media print {
+  :root,
+  .dark {
+    --color-fd-background: #fff;
+    --color-fd-foreground: #111;
+    --color-fd-muted-foreground: #444;
+    --color-fd-card: #fff;
+    --color-fd-primary: #333;
+    --docs-code: #f5f5f5;
+    color-scheme: light;
+  }
+  #nd-subnav,
+  #nd-sidebar,
+  [data-sidebar-placeholder],
+  #nd-toc,
+  [data-toc-popover],
+  .docs-page-actions,
+  .docs-page-feedback,
+  .docs-pagination {
+    display: none !important;
+  }
+  #nd-notebook-layout,
+  [data-layout-main] {
+    display: block;
+  }
+  .docs-article {
+    padding: 0;
+    max-width: none;
+  }
+  .docs-article-header {
+    padding-top: 0;
+  }
+  .docs-article pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .docs-article :is(h2, h3, h4) {
+    break-after: avoid;
+  }
+  .dark .docs-screenshot .docs-screenshot-light {
+    display: block;
+  }
+  .dark .docs-screenshot .docs-screenshot-dark {
+    display: none;
+  }
 }

@@ -1448,6 +1448,7 @@
     "headersHint": "Cache-, CORS- oder andere Antwortheader hinzufügen."
   },
   "icon": {
+    "change": "Symbol ändern",
     "label": "URL des Projektsymbols",
     "hint": "Verwende eine HTTP- oder HTTPS-Bild-URL. Leere sie, um das Standardsymbol zu verwenden.",
     "reset": "Standardsymbol verwenden"

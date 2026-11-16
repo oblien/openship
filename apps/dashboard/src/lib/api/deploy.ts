@@ -90,6 +90,8 @@ export interface PrepareComposeService {
   dockerfile?: string;
   buildArgs?: Record<string, string | null>;
   ports: string[];
+  /** Container ports from the compose file's `expose:` — not published to the host. */
+  expose?: string[];
   dependsOn: string[];
   environment: Record<string, string>;
   /** Parser-owned expressions; preview values are not a replacement for their source. */

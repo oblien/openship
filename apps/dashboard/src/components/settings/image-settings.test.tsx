@@ -49,6 +49,7 @@ it("saves the avatar through the current user's existing auth update", async () 
       </I18nProvider>,
     ),
   );
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   await act(async () => {
     const input = host.querySelector("input")!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -66,17 +67,25 @@ it("saves the avatar through the current user's existing auth update", async () 
 });
 
 it("clears the single project icon field through existing settings", async () => {
+  const onClose = vi.fn();
   await act(async () =>
     root.render(
       <I18nProvider>
-        <ProjectIconSetting />
+        <ProjectIconSetting onClose={onClose} />
       </I18nProvider>,
     ),
   );
-  await act(async () => host.querySelector<HTMLButtonElement>('button[type="button"]')!.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.querySelector('input[type="url"]')).not.toBeNull();
+  await act(async () =>
+    Array.from(dialog.querySelectorAll("button"))
+      .find((button) => button.textContent === "Use default icon")!
+      .click(),
+  );
   expect(h.project).toHaveBeenCalledWith("project-a", { iconUrl: null });
   expect(h.update).toHaveBeenCalledWith({
     iconUrl: null,
   });
   expect(h.invalidate).toHaveBeenCalledWith("project-a");
+  expect(onClose).toHaveBeenCalledOnce();
 });

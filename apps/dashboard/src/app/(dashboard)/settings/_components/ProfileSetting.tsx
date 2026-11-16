@@ -15,6 +15,7 @@ export function ProfileSetting() {
     <SettingsSection icon="user" title={c.title} description={c.description}>
       <ImageUrlEditor
         value={user.image}
+        editLabel={c.change}
         label={c.label}
         hint={c.hint}
         resetLabel={c.reset}

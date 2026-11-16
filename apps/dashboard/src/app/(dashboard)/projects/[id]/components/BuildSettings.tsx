@@ -3,11 +3,9 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useState } from "react";
 import Link from "next/link";
-import { isServicesFramework } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n } from "@/components/i18n-provider";
 import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
-import { RuntimeSourceUpdate } from "@/components/updates/RuntimeSourceUpdate";
 import { projectApplication } from "@/lib/project-application";
 import { EnvVarsEditor } from "./EnvVarsEditor";
 import { ResourceSettings } from "./ResourceSettings";
@@ -60,12 +58,9 @@ function SectionCard({
 
 /** Project-owned settings stay here regardless of the number of workloads. */
 export const BuildSettings = () => {
-  const { buildData, projectData, servicesData, id } = useProjectSettings();
+  const { projectData, servicesData, id } = useProjectSettings();
   const { t } = useI18n();
   const application = projectApplication(projectData, servicesData.services);
-  const hasRepo = Boolean(projectData.gitOwner && projectData.gitRepo);
-  const composeSource =
-    Boolean(projectData.composePath) || isServicesFramework(projectData.framework);
 
   if (projectData.framework === "webmail") {
     return (
@@ -95,12 +90,6 @@ export const BuildSettings = () => {
               <UiIcon name="arrow-right" className="size-3.5 rtl:rotate-180" />
             </Link>
           }
-        />
-      )}
-      {hasRepo && composeSource && (
-        <RuntimeSourceUpdate
-          projectId={id}
-          initialPath={buildData.composePath || "docker-compose.yml"}
         />
       )}
       <ProjectEnvironmentSettings />
