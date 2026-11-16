@@ -198,6 +198,9 @@
     "domain": {
       "internalService": "Serviço interno",
       "noPublicPorts": "Nenhuma porta pública detectada",
+      "exposedPortsNotPublished": "As portas de contêiner {ports} não são publicadas no host.",
+      "publishPortHint": "Publique uma delas (por exemplo 127.0.0.1:{port}:{port}) para dar a este serviço um domínio público.",
+      "tcpPortRequiredHint": "Para usar um domínio web público, adicione uma porta TCP nas configurações de portas do serviço.",
       "publicDomain": "Domínio público",
       "internetEnabled": "Tráfego da internet ativado",
       "privateByDefault": "Privado por padrão",

@@ -15,7 +15,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
-import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
+import { firstExposedTcpPort, parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -158,6 +158,45 @@ const SkeletonBlock: React.FC<{ className: string }> = ({ className }) => (
 
 // ─── Per-service domain section (always visible when expandable) ─────────────
 
+/**
+ * The "no public port" card of the compose import wizard.
+ *
+ * A service that only declares `expose:` has container ports but nothing
+ * published, so it has no domain yet. The card names the ports the service
+ * exposes and says which one to publish — before this it said "no public
+ * ports" and stopped there, which read as "this service cannot have a domain"
+ * (#1733).
+ */
+export const InternalServiceNotice: React.FC<{ exposedPorts: string[] }> = ({
+  exposedPorts,
+}) => {
+  const { t } = useI18n();
+  const d = t.importProject.composeServices.domain;
+  const publishPort = firstExposedTcpPort(exposedPorts);
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex size-9 items-center justify-center rounded-lg bg-muted/50">
+        <UiIcon name="lock" className="size-4 text-muted-foreground" />
+      </div>
+      <div>
+        <p className="text-sm font-medium text-foreground">{d.internalService}</p>
+        <p className="text-xs text-muted-foreground">
+          {exposedPorts.length > 0
+            ? interpolate(d.exposedPortsNotPublished, { ports: exposedPorts.join(", ") })
+            : d.noPublicPorts}
+        </p>
+        {exposedPorts.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {publishPort
+              ? interpolate(d.publishPortHint, { port: publishPort })
+              : d.tcpPortRequiredHint}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ServiceDomainSection: React.FC<{
   service: ComposeServiceInfo;
   projectName: string;
@@ -168,17 +207,7 @@ const ServiceDomainSection: React.FC<{
   const hasPorts = service.ports.length > 0;
 
   if (!hasPorts) {
-    return (
-      <div className="flex items-center gap-3">
-        <div className="flex size-9 items-center justify-center rounded-lg bg-muted/50">
-          <UiIcon name="lock" className="size-4 text-muted-foreground" />
-        </div>
-        <div>
-          <p className="text-sm font-medium text-foreground">{d.internalService}</p>
-          <p className="text-xs text-muted-foreground">{d.noPublicPorts}</p>
-        </div>
-      </div>
-    );
+    return <InternalServiceNotice exposedPorts={service.expose ?? []} />;
   }
 
   const primaryPort = service.exposedPort || serviceExposedPort(service) || "";
