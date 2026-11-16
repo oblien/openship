@@ -40,12 +40,6 @@ html[lang="ar"] .landing-hero .hero-description {
   font-size: clamp(1rem, 1.2vw, 1.125rem);
   line-height: 1.9;
 }
-html[lang="ar"] .cmp-cell {
-  line-height: 1.8;
-}
-html[lang="ar"] .cmp-cell--win {
-  font-weight: 400;
-}
 html[lang="ar"] .cmp-title {
   font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 400;

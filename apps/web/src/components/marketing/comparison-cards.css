@@ -1,0 +1,72 @@
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.compare-card {
+  display: flex;
+  flex-direction: column;
+  padding: 28px;
+  border: 1px solid var(--th-divider);
+  border-radius: 20px;
+  transition: background 150ms ease;
+}
+.compare-card:hover {
+  background: var(--th-bg-subtle);
+}
+.compare-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  color: var(--th-text-muted);
+}
+.compare-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  background: var(--th-bg-subtle);
+  color: var(--th-text-heading);
+  font-size: 15px;
+  font-weight: 600;
+}
+.compare-card h3 {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.compare-card p {
+  color: var(--th-text-body);
+  margin: 10px 0 24px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.compare-card-link {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.compare-provider-mark {
+  background: #fff;
+}
+.compare-card:focus-visible {
+  outline: 2px solid var(--th-text-heading);
+  outline-offset: 5px;
+}
+@media (max-width: 560px) {
+  .compare-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .compare-card {
+    padding: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compare-card {
+    transition: none;
+  }
+}
