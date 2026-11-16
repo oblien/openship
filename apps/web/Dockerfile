@@ -17,7 +17,7 @@ FROM dependencies AS builder
 COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
-COPY scripts/web-client-messages.mjs ./scripts/
+COPY scripts/web-client-messages.mjs scripts/web-client-messages.d.mts ./scripts/
 
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd apps/web && bun run build

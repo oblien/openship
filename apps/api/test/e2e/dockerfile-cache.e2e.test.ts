@@ -66,6 +66,7 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
     await write("patches/fixture.patch", "first patch input\n");
     await write("vendor/fixture.txt", "first vendored package input\n");
     await write("scripts/web-client-messages.mjs", "// Website build preparation fixture.\n");
+    await write("scripts/web-client-messages.d.mts", "export {};\n");
     await write("packages/shared/package.json", {
       name: "@fixture/shared",
       version: "1.0.0",
