@@ -53,6 +53,9 @@ to invoke administrative operations, including host command execution.
 - Review Compose changes in a shared before/after dialog and apply the exact
   reviewed revision without repeating setup. Preserve deployment options and
   saved overrides, mask credentials, and require a new review if source changes (#1796).
+- Explain private-image pull failures with the affected image and a direct link
+  to registry connections. Preserve public-image recovery and distinguish registry
+  credentials from GitHub repository access (#1798).
 - Reveal and hide service environment values through the shared Compose editor
   while retaining the existing permission checks (#1771).
 - Import Railway projects with multiple repositories as native services and
