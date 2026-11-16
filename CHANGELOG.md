@@ -71,6 +71,8 @@ to invoke administrative operations, including host command execution.
   dropping build ownership, cancellation or capacity checks.
 - Back up verified empty Docker volumes and bind directories alongside populated
   sources. Refuse missing sources and preserve errors for unavailable storage.
+- Verify every Redis Sentinel has discovered the writable primary, its replicas
+  and the full voting group before reporting replicated databases ready.
 - Fence event-stream admission while relocating the controller, restore access
   when it resumes, and link server preparation to its deployment progress.
 - Preserve the mail host's configured ignored IP addresses when updating its engine.

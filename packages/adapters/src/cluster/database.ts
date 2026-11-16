@@ -25,6 +25,7 @@ import { kubernetesPodIssue, kubernetesPodPhase } from "./kubernetes-health";
 import { kubernetesIdLabel } from "./kubernetes-label";
 import { deleteKubernetesObject, patchKubernetesObject } from "./kubernetes-mutation";
 import { RedisArchive, DatabaseArchiveTasks } from "./redis-backups";
+import { redisSentinelReadiness } from "./redis-readiness";
 export type { ClusterDatabaseBackupStorage } from "./database-backups";
 
 export const DATABASE_IMAGES = {
@@ -1023,7 +1024,7 @@ export class ClusterDatabaseAdapter {
         `timeout 10 redis-cli -h ${host} INFO replication | tr -d '\\r' | grep -qx 'role:master'`,
         `timeout 10 redis-cli -h ${host} INFO replication | tr -d '\\r' | grep -qx 'connected_slaves:${c.instances - 1}'`,
         `timeout 15 redis-cli -h ${host} WAIT ${c.instances - 1} 10000 | grep -qx '${c.instances - 1}'`,
-        `timeout 10 redis-cli -h database-sentinel.${this.namespace}.svc.cluster.local -p 26379 SENTINEL CKQUORUM mymaster | grep -q '^OK '`,
+        redisSentinelReadiness(this.namespace, c.instances - 1),
       );
     const check =
       c.engine === "postgres"
