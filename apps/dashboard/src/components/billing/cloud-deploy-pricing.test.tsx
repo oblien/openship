@@ -23,6 +23,14 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// Billing fixtures must not start real session polling or leave delayed auth
+// cleanup running after happy-dom removes the browser globals.
+vi.mock("@/lib/auth-client", () => ({
+  useSession: () => ({
+    isPending: false,
+    data: { user: { id: "billing-viewer" }, session: { activeOrganizationId: "billing-org" } },
+  }),
+}));
 vi.mock("@/lib/api/billing", () => ({
   billingApi: { getBillingState: mocks.state, getResources: mocks.resources },
 }));
