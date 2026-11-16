@@ -10,7 +10,7 @@ OpenShip 1.0 brings a refreshed dashboard, edge maintenance and custom pages,
 deploy links, and scheduled mail workflows. Includes every change since 0.9.12,
 with more reliable builds, imports, billing and recovery.
 
-**Security update:** administrators should update all OpenShip components. This
+**Recommended update:** administrators should update all OpenShip components. This
 release closes an authorization flaw that allowed ordinary organization members
 to invoke administrative operations, including host command execution.
 
@@ -26,6 +26,8 @@ to invoke administrative operations, including host command execution.
 - Keep generated local mail credentials and runtime caches out of image build
   contexts. Bundle the shared assistant client and its dependency patch so
   release builds do not depend on a sibling checkout or baked development URLs.
+- Include the website's client-message generator in its Docker build, and verify
+  the production website image and its public pages before release.
 
 ### Edge pages and routing
 

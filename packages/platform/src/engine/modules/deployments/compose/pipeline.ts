@@ -379,7 +379,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   }
   if (composeBuild.buildFailures.size > 0) {
     logger.log(
-      `Build phase completed with ${composeBuild.buildFailures.size} failed service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Deploying available services...\n`,
+      `Image preparation failed for ${composeBuild.buildFailures.size} service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Checking deployment readiness before activation...\n`,
       "warn",
     );
   } else {

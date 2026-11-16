@@ -65,6 +65,7 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
     await write("tsconfig.base.json", "{}");
     await write("patches/fixture.patch", "first patch input\n");
     await write("vendor/fixture.txt", "first vendored package input\n");
+    await write("scripts/web-client-messages.mjs", "// Website build preparation fixture.\n");
     await write("packages/shared/package.json", {
       name: "@fixture/shared",
       version: "1.0.0",
@@ -78,7 +79,11 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
         private: true,
         type: "module",
         dependencies: { "@fixture/shared": "workspace:*" },
-        scripts: { build: "bun build.js" },
+        scripts: {
+          build: app === "web"
+            ? "bun ../../scripts/web-client-messages.mjs && bun build.js"
+            : "bun build.js",
+        },
       });
       await write(`apps/${app}/revision.txt`, "first source");
       await write(

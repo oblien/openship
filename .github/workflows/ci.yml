@@ -28,6 +28,10 @@ concurrency:
 # unmergeable forever with no visible reason.
 
 jobs:
+  website-image:
+    name: Website image
+    uses: ./.github/workflows/website-image.yml
+
   actions-runner:
     name: Actions execution
     permissions:
@@ -257,7 +261,7 @@ jobs:
   # matrix must fail this check; no individual shard can make the PR green.
   test:
     name: Test
-    needs: [test_suites, actions-runner]
+    needs: [test_suites, actions-runner, website-image]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -266,9 +270,10 @@ jobs:
         env:
           TEST_SUITES_RESULT: ${{ needs.test_suites.result }}
           ACTIONS_RESULT: ${{ needs.actions-runner.result }}
+          WEBSITE_RESULT: ${{ needs.website-image.result }}
         run: |
-          if [ "$TEST_SUITES_RESULT" != "success" ] || [ "$ACTIONS_RESULT" != "success" ]; then
-            echo "::error::Test suites: $TEST_SUITES_RESULT; Actions execution: $ACTIONS_RESULT"
+          if [ "$TEST_SUITES_RESULT" != "success" ] || [ "$ACTIONS_RESULT" != "success" ] || [ "$WEBSITE_RESULT" != "success" ]; then
+            echo "::error::Test suites: $TEST_SUITES_RESULT; Actions execution: $ACTIONS_RESULT; Website image: $WEBSITE_RESULT"
             exit 1
           fi
 

@@ -34,6 +34,10 @@ permissions:
   actions: read
 
 jobs:
+  website-image:
+    name: Website image
+    uses: ./.github/workflows/website-image.yml
+
   geoip:
     name: GeoIP freshness
     uses: ./.github/workflows/geoip.yml
