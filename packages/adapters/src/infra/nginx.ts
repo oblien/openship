@@ -1797,7 +1797,11 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const recordPath = join(dir, "record-id.txt");
     await this._mkdir(dir);
     try {
-      await this._chmod(dir, 0o700);
+      // Do not chmod the directory through the command channel. On deployments
+      // where file operations and commands use different host/container users,
+      // the directory can be created by one namespace and chmod reaches it
+      // through another, causing DNS-01 issuance to fail before Certbot runs.
+      // Hook files are created with restrictive modes by _writeFile below.
       await this._writeFile(authPath, opts.dnsAuthHookScript, 0o700);
       if (opts.dnsCleanupHookScript) {
         await this._writeFile(cleanupPath, opts.dnsCleanupHookScript, 0o700);
