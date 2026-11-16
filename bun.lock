@@ -15,7 +15,7 @@
     },
     "apps/api": {
       "name": "@repo/api",
-      "version": "0.9.12",
+      "version": "1.0.0",
       "dependencies": {
         "@better-auth/core": "1.7.15",
         "@better-auth/drizzle-adapter": "1.7.15",
@@ -62,7 +62,7 @@
     },
     "apps/cli": {
       "name": "@repo/cli",
-      "version": "0.9.12",
+      "version": "1.0.0",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -144,7 +144,7 @@
     },
     "apps/desktop": {
       "name": "@repo/desktop",
-      "version": "0.9.12",
+      "version": "1.0.0",
       "dependencies": {
         "@repo/core": "workspace:*",
         "@repo/onboarding": "workspace:*",
@@ -167,11 +167,11 @@
     },
     "apps/email": {
       "name": "@repo/email",
-      "version": "0.9.12",
+      "version": "1.0.0",
     },
     "apps/web": {
       "name": "@repo/web",
-      "version": "0.9.12",
+      "version": "1.0.0",
       "dependencies": {
         "@repo/contracts": "workspace:*",
         "@repo/core": "workspace:*",
@@ -224,7 +224,7 @@
         "ignore": "^7.0.5",
         "ioredis": "^5.10.0",
         "ipaddr.js": "^2.4.0",
-        "oblien": "3.0.2",
+        "oblien": "3.2.0",
         "ssh2": "^1.17.0",
         "tar-fs": "^2.1.4",
         "undici": "^7.30.2",
@@ -325,7 +325,7 @@
     },
     "packages/openship": {
       "name": "openship",
-      "version": "0.9.12",
+      "version": "1.0.0",
       "bin": {
         "openship": "./dist/node-entry.js",
       },
@@ -350,7 +350,7 @@
     },
     "packages/platform": {
       "name": "@repo/platform",
-      "version": "0.9.12",
+      "version": "1.0.0",
       "dependencies": {
         "@actions/expressions": "0.3.61",
         "@actions/workflow-parser": "0.3.61",
@@ -2756,7 +2756,7 @@
 
     "object.assign": ["object.assign@4.1.7", "", { "dependencies": { "call-bind": "^1.0.8", "call-bound": "^1.0.3", "define-properties": "^1.2.1", "es-object-atoms": "^1.0.0", "has-symbols": "^1.1.0", "object-keys": "^1.1.1" } }, "sha512-nK28WOo+QIjBkDduTINE4JkF/UJJKyf2EJxvJKfblDpyg0Q+pkOHNTL0Qwy6NP6FhE/EnzV73BxxqcJaXY9anw=="],
 
-    "oblien": ["oblien@3.0.2", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-f2hP0e9ujrL/H7eCP7mwAlnpmVa7OSDEgQGFEjwEXaSZUYJlBUwcZx+MPsTU3RNjlRj1tVpCRSa9PT3qi8zkNA=="],
+    "oblien": ["oblien@3.2.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3", "zod": "4.3.6" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-788bnt5IymO6FDF1rJlLPy9EXkvVA3NFt1cPyF+o9gFQbtDNbsz1xPRMYDqUC+uMQOj7kxS3ZSnVe5HZOEFINw=="],
 
     "obug": ["obug@2.2.1", "", {}, "sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q=="],
 
@@ -3953,6 +3953,8 @@
     "normalize-package-data/semver": ["semver@5.7.3", "", { "bin": { "semver": "bin/semver" } }, "sha512-kM18BPOqTi0+TB68703/GJRpAML5Me+IDQsR1J26YB3EFKKNEyHIVZuWDX7+WKQB3tHwDwgk24BfhdpWUbytvQ=="],
 
     "npm-run-path/path-key": ["path-key@2.0.1", "", {}, "sha512-fEHGKCSmUSDPv4uoj8AlD+joPlq3peND+HRYyxFz4KPw4z926S/b8rIuFs2FYJg3BwsxJf6A9/3eIdLaYC+9Dw=="],
+
+    "oblien/zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 
     "p-queue/eventemitter3": ["eventemitter3@4.0.7", "", {}, "sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw=="],
 

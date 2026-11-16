@@ -87,7 +87,7 @@ to invoke administrative operations, including host command execution.
 
 ### Cloud, billing and CLI
 
-- Move the Oblien integration to SDK 3.0.2 and the provider's native versioned
+- Move the Oblien integration to SDK 3.2.0 and the provider's native versioned
   VM API. Preserve saved VM identities, customer metadata and purchased offers;
   validate scoped credentials against the selected VM.
 - Recover unfinished Cloud purchases instead of creating duplicate unpaid
