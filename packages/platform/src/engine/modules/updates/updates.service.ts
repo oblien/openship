@@ -36,6 +36,7 @@
  * correct on a cold cache, on desktop (where the job never runs at all), and on an
  * instance whose scheduler is broken.
  */
+import type { ApplyProjectUpdateInput } from "@repo/contracts";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -600,7 +601,7 @@ export async function getProjectDrift(
  * No post-deploy rescan: deployed state and progress are read live, while the
  * upstream result remains valid until the next poll.
  */
-export async function applyProjectUpdate(ctx: RequestContext, projectId: string) {
+export async function applyProjectUpdate(ctx: RequestContext, projectId: string, input: ApplyProjectUpdateInput = {}) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   const active = await findActiveDeployment(project);
@@ -620,6 +621,7 @@ export async function applyProjectUpdate(ctx: RequestContext, projectId: string)
     // sibling's local image, restart an unchanged database or build an app.
     const { deployment } = await triggerDeployment(ctx, {
       projectId,
+      composeRevision: input.composeRevision,
       environment: active.environment,
       trigger: "update",
       serviceIds,
@@ -630,5 +632,6 @@ export async function applyProjectUpdate(ctx: RequestContext, projectId: string)
   }
   return redeployBuildSession(ctx, active.id, {
     trigger: "update",
+    composeRevision: input.composeRevision,
   });
 }

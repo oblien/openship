@@ -415,15 +415,24 @@
     "fixStep2": "Adicione uma rota ou domínio personalizado para a porta do serviço.",
     "fixStep3": "Verifique o domínio e implemente.",
     "composeReview": {
-      "title": "O Compose mudou",
+      "title": "Rever alterações do Compose",
       "addedTitle": "Há novos serviços para configurar",
-      "description": "O ficheiro Compose mudou desde a última configuração. Reveja os serviços e as definições atuais antes de voltar a implementar.",
+      "description": "Reveja as alterações no ficheiro Compose. Aplique e implemente agora ou configure primeiro os serviços.",
       "configure": "Configurar",
       "cancel": "Cancelar",
       "added": "Adicionados",
       "changed": "Alterados",
       "removed": "Removidos",
-      "reviewHint": "Reveja estas alterações do Compose e implemente para as aplicar. Os serviços removidos param durante a implementação; os seus dados persistentes são mantidos."
+      "reviewHint": "Reveja estas alterações do Compose e implemente para as aplicar. Os serviços removidos param durante a implementação; os seus dados persistentes são mantidos.",
+      "apply": "Aplicar e implementar",
+      "applying": "A iniciar implementação…",
+      "before": "Anterior",
+      "after": "Novo",
+      "secretsHidden": "Os valores do ambiente estão ocultos",
+      "preservationHint": "Os ajustes guardados são preservados. Os serviços removidos param durante a implementação; os volumes são mantidos.",
+      "changedAgain": "O ficheiro Compose voltou a mudar. Reveja as diferenças atualizadas antes de implementar.",
+      "applyFailed": "Não foi possível iniciar a implementação. Reveja o erro ou configure os serviços.",
+      "settingsChanged": "As definições do serviço mudaram."
     }
   },
   "connections": {

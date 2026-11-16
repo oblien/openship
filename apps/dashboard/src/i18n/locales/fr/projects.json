@@ -415,15 +415,24 @@
     "fixStep2": "Ajoutez une route ou un domaine personnalisé pour le port du service.",
     "fixStep3": "Vérifiez le domaine et déployez.",
     "composeReview": {
-      "title": "Compose a changé",
+      "title": "Vérifier les modifications Compose",
       "addedTitle": "De nouveaux services sont à configurer",
-      "description": "Le fichier Compose a changé depuis la dernière configuration. Vérifiez les services et paramètres actuels avant de redéployer.",
+      "description": "Vérifiez les modifications du fichier Compose. Appliquez et déployez maintenant, ou configurez les services au préalable.",
       "configure": "Configurer",
       "cancel": "Annuler",
       "added": "Ajoutés",
       "changed": "Modifiés",
       "removed": "Supprimés",
-      "reviewHint": "Vérifiez ces changements Compose, puis déployez pour les appliquer. Les services supprimés seront arrêtés pendant le déploiement ; leurs données persistantes seront conservées."
+      "reviewHint": "Vérifiez ces changements Compose, puis déployez pour les appliquer. Les services supprimés seront arrêtés pendant le déploiement ; leurs données persistantes seront conservées.",
+      "apply": "Appliquer et déployer",
+      "applying": "Démarrage du déploiement…",
+      "before": "Précédent",
+      "after": "Nouveau",
+      "secretsHidden": "Les valeurs d’environnement sont masquées",
+      "preservationHint": "Les réglages enregistrés sont conservés. Les services supprimés sont arrêtés pendant le déploiement ; leurs volumes sont conservés.",
+      "changedAgain": "Le fichier Compose a encore changé. Vérifiez les nouvelles différences avant de déployer.",
+      "applyFailed": "Impossible de démarrer le déploiement. Vérifiez l’erreur ou configurez les services.",
+      "settingsChanged": "Les paramètres du service ont changé."
     }
   },
   "connections": {

@@ -221,7 +221,7 @@ A changed digest describes image content, not a security remediation guarantee.
 | --- | --- | --- |
 | List update status; behindOnly filters to available updates. | `updates.list(input?)` | `GET /api/updates`<br />`updates:read` |
 | Refresh the organization’s update scan. | `updates.scan()` | `POST /api/updates/scan`<br />`updates:write` |
-| Apply an available update to the specified project ID. | `updates.apply(id)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
+| Apply an available update to the specified project ID. | `updates.apply(id, input?)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
 | Refresh configured runtime images and rebuild selected services at the deployed source version. | `updates.updateRuntime(id, input?)` | `POST /api/updates/:projectId/runtime`<br />`project:write` |
 | Compare deployed image and recorded base-image digests with the registry. | `updates.checkRuntime(id, input?)` | `POST /api/updates/:projectId/runtime/check`<br />`project:read` |
 | Read literal Dockerfile or Compose image references at the deployment branch commit. Requires repository source access. | `updates.runtimeSource(id, input)` | `POST /api/updates/:projectId/runtime/source`<br />`project:read` |

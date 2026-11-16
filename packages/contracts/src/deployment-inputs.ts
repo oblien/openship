@@ -2,6 +2,8 @@
  * Deployment validation schemas - Shared TypeBox operation contracts.
  */
 
+import { ComposeRevisionSchema } from "./compose-review";
+
 import { Type, type Static } from "@sinclair/typebox";
 import { OwnerRepoParams } from "./github-inputs";
 import { CreateDeploymentSchema } from "./deployments";
@@ -110,9 +112,7 @@ export const BuildServiceInput = Type.Object({
  */
 export const BuildAccessBody = Type.Object({
   projectId: Type.String({ description: "Target project id (from projects/ensure). Required." }),
-  composeRevision: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$",
-    description: "Reviewed Compose revision returned by prepare with projectId. Required when an existing source stack changes; a stale revision is rejected before synchronization.",
-  })),
+  composeRevision: Type.Optional(ComposeRevisionSchema),
   uploadSessionId: Type.Optional(
     Type.String({
       description: "Folder-upload session id — deploys the uploaded source instead of git.",

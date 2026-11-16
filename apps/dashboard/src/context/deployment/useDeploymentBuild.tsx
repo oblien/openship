@@ -687,6 +687,7 @@ export function useDeploymentBuild(
     overrides?: {
       /** Reuse the draft already created before a capacity refusal. */
       projectId?: string;
+      composeRevision?: string;
       runtimeMode?: DeploymentConfig["runtimeMode"];
       // Applied to THIS deploy's payload directly, bypassing async React state
       // — lets the clone-strategy gate flip build-local for the in-flight
@@ -990,7 +991,7 @@ export function useDeploymentBuild(
       // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
-        composeRevision: config.composeRevision,
+        composeRevision: overrides?.composeRevision ?? config.composeRevision,
         branch: config.branch || undefined,
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
@@ -1068,7 +1069,15 @@ export function useDeploymentBuild(
       errorDiagnostics.error("dashboard/context/deployment/useDeploymentBuild", "Deployment error:", err);
       const message = getApiErrorMessage(err, "Failed to start deployment");
       const errorCode = extractErrorCode(err);
-      if (showComposeReview(err)) {
+      if (overrides?.composeRevision) {
+        setState((prev) => ({ ...prev, isDeploying: false }));
+        throw err;
+      }
+      if (showComposeReview(err, async (composeRevision) => {
+        const id = await startDeployment({ ...overrides, projectId: ensuredProjectId ?? undefined, composeRevision });
+        if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
+        return id;
+      })) {
         setState((prev) => ({ ...prev, isDeploying: false }));
         return null;
       }
@@ -1601,7 +1610,7 @@ export function useDeploymentBuild(
   ]);
 
   const redeploy = useCallback(
-    async (deploymentId: string, options?: { reuseBuild?: boolean }): Promise<string | null> => {
+    async function redeploy(deploymentId: string, options?: { reuseBuild?: boolean; composeRevision?: string }): Promise<string | null> {
       if (!deploymentId) {
         showToast("Deployment ID not provided", "error", "Error");
         return null;
@@ -1655,8 +1664,13 @@ export function useDeploymentBuild(
         const msg = getApiErrorMessage(error, "Failed to start redeployment");
         // A missing GitHub credential surfaces the SAME modal as the deploy
         // wizard (never a bare toast) — one shared handler, one source of truth.
+        if (options?.composeRevision) throw error;
         const openedModal =
-          showComposeReview(error) || showCloudPricing(error, async () => {
+          showComposeReview(error, async (composeRevision) => {
+            const id = await redeploy(deploymentId, { ...options, composeRevision });
+            if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
+            return id;
+          }) || showCloudPricing(error, async () => {
             const id = await redeploy(deploymentId, options);
             if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
           }) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);

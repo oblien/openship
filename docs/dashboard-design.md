@@ -509,11 +509,14 @@ cancellations and unfinished attempts from success rate; count queued attempts a
 Each project retains its own history.
 Old `/deployments` links redirect to Monitoring while preserving filters.
 
-When redeploy detects changed Compose source, show a review modal with the added,
-changed, and removed service names. Configure opens the existing deployment
-wizard with the fresh source and saved settings/destination; cancel performs no
-synchronization. Show the change summary in the wizard and validate its source
-revision before deploying. Retire removed services through normal deployment
+When redeploy detects changed Compose source, use the shared wide review modal
+with a scrollable field diff grouped by added, changed, and removed services. Keep
+the actions visible below the diff. Apply & deploy retries the original operation
+against the exact reviewed source revision; a newer revision requires fresh review.
+Mask secret values on the server and preserve saved overrides through the existing
+Compose reconciliation. Configure remains an alternative that opens the existing
+wizard with fresh source and saved settings/destination; cancel performs no
+synchronization. Older APIs without a review token retain Configure. Retire removed services through normal deployment
 cleanup while preserving their persistent data and deployment history.
 Deploy asks for DNS setup only for newly selected custom hostnames or a changed
 destination. Existing hostnames on the same deployed destination continue directly;

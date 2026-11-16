@@ -47,7 +47,7 @@ export function useRuntimeUpdate(
   }, []);
 
   const update = useCallback(
-    async function runUpdate(advisory?: ApplySecurityInput): Promise<void> {
+    async function runUpdate(advisory?: ApplySecurityInput, composeRevision?: string): Promise<void> {
       const scope = getApiRequestScopeVersion();
       const requestIdentity = `${identity}:${scope}`;
       if (pending.current === requestIdentity) return;
@@ -61,8 +61,8 @@ export function useRuntimeUpdate(
       setPendingIdentity(requestIdentity);
       try {
         const { data } = advisory
-          ? await updatesApi.applySecurity(projectId, advisory)
-          : await updatesApi.updateRuntime(projectId, serviceId ? { serviceIds: [serviceId] } : {});
+          ? await updatesApi.applySecurity(projectId, { ...advisory, ...(composeRevision && { composeRevision }) })
+          : await updatesApi.updateRuntime(projectId, { ...(serviceId && { serviceIds: [serviceId] }), ...(composeRevision && { composeRevision }) });
         if (!current()) return;
         if (!isCreateDeploymentResult(data) || data.project_id !== projectId)
           throw new Error(copy.failed);
@@ -75,7 +75,8 @@ export function useRuntimeUpdate(
         // Re-read admission failures too, so a stale refresh button becomes
         // the current configuration guidance instead of offering the same no-op.
         if (advisory) refreshConsumers(resourceKey);
-        if (showComposeReview(error)) return;
+        if (composeRevision && !isAbortError(error)) throw error;
+        if (showComposeReview(error, (revision) => runUpdate(advisory, revision))) return;
         if (
           showCloudPricing(error, async () => {
             if (current()) await runUpdate(advisory);

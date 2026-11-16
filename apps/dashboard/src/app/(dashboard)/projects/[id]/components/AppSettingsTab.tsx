@@ -55,14 +55,15 @@ export function AppSettingsTab() {
     }
   };
 
-  const handleApply = async () => {
+  const handleApply = async (composeRevision?: string) => {
     setApplying(true);
     try {
-      await deployApi.trigger({ projectId: id, refresh: true });
+      await deployApi.trigger({ projectId: id, refresh: true, ...(composeRevision && { composeRevision }) });
       showToast(ps.applied, "success");
       setPendingApply(false);
     } catch (err) {
-      if (!showComposeReview(err) && !showCloudPricing(err)) showToast(getApiErrorMessage(err, ps.applyFailed), "error");
+      if (composeRevision) throw err;
+      if (!showComposeReview(err, handleApply) && !showCloudPricing(err)) showToast(getApiErrorMessage(err, ps.applyFailed), "error");
     } finally {
       setApplying(false);
     }
@@ -107,7 +108,7 @@ export function AppSettingsTab() {
         {pendingApply && (
           <button
             type="button"
-            onClick={handleApply}
+            onClick={() => void handleApply()}
             disabled={applying}
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
           >

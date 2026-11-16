@@ -200,6 +200,7 @@ export async function planProjectRuntimeUpdate(
       commitMessage: active.commitMessage ?? undefined,
       ...(isReleaseProvider(project.gitProvider) && { releaseVersion }),
       trigger: "update",
+      ...(input.composeRevision && { composeRevision: input.composeRevision }),
       forcePullImages: true,
       ...(approval && { securityApproval: approval }),
       ...(input.serviceIds
