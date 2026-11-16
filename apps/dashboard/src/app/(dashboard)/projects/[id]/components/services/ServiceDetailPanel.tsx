@@ -434,7 +434,7 @@ export function ServiceDetailPanel({
    * rebuild + redeploy ONLY this service and land on the build screen. Image
    * apps use the shared image refresh operation when redeploying.
    */
-  const handleRedeployService = async () => {
+  const handleRedeployService = async (composeRevision?: string): Promise<boolean> => {
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
       return false;
@@ -445,7 +445,7 @@ export function ServiceDetailPanel({
     }
     setRedeploying(true);
     try {
-      const res = await deployApi.trigger({ projectId, serviceIds: [service.id] });
+      const res = await deployApi.trigger({ projectId, serviceIds: [service.id], ...(composeRevision && { composeRevision }) });
       if ((res as any)?.success === false) {
         setRedeploying(false);
         showToast(
@@ -460,7 +460,8 @@ export function ServiceDetailPanel({
       return true;
     } catch (err) {
       setRedeploying(false);
-      if (showComposeReview(err) || showCloudPricing(err)) return false;
+      if (composeRevision) throw err;
+      if (showComposeReview(err, handleRedeployService) || showCloudPricing(err)) return false;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",

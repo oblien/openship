@@ -466,7 +466,7 @@ export default function ProjectTopology({
     setIntent(requested === "update" || !canReuse ? "update" : "refresh");
     setReviewing(true);
   };
-  const apply = async () => {
+  const apply = async (composeRevision?: string) => {
     if (applyingRef.current || busy) return;
     applyingRef.current = true;
     setApplying(true);
@@ -509,7 +509,7 @@ export default function ProjectTopology({
             await connectionsApi.remove(id, connectionId);
           },
           deploy: async (input) => {
-            const response = await deployApi.trigger({ projectId: id, ...input });
+            const response = await deployApi.trigger({ projectId: id, ...input, ...(composeRevision && { composeRevision }) });
             if (response?.success === false)
               throw new Error(response?.error || "Deployment could not be started.");
             return response;
@@ -528,7 +528,8 @@ export default function ProjectTopology({
       setChanges([]);
       setReviewing(false);
     } catch (error) {
-      if (!showComposeReview(error) && !showCloudPricing(error))
+      if (composeRevision) throw error;
+      if (!showComposeReview(error, apply) && !showCloudPricing(error))
         setApplyError(getApiErrorMessage(error, "Changes could not be applied."));
       invalidateProjectCaches(id);
       void runtime.refresh();

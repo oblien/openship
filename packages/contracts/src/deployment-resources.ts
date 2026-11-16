@@ -1,3 +1,4 @@
+import { ComposeRevisionSchema } from "./compose-review";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistorySummary, type DeploymentHistoryFilter, type LogEntry, type PromptPayload } from "@repo/core";
@@ -25,6 +26,7 @@ export const ListDeploymentsSchema = Type.Object({
 export const DeploymentLogsSchema = Type.Object({ tail: Type.Optional(Type.Integer({ minimum: 1, maximum: 100_000 })) });
 export const RedeploySchema = Type.Object({
   useExistingCommit: Type.Optional(Type.Boolean({ description: "Rebuild the selected deployment's commit instead of the latest commit." })),
+  composeRevision: Type.Optional(ComposeRevisionSchema),
   reuseBuild: Type.Optional(Type.Boolean({ description: "Retry a failed deployment with its retained completed Docker images. Never rebuilds or pulls substitutes; mutually exclusive with useExistingCommit." })),
 });
 export const RespondSchema = Type.Object({ action: Type.String({ minLength: 1, maxLength: 256 }) });

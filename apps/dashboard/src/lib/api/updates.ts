@@ -1,6 +1,7 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type {
+  ApplyProjectUpdateInput,
   CreateDeploymentResult,
   ProjectUpdate,
   UpdateRuntimeInput,
@@ -95,8 +96,10 @@ export const updatesApi = {
   scan: () => api.post<{ data: ScanSummary }>(endpoints.updates.scan),
 
   /** Apply the available update to a project/app (force-pull + redeploy). */
-  apply: (projectId: string) =>
+  apply: (projectId: string, input?: ApplyProjectUpdateInput) =>
     api.post<{ data: { success: boolean; deployment_id: string; project_id: string } }>(
       endpoints.updates.apply(projectId),
+      input,
+      { timeout: 60_000 },
     ),
 };

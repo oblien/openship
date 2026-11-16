@@ -474,15 +474,24 @@
     "fixStep2": "Add a route or custom domain for the service port.",
     "fixStep3": "Verify the domain and deploy.",
     "composeReview": {
-      "title": "Compose changed",
+      "title": "Review Compose changes",
       "addedTitle": "New services need configuration",
-      "description": "The Compose file has changed since your last configuration. Review the latest services and settings before redeploying.",
+      "description": "Review what changed in your Compose file. Apply and deploy now, or configure the services first.",
       "configure": "Configure",
       "cancel": "Cancel",
       "added": "Added",
       "changed": "Changed",
       "removed": "Removed",
-      "reviewHint": "Review these Compose changes, then deploy to apply them. Removed services stop during deployment; their persistent data is kept."
+      "reviewHint": "Review these Compose changes, then deploy to apply them. Removed services stop during deployment; their persistent data is kept.",
+      "apply": "Apply & deploy",
+      "applying": "Starting deployment…",
+      "before": "Previous",
+      "after": "Incoming",
+      "secretsHidden": "Environment values are hidden",
+      "preservationHint": "Saved overrides are preserved. Removed services stop during deployment; their volumes are kept.",
+      "changedAgain": "The Compose file changed again. Review the updated diff before deploying.",
+      "applyFailed": "Could not start deployment. Review the error or configure the services.",
+      "settingsChanged": "Service settings changed."
     }
   },
   "incomingWebhooks": {

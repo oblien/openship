@@ -90,6 +90,14 @@ async function project(owner: SeededOwner, name: string, deployed = true) {
 }
 
 describe("runtime update shared SDK/HTTP operation", () => {
+  it("preserves the Compose review revision through native and HTTP runtime refresh", async () => {
+    const owner = await seedOwner(), p = await project(owner, "reviewed-runtime"), c = await clients(owner);
+    const composeRevision = "b".repeat(64);
+    for (const client of [c.native.updates, c.remote.updates]) await client.updateRuntime(p.id, { composeRevision });
+    expect(provider.deploy).toHaveBeenCalledTimes(2);
+    for (const [, input] of provider.deploy.mock.calls) expect(input).toMatchObject({ projectId: p.id, composeRevision, forcePullImages: true });
+  });
+
   it("rebuilds a source runtime at the active commit without requiring source drift", async () => {
     const owner = await seedOwner(),
       p = await project(owner, "source"),

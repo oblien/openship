@@ -191,6 +191,15 @@ describe("updates shared SDK/HTTP operations", () => {
     expect(provider.redeploy).not.toHaveBeenCalled();
   });
 
+
+  it("carries a reviewed Compose revision through native and HTTP updates", async () => {
+    const owner = await seedOwner(), p = await project(owner, "reviewed-apply"), c = await clients(owner);
+    const composeRevision = "a".repeat(64);
+    provider.redeploy.mockResolvedValue({ project_id: p.id, deployment_id: "reviewed-deployment" });
+    for (const client of [c.native.updates, c.remote.updates]) await client.apply(p.id, { composeRevision });
+    expect(provider.redeploy).toHaveBeenCalledTimes(2);
+    for (const [, , input] of provider.redeploy.mock.calls) expect(input).toEqual({ trigger: "update", composeRevision });
+  });
   it("retains the update trigger and records one audit through either interface", async () => {
     const owner = await seedOwner(),
       p = await project(owner, "apply"),

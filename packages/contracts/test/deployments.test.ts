@@ -14,6 +14,7 @@ describe("deployment contract", () => {
       "acceptComposeChanges",
       "branch",
       "commitSha",
+      "composeRevision",
       "environment",
       "forceAll",
       "projectId",
@@ -44,6 +45,15 @@ describe("deployment contract", () => {
         trigger: "actions",
       }),
     ).toEqual({ projectId: "p1" });
+  });
+
+  it("preserves valid review revisions and rejects malformed acceptance tokens", () => {
+    const composeRevision = "a".repeat(64);
+    expect(parseCreateDeploymentInput({ projectId: "p1", composeRevision }))
+      .toEqual({ projectId: "p1", composeRevision });
+    for (const invalid of ["", "a".repeat(63), "A".repeat(64), "z".repeat(64)]) {
+      expect(Value.Check(CreateDeploymentSchema, { projectId: "p1", composeRevision: invalid })).toBe(false);
+    }
   });
 
   it("accepts complete deployment records and compatible ID-only responses", () => {

@@ -1,3 +1,4 @@
+import { ComposeRevisionSchema } from "./compose-review";
 import { ServerSecurityResultSchema } from "./server-security";
 import {
   RuntimeSourceInputSchema,
@@ -187,6 +188,7 @@ export const UpdateProjectSchemas = {
     action: "write",
     input: Type.Object(
       {
+        composeRevision: Type.Optional(ComposeRevisionSchema),
         advisoryId: Type.String({ minLength: 1, maxLength: 100 }),
         deploymentId: Type.String({ minLength: 1 }),
         serviceId: Type.Optional(nullableString),
@@ -199,12 +201,14 @@ export const UpdateProjectSchemas = {
   },
   apply: {
     action: "write",
+    input: Type.Object({ composeRevision: Type.Optional(ComposeRevisionSchema) }, { additionalProperties: false }),
+    optionalInput: true,
     output: CreateDeploymentResultSchema,
     outputCheck: isCreateDeploymentResult,
   },
   updateRuntime: {
     action: "write",
-    input: RuntimeScopeSchema,
+    input: Type.Object({ ...RuntimeScopeSchema.properties, composeRevision: Type.Optional(ComposeRevisionSchema) }, { additionalProperties: false }),
     optionalInput: true,
     output: CreateDeploymentResultSchema,
     outputCheck: isCreateDeploymentResult,
@@ -222,6 +226,7 @@ export type AdvisoryFeedResult = Static<typeof AdvisoryFeedResultSchema>;
 export type SecurityOverview = Static<typeof SecurityOverviewSchema>;
 export type SecurityCheckPolicy = Static<typeof SecurityCheckPolicySchema>;
 export type ApplySecurityInput = Static<typeof UpdateProjectSchemas.applySecurity.input>;
+export type ApplyProjectUpdateInput = Static<typeof UpdateProjectSchemas.apply.input>;
 export type UpdateRuntimeInput = Static<typeof UpdateProjectSchemas.updateRuntime.input>;
 export type RuntimeImageCheckResult = Static<typeof RuntimeImageCheckResultSchema>;
 export interface UpdateOperations

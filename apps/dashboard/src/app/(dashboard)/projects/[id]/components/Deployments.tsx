@@ -91,16 +91,16 @@ export const Deployments = () => {
   }, [projectData?.id, isBlocked, projectData?.latestDeploymentId]);
 
   // Redeploy saved settings against the latest source. Source changes stop at
-  // the shared review gate and open the existing configuration wizard.
+  // the shared review gate, then retry this same operation after explicit review.
   const runRedeploy = React.useCallback(
-    async (mode: "smart" | "all" | "refresh" | "update" = "smart") => {
+    async function runRedeploy(mode: "smart" | "all" | "refresh" | "update" = "smart", composeRevision?: string): Promise<void> {
       if (!projectData?.id) return;
       setIsRedeploying(true); // drive the loading state for menu paths too
       try {
         if (mode === "update") {
           // Image updates must force-pull the tag through the existing update
           // operation; a normal rebuild can reuse the currently running image.
-          const res = await updatesApi.apply(projectData.id);
+          const res = await updatesApi.apply(projectData.id, composeRevision ? { composeRevision } : undefined);
           openTriggeredBuild(
             router,
             { data: { deployment: { id: res.data?.deployment_id } } },
@@ -114,10 +114,11 @@ export const Deployments = () => {
             : mode === "refresh"
               ? { projectId: projectData.id, refresh: true }
               : { projectId: projectData.id, smartRoute: true };
-        const res = await deployApi.trigger(body);
+        const res = await deployApi.trigger({ ...body, ...(composeRevision && { composeRevision }) });
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
-        if (showComposeReview(error)) {
+        if (composeRevision && !isAbortError(error)) { setIsRedeploying(false); throw error; }
+        if (showComposeReview(error, (revision) => runRedeploy(mode, revision))) {
           setIsRedeploying(false);
           return;
         }

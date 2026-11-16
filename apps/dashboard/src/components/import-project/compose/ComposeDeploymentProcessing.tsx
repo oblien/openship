@@ -212,7 +212,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
   }, [state.deploymentId, state.projectId, router, showToast, cd]);
 
   const retryInFlightRef = React.useRef(false);
-  const handleRetryFailed = React.useCallback(async () => {
+  const handleRetryFailed = React.useCallback(async function retryFailed(composeRevision?: string): Promise<void> {
     if (retryInFlightRef.current) return; // one retry press = one POST
     // Rebuild ONLY the failed services — the successful ones carry forward on
     // their existing containers (compose carry-forward). Prefer the live
@@ -236,12 +236,13 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
     setDecisionResolved(true);
     setDecisionModalOpen(false);
     try {
-      const res = await deployApi.trigger({ projectId: state.projectId, serviceIds: failedIds });
+      const res = await deployApi.trigger({ projectId: state.projectId, serviceIds: failedIds, ...(composeRevision && { composeRevision }) });
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${state.projectId}`);
     } catch (err) {
       observeCaughtError(err, "dashboard/components/import-project/compose/ComposeDeploymentProcessing");
-      if (showComposeReview(err) || showCloudPricing(err)) {
+      if (composeRevision) throw err;
+      if (showComposeReview(err, retryFailed) || showCloudPricing(err)) {
         // A quota refusal created no build. Keep the failed-service retry available.
         setDecisionResolved(false);
         return;
