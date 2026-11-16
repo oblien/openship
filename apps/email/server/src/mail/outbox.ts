@@ -353,7 +353,27 @@ export async function runOutboxPass(now = Date.now()) {
       error: "Processing was interrupted. Check Sent before sending again.",
     })
     .where(
-      and(eq(schema.mailJob.state, "running"), lte(schema.mailJob.updatedAt, now - 5 * 60_000)),
+      and(
+        eq(schema.mailJob.kind, "send"),
+        eq(schema.mailJob.state, "running"),
+        lte(schema.mailJob.updatedAt, now - 5 * 60_000),
+      ),
+    )
+    .run();
+  // Removing snooze flags is idempotent. Recover interrupted wake-ups, keeping
+  // their credentials and fencing any old worker that eventually returns.
+  db.update(schema.mailJob)
+    .set({
+      state: "pending",
+      revision: sql`${schema.mailJob.revision} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(schema.mailJob.kind, "snooze"),
+        eq(schema.mailJob.state, "running"),
+        lte(schema.mailJob.updatedAt, now - 5 * 60_000),
+      ),
     )
     .run();
   const candidates = db
@@ -393,13 +413,14 @@ export async function runOutboxPass(now = Date.now()) {
         if (mailboxId(mailbox) !== row.mailboxId) throw new Error("Mailbox mismatch");
         const auth = mailboxAuth(mailbox);
         const payload = JSON.parse(decryptSecret(row.payload, context(row, "payload"))) as Payload;
-        dispatched = true;
         if (row.kind === "send" && "message" in payload) {
+          dispatched = true;
           await mailRouteInternals.send(auth.smtp, auth.imap, payload.from, {
             ...payload.message,
             messageId: `<${row.id}@${mailbox.email.split("@").at(-1)}>`,
           });
         } else if (row.kind === "snooze" && "ids" in payload) {
+          dispatched = true;
           await withSnoozeLock(row.mailboxId, async () => {
             const current = db
               .select()
@@ -412,14 +433,22 @@ export async function runOutboxPass(now = Date.now()) {
         } else throw new Error("Invalid job payload");
       }
     } catch {
-      state = dispatched && row.kind === "send" ? "uncertain" : "failed";
+      state = dispatched ? (row.kind === "send" ? "uncertain" : "pending") : "failed";
       message =
         state === "uncertain"
           ? "Delivery could not be confirmed. Check Sent or the recipient before sending again."
-          : "Could not complete this item. Sign in again and retry from your mailbox.";
+          : state === "pending"
+            ? "Could not wake these messages. We will retry when the mailbox is available."
+            : "Could not complete this item. Sign in again and retry from your mailbox.";
     }
     db.update(schema.mailJob)
-      .set({ state, error: message, credentials: null, updatedAt: Date.now() })
+      .set({
+        state,
+        error: message,
+        credentials: state === "pending" ? row.credentials : null,
+        dueAt: state === "pending" ? Math.max(now, Date.now()) + 60_000 : row.dueAt,
+        updatedAt: Date.now(),
+      })
       .where(
         and(
           eq(schema.mailJob.id, row.id),

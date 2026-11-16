@@ -125,6 +125,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@mindwire-ai/client@../../../vendor/mindwire-client-0.1.0-beta.3-83f1a8478412.tgz": "../../../patches/mindwire-client-0.1.0-beta.3-same-origin.patch",
+  },
   "overrides": {
     "@tiptap/core": "2.27.3",
     "@tiptap/pm": "2.27.3",

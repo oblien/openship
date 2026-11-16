@@ -4,11 +4,12 @@
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS dependencies
 WORKDIR /app
 
-COPY package.json bun.lock pnpm-workspace.yaml ./
+COPY package.json bun.lock bunfig.toml pnpm-workspace.yaml ./
 # Preserve workspace paths without making installation depend on source edits.
 # Email's postinstall also installs its two nested packages.
 COPY --parents apps/*/package.json packages/*/package.json apps/email/*/package.json apps/email/*/bun.lock ./
 COPY patches/ ./patches/
+COPY vendor/ ./vendor/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 

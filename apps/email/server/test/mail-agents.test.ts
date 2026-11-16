@@ -292,6 +292,54 @@ describe("durable sends and approvals", () => {
 });
 
 describe("snooze wake-ups", () => {
+  it("recovers an interrupted wake-up without replaying an interrupted send", async () => {
+    const add = spyOn(driver, "snoozeThreads").mockResolvedValue();
+    const wake = spyOn(driver, "unsnoozeThreads").mockResolvedValue();
+    try {
+      const now = Date.now();
+      const job = await snooze(alice, ["sleeping"], new Date(now + 30_000).toISOString());
+      const queued = enqueueSend(alice, message);
+      for (const id of [job.id, queued.messageId]) {
+        db.update(schema.mailJob)
+          .set({ state: "running", updatedAt: now - 360_000, dueAt: now - 1 })
+          .where(eq(schema.mailJob.id, id))
+          .run();
+      }
+      await runOutboxPass(now);
+      expect(wake.mock.calls.map((call) => call[1].ids)).toEqual([["sleeping"]]);
+      expect(readJob(alice, job.id).state).toBe("done");
+      expect(readJob(alice, queued.messageId).state).toBe("uncertain");
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      add.mockRestore();
+      wake.mockRestore();
+    }
+  });
+
+  it("retries an unavailable mailbox later and respects re-snoozing in the meantime", async () => {
+    const add = spyOn(driver, "snoozeThreads").mockResolvedValue();
+    const wake = spyOn(driver, "unsnoozeThreads")
+      .mockRejectedValueOnce(new Error("IMAP connection unavailable"))
+      .mockResolvedValue();
+    try {
+      const now = Date.now();
+      const first = await snooze(alice, ["one", "two"], new Date(now + 30_000).toISOString());
+      await runOutboxPass(now + 60_000);
+      expect(readJob(alice, first.id).state).toBe("pending");
+      expect(readJob(alice, first.id).credentials).not.toBeNull();
+      await runOutboxPass(now + 61_000);
+      expect(wake).toHaveBeenCalledTimes(1);
+      await snooze(alice, ["one"], new Date(now + 600_000).toISOString());
+      await runOutboxPass(now + 180_000);
+      expect(wake.mock.calls.map((call) => call[1].ids)).toEqual([["one", "two"], ["two"]]);
+      expect(readJob(alice, first.id).state).toBe("done");
+      expect(readJob(alice, first.id).credentials).toBeNull();
+    } finally {
+      add.mockRestore();
+      wake.mockRestore();
+    }
+  });
+
   it("wakes only the messages still belonging to a schedule after re-snoozing and manual unsnooze", async () => {
     const add = spyOn(driver, "snoozeThreads").mockResolvedValue();
     const wake = spyOn(driver, "unsnoozeThreads").mockResolvedValue();

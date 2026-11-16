@@ -1295,10 +1295,40 @@ export async function unsnoozeThreads(
   auth: ImapAuth,
   input: { ids: string[] },
 ): Promise<void> {
-  // After unsnooze we don't know which mailbox the message currently
-  // lives in - but snoozed messages live in INBOX with $Snoozed set, so
-  // INBOX is where the keyword needs to be removed.
-  return modifyFlag(auth, input.ids, 'inbox', SNOOZE_KEYWORD, false);
+  if (!input.ids.length) return;
+  return withImap(auth, async (client) => {
+    // Messages can be moved or deleted while asleep. List actual mailboxes so
+    // absence is a safe no-op, while connection/SELECT failures still retry.
+    const mailboxes = (await client.list())
+      .filter((mailbox) => !mailbox.flags.has('\\Noselect') && !mailbox.flags.has('\\NonExistent'))
+      .map((mailbox) => mailbox.path);
+    const remaining = new Set(input.ids);
+    for (const mailbox of new Set(['INBOX', ...mailboxes])) {
+      if (!remaining.size) break;
+      const ids = [...remaining].filter((id) => mailbox === 'INBOX' || !/^uid:\d+$/.test(id));
+      if (!ids.length) continue;
+      const lock = await client.getMailboxLock(mailbox);
+      try {
+        for (const id of ids) {
+          // Legacy UID handles belong to INBOX; another mailbox's equal UID
+          // identifies an unrelated message and must never be modified.
+          const uid = /^uid:(\d+)$/.exec(id)?.[1];
+          const found = uid
+            ? (await client.fetchOne(uid, { uid: true }, { uid: true }))
+              ? [Number(uid)]
+              : null
+            : await resolveMessageUids(client, id);
+          if (!found?.length) continue;
+          if (!(await client.messageFlagsRemove(found, [SNOOZE_KEYWORD], { uid: true }))) {
+            throw new Error(`IMAP refused snooze removal: ${id}`);
+          }
+          remaining.delete(id);
+        }
+      } finally {
+        lock.release();
+      }
+    }
+  });
 }
 
 export async function modifyLabels(

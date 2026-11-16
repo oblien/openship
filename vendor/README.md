@@ -10,3 +10,10 @@ SHA-256: `83f1a847841212f6406840cbc1b1914339978699db354166ce154dbcc7b5ab26`.
 
 Source project: [oblien/mindwire](https://github.com/oblien/mindwire),
 `packages/client`.
+
+Both consumers apply `patches/mindwire-client-0.1.0-beta.3-same-origin.patch`
+through Bun's `patchedDependencies`. It changes the optional vision client's
+default URL to the browser's current origin, while preserving an explicitly
+configured `visionUrl`. The upstream bundle otherwise contains fixed development
+ports, including `localhost:5020`, which fails the mail release's dev-origin check.
+The archive and checksum above remain unchanged.

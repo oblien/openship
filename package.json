@@ -76,6 +76,7 @@
     "vite": "^7.3.8"
   },
   "patchedDependencies": {
-    "@actions/workflow-parser@0.3.61": "patches/@actions%2Fworkflow-parser@0.3.61.patch"
+    "@actions/workflow-parser@0.3.61": "patches/@actions%2Fworkflow-parser@0.3.61.patch",
+    "@mindwire-ai/client@../../vendor/mindwire-client-0.1.0-beta.3-83f1a8478412.tgz": "patches/mindwire-client-0.1.0-beta.3-same-origin.patch"
   }
 }
