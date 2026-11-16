@@ -23,6 +23,8 @@ to invoke administrative operations, including host command execution.
 - Choose a sign-in page or the browser's native authentication prompt for
   self-hosted hostnames. Customize sign-in HTML and session duration, revoke
   sessions, and see enabled protection directly on domain cards.
+- Update the Actions worker to OpenTelemetry 1.47.0, fixing bypassed
+  attribute-length limits in its tracing dependency.
 - Keep generated local mail credentials and runtime caches out of image build
   contexts. Bundle the shared assistant client and its dependency patch so
   release builds do not depend on a sibling checkout or baked development URLs.
