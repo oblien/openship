@@ -1,5 +1,5 @@
 import { AppError, ConflictError, ValidationError } from "@repo/core";
-import { repos } from "@repo/db";
+import { repos, type Service } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import type { PrivateImportPlan, PlannedImportService } from "./platform-import-plan";
 import { ensureProject } from "../projects/project-crud.service";
@@ -20,6 +20,7 @@ import {
 import { verifyPlatformDeployment } from "./platform-import-health";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { prepareMigrationTarget } from "./migration-runtime";
+import { createConnection } from "../projects/project-connection.service";
 
 export interface ImportLifecycle {
   signal: AbortSignal;
@@ -76,13 +77,29 @@ export async function executePlatformImport(
     resourceId: plan.targetServerId,
     action: "write",
   });
-  if (!plan.project)
+  if (!plan.projects?.length)
     throw new AppError(
       "Review this import again before starting it.",
       409,
       "IMPORT_REVIEW_EXPIRED",
     );
   const services = orderedImports(plan.services);
+  const destinations = plan.projects.map((project) => ({
+    ...project,
+    services: services.filter((service) => project.sourceIds.includes(service.source.id)),
+    projectId: "",
+  }));
+  const destinationFor = new Map(
+    destinations.flatMap((destination) =>
+      destination.sourceIds.map((id) => [id, destination] as const),
+    ),
+  );
+  if (services.some((service) => !destinationFor.has(service.source.id)))
+    throw new AppError(
+      "Review this import again before starting it.",
+      409,
+      "IMPORT_REVIEW_EXPIRED",
+    );
   lifecycle.log("Checking the complete project's storage and destination configuration");
   await preflightPlatformData(services, lifecycle.signal);
   await prepareMigrationTarget(ctx.organizationId, plan.targetServerId, runId, {
@@ -91,44 +108,61 @@ export async function executePlatformImport(
   });
   lifecycle.signal.throwIfAborted();
   await lifecycle.phase("adopting");
-  lifecycle.log(`Creating project ${plan.project.name}`);
-  const { project_id: projectId } = await ensureProject(plan.project, ctx.organizationId, ctx, {
-    mustCreate: true,
-  });
-  for (const service of services) {
-    if (
-      !(await repos.dockerMigrationRun.bindImportedProject(
-        runId,
-        ctx.organizationId,
-        service.source.id,
-        projectId,
-      ))
-    )
-      throw new AppError(
-        "The import was cancelled while creating its project. Its saved configuration was retained.",
-        409,
-        "IMPORT_ADMISSION_CLOSED",
-      );
-  }
-  await repos.project.update(projectId, { autoDeploy: false, runtimeMode: "docker" });
-  for (const service of services) {
+  const bySource = new Map<string, Service>();
+  for (const destination of destinations) {
     lifecycle.signal.throwIfAborted();
-    if (!service.create.services?.length)
-      await createService(ctx, projectId, platformImportSourceService(service, services));
-  }
-  // Use the same pending-domain and ownership path as server/Docker migration.
-  // Validate every route before pausing Railway or copying data. Deployment will
-  // reconcile routing normally; neither this step nor import changes external DNS.
-  try {
-    await saveMigrationRoutes(ctx, projectId, platformImportRoutes(services), lifecycle.log);
-  } catch (error) {
-    if (error instanceof ValidationError || error instanceof ConflictError)
-      throw new AppError(error.message, error.statusCode, "IMPORT_DOMAIN_REVIEW_REQUIRED");
-    throw error;
-  }
-  const rows = await repos.service.listByProject(projectId);
-  const bySource = new Map(
-    services.map((service) => {
+    lifecycle.log(`Creating project ${destination.create.name}`);
+    const { project_id: projectId } = await ensureProject(
+      destination.create,
+      ctx.organizationId,
+      ctx,
+      {
+        mustCreate: true,
+      },
+    );
+    destination.projectId = projectId;
+    for (const service of destination.services) {
+      if (
+        !(await repos.dockerMigrationRun.bindImportedProject(
+          runId,
+          ctx.organizationId,
+          service.source.id,
+          projectId,
+        ))
+      )
+        throw new AppError(
+          "The import was cancelled while creating its project. Its saved configuration was retained.",
+          409,
+          "IMPORT_ADMISSION_CLOSED",
+        );
+    }
+    await repos.project.update(projectId, { autoDeploy: false, runtimeMode: "docker" });
+    for (const service of destination.services) {
+      lifecycle.signal.throwIfAborted();
+      if (!service.create.services?.length)
+        await createService(
+          ctx,
+          projectId,
+          platformImportSourceService(service, destination.services),
+        );
+    }
+    // Use the same pending-domain and ownership path as server/Docker migration.
+    // Validate every route before pausing Railway or copying data. Deployment will
+    // reconcile routing normally; neither this step nor import changes external DNS.
+    try {
+      await saveMigrationRoutes(
+        ctx,
+        projectId,
+        platformImportRoutes(destination.services),
+        lifecycle.log,
+      );
+    } catch (error) {
+      if (error instanceof ValidationError || error instanceof ConflictError)
+        throw new AppError(error.message, error.statusCode, "IMPORT_DOMAIN_REVIEW_REQUIRED");
+      throw error;
+    }
+    const rows = await repos.service.listByProject(projectId);
+    for (const service of destination.services) {
       const row = rows.find((row) => row.name === service.create.name);
       if (!row)
         throw new AppError(
@@ -136,9 +170,9 @@ export async function executePlatformImport(
           409,
           "IMPORT_TARGET_SERVICE_MISSING",
         );
-      return [service.source.id, row] as const;
-    }),
-  );
+      bySource.set(service.source.id, row);
+    }
+  }
   const checkpoint = async () => {
     const current = (await repos.dockerMigrationRun.findById(runId))?.recovery.providerImport;
     if (!current)
@@ -152,7 +186,8 @@ export async function executePlatformImport(
     },
   });
   const saveEnvironment = async (sourceId: string, values: Record<string, string>) => {
-    await mergeServiceEnvVars(ctx, projectId, bySource.get(sourceId)!.id, {
+    const target = bySource.get(sourceId)!;
+    await mergeServiceEnvVars(ctx, target.projectId, target.id, {
       environment: "production",
       deletes: [],
       upserts: Object.entries(values).map(([key, value]) => ({
@@ -163,16 +198,33 @@ export async function executePlatformImport(
       })),
     });
   };
-  for (const service of services) await saveEnvironment(service.source.id, service.environment);
+  const isCrossProject = (service: PlannedImportService, dependencyId: string) =>
+    bySource.get(service.source.id)!.projectId !== bySource.get(dependencyId)?.projectId;
+  for (const service of services) {
+    // Native connections own project-level variables. A service-level copy would
+    // shadow the refreshed value on this deployment and subsequent redeploys.
+    const linkedKeys = new Set(
+      service.bindings
+        .filter((binding) => isCrossProject(service, binding.sourceId))
+        .map((binding) => binding.envKey),
+    );
+    await saveEnvironment(
+      service.source.id,
+      Object.fromEntries(
+        Object.entries(service.environment).filter(([key]) => !linkedKeys.has(key)),
+      ),
+    );
+  }
   for (const service of services) {
     const values: Record<string, string> = {};
     for (const binding of service.bindings) {
+      if (isCrossProject(service, binding.sourceId)) continue;
       // Railway already resolved these against native service DNS during review.
       if (Object.hasOwn(service.environment, binding.envKey)) continue;
       const dependency = bySource.get(binding.sourceId);
       if (!dependency)
         throw new AppError("An import dependency is missing", 409, "IMPORT_DEPENDENCY_MISSING");
-      const output = (await getAppConnectionView(ctx, projectId)).outputs.find(
+      const output = (await getAppConnectionView(ctx, dependency.projectId)).outputs.find(
         (output) => output.internal && output.sourceServiceId === dependency.id && output.value,
       );
       if (!output)
@@ -195,7 +247,7 @@ export async function executePlatformImport(
     await copyPlatformData({
       runId,
       service,
-      projectId,
+      projectId: bySource.get(service.source.id)!.projectId,
       serviceId: bySource.get(service.source.id)!.id,
       deploymentId,
       signal: lifecycle.signal,
@@ -205,11 +257,43 @@ export async function executePlatformImport(
   };
   const deploy = async (selected: PlannedImportService[]) => {
     lifecycle.signal.throwIfAborted();
+    const destination = destinationFor.get(selected[0].source.id)!;
+    const projectId = destination.projectId;
+    for (const service of selected) {
+      for (const binding of service.bindings) {
+        if (!isCrossProject(service, binding.sourceId)) continue;
+        lifecycle.signal.throwIfAborted();
+        const dependency = bySource.get(binding.sourceId);
+        if (!dependency)
+          throw new AppError("An import dependency is missing", 409, "IMPORT_DEPENDENCY_MISSING");
+        const output = (await getAppConnectionView(ctx, dependency.projectId)).outputs.find(
+          (output) => output.internal && output.sourceServiceId === dependency.id,
+        );
+        if (!output)
+          throw new AppError(
+            "The imported dependency has no usable connection output",
+            409,
+            "IMPORT_CONNECTION_NOT_READY",
+          );
+        await createConnection(
+          ctx,
+          projectId,
+          {
+            sourceProjectId: dependency.projectId,
+            outputId: output.id,
+            envKey: binding.envKey,
+            mode: "internal",
+            valueTemplate: binding.valueTemplate,
+          },
+          { defer: true },
+        );
+      }
+    }
     await lifecycle.phase("deploying");
     lifecycle.log(
-      `Deploying ${plan.project.name}: ${selected.map((service) => service.create.name).join(", ")}`,
+      `Deploying ${destination.create.name}: ${selected.map((service) => service.create.name).join(", ")}`,
     );
-    const source = services.find((service) => service.create.gitRepo)?.source;
+    const source = destination.services.find((service) => service.create.gitRepo)?.source;
     const result = await triggerDeployment(ctx, {
       projectId,
       serverId: plan.targetServerId,
@@ -263,8 +347,19 @@ export async function executePlatformImport(
       } else await transfer(service);
     }
   }
-  const deploymentId = await deploy(services);
-  await verifyPlatformDeployment(projectId, deploymentId, lifecycle.signal);
+  // Multi-source plans have one service per project. The service order already
+  // guarantees each private dependency is deployed before its consumers connect.
+  const deployed = new Map<string, string>();
+  for (const service of services) {
+    const destination = destinationFor.get(service.source.id)!;
+    if (!deployed.has(destination.projectId))
+      deployed.set(destination.projectId, await deploy(destination.services));
+  }
+  await Promise.all(
+    [...deployed].map(([projectId, deploymentId]) =>
+      verifyPlatformDeployment(projectId, deploymentId, lifecycle.signal),
+    ),
+  );
   await repos.dockerMigrationRun.updateRecovery(runId, {
     providerImport: {
       ...(await checkpoint()),
@@ -272,7 +367,7 @@ export async function executePlatformImport(
     },
   });
   lifecycle.log(
-    `${plan.project.name} imported with ${services.length} services; source data retained.`,
+    `${plan.projectName} imported with ${services.length} services in ${destinations.length} project(s); source data retained.`,
   );
 }
 

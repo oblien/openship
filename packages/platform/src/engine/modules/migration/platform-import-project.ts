@@ -3,15 +3,83 @@ import type {
   TCreateServiceBody,
   TEnsureProjectBody,
 } from "@repo/contracts";
+import { slugify } from "@repo/core";
 import type { PlannedImportService } from "./platform-import-plan";
+
+export interface PlannedImportProject {
+  create: TEnsureProjectBody;
+  sourceIds: string[];
+}
+
+/** A native project has one Git checkout. Keep compatible environments together;
+ * otherwise give each service its own project and use ordinary private links. */
+export function platformImportProjects(
+  name: string,
+  serverId: string,
+  services: PlannedImportService[],
+): PlannedImportProject[] {
+  const imports = services.filter((service) => service.data !== "external");
+  const sources = new Set(
+    imports
+      .filter((service) => service.create.gitRepo)
+      .map((service) =>
+        JSON.stringify([
+          service.create.gitProvider,
+          service.create.gitOwner,
+          service.create.gitRepo,
+          service.create.gitBranch,
+          service.source.commit,
+        ]),
+      ),
+  );
+  const groups = sources.size > 1 ? imports.map((service) => [service]) : [imports];
+  if (groups.length > 1) {
+    for (const service of imports) {
+      const keys = new Set(service.bindings.map((binding) => binding.envKey));
+      for (const key of keys) {
+        const bindings = service.bindings.filter((binding) => binding.envKey === key);
+        if (new Set(bindings.map((binding) => binding.sourceId)).size > 1) {
+          service.source.blockers.push(
+            `Review ${key}: use a separate connection variable for each private service when importing into separate projects.`,
+          );
+        }
+        for (const binding of bindings) {
+          if (
+            Object.hasOwn(service.environment, key) &&
+            binding.valueTemplate === undefined &&
+            bindings.length === 1
+          )
+            service.source.blockers.push(
+              `Review ${key}: its private host cannot be safely converted into a project connection. Provide a destination value explicitly.`,
+            );
+          const dependency = imports.find((candidate) => candidate.source.id === binding.sourceId);
+          if (dependency && !(dependency.source.port || dependency.create.port))
+            service.source.blockers.push(
+              `Review ${key}: ${dependency.create.name} needs a private listener port for its project connection.`,
+            );
+        }
+      }
+    }
+  }
+  return groups.map((group) => ({
+    create: platformImportProject(
+      groups.length === 1
+        ? name
+        : `${slugify(name).slice(0, 100 - group[0].create.name.length - 1)}-${group[0].create.name}`,
+      serverId,
+      group,
+    ),
+    sourceIds: group.map((service) => service.source.id),
+  }));
+}
 
 function dependencyNames(service: PlannedImportService, services: PlannedImportService[]) {
   return [
     ...new Set(
-      service.bindings.map(
-        (binding) =>
-          services.find((dependency) => dependency.source.id === binding.sourceId)!.create.name,
-      ),
+      service.bindings.flatMap((binding) => {
+        const dependency = services.find((candidate) => candidate.source.id === binding.sourceId);
+        return dependency ? [dependency.create.name] : [];
+      }),
     ),
   ];
 }
@@ -37,9 +105,8 @@ export function platformImportRoutes(services: PlannedImportService[]): Migratio
   );
 }
 
-/** Translate reviewed provider recipes into the same project and service inputs
- * used by native imports. A provider project never becomes several projects. */
-export function platformImportProject(
+/** Translate one compatible group into ordinary project and service inputs. */
+function platformImportProject(
   name: string,
   serverId: string,
   services: PlannedImportService[],
@@ -53,15 +120,6 @@ export function platformImportProject(
       service.source.blockers.push(
         "This repository declares project-wide release commands. Review a service-compatible release recipe before importing; grouped imports cannot silently skip those commands.",
       );
-    if (
-      service.create.gitOwner !== first.create.gitOwner ||
-      service.create.gitRepo !== first.create.gitRepo ||
-      service.source.commit !== first.source.commit
-    ) {
-      service.source.blockers.push(
-        "These services use different repositories or deployed revisions. A native OpenShip project has one Git source; align the source services before importing them together.",
-      );
-    }
   }
   return {
     name,

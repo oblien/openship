@@ -37,6 +37,7 @@ export function PlatformImportReview({
   onStart: () => void;
 }) {
   const imports = plan.services.filter((s) => choices[s.id]?.data !== "external");
+  const projectCount = plan.projects?.length ?? 1;
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-5">
@@ -86,6 +87,15 @@ export function PlatformImportReview({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {importDataLabel(service, choice)}
                     </p>
+                    {projectCount > 1 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Project:{" "}
+                        {
+                          plan.projects?.find((project) => project.serviceIds.includes(service.id))
+                            ?.name
+                        }
+                      </p>
+                    )}
                   </div>
                   <span className="hidden text-xs text-muted-foreground sm:inline">
                     {service.commit
@@ -161,8 +171,15 @@ export function PlatformImportReview({
           <div>
             <h3 className="font-semibold">Review complete</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              One project · {imports.length} {imports.length === 1 ? "service" : "services"}
+              {projectCount} {projectCount === 1 ? "project" : "projects"} · {imports.length}{" "}
+              {imports.length === 1 ? "service" : "services"}
             </p>
+            {projectCount > 1 && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Separate projects keep each service’s repository and revision. Dependencies use
+                private connections on the destination server.
+              </p>
+            )}
           </div>
           <InstallStepper
             steps={[

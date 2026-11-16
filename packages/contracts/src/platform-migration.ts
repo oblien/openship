@@ -72,6 +72,7 @@ export const PlatformMigrationPlanSchema = Type.Object({
   planId: id,
   provider,
   projectName: text,
+  projects: Type.Optional(Type.Array(Type.Object({ name: text, serviceIds: Type.Array(id) }))),
   environmentName: text,
   targetServerId: id,
   services: Type.Array(PlatformImportServiceSchema),
