@@ -460,9 +460,24 @@ done
         );
         for (const args of [
           ["get", "redisclusters", "-A", "-o", "yaml"],
+          ["get", "redisreplications,redissentinels", "-A", "-o", "yaml"],
           ["logs", "-n", "ot-operators", "deployment/redis-operator", "--tail=200"],
         ]) {
           console.error(redactor.redact(await lab.nodeExec(0, ["kubectl", ...args])));
+        }
+        const pods = await lab.api.request<{ items: KubernetesObject[] }>(
+          "GET",
+          `/api/v1/pods?labelSelector=${encodeURIComponent(`openship.io/runtime=${lab.runtimeId},redis_setup_type`)}`,
+        );
+        for (const pod of pods.items) {
+          try {
+            console.error(redactor.redact(await lab.nodeExec(0, [
+              "kubectl", "logs", "-n", pod.metadata.namespace!, pod.metadata.name!,
+              "--tail=100", "--request-timeout=8s", "--all-containers=true", "--prefix=true",
+            ], 12)));
+          } catch (error) {
+            console.error(redactor.redact(`Redis pod logs unavailable: ${String(error)}`));
+          }
         }
       } catch (error) {
         console.error("Database operator diagnostics unavailable:", String(error));
