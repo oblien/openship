@@ -1,6 +1,6 @@
 import { OperationError, type ComposeServiceDiff } from "@repo/contracts";
 import { createHmac } from "node:crypto";
-import { commandToArgv, sortJsonKeys } from "@repo/core";
+import { commandToArgv, sortJsonKeys, hasComposeInterpolation, ENV_MASK } from "@repo/core";
 import { toComposeSpec, composeSpecDiff, type Service } from "@repo/db";
 import { env } from "../../config/env";
 import { redactDiagnosticText } from "@repo/core/diagnostics";
@@ -130,11 +130,11 @@ function displayDiff(changes: ReturnType<typeof sourceChanges>): ComposeServiceD
     const display = (value: unknown): string | null => {
       if (value === undefined || value === null) return null;
       const text = typeof value === "string" ? value : JSON.stringify(value);
-      return redactDiagnosticText(
-        text.replace(/\$\{([^}:]+):[^}]*\}/g, "${$1:[REDACTED]}"),
-        4000,
-        secrets,
-      );
+      // Authored expressions can hold nested defaults and required-value messages.
+      // Use the shared interpolation detector and mask the whole value, as the
+      // drift preview already does for template provenance.
+      if (hasComposeInterpolation(text)) return ENV_MASK;
+      return redactDiagnosticText(text, 4000, secrets);
     };
     // Share the drift UI's comparison and masking instead of maintaining a
     // second interpretation of Compose fields or secret-bearing provenance.

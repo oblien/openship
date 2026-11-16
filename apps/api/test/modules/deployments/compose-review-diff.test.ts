@@ -114,6 +114,15 @@ describe("Compose review details", () => {
     expect(JSON.stringify(result)).not.toContain(secret);
   });
 
+  it.each(["-", ":-", "+", ":+", "?", ":?", ":-${OTHER:-nested}-"])("masks defaults in Compose expressions using %s", (operator) => {
+    const expression = "registry/app:${TAG" + operator + "private-default}";
+    const source = [{ name: "worker", image: "registry/app:private-default", advanced: {
+      imageTemplate: { expression, unresolvedVariables: [] },
+    } }];
+    const result = review([row("worker", { name: "worker", image: "registry/app:old" })], source);
+    expect(JSON.stringify(result)).not.toContain("private-default");
+  });
+
   it("ignores interpolation values, legacy baselines and independently added services", () => {
     const source = {
       name: "worker",
