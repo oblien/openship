@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { EDGE_RESPONSE_MAX_BYTES, normalizeEdgeHtml } from "@repo/core";
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,8 @@ export function HtmlDocumentEditor({
             if (selected.size > EDGE_RESPONSE_MAX_BYTES) throw new Error(w.sizeLimit);
             onChange(normalizeEdgeHtml(await selected.text()));
             setError("");
-          } catch {
+          } catch (error) {
+            reportCaughtError(error, "dashboard/edge-pages/html-upload");
             setError(w.sizeLimit);
           }
         }}

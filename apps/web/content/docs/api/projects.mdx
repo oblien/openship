@@ -567,6 +567,8 @@ IDs.
 | Repair routing with live logs and a terminal success or failure event. | `projects.retryRoutingStream(id, options?)` | `POST /api/projects/:id/routing/retry/stream`<br />`project:write` |
 | Read active runtime roles, replica status, and restart counts. | `projects.getRuntimeRoles(id)` | `GET /api/projects/:id/roles`<br />`project:read` |
 | Read recent runtime logs; optionally select a role, replica, and active deployment. | `projects.runtimeLogs(id, input?)` | `GET /api/projects/:id/logs`<br />`project:read` |
+| Read project and hostname maintenance/error pages, their revision, and edge apply status. | `projects.getEdgePages(id)` | `GET /api/projects/:id/edge-pages`<br />`project:read` · Self-hosted |
+| Update maintenance and error HTML using the current revision, then inspect the returned apply status. | `projects.updateEdgePages(id, input)` | `PUT /api/projects/:id/edge-pages`<br />`project:write` · Self-hosted |
 | Read hostname password-protection status without exposing credentials. | `projects.listRouteProtection(id)` | `GET /api/projects/:id/route-protection`<br />`project:read` · Self-hosted |
 | Protect or unlock a self-hosted HTTPS hostname, revoke sessions, or retry a pending edge update. | `projects.changeRouteProtection(id, input)` | `PUT /api/projects/:id/route-protection`<br />`project:write` · Self-hosted |
 | List the project’s edge route rules. | `projects.listRouteRules(id)` | `GET /api/projects/:id/route-rules`<br />`project:read` |

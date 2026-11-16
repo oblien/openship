@@ -86,9 +86,13 @@ r.delete(
 // agent to this one box — the per-resource scope the jobs-based workaround could not
 // express. MCP-exposed deliberately: this is the sanctioned agent execution point.
 
-r.get("/servers/:id/edge-pages", { tag: "server:read" }, rateLimit.getEdgePages);
+r.get("/servers/:id/edge-pages", {
+  tag: "server:read",
+  mcp: { description: "Read this server's default maintenance and error pages, including the page served for unmatched hostnames or direct IP requests." },
+}, rateLimit.getEdgePages);
 r.put("/servers/:id/edge-pages", {
   tag: "server:admin", body: EdgePagesSchema, auditHandledByOperation: true,
+  mcp: { description: "Set this server's default edge maintenance and error HTML, including unmatched hostname and direct IP pages. Project and hostname overrides remain more specific than these defaults." },
 }, rateLimit.updateEdgePages);
 
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */

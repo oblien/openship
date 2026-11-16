@@ -1,4 +1,6 @@
 {
   "title": "launch",
-  "pages": ["index"]
+  "pages": [
+    "index"
+  ]
 }

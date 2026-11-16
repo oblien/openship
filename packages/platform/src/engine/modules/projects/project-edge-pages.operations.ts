@@ -8,6 +8,7 @@ import {
   type ProjectEdgePages,
 } from "@repo/core";
 import { repos, type Project } from "@repo/db";
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { ProjectRoutingSchemas } from "@repo/contracts";
 import type { ResourceServices } from "../../../resource-operations";
 import type { ExecutionContext } from "../../../context";
@@ -62,6 +63,11 @@ async function state(ctx: ExecutionContext, project: Project, publish = false) {
     });
     return { ...result, status: applied ? ("applied" as const) : ("pending" as const) };
   } catch (error) {
+    errorDiagnostics.warn(
+      "platform/engine/modules/projects/project-edge-pages",
+      publish ? "Could not apply edge pages" : "Could not verify edge pages",
+      error,
+    );
     return { ...result, status: "pending" as const, message: safeErrorMessage(error) };
   }
 }
