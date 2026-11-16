@@ -245,7 +245,8 @@
       "runtimeApi": "Laufzeit-API",
       "workloads": "Workloads",
       "settings": "Einstellungen",
-      "runs": "Ausführungen"
+      "runs": "Ausführungen",
+      "pages": "Edge-Seiten"
     },
     "healthy": "Fehlerfrei",
     "issues": "Probleme",

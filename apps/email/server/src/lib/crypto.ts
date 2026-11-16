@@ -4,8 +4,8 @@
  *
  * Format on disk: [12-byte IV | ciphertext | 16-byte GCM tag].
  *
- * Use only for the IMAP password - never for anything else. Loss of
- * the key invalidates every session (the next sign-in re-issues).
+ * Optional associated data binds background credentials and mail content to
+ * their mailbox and record. Existing session ciphertext remains compatible.
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
@@ -26,16 +26,17 @@ function getKey(): Buffer {
   return Buffer.from(hex, 'hex');
 }
 
-export function encryptSecret(plaintext: string): Buffer {
+export function encryptSecret(plaintext: string, context?: string): Buffer {
   const key = getKey();
   const iv = randomBytes(IV_LEN);
   const cipher = createCipheriv(ALGO, key, iv);
+  if (context) cipher.setAAD(Buffer.from(context));
   const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, ciphertext, tag]);
 }
 
-export function decryptSecret(payload: Buffer): string {
+export function decryptSecret(payload: Buffer, context?: string): string {
   if (payload.length < IV_LEN + TAG_LEN) {
     throw new Error('Encrypted payload too short');
   }
@@ -44,6 +45,7 @@ export function decryptSecret(payload: Buffer): string {
   const tag = payload.subarray(payload.length - TAG_LEN);
   const ciphertext = payload.subarray(IV_LEN, payload.length - TAG_LEN);
   const decipher = createDecipheriv(ALGO, key, iv);
+  if (context) decipher.setAAD(Buffer.from(context));
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return plaintext.toString('utf8');

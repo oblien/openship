@@ -14,6 +14,7 @@
 
 import { Hono } from "hono";
 import {
+  UpdateProjectEdgePagesSchema,
   WebhookPageInputSchema,
   RecentServerLogsInputSchema,
   ListProjectsSchema,
@@ -128,6 +129,15 @@ r.get(
   },
   edgeConfig.getEdgeConfig,
 );
+
+r.get("/:id/edge-pages", {
+  tag: "project:read", localOnly: true,
+  mcp: { description: "Read saved project and hostname maintenance/error pages, their revision, and whether the self-hosted edge has applied them." },
+}, routeRules.getEdgePages);
+r.put("/:id/edge-pages", {
+  tag: "project:write", localOnly: true, body: UpdateProjectEdgePagesSchema, auditHandledByOperation: true,
+  mcp: { description: "Update maintenance and custom error HTML for a self-hosted project or its hostnames. Read edge-pages first and supply expectedRevision to avoid overwriting concurrent edits. Inspect the returned apply status before reporting success." },
+}, routeRules.updateEdgePages);
 
 r.get("/:id/route-protection", {
   tag: "project:read", localOnly: true,

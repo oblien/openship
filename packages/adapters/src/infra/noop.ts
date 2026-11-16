@@ -10,6 +10,7 @@ import type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./types
 
 export class NoopInfraProvider implements RoutingProvider, SslProvider {
   async registerRoute(_route: RouteConfig): Promise<void> {
+    if (_route.edgePages) throw new Error("Custom edge pages require a self-hosted OpenResty edge.");
     if (_route.protection) throw new Error("Password protection requires a self-hosted HTTPS edge.");
     // Desktop/dev - no reverse proxy
   }

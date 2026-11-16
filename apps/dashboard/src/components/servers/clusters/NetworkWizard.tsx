@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -775,7 +776,7 @@ export function NetworkWizard({
               ))}
               <p className="text-xs leading-relaxed text-muted-foreground">{m.endpointHint}</p>
               <details className="rounded-xl bg-muted/30 p-4">
-                <summary className="cursor-pointer text-sm font-medium">{c.advancedChecks}</summary>
+                <DisclosureSummary className="cursor-pointer text-sm font-medium">{c.advancedChecks}</DisclosureSummary>
                 <div className="mt-4 space-y-4">
                   <Label className="block">
                     {c.addressRanges}
@@ -1001,7 +1002,7 @@ export function NetworkWizard({
                 })}
               </div>
               <details className="rounded-xl bg-muted/40 p-4">
-                <summary className="cursor-pointer text-sm font-medium">{c.advancedChecks}</summary>
+                <DisclosureSummary className="cursor-pointer text-sm font-medium">{c.advancedChecks}</DisclosureSummary>
                 <div className="mt-3 grid gap-4 @md/cluster-form:grid-cols-2">
                   <Label className="text-muted-foreground">
                     {c.mtu}

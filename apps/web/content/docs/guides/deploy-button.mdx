@@ -1,0 +1,150 @@
+---
+title: Deploy with OpenShip button
+description: Let people deploy your repository or a catalog app to OpenShip Cloud or their own server.
+---
+
+Add a button to your README that opens [openship.io/deploy](https://openship.io/deploy).
+Visitors choose **OpenShip Cloud** or **Your own server** before signing in.
+Opening the link does not install, purchase or deploy anything.
+
+## Add the button
+
+For your own GitHub repository — **no catalog listing or approval required**:
+
+```md
+[![Deploy with OpenShip](https://openship.io/deploy.svg)](https://openship.io/deploy?repo=b3duZXIvcmVwbw)
+```
+
+For an app in the OpenShip catalog:
+
+```md
+[![Deploy with OpenShip](https://openship.io/deploy.svg)](https://openship.io/deploy?app=n8n)
+```
+
+Paste your repository URL into [openship.io/deploy](https://openship.io/deploy) to generate its
+button. Repository links encode `owner/repo` using the same unpadded Base64url format as the
+dashboard; `b3duZXIvcmVwbw` above decodes to `owner/repo`. Existing links with a full GitHub URL
+in `repo` still work. App links use the catalog ID, such as `n8n`.
+
+Pass **one** of `repo` and `app`. Repository links use the default branch unless you add a
+URL-encoded `branch` parameter. Only the repository reference is encoded; deployment settings
+remain in `openship.json` in the repository.
+The public page shows **Light** and **Dark** button previews. Select a style, then use
+**Copy Markdown**. The style only changes the button image; both use the same deployment flow.
+
+| Button | Image URL                              |
+| ------ | -------------------------------------- |
+| Dark   | `https://openship.io/deploy.svg`       |
+| Light  | `https://openship.io/deploy-light.svg` |
+
+Use `repo` for a project hosted in your own repository. Use `app` only for an existing catalog ID.
+You do not need to submit your project to the OpenShip catalog to create a deploy button.
+
+## Configure your repository
+
+An optional [`openship.json`](/docs/reference/openship-json) stores the same deployment
+defaults used by ordinary Git deployments. The button does not introduce another manifest format.
+
+```json
+{
+  "$schema": "https://openship.io/openship.schema.json",
+  "framework": "nextjs",
+  "port": 3000
+}
+```
+
+OpenShip detects the stack, then applies the supported fields in `openship.json`.
+Docker Compose and supported monorepo configurations use the existing setup flow.
+Keep secrets out of public repositories and deploy links. Users provide their own secrets,
+review domains and storage, and select their deployment destination in the setup screen.
+Private repositories still require a connection with access in the destination instance.
+
+### Add your name and logo
+
+Add optional `display` fields to your repository-root `openship.json`:
+
+```json
+{
+  "$schema": "https://openship.io/openship.schema.json",
+  "display": {
+    "name": "Mindwire",
+    "logo": "public/logo.svg"
+  }
+}
+```
+
+The logo path is relative to the repository root, including `public/` if that is where
+the file lives. PNG, JPEG, WebP and SVG files are supported. No catalog listing is required.
+
+The deploy page appears immediately with the repository name and GitHub icon, then loads
+branding in the background from the link's branch, or the repository's default branch.
+OpenShip reads public files without GitHub credentials and caches the display fields for
+30 minutes; missing or unavailable manifests are cached for 5 minutes. Private repositories
+and invalid or missing logos keep the fallback. Branding never blocks choosing a destination.
+
+`display` only customizes the public preview. It does not rename the deployed project or
+change its build settings. The repository link stays visible alongside your branding.
+
+### A repository with services
+
+Your repository can also contain just an `openship.json` with image-based services, or a
+Docker Compose file. A catalog template is not required. For example:
+
+```json
+{
+  "$schema": "https://openship.io/openship.schema.json",
+  "services": [
+    {
+      "name": "web",
+      "image": "nginx:stable-alpine",
+      "exposed": true,
+      "exposedPort": "80"
+    },
+    {
+      "name": "cache",
+      "image": "valkey/valkey:8-alpine",
+      "volumes": ["cache-data:/data"]
+    }
+  ]
+}
+```
+
+Commit the file at your repository root and link the README button to that repository.
+The normal setup screen loads these as services of one project for review on either destination.
+The file uses the [deployment configuration schema](/docs/reference/openship-json), not the
+OpenShip catalog template format. Do not paste an app catalog entry into `openship.json`.
+
+## Where the button goes
+
+| Choice          | Next step                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| OpenShip Cloud  | Sign in if needed, then configure the app on a Cloud plan. Existing plan selection and checkout are reused.                     |
+| Your own server | Run the install command over SSH, then review the app in that server's OpenShip dashboard. No Cloud account is required.        |
+| OpenShip Manage | Sign in to Cloud, choose a connected server or add one over SSH using the existing Manage setup, then configure the deployment. |
+
+Source and branch are preserved through sign-in. A deployment link is a starting point:
+normal workspace permissions, destination access and deployment checks still apply.
+The Manage handoff (`destination=server`) opens the shared server picker and waits for a choice,
+even if there is only one connected server. With none connected, Add Server opens in the same
+flow and returns the new server to the deployment form.
+
+## Start on your server
+
+```sh
+curl -fsSL https://get.openship.io | sh -s -- --repo 'https://github.com/owner/repo'
+```
+
+If the CLI is already installed:
+
+```sh
+openship launch --repo 'https://github.com/owner/repo' --branch 'main'
+openship launch --app 'n8n'
+```
+
+`launch` always uses **this machine's installation**, regardless of the CLI's selected Cloud
+context. It asks before installing or starting OpenShip, reuses existing setup, and prints a
+link to the normal deployment wizard. Configure and deploy there; the launcher does not
+submit a deployment in the background. A private dashboard also gets SSH tunnel instructions.
+
+The bootstrap command requires an interactive terminal. For scripted deployments to an
+already configured instance, use the existing [CLI deployment commands](/docs/cli/deploy).

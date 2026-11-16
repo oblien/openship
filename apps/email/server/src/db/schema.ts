@@ -46,10 +46,7 @@ export const session = sqliteTable(
     /** Unix-seconds epoch - when the session must be re-validated. */
     expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
   },
-  (t) => [
-    index('idx_session_email').on(t.email),
-    index('idx_session_expires_at').on(t.expiresAt),
-  ],
+  (t) => [index('idx_session_email').on(t.email), index('idx_session_expires_at').on(t.expiresAt)],
 );
 
 export const userSettings = sqliteTable('user_settings', {
@@ -97,3 +94,75 @@ export const cookieConsent = sqliteTable('cookie_consent', {
 // Branding moved to a JSON file on disk - see [lib/branding.ts].
 // Source of truth is `${BRANDING_PATH}/config.json`, seeded on first read and
 // updated through `PATCH /admin/branding` (BRANDING_ADMIN_TOKEN). No SQLite row.
+
+export const mailInstance = sqliteTable('mail_instance', {
+  id: text('id').primaryKey(),
+  value: text('value').notNull(),
+});
+
+export const mailGrant = sqliteTable(
+  'mail_grant',
+  {
+    id: text('id').primaryKey(),
+    mailboxId: text('mailbox_id').notNull(),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    scopes: text('scopes', { mode: 'json' }).$type<string[]>().notNull(),
+    credentials: blob('credentials', { mode: 'buffer' }),
+    createdAt: integer('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    revokedAt: integer('revoked_at'),
+    internal: integer('internal', { mode: 'boolean' }).notNull().default(false),
+    parentId: text('parent_id'),
+  },
+  (t) => [
+    index('idx_mail_grant_mailbox').on(t.mailboxId),
+    index('idx_mail_grant_expiry').on(t.expiresAt),
+  ],
+);
+
+export const mailJob = sqliteTable(
+  'mail_job',
+  {
+    id: text('id').primaryKey(),
+    mailboxId: text('mailbox_id').notNull(),
+    grantId: text('grant_id'),
+    kind: text('kind', { enum: ['send', 'snooze'] }).notNull(),
+    state: text('state', {
+      enum: ['approval', 'pending', 'running', 'done', 'cancelled', 'failed', 'uncertain'],
+    }).notNull(),
+    revision: integer('revision').notNull().default(1),
+    payload: blob('payload', { mode: 'buffer' }).notNull(),
+    credentials: blob('credentials', { mode: 'buffer' }),
+    dueAt: integer('due_at').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    error: text('error'),
+  },
+  (t) => [
+    index('idx_mail_job_due').on(t.state, t.dueAt),
+    index('idx_mail_job_mailbox').on(t.mailboxId),
+    index('idx_mail_job_retention').on(t.state, t.updatedAt),
+  ],
+);
+
+export const mailAssistant = sqliteTable('mail_assistant', {
+  mailboxId: text('mailbox_id').primaryKey(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull(),
+  allowSend: integer('allow_send', { mode: 'boolean' }).notNull().default(false),
+  chatId: text('chat_id').notNull(),
+  history: blob('history', { mode: 'buffer' }).notNull(),
+  activeRequest: text('active_request'),
+  activeUntil: integer('active_until'),
+  activeGrant: text('active_grant'),
+  consentGrant: text('consent_grant'),
+});
+
+// Display metadata only. Mindwire owns provider secrets inside the mailbox runtime.
+export const mailAssistantConnection = sqliteTable('mail_assistant_connection', {
+  mailboxId: text('mailbox_id').primaryKey(),
+  agent: text('agent', { enum: ['codex', 'claude-code'] }).notNull(),
+  name: text('name').notNull(),
+  model: text('model'),
+  customProvider: text('custom_provider'),
+});

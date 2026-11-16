@@ -119,6 +119,7 @@ beforeEach(() => {
   state.sourceRow = null;
   delete state.project.environmentType;
   delete state.project.previewSettings;
+  delete state.project.routingConfig;
   state.project.organizationId = "org";
   state.project.deletionInProgress = false;
   state.domain.projectId = "proj";
@@ -132,6 +133,19 @@ beforeEach(() => {
   state.setProtection.mockResolvedValue(true);
   state.register.mockResolvedValue(undefined);
   state.hostAdmission.mockResolvedValue(undefined);
+});
+
+it("publishes current maintenance intent on redeploy and clears pages for an unconfigured owner", async () => {
+  state.project.routingConfig = { edgePages: {
+    defaults: { files: [], errors: [], maintenance: { enabled: true, retryAfter: 300 } },
+  } };
+  await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+  expect(state.register).toHaveBeenLastCalledWith(expect.objectContaining({
+    edgePages: { errors: {}, maintenance: { enabled: true, retryAfter: 300 } },
+  }));
+  delete state.project.routingConfig;
+  await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+  expect(state.register).toHaveBeenLastCalledWith(expect.objectContaining({ edgePages: null }));
 });
 
 describe("native preview password inheritance", () => {
@@ -280,6 +294,7 @@ describe("route protection admission and publication", () => {
     expect(state.register).toHaveBeenLastCalledWith({
       ...route,
       protection: policy,
+      edgePages: null,
       terminatesTlsLocally: true,
     });
     state.row!.secret = null;
@@ -321,7 +336,7 @@ describe("route protection admission and publication", () => {
       { registerRoute: state.register },
       { ...route, protection: policy },
     );
-    expect(state.register).toHaveBeenCalledWith({ ...route, protection: null });
+    expect(state.register).toHaveBeenCalledWith({ ...route, protection: null, edgePages: null });
     expect(state.markApplied).not.toHaveBeenCalled();
   });
 
@@ -333,7 +348,7 @@ describe("route protection admission and publication", () => {
       { registerRoute: state.register },
       { ...route, protection: policy },
     );
-    expect(state.register).toHaveBeenCalledWith({ ...route, protection: null });
+    expect(state.register).toHaveBeenCalledWith({ ...route, protection: null, edgePages: null });
     expect(state.markApplied).toHaveBeenCalledWith("proj", "private.test", "v1");
   });
 
@@ -420,6 +435,7 @@ describe("route protection admission and publication", () => {
     expect(state.register).toHaveBeenCalledWith({
       ...route,
       protection: policy,
+      edgePages: null,
       terminatesTlsLocally: true,
     });
     state.register.mockClear();

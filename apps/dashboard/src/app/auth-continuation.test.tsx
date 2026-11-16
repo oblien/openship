@@ -46,6 +46,15 @@ import AuthLayout from "./(auth)/layout";
 const app = "/apps/new/minio?projectId=proj_draft";
 const chooser = `/select-organization?${new URLSearchParams({ returnTo: app })}`;
 
+it("preserves the deploy button's repository, branch and destination through sign-in", async () => {
+  const target = "/deploy/b3duZXIvcmVwbw?destination=server&branch=release%2Fv2";
+  h.headers.set("x-pathname-with-search", target);
+  h.session.mockResolvedValue(null);
+  await expect(DashboardLayout({ children: null })).rejects.toEqual({
+    redirect: `/login?${new URLSearchParams({ returnTo: target })}`,
+  });
+});
+
 beforeEach(() => {
   vi.resetAllMocks();
   h.headers = new Headers({

@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -339,7 +340,7 @@ function NativeClusterRuntimePanel({
         !available &&
         (runtime.status === "ready" ? (
           <details className="rounded-2xl bg-card p-5">
-            <summary className="cursor-pointer text-sm font-medium">{c.details}</summary>
+            <DisclosureSummary className="cursor-pointer text-sm font-medium">{c.details}</DisclosureSummary>
             <div className="mt-4">
               <NetworkSetupProgress
                 hosts={runtime.plan.hosts}

@@ -1,3 +1,4 @@
+import type { EdgePages } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { api, ApiError, getApiBaseUrl, getActiveOrganizationId } from "./client";
 import {
@@ -993,6 +994,10 @@ export const systemApi = {
   // ── Rate Limiting (per-server) ─────────────────────────────────────────────
 
   /** Get rate limit config for a server */
+  getEdgePages: (serverId: string) =>
+    checkedResponse(ServerResourceSchemas.getEdgePages, api.get(`system/servers/${serverId}/edge-pages`)),
+  updateEdgePages: (serverId: string, config: EdgePages) =>
+    checkedResponse(ServerResourceSchemas.updateEdgePages, api.put(`system/servers/${serverId}/edge-pages`, config)),
   getRateLimit: (serverId: string) =>
     checkedResponse(ServerResourceSchemas.getRateLimit, api.get(endpoints.system.serverRateLimit(serverId))),
 

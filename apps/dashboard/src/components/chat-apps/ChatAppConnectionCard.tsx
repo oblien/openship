@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useState } from "react";
 import type { ChatAppView } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
@@ -171,7 +172,7 @@ export function ChatAppConnectionCard({
       </div>
       {c.transport === "webhook" && (
         <details className="mt-3 text-xs">
-          <summary className="cursor-pointer text-muted-foreground">Bot webhook URL</summary>
+          <DisclosureSummary className="cursor-pointer text-muted-foreground">Bot webhook URL</DisclosureSummary>
           <div className="mt-2 flex items-center gap-3 rounded-xl bg-background p-3">
             <code className="min-w-0 flex-1 break-all">{c.webhookUrl}</code>
             <Button

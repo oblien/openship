@@ -26,3 +26,10 @@ export async function listRouteProtection(c: Context) {
 export async function changeRouteProtection(c: Context) {
   return c.json({ data: await operationData(c, operations().changeRouteProtection(operationContext(c), param(c, "id"), await c.req.json())) });
 }
+
+export async function getEdgePages(c: Context) {
+  return c.json(await operationData(c, operations().getEdgePages(operationContext(c), param(c, "id"))));
+}
+export async function updateEdgePages(c: Context) {
+  return c.json(await operationData(c, operations().updateEdgePages(operationContext(c), param(c, "id"), await c.req.json())));
+}

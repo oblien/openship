@@ -15,6 +15,7 @@ import type { Context as HonoContext } from 'hono';
 import type { SessionContext } from './lib/session';
 import type { ImapAuth } from './lib/imap';
 import type { SmtpAuth } from './lib/smtp';
+import { mailboxAuth } from './mail/identity';
 
 export interface AppContext {
   session: SessionContext | null;
@@ -30,18 +31,7 @@ export function buildContext(
   if (!session) return { session: null, imap: null, smtp: null, hono };
   return {
     session,
-    imap: {
-      host: session.imapHost,
-      port: session.imapPort,
-      user: session.email,
-      pass: session.password,
-    },
-    smtp: {
-      host: session.smtpHost,
-      port: session.smtpPort,
-      user: session.email,
-      pass: session.password,
-    },
+    ...mailboxAuth(session),
     hono,
   };
 }

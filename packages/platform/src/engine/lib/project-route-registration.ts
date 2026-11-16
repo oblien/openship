@@ -1,7 +1,7 @@
 import type { RouteConfig, RoutingProvider } from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
 import { resolveProjectRouteProtection, withRouteProtectionLock } from "./route-protection";
-import { AppError } from "@repo/core";
+import { AppError, resolveProjectEdgePages } from "@repo/core";
 
 /** Project-owned routes apply saved policies on deploy, retry, and live edits. */
 export async function registerProjectRoute(
@@ -23,7 +23,11 @@ export async function registerProjectRoute(
       project.id,
       route.domain,
     );
-    await routing.registerRoute({ ...route, ...routeOptions });
+    await routing.registerRoute({
+      ...route,
+      ...routeOptions,
+      edgePages: resolveProjectEdgePages(current.routingConfig?.edgePages, route.domain),
+    });
     await onApplied?.();
   });
 }

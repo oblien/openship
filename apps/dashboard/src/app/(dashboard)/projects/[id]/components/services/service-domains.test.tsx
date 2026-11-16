@@ -499,11 +499,11 @@ describe("application domain ownership", () => {
     expect(host.querySelector('[aria-label="Project route rules"]')).toBeNull();
   });
 
-  it("keeps project routing policy and route rules in project Domains", async () => {
+  it("keeps project Domains focused on hostnames with routing and access in their own tabs", async () => {
     context.projectData.deployTarget = "server";
     await render(null);
-    expect(host.querySelectorAll('[aria-label="Project routing policy"]')).toHaveLength(1);
-    expect(host.querySelectorAll('[aria-label="Project route rules"]')).toHaveLength(1);
+    expect(host.querySelector('[aria-label="Project routing policy"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Project route rules"]')).toBeNull();
     expect(host.textContent).toContain("other.example.com");
     expect(host.textContent).toContain("app.example.com");
   });

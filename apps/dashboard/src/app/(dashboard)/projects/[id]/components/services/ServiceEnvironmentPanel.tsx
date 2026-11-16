@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -410,9 +411,9 @@ export function ServiceEnvironmentPanel({
               )}
               {!checking && state.recoverableKeys.length > 0 && (
                 <details className="rounded-xl bg-muted/30 px-3 py-2.5">
-                  <summary className="cursor-pointer text-foreground">
+                  <DisclosureSummary className="cursor-pointer text-foreground">
                     {labels.recoveryTitle} · {state.recoverableKeys.length}
-                  </summary>
+                  </DisclosureSummary>
                   <div className="mt-2 space-y-2">
                     <p>{labels.recoveryHint}</p>
                     <div className="flex flex-wrap gap-1.5">

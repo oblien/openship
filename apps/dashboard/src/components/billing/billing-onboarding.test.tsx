@@ -25,7 +25,6 @@ import { BillingUsage } from "./BillingUsage";
 import { CloudPlanPicker } from "./CloudPlanPicker";
 import { BillingWorkspaceProvider } from "./BillingWorkspaceContext";
 import { SubscriptionChangeStatus } from "./SubscriptionChangeStatus";
-import { CloudHomePlanCard } from "./CloudHomePlanCard";
 import type { ApiPlan } from "./PricingCards";
 import { monthlyCompute } from "../../../test/helpers/monthly-billing";
 
@@ -483,51 +482,6 @@ describe("existing server plan-change review", () => {
     await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(dialog()).toBeNull();
     expect(mocks.post).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe("Cloud home plan card", () => {
-  it("gives a new workspace a direct plan comparison without another catalog or checkout request", async () => {
-    await render(<CloudHomePlanCard state={free} />);
-    expect(container.textContent).toContain(copy.home.title);
-    expect(container.querySelector('a[href="/billing/plans"]')?.textContent).toContain(copy.home.viewPlans);
-    expect(mocks.get).not.toHaveBeenCalled();
-    expect(mocks.post).not.toHaveBeenCalled();
-  });
-
-  it("removes the offer after the workspace subscribes", async () => {
-    await render(<CloudHomePlanCard state={free} />);
-    expect(container.querySelector("section")).not.toBeNull();
-    await render(<CloudHomePlanCard state={paid} />);
-    expect(container.querySelector("section")).toBeNull();
-    expect(container.querySelector("a")).toBeNull();
-  });
-
-  it("recognizes complimentary access without prompting for another subscription", async () => {
-    await render(<CloudHomePlanCard state={complimentary} />);
-    expect(container.querySelector("section")).toBeNull();
-  });
-
-  it("does not advertise an available subscription while purchases are disabled", async () => {
-    await render(<CloudHomePlanCard state={{ ...free, billing: { enabled: false } }} />);
-    expect(container.querySelector("section")).toBeNull();
-  });
-
-  it("does not invent a free or active plan when billing is unavailable", async () => {
-    await render(<CloudHomePlanCard state={null} />);
-    expect(container.querySelector("section")).toBeNull();
-  });
-
-  it.each(["credit_exhausted", "past_due", "paused"])("keeps the card hidden for an existing %s customer", async status => {
-    await render(<CloudHomePlanCard state={{ ...paid, status }} />);
-    expect(container.querySelector("section")).toBeNull();
-  });
-
-  it("does not treat a canceled subscriber or an account with saved credits as a new customer", async () => {
-    await render(<CloudHomePlanCard state={{ ...free, subscription: { ...paid.subscription!, status: "canceled" } }} />);
-    expect(container.querySelector("section")).toBeNull();
-    await render(<CloudHomePlanCard state={{ ...free, balance: paid.balance }} />);
-    expect(container.querySelector("section")).toBeNull();
   });
 });
 

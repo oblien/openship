@@ -1,3 +1,4 @@
+import '@mindwire-ai/client/ui.css';
 import {
   isRouteErrorResponse,
   Links,
@@ -18,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { getLocale } from '@/paraglide/runtime';
 import { siteConfig } from '@/lib/site-config';
 import { runtimeBranding } from '@/lib/runtime-branding';
-import { signOut } from '@/lib/auth-client';
+import { readActiveConnectionId, signOut } from '@/lib/auth-client';
 import { TRPC_URL } from '@/lib/backend-url';
 import type { Route } from './+types/root';
 import { AlertCircle } from 'lucide-react';
@@ -26,25 +27,9 @@ import { m } from '@/paraglide/messages';
 import { ArrowLeft } from 'lucide-react';
 import superjson from 'superjson';
 import './globals.css';
+import './mail-assistant.css';
 
 const getUrl = () => TRPC_URL;
-
-/**
- * Reads the active connection id from the non-httpOnly companion cookie
- * the server writes alongside `zero_session`. Used at boot to namespace
- * the persisted query cache per signed-in mailbox - so switching accounts
- * doesn't show stale data from the previous one, and each user keeps its
- * own offline cache.
- *
- * The cookie value is just a session id; the password lives in the
- * httpOnly cookie and never reaches JS.
- */
-function readActiveConnectionId(): string | null {
-  if (typeof document === 'undefined') return null;
-  // Cookie name has to match SESSION_COOKIE_NAME + '_id' on the server.
-  const match = document.cookie.match(/(?:^|;\s*)zero_session_id=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
 
 export const getServerTrpc = (req: Request) =>
   createTRPCClient<AppRouter>({

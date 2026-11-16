@@ -1,8 +1,4 @@
--- Applies to assets, redirects, errors and upstream responses alike.
--- A CDN must not cache an authenticated representation for the next visitor.
-ngx.header["Cache-Control"] = "private, no-store"
-ngx.header["CDN-Cache-Control"] = "no-store"
-ngx.header["Cloudflare-CDN-Cache-Control"] = "no-store"
-ngx.header["Surrogate-Control"] = "no-store"
-ngx.header["Expires"] = nil
-ngx.header["ETag"] = nil
+require("openship.response_headers").private()
+-- A server default may be configured independently of this protected route.
+local ok, pages = pcall(require, "openship.edge_pages")
+if ok then pages.headers() end

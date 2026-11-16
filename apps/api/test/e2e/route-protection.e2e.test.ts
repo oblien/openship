@@ -6,7 +6,8 @@ import { PassThrough } from "node:stream";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { normalizeEdgeResponse } from "@repo/core";
+import { gzipSync } from "node:zlib";
+import { compileEdgePages, normalizeEdgeResponse, type EdgePages } from "@repo/core";
 import {
   NginxProvider,
   OPENRESTY_DEFAULT_PATHS,
@@ -35,6 +36,7 @@ let docker: Docker;
 const paths = OPENRESTY_DEFAULT_PATHS;
 const proxyLocations = [
   { pathPrefix: "/api/", targetUrl: "http://127.0.0.1:39482", external: true },
+  { pathPrefix: "/offline/", targetUrl: "http://127.0.0.1:39483", external: true },
 ];
 
 async function exec(command: string, options?: { user?: string; timeout?: number }): Promise<string> {
@@ -58,10 +60,14 @@ async function exec(command: string, options?: { user?: string; timeout?: number
   return text;
 }
 async function write(path: string, contents: string, mode = 0o644) {
-  // No shell expansion of the payload, including passwords or Lua source.
+  // Match the container executor's bounded writes: HTML can exceed the kernel's
+  // per-argument limit once encoded in a vhost. Never expand payload as shell code.
   await exec(
-    `mkdir -p ${sq(path.substring(0, path.lastIndexOf("/")))} && (umask 077; printf %s ${sq(Buffer.from(contents).toString("base64"))} | base64 -d > ${sq(path)}) && chmod ${mode.toString(8)} ${sq(path)}`,
+    `mkdir -p ${sq(path.substring(0, path.lastIndexOf("/")))} && (umask 077; : > ${sq(path)}) && chmod ${mode.toString(8)} ${sq(path)}`,
   );
+  const encoded = Buffer.from(contents).toString("base64");
+  for (let offset = 0; offset < encoded.length; offset += 32768)
+    await exec(`printf %s ${sq(encoded.slice(offset, offset + 32768))} | base64 -d >> ${sq(path)}`);
 }
 type Answer = { status: number; headers: IncomingHttpHeaders; body: string };
 function ask(
@@ -204,6 +210,26 @@ describeDockerE2E("password-protected routes through the real edge", () => {
       `${paths.sitesDir}/_test_upstream.conf`,
       `server {
       listen 127.0.0.1:39482;
+      header_filter_by_lua_block { }
+      body_filter_by_lua_block { }
+      location = /api/authorization {
+        content_by_lua_block { ngx.print((ngx.var.http_authorization or "none") .. "|" .. (ngx.var.http_cookie or "none")) }
+      }
+      location = /api/error {
+        content_by_lua_block {
+          ngx.status = tonumber(ngx.var.arg_status) or 502
+          ngx.header["Content-Type"] = "application/json"
+          ngx.header["Content-Security-Policy"] = "default-src 'none'"
+          ngx.print('{"error":"original app response"}')
+        }
+      }
+      location = /api/compressed {
+        content_by_lua_block {
+          ngx.status = 502
+          ngx.header["Content-Encoding"] = "gzip"
+          ngx.print(ngx.decode_base64("${gzipSync("original compressed error").toString("base64")}"))
+        }
+      }
       # Test-only bridge to the loopback management listener.
       location = /api/test-rules { proxy_pass http://127.0.0.1:9145/rules; }
       location / {
@@ -481,6 +507,131 @@ describeDockerE2E("password-protected routes through the real edge", () => {
       expect(authenticated.status).toBe(spaFallback === false ? 404 : 200);
       expect(authenticated.body).toBe(spaFallback === false ? "private not-found page" : "private document");
     }
+  });
+
+  it("uses browser authentication without HTML, strips credentials, and revokes cached passwords", async () => {
+    const headers = { Authorization: `Basic ${Buffer.from(`viewer:${password}`).toString("base64")}` };
+    const basic = { ...protection, mode: "basic" as const, username: "viewer" };
+    try {
+      await nginx.setRouteProtection("other.test", basic);
+      await settleReload();
+      const rejected = await ask("/", { host: "other.test" });
+      expect(rejected.status).toBe(401);
+      expect(rejected.headers["www-authenticate"]).toContain("Basic");
+      expect(rejected.body).not.toContain("<html");
+      expect((await ask("/", { host: "other.test", headers: { Authorization: `Basic ${Buffer.from("viewer:incorrect-password").toString("base64")}` } })).status).toBe(401);
+      // Exercise both worker caches; a page load's assets must not spend another
+      // PBKDF2 operation or the sign-in rate limit on every request.
+      for (let i = 0; i < 12; i++) {
+        const response = await ask("/api/authorization", { host: "other.test", headers, cookie: `${cookie}; app_session=kept` });
+        expect(response).toMatchObject({ status: 200, body: "none|app_session=kept" });
+        expect(response.headers["cache-control"]).toBe("private, no-store");
+        expect(response.headers["set-cookie"]).toBeUndefined();
+      }
+      expect((await ask("/", { host: "other.test", http: true, headers })).status).toBe(403);
+      const rotated = { ...await createRouteProtection("replacement-test-password"), mode: "basic" as const, username: "viewer" };
+      await nginx.setRouteProtection("other.test", rotated);
+      await settleReload();
+      expect((await ask("/", { host: "other.test", headers })).status).toBe(401);
+    } finally {
+      await nginx.setRouteProtection("other.test", protection);
+      await settleReload();
+    }
+  });
+
+  it("renders large custom sign-in HTML around the same CSRF-protected form", async () => {
+    const loginHtml = `<!doctype html><title>Our private site</title><style>body{background:#111;color:#fff}</style><main>{{form}}</main><!--${"x".repeat(60000)}-->`;
+    try {
+      await nginx.setRouteProtection("private.test", { ...protection, loginHtml });
+      await settleReload();
+      const page = await ask("/");
+      expect(page.status).toBe(401);
+      expect(page.body).toContain("<title>Our private site</title>");
+      expect(page.body).toContain('name="csrf"');
+      expect(page.body).not.toContain("{{form}}");
+      expect(page.headers["content-security-policy"]).toContain("default-src 'none'");
+      expect((await login()).status).toBe(303);
+    } finally {
+      await nginx.setRouteProtection("private.test", protection);
+      await settleReload();
+    }
+  });
+
+  it("serves maintenance at the edge for all methods and paths without bypassing authentication", async () => {
+    const html = '<!doctype html><h1>Back after our upgrade</h1><script>document.title="Maintenance"</script>';
+    const pages = compileEdgePages({ files: [{ id: "maintenance", name: "maintenance.html", html }], errors: [], maintenance: { enabled: true, pageId: "maintenance", retryAfter: 600 } })!;
+    try {
+      await nginx.setRouteEdgePages("private.test", pages);
+      await settleReload();
+      for (const path of ["/", "/api/error", "/old", "/asset.js", "/missing"]) {
+        expect((await ask(path)).status).toBe(401);
+        const response = await ask(path, { cookie });
+        expect(response).toMatchObject({ status: 503, body: html });
+        expect(response.headers["retry-after"]).toBe("600");
+        expect(response.headers["cache-control"]).toBe("private, no-store");
+      }
+      expect((await ask("/api/error", { method: "POST", body: "data", cookie })).status).toBe(503);
+      expect(await ask("/", { method: "HEAD", cookie })).toMatchObject({ status: 503, body: "" });
+      expect((await ask("/_openship/access")).status).toBe(401);
+      expect((await ask("/.well-known/acme-challenge/verify_123")).status).not.toBe(503);
+      expect((await ask("/", { host: "public.test" })).status).toBe(200);
+      // Changing the route target must retain maintenance, including a restart.
+      await nginx.registerRoute({ domain: "private.test", tls: true, terminatesTlsLocally: true, staticRoot: "/opt/openship/route-test", proxyLocations });
+      await exec("openresty -s stop && sleep 1 && openresty");
+      expect((await ask("/", { cookie })).status).toBe(503);
+      // A rejected update restores both the generated vhost and its durable state.
+      await write(`${paths.sitesDir}/invalid.conf`, "not_an_nginx_directive;");
+      await expect(nginx.setRouteEdgePages("private.test", null)).rejects.toThrow();
+      expect(await nginx.getRouteEdgePages("private.test")).toEqual(pages);
+      expect((await ask("/", { cookie })).status).toBe(503);
+    } finally {
+      await exec(`rm -f ${sq(`${paths.sitesDir}/invalid.conf`)}`);
+      await nginx.setRouteEdgePages("private.test", null);
+      await settleReload();
+    }
+    expect((await ask("/", { cookie })).status).toBe(200);
+  });
+
+  it("inherits server error pages, overrides per hostname, and keeps status codes and IP defaults", async () => {
+    const serverHtml = `<!doctype html><h1>Server unavailable</h1><!--${"x".repeat(65000)}-->`;
+    const hostHtml = '<!doctype html><h1>Project unavailable</h1>';
+    const addressHtml = '<!doctype html><h1>Choose a connected domain</h1>';
+    const config: EdgePages = { files: [
+      { id: "error", name: "unavailable.html", html: serverHtml },
+      { id: "address", name: "address.html", html: addressHtml },
+    ], errors: [{ status: 502, pageId: "error" }, { status: 503, pageId: "error" }], defaultPageId: "address" };
+    try {
+      await nginx.setEdgePages(config);
+      await nginx.setRouteEdgePages("private.test", { errors: { "502": hostHtml } });
+      await settleReload();
+      expect(await nginx.getEdgePages()).toEqual(config);
+      expect(await ask("/api/error?status=502", { cookie })).toMatchObject({ status: 502, body: hostHtml });
+      expect(await ask("/offline/", { cookie })).toMatchObject({ status: 502, body: hostHtml });
+      const compressed = await ask("/api/compressed", { cookie });
+      expect(compressed).toMatchObject({ status: 502, body: hostHtml });
+      expect(compressed.headers["content-encoding"]).toBeUndefined();
+      const inherited = await ask("/api/error?status=503", { cookie });
+      expect(inherited).toMatchObject({ status: 503, body: serverHtml });
+      expect(inherited.headers["content-type"]).toContain("text/html");
+      expect(inherited.headers["content-security-policy"]).toBeUndefined();
+      expect(inherited.headers["cache-control"]).toBe("private, no-store");
+      expect(await ask("/api/error?status=502", { method: "HEAD", cookie })).toMatchObject({ status: 502, body: "" });
+      expect(await ask("/api/error?status=502", { host: "public.test" })).toMatchObject({ status: 502, body: serverHtml });
+      expect(await ask("/api/error?status=504", { cookie })).toMatchObject({ status: 504, body: '{"error":"original app response"}' });
+      expect((await ask("/api/error?status=502")).status).toBe(401);
+      expect(await ask("/", { host: "unmatched.test", http: true })).toMatchObject({ status: 404, body: addressHtml });
+      expect(await ask("/", { host: "127.0.0.1", http: true })).toMatchObject({ status: 404, body: addressHtml });
+      expect((await ask("/.well-known/acme-challenge/unknown", { host: "unmatched.test", http: true })).body).not.toContain("Choose a connected domain");
+      await write(`${paths.sitesDir}/invalid.conf`, "not_an_nginx_directive;");
+      await expect(nginx.setEdgePages({ files: [], errors: [] })).rejects.toThrow();
+      expect(await nginx.getEdgePages()).toEqual(config);
+    } finally {
+      await exec(`rm -f ${sq(`${paths.sitesDir}/invalid.conf`)}`);
+      await nginx.setEdgePages({ files: [], errors: [] });
+      await nginx.setRouteEdgePages("private.test", null);
+      await settleReload();
+    }
+    expect(await ask("/api/error?status=502", { host: "public.test" })).toMatchObject({ status: 502, body: '{"error":"original app response"}' });
   });
 
   it("invalidates old cookies and restores the previous lock after a rejected config update", async () => {

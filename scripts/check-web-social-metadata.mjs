@@ -42,6 +42,7 @@ const translatedSections = new Set([
   "pricing",
   "features",
   "apps",
+  "deploy",
   "migrate",
   "compare",
   "sla",

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { AppContext } from '../src/ctx';
 import * as imap from '../src/lib/imap';
 import { mailRouter } from '../src/trpc/routes/mail';
+import { unsnoozeThreads } from '../src/lib/imap-driver';
 
 const ctx = {
   session: {
@@ -50,6 +51,7 @@ function message(uid: number) {
 }
 const client = {
   mailbox: { uidValidity: 1 },
+  list: async () => [...mailboxes.keys()].map((path) => ({ path, flags: new Set<string>() })),
   mailboxCreate: async (path: string) => {
     if (!mailboxes.has(path)) mailboxes.set(path, new Set());
   },
@@ -116,6 +118,41 @@ beforeEach(() => {
   connection.mockImplementation(async (_auth, fn) => fn(client as never));
 });
 afterAll(() => connection.mockRestore());
+
+describe('idempotent snooze wake-ups', () => {
+  it('skips deleted messages and wakes the rest of the batch', async () => {
+    flags.set('INBOX:42', new Set(['$Snoozed']));
+    await unsnoozeThreads(ctx.imap, {
+      ids: ['<deleted@example.com>', '<6044072238196767142@google.com>'],
+    });
+    expect(flags.get('INBOX:42')?.has('$Snoozed')).toBe(false);
+  });
+
+  it('finds a snoozed message moved to a custom mailbox', async () => {
+    mailboxes.get('INBOX')!.clear();
+    mailboxes.get('Sent')!.clear();
+    mailboxes.set('Projects', new Set([42]));
+    flags.set('Projects:42', new Set(['$Snoozed']));
+    await unsnoozeThreads(ctx.imap, { ids: ['<6044072238196767142@google.com>'] });
+    expect(flags.get('Projects:42')?.has('$Snoozed')).toBe(false);
+  });
+
+  it('does not use an inbox UID to change a different message in Sent', async () => {
+    mailboxes.get('INBOX')!.clear();
+    flags.set('Sent:42', new Set(['$Snoozed']));
+    await unsnoozeThreads(ctx.imap, { ids: ['uid:42'] });
+    expect(flags.get('Sent:42')?.has('$Snoozed')).toBe(true);
+  });
+
+  it('propagates mailbox outages so the worker can retry', async () => {
+    const lock = spyOn(client, 'getMailboxLock').mockRejectedValue(new Error('Mailbox unavailable'));
+    try {
+      await expect(unsnoozeThreads(ctx.imap, { ids: ['uid:42'] })).rejects.toThrow('Mailbox unavailable');
+    } finally {
+      lock.mockRestore();
+    }
+  });
+});
 
 describe('webmail deletion (#429)', () => {
   it('moves an inbox message to Trash, then permanently deletes it from Bin', async () => {

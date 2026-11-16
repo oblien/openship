@@ -245,7 +245,8 @@
       "runtimeApi": "API de execução",
       "workloads": "Cargas de trabalho",
       "settings": "Configurações",
-      "runs": "Execuções"
+      "runs": "Execuções",
+      "pages": "Páginas do edge"
     },
     "healthy": "Saudável",
     "issues": "Problemas",

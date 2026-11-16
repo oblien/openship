@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SERVICE_STARTING_HEALTH_WARNING } from "@repo/core";
@@ -142,7 +143,7 @@ export function DeploymentHealthWarning({
       </div>
       {resolved ? (
         <details className="mt-2 text-sm text-muted-foreground">
-          <summary className="cursor-pointer">{copy.atDeployment}</summary>
+          <DisclosureSummary className="cursor-pointer">{copy.atDeployment}</DisclosureSummary>
           <p className="mt-1 break-words">{warningMessage}</p>
         </details>
       ) : (

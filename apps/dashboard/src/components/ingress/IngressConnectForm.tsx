@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useEffect, useId, useState } from "react";
 import type { IngressConnectInput } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
@@ -378,9 +379,9 @@ export function IngressConnectForm({
                       </>
                     )}
                     <details className="text-sm">
-                      <summary className="cursor-pointer text-muted-foreground">
+                      <DisclosureSummary className="cursor-pointer text-muted-foreground">
                         {copy.advanced}
-                      </summary>
+                      </DisclosureSummary>
                       <div className="mt-3">
                         {field(
                           "port",

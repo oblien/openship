@@ -9,6 +9,7 @@ import nodemailer from 'nodemailer';
 import type Mail from 'nodemailer/lib/mailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import net from 'node:net';
+import MailComposer from 'nodemailer/lib/mail-composer';
 
 export interface SmtpAuth {
   host: string;
@@ -18,6 +19,7 @@ export interface SmtpAuth {
 }
 
 export interface SendInput {
+  messageId?: string;
   from: string;
   to: string[];
   cc?: string[];
@@ -31,6 +33,27 @@ export interface SendInput {
   attachments?: Mail.Attachment[];
 }
 
+export function decodeAttachments(
+  attachments?: Array<{ name: string; type: string; base64: string }>,
+): Mail.Attachment[] | undefined {
+  return attachments?.map((a) => ({
+    filename: a.name,
+    content: Buffer.from(a.base64, 'base64'),
+    contentType: a.type,
+  }));
+}
+
+/** Drafts and Sent use the same MIME encoding as SMTP, including attachments and Unicode headers. */
+export async function composeRfc822(input: SendInput): Promise<Buffer> {
+  const compiled = new MailComposer({
+    ...input,
+    disableFileAccess: true,
+    disableUrlAccess: true,
+  }).compile();
+  compiled.keepBcc = true;
+  return compiled.build();
+}
+
 export async function sendMail(auth: SmtpAuth, input: SendInput): Promise<{ messageId: string }> {
   const options: SMTPTransport.Options = {
     host: auth.host,
@@ -41,6 +64,9 @@ export async function sendMail(auth: SmtpAuth, input: SendInput): Promise<{ mess
     // downgrade in front of it) gets the mailbox password in cleartext. Every
     // real submission host supports it; refusing to send is the right failure.
     requireTLS: auth.port !== 465,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 60_000,
     auth: { user: auth.user, pass: auth.pass },
     // Use the OS resolver, as IMAP does, so Docker's extra_hosts and other
     // administrator-managed host mappings apply to submission too. Nodemailer's
@@ -76,6 +102,9 @@ export async function sendMail(auth: SmtpAuth, input: SendInput): Promise<{ mess
 
   try {
     const info = await transporter.sendMail({
+      disableFileAccess: true,
+      disableUrlAccess: true,
+      messageId: input.messageId,
       from: input.from,
       to: input.to,
       cc: input.cc,

@@ -1,0 +1,102 @@
+---
+title: Maintenance and custom error pages
+description: Serve maintenance, error and default address pages from your self-hosted edge.
+---
+
+Open a project’s **Domains & Routes → Pages & maintenance**. Add an HTML file,
+then assign it to maintenance mode or an error status. The edge serves the page
+without starting your application or contacting the control plane.
+
+Use **All project domains** for project defaults, or select a hostname for its
+own configuration. **Use project defaults** removes that hostname’s overrides.
+New domains inherit the project defaults when they are published.
+
+## Maintenance
+
+Turn on **Maintenance mode**, choose a page or keep the built-in page, then select
+**Save & apply**. The edge returns **503 Service Unavailable** with a `Retry-After`
+header. This covers the hostname’s pages, assets, API requests and redirects.
+Your application continues running. Turning maintenance off restores its routes.
+
+Password protection is still checked before showing the maintenance page. Certificate
+and ownership verification paths remain reachable. Maintenance applies only to traffic
+through the edge: it does not close existing connections or block direct service ports.
+Purge previously cached public content from any external CDN.
+
+## Error pages and inheritance
+
+Upload or paste HTML in **HTML files**, then choose **Assign page** to map a status
+code to a file. One file can serve several statuses. Supported codes are 400, 403,
+404, 405, 408, 413, 429, 500, 502, 503 and 504.
+
+The original HTTP status is preserved. The edge replaces the response body for explicitly
+assigned statuses, including an application’s own response with that status. Unassigned
+application responses remain unchanged. Sign-in failures and maintenance keep their own
+responses, so error mappings cannot hide authentication or maintenance state.
+
+Resolution is per status: **hostname override → project default → server default**.
+Removing an assignment restores inheritance. Remove a file’s assignments before deleting it.
+A static site with SPA fallback enabled returns 200 for a missing path, so a custom 404
+page requires turning that fallback off under **Routing → URL behavior**.
+
+## Server defaults and direct-IP visits
+
+Open **Servers → your connected server → Edge pages** to set default error pages.
+**Default address page** selects the HTML shown for direct-IP requests and hostnames
+without a routed application. It returns 404, independent of your project routes.
+HTTPS still needs a trusted certificate; an HTML page cannot fix a TLS certificate warning.
+
+Server-wide changes require server administrator access. They use the existing configuration
+validation and reload transaction. A failed reload restores the prior configuration.
+
+## HTML and previews
+
+Each file can contain up to **64 KiB of UTF-8 HTML**. Use inline CSS and embedded assets
+so the page works while the application is down. A library holds up to 12 files; a project’s
+combined defaults and hostname overrides are limited to 2 MiB.
+
+The dashboard preview has an opaque sandbox and blocks scripts, forms and external assets.
+On the public site, maintenance and error HTML is served as supplied, including scripts.
+Only include code you trust to run on that site’s origin. HTML is stored as response data;
+it is never run as a server script or interpolated into nginx directives.
+
+## Application state and support
+
+**Applied** means the edge accepted the configuration. **Pending** means the project saved
+the change but the edge has not applied it; use **Save & apply** to retry. A pending maintenance
+change does not mean the site is already paused. A project without published routes shows
+that the settings will apply at deployment.
+
+Project settings survive redeployments and routing retries. The edge’s saved configuration
+continues serving across restarts without the control plane. Ordinary routing and proxy
+edits preserve maintenance settings. Concurrent page edits require reloading before saving.
+
+Use an up-to-date self-hosted OpenResty edge. Managed Cloud and cluster targets do not expose
+these settings. Provider-owned servers cannot be customized through this API. If an older
+edge lacks the page runtime, update it through the existing server infrastructure flow and retry.
+
+## API and SDK
+
+Project reads return the saved config, its revision and application state:
+
+```ts
+const projectId = "your-project-id";
+const current = await ship.projects.getEdgePages(projectId);
+await ship.projects.updateEdgePages(projectId, {
+  expectedRevision: current.revision,
+  config: {
+    defaults: {
+      files: [{ id: "maintenance", name: "maintenance.html", html: "<h1>Back shortly</h1>" }],
+      errors: [{ status: 503, pageId: "maintenance" }],
+      maintenance: { enabled: true, pageId: "maintenance", retryAfter: 300 },
+    },
+  },
+});
+```
+
+The HTTP endpoints are `GET` and `PUT /api/projects/:id/edge-pages`.
+Server defaults use `GET` and `PUT /api/system/servers/:id/edge-pages`, or
+`ship.servers.getEdgePages(serverId)` and `ship.servers.updateEdgePages(serverId, config)`.
+Server config contains `files`, `errors` and an optional `defaultPageId`; maintenance belongs
+to projects or hostnames. Use these dedicated operations to change pages, rather than a
+project’s generic routing update.

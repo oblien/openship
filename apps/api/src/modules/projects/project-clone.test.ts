@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Duplicating a project copies its RECORDS. These tests exist for three things that are invisible
@@ -384,5 +384,65 @@ describe("the exclusion lists are the contract", () => {
     for (const f of ["exposed", "domain", "customDomain", "publicEndpoints"]) {
       expect(CLONE_EXCLUSIONS.service).toContain(f);
     }
+  });
+});
+
+describe("independent copies on the source server", () => {
+  let originalServices: typeof h.services;
+  beforeEach(() => {
+    originalServices = structuredClone(h.services);
+    h.servers.push({ id: "srv_a", organizationId: "org1", workspaceId: null, purpose: "deployment" });
+  });
+  afterEach(() => { h.services = originalServices; });
+
+  it("allocates new ports without changing the source or claiming its domains", async () => {
+    h.services[0]!.ports = ["127.0.0.1:3100:3000", "5353:53/udp"];
+    await clone({ targetServerId: "srv_a", chosen: [{ ...CHOSEN[0]!, ports: ["127.0.0.1:3100:3000", "5353:53/udp"] }] });
+    expect(clonedServices()[0]!.row.ports).toEqual(["3000", "53/udp"]);
+    expect(clonedServices()[0]!.row).not.toHaveProperty("domain");
+    expect(clonedProject()).not.toHaveProperty("compositeRoutes");
+    expect(h.services[0]!.ports).toEqual(["127.0.0.1:3100:3000", "5353:53/udp"]);
+    expect(h.project.activeDeploymentId).toBe("dep_live");
+  });
+
+  it("refuses sharing host paths before creating a copy", async () => {
+    const chosen = [{ ...CHOSEN[0]!, volumes: [{ type: "bind" as const, source: "/srv/data", target: "/data", rw: false }] }];
+    await expect(clone({ targetServerId: "srv_a", chosen })).rejects.toThrow(/host path.*same-server/i);
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
+  });
+
+  it("requires declared dependencies instead of deploying a broken partial copy", async () => {
+    h.services[0]!.dependsOn = ["db"];
+    await expect(clone({ chosen: [CHOSEN[0]!] })).rejects.toThrow(/Include db/);
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
+    await expect(clone()).resolves.toMatchObject({ created: true, adopted: ["web", "db"] });
+  });
+
+  it("refuses a stale partial match before copying data without a corresponding service", async () => {
+    await expect(clone({ chosen: [CHOSEN[0]!, { ...CHOSEN[1]!, name: "removed-service" }] }))
+      .rejects.toThrow(/no longer match/);
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
+  });
+
+  it("requires namespace dependencies and refuses raw host/container namespaces", async () => {
+    h.services[0]!.advanced = { networkMode: "service:db" };
+    await expect(clone({ chosen: [CHOSEN[0]!] })).rejects.toThrow(/Include db/);
+    h.services[0]!.advanced = { networkMode: "host" };
+    await expect(clone()).rejects.toThrow(/host is not supported/);
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
+  });
+
+  it("copies a single application without inventing service rows", async () => {
+    h.services = [];
+    const result = await clone({ targetServerId: "srv_a", chosen: [{ ...CHOSEN[0]!, volumes: [] }] });
+    expect(result).toMatchObject({ created: true, adopted: ["web"], handover: { web: "img/web:live" } });
+    expect(clonedServices()).toEqual([]);
+    expect(clonedProject()).toMatchObject({ serverId: "srv_a", activeDeploymentId: null });
+  });
+
+  it("refuses single-application mounts before creating records", async () => {
+    h.services = [];
+    await expect(clone({ chosen: [CHOSEN[0]!] })).rejects.toThrow(/single application with mounted data/);
+    expect(createProjectWithRecords).not.toHaveBeenCalled();
   });
 });

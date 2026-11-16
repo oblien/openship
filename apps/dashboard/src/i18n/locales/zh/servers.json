@@ -245,7 +245,8 @@
       "runtimeApi": "运行时 API",
       "workloads": "工作负载",
       "settings": "设置",
-      "runs": "运行记录"
+      "runs": "运行记录",
+      "pages": "边缘页面"
     },
     "healthy": "健康",
     "issues": "问题",

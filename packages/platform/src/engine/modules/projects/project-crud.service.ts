@@ -152,13 +152,20 @@ async function assertBuildCommandUpdate(
  * increase/pin must not race a sweep operating on the previous policy. */
 async function persistProjectFields(projectId: string, update: Record<string, unknown>) {
   const save = async () => {
+    if ("routingConfig" in update) {
+      // Source/wizard/proxy edits do not own maintenance intent. Read under the
+      // same lock as the pages writer so a stale form cannot turn it off.
+      const current = await repos.project.findById(projectId);
+      if (current?.routingConfig?.edgePages)
+        update.routingConfig = { ...(update.routingConfig as object | null), edgePages: current.routingConfig.edgePages };
+    }
     await repos.project.update(projectId, update);
     if (update.rollbackWindow !== undefined) {
       const { reconcileProjectRetentionSafe } = await import("../deployments/rollback/rollback-orchestrator");
       await reconcileProjectRetentionSafe(projectId);
     }
   };
-  return update.rollbackWindow !== undefined ? withProjectRuntimeLock(projectId, save) : save();
+  return update.rollbackWindow !== undefined || "routingConfig" in update ? withProjectRuntimeLock(projectId, save) : save();
 }
 
 /**

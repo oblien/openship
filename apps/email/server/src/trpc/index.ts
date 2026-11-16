@@ -14,8 +14,9 @@ import { templatesRouter } from './routes/templates';
 import { userRouter } from './routes/user';
 import { cookiePreferencesRouter } from './routes/cookies';
 import { brandingRouter } from './routes/branding';
+import { mailAgentsRouter, outboxRouter } from './routes/mail-agents';
+import { assistantRouter, aiRouter } from './routes/assistant';
 import {
-  aiRouter,
   brainRouter,
   bimiRouter,
   connectionsRouter,
@@ -24,6 +25,9 @@ import {
 } from './routes/stubs';
 
 export const appRouter = router({
+  assistant: assistantRouter,
+  mailAgents: mailAgentsRouter,
+  outbox: outboxRouter,
   mail: mailRouter,
   blockedSenders: blockedSendersRouter,
   drafts: draftsRouter,

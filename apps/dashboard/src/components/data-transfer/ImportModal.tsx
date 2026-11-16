@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useRef, useState } from "react";
@@ -310,9 +311,9 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                         project.existingProjectId && selection.projectIds?.includes(project.id),
                     ) && (
                       <details className="rounded-lg border border-border p-3 text-xs">
-                        <summary className="cursor-pointer font-medium text-foreground">
+                        <DisclosureSummary className="cursor-pointer font-medium text-foreground">
                           Override individual project conflicts
-                        </summary>
+                        </DisclosureSummary>
                         <div className="mt-3 space-y-3">
                           {preview.projects
                             .filter(
@@ -382,9 +383,9 @@ export function ImportModal({ open, onClose }: { open: boolean; onClose: () => v
                       />
                     </div>
                     <details className="rounded-lg border border-border p-3 text-xs">
-                      <summary className="cursor-pointer font-medium text-foreground">
+                      <DisclosureSummary className="cursor-pointer font-medium text-foreground">
                         History to import
-                      </summary>
+                      </DisclosureSummary>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         {ALL_HISTORY.map((category) => (
                           <TransferOption

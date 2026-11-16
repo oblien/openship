@@ -1,3 +1,5 @@
+import { edgeStatusPage } from "./edge-status-page";
+
 /**
  * The page the edge serves for a hostname it does not route (#431).
  *
@@ -71,73 +73,14 @@
  */
 export const EDGE_UNROUTED_SENTINEL = "openship-edge-unrouted";
 
-/**
- * The page, in fragments. Joined with no separator, so every fragment must be
- * self-contained at its boundaries (a break only ever falls between tags or
- * between CSS declarations — never inside a text node, where the missing newline
- * would run two words together).
- */
-const HTML_FRAGMENTS: readonly string[] = [
-  `<!doctype html>`,
-  `<!--${EDGE_UNROUTED_SENTINEL}-->`,
-  `<html lang="en">`,
-  `<head>`,
-  `<meta charset="utf-8">`,
-  `<meta name="viewport" content="width=device-width,initial-scale=1">`,
-  // An unrouted host must never enter a search index under our page.
-  `<meta name="robots" content="noindex,nofollow">`,
-  `<title>Service not found</title>`,
-  `<style>`,
-  // Matches the dashboard's theme: a neutral black-on-white scale, mirrored for
-  // dark. No webfont, no image, no external request — the page must render on a
-  // box whose only working listener is the one serving it. Colours are `rgb()`,
-  // never `#rrggbb`: see the no-`#` invariant in the header.
-  `:root{color-scheme:light dark}`,
-  `*{box-sizing:border-box}`,
-  `body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:rgb(255,255,255);color:rgba(0,0,0,.66);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}`,
-  `main{width:100%;max-width:32rem;padding:2.5rem 1.5rem;text-align:center}`,
-  // The muted scale is .56, not the .4–.52 it started at: black at .52 on white is
-  // 4.3:1 and at .4 is 2.9:1, both under WCAG AA's 4.5:1 for text this small, and
-  // this is the most-seen page the edge serves. .56 ≈ 4.75:1.
-  `.tag{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.25rem;padding:.25rem .625rem;border:1px solid rgba(0,0,0,.1);border-radius:999px;font-size:12px;color:rgba(0,0,0,.56)}`,
-  `.dot{width:6px;height:6px;border-radius:50%;background:rgb(224,169,10)}`,
-  `h1{margin:0 0 .5rem;font-size:1.375rem;font-weight:600;letter-spacing:-.01em;color:rgba(0,0,0,.92)}`,
-  `p{margin:0 auto 1.5rem;max-width:26rem}`,
-  `ul{display:inline-block;margin:0;padding:0;list-style:none;text-align:left;font-size:13.5px;color:rgba(0,0,0,.56)}`,
-  `li{position:relative;padding:.2rem 0 .2rem 1rem}`,
-  `li::before{content:"";position:absolute;left:0;top:.75em;width:4px;height:4px;border-radius:50%;background:rgba(0,0,0,.25)}`,
-  `footer{margin-top:2.25rem;font-size:12px;color:rgba(0,0,0,.56)}`,
-  `@media(prefers-color-scheme:dark){`,
-  `body{background:rgb(10,10,10);color:rgba(255,255,255,.66)}`,
-  `.tag{border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.56)}`,
-  `h1{color:rgba(255,255,255,.95)}`,
-  `ul{color:rgba(255,255,255,.56)}`,
-  `li::before{background:rgba(255,255,255,.28)}`,
-  `footer{color:rgba(255,255,255,.56)}`,
-  `}`,
-  `</style>`,
-  `</head>`,
-  `<body>`,
-  `<main>`,
-  `<span class="tag"><span class="dot"></span>404 &middot; no route</span>`,
-  `<h1>Service not found</h1>`,
-  // "reachable, but nothing is configured" is the whole message: it separates a
-  // down app from an address that was never wired up, which is the distinction a
-  // raw TLS error or a stock 404 destroys.
-  `<p>This server is reachable, but no application is configured for the address you requested.</p>`,
-  `<ul>`,
-  `<li>Check the address for a typo</li>`,
-  `<li>The deployment may have been removed or renamed</li>`,
-  `<li>A newly added domain can take a few minutes to start serving</li>`,
-  `</ul>`,
-  `<footer>Served by Openship</footer>`,
-  `</main>`,
-  `</body>`,
-  `</html>`,
-];
-
-/** The page as one line, ready to be embedded in a single-quoted nginx token. */
-export const EDGE_NOT_FOUND_HTML = HTML_FRAGMENTS.join("");
+/** Neutral, self-contained HTML, safe in a single-quoted nginx return token. */
+export const EDGE_NOT_FOUND_HTML = edgeStatusPage({
+  marker: EDGE_UNROUTED_SENTINEL,
+  title: "Service not found",
+  label: "404 · Address not connected",
+  description: "This server is reachable, but no application is configured for this address.",
+  detail: "Check the address, or contact the site owner if you expected an application here.",
+});
 
 /**
  * The `location /` that serves it — SHARED by the bare edge's catch-all and the

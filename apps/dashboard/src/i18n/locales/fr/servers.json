@@ -245,7 +245,8 @@
       "runtimeApi": "API d’exécution",
       "workloads": "Charges de travail",
       "settings": "Paramètres",
-      "runs": "Exécutions"
+      "runs": "Exécutions",
+      "pages": "Pages de l’edge"
     },
     "healthy": "En bon état",
     "issues": "Problèmes",

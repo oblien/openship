@@ -322,6 +322,8 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
         path: (id, input) =>
           path(id) + `/modules/${encodeURIComponent((input as { module: string }).module)}/apply`,
       },
+      getEdgePages: { method: "GET", path: (id) => path(id) + "/edge-pages" },
+      updateEdgePages: { method: "PUT", path: (id) => path(id) + "/edge-pages" },
       getRateLimit: { method: "GET", path: (id) => path(id) + "/rate-limit" },
       updateRateLimit: { method: "PATCH", path: (id) => path(id) + "/rate-limit" },
       check: {
