@@ -2,56 +2,45 @@ import { RootProvider } from "fumadocs-ui/provider/next";
 import { DocsLayout } from "fumadocs-ui/layouts/notebook";
 import { docsSource } from "@/lib/source";
 import type { ReactNode } from "react";
+import Link from "next/link";
+import { ArrowUpRight, LifeBuoy } from "lucide-react";
 
 // fumadocs-ui/style.css is imported once in the (docs) ROOT layout so the
 // stylesheet is confined to the docs document (see (docs)/layout.tsx).
 
-/**
- * Native Fumadocs "Notebook" docs shell — full-width navbar on top (like
- * fumadocs.dev), sidebar + TOC below. RootProvider is scoped to /docs so the
- * light-only marketing site is untouched, while docs get the full native
- * experience: light/dark theme + toggle, native search (/api/search), sidebar,
- * TOC. No custom theming — stock Fumadocs.
- */
 export default function DocsRootLayout({ children }: { children: ReactNode }) {
   return (
-    <RootProvider theme={{ defaultTheme: "light", enableSystem: false }}>
+    <RootProvider theme={{ defaultTheme: "system", enableSystem: true }}>
       <DocsLayout
         tree={docsSource.pageTree}
+        containerProps={{ className: "openship-docs" }}
+        sidebar={{
+          defaultOpenLevel: 0,
+          footer: (
+            <Link className="docs-sidebar-help" href="/docs/troubleshooting">
+              <LifeBuoy size={17} aria-hidden="true" />
+              Troubleshooting
+              <ArrowUpRight size={15} aria-hidden="true" />
+            </Link>
+          ),
+        }}
         nav={{
           mode: "top",
           title: (
-            // Same mark as the marketing navbar: a ring + wordmark.
-            //
-            // INLINE STYLES, not Tailwind utilities: this document loads ONLY
-            // fumadocs' standalone Tailwind build (see (docs)/layout.tsx), which
-            // contains just the classes fumadocs itself uses. Arbitrary utilities
-            // like `h-[22px]`/`border-[2.5px]` aren't in it, so with preflight's
-            // `border-width: 0` the ring rendered as a 0x0 invisible span — the
-            // wordmark showed alone. `currentColor` keeps the ring tracking the nav
-            // text through the light/dark toggle.
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
-              <span
-                aria-hidden
-                style={{
-                  width: 22,
-                  height: 22,
-                  flexShrink: 0,
-                  borderRadius: 9999,
-                  borderWidth: 2.5,
-                  borderStyle: "solid",
-                  borderColor: "currentColor",
-                }}
-              />
-              <span style={{ fontWeight: 600 }}>OpenShip</span>
+            <span className="docs-brand">
+              <span className="docs-brand-mark" aria-hidden="true" />
+              <span>OpenShip</span>
+              <span className="docs-brand-label">Docs</span>
             </span>
           ),
-          url: "/",
+          url: "/docs",
         }}
         githubUrl="https://github.com/oblien/openship"
         links={[
-          { text: "Changelog", url: "/changelog" },
-          { text: "Blog", url: "/blog" },
+          { text: "Guides", url: "/docs/guides", active: "nested-url" },
+          { text: "API & SDK", url: "/docs/api", active: "nested-url" },
+          { text: "CLI", url: "/docs/cli", active: "nested-url" },
+          { text: "Website", url: "/", active: "none" },
         ]}
       >
         {children}

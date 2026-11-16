@@ -5,15 +5,13 @@ description: Put an app online straight from a folder on your computer — no Gi
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Not everything lives on GitHub. Sometimes the code is just a folder on your laptop — one you cloned ages
-ago, downloaded, or started from scratch. Openship can take that folder and put it online, no git remote
-needed. Think of it like mailing a parcel instead of a letter: you hand over the whole box of files, and
-Openship unpacks it, figures out what's inside, builds it, and gives you back a real web address.
+Deploy source files from your machine without a Git remote. Use Desktop to select a folder, upload
+through the browser, or submit it with the CLI. OpenShip builds the uploaded source on the selected build path.
 
 <Callout title="What you need first">
 - Openship up and running (you can see the dashboard). If not, start with [Installation](/docs/getting-started/installation).
 - A folder on disk with your app in it — a website, an API, anything.
-- You do **not** need Docker, a server config, or any special files. Openship reads your folder and works out the rest.
+- A deployment destination with the runtime components and capacity your app requires.
 </Callout>
 
 ## What actually gets uploaded

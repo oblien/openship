@@ -1,17 +1,13 @@
 ---
 title: Preview environments
-description: Make a separate, safe copy of your project from a git branch — so you can try changes before they reach your real site.
+description: Deploy branches and pull requests into separate environments, with their own configuration and URLs.
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Say you have a project that's already live, and you want to try something risky — a new design, a big rewrite —
-without breaking the version real people are using. An **environment** lets you do exactly that. Think of it
-like a rehearsal stage set up right next to the main one: same script, same props, but the audience only ever
-watches the main stage. You practice on the side, and only move things across when you're happy.
-
-In Openship, each environment is its own copy of the project. It follows its own git branch and gets its own
-web address, so your `production` site and a `preview` copy never step on each other.
+Deploy a branch into a separate project environment with its own deployment state and URL. Use preview
+configuration and separate data dependencies where isolation is required; shared databases and external
+services remain shared unless you configure them otherwise.
 
 <Callout title="What you need first">
 - A project that's already set up in Openship (see [Deploy from GitHub](/docs/guides/deploy-from-github) if you don't have one yet).
@@ -21,13 +17,9 @@ web address, so your `production` site and a `preview` copy never step on each o
 
 ## What "production" and "preview" mean
 
-Two words show up a lot here. In plain terms:
-
-- **Production** — the real thing. This is the copy your visitors see. It follows your main branch (usually
-  `main` or `master`).
-- **Preview** — a practice copy. It follows some other branch, lives at its own separate web address, and can
-  have its own environment variables (its own secrets and settings). Break it all you like — production doesn't
-  notice.
+- **Production** serves your live application and usually follows `main` or `master`.
+- **Preview** runs a different branch at a separate URL, with its own variables and deployment history.
+  Use separate databases and external services to keep preview writes away from production data.
 
 Openship decides which type a new environment is by looking at its branch:
 
@@ -35,9 +27,9 @@ Openship decides which type a new environment is by looking at its branch:
 - Any other branch becomes a **preview** environment.
 - If you create one by hand without a branch, it's a **development** environment.
 
-Each environment is a full, independent copy: its own address, its own variables, its own deploy history. What
-they share is the build recipe — when you create one, Openship copies the original project's framework, build
-commands, and settings so you don't set them up again.
+Each environment has its own project ID, address, variables, and deployment history. When you create one,
+OpenShip copies the source project's framework, build commands, and settings. This does not copy a
+database or isolate external dependencies referenced by that configuration.
 
 ## Automatic pull request previews
 
@@ -80,8 +72,7 @@ production infrastructure. Standard repository Dockerfiles and Compose files are
 
 ## Create an environment from a branch
 
-You do this from the project's page, using the **environment switcher** — the little pill at the top that shows
-the current environment's name and its branch.
+Use the **environment switcher** at the top of the project page.
 
 <Steps>
 
@@ -89,9 +80,7 @@ the current environment's name and its branch.
 
 ### Open the project and find the switcher
 
-Go to your project. At the top you'll see a rounded button showing the current environment (for a brand-new
-project this just reads **Production** with your main branch next to it). Right beside it is a small **+**
-button for adding a branch.
+Open the project. Find the current environment name and branch, then select the **+** button beside them.
 
 </Step>
 
@@ -99,16 +88,9 @@ button for adding a branch.
 
 ### Press + and pick a branch
 
-Click the **+**. Openship reads your repository and lists its branches, with a **Search branches** box at the
-top to filter a long list. Click the branch you want to base the new environment on.
-
-Openship creates a fresh copy of the project tied to that branch and drops you onto its page. That's it — you're
-now looking at the new environment.
-
-<Callout title="Tip" type="info">
-The name is filled in for you from the branch (a branch called `feature/new-home` becomes "Feature New Home").
-Nothing you have to type.
-</Callout>
+Select a repository branch; use **Search branches** to filter the list. OpenShip creates the environment
+and opens its project page. Its name is generated from the branch, such as `feature/new-home` →
+**Feature New Home**.
 
 </Step>
 
@@ -116,9 +98,8 @@ Nothing you have to type.
 
 ### Deploy the new environment
 
-The new environment starts empty — creating it doesn't deploy anything yet. Deploy it the same way you deploy
-any project: open it and press **Deploy**. When it finishes, this copy has its own live web address, separate
-from production.
+Review the new environment's variables and data dependencies, then select **Deploy**. Creating a manual
+environment does not deploy it automatically. Once deployed, verify its URL and runtime logs.
 
 </Step>
 
@@ -126,27 +107,26 @@ from production.
 
 ### Switching between environments
 
-Once you have more than one, click the switcher pill to see the full list. Each row shows the environment name
-and its branch, with a check mark next to the one you're viewing. Click any row to jump to that copy of the
-project — its own deploys, logs, and variables.
+Open the switcher and select an environment. Each row shows its name and branch; the selected environment
+has a check mark. Deployments, logs, and variables belong to the environment you are viewing.
 
 ### Creating one by hand (no branch)
 
-At the bottom of the Add-branch panel there's a **Manual environment** option. Use it when you want an
-environment that isn't tied to a specific branch yet — you give it a name (and, optionally, a **Branch label**)
-and press **Create**. This makes a *development* environment.
+Select **Manual environment** in the Add-branch panel. Enter a name and, optionally, a **Branch label**,
+then select **Create**. An environment without a branch is classified as **development**.
 
 ## CLI
 
-If you deploy from the CLI, the `deploy` command has an `--env` flag that tells Openship which environment a
-deploy is for. It applies that environment's variables and records the deploy under it.
+Select the environment's project ID with `--project`. The `--env` flag selects the deployment mode and
+variable set; it does **not** create a separate environment. A preview deployment against a production
+project is rejected.
 
 ```bash
 # Deploy the project your folder is linked to, as production (this is the default)
 openship deploy
 
-# Deploy as a preview instead — uses your preview environment's variables
-openship deploy --env preview
+# Deploy an existing non-production environment with preview variables
+openship deploy --project <environment-project-id> --env preview
 ```
 
 <Callout title="Only two values" type="info">
@@ -154,14 +134,13 @@ openship deploy --env preview
 to `production`.
 </Callout>
 
-Each environment you created in the switcher is its own project with its own ID. To deploy one of those copies
-specifically, point the CLI at it with `--project`:
+Add `--watch` to follow build progress:
 
 ```bash
 openship deploy --project <environment-project-id> --env preview --watch
 ```
 
-`--watch` streams the build logs until it finishes, so you can see it go live right there in your terminal.
+Verify the deployment URL and runtime logs after the build finishes.
 
 ## Troubleshooting
 

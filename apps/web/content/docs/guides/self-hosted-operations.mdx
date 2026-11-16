@@ -1,0 +1,139 @@
+---
+title: Operate a self-hosted installation
+description: Manage the control-plane service, restrict host access, automate installation, and remove it safely.
+---
+
+This guide applies to the **self-hosted control plane**. Applications deployed to connected servers have
+separate lifecycles. Start with [installation](/docs/getting-started/installation) for initial setup.
+
+## Service lifecycle
+
+| Command | Result |
+| --- | --- |
+| `openship up` | Start the supported background service. |
+| `openship up --foreground` | Run in the terminal; stop when the process exits. |
+| `openship stop` | Stop OpenShip while retaining installation data. |
+| `openship status` | Inspect the selected instance's health and mode. |
+| `openship doctor` | Diagnose configuration, connectivity, and runtime setup. |
+
+Background service support depends on the host:
+
+- **Linux:** systemd, with a system unit or user unit and linger as appropriate.
+- **macOS:** a launchd agent, reloaded at login.
+- **Windows:** a Scheduled Task at logon, where supported. Use foreground mode or Desktop when service registration is unavailable.
+
+On a Linux host without systemd, use a supervised foreground process or the Compose stack.
+
+## Host control (hardening)
+
+The Compose installer configures an SSH channel from the API container to the host through
+`host.docker.internal`. Host operations include port takeover, configuration, and the host terminal.
+The channel requires a reachable SSH daemon and firewall rules that permit container-to-host traffic.
+
+`openship up` probes this channel and offers the needed rule. `openship doctor` checks it later.
+A healthy container stack does not prove that host operations work. See
+[host-channel diagnostics](/docs/troubleshooting/host-channel) for repair.
+
+For a control plane that only manages remote servers:
+
+```bash
+openship up --no-host-control
+```
+
+This disables the generated host key and host operations, and removes **This Server** as a deployment target.
+It is a CLI installation option, not a dashboard toggle.
+
+<Callout title="Docker access remains privileged" type="warn">
+The API still mounts the host Docker socket when using that installation mode. Access to the socket can
+control the host. Disabling host control does not isolate a compromised control plane.
+</Callout>
+
+| Use case | Host-control setting |
+| --- | --- |
+| Control plane also deploys to its own host | Leave enabled for required host operations. |
+| Control plane manages only remote servers | Disable with `--no-host-control`. |
+| Host also runs sensitive workloads | Prefer a separate control-plane host and restrict access. |
+
+Use private connectivity or a trusted authenticated proxy when the dashboard should not be public.
+`OPENSHIP_BIND_ADDR` controls the bind address for supported installations.
+
+## Fully unattended install (headless)
+
+Supply **`OPENSHIP_ADMIN_PASSWORD` through a protected environment**, then use `--non-interactive`
+(alias `--yes`) and the required administrator/domain options. Avoid putting passwords in command-line
+arguments, shell history, logs, or source control.
+
+For a private Compose installation:
+
+```bash
+openship up --non-interactive \
+  --admin-email admin@example.com --admin-name "Platform team" \
+  --domain-kind none
+```
+
+For a custom hostname with managed TLS:
+
+```bash
+openship up --non-interactive \
+  --admin-email admin@example.com --admin-name "Platform team" \
+  --domain-kind custom --hostname ops.example.com \
+  --acme-email admin@example.com --edge migrate
+```
+
+Add `--bare` to use the bare installation path. Both installation modes support administrator bootstrap
+and the domain modes below.
+
+| Domain mode | Requirements |
+| --- | --- |
+| `none` | No public domain; use private access. |
+| `byo` | Your reverse proxy; provide `--hostname` or `--public-url`. |
+| `custom` | `--hostname`, ACME contact, reachable ingress, and a decision about existing port ownership. |
+| `free` | A Cloud-connected instance and `--slug`; the initial free-domain connection requires an interactive browser step. |
+
+`--edge migrate` imports supported existing proxy sites before takeover. `--edge takeover` stops the existing
+proxy, so its sites stop serving unless they are configured elsewhere. `--edge cancel` declines takeover.
+Review this choice before automating it on a shared host.
+
+Administrator bootstrap is idempotent: rerunning it can reset the existing administrator's password.
+Missing/invalid required input exits non-zero. Certificate issuance is best-effort: setup may complete while
+TLS remains pending, with a reported reason and subsequent retries. Verify the hostname after setup.
+
+Use `openship up --dry-run` to inspect the planned installation without provisioning it.
+
+## Preserve installation secrets
+
+Keep the original installation user's `~/.openship` directory and a protected copy of its configuration.
+For Compose installations, database and encryption secrets are stored in `~/.openship/compose/.env`.
+Do not regenerate them against an existing database.
+
+If startup refuses to regenerate secrets, follow the
+[recovery procedure](/docs/troubleshooting#symptom-openship-up-refuses-to-regenerate-secrets).
+An application backup and a control-plane backup protect different data; plan for both.
+
+## Removing Openship
+
+Read the command's confirmation before continuing:
+
+```bash
+openship uninstall
+```
+
+| Option | Effect |
+| --- | --- |
+| `--keep-data` | Retain the database and certificates while removing the running stack. |
+| `--keep-images` | Retain OpenShip container images. |
+| `--yes` | Skip confirmation; use only after checking the intended installation. |
+
+Uninstall removes OpenShip's stack and selected installation data. Deployed applications are not deleted
+as part of control-plane removal, and unrelated Docker resources are not pruned.
+Delete projects explicitly first if their workloads should also be removed.
+
+If OpenShip previously took over ports `80`/`443`, you may need to re-enable the previous reverse proxy
+manually. Removing the edge can interrupt public routes even while application containers keep running.
+
+## Next steps
+
+<Cards>
+  <Card title="Production readiness" href="/docs/guides/production-readiness" description="Check access, capacity, monitoring, backups, and recovery." />
+  <Card title="Move the control plane" href="/docs/guides/migrate-control-plane" description="Transfer installation data and credentials to another machine." />
+</Cards>

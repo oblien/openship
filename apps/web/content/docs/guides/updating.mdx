@@ -5,13 +5,12 @@ description: Keep your Openship up to date — the one-click desktop updater, th
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-New versions of Openship come out from time to time — bug fixes, new features, the occasional security
-patch. Updating is how you get them. Think of it like the update button on your phone: Openship checks
-whether there's a newer version, and if there is, it swaps the old one out for the new one.
+Update Desktop or a self-hosted installation to a published OpenShip release. Review the release notes,
+back up installation data and secrets, and verify service health afterward. Managed Cloud updates are
+operated by OpenShip.
 
-Openship gets these updates in one place only: the project's **public GitHub releases**. It **pulls** that
-information — it asks GitHub "is there anything newer?" Nothing is ever pushed to your install, and no
-Openship-run server can reach in and change your app. You stay in control of when (and whether) you update.
+Self-hosted update discovery reads the public GitHub releases. Installation happens through the update
+workflow you initiate or explicitly enable.
 
 <Callout title="Good to know">
 - **Automatic updates are off by default.** Openship tells you when an update exists; it doesn't install

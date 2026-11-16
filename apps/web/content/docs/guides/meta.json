@@ -1,5 +1,5 @@
 {
-  "title": "Guides",
+  "title": "Task guides",
   "pages": [
     "index",
     "---Deploy code---",
@@ -22,6 +22,7 @@
     "persistent-storage",
     "sleep-mode-resources",
     "---Operate---",
+    "production-readiness",
     "logs-monitoring",
     "jobs",
     "actions",
@@ -30,6 +31,7 @@
     "mcp-clusters-and-scaling",
     "the-edge",
     "updating",
+    "self-hosted-operations",
     "---Source access---",
     "git-authentication",
     "self-hosted-github-app",
