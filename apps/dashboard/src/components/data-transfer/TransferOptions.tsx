@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useMemo, useState } from "react";
 import type { ExportHistoryCategory, TransferProject } from "@/lib/api/data-transfer";
 
@@ -209,9 +210,9 @@ export function TransferWarnings({
       )}
       {warnings.length > 0 && (
         <details className="rounded-lg border border-warning-border bg-warning-bg p-3 text-xs leading-relaxed text-warning">
-          <summary className="cursor-pointer font-medium">
+          <DisclosureSummary className="cursor-pointer font-medium">
             What to check after transfer ({warnings.length})
-          </summary>
+          </DisclosureSummary>
           <ul className="mt-2 list-disc space-y-2 ps-4">
             {warnings.map((warning) => (
               <li key={warning}>{warning}</li>

@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 
 import { useEffect, useState } from "react";
@@ -156,9 +157,9 @@ function ScopedDeliveryHistory() {
                 </div>
                 {delivery.lastError && (
                   <details className="mt-2 text-xs text-muted-foreground">
-                    <summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <DisclosureSummary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {copy.errorDetails}
-                    </summary>
+                    </DisclosureSummary>
                     <p className="mt-2 whitespace-pre-wrap break-words">{delivery.lastError}</p>
                   </details>
                 )}

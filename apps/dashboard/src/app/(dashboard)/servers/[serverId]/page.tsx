@@ -36,6 +36,7 @@ import {
   type ConnectionErrorKind,
 } from "./_components/connection-banner";
 
+import { EdgePagesPanel } from "@/components/routing/EdgePagesPanel";
 import { RateLimitSettings } from "./_components/rate-limit-settings";
 import { GpuCard } from "./_components/gpu-card";
 import { BuildCacheCard } from "./_components/build-cache-card";
@@ -774,6 +775,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
               <ServerGitHubConnect serverId={serverId} variant="card" />
             )}
 
+            {activeTab === "pages" && hostConfiguration && <EdgePagesPanel serverId={serverId} />}
             {activeTab === "security" && (
               <div className="space-y-6">
                 {hostConfiguration && <ServerIngressCard serverId={serverId} />}

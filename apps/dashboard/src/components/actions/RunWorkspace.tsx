@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useEffect, useState } from "react";
 import type { ActionJobView, ActionRunView } from "@repo/contracts";
 import { actionFinished, type ActionStatus as Status } from "@repo/core";
@@ -299,7 +300,7 @@ export function RunWorkspace({
             />
             {!!Object.keys(job.outputs).length && (
               <details className="shrink-0 text-xs">
-                <summary className="cursor-pointer text-muted-foreground">{a.outputs}</summary>
+                <DisclosureSummary className="cursor-pointer text-muted-foreground">{a.outputs}</DisclosureSummary>
                 <dl className="mt-2 max-h-32 space-y-2 overflow-auto">
                   {Object.entries(job.outputs).map(([key, value]) => (
                     <div key={key}>

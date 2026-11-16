@@ -146,3 +146,5 @@ export * from "./locale";
 export * from "./concurrency";
 export * from "./migration-links";
 export * from "./edge-response";
+export * from "./edge-pages";
+export * from "./deploy-link";

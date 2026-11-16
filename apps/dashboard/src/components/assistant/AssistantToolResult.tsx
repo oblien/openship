@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import type { AssistantPart } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
 import { outputLabel, outputRecord, parseToolOutput } from "./tool-output";
@@ -57,7 +58,7 @@ function ToolDataDetails({ label, value }: { label: string; value: unknown }) {
   const code = typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
   return (
     <details className="min-w-0 rounded-xl bg-background px-4 py-3">
-      <summary className="cursor-pointer text-xs text-muted-foreground">{label}</summary>
+      <DisclosureSummary className="cursor-pointer text-xs text-muted-foreground">{label}</DisclosureSummary>
       <div className="mt-3 flex justify-end">
         <AssistantCopyButton value={code} label={`Copy ${label.toLowerCase()}`} compact />
       </div>

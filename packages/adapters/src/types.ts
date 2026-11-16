@@ -598,6 +598,7 @@ export interface RouteHostRedirect {
 }
 
 interface BaseRouteConfig {
+  edgePages?: import("@repo/core").CompiledEdgePages | null;
   /** Private edge material. null explicitly unlocks; omission preserves an existing lock. */
   protection?: RouteProtection | null;
   /** External domain (e.g. "my-app.example.com") */

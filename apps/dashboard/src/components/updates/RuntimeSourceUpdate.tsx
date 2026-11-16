@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
 import type {
   RuntimeSource,
@@ -281,9 +282,9 @@ function SourceEditor({
                   </label>
                 </div>
                 <details>
-                  <summary className="cursor-pointer text-sm text-muted-foreground">
+                  <DisclosureSummary className="cursor-pointer text-sm text-muted-foreground">
                     {copy.browse}
-                  </summary>
+                  </DisclosureSummary>
                   <RepositoryPathBrowser
                     source={repo}
                     kind="file"

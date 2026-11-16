@@ -1,3 +1,5 @@
+import { edgeStatusPage } from "./edge-status-page";
+
 /**
  * The page the edge serves for a hostname it DOES route, whose upstream did not answer
  * (#556) — the sibling of {@link ./edge-not-found.ts} and built the same way.
@@ -57,76 +59,14 @@ export const EDGE_UPSTREAM_DOWN_SENTINEL = "openship-edge-upstream-down";
  *  only from `error_page` and can never be selected by a request URI. */
 export const EDGE_UPSTREAM_DOWN_LOCATION_NAME = "@osh_upstream_down";
 
-/**
- * The page, in fragments. Joined with no separator, so every fragment must be
- * self-contained at its boundaries (a break only ever falls between tags or between CSS
- * declarations — never inside a text node, where the missing newline would run two words
- * together).
- */
-const HTML_FRAGMENTS: readonly string[] = [
-  `<!doctype html>`,
-  `<!--${EDGE_UPSTREAM_DOWN_SENTINEL}-->`,
-  `<html lang="en">`,
-  `<head>`,
-  `<meta charset="utf-8">`,
-  `<meta name="viewport" content="width=device-width,initial-scale=1">`,
-  // A transient outage must never be the version of the page that enters an index.
-  `<meta name="robots" content="noindex,nofollow">`,
-  `<title>Application unavailable</title>`,
-  `<style>`,
-  // Same neutral black-on-white scale as the 404 page, mirrored for dark, so the two
-  // pages the edge serves read as one system. No webfont, no image, no external request:
-  // the page must render on a box whose only working listener is the one serving it.
-  // Colours are `rgb()`, never a hex triplet — see the no-`#` invariant above.
-  `:root{color-scheme:light dark}`,
-  `*{box-sizing:border-box}`,
-  `body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:rgb(255,255,255);color:rgba(0,0,0,.66);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}`,
-  `main{width:100%;max-width:32rem;padding:2.5rem 1.5rem;text-align:center}`,
-  // .56 on white ≈ 4.75:1 — WCAG AA for text this small. The 404 page documents why the
-  // lighter scales it started at (.4–.52) were under the bar.
-  `.tag{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.25rem;padding:.25rem .625rem;border:1px solid rgba(0,0,0,.1);border-radius:999px;font-size:12px;color:rgba(0,0,0,.56)}`,
-  // Red, not the 404 page's amber: that page describes a name that was never wired up,
-  // this one an app that should be answering and is not.
-  `.dot{width:6px;height:6px;border-radius:50%;background:rgb(214,69,58)}`,
-  `h1{margin:0 0 .5rem;font-size:1.375rem;font-weight:600;letter-spacing:-.01em;color:rgba(0,0,0,.92)}`,
-  `p{margin:0 auto 1.5rem;max-width:26rem}`,
-  `ul{display:inline-block;margin:0;padding:0;list-style:none;text-align:left;font-size:13.5px;color:rgba(0,0,0,.56)}`,
-  `li{position:relative;padding:.2rem 0 .2rem 1rem}`,
-  `li::before{content:"";position:absolute;left:0;top:.75em;width:4px;height:4px;border-radius:50%;background:rgba(0,0,0,.25)}`,
-  `footer{margin-top:2.25rem;font-size:12px;color:rgba(0,0,0,.56)}`,
-  `@media(prefers-color-scheme:dark){`,
-  `body{background:rgb(10,10,10);color:rgba(255,255,255,.66)}`,
-  `.tag{border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.56)}`,
-  `h1{color:rgba(255,255,255,.95)}`,
-  `ul{color:rgba(255,255,255,.56)}`,
-  `li::before{background:rgba(255,255,255,.28)}`,
-  `footer{color:rgba(255,255,255,.56)}`,
-  `}`,
-  `</style>`,
-  `</head>`,
-  `<body>`,
-  `<main>`,
-  // No status number in the tag: this one page answers both 502 and 504, and nginx keeps
-  // the real code on the status line (see the handler below). Naming one of them here
-  // would be wrong half the time.
-  `<span class="tag"><span class="dot"></span>upstream not responding</span>`,
-  `<h1>Application unavailable</h1>`,
-  // "routed, but not answering" is the whole message — the distinction the stock page
-  // destroys, and the mirror of the 404 page separating "nothing is deployed here".
-  `<p>This address is configured, but the application behind it is not responding.</p>`,
-  `<ul>`,
-  `<li>The deployment may be starting up or restarting</li>`,
-  `<li>The application may have stopped or crashed</li>`,
-  `<li>Trying again in a moment may work</li>`,
-  `</ul>`,
-  `<footer>Served by Openship</footer>`,
-  `</main>`,
-  `</body>`,
-  `</html>`,
-];
-
-/** The page as one line, ready to be embedded in a single-quoted nginx token. */
-export const EDGE_UPSTREAM_DOWN_HTML = HTML_FRAGMENTS.join("");
+/** Neutral, self-contained HTML, safe in a single-quoted nginx return token. */
+export const EDGE_UPSTREAM_DOWN_HTML = edgeStatusPage({
+  marker: EDGE_UPSTREAM_DOWN_SENTINEL,
+  title: "Application unavailable",
+  label: "Temporarily unavailable",
+  description: "The application at this address is not responding.",
+  detail: "It may be starting up or restarting. Please try again in a moment.",
+});
 
 /**
  * The `error_page` + named location that serve it, emitted at SERVER scope in every

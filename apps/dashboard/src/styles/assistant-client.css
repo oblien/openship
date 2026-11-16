@@ -1,0 +1,27 @@
+/* Shared conversation UI inherits OpenShip's appearance and typography. */
+.openship-assistant-client .react-ai-agent {
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-tertiary: var(--muted-foreground);
+  --text-danger: var(--danger);
+  --bg-elevated: var(--card);
+  --bg-muted: var(--muted);
+  --bg-surface: var(--card);
+  --inverse-bg: var(--foreground);
+  --inverse-text: var(--background);
+  --bg-secondary: var(--card);
+  color: var(--foreground);
+  font: inherit;
+}
+.openship-assistant-client .react-ai-agent-message-item {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+.openship-assistant-client .react-ai-agent-user-message-text {
+  font: inherit;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+}
+.openship-assistant-client .react-ai-agent-user-message-bubble {
+  background: var(--card);
+}

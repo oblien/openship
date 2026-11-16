@@ -308,7 +308,8 @@
       "runtimeApi": "Runtime API",
       "workloads": "Workloads",
       "settings": "Settings",
-      "runs": "Runs"
+      "runs": "Runs",
+      "pages": "Edge pages"
     },
     "healthy": "Healthy",
     "issues": "Issues",

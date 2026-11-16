@@ -1,3 +1,4 @@
+import { EdgePagesSchema } from "./edge-pages";
 import { ServerSecuritySchemas } from "./server-security";
 import {
   NetworkCollectionSchemas,
@@ -537,6 +538,8 @@ export const ServerCollectionSchemas = {
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const ServerResourceSchemas = {
+  getEdgePages: { action: "read", output: Type.Object({ config: EdgePagesSchema }) },
+  updateEdgePages: { action: "admin", input: EdgePagesSchema, output: Type.Object({ config: EdgePagesSchema }) },
   ...ServerSecuritySchemas,
   ...ManagedServerResourceSchemas,
   usage: { action: "read", output: CloudWorkspaceUsageSchema },

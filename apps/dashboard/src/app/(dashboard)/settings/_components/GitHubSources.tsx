@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -644,9 +645,9 @@ function SourceForm({
         />
       </Field>
       <details>
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+        <DisclosureSummary className="cursor-pointer text-xs font-medium text-muted-foreground">
           {copy.enterpriseSettings}
-        </summary>
+        </DisclosureSummary>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <Field label={copy.webUrlLabel}>
             <input

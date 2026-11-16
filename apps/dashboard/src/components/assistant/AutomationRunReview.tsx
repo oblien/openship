@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AUTOMATION_ACTIONS, type AssistantAutomationRun } from "@repo/contracts";
@@ -126,9 +127,9 @@ export function AutomationRunReview({
             </p>
             {patch.files.map((file) => (
               <details key={file.path} className="rounded-xl bg-card p-4">
-                <summary className="cursor-pointer break-all text-sm font-medium">
+                <DisclosureSummary className="cursor-pointer break-all text-sm font-medium">
                   {file.path}{"delete" in file ? " · Delete" : ""}
-                </summary>
+                </DisclosureSummary>
                 {"delete" in file ? (
                   <p className="mt-4 text-sm text-muted-foreground">Delete this existing file.</p>
                 ) : (

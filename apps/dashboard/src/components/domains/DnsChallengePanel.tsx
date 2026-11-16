@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@repo/ui/icons";
 import type { DomainDnsChallenge } from "@repo/contracts";
@@ -304,9 +305,9 @@ export default function DnsChallengePanel({
             </div>
             {run?.logs && (
               <details className="rounded-xl bg-muted/40 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-foreground">
+                <DisclosureSummary className="cursor-pointer text-sm font-medium text-foreground">
                   {c.logs}
-                </summary>
+                </DisclosureSummary>
                 <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-muted-foreground">
                   {run.logs}
                 </pre>

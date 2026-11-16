@@ -380,3 +380,35 @@ jobs:
       - name: Run webmail client tests
         working-directory: apps/email/client
         run: bun test
+
+      # Unit tests do not exercise the Docker dependency layout or the release
+      # bundle's dev-origin scan. Build the same artifact that ships to users.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production webmail image
+        run: docker buildx build --load --file apps/email/Dockerfile.webmail --tag openship-webmail:ci .
+
+      - name: Verify production webmail startup
+        run: |
+          set -euo pipefail
+          container="webmail-readiness-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker logs "$container"; docker rm -fv "$container" >/dev/null' EXIT
+          docker run -d --name "$container" --network none \
+            -e SESSION_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+            -e BRANDING_ADMIN_TOKEN="$(openssl rand -hex 32)" \
+            openship-webmail:ci
+          for attempt in $(seq 1 30); do
+            if docker exec "$container" bun -e \
+              'fetch("http://127.0.0.1:4080/health").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'; then
+              docker exec "$container" bun -e '
+                const response = await fetch("http://127.0.0.1:4080/");
+                const html = await response.text();
+                if (!response.ok || !html.includes("/assets/")) process.exit(1);
+                console.log("Production webmail serves its health endpoint and client assets.");
+              '
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1

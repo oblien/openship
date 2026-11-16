@@ -522,6 +522,18 @@
       "description": "Inspect resources that project deletion would affect.",
       "route": "GET /api/projects/:id/deletion-preview"
     },
+    "projects.getEdgePages": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read project and hostname maintenance/error pages, their revision, and edge apply status.",
+      "route": "GET /api/projects/:id/edge-pages"
+    },
+    "projects.updateEdgePages": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Update maintenance and error HTML using the current revision, then inspect the returned apply status.",
+      "route": "PUT /api/projects/:id/edge-pages"
+    },
     "projects.listRouteProtection": {
       "page": "projects",
       "section": "Routing and monitoring",
@@ -1601,6 +1613,18 @@
       "section": "Components and installation",
       "description": "Apply a managed component’s configuration.",
       "route": "POST /api/system/servers/:id/modules/:module/apply"
+    },
+    "servers.getEdgePages": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Read server error pages and the fallback for unmatched hosts or direct IP requests.",
+      "route": "GET /api/system/servers/:id/edge-pages"
+    },
+    "servers.updateEdgePages": {
+      "page": "servers",
+      "section": "Networking",
+      "description": "Update default edge pages for this server; project and hostname overrides take precedence.",
+      "route": "PUT /api/system/servers/:id/edge-pages"
     },
     "servers.getRateLimit": {
       "page": "servers",

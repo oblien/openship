@@ -4,6 +4,7 @@
  */
 
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+export { encodeRepoSlug } from "@repo/core";
 const LOCAL_PREFIX = "local:";
 const UPLOAD_PREFIX = "upload:";
 const REPO_V2_PREFIX = "repo:v2:";
@@ -21,13 +22,6 @@ function encodeBase64Url(data: string): string {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
-}
-
-/**
- * Encodes owner and repo into a URL-safe base64 slug
- */
-export function encodeRepoSlug(owner: string, repo: string): string {
-  return encodeBase64Url(`${owner}/${repo}`);
 }
 
 /**

@@ -782,6 +782,8 @@ shared storage before removing the cluster runtime.
 | Start an authorized port forward. | `servers.startTunnel(id, input)` | `POST /api/system/servers/:id/tunnels/:tunnelId/start`<br />`server:write` · Self-hosted |
 | Stop a port forward. | `servers.stopTunnel(id, input)` | `POST /api/system/servers/:id/tunnels/:tunnelId/stop`<br />`server:write` · Self-hosted |
 | Remove a port-forward configuration. | `servers.removeTunnel(id, input)` | `DELETE /api/system/servers/:id/tunnels/:tunnelId`<br />`server:write` · Self-hosted |
+| Read server error pages and the fallback for unmatched hosts or direct IP requests. | `servers.getEdgePages(id)` | `GET /api/system/servers/:id/edge-pages`<br />`server:read` |
+| Update default edge pages for this server; project and hostname overrides take precedence. | `servers.updateEdgePages(id, input)` | `PUT /api/system/servers/:id/edge-pages`<br />`server:admin` |
 | Read per-server request rate-limit configuration. | `servers.getRateLimit(id)` | `GET /api/system/servers/:id/rate-limit`<br />`server:read` |
 | Update per-server request rate limits. | `servers.updateRateLimit(id, input)` | `PATCH /api/system/servers/:id/rate-limit`<br />`server:admin` |
 

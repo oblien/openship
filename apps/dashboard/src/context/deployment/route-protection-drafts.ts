@@ -27,9 +27,13 @@ export async function persistRouteProtectionDrafts(projectId: string, config: De
         "The protected hostname changed. Open its lock settings and save the password again.",
       );
     const prior = changes.get(draft.hostname);
-    if (prior && prior.password !== draft.password)
+    const options = (value: typeof draft) => JSON.stringify([
+      value.options?.mode ?? "page", value.options?.username ?? "visitor",
+      value.options?.sessionSeconds ?? 86400, value.options?.loginHtml ?? "",
+    ]);
+    if (prior && (prior.password !== draft.password || options(prior) !== options(draft)))
       throw new Error(
-        "This hostname has different staged passwords. Keep one password for the hostname.",
+        "This hostname has different staged password settings. Keep one configuration for the hostname.",
       );
     changes.set(draft.hostname, draft);
   }

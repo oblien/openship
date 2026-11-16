@@ -1,33 +1,19 @@
 "use client";
 
-import { code } from "@streamdown/code";
+import { ChatMarkdown } from "@mindwire-ai/client";
 import { useContext, type ComponentProps } from "react";
 import {
   CodeBlock,
-  Streamdown,
   StreamdownContext,
   defaultComponents,
-  defaultRehypePlugins,
   useIsCodeFenceIncomplete,
   type Components,
   type ExtraProps,
-  type StreamdownProps,
 } from "streamdown";
 import { AssistantCopyButton } from "./AssistantCopyButton";
 import styles from "./assistant-markdown.module.css";
 
-// Keep Streamdown's sanitizer, but omit its raw-HTML parser and permissive URL defaults.
-const rehypePlugins: StreamdownProps["rehypePlugins"] = [defaultRehypePlugins.sanitize];
-const urlTransform: StreamdownProps["urlTransform"] = (url, key) => {
-  if (key !== "href") return undefined;
-  try {
-    const { protocol } = new URL(url, "https://openship.invalid");
-    return ["https:", "http:", "mailto:"].includes(protocol) ? url : undefined;
-  } catch {
-    return undefined;
-  }
-};
-const components: Components = {
+export const assistantMarkdownComponents: Components = {
   code: AssistantCode,
   a: ({ href, children }) =>
     href ? (
@@ -44,17 +30,6 @@ const components: Components = {
     ),
   img: ({ alt }) => <span className="text-muted-foreground">{alt || "Image"}</span>,
 };
-const plugins = { code };
-// Animate arriving words without queuing an artificial second stream behind the agent.
-const animation: StreamdownProps["animated"] = {
-  animation: "fadeIn",
-  duration: 160,
-  easing: "ease-out",
-  sep: "word",
-  stagger: 12,
-  maxBacklogMs: 180,
-};
-
 function AssistantCode(props: ComponentProps<"code"> & ExtraProps) {
   const { isAnimating } = useContext(StreamdownContext);
   const isIncomplete = useIsCodeFenceIncomplete();
@@ -69,7 +44,7 @@ function AssistantCode(props: ComponentProps<"code"> & ExtraProps) {
   );
 }
 
-/** One renderer for replies and reasoning, including partially received Markdown. */
+/** Host controls, shared Markdown parsing and streaming. */
 export function AssistantMarkdown({
   children,
   streaming = false,
@@ -78,21 +53,11 @@ export function AssistantMarkdown({
   streaming?: boolean;
 }) {
   return (
-    <Streamdown
-      className={styles.markdown}
-      data-assistant-markdown=""
-      dir="auto"
-      plugins={plugins}
-      rehypePlugins={rehypePlugins}
-      urlTransform={urlTransform}
-      components={components}
-      controls={false}
-      skipHtml
+    <ChatMarkdown
+      text={children}
       isAnimating={streaming}
-      animated={animation}
-      tableMaxHeight={0}
-    >
-      {children}
-    </Streamdown>
+      components={assistantMarkdownComponents}
+      className={styles.markdown}
+    />
   );
 }

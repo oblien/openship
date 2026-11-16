@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectSecurityResult } from "@repo/contracts";
@@ -160,10 +161,10 @@ export function SecurityProjectReview({
   };
   return (
     <details className="rounded-2xl bg-card p-4" open={findings.length > 0 ? true : undefined}>
-      <summary className="cursor-pointer text-sm font-medium text-foreground">
+      <DisclosureSummary className="cursor-pointer text-sm font-medium text-foreground">
         {name ?? copy.title}
         {findings.length > 0 && <span className="ms-2 text-warning">{findings.length}</span>}
-      </summary>
+      </DisclosureSummary>
       <div className="mt-4 space-y-4">
         {(unavailable || !findings.length) && (
           <p className="text-sm text-muted-foreground">
@@ -305,7 +306,7 @@ export function SecurityProjectReview({
                 className="text-sm text-muted-foreground"
                 open={services.some((item) => item.runtimeUpgradeRequired)}
               >
-                <summary className="cursor-pointer">{copy.details}</summary>
+                <DisclosureSummary className="cursor-pointer">{copy.details}</DisclosureSummary>
                 <p className="mt-2 leading-relaxed">{advisory.message}</p>
               </details>
             )}
@@ -391,9 +392,9 @@ export function SecurityProjectReview({
         ))}
         {!serviceId && (
           <details>
-            <summary className="cursor-pointer text-sm text-muted-foreground">
+            <DisclosureSummary className="cursor-pointer text-sm text-muted-foreground">
               {copy.automatic}
-            </summary>
+            </DisclosureSummary>
             <div className="mt-3 flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <p className="max-w-2xl text-xs text-muted-foreground">

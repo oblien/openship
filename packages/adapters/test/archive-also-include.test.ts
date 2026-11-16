@@ -100,4 +100,17 @@ describe("prepareSourceTarArgs alsoInclude (git-truth branch)", () => {
     expect(files).toContain("package.json");
     expect(files).toContain(".next/BUILD_ID");
   });
+
+  it("packs a dirty worktree with unstaged deletions and keeps untracked source", async () => {
+    const deleted = "removed file.js";
+    await writeFile(join(repo, deleted), "old source");
+    await exec("git", ["-C", repo, "add", "--", deleted]);
+    await rm(join(repo, deleted));
+    await writeFile(join(repo, "new file.js"), "new source");
+    const files = await listArchive();
+    expect(files).not.toContain(deleted);
+    expect(files).toContain("new file.js");
+    expect(files).toContain("index.js");
+    expect(files).not.toContain(".env");
+  });
 });

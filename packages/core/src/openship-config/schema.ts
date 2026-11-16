@@ -8,8 +8,8 @@
  *
  * This is the typed shape. `parse.ts` validates/coerces raw JSON into it; the
  * published JSON Schema (for editor autocomplete) is generated from the same
- * field set. Every field maps 1:1 to an existing API option — see the docs
- * reference page for the mapping table.
+ * field set. Deployment fields map to existing API options; `display` only
+ * describes the public deploy-button preview.
  */
 
 import type { StackId, StackRole } from "../stacks";
@@ -158,7 +158,15 @@ export interface OpenshipResources {
   swapDisabled?: boolean;
 }
 
+export interface OpenshipDisplay {
+  name?: string;
+  /** Repository-relative PNG, JPEG, WebP or SVG. Never a URL or inline markup. */
+  logo?: string;
+}
+
 export interface OpenshipConfig {
+  /** Optional presentation metadata; does not change deployment configuration. */
+  display?: OpenshipDisplay;
   // ── Build ──
   framework?: StackId;
   packageManager?: string;

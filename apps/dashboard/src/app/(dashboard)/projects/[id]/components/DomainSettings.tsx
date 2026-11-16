@@ -9,8 +9,6 @@ import { getPortCheckIssue } from "@repo/core";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { RoutingConfigCard } from "./RoutingConfigCard";
-import { RouteRules } from "./RouteRules";
 import { DomainResponseRoutes } from "@/components/routing/DomainResponseRoutes";
 import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
 import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
@@ -2726,23 +2724,6 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
           )}
         </div>
       )}
-
-      {/* Routing (rewrites/redirects/headers) — advanced, sits AFTER the
-          domain/route cards so the primary domain list leads the page. */}
-      {!serviceScope && !applicationScope && <RoutingConfigCard
-        id={id}
-        isCloudProject={isCloudProject}
-        initial={projectData.routingConfig}
-        onSaved={(cfg) => setProjectData((prev) => ({ ...prev, routingConfig: cfg }))}
-      />}
-
-      {/* Edge security rules (rate-limit / ban / geo / hotlink) — a distinct
-          feature from the routing config above, but the same kind of edge
-          concern, so it sits right here, collapsed by default. Moved out of the
-          Advanced tab. */}
-      {/* Route rules are a self-hosted-edge feature (local-only endpoints); a
-          cloud-owned project uses the Oblien edge, so hide them for cloud. */}
-      {!serviceScope && !applicationScope && !isCloudProject && <RouteRules />}
 
       {editingRouteService && editingRouteTarget && routeDraft && (
         <div

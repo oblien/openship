@@ -13,8 +13,8 @@ import {
 import { decodeSlug } from "@/utils/repoSlug";
 import { chatAppSetup } from "@repo/contracts";
 
-const tool = (name: string, data: unknown): AssistantTool => ({
-  id: "call",
+const tool = (name: string, data: unknown, id = name): AssistantTool => ({
+  id,
   name,
   input: {},
   output: JSON.stringify({ content: [{ type: "text", text: JSON.stringify(data) }] }),
@@ -46,9 +46,9 @@ describe("OpenShip tool result presentation", () => {
         ]}
       />,
     );
-    expect(html).toContain("Find specialists · Completed · 0 results");
-    expect(html).toContain("Find automations · Completed · 0 results");
-    expect(html).toContain("Find apps · Completed · 8 results");
+    expect(html).toContain("Find specialists · Completed");
+    expect(html).toContain("Find automations · Completed");
+    expect(html).toContain("Find apps · Completed");
     expect(html).not.toMatch(/No specialists|No automations|Apps from tool|View all|View app/);
     expect(html).not.toContain("App 0");
     const details = renderToStaticMarkup(
@@ -59,17 +59,20 @@ describe("OpenShip tool result presentation", () => {
     expect(details).toContain('href="/projects/app-7"');
   });
 
-  it("uses the latest repeated read and keeps lookup results out of the transcript", () => {
+  it("groups repeated reads and keeps lookup results in the inspector", () => {
     const html = renderToStaticMarkup(
       <AssistantToolActivity
         active={false}
         parts={[
-          { type: "tool", tool: tool("get_projects", { data: [{ id: "old", name: "Old app" }] }) },
-          { type: "tool", tool: tool("get_projects", { data: [] }) },
+          {
+            type: "tool",
+            tool: tool("get_projects", { data: [{ id: "old", name: "Old app" }] }, "read-a"),
+          },
+          { type: "tool", tool: tool("get_projects", { data: [] }, "read-b") },
         ]}
       />,
     );
-    expect(html).toContain("Find apps · Completed · 0 results · 2 calls");
+    expect(html).toContain("Find apps · Completed · 2 calls");
     expect(html).not.toContain("Old app");
     expect(html).not.toContain("No apps in this result.");
   });
@@ -102,8 +105,11 @@ describe("OpenShip tool result presentation", () => {
       <AssistantToolActivity
         active={false}
         parts={[
-          { type: "tool", tool: { ...tool("exec", []), input: "text(ALL_TOOLS);" } },
-          { type: "tool", tool: { ...tool("exec", []), input: "await tools.deploy();" } },
+          { type: "tool", tool: { ...tool("exec", [], "discovery"), input: "text(ALL_TOOLS);" } },
+          {
+            type: "tool",
+            tool: { ...tool("exec", [], "workflow"), input: "await tools.deploy();" },
+          },
           { type: "tool", tool: deploy("deploy-a") },
           { type: "tool", tool: deploy("deploy-b") },
         ]}

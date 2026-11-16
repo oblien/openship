@@ -21,6 +21,7 @@
     "@fontsource-variable/geist": "5.2.6",
     "@fontsource-variable/geist-mono": "5.2.6",
     "@hookform/resolvers": "4.1.2",
+    "@mindwire-ai/client": "file:../../../vendor/mindwire-client-0.1.0-beta.3-83f1a8478412.tgz",
     "@react-email/components": "^0.0.36",
     "@react-email/html": "^0.0.11",
     "@react-email/render": "1.1.0",
@@ -141,5 +142,8 @@
     "prosemirror-model": "1.25.8",
     "prosemirror-state": "1.4.4",
     "prosemirror-view": "1.42.3"
+  },
+  "patchedDependencies": {
+    "@mindwire-ai/client@../../../vendor/mindwire-client-0.1.0-beta.3-83f1a8478412.tgz": "../../../patches/mindwire-client-0.1.0-beta.3-same-origin.patch"
   }
 }

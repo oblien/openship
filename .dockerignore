@@ -41,6 +41,8 @@ apps/email/client/build
 apps/desktop/resources
 apps/cli/.cli-payload
 .dev-secrets.json
+# The sample mail environment contains generated credentials, keys and mail.
+apps/email/.dev-mail
 data
 
 # VCS + CI

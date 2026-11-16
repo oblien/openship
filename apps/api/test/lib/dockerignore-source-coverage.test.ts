@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -93,6 +93,81 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
  *  exempted here: `.dockerignore`'s `*.md` is unanchored and so drops only root-level
  *  files, and apps/web/Dockerfile compiles the 102 `.mdx` files under content/. */
 const DELIBERATE = /(^|\/)\.env($|\.)/;
+const contextFiles = tracked.filter((file) => !isExcluded(file, patterns));
+
+/** Map repository files to their paths in the first dependency-install stage.
+ * This deliberately handles only the COPY/WORKDIR syntax used by our images;
+ * validating a manifest against the full checkout would miss absent build inputs.
+ */
+function dependencyInputs(dockerfile: string): Map<string, string> {
+  let directory = "/";
+  const files = new Map<string, string>();
+  for (const line of dockerfile.replace(/\\\r?\n/g, " ").split("\n")) {
+    const [instruction, ...args] = line.trim().split(/\s+/);
+    if (instruction === "FROM") {
+      directory = "/";
+      files.clear();
+    } else if (instruction === "WORKDIR") {
+      directory = posix.resolve(directory, args[0]);
+    } else if (instruction === "COPY" && !args.some((arg) => arg.startsWith("--from="))) {
+      const parents = args.includes("--parents");
+      const paths = args.filter((arg) => !arg.startsWith("--"));
+      const destination = posix.resolve(directory, paths.pop()!);
+      for (const source of paths) {
+        const pattern = toRegex(source);
+        const prefix = source.replace(/\/$/, "") + "/";
+        for (const file of contextFiles) {
+          if (pattern.test(file)) {
+            files.set(posix.join(destination, parents ? file : posix.basename(file)), file);
+          } else if (file.startsWith(prefix)) {
+            files.set(posix.join(destination, file.slice(prefix.length)), file);
+          }
+        }
+      }
+    } else if (instruction === "RUN" && /\bbun install\b/.test(line)) {
+      return files;
+    }
+  }
+  throw new Error("No dependency installation found in Dockerfile");
+}
+
+describe("Docker dependency inputs", () => {
+  it.each([
+    "apps/api/Dockerfile",
+    "apps/dashboard/Dockerfile",
+    "apps/web/Dockerfile",
+    "apps/email/Dockerfile.webmail",
+  ])("resolves local package archives inside %s before installation", (path) => {
+    const inputs = dependencyInputs(readFileSync(join(REPO_ROOT, path), "utf8"));
+    let checked = 0;
+    for (const [destination, source] of inputs) {
+      if (!destination.endsWith("/package.json")) continue;
+      const manifest = JSON.parse(readFileSync(join(REPO_ROOT, source), "utf8"));
+      for (const dependency of Object.values({
+        ...manifest.dependencies,
+        ...manifest.devDependencies,
+        ...manifest.optionalDependencies,
+      })) {
+        if (typeof dependency !== "string" || !dependency.startsWith("file:")) continue;
+        const resolved = posix.resolve(posix.dirname(destination), dependency.slice(5));
+        expect(
+          inputs.has(resolved) || inputs.has(posix.join(resolved, "package.json")),
+          `${destination}: missing ${resolved}`,
+        ).toBe(true);
+        checked++;
+      }
+      if (manifest.workspaces) {
+        expect(inputs.get(posix.join(posix.dirname(destination), "bunfig.toml"))).toBe("bunfig.toml");
+      }
+      for (const patch of Object.values(manifest.patchedDependencies ?? {})) {
+        if (typeof patch !== "string") continue;
+        const resolved = posix.resolve(posix.dirname(destination), patch);
+        expect(inputs.has(resolved), `${destination}: missing dependency patch ${resolved}`).toBe(true);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+});
 
 describe(".dockerignore vs tracked source", () => {
   it("sees the repo (git ls-files returned files)", () => {
@@ -124,5 +199,18 @@ describe(".dockerignore vs tracked source", () => {
     expect(isExcluded("apps/api/.env.local", p)).toBe(true);
     expect(isExcluded("apps/api/.env.example", p)).toBe(false);
     expect(isExcluded("packages/platform/src/engine/config/env.ts", p)).toBe(false);
+  });
+
+  it("excludes generated mail credentials and keys but retains vendored dependencies", () => {
+    for (const path of [
+      "apps/email/.dev-mail/server.env",
+      "apps/email/.dev-mail/tls/key.pem",
+      "apps/email/.dev-mail/data/dovecot-keys/private.key",
+    ]) {
+      expect(isExcluded(path, patterns), path).toBe(true);
+    }
+    for (const path of tracked.filter((file) => file.startsWith("vendor/"))) {
+      expect(isExcluded(path, patterns), path).toBe(false);
+    }
   });
 });

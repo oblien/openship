@@ -9,6 +9,10 @@ import dns from 'node:dns';
 import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { sendMail } from '../src/lib/smtp';
+import * as imap from '../src/lib/imap';
+import { enqueueSend, runOutboxPass, readJob } from '../src/mail/outbox';
+import { db, schema } from '../src/db';
+import { simpleParser } from 'mailparser';
 
 let dir: string;
 let cert: Buffer;
@@ -120,6 +124,61 @@ async function waitForClose(server: Awaited<ReturnType<typeof localSmtp>>) {
 }
 
 describe('webmail submission over real local SMTP sockets', () => {
+  it('dispatches a durable scheduled job once and saves its MIME attachments in Sent', async () => {
+    db.delete(schema.mailJob).run();
+    const server = await localSmtp('starttls');
+    const saved: Buffer[] = [];
+    spyOn(imap, 'withImap').mockImplementation(async (_auth, use) =>
+      use({
+        append: async (_folder: string, body: Buffer) => {
+          saved.push(body);
+          return { uid: 1 };
+        },
+      } as never),
+    );
+    const mailbox = {
+      email: 'user@example.test',
+      password: 'test-only-password',
+      imapHost: 'localhost',
+      imapPort: 993,
+      smtpHost: 'localhost',
+      smtpPort: 587,
+    };
+    try {
+      routeTo(server.port);
+      const queued = enqueueSend(
+        mailbox,
+        {
+          from: mailbox.email,
+          message: {
+            ...message,
+            attachments: [
+              {
+                name: 'report.txt',
+                type: 'text/plain',
+                base64: Buffer.from('report').toString('base64'),
+              },
+            ],
+          },
+        },
+        new Date(Date.now() + 60_000).toISOString(),
+      );
+      await runOutboxPass();
+      expect(server.deliveries).toHaveLength(0);
+      await runOutboxPass(Date.now() + 120_000);
+      await runOutboxPass(Date.now() + 180_000);
+      await waitForClose(server);
+      expect(server.deliveries).toEqual([{ delivered: true, secure: true }]);
+      expect(readJob(mailbox, queued.messageId).state).toBe('done');
+      expect(saved).toHaveLength(1);
+      const sent = await simpleParser(saved[0]!);
+      expect(sent.messageId).toBe(`<${queued.messageId}@example.test>`);
+      expect(sent.attachments[0].content.toString()).toBe('report');
+    } finally {
+      db.delete(schema.mailJob).run();
+      await server.close();
+    }
+  });
   it.each(['tls', 'starttls'] as const)(
     'sends with verified %s through the OS hostname resolver',
     async (mode) => {

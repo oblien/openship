@@ -1,3 +1,4 @@
+import { ProjectEdgePagesSchema } from "./edge-pages";
 /**
  * Project validation schemas - Shared TypeBox operation contracts.
  * Framework & PackageManager enums are derived from the STACKS registry
@@ -314,6 +315,7 @@ const ProxySettingsSchema = Type.Object(
 );
 
 const RoutingConfigSchema = Type.Object({
+  edgePages: Type.Optional(ProjectEdgePagesSchema),
   rewrites: Type.Optional(Type.Array(RoutingRuleSchema, { maxItems: 200 })),
   redirects: Type.Optional(
     Type.Array(

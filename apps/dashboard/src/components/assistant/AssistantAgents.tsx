@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -176,7 +177,7 @@ function AgentList({ agents }: { agents: AssistantAgent[] }) {
         ))}
         {agents.some((a) => a.archived) && (
           <details className="px-2 pt-4 text-sm text-muted-foreground">
-            <summary className="cursor-pointer">Archived agents</summary>
+            <DisclosureSummary className="cursor-pointer">Archived agents</DisclosureSummary>
             <div className="mt-3 space-y-2">
               {agents
                 .filter((a) => a.archived)

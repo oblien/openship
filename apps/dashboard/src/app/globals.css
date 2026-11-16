@@ -11,6 +11,11 @@
 /* The third theme — lets `dim:` utilities target the neutral medium-dark. */
 @custom-variant dim (&:where([data-theme="dim"], [data-theme="dim"] *));
 
+/* Only this disclosure's own open state rotates its icon, including nested details. */
+details[open] > .disclosure-summary > .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
 /*
  * The desktop app's own header row (DesktopChrome). A REAL row, not an overlay:
  * it used to be an invisible fixed strip with no layout height, which forced every

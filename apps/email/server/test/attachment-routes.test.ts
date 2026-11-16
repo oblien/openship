@@ -1,3 +1,5 @@
+import { runOutboxPass } from '../src/mail/outbox';
+import { db, schema } from '../src/db';
 import { afterAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import type { AppContext } from '../src/ctx';
 import { mailRouteInternals, mailRouter } from '../src/trpc/routes/mail';
@@ -36,6 +38,7 @@ const send = spyOn(mailRouteInternals, 'send');
 const caller = mailRouter.createCaller(ctx);
 
 beforeEach(() => {
+  db.delete(schema.mailJob).run();
   getThread.mockReset();
   send.mockReset();
 });
@@ -57,6 +60,7 @@ describe('attachment byte routes', () => {
       headers: { 'In-Reply-To': '<original@example.com>', References: '<original@example.com>' },
     });
 
+    await runOutboxPass(Date.now() + 30_000);
     expect(send).toHaveBeenCalledWith(
       ctx.smtp,
       ctx.imap,
@@ -65,9 +69,9 @@ describe('attachment byte routes', () => {
         html: '<p>Reply</p><p>Sender signature</p><blockquote><p>Original report</p></blockquote>',
         inReplyTo: '<original@example.com>',
         references: ['<original@example.com>'],
-        attachments: undefined,
       }),
     );
+    expect(send.mock.calls[0]![3].attachments).toBeUndefined();
   });
 
   it('loads download bytes from the requested mailbox', async () => {
@@ -100,6 +104,7 @@ describe('attachment byte routes', () => {
     expect(getThread).toHaveBeenCalledWith(ctx.imap, 'message-1', 'archive', undefined, {
       includeAttachmentBytes: true,
     });
+    await runOutboxPass(Date.now() + 30_000);
     expect(send).toHaveBeenCalledWith(
       ctx.smtp,
       ctx.imap,
@@ -147,6 +152,7 @@ describe('attachment byte routes', () => {
       originalFolder: 'sent',
     });
 
+    await runOutboxPass(Date.now() + 30_000);
     expect(send).toHaveBeenCalledWith(
       ctx.smtp,
       ctx.imap,

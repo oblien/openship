@@ -80,6 +80,14 @@ const snapshot = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+function deferredSnapshot() {
+  let resolve!: (value: ReturnType<typeof snapshot>) => void;
+  const promise = new Promise<ReturnType<typeof snapshot>>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 let build: ReturnType<typeof useDeploymentBuild>;
 let root: Root;
 let container: HTMLDivElement;
@@ -136,7 +144,7 @@ it("does not let an older poll hide publication received over the stream", async
   api.stream.isConnected = false;
   await mount();
   await load({ status: "deploying", currentStep: 4, progress: 80 });
-  const delayed = Promise.withResolvers<ReturnType<typeof snapshot>>();
+  const delayed = deferredSnapshot();
   api.status.mockReturnValueOnce(delayed.promise);
   await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
   const verification = { startedAt: START.toISOString(), urls: ["https://example.test"] };
@@ -150,7 +158,7 @@ it("does not let an older poll hide publication received over the stream", async
 describe("build status on browser return", () => {
   it("reconciles again when browser return overlaps a stale in-flight read", async () => {
     await mount(); await load();
-    const stale = Promise.withResolvers<ReturnType<typeof snapshot>>();
+    const stale = deferredSnapshot();
     api.status.mockReturnValueOnce(stale.promise);
     await act(async () => window.dispatchEvent(new Event("focus")));
     await act(async () => {

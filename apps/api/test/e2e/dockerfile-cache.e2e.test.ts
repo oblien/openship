@@ -61,8 +61,10 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
       scripts: { postinstall: `bun -e 'await Bun.write(".install-id", crypto.randomUUID())'` },
     });
     await write("pnpm-workspace.yaml", "packages:\n  - apps/*\n  - packages/*\n");
+    await copyFile(join(root, "bunfig.toml"), join(directory, "bunfig.toml"));
     await write("tsconfig.base.json", "{}");
     await write("patches/fixture.patch", "first patch input\n");
+    await write("vendor/fixture.txt", "first vendored package input\n");
     await write("packages/shared/package.json", {
       name: "@fixture/shared",
       version: "1.0.0",
@@ -176,7 +178,9 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
       "apps/dashboard/package.json",
       "packages/shared/package.json",
       "bun.lock",
+      "bunfig.toml",
       "patches/fixture.patch",
+      "vendor/fixture.txt",
       "apps/email/server/bun.lock",
       "apps/email/client/package.json",
     ]) {

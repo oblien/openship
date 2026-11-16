@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { Type } from "@sinclair/typebox";
 import {
+  EdgePagesSchema,
   RemoveServerInputSchema,
   ServerInstallSessionInputSchema,
   ApplyAllServerContainersInputSchema,
@@ -84,6 +85,15 @@ r.delete(
 // Host exec. `server:admin` on the id, so a {server,<id>,[admin]} grant confines an
 // agent to this one box — the per-resource scope the jobs-based workaround could not
 // express. MCP-exposed deliberately: this is the sanctioned agent execution point.
+
+r.get("/servers/:id/edge-pages", {
+  tag: "server:read",
+  mcp: { description: "Read this server's custom error pages and the fallback page served for unmatched hostnames or direct IP requests." },
+}, rateLimit.getEdgePages);
+r.put("/servers/:id/edge-pages", {
+  tag: "server:admin", body: EdgePagesSchema, auditHandledByOperation: true,
+  mcp: { description: "Set this server's default error HTML and its fallback page for unmatched hostnames or direct IP requests. Project and hostname overrides remain more specific than these defaults." },
+}, rateLimit.updateEdgePages);
 
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */
 r.get(
