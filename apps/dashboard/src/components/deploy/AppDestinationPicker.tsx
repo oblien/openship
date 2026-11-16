@@ -4,6 +4,7 @@ import ServerSelector from "@/components/shared/ServerSelector";
 import type { DeployTarget } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
+import type { DeployDestination } from "@repo/core";
 
 export interface AppDestination {
   /**
@@ -34,6 +35,7 @@ export function AppDestinationPicker({
   onReadyChange,
   needsGpu = false,
   selfHostedOnly = false,
+  destinationKind,
 }: {
   value: AppDestination | null;
   onChange: (d: AppDestination) => void;
@@ -43,6 +45,7 @@ export function AppDestinationPicker({
   onReadyChange?: (ready: boolean) => void;
   needsGpu?: boolean;
   selfHostedOnly?: boolean;
+  destinationKind?: DeployDestination;
 }) {
   const { t } = useI18n();
   const { selfHosted } = usePlatform();
@@ -61,6 +64,7 @@ export function AppDestinationPicker({
       compact
       needsGpu={needsGpu}
       selfHostedOnly={selfHostedOnly}
+      destinationKind={destinationKind}
       onSelect={(server) => {
         if (!server && selfHosted) return;
         onChange({

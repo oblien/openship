@@ -24,7 +24,7 @@ describe('persisting the webmail query cache', () => {
   });
 
   it('still excludes successful mail and draft contents', () => {
-    for (const root of ['mail', 'drafts', 'settings', 'labels']) {
+    for (const root of ['mail', 'drafts', 'outbox', 'assistant', 'mailAgents', 'ai', 'brain', 'settings', 'labels']) {
       client.setQueryData([[root, 'list']], { root });
     }
     const snapshot = dehydrate(client, { shouldDehydrateQuery: shouldPersistQuery });

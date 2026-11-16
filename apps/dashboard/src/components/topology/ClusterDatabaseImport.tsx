@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -53,9 +54,9 @@ export function ClusterDatabaseImport({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="cursor-pointer">
+      <DisclosureSummary className="cursor-pointer">
         Import existing data{value ? " · Backup selected" : ""}
-      </summary>
+      </DisclosureSummary>
       <div className="mt-3 space-y-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
           Recover a backup into this new database. Pause writes and take a fresh backup before your

@@ -212,6 +212,113 @@ it("keeps first-subscription setup read-only on Cloud", async () => {
   expect(h.ensure).not.toHaveBeenCalled();
   expect(h.add).not.toHaveBeenCalled();
 });
+it("keeps an explicit own-server choice out of the Cloud inventory and purchase fallback", async () => {
+  const change = vi.fn(), ready = vi.fn();
+  await render(<ServerSelector forDeployment destinationKind="server" autoSelectFirst onSelect={change} onReadyChange={ready} />);
+  expect(change).not.toHaveBeenCalled();
+  expect(ready).toHaveBeenLastCalledWith(false);
+  expect(host.textContent).not.toContain("Production");
+  expect(host.textContent).not.toContain(copy.defaultHint);
+});
+it("keeps an explicit Cloud choice out of a connected-server default", async () => {
+  h.list.mockResolvedValue({ servers: [{ ...server, id: "ssh-server", managed: null, connection: "ssh" }] });
+  const change = vi.fn();
+  await render(<ServerSelector forDeployment destinationKind="cloud" autoSelectFirst onSelect={change} />);
+  expect(change).toHaveBeenCalledExactlyOnceWith(null);
+  expect(host.textContent).toContain(copy.defaultHint);
+  expect(h.add).not.toHaveBeenCalled();
+});
+it.each([1, 2])("asks which connected server to use from a public link, even with %s server(s)", async count => {
+  const servers = Array.from({ length: count }, (_, i) => ({
+    ...server, id: `ssh-${i}`, managed: null, connection: "ssh" as const, name: `VPS ${i + 1}`,
+  }));
+  h.list.mockResolvedValue({ servers: [server, ...servers] });
+  const changed = vi.fn(), ready = vi.fn();
+  function Picker() {
+    const [value, setValue] = useState<AppDestination | null>(null);
+    return <AppDestinationPicker destinationKind="server" value={value} onReadyChange={ready}
+      onChange={next => { changed(next); setValue(next); }} />;
+  }
+  await render(<Picker />);
+  expect(changed).not.toHaveBeenCalled();
+  expect(ready).toHaveBeenLastCalledWith(false);
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.getAttribute("aria-label")).toBe(baseDictionary.deploy.targetStep.chooseServer);
+  await act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!.click());
+  const list = document.querySelector('[role="listbox"]')!;
+  expect(list.textContent).not.toContain(server.name);
+  expect(list.querySelectorAll('[role="option"]')).toHaveLength(count);
+  await act(async () => [...list.querySelectorAll<HTMLElement>('[role="option"]')].at(-1)!.click());
+  expect(changed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    serverId: servers[count - 1]!.id, deployTarget: "server", workspaceId: undefined,
+  }));
+  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).toContain(`VPS ${count}`);
+  expect(h.list).toHaveBeenCalledOnce();
+  expect(h.add).not.toHaveBeenCalled();
+  expect(h.ensure).not.toHaveBeenCalled();
+});
+it("adds a missing connected server through the existing flow and selects it", async () => {
+  h.list.mockResolvedValue({ servers: [server] });
+  const change = vi.fn(), ready = vi.fn();
+  await render(<ServerSelector destinationKind="server" forDeployment onSelect={change} onReadyChange={ready} />);
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain(baseDictionary.widgets.shared.serverSelector.noServerConnected);
+  expect(dialog.textContent).not.toContain(copy.noneAvailable);
+  expect(dialog.textContent).not.toContain(copy.newProjectServer);
+  expect(h.add).not.toHaveBeenCalled();
+  await act(async () => [...dialog.querySelectorAll('button')].find(node =>
+    node.textContent === baseDictionary.widgets.shared.serverSelector.addNewServer)!.click());
+  expect(h.add).toHaveBeenCalledOnce();
+  expect(change).not.toHaveBeenCalled();
+  const connected = { ...server, id: "new-vps", name: "New VPS", connection: "ssh", managed: null };
+  h.list.mockResolvedValue({ servers: [server, connected] });
+  await act(async () => h.add.mock.calls[0]![0](connected));
+  expect(change).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: connected.id }));
+  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).toContain(connected.name);
+  expect(h.ensure).not.toHaveBeenCalled();
+});
+it("shows loading and retry in the destination prompt without treating failed inventory as empty", async () => {
+  let reject!: (error: Error) => void;
+  h.list.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  const change = vi.fn();
+  await render(<ServerSelector destinationKind="server" forDeployment onSelect={change} />);
+  expect(document.querySelector('[role="dialog"] [aria-busy="true"]')).not.toBeNull();
+  expect(h.add).not.toHaveBeenCalled();
+  await act(async () => reject(new Error("Inventory unavailable")));
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("Inventory unavailable");
+  expect(dialog.textContent).not.toContain(baseDictionary.widgets.shared.serverSelector.noServerConnected);
+  h.list.mockResolvedValue({ servers: [] });
+  await act(async () => [...dialog.querySelectorAll('button')].find(node =>
+    node.textContent === baseDictionary.billing.plansRoute.tryAgain)!.click());
+  expect(dialog.textContent).toContain(baseDictionary.widgets.shared.serverSelector.noServerConnected);
+  expect(change).not.toHaveBeenCalled();
+});
+it("lets users dismiss the prompt without selecting or deploying to a default", async () => {
+  h.list.mockResolvedValue({ servers: [{ ...server, id: "ssh-server", managed: null, name: "VPS" }] });
+  const change = vi.fn(), ready = vi.fn();
+  await render(<ServerSelector destinationKind="server" forDeployment autoSelectFirst onSelect={change} onReadyChange={ready} />);
+  await act(async () => document.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!.click());
+  await render(<ServerSelector destinationKind="server" forDeployment autoSelectFirst onSelect={change} onReadyChange={ready} />);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(change).not.toHaveBeenCalled();
+  expect(ready).toHaveBeenLastCalledWith(false);
+  expect(host.querySelector('button[aria-haspopup="listbox"]')).not.toBeNull();
+});
+it("keeps saved server bindings instead of prompting or replacing them", async () => {
+  const change = vi.fn(), ready = vi.fn();
+  await render(<ServerSelector destinationKind="server" forDeployment readOnly value="saved-server"
+    selectedName="Saved server" onSelect={change} onReadyChange={ready} />);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(h.list).not.toHaveBeenCalled();
+  expect(change).not.toHaveBeenCalled();
+  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(host.textContent).toContain("Saved server");
+});
 it("ignores a destination response from the previous organization", async () => {
   const old = deferred<unknown>();
   h.list.mockReturnValueOnce(old.promise);

@@ -257,7 +257,8 @@
       "runtimeApi": "Çalışma zamanı API’si",
       "workloads": "İş yükleri",
       "settings": "Ayarlar",
-      "runs": "Çalıştırmalar"
+      "runs": "Çalıştırmalar",
+      "pages": "Edge sayfaları"
     },
     "healthy": "Sağlıklı",
     "issues": "Sorunlar var",

@@ -13,8 +13,7 @@
  *
  * If you change `schema.ts`:
  *   - Adding a table → add another `CREATE TABLE IF NOT EXISTS` here.
- *   - Adding a column → add `ALTER TABLE … ADD COLUMN IF NOT EXISTS`
- *     (SQLite 3.35+).
+ *   - Adding a column → inspect PRAGMA table_info before ALTER TABLE.
  *   - Renaming/dropping → write a one-shot migration in here gated
  *     by a `PRAGMA user_version` bump.
  *
@@ -25,6 +24,32 @@
 import type { Database } from 'bun:sqlite';
 
 const STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS mail_assistant_connection (
+    mailbox_id TEXT PRIMARY KEY, agent TEXT NOT NULL, name TEXT NOT NULL,
+    model TEXT, custom_provider TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS mail_instance (id TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS mail_grant (
+    id TEXT PRIMARY KEY, mailbox_id TEXT NOT NULL, name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL, credentials BLOB,
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER,
+    internal INTEGER NOT NULL DEFAULT 0, parent_id TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_mail_grant_mailbox ON mail_grant(mailbox_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_mail_grant_expiry ON mail_grant(expires_at)`,
+  `CREATE TABLE IF NOT EXISTS mail_job (
+    id TEXT PRIMARY KEY, mailbox_id TEXT NOT NULL, grant_id TEXT,
+    kind TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+    payload BLOB NOT NULL, credentials BLOB, due_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, error TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_mail_job_due ON mail_job(state, due_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_mail_job_retention ON mail_job(state, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_mail_job_mailbox ON mail_job(mailbox_id)`,
+  `CREATE TABLE IF NOT EXISTS mail_assistant (
+    mailbox_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, allow_send INTEGER NOT NULL DEFAULT 0,
+    chat_id TEXT NOT NULL, history BLOB NOT NULL, active_request TEXT, active_until INTEGER, active_grant TEXT, consent_grant TEXT
+  )`,
   `CREATE TABLE IF NOT EXISTS session (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL,

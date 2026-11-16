@@ -24,6 +24,7 @@ import { doctorCommand } from "./commands/doctor";
 
 // Deploy loop
 import { deployCommand } from "./commands/deploy";
+import { launchCommand } from "./commands/launch";
 import { deploymentCommand } from "./commands/deployment";
 import { logsCommand } from "./commands/logs";
 
@@ -163,6 +164,7 @@ program.addCommand(doctorCommand);
 
 // Deploy loop
 program.addCommand(deployCommand);
+program.addCommand(launchCommand);
 program.addCommand(deploymentCommand);
 program.addCommand(logsCommand);
 

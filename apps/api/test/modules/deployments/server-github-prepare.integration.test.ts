@@ -21,6 +21,7 @@ import { buildBackgroundContext } from "@repo/platform/engine/lib/background-con
 import { buildDependencies } from "@repo/platform/engine/modules/deployments/build.operations";
 import { resolveBuildGitToken } from "@repo/platform/engine/modules/github/clone-auth";
 import { OpenshipClient } from "@repo/sdk/client";
+import { parseDeploySource } from "@repo/core";
 import { githubRoutes } from "../../../src/modules/github/github.routes";
 import { deploymentRoutes } from "../../../src/modules/deployments/deployment.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
@@ -241,6 +242,71 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     expect(requests.length).toBeGreaterThan(0);
     expect(requests.every((request) => request.token === null)).toBe(true);
   });
+  it.each([false, true])(
+    "prepares an uncatalogued repository's openship.json services (Cloud=%s)",
+    async (cloudMode) => {
+      env.CLOUD_MODE = cloudMode;
+      publicReadAllowed = true;
+      const originalFiles = { ...files };
+      // A README and manifest are sufficient: no catalog entry, package.json,
+      // Dockerfile or Compose file participates in this source preparation.
+      for (const name of Object.keys(files)) delete files[name];
+      Object.assign(files, {
+        "README.md": "Deploy this project with OpenShip.\n",
+        "openship.json": JSON.stringify({
+          services: [
+            {
+              name: "web",
+              image: "nginx:stable-alpine",
+              exposed: true,
+              exposedPort: "80",
+              dependsOn: ["cache"],
+            },
+            { name: "cache", image: "valkey/valkey:8-alpine", volumes: ["cache-data:/data"] },
+          ],
+        }),
+      });
+      try {
+        const intent = parseDeploySource({
+          repo: "https://github.com/acme/private-workspace",
+          branch: "main",
+        });
+        if (intent.kind !== "repo") throw new Error("Expected a repository deployment link");
+        const scan = await client().deployments.prepare({
+          source: "github",
+          owner: intent.owner,
+          repo: intent.repo,
+          branch: intent.branch,
+        });
+        expect(scan.projectType).toBe("services");
+        expect(scan.services).toHaveLength(2);
+        expect(scan.services?.[0]).toMatchObject({
+          name: "web",
+          image: "nginx:stable-alpine",
+          exposed: true,
+          exposedPort: "80",
+          dependsOn: ["cache"],
+        });
+        expect(scan.services?.[1]).toMatchObject({
+          name: "cache",
+          image: "valkey/valkey:8-alpine",
+          volumes: ["cache-data:/data"],
+        });
+        expect(scan.configDiagnostics?.errors ?? []).toEqual([]);
+        expect(requests.some((request) => request.path.endsWith("/contents/openship.json"))).toBe(
+          true,
+        );
+        // Self-hosting reuses its configured local server credential. Cloud has
+        // no account connection here and reads the public repository anonymously.
+        expect(new Set(requests.map((request) => request.token))).toEqual(
+          new Set([cloudMode ? null : `Bearer ${pat}`]),
+        );
+      } finally {
+        for (const name of Object.keys(files)) delete files[name];
+        Object.assign(files, originalFiles);
+      }
+    },
+  );
   it("keeps an explicitly selected remote server through branch and folder browsing", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
     const repo = { owner: source.owner, repo: source.repo, serverId };

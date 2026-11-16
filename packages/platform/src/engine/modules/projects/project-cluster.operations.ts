@@ -24,6 +24,7 @@ import { findActiveDeployment } from "../../lib/active-deployment";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import { assertProjectStorageEmpty } from "../../lib/project-storage-guard";
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
+import { assertProjectEdgePagesTarget } from "./project-routing-capabilities";
 import { fleetAdmin } from "../system/managed-network.operations";
 import {
   authorizeMember,
@@ -129,6 +130,7 @@ export function createProjectClusterOperations(
       const changed = await withLiveProjectRuntimeMutation(id, async (project) => {
         assertResourceInOrg(project, "Project", ctx.organizationId, id);
         if (input.clusterId) await assertRouteProtectionTarget(project, "cluster");
+        if (input.clusterId) assertProjectEdgePagesTarget(project, "cluster");
         if (
           input.clusterId !== project.clusterId &&
           (await repos.clusterDatabase.list(ctx.organizationId, id)).some(

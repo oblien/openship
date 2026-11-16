@@ -16,6 +16,7 @@ import { AdvancedSettings } from "../components/AdvancedSettings";
 import { OverviewTab } from "../components/OverviewTab";
 import { ServicesTab } from "../components/ServicesTab";
 import { ProjectTopologyPage } from "@/components/topology/ProjectTopologyPage";
+import { DomainSection } from "../components/DomainSection";
 import { ProjectSidebar, ProjectMobileTabs } from "../components/ProjectSidebar";
 import { ProjectTabSections } from "../components/ProjectTabSections";
 import { DraftProjectView } from "../components/DraftProjectView";
@@ -28,7 +29,11 @@ import {
   projectEnvironmentHref,
   removeProjectEnvironment,
 } from "@/context/project-environments";
-import { useProjectInfo, PROJECT_INFO_NOT_FOUND } from "@/hooks/useProjectEndpoints";
+import {
+  useProjectInfo,
+  PROJECT_INFO_NOT_FOUND,
+  retryProjectRequests,
+} from "@/hooks/useProjectEndpoints";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
@@ -560,7 +565,11 @@ const ProjectSettingsContent = () => {
   // Project shell waits for project info specifically (not analytics).
   // Analytics is per-card now; the page-level gate is about whether we
   // know enough about the project to even render its tabs.
-  const { isLoading: isLoadingProjectInfo, error: projectInfoError } = useProjectInfo(id);
+  const {
+    isLoading: isLoadingProjectInfo,
+    isRefreshing: isRetryingProjectInfo,
+    error: projectInfoError,
+  } = useProjectInfo(id);
   const [topologyHasPending, setTopologyHasPending] = useState(false);
   const [retryDeletionFor, setRetryDeletionFor] = useState<string | null>(null);
   const [unconfirmedDeletionFor, setUnconfirmedDeletionFor] = useState<string | null>(null);
@@ -932,6 +941,11 @@ const ProjectSettingsContent = () => {
         );
       case "services":
         return <ServicesTab />;
+      case "routing":
+      case "access":
+      case "edge-pages":
+      case "proxy":
+        return <DomainSection section={activeTab} />;
       case "domains":
         return <DomainSettings />;
       case "actions":
@@ -970,6 +984,18 @@ const ProjectSettingsContent = () => {
   // still-loading. The `!projectInfoError` guard avoids an infinite skeleton
   // when the fetch genuinely failed (non-404) and the seed will never arrive.
   const projectDataReady = projectData.id === id;
+  // Keep the error and its actions visible during a retry. The shared reader
+  // retains the failure until a new response arrives, then seeds the project.
+  if (projectInfoError && projectInfoError !== PROJECT_INFO_NOT_FOUND && !projectDataReady) {
+    return (
+      <ErrorState
+        type="load-failed"
+        error={{ details: projectInfoError }}
+        retrying={isRetryingProjectInfo}
+        onRetry={() => retryProjectRequests(id)}
+      />
+    );
+  }
   if (isLoadingProjectInfo || (!projectDataReady && !projectInfoError)) {
     // Mirror the post-load shell (header + two-column grid) so the
     // page doesn't jump when data lands. The right column gets its
@@ -1032,14 +1058,6 @@ const ProjectSettingsContent = () => {
       </PageContainer>
     );
   }
-  // A non-404 fetch failure (cloud unreachable, network, 5xx) never delivers
-  // the real project — the empty seed still reads as "draft" below, so guard
-  // here and surface the actual load error instead of a fake draft screen.
-  // (404 / access errors are already handled via projectNotFound above.)
-  if (projectInfoError && projectInfoError !== PROJECT_INFO_NOT_FOUND && !projectDataReady) {
-    return <ErrorState type="load-failed" error={{ details: projectInfoError }} />;
-  }
-
   // Draft / never-successfully-deployed projects (no active deployment)
   // get a focused screen instead of the analytics dashboard, which would
   // otherwise render empty. In-flight first builds (queued/building/

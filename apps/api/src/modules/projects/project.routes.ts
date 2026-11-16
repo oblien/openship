@@ -14,6 +14,7 @@
 
 import { Hono } from "hono";
 import {
+  UpdateProjectEdgePagesSchema,
   WebhookPageInputSchema,
   RecentServerLogsInputSchema,
   ListProjectsSchema,
@@ -128,6 +129,13 @@ r.get(
   },
   edgeConfig.getEdgeConfig,
 );
+
+r.get("/:id/edge-pages", {
+  tag: "project:read", localOnly: true,
+}, routeRules.getEdgePages);
+r.put("/:id/edge-pages", {
+  tag: "project:write", localOnly: true, body: UpdateProjectEdgePagesSchema, auditHandledByOperation: true,
+}, routeRules.updateEdgePages);
 
 r.get("/:id/route-protection", {
   tag: "project:read", localOnly: true,

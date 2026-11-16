@@ -25,6 +25,7 @@ import {
   OPENSHIP_RUNTIMES,
   OPENSHIP_WORKLOADS,
   type OpenshipConfig,
+  type OpenshipDisplay,
   type OpenshipDomain,
   type OpenshipEnv,
   type OpenshipReadiness,
@@ -35,7 +36,7 @@ import {
   type OpenshipService,
   type ParseResult,
 } from "./schema";
-import { normalizeRepoPattern } from "../source-access";
+import { normalizeRepoPath, normalizeRepoPattern } from "../source-access";
 import { validateImageReference } from "../project-source";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
 import { isRuntimeVersion, runtimeVersionError } from "../runtime-version";
@@ -45,6 +46,7 @@ import { resolveTierResources } from "../resources";
 
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
+  "display",
   "framework",
   "packageManager",
   "rootDirectory",
@@ -742,6 +744,37 @@ function parseAutoDeployPaths(ctx: Ctx, raw: unknown): OpenshipConfig["autoDeplo
   return result;
 }
 
+function parseDisplay(ctx: Ctx, raw: unknown): OpenshipDisplay | undefined {
+  if (raw === undefined) return undefined;
+  if (!ctx.isObj(raw)) {
+    ctx.err("display", "must be an object");
+    return undefined;
+  }
+  const display: OpenshipDisplay = {};
+  const name = ctx.str(raw.name, "display.name");
+  const controls = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
+  if (name !== undefined) {
+    if (!name.trim() || name.length > 80 || controls.test(name))
+      ctx.err("display.name", "use 1–80 characters without control characters");
+    else display.name = name.trim();
+  }
+  const logo = ctx.str(raw.logo, "display.logo");
+  if (logo !== undefined) {
+    const path = normalizeRepoPath(logo);
+    if (
+      !path ||
+      logo.length > 512 ||
+      logo.startsWith("/") ||
+      /[:%?#]/.test(logo) ||
+      controls.test(logo) ||
+      !/\.(png|jpe?g|webp|svg)$/i.test(path)
+    ) {
+      ctx.err("display.logo", "use a repository-relative PNG, JPEG, WebP or SVG path");
+    } else display.logo = path;
+  }
+  return Object.keys(display).length ? display : undefined;
+}
+
 /** Parse + validate raw `openship.json` JSON (already `JSON.parse`d) into a config. */
 export function parseOpenshipConfig(raw: unknown): ParseResult {
   const ctx = new Ctx();
@@ -755,6 +788,7 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
 
   const resources = parseResources(ctx, raw.resources, "resources");
   const config: OpenshipConfig = {
+    display: parseDisplay(ctx, raw.display),
     framework: ctx.enumOf(raw.framework, "framework", STACK_IDS),
     packageManager: parsePackageManager(ctx, raw.packageManager, "packageManager"),
     rootDirectory: ctx.str(raw.rootDirectory, "rootDirectory"),

@@ -19,6 +19,7 @@
     "declarationMap": false,
     "noEmit": true,
     "paths": {
+      "@zero/server/trpc": ["../server/src/trpc/index.ts"],
       "@/*": ["./*"]
     },
     "rootDirs": [".", "./.react-router/types"]

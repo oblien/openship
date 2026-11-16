@@ -3,7 +3,7 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import { reactRouter } from '@react-router/dev/vite';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import babel from 'vite-plugin-babel';
-import tailwindcss from "@tailwindcss/vite";
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import dedent from 'dedent';
 import { editorSharedPackages } from './lib/editor-dependencies';
@@ -50,6 +50,13 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
+    // Keep browser requests same-origin in development, as they are in the shipped app.
+    proxy: Object.fromEntries(
+      ['/api', '/auth', '/mail/idle', '/mcp', '/branding.json', '/branding/assets'].map((path) => [
+        path,
+        { target: process.env.MAIL_DEV_API_URL ?? 'http://127.0.0.1:3030', changeOrigin: true },
+      ]),
+    ),
     warmup: {
       clientFiles: ['./app/**/*', './components/**/*'],
     },

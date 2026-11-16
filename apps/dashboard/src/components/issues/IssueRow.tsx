@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import Link from "next/link";
@@ -282,7 +283,7 @@ export function IssueRow({
       )}
       {meta && <p className={cn("truncate", metaClass)}>{meta}</p>}
       {connectionIssue && connectionDetail && <details className={metaClass}>
-        <summary className="cursor-pointer">{c.connectivity.details}</summary>
+        <DisclosureSummary className="cursor-pointer">{c.connectivity.details}</DisclosureSummary>
         <p className="mt-1 break-words whitespace-pre-wrap">{connectionDetail}</p>
       </details>}
       {selfUpdate && <p className={metaClass}>{c.selfUpdateNote}</p>}

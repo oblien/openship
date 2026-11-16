@@ -23,7 +23,7 @@ import type { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { sanitizeMailHtml } from './sanitize';
 import { withImap, type ImapAuth } from './imap';
-import { sendMail, type SmtpAuth, type SendInput } from './smtp';
+import { composeRfc822, decodeAttachments, sendMail, type SmtpAuth, type SendInput } from './smtp';
 
 export type FolderSlug =
   | 'inbox'
@@ -853,7 +853,7 @@ function normalizeMessageId(id: string | null | undefined): string {
   return value.trim();
 }
 
-async function resolveMessageUids(
+export async function resolveMessageUids(
   client: Pick<ImapFlow, 'search' | 'fetch'>,
   id: string,
 ): Promise<number[] | null> {
@@ -1282,9 +1282,8 @@ export async function deleteThreads(auth: ImapAuth, input: FlagInput): Promise<v
 
 // Snooze: stamp the $Snoozed custom keyword on INBOX messages so they
 // disappear from inbox (we exclude that keyword in listThreads/inbox)
-// and surface under /mail/snoozed. The `until` timestamp is accepted by
-// the API for forward-compat but not persisted yet - there's no
-// wake-up worker, so messages stay snoozed until manually unsnoozed.
+// and surface under /mail/snoozed. The mail outbox persists the wake-up
+// time and invokes the same unsnooze operation when it is due.
 export async function snoozeThreads(
   auth: ImapAuth,
   input: { ids: string[]; until?: string },
@@ -1353,6 +1352,7 @@ export async function modifyLabels(
 }
 
 export interface SendMailInput {
+  messageId?: string;
   to: string[];
   cc?: string[];
   bcc?: string[];
@@ -1371,6 +1371,7 @@ export async function send(
   input: SendMailInput,
 ): Promise<{ messageId: string }> {
   const send: SendInput = {
+    messageId: input.messageId,
     from,
     to: input.to,
     cc: input.cc,
@@ -1380,11 +1381,7 @@ export async function send(
     html: input.html,
     inReplyTo: input.inReplyTo,
     references: input.references,
-    attachments: input.attachments?.map((a) => ({
-      filename: a.name,
-      content: Buffer.from(a.base64, 'base64'),
-      contentType: a.type,
-    })),
+    attachments: decodeAttachments(input.attachments),
   };
   const result = await sendMail(smtp, send);
 
@@ -1392,29 +1389,11 @@ export async function send(
   // Postfix's sender_bcc would also do this, but appending lets us
   // reflect the message immediately without waiting for delivery.
   await withImap(imap, async (client) => {
-    const rfc822 = buildRfc822(from, send, result.messageId);
+    const rfc822 = await composeRfc822({ ...send, messageId: result.messageId });
     await client.append('Sent', rfc822, ['\\Seen']);
   }).catch(() => {
     // Best-effort: an APPEND failure shouldn't fail the send.
   });
 
   return result;
-}
-
-function buildRfc822(from: string, m: SendInput, messageId: string): Buffer {
-  const headers = [
-    `From: ${from}`,
-    `To: ${m.to.join(', ')}`,
-    m.cc?.length ? `Cc: ${m.cc.join(', ')}` : null,
-    `Subject: ${m.subject}`,
-    `Date: ${new Date().toUTCString()}`,
-    `Message-Id: ${messageId}`,
-    m.inReplyTo ? `In-Reply-To: ${m.inReplyTo}` : null,
-    m.references?.length ? `References: ${m.references.join(' ')}` : null,
-    'MIME-Version: 1.0',
-    m.html ? 'Content-Type: text/html; charset=UTF-8' : 'Content-Type: text/plain; charset=UTF-8',
-  ]
-    .filter(Boolean)
-    .join('\r\n');
-  return Buffer.from(`${headers}\r\n\r\n${m.html ?? m.text ?? ''}`);
 }

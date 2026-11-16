@@ -227,6 +227,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
   }
 
   async registerRoute(route: RouteConfig): Promise<void> {
+    if (route.edgePages) throw new Error("Custom edge pages require a self-hosted OpenResty edge.");
     if (route.protection) throw new Error("Password protection is not supported by the Cloud edge.");
     if (route.webhookProxy)
       throw new Error("Managed application routes cannot proxy control-plane webhooks");

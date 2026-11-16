@@ -32,6 +32,9 @@ type Pages = {
   "/mail/compose": {
     params: {};
   };
+  "/mail/scheduled": {
+    params: {};
+  };
   "/mail/under-construction/:path": {
     params: {
       "path": string;
@@ -51,6 +54,9 @@ type Pages = {
   "/settings/general": {
     params: {};
   };
+  "/settings/agents": {
+    params: {};
+  };
   "/settings/labels": {
     params: {};
   };
@@ -61,6 +67,9 @@ type Pages = {
     params: {};
   };
   "/settings/security": {
+    params: {};
+  };
+  "/settings/signatures": {
     params: {};
   };
   "/settings/shortcuts": {
@@ -81,7 +90,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/api/mailto-handler" | "/login" | "/developer" | "/mail" | "/mail/create" | "/mail/compose" | "/mail/under-construction/:path" | "/mail/:folder" | "/settings" | "/settings/appearance" | "/settings/general" | "/settings/labels" | "/settings/notifications" | "/settings/privacy" | "/settings/security" | "/settings/shortcuts" | "/settings/*" | "/*";
+    page: "/" | "/api/mailto-handler" | "/login" | "/developer" | "/mail" | "/mail/create" | "/mail/compose" | "/mail/scheduled" | "/mail/under-construction/:path" | "/mail/:folder" | "/settings" | "/settings/appearance" | "/settings/general" | "/settings/agents" | "/settings/labels" | "/settings/notifications" | "/settings/privacy" | "/settings/security" | "/settings/signatures" | "/settings/shortcuts" | "/settings/*" | "/*";
   };
   "page.tsx": {
     id: "page";
@@ -97,7 +106,7 @@ type RouteFiles = {
   };
   "(routes)/layout.tsx": {
     id: "(routes)/layout";
-    page: "/developer" | "/mail" | "/mail/create" | "/mail/compose" | "/mail/under-construction/:path" | "/mail/:folder" | "/settings" | "/settings/appearance" | "/settings/general" | "/settings/labels" | "/settings/notifications" | "/settings/privacy" | "/settings/security" | "/settings/shortcuts" | "/settings/*" | "/*";
+    page: "/developer" | "/mail" | "/mail/create" | "/mail/compose" | "/mail/scheduled" | "/mail/under-construction/:path" | "/mail/:folder" | "/settings" | "/settings/appearance" | "/settings/general" | "/settings/agents" | "/settings/labels" | "/settings/notifications" | "/settings/privacy" | "/settings/security" | "/settings/signatures" | "/settings/shortcuts" | "/settings/*" | "/*";
   };
   "(routes)/developer/page.tsx": {
     id: "(routes)/developer/page";
@@ -105,7 +114,7 @@ type RouteFiles = {
   };
   "(routes)/mail/layout.tsx": {
     id: "(routes)/mail/layout";
-    page: "/mail" | "/mail/create" | "/mail/compose" | "/mail/under-construction/:path" | "/mail/:folder";
+    page: "/mail" | "/mail/create" | "/mail/compose" | "/mail/scheduled" | "/mail/under-construction/:path" | "/mail/:folder";
   };
   "(routes)/mail/page.tsx": {
     id: "(routes)/mail/page";
@@ -119,6 +128,10 @@ type RouteFiles = {
     id: "(routes)/mail/compose/page";
     page: "/mail/compose";
   };
+  "(routes)/mail/scheduled/page.tsx": {
+    id: "(routes)/mail/scheduled/page";
+    page: "/mail/scheduled";
+  };
   "(routes)/mail/under-construction/[path]/page.tsx": {
     id: "(routes)/mail/under-construction/[path]/page";
     page: "/mail/under-construction/:path";
@@ -129,7 +142,7 @@ type RouteFiles = {
   };
   "(routes)/settings/layout.tsx": {
     id: "(routes)/settings/layout";
-    page: "/settings" | "/settings/appearance" | "/settings/general" | "/settings/labels" | "/settings/notifications" | "/settings/privacy" | "/settings/security" | "/settings/shortcuts" | "/settings/*";
+    page: "/settings" | "/settings/appearance" | "/settings/general" | "/settings/agents" | "/settings/labels" | "/settings/notifications" | "/settings/privacy" | "/settings/security" | "/settings/signatures" | "/settings/shortcuts" | "/settings/*";
   };
   "(routes)/settings/page.tsx": {
     id: "(routes)/settings/page";
@@ -142,6 +155,10 @@ type RouteFiles = {
   "(routes)/settings/general/page.tsx": {
     id: "(routes)/settings/general/page";
     page: "/settings/general";
+  };
+  "(routes)/settings/agents/page.tsx": {
+    id: "(routes)/settings/agents/page";
+    page: "/settings/agents";
   };
   "(routes)/settings/labels/page.tsx": {
     id: "(routes)/settings/labels/page";
@@ -158,6 +175,10 @@ type RouteFiles = {
   "(routes)/settings/security/page.tsx": {
     id: "(routes)/settings/security/page";
     page: "/settings/security";
+  };
+  "(routes)/settings/signatures/page.tsx": {
+    id: "(routes)/settings/signatures/page";
+    page: "/settings/signatures";
   };
   "(routes)/settings/shortcuts/page.tsx": {
     id: "(routes)/settings/shortcuts/page";
@@ -184,16 +205,19 @@ type RouteModules = {
   "(routes)/mail/page": typeof import("./app/(routes)/mail/page.tsx");
   "(routes)/mail/create/page": typeof import("./app/(routes)/mail/create/page.tsx");
   "(routes)/mail/compose/page": typeof import("./app/(routes)/mail/compose/page.tsx");
+  "(routes)/mail/scheduled/page": typeof import("./app/(routes)/mail/scheduled/page.tsx");
   "(routes)/mail/under-construction/[path]/page": typeof import("./app/(routes)/mail/under-construction/[path]/page.tsx");
   "(routes)/mail/[folder]/page": typeof import("./app/(routes)/mail/[folder]/page.tsx");
   "(routes)/settings/layout": typeof import("./app/(routes)/settings/layout.tsx");
   "(routes)/settings/page": typeof import("./app/(routes)/settings/page.tsx");
   "(routes)/settings/appearance/page": typeof import("./app/(routes)/settings/appearance/page.tsx");
   "(routes)/settings/general/page": typeof import("./app/(routes)/settings/general/page.tsx");
+  "(routes)/settings/agents/page": typeof import("./app/(routes)/settings/agents/page.tsx");
   "(routes)/settings/labels/page": typeof import("./app/(routes)/settings/labels/page.tsx");
   "(routes)/settings/notifications/page": typeof import("./app/(routes)/settings/notifications/page.tsx");
   "(routes)/settings/privacy/page": typeof import("./app/(routes)/settings/privacy/page.tsx");
   "(routes)/settings/security/page": typeof import("./app/(routes)/settings/security/page.tsx");
+  "(routes)/settings/signatures/page": typeof import("./app/(routes)/settings/signatures/page.tsx");
   "(routes)/settings/shortcuts/page": typeof import("./app/(routes)/settings/shortcuts/page.tsx");
   "(routes)/settings/[...settings]/page": typeof import("./app/(routes)/settings/[...settings]/page.tsx");
   "meta-files/not-found": typeof import("./app/meta-files/not-found.ts");

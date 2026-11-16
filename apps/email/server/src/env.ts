@@ -93,6 +93,12 @@ export interface Env {
   DEFAULT_SMTP_PORT: number;
 
   SQLITE_PATH: string;
+  MAIL_PUBLIC_URL: string | undefined;
+  MAIL_MINDWIRE_TARGETS: string;
+  /** Dedicated mail runtime engine. Never inherited from the control plane. */
+  MAIL_MINDWIRE_DOCKER_SOCKET: string | undefined;
+  MAIL_MINDWIRE_DOCKER_NETWORK: string | undefined;
+  MAIL_MINDWIRE_MCP_URL: string | undefined;
   /**
    * Filesystem root for white-label config. The directory contains
    *   config.json   - site/login/footer text
@@ -139,6 +145,11 @@ export const env: Env = {
   DEFAULT_SMTP_PORT: int('DEFAULT_SMTP_PORT', 587),
 
   SQLITE_PATH: optional('SQLITE_PATH', './data/zero.db'),
+  MAIL_PUBLIC_URL: process.env.MAIL_PUBLIC_URL?.trim() || undefined,
+  MAIL_MINDWIRE_TARGETS: optional('MAIL_MINDWIRE_TARGETS', '{}'),
+  MAIL_MINDWIRE_DOCKER_SOCKET: process.env.MAIL_MINDWIRE_DOCKER_SOCKET,
+  MAIL_MINDWIRE_DOCKER_NETWORK: process.env.MAIL_MINDWIRE_DOCKER_NETWORK,
+  MAIL_MINDWIRE_MCP_URL: process.env.MAIL_MINDWIRE_MCP_URL,
   BRANDING_PATH: optional('BRANDING_PATH', './data/mail-branding'),
   BRANDING_ADMIN_TOKEN: required('BRANDING_ADMIN_TOKEN'),
 };

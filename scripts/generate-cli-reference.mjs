@@ -6,7 +6,7 @@ import { cliSurface, docsDirectory } from "./docs-surface.mjs";
 
 const categories = {
   Connect: ["login", "logout", "context", "token", "access", "credential", "github", "api"],
-  Deploy: ["init", "config", "deploy", "deployment", "logs"],
+  Deploy: ["init", "config", "launch", "deploy", "deployment", "logs"],
   Applications: ["project", "app", "service", "domain", "dns"],
   Operations: ["monitoring", "notification", "webhook", "audit", "analytics", "settings"],
   Cloud: ["billing"],
@@ -45,6 +45,7 @@ const guides = {
   init: "projects",
   config: "projects",
   deploy: "deploy",
+  launch: "../guides/deploy-button",
   deployment: "deploy",
   logs: "deploy",
   project: "projects",

@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -265,12 +266,12 @@ export function ExportPanel({
         disabled={busy}
       />
       <details className="rounded-lg border border-border p-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">
+        <DisclosureSummary className="cursor-pointer text-sm font-medium text-foreground">
           {interpolate(d.historyOptionsSummary, {
             count: String(selection.history.length),
             total: String(ALL_HISTORY.length),
           })}
-        </summary>
+        </DisclosureSummary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {ALL_HISTORY.map((category) => (
             <TransferOption

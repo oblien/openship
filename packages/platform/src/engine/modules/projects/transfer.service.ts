@@ -1,4 +1,5 @@
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
+import { assertProjectEdgePagesTarget } from "./project-routing-capabilities";
 /**
  * Project transfer service — local <-> Openship Cloud mobility.
  *
@@ -38,7 +39,7 @@ import {
   type SubgraphScope,
 } from "@repo/db";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
-import { AppError } from "@repo/core";
+import { AppError, type RoutingConfig } from "@repo/core";
 import { randomUUID } from "node:crypto";
 import { teardownProject, getActiveProjectState } from "@repo/platform/engine/modules/projects/project-teardown";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -103,6 +104,7 @@ interface ProjectRow {
   clusterId: string | null;
   cloudPromotion: ProjectPromotion | null;
   appTemplateId: string | null;
+  routingConfig: RoutingConfig | null;
 }
 
 async function loadProject(projectId: string, organizationId: string): Promise<ProjectRow | null> {
@@ -115,6 +117,7 @@ async function loadProject(projectId: string, organizationId: string): Promise<P
       clusterId: schema.project.clusterId,
       cloudPromotion: schema.project.cloudPromotion,
       appTemplateId: schema.project.appTemplateId,
+      routingConfig: schema.project.routingConfig,
     })
     .from(schema.project)
     .where(eq(schema.project.id, projectId));
@@ -157,6 +160,7 @@ async function transferProjectToCloudLocked(input: TransferToCloudInput): Promis
   const project = await loadProject(input.projectId, input.organizationId);
   if (!project) throw new TransferProjectNotFoundError(input.projectId);
   await assertRouteProtectionTarget(project, "cloud");
+  assertProjectEdgePagesTarget(project, "cloud");
   assertNotControlPlane(project);
   if (project.workspaceId) {
     throw new TransferAlreadyOnTargetError("cloud");

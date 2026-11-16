@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -70,8 +71,8 @@ function Detail({
     : interpolate(t.projectDetail.services.detail.networking.copyValue, { label });
   return (
     <div className="min-w-0 space-y-1">
-      <dt className="text-[11px] text-muted-foreground">{label}</dt>
-      <dd className="flex min-w-0 items-center gap-2 text-xs text-foreground">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-2 text-sm text-foreground">
         <span className="min-w-0 flex-1 truncate" title={value}>
           {value}
         </span>
@@ -205,7 +206,10 @@ export function TopologyInspector({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">{resource?.name || "Connection"}</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="truncate text-sm font-medium">{resource?.name || "Connection"}</h2>
+            {resource && <TopologyStatus state={resource.pending ? "pending" : resource.state} />}
+          </div>
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
             {resource?.description || relation?.label}
           </p>
@@ -321,74 +325,98 @@ export function TopologyInspector({
         )}
         {resource && (!editable || tab === "overview") && (
           <div className="space-y-5">
-            {editable && !resource.pending && service?.enabled !== false && (
-              <Button
-                className="w-full justify-between"
-                variant="secondary"
-                disabled={disabled || busy}
-                onClick={() => setTab("scaling")}
-              >
-                <span className="flex items-center gap-2">
-                  <UiIcon name="layers" />
-                  {t.projects.quickScale.scale}
-                </span>
-                <UiIcon name="arrow-right" />
-              </Button>
+            {service && !resource.pending && (
+              <div className="grid grid-cols-2 gap-2">
+                {resource.container?.containerId &&
+                !["stopped", "failed"].includes(resource.state) ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      disabled={lifecycleDisabled}
+                      onClick={() => onLifecycle(service, "restart")}
+                    >
+                      <UiIcon name="refresh" />
+                      Restart
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={lifecycleDisabled}
+                      onClick={() => onLifecycle(service, "stop")}
+                    >
+                      <UiIcon name="square" />
+                      Stop
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    className="col-span-2"
+                    variant="secondary"
+                    disabled={
+                      lifecycleDisabled ||
+                      !project.activeDeploymentId ||
+                      !serviceCanStartWithoutBuild(service)
+                    }
+                    onClick={() => onLifecycle(service, "start")}
+                  >
+                    <UiIcon name="play" />
+                    Start service
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  disabled={disabled}
+                  onClick={() => onNavigate(`${serviceHref}/logs`)}
+                >
+                  <UiIcon name="file-text" />
+                  Logs
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={disabled}
+                  onClick={() => onNavigate(`${serviceHref}/env`)}
+                >
+                  <UiIcon name="key" />
+                  Variables
+                </Button>
+              </div>
             )}
-            <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-              {resource.kind === "application" &&
-              resource.version &&
-              !resource.replicaStatus &&
-              resource.state !== "disabled" ? (
-                <p className="text-xs">Deployed {resource.version}</p>
-              ) : (
-                <TopologyStatus state={resource.pending ? "pending" : resource.state} />
-              )}
-              {resource.pending && (
-                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                  Review and apply to save this configuration and deploy it.
-                </p>
-              )}
-              {resource.container?.duplicates?.length ? (
-                <p className="mt-2 text-[11px] leading-relaxed text-warning">
-                  {resource.container.duplicates.length} additional container(s) need attention.
-                  Review these containers before scaling this application.
-                </p>
-              ) : null}
-            </div>
-            <dl className="grid grid-cols-1 gap-4">
-              {resource.clusterPod && (
-                <>
-                  <Detail label="Server" value={resource.description} />
-                  <Detail label="Restarts" value={String(resource.clusterPod.restarts)} />
-                </>
-              )}
-              <Detail label="Running image" value={resource.container?.imageRef} copyable />
-              {!resource.container?.imageRef && (
-                <Detail label="Configured image" value={service?.image} copyable />
-              )}
-              <Detail label="Container" value={resource.container?.containerId} copyable />
-              <Detail label="Private address" value={resource.container?.ip} copyable />
-              <Detail
-                label="Server"
-                value={
-                  resource.kind === "linked" || !!resource.clusterPod
-                    ? undefined
-                    : project.serverName ||
-                      (project.deployTarget === "cloud"
-                        ? "OpenShip Cloud"
-                        : project.deployTarget === "cluster"
-                          ? "Server cluster"
-                          : project.deployTarget === "local"
-                            ? "Local machine"
-                            : project.serverId
-                              ? "Connected server"
-                              : "Not selected")
-                }
-              />
-              <Detail label="Ports" value={service?.ports?.join(", ")} copyable />
-              <Detail label="Managed by" value={resource.ownerName} />
-            </dl>
+            {editable && !resource.pending && service?.enabled !== false && (
+              <div className="space-y-2">
+                {canRefresh && (
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    disabled={disabled || busy}
+                    onClick={() => onDeploy("refresh", service?.id)}
+                  >
+                    <UiIcon name="refresh" />
+                    Redeploy current release
+                  </Button>
+                )}
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  disabled={disabled || busy}
+                  onClick={() => onDeploy("update", service?.id)}
+                >
+                  <UiIcon name="arrow-up-right" />
+                  Deploy latest source
+                </Button>
+              </div>
+            )}
+
+            {resource.pending && (
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Review and apply to save this configuration and deploy it.
+              </p>
+            )}
+            {resource.container?.duplicates?.length ? (
+              <p className="text-sm leading-relaxed text-warning">
+                {resource.container.duplicates.length} additional container(s) need attention.
+                Review these containers before scaling this application.
+              </p>
+            ) : null}
+
             {resource.role && resource.deploymentId && (
               <RuntimeRoleReplicas
                 projectId={project.id}
@@ -415,16 +443,6 @@ export function TopologyInspector({
                 >
                   <UiIcon name="file-text" /> Application logs
                 </Button>
-                <details className="text-xs">
-                  <summary className="cursor-pointer text-muted-foreground">
-                    Technical details
-                  </summary>
-                  <dl className="mt-3 grid grid-cols-1 gap-3">
-                    <Detail label="Pod ID" value={resource.clusterPod.name} copyable />
-                    <Detail label="Node ID" value={resource.clusterPod.nodeName} copyable />
-                    <Detail label="Phase" value={resource.clusterPod.phase} />
-                  </dl>
-                </details>
               </>
             )}
             {sourceHref && (
@@ -455,85 +473,6 @@ export function TopologyInspector({
                 and leave automatically as they become ready or stop.
               </p>
             )}
-            {service && !resource.pending && (
-              <div className="grid grid-cols-2 gap-2">
-                {resource.container?.containerId &&
-                !["stopped", "failed"].includes(resource.state) ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      disabled={lifecycleDisabled}
-                      onClick={() => onLifecycle(service, "restart")}
-                    >
-                      <UiIcon name="refresh" />
-                      Restart
-                    </Button>
-                    <Button
-                      variant="outline"
-                      disabled={lifecycleDisabled}
-                      onClick={() => onLifecycle(service, "stop")}
-                    >
-                      <UiIcon name="square" />
-                      Stop
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    className="col-span-2"
-                    variant="outline"
-                    disabled={
-                      lifecycleDisabled ||
-                      !project.activeDeploymentId ||
-                      !serviceCanStartWithoutBuild(service)
-                    }
-                    onClick={() => onLifecycle(service, "start")}
-                  >
-                    <UiIcon name="play" />
-                    Start service
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  disabled={disabled}
-                  onClick={() => onNavigate(`${serviceHref}/logs`)}
-                >
-                  <UiIcon name="file-text" />
-                  Logs
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={disabled}
-                  onClick={() => onNavigate(`${serviceHref}/env`)}
-                >
-                  <UiIcon name="key" />
-                  Variables
-                </Button>
-              </div>
-            )}
-            {editable && !resource.pending && service?.enabled !== false && (
-              <div className="space-y-2 border-t border-border/50 pt-4">
-                {canRefresh && (
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    disabled={disabled || busy}
-                    onClick={() => onDeploy("refresh", service?.id)}
-                  >
-                    <UiIcon name="refresh" />
-                    Redeploy current release
-                  </Button>
-                )}
-                <Button
-                  className="w-full"
-                  variant="outline"
-                  disabled={disabled || busy}
-                  onClick={() => onDeploy("update", service?.id)}
-                >
-                  <UiIcon name="arrow-up-right" />
-                  Deploy latest source
-                </Button>
-              </div>
-            )}
             {relations.length > 0 && (
               <section className="space-y-2 border-t border-border/50 pt-4">
                 <h3 className="text-xs font-medium">Connections</h3>
@@ -552,6 +491,48 @@ export function TopologyInspector({
                 ))}
               </section>
             )}
+            <details className="rounded-xl bg-muted/25 p-3">
+              <DisclosureSummary className="text-sm font-medium">Runtime details</DisclosureSummary>
+              <div className="pt-4">
+                <dl className="grid grid-cols-1 gap-4">
+                  <Detail label="Deployed version" value={resource.version} />
+                  {resource.clusterPod && (
+                    <>
+                      <Detail label="Server" value={resource.description} />
+                      <Detail label="Restarts" value={String(resource.clusterPod.restarts)} />
+                      <Detail label="Pod ID" value={resource.clusterPod.name} copyable />
+                      <Detail label="Node ID" value={resource.clusterPod.nodeName} copyable />
+                      <Detail label="Phase" value={resource.clusterPod.phase} />
+                    </>
+                  )}
+                  <Detail label="Running image" value={resource.container?.imageRef} copyable />
+                  {!resource.container?.imageRef && (
+                    <Detail label="Configured image" value={service?.image} copyable />
+                  )}
+                  <Detail label="Container" value={resource.container?.containerId} copyable />
+                  <Detail label="Private address" value={resource.container?.ip} copyable />
+                  <Detail
+                    label="Server"
+                    value={
+                      resource.kind === "linked" || !!resource.clusterPod
+                        ? undefined
+                        : project.serverName ||
+                          (project.deployTarget === "cloud"
+                            ? "OpenShip Cloud"
+                            : project.deployTarget === "cluster"
+                              ? "Server cluster"
+                              : project.deployTarget === "local"
+                                ? "Local machine"
+                                : project.serverId
+                                  ? "Connected server"
+                                  : "Not selected")
+                    }
+                  />
+                  <Detail label="Ports" value={service?.ports?.join(", ")} copyable />
+                  <Detail label="Managed by" value={resource.ownerName} />
+                </dl>
+              </div>
+            </details>
           </div>
         )}
         {resource && editable && tab === "configuration" && (

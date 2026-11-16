@@ -68,7 +68,7 @@ export function ServerPicker<T extends ServerInfo>({
   const { selfHosted } = usePlatform();
   const copy = t.deploy.targetStep;
   const managedOnly = servers.length > 0 && servers.every(server => server.managed);
-  const hostLabels = selfHosted && !managedOnly;
+  const hostLabels = !managedOnly && (selfHosted || servers.every(server => !server.managed));
   const name = label ?? (hostLabels ? copy.chooseServer : t.servers.resources.selectPool);
   return (
     <div className="space-y-2">

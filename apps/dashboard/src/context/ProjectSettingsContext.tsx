@@ -1062,7 +1062,15 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
       { id: "overview", label: tl.overview, icon: "chart-pie" },
       { id: "topology", label: tl.topology, icon: "topology" },
       { id: "services", label: tl.services, icon: "layers" },
-      { id: "domains", label: tl.domains, icon: "globe" },
+      { id: "domains", label: tl.domains, icon: "globe", sections: [
+        { id: "domains", label: tl.domains },
+        { id: "routing", label: t.widgets.routing.pages.tabs.routing },
+        ...(projectData.deployTarget !== "cloud" && projectData.deployTarget !== "cluster" && !projectData.workspaceId && !projectData.clusterId ? [
+          { id: "access", label: t.widgets.routing.pages.tabs.access },
+          { id: "edge-pages", label: t.widgets.routing.pages.tabs.pages },
+          { id: "proxy", label: t.widgets.routing.pages.tabs.proxy },
+        ] : []),
+      ] },
       { id: "deployments", label: tl.deployments, icon: "rocket" },
       // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
       // in both modes through adapters that already exist — resource usage via

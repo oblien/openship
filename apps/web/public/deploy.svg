@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="212" height="40" viewBox="0 0 212 40" role="img" aria-label="Deploy with OpenShip">
+  <title>Deploy with OpenShip</title>
+  <rect width="212" height="40" rx="9" fill="#171717"/>
+  <circle cx="22" cy="20" r="9" fill="none" stroke="#fff" stroke-width="2"/>
+  <text x="41" y="25" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="500">Deploy with OpenShip</text>
+</svg>

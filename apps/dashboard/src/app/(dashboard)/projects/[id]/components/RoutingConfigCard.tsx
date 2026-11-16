@@ -12,6 +12,7 @@ import { RoutingConfigEditor } from "@/components/routing/RoutingConfigEditor";
 import { Button } from "@/components/ui/button";
 
 type Props = {
+  section?: "routing" | "proxy";
   id: string;
   initial: RoutingConfig | null | undefined;
   /** Project deployment target, independent of the dashboard hosting mode. */
@@ -24,7 +25,7 @@ export function RoutingConfigCard(props: Props) {
   return <ProjectRoutingEditor key={props.id} {...props} />;
 }
 
-function ProjectRoutingEditor({ id, initial, onSaved, isCloudProject = false }: Props) {
+function ProjectRoutingEditor({ id, initial, onSaved, isCloudProject = false, section }: Props) {
   const { showToast } = useToast();
   const { t } = useI18n();
   const w = t.widgets.routing.configEditor;
@@ -98,11 +99,11 @@ function ProjectRoutingEditor({ id, initial, onSaved, isCloudProject = false }: 
   };
 
   return (
-    <section className="space-y-4" aria-label={w.title}>
+    <section className="space-y-4" aria-label={section === "proxy" ? t.widgets.routing.pages.tabs.proxy : w.title}>
       <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl bg-card p-5">
         <div className="min-w-0">
-          <h3 className="text-base font-medium text-foreground">{w.title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{w.description}</p>
+          <h3 className="text-base font-medium text-foreground">{section === "proxy" ? t.widgets.routing.pages.tabs.proxy : w.title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{section === "proxy" ? t.widgets.routing.pages.proxyHint : w.description}</p>
         </div>
         <Button type="button" onClick={save} disabled={saving}>
           {saving ? t.projectSettings.routing.saving : t.projectSettings.routing.save}
@@ -115,7 +116,8 @@ function ProjectRoutingEditor({ id, initial, onSaved, isCloudProject = false }: 
           setDraft(next);
         }}
         disabled={saving}
-        showProxySettings={!isCloudProject}
+        showProxySettings={!isCloudProject && section !== "routing"}
+        section={section}
         edgeConfig={isCloudProject ? null : edge}
         onRefreshEdgeConfig={isCloudProject ? undefined : loadEdge}
         edgeConfigLoading={edgeLoading || saving}

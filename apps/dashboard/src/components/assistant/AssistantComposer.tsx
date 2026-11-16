@@ -1,6 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useRef, useState, type ReactNode, type RefObject } from "react";
+import { useChatComposer } from "@mindwire-ai/client";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ASSISTANT_IMAGE_TYPES } from "@repo/contracts";
@@ -62,38 +63,18 @@ export function AssistantComposer({
     !imagesPending &&
     (!!value.trim() || !!images.length) &&
     (!images.length || imagesSupported);
-  useLayoutEffect(() => {
-    const field = input.current;
-    if (!field) return;
-    const resize = () => {
-      // Empty inputs use their two-row baseline, not a previous draft's
-      // measured height or the height of a wrapped placeholder.
-      if (!value) {
-        field.style.height = "auto";
-        field.scrollTop = 0;
-        return;
-      }
-      field.style.height = "0px";
-      field.style.height = `${field.scrollHeight}px`;
-    };
-    resize();
-    // Sidebar and viewport changes can wrap an unchanged draft onto more lines.
-    let width = field.clientWidth;
-    const observer = new ResizeObserver(() => {
-      if (field.clientWidth === width) return;
-      width = field.clientWidth;
-      resize();
-    });
-    observer.observe(field);
-    return () => observer.disconnect();
-  }, [value, input, compact]);
+  const composer = useChatComposer({
+    value,
+    onChange,
+    onSend,
+    canSend: sendable,
+    inputRef: input,
+    hasAttachments: images.length > 0,
+  });
   return (
     <form
       aria-label="Message composer"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (sendable) onSend();
-      }}
+      onSubmit={composer.onSubmit}
       onDragEnter={(event) => {
         if (!event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
@@ -147,8 +128,10 @@ export function AssistantComposer({
           ))}
         </div>
       )}
+      {composer.menu}
       <textarea
-        ref={input}
+        {...composer.textareaProps}
+        ref={composer.inputRef}
         aria-label="Message your assistant"
         placeholder={placeholder}
         rows={2}
@@ -162,20 +145,11 @@ export function AssistantComposer({
           event.preventDefault();
           onImages?.(files);
         }}
-        onKeyDown={(event) => {
-          if (
-            event.key === "Enter" &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing &&
-            event.nativeEvent.keyCode !== 229 &&
-            !window.matchMedia("(pointer: coarse)").matches
-          ) {
-            event.preventDefault();
-            if (sendable) onSend();
-          }
-        }}
+        onKeyDown={composer.onKeyDown}
         className={`block max-h-[min(168px,25dvh)] ${compact ? "min-h-16" : "min-h-20"} w-full resize-none overflow-y-auto bg-transparent px-2 py-1 text-base leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60`}
       />
+      {composer.feedback}
+      {composer.dialog}
       {imageError && (
         <p role="alert" className="px-2 pt-2 text-xs text-danger">
           {imageError}

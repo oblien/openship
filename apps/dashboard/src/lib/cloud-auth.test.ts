@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { newServerBillingHref } from "./billing-links";
+import { deploySetupHref, parseDeploySource } from "@repo/core";
 
 vi.mock("@/lib/api/urls", () => ({
   getCloudApiOrigin: () => "https://api.openship.io",
@@ -14,6 +15,30 @@ import {
   authContinuationHref,
   emailVerificationHref,
 } from "./cloud-auth";
+
+it("keeps a repository button's source, branch and destination through auth links", () => {
+  const source = parseDeploySource({ repo: "https://github.com/owner/repository", branch: "release/v2" });
+  const returnTo = deploySetupHref(source, "server");
+  for (const route of ["/login", "/register"] as const) {
+    const params = new URLSearchParams({ returnTo });
+    const auth = new URL(buildAuthPageHref(route, params), "https://app.openship.io");
+    expect(auth.searchParams.get("returnTo")).toBe(returnTo);
+    expect(getPostAuthRedirect(auth.searchParams)).toBe(returnTo);
+  }
+  for (const decoded of ["local:/etc/passwd", "upload:session", "project:existing", "repo:v2:{}", "owner/repo/../extra"]) {
+    expect(validateReturnTo(`/deploy/${Buffer.from(decoded).toString("base64url")}`)).toBeNull();
+  }
+  expect(validateReturnTo(`/deploy/b3duZXIvcmVwbw/../../settings`)).toBeNull();
+  expect(validateReturnTo(`//evil.test${returnTo}`)).toBeNull();
+});
+
+it("bounds encoded repository continuations without losing a long valid branch", () => {
+  const source = parseDeploySource({ repo: `https://github.com/owner/${"repo".repeat(20)}`, branch: `${"a/".repeat(98)}b` });
+  const returnTo = deploySetupHref(source, "cloud");
+  expect(returnTo.length).toBeGreaterThan(512);
+  expect(validateReturnTo(returnTo)).toBe(returnTo);
+  expect(validateReturnTo(`${returnTo}&junk=${"a".repeat(2048)}`)).toBeNull();
+});
 
 describe("computePkceChallenge", () => {
   it("computes the RFC 7636 S256 example without Web Crypto", async () => {

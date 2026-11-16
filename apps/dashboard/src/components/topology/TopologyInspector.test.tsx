@@ -65,21 +65,25 @@ async function render(busy = false, patch: Partial<TopologyResource> = {}) {
 }
 
 describe("topology quick scaling", () => {
-  it("opens the existing Scale tab from the selected application overview", async () => {
+  it("uses one Scale entry in the tab bar", async () => {
     await render();
-    const quick = [...host.querySelectorAll<HTMLButtonElement>('button:not([role="tab"])')].find(
+    const quick = [...host.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
       (node) => node.textContent?.trim() === "Scale",
     )!;
+    expect([...host.querySelectorAll('button:not([role="tab"])')].some(node => node.textContent?.trim() === "Scale")).toBe(false);
     await act(async () => quick.click());
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Scale");
     expect(host.textContent).toContain("Replica scaling controls");
   });
-  it("holds the quick action while a lifecycle operation is running", async () => {
+  it("keeps actions above runtime details and shows status once", async () => {
     await render(true);
-    const quick = [...host.querySelectorAll<HTMLButtonElement>('button:not([role="tab"])')].find(
-      (node) => node.textContent?.trim() === "Scale",
-    )!;
-    expect(quick.disabled).toBe(true);
+    const deploy = [...host.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.includes("Deploy latest source"))!;
+    expect(deploy.disabled).toBe(true);
+    expect(host.textContent?.match(/Running/g)).toHaveLength(1);
+    const details = host.querySelector('details')!;
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain("Runtime details");
+    expect(deploy.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
   it("keeps observed individual pods as inspection instead of independent scale targets", async () => {
     await render(false, {

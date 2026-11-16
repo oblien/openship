@@ -7,6 +7,25 @@
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string" },
+    "display": {
+      "type": "object",
+      "description": "Optional public deploy-button branding. Does not change deployment settings.",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?!\\s*$)[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]+(?![\\s\\S])"
+        },
+        "logo": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\:%?#\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]+\\.(?:[Pp][Nn][Gg]|[Jj][Pp][Ee]?[Gg]|[Ww][Ee][Bb][Pp]|[Ss][Vv][Gg])(?![\\s\\S])",
+          "description": "Path from the repository root, for example public/logo.svg. URLs, traversal and inline data are not accepted."
+        }
+      }
+    },
     "autoDeployPaths": {
       "type": "object",
       "description": "Push-only repo-relative path overrides. include replaces automatic workspace selection; exclude removes matching changes. Root build configuration and forced deploys always run.",

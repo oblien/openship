@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useRef, useState } from "react";
@@ -27,9 +28,9 @@ export function ClusterDatabaseBackupSettings({
 }) {
   return (
     <details className="rounded-xl bg-muted/30 p-3 text-sm" open={!!value}>
-      <summary className="cursor-pointer">
+      <DisclosureSummary className="cursor-pointer">
         Backups {value ? "· Configured" : "· Choose a destination"}
-      </summary>
+      </DisclosureSummary>
       <div className="mt-3 space-y-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
           {engine === "postgres"

@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
@@ -118,7 +119,7 @@ export function ServerProjects({
       )}
       {resourcePool && showDisk && (
         <details className="mt-3 text-xs text-muted-foreground">
-          <summary className="cursor-pointer">{copy.storageDetails}</summary>
+          <DisclosureSummary className="cursor-pointer">{copy.storageDetails}</DisclosureSummary>
           <p className="mt-2 leading-5">{t.billing.workspaces.projectDiskHint}</p>
         </details>
       )}

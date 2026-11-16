@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import Link from "next/link";
 import type { MigrationRun, TransferProgress } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
@@ -186,7 +187,7 @@ export function PlatformImportProgress({
         )}
         {run.logs && (
           <details className="rounded-2xl bg-card p-5">
-            <summary className="cursor-pointer text-sm font-medium">Import log</summary>
+            <DisclosureSummary className="cursor-pointer text-sm font-medium">Import log</DisclosureSummary>
             <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">
               {run.logs}
             </pre>

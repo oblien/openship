@@ -75,6 +75,7 @@ vi.mock("@/components/shared/ServerSelector", () => ({
     readOnly: false,
   }),
   ServerSelectorView: () => null,
+  ServerSelectionPrompt: () => null,
 }));
 vi.mock("./components/DeployTargetStep", () => ({
   default: () => null,

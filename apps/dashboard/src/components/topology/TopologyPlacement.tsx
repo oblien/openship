@@ -3,9 +3,10 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { Modal } from "@/components/ui/Modal";
-import { Button } from "@/components/ui/button";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { ProjectMigrationCard } from "@/components/migration/ProjectMigrationCard";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import type { Service } from "@/lib/api/services";
@@ -41,10 +42,12 @@ export function TopologyPlacement({
   onClose: () => void;
 }) {
   const [runId, setRunId] = useState(existingRunId);
+  const titleId = useId();
   const close = () => {
     invalidateProjectCaches(project.id);
     onClose();
   };
+  const { dialog, onKeyDown } = useDialogFocus(close, !runId);
   if (runId)
     return (
       <ServerMigrationWizard
@@ -57,23 +60,33 @@ export function TopologyPlacement({
       />
     );
   return (
-    <Modal isOpen onClose={close} maxWidth="760px" width="100%">
-      <div className="space-y-5 p-6">
-        <div className="space-y-1.5 pe-8">
-          <Button className="mb-2 -ms-2 gap-1.5" variant="ghost" size="sm" onClick={close}>
-            <UiIcon name="arrow-left" />
-            Back to topology
-          </Button>
-          <h2 className="text-lg font-semibold">
-            {service
-              ? `Clone ${service.name}`
-              : intent === "copy"
-                ? "Clone environment"
-                : "Move environment"}
-          </h2>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {project.name} · {project.environmentName || project.environmentType || "Production"}
-          </p>
+    <Modal isOpen onClose={close} maxWidth="1040px" width="100%">
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="space-y-6 p-5 outline-none sm:p-8"
+      >
+        <div className="flex items-center gap-4 pe-8">
+          <FeatureIllustration
+            name="instance-transfer"
+            className="illustration-color h-16 w-20 shrink-0"
+          />
+          <div className="min-w-0 space-y-1.5">
+            <h2 id={titleId} className="text-2xl font-medium">
+              {service
+                ? `Duplicate ${service.name}`
+                : intent === "copy"
+                  ? "Duplicate environment"
+                  : "Move environment"}
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {project.name} · {project.environmentName || project.environmentType || "Production"}
+            </p>
+          </div>
         </div>
         <ProjectMigrationCard
           projectId={project.id}

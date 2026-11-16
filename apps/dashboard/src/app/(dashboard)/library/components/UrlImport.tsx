@@ -9,6 +9,7 @@ import { encodeRepoSlug } from "@/utils/repoSlug";
 import { useI18n } from "@/components/i18n-provider";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { parseDeploySource } from "@repo/core";
 
 export function UrlImport({ header }: { header?: React.ReactNode }) {
   const { t } = useI18n();
@@ -22,19 +23,11 @@ export function UrlImport({ header }: { header?: React.ReactNode }) {
     setError("");
 
     try {
-      const parsed = new URL(url.trim());
-      const parts = parsed.pathname.replace(/\/+$/, "").slice(1).split("/");
-      const [owner, rawRepo] = parts;
-      const repo = rawRepo?.replace(/\.git$/, "");
-      if (
-        !["https:", "http:"].includes(parsed.protocol) ||
-        !["github.com", "www.github.com"].includes(parsed.hostname) ||
-        parsed.username || parsed.password || parsed.port ||
-        parts.length !== 2 || !owner || !repo ||
-        !/^[a-zA-Z0-9-]+$/.test(owner) || !/^[a-zA-Z0-9_.-]+$/.test(repo)
-      ) throw new Error("Invalid repository URL");
-      router.push(`/deploy/${encodeRepoSlug(owner, repo)}`);
+      const source = parseDeploySource({ repo: url });
+      if (source.kind !== "repo") return;
+      router.push(`/deploy/${encodeRepoSlug(source.owner, source.repo)}`);
     } catch {
+      // diagnostics-ignore: invalid user-entered repository URLs are shown inline.
       setError(t.library.urlImport.invalidUrl);
     }
   };

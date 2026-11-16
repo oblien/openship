@@ -36,6 +36,8 @@ import { getBranding, assetsDir } from './lib/branding';
 import { renderIndexHtml } from './lib/index-html';
 import { brandingAdminRoute } from './routes/branding-admin';
 import type { Server } from 'bun';
+import { startOutboxWorker } from './mail/outbox';
+import { mailMcpRoutes } from './mail/mcp';
 
 const app = new Hono();
 
@@ -101,6 +103,7 @@ app.use(
 
 app.route('/auth', authRoutes);
 app.route('/mail', idleRoute);
+app.route('/mcp', mailMcpRoutes);
 // Token-gated write API for branding. Openship's dashboard PATCHes
 // here using the shared BRANDING_ADMIN_TOKEN. Reads (`/branding.json`)
 // stay unauthenticated for the login page.
@@ -191,6 +194,7 @@ app.use('/*', serveStatic({
 app.get('*', sendIndexHtml);
 
 const port = env.PORT;
+startOutboxWorker();
 console.log(`[zero] listening on http://localhost:${port}`);
 
 export default {

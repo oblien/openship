@@ -1,3 +1,4 @@
+import { projectEdgePageResources } from "./project-edge-pages.operations";
 import { listRouteProtection, changeRouteProtection } from "../../lib/route-protection";
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -61,6 +62,7 @@ function record(ctx: ExecutionContext, projectId: string, operation: string, rul
 }
 
 export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSchemas> = {
+  ...projectEdgePageResources,
   listRouteProtection,
   async changeRouteProtection(ctx, id, input) {
     const result = await changeRouteProtection(ctx, id, input);
