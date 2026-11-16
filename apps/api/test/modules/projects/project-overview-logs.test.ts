@@ -19,7 +19,6 @@ vi.mock("@repo/db", () => ({ repos: {
 vi.mock("@repo/platform/engine/modules/projects/project.service", () => ({ listProjects: h.list, enrichProjectsBatch: h.enrich, deploymentIsBlocked: () => false }));
 vi.mock("@repo/platform/engine/lib/authorization", () => ({ authorization: { checkPermissionOnResource: h.canRead, authorize: async (ctx: ExecutionContext) => ctx } }));
 vi.mock("@repo/platform/engine/lib/cloud/projects", () => ({ fetchOrgCloudProjects: h.cloudProjects }));
-vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ refreshProjectFaviconIfStale: vi.fn() }));
 vi.mock("@repo/platform/engine/config/index", () => ({ env: h.env }));
 vi.mock("@repo/platform/engine/lib/oblien-user-client", () => ({ getAdminOblienClient: () => h.env.CLOUD_MODE ? { analytics: { streamToken: h.streamToken, requests: h.requests } } : null }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ analytics: { streamToken: h.streamToken, requests: h.requests } }) }));

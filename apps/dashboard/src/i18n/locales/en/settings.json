@@ -1791,5 +1791,22 @@
       "title": "Demo mode",
       "description": "Blur IP addresses, hosts, and environment values during screen-shares and recordings."
     }
+  },
+  "imageUrl": {
+    "preview": "Image preview",
+    "invalid": "Enter an HTTP or HTTPS image URL without embedded credentials.",
+    "failed": "Could not save the image URL.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "previewFailed": "Preview unavailable. Check that the URL points directly to an image."
+  },
+  "profile": {
+    "change": "Change avatar",
+    "title": "Profile",
+    "description": "Your personal account image.",
+    "label": "Avatar URL",
+    "hint": "Use a direct image URL. Leave empty to use your initial.",
+    "reset": "Use initial"
   }
 }

@@ -24,9 +24,10 @@ import type { RequestContext } from "../../src/lib/request-context";
  * the grantable surface without proving it authorizes something → this fails.
  */
 
+// Exercise grant algebra under an owner's ceiling; members cannot delegate admin.
 vi.mock("@repo/db", () => ({
   repos: {
-    member: { find: vi.fn(async () => ({ id: "m1", role: "member" })) },
+    member: { find: vi.fn(async () => ({ id: "m1", role: "owner" })) },
     project: {
       findById: vi.fn(async (id: string) => (id === "*" ? null : { id, organizationId: "org1" })),
       findEnvVarById: vi.fn(async () => null),

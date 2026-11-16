@@ -3,6 +3,26 @@
 Website content lives in `apps/web/content/docs`. `meta.json` files define the
 navigation order. Keep pages organized by the reader's task.
 
+## Interface and screenshots
+
+Docs use an isolated document with the landing site's `theme.css` and Gellix font.
+`docs-overrides.css` maps Fumadocs to those tokens and handles documentation layouts.
+Use sentence case, neutral colors, medium-weight headings, and rounded buttons. Use
+an inset, rounded surface for navigation, matching the dashboard. Keep the reading
+area open, with soft surfaces for code, notices, and setup choices. Avoid adding bordered panels
+around sections. Keep Fumadocs responsible for search, sidebar navigation, tabs,
+copy controls, and the table of contents.
+
+Use `DocsScreenshot` for the existing product walkthrough images. It follows the
+selected theme, includes descriptive alt text and a caption, and opens the original
+image for inspection. Place screenshots next to the step they explain; keep the
+instructions in text as well. Reuse assets in `public/screenshots` instead of
+adding copies. Review captures belong outside the repository.
+
+Validate the homepage, a task guide, and an API reference in light and dark themes,
+on desktop and mobile. Check keyboard search, sidebar navigation, page anchors,
+code tabs, copy actions, and expandable API fields after layout changes.
+
 ## One reference per resource
 
 `api/<resource>.mdx` owns the behavior, inputs, results, and examples for a resource.

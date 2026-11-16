@@ -626,7 +626,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     async listHistoryProjects(organizationId: string) {
       return db.selectDistinct({
         id: project.id, name: project.name,
-        activeDeploymentId: project.activeDeploymentId, favicon: project.favicon,
+        activeDeploymentId: project.activeDeploymentId, iconUrl: project.iconUrl,
       }).from(project).innerJoin(deployment, eq(deployment.projectId, project.id))
         .where(and(eq(project.organizationId, organizationId), eq(deployment.organizationId, organizationId)))
         .orderBy(project.name, project.id);

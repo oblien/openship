@@ -6,14 +6,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { type Project } from "@/constants/mock";
-import { AppLogo } from "@/components/AppLogo";
-import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
+import { ProjectIcon } from "@/components/shared/ProjectIcon";
 import { getProjectStatus, projectCardHref, projectDisplayDomain } from "@/utils/project-status";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { ServiceStatusIndicator } from "@/components/services/ServiceStatusBadge";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { timeAgo } from "@/lib/time";
-import { useImageFallback } from "@/hooks/useImageFallback";
 import { getHostingLabel } from "./ProjectCard";
 
 /** Compact project summary with direct links to its management screens. */
@@ -22,12 +20,10 @@ const ProjectGridCard: React.FC<{
    *  every row by the projects list and `/info`, but isn't declared on `Project`
    *  (constants/mock) yet, so it's spelled out here rather than cast away. */
   project: Project & { primaryDomain?: string | null };
-  preferAppLogo?: boolean;
   updateAvailable?: boolean;
-}> = ({ project, preferAppLogo, updateAvailable }) => {
+}> = ({ project, updateAvailable }) => {
   const { t } = useI18n();
   const router = useRouter();
-  const favicon = useImageFallback(project.favicon);
 
   const domain = projectDisplayDomain(project);
   const hosting = getHostingLabel(project.deployTarget, project.serverName, t);
@@ -65,20 +61,7 @@ const ProjectGridCard: React.FC<{
 
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
-          {preferAppLogo && project.isApp ? (
-            <AppLogo appId={appTemplateId} className="size-6 object-contain" />
-          ) : favicon.showImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              ref={favicon.ref}
-              src={project.favicon!}
-              alt=""
-              className="size-6 object-contain"
-              onError={favicon.onError}
-            />
-          ) : (
-            <ProjectStackIcon framework={project.framework} />
-          )}
+          <ProjectIcon project={project} appTemplateId={appTemplateId} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">

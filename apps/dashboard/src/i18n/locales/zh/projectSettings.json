@@ -278,7 +278,7 @@
       "currentServer": "当前服务器",
       "migrate": "迁移",
       "noOtherServers": "请先添加第二台服务器作为迁移目标。",
-      "cloudLater": "服务器之间迁移。暂不支持与 OpenShip Cloud 之间的迁移。",
+      "cloudLater": "支持已连接或托管服务器上的 Docker 工作负载。工作角色和集群工作负载使用各自的部署流程。",
       "startFailed": "无法开始迁移",
       "confirmTitle": "将 {project} 迁移到 {server}",
       "confirmSubtitle": "在你开始迁移前，不会有任何更改。",
@@ -291,11 +291,11 @@
       "intentMove": "迁移",
       "intentCopy": "复制",
       "intentMoveHint": "项目整体迁移。确认后，其容器和数据卷将从旧服务器上移除。",
-      "intentCopyHint": "原项目继续运行。将在新服务器上创建第二个项目，并复制一份数据。",
+      "intentCopyHint": "创建一个拥有独立数据和设置的新项目。副本不会分担流量，也不会保持同步。",
       "confirmTitleCopy": "将 {project} 复制到 {server}",
       "confirmStartCopy": "开始复制",
-      "downtimeNoteCopy": "复制数据期间项目会短暂离线 —— 数据卷必须静止才能完整复制。复制完成后会立即在旧服务器上重新启动。",
-      "copyNoDomainsNote": "副本初始没有域名 —— 现有域名仍归正在提供服务的那个项目。",
+      "downtimeNoteCopy": "所选服务会在复制数据时暂停，复制完成后、部署副本前重新启动。没有存储数据时，原服务会持续运行。",
+      "copyNoDomainsNote": "副本初始没有域名。添加域名前请检查连接设置。",
       "fromLabel": "源",
       "toLabel": "目标",
       "modeLabel": "模式",
@@ -304,7 +304,15 @@
       "scopeHintAll": "所有服务及其数据。",
       "scopeHintSome": "{count} 个服务 —— 其余仅保留在原项目中。",
       "sourceServices": "{count} 个服务",
-      "runningStatus": "进行中 — {status}"
+      "runningStatus": "进行中 — {status}",
+      "copyName": "副本名称",
+      "retry": "重试",
+      "loadingServices": "正在加载服务…",
+      "servicesFailed": "无法加载服务。",
+      "singleApplication": "将复制整个应用。",
+      "dependenciesRequired": "请在副本中包含以下依赖服务：{services}。",
+      "selectService": "请至少选择一个现有服务进行复制。",
+      "sameServerHint": "命名卷会单独复制，并重新分配主机端口。主机挂载路径需要使用另一台服务器。"
     },
     "cache": {
       "title": "Docker 构建缓存",
@@ -1390,6 +1398,7 @@
     "failed": "无法准备源码更新。"
   },
   "responseRoutes": {
+    "empty": "暂无虚拟路由",
     "title": "虚拟路由",
     "description": "在此域名的指定路径上直接由边缘返回内容。",
     "add": "添加路由",
@@ -1437,5 +1446,11 @@
     "bytes": "字节",
     "emptyBodyHint": "此状态码要求响应正文为空。",
     "headersHint": "添加缓存、CORS 或其他响应标头。"
+  },
+  "icon": {
+    "change": "更改图标",
+    "label": "项目图标 URL",
+    "hint": "使用 HTTP 或 HTTPS 图片 URL。清空后将使用默认图标。",
+    "reset": "使用默认图标"
   }
 }

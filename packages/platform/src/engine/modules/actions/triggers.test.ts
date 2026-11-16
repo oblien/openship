@@ -33,6 +33,7 @@ vi.mock("./action.service", () => ({
   rerunActionWorkflow: h.rerun,
 }));
 import { dispatchActionWebhook, enqueueActionWebhook } from "./triggers";
+import { GitHubApiError } from "../github/github.error";
 
 const base = "a".repeat(40),
   head = "b".repeat(40),
@@ -80,6 +81,7 @@ beforeEach(() => {
       owner: "acme",
       repo: "app",
       path: ".github/workflows/ci.yml",
+      source: null,
       authority: {},
       allowForks: true,
     },
@@ -95,6 +97,66 @@ beforeEach(() => {
 });
 const dispatch = (value = event()) =>
   dispatchActionWebhook("pull_request", value, "delivery", target);
+
+it.each(["push", "pull_request"])(
+  "ignores a workflow absent at the %s revision",
+  async (eventName) => {
+    h.file.mockRejectedValueOnce(new GitHubApiError(404, "Not Found", new Headers()));
+    const revision = eventName === "push" ? head : base;
+    h.fetch.mockImplementationOnce(async ({ url }) => {
+      if (url === `https://api.github.com/repos/acme/app/commits/${revision}`)
+        return { sha: revision };
+      throw new Error(`Unexpected GitHub request: ${url}`);
+    });
+    await dispatchActionWebhook(
+      eventName,
+      eventName === "push" ? { ...event(), ref: "refs/heads/other", after: head } : event(),
+      "delivery",
+      target,
+    );
+    expect(h.trigger).not.toHaveBeenCalled();
+    expect(h.error).toHaveBeenCalledExactlyOnceWith("org", "workflow", null);
+  },
+);
+
+it.each([403, 429, 500])("retains workflow source failures from GitHub (%s)", async (status) => {
+  const error = new GitHubApiError(status, "Unavailable", new Headers());
+  h.file.mockRejectedValueOnce(error);
+  await expect(dispatch()).rejects.toThrow(error);
+  expect(h.trigger).not.toHaveBeenCalled();
+  expect(h.error).toHaveBeenCalledWith("org", "workflow", error.message);
+});
+
+it("retains a missing revision or inaccessible repository as a workflow error", async () => {
+  const error = new GitHubApiError(404, "Not Found", new Headers());
+  h.file.mockRejectedValueOnce(error);
+  h.fetch.mockRejectedValueOnce(error);
+  await expect(dispatch()).rejects.toThrow(error);
+  expect(h.trigger).not.toHaveBeenCalled();
+  expect(h.error).toHaveBeenCalledWith("org", "workflow", error.message);
+});
+
+it("uses the pushed workflow's branch rules rather than the saved definition", async () => {
+  const workflows = await h.workflows();
+  workflows[0].definition = { triggers: { push: { branches: ["main"] } } };
+  h.file.mockResolvedValueOnce({
+    content: source.replace(
+      "pull_request:\n    types: [opened, reopened, synchronize, closed]",
+      "push:\n    branches: [deploy/**]",
+    ),
+  });
+  await dispatchActionWebhook(
+    "push",
+    { ...event(), ref: "refs/heads/deploy/topic", after: head },
+    "delivery",
+    target,
+  );
+  expect(h.trigger).toHaveBeenCalledOnce();
+  expect(h.trigger.mock.calls[0]![2]).toMatchObject({
+    revision: head,
+    ref: "refs/heads/deploy/topic",
+  });
+});
 
 it("routes GitHub-owned events to the exact workflow without storing webhook payloads", async () => {
   h.workflows.mockResolvedValueOnce([

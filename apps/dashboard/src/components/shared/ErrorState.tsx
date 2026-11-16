@@ -1,12 +1,13 @@
 "use client";
 
-import { Icon as UiIcon } from "@repo/ui/icons";
-
-import { useRouter } from "next/navigation";
+import { useId } from "react";
+import Link from "next/link";
+import { Icon } from "@repo/ui/icons";
+import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useI18n } from "@/components/i18n-provider";
-
-/* ── Error type configs ─────────────────────────────────────────────── */
 
 type ErrorType = "repo-not-found" | "project-not-found" | "access-denied" | "load-failed";
 
@@ -16,158 +17,122 @@ interface ErrorStateProps {
     message?: string;
     details?: string;
   };
+  onRetry?: () => void;
+  retrying?: boolean;
 }
 
-/* ── Component ──────────────────────────────────────────────────────── */
+const illustrations = {
+  "repo-not-found": "git-authentication",
+  "project-not-found": "local-folder-deploys",
+  "access-denied": "private-networking",
+  "load-failed": "api-sdk",
+} satisfies Record<ErrorType, FeatureIllustrationName>;
 
-export default function ErrorState({ error = {}, type = "repo-not-found" }: ErrorStateProps) {
-  const router = useRouter();
+/** Resource failures share the same quiet, illustrated layout as empty lists. */
+export default function ErrorState({
+  error = {},
+  type = "repo-not-found",
+  onRetry,
+  retrying = false,
+}: ErrorStateProps) {
   const { t } = useI18n();
   const w = t.widgets.shared.errorState;
-
-  const ERROR_CONFIGS = {
-    "repo-not-found": {
-      icon: "git-branch" as const,
-      iconColor: "text-destructive",
-      iconBg: "bg-destructive/10",
-      title: w.repoNotFound.title,
-      subtitle: w.repoNotFound.subtitle,
-      hints: w.repoNotFound.hints,
-      actions: [
-        { label: w.repoNotFound.backToLibrary, icon: "arrow-left" as const, variant: "secondary" as const, path: "/library" },
-        { label: w.repoNotFound.importRepository, icon: "plus" as const, variant: "primary" as const, path: "/library" },
-      ],
-    },
-    "project-not-found": {
-      icon: "warning" as const,
-      iconColor: "text-destructive",
-      iconBg: "bg-destructive/10",
-      title: w.projectNotFound.title,
-      subtitle: w.projectNotFound.subtitle,
-      hints: w.projectNotFound.hints,
-      actions: [
-        { label: w.projectNotFound.backToDashboard, icon: "arrow-left" as const, variant: "secondary" as const, path: "/" },
-        { label: w.projectNotFound.createNewProject, icon: "plus" as const, variant: "primary" as const, path: "/library" },
-      ],
-    },
-    "access-denied": {
-      icon: "lock" as const,
-      iconColor: "text-warning",
-      iconBg: "bg-warning-bg",
-      title: w.accessDenied.title,
-      subtitle: w.accessDenied.subtitle,
-      hints: w.accessDenied.hints,
-      actions: [
-        { label: w.accessDenied.backToDashboard, icon: "arrow-left" as const, variant: "secondary" as const, path: "/" },
-      ],
-    },
-    // A non-404 fetch failure (cloud unreachable, network, 5xx). The caller
-    // passes the real reason via `error.details` so the actual message (e.g. a
-    // cloud-connection error) shows instead of a misleading "draft" screen.
-    "load-failed": {
-      icon: "warning" as const,
-      iconColor: "text-destructive",
-      iconBg: "bg-destructive/10",
-      title: w.loadFailed.title,
-      subtitle: w.loadFailed.subtitle,
-      hints: [] as string[],
-      actions: [
-        { label: w.projectNotFound.backToDashboard, icon: "arrow-left" as const, variant: "secondary" as const, path: "/" },
-      ],
-    },
+  const titleId = useId();
+  const descriptionId = useId();
+  const configs = {
+    "repo-not-found": w.repoNotFound,
+    "project-not-found": w.projectNotFound,
+    "access-denied": w.accessDenied,
+    "load-failed": { ...w.loadFailed, hints: [] },
   };
-
-  const config = ERROR_CONFIGS[type] ?? ERROR_CONFIGS["repo-not-found"];
-  const Icon = config.icon;
-
-  const title = error.message || config.title;
-  const subtitle = error.details || config.subtitle;
+  const config = configs[type];
+  const canRetry = type === "load-failed" && !!onRetry;
+  const destination = type === "repo-not-found" ? "/library" : "/projects";
+  const destinationLabel =
+    type === "repo-not-found" ? w.repoNotFound.backToLibrary : t.chrome.error.goToProjects;
 
   return (
-    <PageContainer>
-        <div className="max-w-xl mx-auto pt-12">
-
-          {/* ── Error card ───────────────────────────────────────── */}
-          <div className="bg-card rounded-2xl border border-border/50">
-            {/* Header */}
-            <div className="px-6 py-5 border-b border-border/50">
-              <div className="flex items-center gap-4">
-                <div className={`w-11 h-11 rounded-xl ${config.iconBg} flex items-center justify-center`}>
-                  <UiIcon name={Icon} className={`size-5 ${config.iconColor}`} />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-                  <p className="text-sm text-muted-foreground/70 mt-0.5">{subtitle}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="px-6 py-5 space-y-5">
-              {/* Hints */}
-              {config.hints.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-foreground mb-2.5">{w.commonCauses}</h3>
-                  <ul className="space-y-1.5">
-                    {config.hints.map((hint: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2.5 text-sm text-muted-foreground">
-                        <span className="mt-1.5 size-1 rounded-full bg-muted-foreground/40 shrink-0" />
-                        {hint}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-3 pt-1">
-                {config.actions.map((action, i) => {
-                  const ActionIcon = action.icon;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => router.push(action.path)}
-                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                        action.variant === "primary"
-                          ? "bg-foreground text-background hover:bg-foreground/90"
-                          : "bg-muted/60 text-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <UiIcon name={ActionIcon} className={`size-4 ${ActionIcon === "arrow-left" ? "rtl:rotate-180" : ""}`} />
-                      {action.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Help card ────────────────────────────────────────── */}
-          <div className="bg-card rounded-2xl border border-border/50 mt-4 px-5 py-4">
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <UiIcon name="help-circle" className="size-[18px] text-primary" />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-foreground mb-1">{w.needHelp}</h3>
-                <p className="text-xs text-muted-foreground/70 mb-2.5">
-                  {w.needHelpDesc}
-                </p>
-                <div className="flex gap-4">
-                  <a
-                    href="https://openship.io/docs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-medium text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
-                  >
-                    {w.documentation} <UiIcon name="external-link" className="size-3" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-
+    <PageContainer className="flex min-h-[70svh] items-center justify-center">
+      <section
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="w-full max-w-md py-10 text-center"
+      >
+        <FeatureIllustration
+          name={illustrations[type]}
+          className="illustration-color mx-auto h-auto w-20"
+        />
+        <div role="status" aria-live="polite" className="mt-5">
+          <h1 id={titleId} className="text-2xl font-medium tracking-tight text-foreground">
+            {error.message || config.title}
+          </h1>
+          <p id={descriptionId} className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            {config.subtitle}
+          </p>
         </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          {canRetry && (
+            <Button type="button" onClick={onRetry} disabled={retrying} aria-busy={retrying}>
+              <Icon
+                name={retrying ? "spinner" : "refresh"}
+                className={retrying ? "motion-safe:animate-spin" : undefined}
+                aria-hidden="true"
+              />
+              {t.chrome.error.tryAgain}
+            </Button>
+          )}
+          <Button asChild variant={canRetry ? "secondary" : "default"}>
+            <Link href={destination}>{destinationLabel}</Link>
+          </Button>
+          {type === "project-not-found" && (
+            <Button asChild variant="secondary">
+              <Link href="/library">
+                <Icon name="plus" aria-hidden="true" />
+                {w.projectNotFound.createNewProject}
+              </Link>
+            </Button>
+          )}
+        </div>
+
+        {(error.details || config.hints.length > 0) && (
+          <details className="mt-6 text-start text-sm text-muted-foreground">
+            <DisclosureSummary className="mx-auto w-fit">
+              {error.details ? t.issues.connectivity.details : w.commonCauses}
+            </DisclosureSummary>
+            <div className="mt-3 space-y-3 rounded-xl bg-card p-4 text-xs leading-relaxed">
+              {error.details && (
+                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                  {error.details}
+                </p>
+              )}
+              {config.hints.length > 0 && (
+                <ul className="space-y-2">
+                  {config.hints.map((hint) => (
+                    <li key={hint} className="flex items-start gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/40"
+                      />
+                      {hint}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </details>
+        )}
+
+        <a
+          href="https://openship.io/docs"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-6 inline-flex items-center gap-1.5 rounded-md text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          {w.documentation}
+          <Icon name="external-link" size={14} aria-hidden="true" />
+        </a>
+      </section>
     </PageContainer>
   );
 }

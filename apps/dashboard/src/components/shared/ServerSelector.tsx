@@ -10,6 +10,8 @@ import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { ServerPicker } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/Modal";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { usePlatform } from "@/context/PlatformContext";
 import { settingsApi } from "@/lib/api/settings";
 import { serverPreference } from "@/lib/server-preference";
@@ -18,6 +20,7 @@ import { dockerMigrationApi } from "@/lib/api/server-migration";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { matchesServer } from "@/lib/server-reference";
 import { sortForGpu } from "@/lib/server-gpu";
+import type { DeployDestination } from "@repo/core";
 
 export interface ServerOption {
   id: string;
@@ -53,6 +56,8 @@ export interface ServerSelectorProps {
    */
   needsGpu?: boolean;
   selfHostedOnly?: boolean;
+  /** Explicit destination choice from the public deploy button; never a saved project's binding. */
+  destinationKind?: DeployDestination;
 }
 
 function option(server: ServerDetail | ServerInfo): ServerOption {
@@ -92,20 +97,29 @@ export function useServerSelection({
   migrationSource = false,
   needsGpu = false,
   selfHostedOnly = false,
+  destinationKind,
 }: ServerSelectorProps, enabled = true) {
   const { selfHosted, deployMode } = usePlatform();
   const restrictedSource = migrationSource && !selfHosted;
+  const connectedOnly = selfHostedOnly || requiredCapability === "ssh" || restrictedSource || destinationKind === "server";
+  const promptForSelection = forDeployment && destinationKind === "server";
+  const shouldUseSavedDefault = useSavedDefault && !promptForSelection;
   const { data, loading: destinationsLoading, error, refresh, contextKey, resourceKey } = useServerDestinations(enabled && !readOnly, restrictedSource ? "migration-source" : "deployment");
   const [linking, setLinking] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [preference, setPreference] = useState<{ contextKey: string; serverId: string | null } | null>(null);
-  const loadingPreference = useSavedDefault && !readOnly && preference?.contextKey !== contextKey;
+  const loadingPreference = shouldUseSavedDefault && !readOnly && preference?.contextKey !== contextKey;
   const loading = destinationsLoading || loadingPreference || linking;
+  const [dismissedPrompt, setDismissedPrompt] = useState<string | null>(null);
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
   const canAddServer = true;
-  const openAddServer = useAddServerModal({ connectedOnly: selfHostedOnly || requiredCapability === "ssh" || restrictedSource, migrationSource: restrictedSource });
+  const openAddServer = useAddServerModal({
+    connectedOnly,
+    migrationSource: restrictedSource,
+    initialMode: destinationKind === "server" ? "connected" : destinationKind === "cloud" ? "managed" : undefined,
+  });
   const requestedId = value === undefined ? internalId : value;
   const selectedId = data?.servers.find(server => matchesServer(server, requestedId))?.id ?? requestedId;
   const onSelectRef = useRef(onSelect);
@@ -151,7 +165,7 @@ export function useServerSelection({
   }
 
   useEffect(() => {
-    if (!enabled || readOnly || !useSavedDefault) return;
+    if (!enabled || readOnly || !shouldUseSavedDefault) return;
     let active = true;
     void settingsApi.get().then(
       (settings) => { if (active) setPreference({ contextKey, serverId: settings.defaultServerId }); },
@@ -160,9 +174,11 @@ export function useServerSelection({
  if (active) setPreference({ contextKey, serverId: null }); },
     );
     return () => { active = false; };
-  }, [enabled, readOnly, useSavedDefault, contextKey]);
+  }, [enabled, readOnly, shouldUseSavedDefault, contextKey]);
 
   const rows = sortForGpu(data?.servers ?? [], needsGpu).filter((server) => {
+    if (destinationKind === "cloud" && !server.managed) return false;
+    if (destinationKind === "server" && server.managed) return false;
     if (selfHostedOnly && server.managed) return false;
     if (!restrictedSource && requiredCapability && !server.capabilities?.[requiredCapability]) return false;
     if (excludeIds?.includes(server.id)) return false;
@@ -175,10 +191,11 @@ export function useServerSelection({
   });
   const ids = rows.map((row) => row.id).join(",");
   const automaticCloud =
-    !selfHostedOnly && !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
+    destinationKind !== "server" && !selfHostedOnly && !selfHosted && forDeployment &&
+    (destinationKind === "cloud" ? rows.length === 0 : data?.servers.length === 0) && !selectedId;
   useEffect(() => {
     if (
-      !enabled || disabled || readOnly || loading || error ||
+      !enabled || disabled || readOnly || loading || error || promptForSelection ||
       selectedId ||
       (!autoSelectFirst && value === null) ||
       autoSelected.current
@@ -189,14 +206,14 @@ export function useServerSelection({
       onSelectRef.current(null);
     } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
       autoSelected.current = true;
-      const remembered = useSavedDefault ? serverPreference(contextKey).read() : null;
+      const remembered = shouldUseSavedDefault ? serverPreference(contextKey).read() : null;
       const preferred = rows.find(row => row.id === preference?.serverId)
         ?? rows.find(row => row.id === remembered)
-        ?? (useSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
+        ?? (shouldUseSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
         ?? rows[0]!;
       void selectServer(preferred);
     }
-  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, useSavedDefault, preference, deployMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, shouldUseSavedDefault, preference, deployMode, promptForSelection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && (
     automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
@@ -243,7 +260,9 @@ export function useServerSelection({
     rows, selectedId, selected: rows.find(server => server.id === selectedId),
     loading, error, refresh, automaticCloud, ready: selectionReady,
     disabled, readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
-    restrictedSource, removeSource, removing, actionError,
+    restrictedSource, connectedOnly, removeSource, removing, actionError,
+    promptOpen: enabled && promptForSelection && !disabled && !readOnly && !selectedId && dismissedPrompt !== resourceKey,
+    dismissPrompt: () => setDismissedPrompt(resourceKey),
     remember: () => { if (selectionReady && selectedId) serverPreference(contextKey).write(selectedId); },
   };
 }
@@ -264,11 +283,11 @@ export function ServerSelectorView({
   const {
     rows, selectedId, loading, error, refresh, automaticCloud, disabled,
     readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
-    restrictedSource, removeSource, removing, actionError,
+    restrictedSource, connectedOnly, removeSource, removing, actionError,
   } = selection;
   const effective = selectedId ?? "";
-  const fieldLabel = label ?? (!selfHosted && !restrictedSource ? "Deployment destination" : copy.serverLabel);
-  const addLabel = restrictedSource ? t.migration.sources.connect : !selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer;
+  const fieldLabel = label ?? (!selfHosted && !connectedOnly ? "Deployment destination" : copy.serverLabel);
+  const addLabel = restrictedSource ? t.migration.sources.connect : !selfHosted && forDeployment && !connectedOnly ? managedCopy.newProjectServer : copy.addNewServer;
   return (
     <div className={compact ? "space-y-2" : "mb-5 space-y-2"}>
       {!compact && (
@@ -310,7 +329,7 @@ export function ServerSelectorView({
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 p-4">
           <p className="min-w-0 text-sm text-muted-foreground">
-            {emptyHint ?? (restrictedSource ? t.migration.sources.empty : selfHosted ? copy.noServerConnected : managedCopy.noneAvailable)}
+            {emptyHint ?? (restrictedSource ? t.migration.sources.empty : selfHosted || connectedOnly ? copy.noServerConnected : managedCopy.noneAvailable)}
           </p>
           <Button
             type="button"
@@ -329,7 +348,7 @@ export function ServerSelectorView({
           <p className="text-xs text-muted-foreground">{disabledReason}</p>
         ) : !disabled && (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {!selfHosted && (
+            {!selfHosted && !connectedOnly && (
               <p className="text-xs text-muted-foreground">
                 {restrictedSource ? t.migration.sources.hint : forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
               </p>
@@ -351,8 +370,58 @@ export function ServerSelectorView({
   );
 }
 
+/** Public own-server links ask once, using the wizard's inventory and selection state. */
+export function ServerSelectionPrompt({ selection }: { selection: ServerSelection }) {
+  const { t } = useI18n();
+  const { promptOpen, dismissPrompt } = selection;
+  const { dialog, onKeyDown } = useDialogFocus(dismissPrompt, promptOpen);
+  if (!promptOpen) return null;
+  return (
+    <Modal
+      isOpen={promptOpen}
+      onClose={dismissPrompt}
+      showCloseButton={false}
+      width="480px"
+      maxWidth="calc(100vw - 2rem)"
+    >
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.deploy.targetStep.chooseServer}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="space-y-5 p-5 outline-none"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">{t.deploy.targetStep.chooseServer}</h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={dismissPrompt}
+            aria-label={t.chrome.window.close}
+          >
+            <Icon name="close" className="size-4" />
+          </Button>
+        </div>
+        <ServerSelectorView
+          selection={selection}
+          label={t.widgets.shared.serverSelector.selectServer}
+          compact
+        />
+      </div>
+    </Modal>
+  );
+}
+
 /** Standalone forms use the same selection state and view. */
 export default function ServerSelector(props: ServerSelectorProps) {
   const selection = useServerSelection(props);
-  return <ServerSelectorView selection={selection} label={props.label} compact={props.compact} emptyHint={props.emptyHint} />;
+  return (
+    <>
+      <ServerSelectionPrompt selection={selection} />
+      <ServerSelectorView selection={selection} label={props.label} compact={props.compact} emptyHint={props.emptyHint} />
+    </>
+  );
 }

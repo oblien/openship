@@ -31,6 +31,45 @@ beforeEach(async () => {
 });
 
 describe("shared authorization", () => {
+  it("does not grant administration to an ordinary member", async () => {
+    state.members.set("org-a:alice", { id: "member-a", role: "member" });
+    state.servers.set("server-a", { organizationId: "org-a" });
+    const input = { resourceType: "server" as const, resourceId: "server-a", action: "admin" as const };
+    expect(await auth.checkPermission("alice", "org-a", input)).toBe(false);
+    expect(await auth.checkPermissionOnResource(context, input)).toBe(false);
+    await expect(auth.authorize(context, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("does not let an existing token retain administration after its owner becomes a member", async () => {
+    state.servers.set("server-a", { organizationId: "org-a" });
+    state.tokenGrants.set("token-a:server:server-a", { permissions: ["admin"] });
+    const token = await auth.resolveScope({ ...alice, tokenScope: { tokenId: "token-a" },
+      credential: { organizationId: "org-a", readOnly: false } }, "org-a");
+    const input = { resourceType: "server" as const, resourceId: "server-a", action: "admin" as const };
+    await expect(auth.authorize(token, input)).resolves.toBeDefined();
+    state.members.set("org-a:alice", { id: "member-a", role: "member" });
+    await expect(auth.authorize(token, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it.each(["project", "server", "mail_server", "settings", "job"] as const)(
+    "keeps member read/write access separate from %s administration", async resourceType => {
+      state.members.set("org-a:alice", { id: "member-a", role: "member" });
+      const input = { resourceType, resourceId: "*" };
+      for (const action of ["read", "write"] as const)
+        expect(await auth.checkPermission("alice", "org-a", { ...input, action })).toBe(true);
+      expect(await auth.checkPermission("alice", "org-a", { ...input, action: "admin" })).toBe(false);
+    },
+  );
+
+  it("preserves explicitly delegated administration for a restricted user on one server", async () => {
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.servers.set("server-a", { organizationId: "org-a" });
+    state.servers.set("server-other", { organizationId: "org-a" });
+    state.grants.set("org-a:alice:server:server-a", { permissions: ["admin"] });
+    await expect(auth.authorize(context, { resourceType: "server", resourceId: "server-a", action: "admin" })).resolves.toBeDefined();
+    await expect(auth.authorize(context, { resourceType: "server", resourceId: "server-other", action: "admin" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("derives checked resources from core without widening the existing type", () => {
     expectTypeOf<CheckedResourceType>().toEqualTypeOf<ResourceType | "env_var" | "build_session">();
     expect(new Set(CHECKED_RESOURCE_TYPES).size).toBe(CHECKED_RESOURCE_TYPES.length);

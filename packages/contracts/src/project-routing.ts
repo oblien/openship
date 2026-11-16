@@ -4,6 +4,7 @@ import { CreateDomainResultSchema } from "./domains";
 import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import type { ResourceOperationSchema } from "./resource-operations";
 import type { StreamOptions } from "./services";
+import { RouteProtectionOptionsSchema, ProjectEdgePagesStatusSchema, UpdateProjectEdgePagesSchema } from "./edge-pages";
 
 export interface ProjectRoutingStreamOptions extends StreamOptions {
   /** Read an existing repair without starting another one. */
@@ -88,17 +89,23 @@ export const ConnectProjectDomainInputSchema = Type.Object({
 export const RouteProtectionStatusSchema = Type.Object({
   hostname: Type.String(), enabled: Type.Boolean(),
   status: Type.Union([Type.Literal("pending"), Type.Literal("applied")]),
+  options: Type.Optional(RouteProtectionOptionsSchema),
 }, { additionalProperties: false });
 export type RouteProtectionStatus = Static<typeof RouteProtectionStatusSchema>;
 export const RouteProtectionInputSchema = Type.Union([
   Type.Object({ hostname: Type.String({ minLength: 1, maxLength: 253 }), action: Type.Literal("protect"),
-    password: Type.String({ minLength: 12, maxLength: 256, writeOnly: true }) }, { additionalProperties: false }),
+    password: Type.String({ minLength: 12, maxLength: 256, writeOnly: true }),
+    options: Type.Optional(RouteProtectionOptionsSchema) }, { additionalProperties: false }),
+  Type.Object({ hostname: Type.String({ minLength: 1, maxLength: 253 }), action: Type.Literal("configure"),
+    options: RouteProtectionOptionsSchema }, { additionalProperties: false }),
   Type.Object({ hostname: Type.String({ minLength: 1, maxLength: 253 }),
     action: Type.Union([Type.Literal("unlock"), Type.Literal("revoke"), Type.Literal("retry")]) }, { additionalProperties: false }),
 ]);
 export type RouteProtectionInput = Static<typeof RouteProtectionInputSchema>;
 
 export const ProjectRoutingSchemas = {
+  getEdgePages: { action: "read", output: ProjectEdgePagesStatusSchema },
+  updateEdgePages: { action: "write", input: UpdateProjectEdgePagesSchema, output: ProjectEdgePagesStatusSchema },
   listRouteProtection: { action: "read", output: Type.Array(RouteProtectionStatusSchema) },
   changeRouteProtection: { action: "write", input: RouteProtectionInputSchema, output: RouteProtectionStatusSchema },
   listRouteRules: { action: "read", output: Type.Array(RouteRuleSchema) },

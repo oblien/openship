@@ -108,7 +108,7 @@ export async function getDomain(ctx: RequestContext, domainId: string) {
 
 /**
  * Make a domain the project's primary. Primary is the project's canonical
- * hostname — what favicon detection, analytics, and the dashboard's project
+ * hostname — what analytics and the dashboard's project
  * link resolve to (getPrimaryByProject). setPrimary unsets any prior primary
  * for the project and marks this one, so exactly one row stays primary.
  * Survives redeploys: per-service route registration preserves an existing

@@ -190,8 +190,9 @@ export function PlatformImportServices({
           </p>
         </div>
         <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-          Services stay together in one project on its private network. Configure test domains after
-          import, then move production traffic.
+          Services with different Git sources import into separate projects with private
+          connections. Review the destination projects before importing. Configure test domains
+          after import, then move production traffic.
         </p>
       </aside>
     </div>

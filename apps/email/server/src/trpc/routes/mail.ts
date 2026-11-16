@@ -11,16 +11,12 @@ import { TRPCError } from '@trpc/server';
 import { router, protectedProcedure } from '../trpc';
 import {
   listThreads,
-  getThread,
   markAsRead as driverMarkRead,
   markAsUnread as driverMarkUnread,
   setStarred,
   setImportant,
   deleteThreads,
   modifyLabels as driverModifyLabels,
-  send as driverSend,
-  snoozeThreads as driverSnooze,
-  unsnoozeThreads as driverUnsnooze,
   normalizeFolderSlug,
 } from '../../lib/imap-driver';
 
@@ -31,35 +27,9 @@ function withFolder<T extends { folder?: string }>(input: T) {
   return { ...input, folder: normalizeFolderSlug(input.folder) };
 }
 import { sanitizeMailHtml, blockRemoteContent } from '../../lib/sanitize';
-
-// Recipients arrive from the client as `{email, name}` objects (Sender).
-// We accept either that or a bare email string for backward compat.
-const senderInput = z.union([
-  z.string(),
-  z.object({ email: z.string(), name: z.string().optional() }),
-]);
-type SenderInput = z.infer<typeof senderInput>;
-function senderToAddress(s: SenderInput): string {
-  if (typeof s === 'string') return s;
-  return s.name ? `${s.name.replace(/[<>]/g, '')} <${s.email}>` : s.email;
-}
-
-export function formatFromAddress(
-  fromEmail: string | undefined,
-  sessionEmail: string,
-  sessionName: string | null | undefined,
-): string {
-  const raw = fromEmail || sessionEmail;
-  if (raw.includes('<')) return raw;
-  const name = sessionName?.replace(/[<>"]/g, '').trim();
-  return name ? `"${name}" <${raw.trim()}>` : raw;
-}
-
-/** Injectable seam for route-level tests; production uses the real IMAP/SMTP drivers. */
-export const mailRouteInternals = {
-  getThread,
-  send: driverSend,
-};
+import { sendInput, prepareMessage, mailRouteInternals } from '../../mail/messages';
+import { enqueueSend, cancelJob, snooze, unsnooze } from '../../mail/outbox';
+export { formatFromAddress, mailRouteInternals } from '../../mail/messages';
 
 // Folder comes in as a loose string (client uses `bin`/`draft`/`snoozed`
 // while the canonical enum is `trash`/`drafts`). Normalize on the way in
@@ -143,86 +113,10 @@ export const mailRouter = router({
       return detail;
     }),
 
-  send: protectedProcedure
-    .input(
-      z.object({
-        to: z.array(senderInput),
-        cc: z.array(senderInput).optional(),
-        bcc: z.array(senderInput).optional(),
-        subject: z.string(),
-        message: z.string().optional(),
-        text: z.string().optional(),
-        html: z.string().optional(),
-        body: z.string().optional(),
-        attachments: z
-          .array(z.object({ name: z.string(), type: z.string(), base64: z.string() }))
-          .optional(),
-        fromEmail: z.string().optional(),
-        draftId: z.string().optional(),
-        threadId: z.string().nullable().optional(),
-        isForward: z.boolean().optional(),
-        originalMessage: z.string().optional(),
-        originalMessageId: z.string().optional(),
-        originalFolder: folderInput,
-        scheduleAt: z.string().optional(),
-        headers: z.record(z.string(), z.string()).optional(),
-        inReplyTo: z.string().optional(),
-        references: z.array(z.string()).optional(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const refsHeader = input.headers?.References;
-      const inReplyToHeader = input.headers?.['In-Reply-To'];
-      const fromAddress = formatFromAddress(input.fromEmail, ctx.session.email, ctx.session.name);
-
-      let originalHtml = input.originalMessage;
-      let forwardedAttachments: typeof input.attachments;
-      if (input.isForward && input.originalMessageId) {
-        const original = await mailRouteInternals.getThread(
-          ctx.imap,
-          input.originalMessageId,
-          normalizeFolderSlug(input.originalFolder),
-          undefined,
-          { includeAttachmentBytes: true },
-        );
-        if (!original?.latest) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Original message could not be loaded for forwarding',
-          });
-        }
-        originalHtml = original.latest.decodedBody ?? originalHtml;
-        forwardedAttachments = original.latest.attachments.map((attachment) => ({
-          name: attachment.filename,
-          type: attachment.contentType,
-          base64: attachment.body,
-        }));
-      }
-
-      const outgoingHtml = input.isForward
-        ? `${input.message ?? input.html ?? input.body ?? ''}${originalHtml ?? ''}`
-        : originalHtml && (input.inReplyTo || inReplyToHeader)
-          ? `${input.message ?? input.html ?? input.body ?? ''}<blockquote>${originalHtml}</blockquote>`
-          : (input.message ?? input.html ?? input.body ?? undefined);
-      const attachments =
-        forwardedAttachments?.length || input.attachments?.length
-          ? [...(forwardedAttachments ?? []), ...(input.attachments ?? [])]
-          : undefined;
-
-      return mailRouteInternals.send(ctx.smtp, ctx.imap, fromAddress, {
-        to: input.to.map(senderToAddress),
-        cc: input.cc?.map(senderToAddress),
-        bcc: input.bcc?.map(senderToAddress),
-        subject: input.subject,
-        html: outgoingHtml,
-        text: input.text,
-        attachments,
-        inReplyTo: input.inReplyTo ?? inReplyToHeader ?? undefined,
-        references:
-          input.references ??
-          (refsHeader ? refsHeader.split(/\s+/).filter(Boolean) : undefined),
-      });
-    }),
+  send: protectedProcedure.input(sendInput).mutation(async ({ ctx, input }) => {
+    const prepared = await prepareMessage(ctx.session, input);
+    return enqueueSend(ctx.session, prepared, input.scheduleAt, { requestId: input.requestId });
+  }),
 
   delete: protectedProcedure
     .input(idOrIdsInput)
@@ -270,18 +164,14 @@ export const mailRouter = router({
   // so the client's existing button doesn't 404.
   forceSync: protectedProcedure.mutation(() => ({ ok: true })),
 
-  // Snooze stamps the $Snoozed IMAP keyword on the message. listThreads
-  // hides $Snoozed messages from inbox and surfaces them under
-  // /mail/snoozed. The `until` field is accepted for forward-compat but
-  // not persisted - without a wake-up worker, messages stay snoozed
-  // until manually unsnoozed.
+  // The background worker removes the existing IMAP keyword at the chosen time.
   snoozeThreads: protectedProcedure
-    .input(z.object({ ids: z.array(z.string()), until: z.string().datetime() }))
-    .mutation(({ ctx, input }) => driverSnooze(ctx.imap, input).then(() => ({ ok: true }))),
+    .input(z.object({ ids: z.array(z.string().min(1)).min(1).max(100), until: z.iso.datetime({ offset: true }) }))
+    .mutation(({ ctx, input }) => snooze(ctx.session, input.ids, input.until)),
 
   unsnoozeThreads: protectedProcedure
     .input(z.object({ ids: z.array(z.string()) }))
-    .mutation(({ ctx, input }) => driverUnsnooze(ctx.imap, input).then(() => ({ ok: true }))),
+    .mutation(({ ctx, input }) => unsnooze(ctx.session, input.ids)),
 
   // Aliases come from Postfix's virtual_alias_maps, which live in the
   // vmail.forwardings table on the mail VPS. For now, return just
@@ -330,11 +220,8 @@ export const mailRouter = router({
     .input(z.object({ query: z.string(), limit: z.number().int().min(1).max(50).optional() }))
     .query(() => ({ suggestions: [] as Array<{ name: string | null; email: string }> })),
 
-  // Undo Send window: the client buffers for N seconds then calls this
-  // if the user clicks Undo. Once nodemailer has flushed to Postfix it's
-  // too late to recall; we expose the endpoint and trust the client's
-  // delay window.
+  // Atomic cancellation succeeds only before the background worker claims the send.
   unsend: protectedProcedure
     .input(z.object({ messageId: z.string() }))
-    .mutation(() => ({ ok: true })),
+    .mutation(({ ctx, input }) => cancelJob(ctx.session, input.messageId)),
 });

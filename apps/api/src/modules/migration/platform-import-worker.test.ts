@@ -6,7 +6,7 @@ import type {
   PrivateImportPlan,
   PlannedImportService,
 } from "@repo/platform/engine/modules/migration/platform-import-plan";
-import { platformImportProject } from "@repo/platform/engine/modules/migration/platform-import-project";
+import { platformImportProjects } from "@repo/platform/engine/modules/migration/platform-import-project";
 const h = vi.hoisted(() => ({
   ensure: vi.fn(),
   merge: vi.fn(),
@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   sourceService: vi.fn(),
   rows: [] as Array<{ id: string; projectId: string; name: string }>,
   view: vi.fn(),
+  connect: vi.fn(),
   deploy: vi.fn(),
   copy: vi.fn(),
   preflight: vi.fn(),
@@ -57,6 +58,9 @@ vi.mock("@repo/platform/engine/modules/projects/project-runtime.service", () => 
 }));
 vi.mock("@repo/platform/engine/modules/apps/app-settings.service", () => ({
   getAppConnectionView: h.view,
+}));
+vi.mock("@repo/platform/engine/modules/projects/project-connection.service", () => ({
+  createConnection: h.connect,
 }));
 vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   triggerDeployment: h.deploy,
@@ -120,7 +124,8 @@ const planFor = (services: PlannedImportService[]) =>
     userId: "user",
     targetServerId: "server",
     services,
-    project: platformImportProject("imported-project", "server", services),
+    projectName: "imported-project",
+    projects: platformImportProjects("imported-project", "server", services),
   }) as PrivateImportPlan;
 let row: any;
 beforeEach(() => {
@@ -183,6 +188,9 @@ beforeEach(() => {
   h.restoreSource.mockImplementation(async (_run, resume) => {
     h.events.push(resume ? "resume-project" : "restore-config");
   });
+  h.connect.mockImplementation(async (_ctx, target, input) => {
+    h.events.push(`connect:${input.sourceProjectId}:${target}`);
+  });
 });
 const lifecycle = (signal = new AbortController().signal) => ({
   signal,
@@ -195,6 +203,95 @@ const lifecycle = (signal = new AbortController().signal) => ({
   }),
 });
 describe("provider import through normal project operations", () => {
+  it("copies all volumes before deploying multiple repositories in dependency order with native links", async () => {
+    const db = service("db", "database"),
+      app = service("app", "app"),
+      worker = service("worker", "worker");
+    for (const entry of [app, worker])
+      Object.assign(entry.create, {
+        gitProvider: "github",
+        gitOwner: "owner",
+        gitRepo: entry.source.id,
+        gitBranch: "main",
+      });
+    worker.source.commit = "b".repeat(40);
+    app.bindings = [
+      { sourceId: "db", envKey: "DB_URL", valueTemplate: "postgres://secret@${host}:5432/store" },
+    ];
+    worker.bindings = [{ sourceId: "app", envKey: "APP_HOST", valueTemplate: "${host}" }];
+    app.environment.DB_URL = "postgres://secret@db:5432/store";
+    worker.environment.APP_HOST = "app";
+    const services = [worker, app, db];
+    const plan = { ...planFor(services), sourceControl: "railway-project" as const };
+    await executePlatformImport(ctx, "run", plan, lifecycle());
+    expect(h.ensure.mock.calls.map(([body]) => body.gitRepo)).toEqual(["worker", "app", undefined]);
+    expect(
+      h.ensure.mock.calls.every(([body]) => body.services.every((s: any) => !s.dependsOn.length)),
+    ).toBe(true);
+    expect(h.copy.mock.calls.map(([input]) => [input.projectId, input.serviceId])).toEqual([
+      ["imported-project-db", "imported-project-db-db"],
+      ["imported-project-app", "imported-project-app-app"],
+      ["imported-project-worker", "imported-project-worker-worker"],
+    ]);
+    expect(h.events.indexOf("copy:worker")).toBeLessThan(
+      h.events.indexOf("deploy:imported-project-db:1"),
+    );
+    expect(h.events.indexOf("healthy:imported-project-db-build-1")).toBeLessThan(
+      h.events.indexOf("connect:imported-project-db:imported-project-app"),
+    );
+    expect(h.events.indexOf("connect:imported-project-db:imported-project-app")).toBeLessThan(
+      h.events.indexOf("deploy:imported-project-app:1"),
+    );
+    expect(h.connect).toHaveBeenCalledWith(
+      ctx,
+      "imported-project-app",
+      {
+        sourceProjectId: "imported-project-db",
+        outputId: "imported-project-db-db:url",
+        envKey: "DB_URL",
+        mode: "internal",
+        valueTemplate: "postgres://secret@${host}:5432/store",
+      },
+      { defer: true },
+    );
+    expect(
+      h.merge.mock.calls.flatMap(([, , , input]) => input.upserts.map((v: any) => v.key)),
+    ).not.toContain("DB_URL");
+    expect(h.deploy.mock.calls.map(([, input]) => [input.projectId, input.commitSha])).toEqual([
+      ["imported-project-db", undefined],
+      ["imported-project-app", "a".repeat(40)],
+      ["imported-project-worker", "b".repeat(40)],
+    ]);
+    expect(h.verify).toHaveBeenCalledTimes(3);
+    expect(row.recovery.providerImport.completed).toEqual(["db", "app", "worker"]);
+  });
+  it("does not start a cross-project consumer if its private connection fails", async () => {
+    const db = service("db", "database"),
+      app = service("app", "app"),
+      worker = service("worker", "worker");
+    for (const entry of [app, worker])
+      Object.assign(entry.create, { gitOwner: "owner", gitRepo: entry.source.id });
+    app.bindings = [{ sourceId: "db", envKey: "DB_URL" }];
+    const plan = { ...planFor([app, db, worker]), sourceControl: "railway-project" as const };
+    row.recovery.providerImport.planEnc = JSON.stringify(plan);
+    h.connect.mockRejectedValue(new Error("Private network unavailable"));
+    await expect(executePlatformImport(ctx, "run", plan, lifecycle())).rejects.toThrow(
+      "Private network unavailable",
+    );
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    expect(row.recovery.providerImport.completed).toEqual([]);
+    expect(h.restoreSource).not.toHaveBeenCalledWith("run", true, expect.anything());
+    await pauseFailedPlatformImport("run");
+    expect(h.disable).toHaveBeenCalledExactlyOnceWith(
+      "imported-project-db",
+      "org",
+      "imported-project-db-build-1",
+    );
+    expect(h.restoreSource).toHaveBeenLastCalledWith("run", true);
+    expect(h.disable.mock.invocationCallOrder[0]).toBeLessThan(
+      h.restoreSource.mock.invocationCallOrder[1],
+    );
+  });
   it("stages custom domains through native migration routing before pausing the source", async () => {
     const web = service("web", "app");
     web.create.name = "storefront";
@@ -299,7 +396,8 @@ describe("provider import through normal project operations", () => {
       const services = [service("db", "database"), service("app", "app")];
       services.forEach((service) => (service.transfer = "cold-volume"));
       const plan = { ...planFor(services), sourceControl: "railway-project" as const };
-      plan.project.name = name;
+      plan.projectName = name;
+      plan.projects[0].create.name = name;
       await executePlatformImport(ctx, name, plan, lifecycle());
       expect(new Set(Object.values(row.recovery.providerImport.projects))).toEqual(new Set([name]));
     }
@@ -379,9 +477,9 @@ describe("provider import through normal project operations", () => {
       }),
     );
   });
-  it("rejects reviews from the old per-service-project flow before allocating a destination", async () => {
+  it("rejects reviews without destination projects before allocating a destination", async () => {
     const plan = planFor([service("app", "app")]);
-    delete (plan as Partial<PrivateImportPlan>).project;
+    delete (plan as Partial<PrivateImportPlan>).projects;
     await expect(executePlatformImport(ctx, "run", plan, lifecycle())).rejects.toMatchObject({
       code: "IMPORT_REVIEW_EXPIRED",
     });
@@ -447,7 +545,7 @@ describe("provider import through normal project operations", () => {
       "deploy:imported-project:3",
       "healthy:imported-project-build-2",
     ]);
-    expect(h.ensure).toHaveBeenCalledExactlyOnceWith(plan.project, "org", ctx, {
+    expect(h.ensure).toHaveBeenCalledExactlyOnceWith(plan.projects[0].create, "org", ctx, {
       mustCreate: true,
     });
     expect(h.merge).toHaveBeenCalledWith(

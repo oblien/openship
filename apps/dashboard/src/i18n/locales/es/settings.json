@@ -1791,5 +1791,22 @@
     "confirmCta": "Dejar de servir",
     "cancel": "Cancelar",
     "noReverseProxy": "No se detectó ningún proxy inverso en esta máquina."
+  },
+  "imageUrl": {
+    "preview": "Vista previa de la imagen",
+    "invalid": "Introduce una URL HTTP o HTTPS sin credenciales.",
+    "failed": "No se pudo guardar la URL de la imagen.",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "saved": "Guardado",
+    "previewFailed": "Vista previa no disponible. Comprueba que la URL enlace directamente a una imagen."
+  },
+  "profile": {
+    "change": "Cambiar avatar",
+    "title": "Perfil",
+    "description": "La imagen de tu cuenta personal.",
+    "label": "URL del avatar",
+    "hint": "Usa una URL directa de imagen. Déjala vacía para mostrar tu inicial.",
+    "reset": "Usar inicial"
   }
 }

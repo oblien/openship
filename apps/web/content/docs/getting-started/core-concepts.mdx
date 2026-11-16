@@ -1,115 +1,95 @@
 ---
 title: Core concepts
-description: The plain-language vocabulary the rest of the docs use — organizations, projects, deployments, services, servers, domains, environments, and runtimes.
+description: Understand how control planes, projects, services, and deployment destinations fit together.
 ---
 
-Openship has a handful of words it uses over and over. Once you know them, the rest of the docs read easily.
-Here's a way to hold them together: your code is a **recipe**, Openship is the **kitchen**, and the pages
-below are the parts of the kitchen. This page is the short glossary — one idea each, in plain words.
+**The control plane manages deployments. The runtime runs your applications.** They can live on the same
+machine or on separate infrastructure. A build can also run elsewhere when the deployment path supports it.
 
 ## Organization (workspace)
 
-*Like a shared filing cabinet for you and your team.*
+An organization groups projects and members. Permissions determine which resources a member can read or
+change. Switch organizations in the account menu before managing a different team's resources.
 
-Everything you make in Openship lives inside an **organization** (the dashboard also calls it a workspace).
-Your projects, servers, and domains all belong to the organization — not to you personally. That's what lets
-a team share them.
-
-You can belong to more than one organization, and each person in one has a **role**: owner, admin, or member.
-The role decides what they're allowed to do. See [Permissions](/docs/security/permissions).
+See [teams and members](/docs/guides/teams-members) and [permissions](/docs/security/permissions).
 
 ## Project
 
-*Like one dish on the menu — one app you want online.*
+A project stores source configuration, build settings, environment values, routing, and deployment history.
+It can contain one application or several services, such as a web app, worker, and database.
 
-A **project** is a single app you deploy. It remembers where your code comes from (a GitHub repo or a folder
-on disk), how to build it, and everything attached to it: its deployments, web addresses, environment
-variables, logs, and settings.
-
-You don't have to configure most of that by hand — Openship looks at your code and fills in sensible
-defaults. Making one is covered in the [Quickstart](/docs/getting-started/quickstart).
+A single application uses the same **Services** flow as a multi-service project. Adding a service extends
+the project; it does not create another copy of the application.
 
 ## Environment
 
-*Like having a real kitchen for customers and a test kitchen for trying recipes.*
+An environment separates a production, preview, or development workload. Related environment projects have
+their own identifiers and deployment state. Check the environment before changing variables or deploying.
 
-An **environment** is a separate copy of your project. The two you'll meet most are:
-
-- **Production** — the live version real people use.
-- **Preview** — a throwaway copy for trying changes before they go live.
-
-(There's also a **development** environment for local work.) Each environment keeps its own deployments, its
-own environment variables, and its own web address, so testing something never touches what's live.
+Use [preview environments](/docs/guides/preview-environments) to test branches independently. Configure
+separate databases or storage where isolation is required; a separate URL alone does not isolate shared data.
 
 ## Deployment
 
-*Like one printing of a book — every deploy makes a new edition.*
+A deployment builds or selects an artifact and releases it to a destination. It records progress, logs,
+source information, and outcome. The active release serves the project while previous releases remain in
+history according to the runtime's retention behavior.
 
-A **deployment** is one attempt to build your code and put it online. Every time you deploy — or, with
-auto-deploy on, every time you push to GitHub — Openship makes a new one. Each successful release gets a
-version number (v1, v2, v3…) so you can tell them apart.
-
-Only one deployment is **live** at a time. The others are kept as history, so if a new one breaks you can
-**roll back** to an earlier one. Each deployment records which commit it built, whether it succeeded, and the
-URL it went live at.
+A [rollback](/docs/guides/rollback-redeploy) changes the application release. It does **not** undo database
+migrations or restore application data.
 
 ## Service
 
-*Like a restaurant with a kitchen, a bar, and a dishwasher — separate stations working together.*
+A service is a workload inside a project: an application, worker, database, cache, or supporting process.
+Services have their own environment overrides, ports, storage, and runtime controls.
 
-Most projects are one thing. But some apps are really several pieces running side by side — a website, a
-database, a cache. Each piece is a **service**. Openship supports two shapes:
+| Workload | Typical configuration |
+| --- | --- |
+| Web application or API | A listening port and a public route. |
+| Background worker | A start command; no public route required. |
+| Database or cache | Private networking and persistent storage when needed. |
+| Static site | A build output directory served by the edge; no application process required. |
 
-- **Compose** — services defined in a `docker-compose` file (for example `web`, `db`, and `redis`).
-- **Monorepo** — several apps living in one repository, each built as its own service.
-
-Services can depend on each other, each can have its own public address or stay private, and a single deploy
-brings the whole set up together. See [Multi-service & Compose](/docs/guides/compose-multi-service).
+Services can come from Compose, a repository, a catalog app, or an added image.
+See [Compose and multiple services](/docs/guides/compose-multi-service).
 
 ## Domain
 
-*Like the street address on your house.*
+A domain routes a hostname such as `app.example.com` to a service. DNS must point to the appropriate ingress,
+and HTTPS requires a valid certificate. Free subdomains are available through supported Cloud-connected flows.
 
-A **domain** is the web address people type to reach your app, such as `app.example.com`. Openship can give a
-project a free address to start with, and you can also connect a custom domain you own.
-
-When you add a custom domain, Openship checks a DNS record to confirm it's really yours, then turns on HTTPS
-for you automatically. One domain per project is marked **primary** (the main address). Full details are in the
-[Domains API](/docs/api/domains).
+A domain can also have [static response routes](/docs/guides/static-response-routes).
+See [custom domains](/docs/guides/custom-domains) for verification and TLS.
 
 ## Server
 
-*Like renting a counter in someone else's kitchen — you bring the recipes, they provide the space.*
+A connected server is a machine OpenShip reaches over SSH. You provide the connection and credentials;
+OpenShip prepares the components needed by the selected workloads. The server does not need a full
+OpenShip control plane installed on it.
 
-A **server** is your own remote computer that Openship connects to over SSH to run your apps. You add it once
-with its connection details (host, user, and a key or password); after that Openship can deploy to it. One
-organization can have several servers.
-
-<Callout title="You only need a server for the 'server' runtime" type="info">
-If you deploy locally or to Openship Cloud, you don't add a server at all. Servers are only for running your
-apps on machines you own.
-</Callout>
+Targets still need runtimes, routing, and any selected service components. “Agentless” does not mean
+nothing runs on the target. See [custom servers](/docs/guides/custom-servers).
 
 ## Runtimes
 
-*Like choosing whether to cook at home, at a friend's place, or order from a restaurant.*
+Separate these three decisions:
 
-When you deploy, you pick **where the app actually runs**. On the deploy screen this choice is called the
-**deploy target**, and there are three:
+| Decision | Options | Controls |
+| --- | --- | --- |
+| Control plane | Self-hosted web, managed Cloud, optional Desktop | Where configuration, credentials, and automation are managed. |
+| Deployment destination | Local machine, connected server, Cloud space, supported cluster | Where application traffic and data are handled. |
+| Build location | Destination or a supported separate builder | Where dependencies and build artifacts are produced. |
 
-- **Local** — on the same computer that's running Openship. Great for trying things out on the desktop app.
-- **Your server** — on one of your own [servers](/docs/getting-started/core-concepts#server), reached over
-  SSH and, by default, run inside Docker.
-- **Openship Cloud** — Openship runs it for you, no machine of your own required.
+Self-hosted and Desktop installations can manage supported Docker, Compose, Swarm, and Kubernetes/k3s
+workflows. Cloud uses managed capacity and plan-specific capabilities; it does not expose customer cluster
+administration. See [runtime model](/docs/architecture/runtime-model) for exact scope.
 
-You choose it on the deploy screen, and you can move a project between them later. How each one works under
-the hood is explained in the [Runtime model](/docs/architecture/runtime-model).
+Desktop is an optional way to keep the control plane local. Remote workloads can keep running when the
+app is closed; controller-managed schedules and webhooks require an available control plane.
 
 ## Related guides
 
 <Cards>
-  <Card title="Quickstart" href="/docs/getting-started/quickstart" description="Put these pieces together and ship your first app." />
-  <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Turn a repository into a live site, click by click." />
-  <Card title="Runtime model" href="/docs/architecture/runtime-model" description="How local, server, and cloud runtimes actually work." />
-  <Card title="Multi-service & Compose" href="/docs/guides/compose-multi-service" description="Run a website, database, and cache together." />
+  <Card title="Quickstart" href="/docs/getting-started/quickstart" description="Connect code and verify a first deployment." />
+  <Card title="Runtime model" href="/docs/architecture/runtime-model" description="Build placement, orchestration, routing, and operational limits." />
 </Cards>

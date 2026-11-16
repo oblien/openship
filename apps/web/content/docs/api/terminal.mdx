@@ -50,9 +50,10 @@ The response carries the one-shot token and its lifetime:
 The token is consumed the first time it's presented on an upgrade — it cannot be replayed. Mint a fresh
 ticket per connection attempt.
 
-<Callout title="No CLI equivalent yet" type="info">
-`openship server ssh <serverId>` is stubbed as "coming soon" — the CLI doesn't bundle a WebSocket client, so
-there's no terminal command today. Use the dashboard, or drive the WebSocket directly as shown below.
+<Callout title="CLI equivalent" type="info">
+Use `openship server terminal SERVER_ID` for an interactive shell through the selected controller.
+For scripts, `openship server exec SERVER_ID "COMMAND"` runs a command and preserves its exit status.
+The SDK and CLI examples below use the same server access and permissions as the dashboard.
 </Callout>
 
 ## Open the WebSocket

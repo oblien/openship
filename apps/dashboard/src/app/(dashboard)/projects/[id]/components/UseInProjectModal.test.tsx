@@ -89,6 +89,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -105,6 +106,21 @@ async function choose(scope: ParentNode, name: string) {
   expect(option, name).toBeDefined();
   await click(option!);
 }
+
+it("shows the saved project icon in the connection picker", async () => {
+  vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+  h.candidates.mockResolvedValue({
+    data: [{ id: "web", name: "Web app", description: "production", appTemplateId: "redis", iconUrl: "https://cdn.example.test/project.svg" }],
+  });
+  await act(async () => root.render(
+    <UseInProjectModal open onClose={onClose} sourceProjectId="db" outputs={outputs} />,
+  ));
+  const dialog = document.querySelector<HTMLElement>("[data-modal-surface]")!;
+  await click(dialog.querySelector<HTMLElement>('[aria-haspopup="listbox"]')!);
+  const image = document.querySelector<HTMLImageElement>('[role="option"] img');
+  expect(image?.getAttribute("src")).toBe("https://cdn.example.test/project.svg");
+  expect(image?.getAttribute("referrerpolicy")).toBe("no-referrer");
+});
 
 describe("connection form copy", () => {
   it("names the count and project, and points at the deployment status, after sharing values", async () => {

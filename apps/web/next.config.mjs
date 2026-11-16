@@ -46,6 +46,19 @@ const nextConfig = {
     const sections = marketingPaths.localized.join("|");
     return {
       beforeFiles: [
+        { source: "/:section(features|compare).md", destination: "/product-raw/en/:section" },
+        {
+          source: "/:section(features|compare)/:slug.md",
+          destination: "/product-raw/en/:section/:slug",
+        },
+        {
+          source: "/:locale/:section(features|compare).md",
+          destination: "/product-raw/:locale/:section",
+        },
+        {
+          source: "/:locale/:section(features|compare)/:slug.md",
+          destination: "/product-raw/:locale/:section/:slug",
+        },
         { source: "/docs.md", destination: "/docs-raw" },
         { source: "/docs/:slug*.md", destination: "/docs-raw/:slug*" },
         { source: "/", destination: "/en" },

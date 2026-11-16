@@ -24,30 +24,6 @@ function gone(name: string): never {
   });
 }
 
-// AI-assisted compose/search/summarize. We stripped the LLM integration,
-// so each procedure returns a typed empty result. The UI silently does
-// nothing if the response is empty.
-export interface WebSearchResult {
-  text: string;
-  sources: Array<{ id: string; title: string; url: string }>;
-}
-export interface ComposeResult {
-  newBody: string;
-}
-
-export const aiRouter = router({
-  compose: protectedProcedure.input(z.any()).mutation((): ComposeResult => ({ newBody: '' })),
-  generateEmailSubject: protectedProcedure
-    .input(z.any())
-    .mutation((): { subject: string } => ({ subject: '' })),
-  generateSearchQuery: protectedProcedure
-    .input(z.any())
-    .mutation((): { query: string } => ({ query: '' })),
-  webSearch: protectedProcedure
-    .input(z.object({ query: z.string() }))
-    .mutation((): WebSearchResult => ({ text: '', sources: [] })),
-});
-
 // Brain = the AI assistant (compose, summarize, label suggestions). We
 // stripped the LLM integration, so reads return empty shapes (UI silently
 // hides itself) and writes throw NOT_IMPLEMENTED.

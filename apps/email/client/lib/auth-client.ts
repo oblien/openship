@@ -35,9 +35,8 @@ import { BACKEND_URL } from './backend-url';
 const BASE = BACKEND_URL;
 
 // Reads the active connection id from the non-httpOnly companion cookie.
-// Lives here too (in addition to root.tsx) so auth-client can scope IDB
-// purges to the CURRENT user instead of nuking every account's cache.
-function readActiveConnectionId(): string | null {
+// Shared by root, auth cleanup and queued-mail UI to scope state to this connection.
+export function readActiveConnectionId(): string | null {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(/(?:^|;\s*)zero_session_id=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;

@@ -16,7 +16,7 @@ const config = { target: "cloud" as const, cloudToken: "namespace-token", cloudN
 
 beforeEach(() => {
   const row = { id: "vm-a", namespace: "namespace-a", status: "running" };
-  fixture.client = { workspace: vi.fn(() => ({ get: vi.fn(async () => row), workloads: { list: vi.fn(async () => []) } })), workspaces: { get: vi.fn(async () => row), create: vi.fn(), delete: vi.fn() } };
+  fixture.client = { vm: vi.fn(() => ({ get: vi.fn(async () => row), workloads: { list: vi.fn(async () => []) } })), vms: { get: vi.fn(async () => row), create: vi.fn(), delete: vi.fn() } };
 });
 afterEach(async () => {
   for (const platform of platforms.splice(0)) await platform.runtime.dispose?.();
@@ -35,13 +35,13 @@ describe("Cloud changes the execution destination, not the deployment runtime", 
     expect(platform.executor).toBeInstanceOf(CloudWorkspaceExecutor);
     expect(platform.localHost).toBe(false);
     expect(platform.system).toBeNull();
-    expect(fixture.client.workspaces.create).not.toHaveBeenCalled();
+    expect(fixture.client.vms.create).not.toHaveBeenCalled();
   });
   it("has no implicit host when a Cloud destination is absent", async () => {
     const platform = await make({ cloudServer: undefined });
     await expect(platform.runtime.build({ projectId: "project-a", buildStrategy: "local" } as never)).rejects.toMatchObject({ code: "DEPLOYMENT_SERVER_REQUIRED" });
     expect(platform.executor).toBeNull();
-    expect(fixture.client.workspace).not.toHaveBeenCalled();
+    expect(fixture.client.vm).not.toHaveBeenCalled();
   });
   it.each(["docker", "bare"] as const)("requires namespace-scoped credentials for %s", async runtime => {
     await expect(make({ runtime, cloudToken: undefined })).rejects.toThrow("organization-scoped credentials");
@@ -52,14 +52,14 @@ describe("Cloud changes the execution destination, not the deployment runtime", 
     const transfer = vi.spyOn(platform.executor!, "transferIn");
     await expect(platform.runtime.build({ projectId: "project-a", localPath: "/etc", buildStrategy: "local" } as never)).rejects.toThrow(/control-plane|host/i);
     expect(transfer).not.toHaveBeenCalled();
-    expect(fixture.client.workspaces.create).not.toHaveBeenCalled();
+    expect(fixture.client.vms.create).not.toHaveBeenCalled();
   });
   it("resolves bare process ports without opening Docker and rejects sibling ports", async () => {
     const workloads = [
       { id: "openship-release-a", labels: { "openship.project": "project-a", "openship.deployment": "release-a", "openship.ports": "[3000]" } },
       { id: "openship-release-b", labels: { "openship.project": "project-b", "openship.deployment": "release-b", "openship.ports": "[4000]" } },
     ];
-    fixture.client.workspace.mockReturnValue({ workloads: { list: async () => workloads } });
+    fixture.client.vm.mockReturnValue({ workloads: { list: async () => workloads } });
     const connection = new CloudServerConnection(fixture.client, { workspaceId: server.workspaceId, namespace: config.cloudNamespace });
     const containers = vi.fn(async () => ({ resolveUrl: async () => { throw new Error("unowned port"); }, resolveTarget: vi.fn() }));
     const scope = managedProjectRoutingScope(connection, server, containers);

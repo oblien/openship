@@ -1,6 +1,6 @@
 import type { OblienEntitlement, OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
 
-/** Saved v9 terms and the SDK 2.8 capacity shape, independent of today's catalog. */
+/** OpenShip saved v9 terms, independent of today's catalog and provider wire names. */
 export function monthlyCloudBilling(organizationId = "org_1", namespace = "os-customer") {
   const periodStart = "2026-10-01T00:00:00Z";
   const periodEnd = "2026-11-01T00:00:00Z";

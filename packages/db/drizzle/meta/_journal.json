@@ -1618,6 +1618,20 @@
       "when": 1794373201000,
       "tag": "0230_restore_workspace_security_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1794373202000,
+      "tag": "0231_project_icon_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1794373203000,
+      "tag": "0232_project_icon_cleanup",
+      "breakpoints": true
     }
   ]
 }

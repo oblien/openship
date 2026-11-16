@@ -1,4 +1,5 @@
 "use client";
+import { parseDeployDestination } from "@repo/core";
 
 import { ComposeChangeSummary } from "@/hooks/useComposeReview";
 import WarningCallout from "@/components/shared/WarningCallout";
@@ -33,7 +34,7 @@ import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
-import { ServerSelectorView, useServerSelection } from "@/components/shared/ServerSelector";
+import { ServerSelectionPrompt, ServerSelectorView, useServerSelection } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -189,6 +190,7 @@ const DeployRepository: React.FC = () => {
         autoSelectFirst: savedTargetState === "none" && !selectReadServer,
         useSavedDefault: savedTargetState === "none" && !selectReadServer,
         selfHostedOnly: selectReadServer,
+        destinationKind: !loadsSavedTarget && !projectId ? parseDeployDestination(searchParams.get("destination")) : undefined,
         onSelect: (server) => updateConfig({
             deployTarget: server ? (server.raw.managed ? "cloud" : "server") : (selfHosted ? "server" : "cloud"),
             serverId: server?.id,
@@ -469,6 +471,7 @@ const DeployRepository: React.FC = () => {
 
     return (
         <PageContainer>
+                <ServerSelectionPrompt selection={serverSelection} />
                 {/* Destination settings share the page's normal content/sidebar layout. */}
                 {step === "target" && (
                     <DeployTargetStep

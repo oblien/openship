@@ -89,9 +89,7 @@ export async function listDeployments(
         ...d,
         isActive: d.id === activeId,
         projectName: project.name,
-        // Project favicon → the dashboard uses it as the row's logo instead
-        // of the framework/Docker glyph.
-        favicon: project.favicon ?? null,
+        iconUrl: project.iconUrl ?? null,
       })),
     };
   }
@@ -110,8 +108,7 @@ export async function listDeployments(
       ...d,
       projectName: proj?.name ?? "Unknown",
       isActive: proj?.activeDeploymentId === d.id,
-      // Project favicon → dashboard row logo (see listByProject above).
-      favicon: proj?.favicon ?? null,
+      iconUrl: proj?.iconUrl ?? null,
     };
   });
 

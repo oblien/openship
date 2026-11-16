@@ -41,4 +41,14 @@ describe("instance handoff recovery UI", () => {
     expect(html).not.toContain("Cancel move");
     expect(instanceProgress(retired)).toBe("Connecting to the new control plane");
   });
+  it("links server preparation to its build view while the source controller is active", () => {
+    const preparing: InstanceStatus = { ...state, role: "active", handoff: {
+      ...state.handoff!, provisioning: { projectId: "project", deploymentId: "deploy", access: "desktop" },
+    } };
+    const html = renderToStaticMarkup(<InstanceProgress state={preparing} refresh={async () => {}} />);
+    expect(html).toContain('href="/build/deploy"');
+    expect(html).not.toContain('href="/deployments/deploy"');
+    const frozen = renderToStaticMarkup(<InstanceProgress state={{ ...preparing, role: "quiescing" }} refresh={async () => {}} />);
+    expect(frozen).not.toContain("View deployment");
+  });
 });

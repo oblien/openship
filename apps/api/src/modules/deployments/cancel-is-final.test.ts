@@ -43,7 +43,6 @@ vi.mock("@repo/platform/engine/modules/projects/cleanup-keep-set", () => ({
 // Terminal-event side channels, each of which drags in auth/github/mail wiring.
 vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: { emit: mocks.notify } }));
 vi.mock("../../lib/audit", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));
-vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn(async () => {}) }));
 vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: vi.fn(async () => {}),
 }));

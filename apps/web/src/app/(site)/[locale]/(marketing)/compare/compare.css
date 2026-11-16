@@ -1,0 +1,224 @@
+.compare-intro-link {
+  margin-top: 24px;
+}
+.compare-provider-fit {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  padding-top: 20px;
+  color: var(--th-text-body);
+  font-size: 15px;
+  line-height: 1.8;
+}
+.compare-provider-fit p {
+  max-width: 72ch;
+}
+.compare-principles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 36px;
+  padding-bottom: 36px;
+  color: var(--th-text-body);
+  font-size: 13px;
+}
+.compare-principles span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.compare-principles span::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--th-text-muted);
+}
+.compare-back:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.compare-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px 24px;
+  margin-top: 28px;
+}
+.compare-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 13px 22px;
+  border-radius: 999px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+.compare-button svg {
+  flex-shrink: 0;
+}
+.compare-table-wrap {
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid var(--th-divider);
+}
+.compare-mobile-label {
+  display: none;
+}
+.compare-related .compare-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+.compare-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  text-align: start;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.compare-table th,
+.compare-table td {
+  padding: 22px 24px;
+  text-align: start;
+  vertical-align: top;
+}
+.compare-table thead {
+  background: var(--th-bg-subtle);
+}
+.compare-table th {
+  font-weight: 500;
+}
+.compare-table tbody tr {
+  border-top: 1px solid var(--th-divider);
+}
+.compare-table tbody th {
+  width: 23%;
+}
+.compare-table td {
+  width: 38.5%;
+  color: var(--th-text-body);
+}
+.compare-table :is(th, td):nth-child(2) {
+  background: var(--th-bg-subtle);
+}
+.compare-note {
+  color: var(--th-text-muted);
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 18px;
+}
+.compare-note a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.compare-migration {
+  padding: 32px;
+  border-radius: 24px;
+  background: var(--th-bg-subtle);
+}
+.compare-migration h3 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.compare-migration p,
+.compare-migration ol {
+  margin-top: 16px;
+  color: var(--th-text-body);
+  font-size: 15px;
+  line-height: 1.85;
+}
+.compare-migration ol {
+  list-style: decimal;
+  padding-inline-start: 20px;
+}
+.compare-migration li {
+  padding-inline-start: 6px;
+  margin-block: 8px;
+}
+.compare-migration .compare-button {
+  margin-top: 24px;
+}
+.compare-sources {
+  color: var(--th-text-body);
+  font-size: 13px;
+  line-height: 1.8;
+  padding-top: 18px;
+}
+.compare-sources p + p {
+  margin-top: 12px;
+}
+.compare-sources ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  margin-top: 24px;
+}
+.compare-sources a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--th-text-heading);
+}
+.compare-sources a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.compare-page :is(a, [tabindex]):focus-visible {
+  outline: 2px solid var(--th-text-heading);
+  outline-offset: 5px;
+}
+@media (max-width: 800px) {
+  .compare-table {
+    min-width: 560px;
+  }
+}
+@media (max-width: 560px) {
+  .compare-migration {
+    padding: 24px;
+  }
+  .compare-table th,
+  .compare-table td {
+    padding: 18px;
+  }
+  .compare-table,
+  .compare-table tbody {
+    display: block;
+    min-width: 0;
+  }
+  .compare-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .compare-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .compare-table tbody tr:first-child {
+    border-top: 0;
+  }
+  .compare-table tbody th {
+    grid-column: 1 / -1;
+    width: auto;
+    padding-bottom: 12px;
+    background: var(--th-bg-subtle);
+  }
+  .compare-table td {
+    width: auto;
+    overflow-wrap: anywhere;
+  }
+  .compare-mobile-label {
+    display: block;
+    margin-bottom: 10px;
+    color: var(--th-text-heading);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .compare-principles {
+    gap: 14px;
+    flex-direction: column;
+  }
+}

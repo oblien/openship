@@ -1,6 +1,6 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeletionModal } from "./DeletionModal";
 import { ProjectRenameModal } from "./ProjectRenameModal";
@@ -13,7 +13,7 @@ import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { getProjectStatus, migrationNeedsOperator } from "@/utils/project-status";
 import { formatBytes } from "@/lib/formatBytes";
 import type { RouteStrategy } from "@/lib/api/settings";
-import type { OpenshipReadiness } from "@repo/core";
+import { isServicesFramework, type OpenshipReadiness } from "@repo/core";
 import { workloadOf } from "@/context/deployment/types";
 import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import { ProjectMigrationCard } from "@/components/migration/ProjectMigrationCard";
@@ -27,6 +27,8 @@ import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { AppConfiguration } from "./AppConfiguration";
 import { BuildSettings } from "./BuildSettings";
 import { CloudStaticHosting } from "@/components/project-settings/CloudStaticHosting";
+import { ProjectIconSetting } from "@/components/project-settings/ProjectIconSetting";
+import { RuntimeSourceUpdateDialog } from "@/components/updates/RuntimeSourceUpdate";
 
 interface Props {
   onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -120,7 +122,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   const { user } = useAuth();
   const { selfHosted } = usePlatform();
   const { t } = useI18n();
-  const { projectData, servicesData } = useProjectSettings();
+  const { projectData, servicesData, buildData } = useProjectSettings();
   const isDeleting = getProjectStatus(projectData) === "deleting";
   // `enabled` is the server's answer (derived from disabled_at in enrichProject).
   // This local copy exists only so the button flips the instant the call returns;
@@ -130,6 +132,15 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   const [isProjectActive, setIsProjectActive] = useState(projectData?.enabled ?? true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [projectDialog, setProjectDialog] = useState<"icon" | "source" | null>(null);
+  const projectInfoHeader = useRef<HTMLDivElement>(null);
+  const openProjectDialog = (dialog: "icon" | "source") => {
+    // The clicked menu item unmounts; retain the trigger as the dialog's return focus.
+    projectInfoHeader.current?.querySelector<HTMLButtonElement>("button[aria-expanded]")?.focus();
+    setProjectDialog(dialog);
+  };
+  const canProposeImageUpdate = Boolean(projectData.gitOwner && projectData.gitRepo) &&
+    (Boolean(projectData.composePath) || isServicesFramework(projectData.framework));
 
   useEffect(() => {
     if (typeof projectData?.enabled === "boolean") setIsProjectActive(projectData.enabled);
@@ -262,12 +273,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
     }
   };
 
-  /**
-   * Project-level actions for the Project Info header. Only Rename is new; the rest
-   * drive the controls this panel already owns (the pause toggle below, the deletion
-   * modal at the bottom) so there's one implementation of each, reachable from the
-   * heading as well as from its own section.
-   */
+  // Project actions reuse the same editors and handlers as the existing settings.
   const menuActions: MenuAction[] = [
     {
       id: "rename",
@@ -276,12 +282,25 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
       onClick: () => setShowRenameModal(true),
     },
     {
+      id: "change-icon",
+      label: t.projectSettings.icon.change,
+      icon: <UiIcon name="file-image" className="size-4" />,
+      onClick: () => openProjectDialog("icon"),
+    },
+    {
       id: "copy-id",
       label: menu.copyId,
       icon: <UiIcon name="copy" className="size-4" />,
       onClick: () => void handleCopyProjectId(),
       divider: true,
     },
+    ...(canProposeImageUpdate ? [{
+      id: "image-update",
+      label: t.projectSettings.sourceImageUpdate.open,
+      icon: <UiIcon name="file-code" className="size-4" />,
+      onClick: () => openProjectDialog("source"),
+      divider: true,
+    }] : []),
     {
       id: "toggle",
       label: isProjectActive ? menu.pause : menu.resume,
@@ -336,7 +355,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           would cut off. Nothing here needs the clip — the header's rule sits well
           below the corner radius. */}
       <div className="flex h-full flex-col rounded-2xl border border-border/50 bg-card">
-        <div className="flex items-start gap-3 rounded-t-2xl border-b border-border/40 px-5 py-4">
+        <div ref={projectInfoHeader} className="flex items-start gap-3 rounded-t-2xl border-b border-border/40 px-5 py-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
             <UiIcon name="sliders" className="size-4 text-primary" />
           </div>
@@ -347,6 +366,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           {/* Project-level actions live on the heading, where the name is shown. */}
           <DropdownMenu
             actions={menuActions}
+            triggerLabel={t.projects.card.more}
             trigger={<UiIcon name="more-vertical" className="size-4 text-muted-foreground" />}
             triggerClassName="-me-1.5 shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             className="shrink-0"
@@ -709,6 +729,17 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             </button>
           </div>
         </div>
+
+      {projectDialog === "icon" && (
+        <ProjectIconSetting key={projectId} onClose={() => setProjectDialog(null)} />
+      )}
+      {projectDialog === "source" && canProposeImageUpdate && (
+        <RuntimeSourceUpdateDialog
+          projectId={projectId}
+          initialPath={buildData.composePath || "docker-compose.yml"}
+          onClose={() => setProjectDialog(null)}
+        />
+      )}
 
       <ProjectRenameModal
         isOpen={showRenameModal}

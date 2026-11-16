@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useEffect, useId, useState } from "react";
 import {
   ASSISTANT_PROVIDER_LABELS,
@@ -328,9 +329,9 @@ function AgentConnection({
               )}
               {info.fields.length > 0 && (
                 <details>
-                  <summary className="cursor-pointer rounded-lg py-2 text-sm text-muted-foreground">
+                  <DisclosureSummary className="cursor-pointer rounded-lg py-2 text-sm text-muted-foreground">
                     Agent settings
-                  </summary>
+                  </DisclosureSummary>
                   <div className="mt-4 space-y-4">
                     <AssistantFields
                       fields={info.fields}

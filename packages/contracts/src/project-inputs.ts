@@ -1,3 +1,4 @@
+import { ProjectEdgePagesSchema } from "./edge-pages";
 /**
  * Project validation schemas - Shared TypeBox operation contracts.
  * Framework & PackageManager enums are derived from the STACKS registry
@@ -8,6 +9,7 @@ import { Type, type Static, type TLiteral } from "@sinclair/typebox";
 import { GitHubDeploymentChecksSchema } from "./deployment-checks";
 import {
   STACK_IDS,
+  MAX_IMAGE_URL_LENGTH,
   RUNTIME_VERSION_PATTERN,
   RUNTIME_VERSION_MAX_LENGTH,
   ALL_PACKAGE_MANAGERS,
@@ -313,6 +315,7 @@ const ProxySettingsSchema = Type.Object(
 );
 
 const RoutingConfigSchema = Type.Object({
+  edgePages: Type.Optional(ProjectEdgePagesSchema),
   rewrites: Type.Optional(Type.Array(RoutingRuleSchema, { maxItems: 200 })),
   redirects: Type.Optional(
     Type.Array(
@@ -559,7 +562,10 @@ export const CreateProjectBody = Type.Object({
 
 // `serverId` is create/ensure-only. Keeping it out of the generic PATCH body is
 // also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
-export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId"]));
+export const UpdateProjectBody = Type.Object({
+  ...Type.Partial(Type.Omit(CreateProjectBody, ["serverId"])).properties,
+  iconUrl: Type.Optional(Type.Union([Type.String({ maxLength: MAX_IMAGE_URL_LENGTH }), Type.Null()])),
+});
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to

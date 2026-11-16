@@ -5,8 +5,7 @@ import { useEmailAliases } from '@/hooks/use-email-aliases';
 import { getReplyDefaults, type ReplyMode } from '@/lib/reply-defaults';
 import { EmailComposer } from '../create/email-composer';
 import { useHotkeysContext } from 'react-hotkeys-hook';
-import { useTRPC } from '@/providers/query-provider';
-import { useMutation } from '@tanstack/react-query';
+import { useSendMail } from '@/hooks/use-send-mail';
 import { useSettings } from '@/hooks/use-settings';
 import { useThread } from '@/hooks/use-threads';
 import { useSession } from '@/lib/auth-client';
@@ -34,8 +33,7 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
   const [, setActiveReplyId] = useQueryState('activeReplyId');
   const { data: emailData, refetch, latestDraft } = useThread(threadId);
   const { data: draft } = useDraft(draftId ?? null);
-  const trpc = useTRPC();
-  const { mutateAsync: sendEmail } = useMutation(trpc.mail.send.mutationOptions());
+  const sendEmail = useSendMail();
   const { data: activeConnection } = useActiveConnection();
   const { data: settings, isLoading: settingsLoading } = useSettings();
   const { data: session } = useSession();
@@ -165,7 +163,7 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
       setMode(null);
       await refetch();
 
-      handleUndoSend(result, settings, {
+      handleUndoSend(result, {
         to: data.to,
         cc: data.cc,
         bcc: data.bcc,

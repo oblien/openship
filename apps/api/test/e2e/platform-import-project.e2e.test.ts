@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { once } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   BuildLogger,
   CommandSourceBackupExecutor,
@@ -20,8 +23,14 @@ import { deployComposeServices } from "@repo/platform/engine/modules/deployments
 import { projectServicesToDeployableServices } from "@repo/platform/engine/modules/deployments/compose/project-services";
 import { seedDeployment, seedOrg, setActive } from "../helpers/seed";
 import { describeDockerE2E, requireDocker, dockerSocketPath } from "../helpers/docker-e2e";
+import { refreshConnectionEnv } from "@repo/platform/engine/modules/projects/project-connection.service";
+import {
+  sharedServiceAlias,
+  sharedServiceNetwork,
+} from "@repo/platform/engine/modules/projects/shared-service-network";
 
-// Substitute Railway's control/SSH boundary and the asynchronous build queue.
+// Substitute Railway's control/SSH boundary, Git checkout, destination resolution
+// and the asynchronous build queue. All runtime operations use an isolated daemon.
 // Review, project creation, encrypted environments, migration checkpoints,
 // volume transfer and the ordinary Compose deployment engine remain real.
 const h = vi.hoisted(() => ({
@@ -50,8 +59,17 @@ vi.mock("@repo/platform/engine/modules/migration/migration-runtime", async (orig
   ...(await original<object>()),
   createMigrationDockerRuntime: h.runtime,
 }));
+vi.mock("@repo/platform/engine/modules/services/service-container", async (original) => ({
+  ...(await original<object>()),
+  // Resolve private-link operations onto the same isolated daemon as the import.
+  // Connection authorization, persistence, DNS and network attachment stay real.
+  resolveServicePlatform: async () => ({ platform: { runtime: await h.runtime() } }),
+}));
 vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   triggerDeployment: h.deploy,
+}));
+vi.mock("@repo/platform/engine/modules/deployments/project-reader", () => ({
+  createGitHubReader: () => ({ readText: async () => "FROM redis:7-alpine\n" }),
 }));
 import {
   discoverPlatform,
@@ -64,6 +82,8 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
   const tag = `import-groups-${randomUUID().slice(0, 8)}`;
   const containers = new Set<string>();
   const volumes = new Set<string>();
+  const images = new Set<string>();
+  const sharedNetworks = new Set<string>();
   const projects: Array<{ id: string; slug: string }> = [];
   const sources = new Map<string, { container: string; exporter: string }>();
   let runtime: DockerRuntime;
@@ -107,11 +127,13 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
       await container.remove({ force: true });
     }
     for (const project of projects) await runtime.removeNetwork(project.slug);
+    for (const name of sharedNetworks) await runtime.docker.getNetwork(name).remove();
     for (const volume of (await runtime.docker.listVolumes()).Volumes ?? []) {
       if (projects.some((project) => volume.Labels?.["openship.project"] === project.id))
         volumes.add(volume.Name);
     }
     for (const name of volumes) await runtime.docker.getVolume(name).remove();
+    for (const image of images) await runtime.removeImage(image);
     await runtime.dispose();
     vi.restoreAllMocks();
   });
@@ -128,9 +150,14 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
     return container.id;
   }
 
-  it.each(["socket", "cloud"] as const)(
-    "imports two three-service projects through %s, isolating DNS, env and persisted data",
-    async (transport) => {
+  it.each([
+    { transport: "socket", split: false },
+    { transport: "cloud", split: false },
+    { transport: "socket", split: true },
+    { transport: "cloud", split: true },
+  ] as const)(
+    "imports through $transport (multiple repositories: $split), isolating DNS, env and persisted data",
+    async ({ transport, split }) => {
       const owner = await seedOrg({ ownsHost: true });
       const ctx = {
         ...owner,
@@ -138,7 +165,7 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
         user: { id: owner.userId, name: "Test", email: "test@example.test" },
         sessionKind: "cookie",
       } as ExecutionContext;
-      const serverId = `${tag}-${transport}`;
+      const serverId = `${tag}-${transport}-${split}`;
       await db.insert(schema.servers).values({
         id: serverId,
         organizationId: owner.organizationId,
@@ -211,6 +238,40 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
         await repos.project.update(input.projectId, { routeStrategy: "container-ip" });
         const project = (await repos.project.findById(input.projectId))!;
         const services = await repos.service.listByProject(project.id);
+        await refreshConnectionEnv(ctx, project.id);
+        const preparedLocalImages = new Map<string, string>();
+        const builtImages = new Map<string, string>();
+        for (const service of services) {
+          if (service.image) preparedLocalImages.set(service.id, service.image);
+          else {
+            // Stand in for the immutable Git checkout with a distinct build per
+            // repository/revision. The image build and deployment stay real.
+            const directory = await mkdtemp(join(tmpdir(), "openship-import-build-"));
+            const image = `${tag}:${service.id}`;
+            images.add(image);
+            try {
+              await writeFile(
+                join(directory, "Dockerfile"),
+                `FROM redis:7-alpine\nRUN echo '${project.gitRepo}:${input.commitSha}' > /source-revision\n`,
+              );
+              const stream = await runtime.docker.buildImage(
+                { context: directory, src: ["Dockerfile"] },
+                { t: image, networkmode: "none", labels: { "openship.project": project.id } },
+              );
+              await new Promise<void>((resolve, reject) =>
+                runtime.docker.modem.followProgress(stream, (error, output) => {
+                  const failure = output?.find((event: { error?: string }) => event.error)?.error;
+                  if (error || failure) reject(error ?? new Error(failure));
+                  else resolve();
+                }),
+              );
+              preparedLocalImages.set(service.id, image);
+              builtImages.set(service.id, image);
+            } finally {
+              await rm(directory, { recursive: true, force: true });
+            }
+          }
+        }
         const deployment = await seedDeployment(project, {
           status: "deploying",
           trigger: "manual",
@@ -227,7 +288,7 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
             ? await openRuntime()
             : await CloudDockerRuntime.forWorkspace(
                 {
-                  workspaces: {
+                  vms: {
                     get: async () => ({
                       id: serverId,
                       namespace: owner.organizationId,
@@ -253,7 +314,8 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
             {
               executor: null,
               localHost: false,
-              preparedLocalImages: new Map(services.map((s) => [s.id, s.image!])),
+              preparedLocalImages,
+              builtImages,
               targetServiceIds: new Set(input.serviceIds),
             },
           );
@@ -269,7 +331,7 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
 
       const imported: Array<{ id: string; marker: string }> = [];
       for (const projectNumber of [1, 2]) {
-        const marker = `${tag}-${transport}-${projectNumber}`;
+        const marker = `${tag}-${transport}-${split}-${projectNumber}`;
         const services: ProviderInventory["services"] = [];
         for (const name of ["db", "cache"]) {
           const id = `${marker}-${name}`;
@@ -332,6 +394,19 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
           startCommand:
             "sh -c 'while true; do printf \"HTTP/1.1 200 OK\\r\\nContent-Length: 6\\r\\nConnection: close\\r\\n\\r\\nready\\n\" | nc -l -p 8080; done'",
         });
+        if (split) {
+          // Two distinct Git sources plus one image-backed database. All volumes
+          // must move before either destination Git service is allowed to start.
+          for (const name of ["cache", "worker"]) {
+            const source = services.find((service) => service.name === name)!;
+            source.image = undefined;
+            source.repository = `fixture/${name}`;
+            source.commit = (name === "cache" ? "a" : "b").repeat(40);
+            source.branch = "main";
+            source.dockerfile = "Dockerfile";
+          }
+          delete services.find((service) => service.name === "worker")!.env.BOTH_HOSTS;
+        }
         const inventory: ProviderInventory = {
           provider: "railway",
           source: { connectionId: "fixture", projectId: marker, environmentId: "production" },
@@ -379,21 +454,26 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
           });
         } finally {
           const saved = await repos.project.listByOrganization(owner.organizationId);
-          for (const p of saved.rows)
+          for (const p of saved.rows) {
             if (!projects.some((known) => known.id === p.id)) projects.push(p);
+            for (const link of await repos.projectConnection.listByTarget(p.id))
+              if (link.sourceServiceId)
+                sharedNetworks.add(sharedServiceNetwork(link.sourceServiceId));
+          }
         }
         const checkpoint = (await repos.dockerMigrationRun.findById(runId))!.recovery
           .providerImport!;
         const ids = [...new Set(Object.values(checkpoint.projects))];
-        expect(ids).toHaveLength(1);
-        const id = ids[0];
-        expect(await repos.service.listByProject(id)).toHaveLength(3);
+        expect(ids).toHaveLength(split ? 3 : 1);
         expect(checkpoint.completed).toHaveLength(3);
         expect((await repos.project.listByOrganization(owner.organizationId)).total).toBe(
-          projectNumber,
+          projectNumber * (split ? 3 : 1),
         );
-        expect(await repos.project.getEnvMap(id, "production", null)).toEqual({});
-        imported.push({ id, marker });
+        for (const id of ids) {
+          expect(await repos.service.listByProject(id)).toHaveLength(split ? 1 : 3);
+          if (!split) expect(await repos.project.getEnvMap(id, "production", null)).toEqual({});
+          imported.push({ id, marker });
+        }
       }
 
       // Check both projects AFTER the second import: duplicate service names
@@ -407,6 +487,12 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
           expect(env.SERVICE_SECRET).toBe(`${marker}-${service.name}`);
           const container = deployed.find((r) => r.serviceId === service.id)!.containerId!;
           expect(await exec(container, 'printf %s "$SERVICE_SECRET"')).toBe(env.SERVICE_SECRET);
+          if (split && project.gitRepo) {
+            const revision = (service.name === "cache" ? "a" : "b").repeat(40);
+            expect(await exec(container, "cat /source-revision")).toBe(
+              `${project.gitRepo}:${revision}`,
+            );
+          }
           if (service.name === "worker") {
             expect(service.exposed).toBe(true);
             expect(service.publicEndpoints).toEqual([
@@ -423,13 +509,50 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
               ),
             ).toBe(true);
             expect(await exec(container, "wget -qO- http://127.0.0.1:8080")).toBe("ready");
-            expect(await exec(container, 'printf %s "$BOTH_HOSTS"')).toBe("db,cache");
+            if (!split) expect(await exec(container, 'printf %s "$BOTH_HOSTS"')).toBe("db,cache");
+            else {
+              const links = await repos.projectConnection.listByTarget(id);
+              expect(links).toHaveLength(2);
+              expect(
+                links.every(
+                  (link) =>
+                    link.organizationId === owner.organizationId &&
+                    link.mode === "internal" &&
+                    link.usesPrivateNetwork,
+                ),
+              ).toBe(true);
+              for (const link of links) {
+                expect(env[link.envKey]).toBeUndefined(); // Service env must not shadow its native link.
+                expect(await exec(container, `printenv ${link.envKey}`)).toBe(
+                  sharedServiceAlias(link.sourceServiceId!),
+                );
+              }
+            }
             expect(await exec(container, 'redis-cli -h "$PRIMARY_HOST" GET marker')).toBe(
               `${marker}-db`,
             );
             expect(await exec(container, 'redis-cli -h "$CACHE_HOST" GET marker')).toBe(
               `${marker}-cache`,
             );
+            if (split) {
+              // An ordinary later deployment refreshes the same saved links and
+              // rejoins the private networks without the import worker involved.
+              await h.deploy(ctx, {
+                projectId: id,
+                serviceIds: [service.id],
+                commitSha: "b".repeat(40),
+              });
+              const current = (await repos.project.findById(id))!;
+              const next = (await repos.service.listByDeployment(current.activeDeploymentId!)).find(
+                (row) => row.serviceId === service.id,
+              )!;
+              expect(await exec(next.containerId!, 'redis-cli -h "$PRIMARY_HOST" GET marker')).toBe(
+                `${marker}-db`,
+              );
+              expect(await exec(next.containerId!, 'redis-cli -h "$CACHE_HOST" GET marker')).toBe(
+                `${marker}-cache`,
+              );
+            }
           } else {
             expect(await exec(container, "redis-cli GET marker")).toBe(`${marker}-${service.name}`);
             await exec(container, "redis-cli SET new-write survives");

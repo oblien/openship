@@ -278,7 +278,7 @@
       "currentServer": "現在のサーバー",
       "migrate": "移行",
       "noOtherServers": "移動先にするため、2 台目のサーバーを追加してください。",
-      "cloudLater": "サーバー間の移行です。OpenShip Cloud との相互移行はまだ対応していません。",
+      "cloudLater": "接続済みまたは管理対象サーバー上のDockerワークロードに対応します。ワーカーロールとクラスターワークロードは専用のデプロイ手順を使用します。",
       "startFailed": "移行を開始できませんでした",
       "confirmTitle": "{project} を {server} へ移動",
       "confirmSubtitle": "移動を開始するまで、何も変更されません。",
@@ -291,11 +291,11 @@
       "intentMove": "移動",
       "intentCopy": "複製",
       "intentMoveHint": "プロジェクトそのものが移動します。確認後、旧サーバーからコンテナとボリュームが削除されます。",
-      "intentCopyHint": "元のプロジェクトはそのまま稼働します。新サーバーにデータを複製した 2 つ目のプロジェクトが作られます。",
+      "intentCopyHint": "独立したデータと設定を持つ別のプロジェクトを作成します。コピー間でトラフィックの共有や同期は行われません。",
       "confirmTitleCopy": "{project} を {server} に複製",
       "confirmStartCopy": "複製を開始",
-      "downtimeNoteCopy": "データ複製中はプロジェクトが短時間停止します（正しく複製するにはボリュームを静止させる必要があります）。複製が終わり次第、旧サーバーで再び起動します。",
-      "copyNoDomainsNote": "複製にはドメインが付きません。既存のドメインは、それを配信しているプロジェクトに残ります。",
+      "downtimeNoteCopy": "選択したサービスはデータのコピー中に停止し、コピーのデプロイ前に再開します。保存データがなければ元のサービスは稼働を続けます。",
+      "copyNoDomainsNote": "コピーにはドメインがありません。ドメインを追加する前に接続設定を確認してください。",
       "fromLabel": "移行元",
       "toLabel": "移行先",
       "modeLabel": "モード",
@@ -304,7 +304,15 @@
       "scopeHintAll": "すべてのサービスとそのデータ。",
       "scopeHintSome": "{count} 個のサービス — 残りは元のプロジェクトにのみ残ります。",
       "sourceServices": "サービス {count} 個",
-      "runningStatus": "実行中 — {status}"
+      "runningStatus": "実行中 — {status}",
+      "copyName": "コピー名",
+      "retry": "再試行",
+      "loadingServices": "サービスを読み込み中…",
+      "servicesFailed": "サービスを読み込めませんでした。",
+      "singleApplication": "アプリケーション全体をコピーします。",
+      "dependenciesRequired": "次の依存サービスもコピーに含めてください: {services}。",
+      "selectService": "複製する既存のサービスを1つ以上選択してください。",
+      "sameServerHint": "名前付きボリュームは個別にコピーし、ホストポートを再割り当てします。ホストのパスには別のサーバーが必要です。"
     },
     "cache": {
       "title": "Docker ビルドキャッシュ",
@@ -1390,6 +1398,7 @@
     "failed": "ソース更新を準備できませんでした。"
   },
   "responseRoutes": {
+    "empty": "仮想ルートはまだありません",
     "title": "仮想ルート",
     "description": "このドメインのパスでエッジから直接コンテンツを返します。",
     "add": "ルートを追加",
@@ -1437,5 +1446,11 @@
     "bytes": "バイト",
     "emptyBodyHint": "このステータスではレスポンス本文を空にする必要があります。",
     "headersHint": "キャッシュ、CORSなどのレスポンスヘッダーを追加します。"
+  },
+  "icon": {
+    "change": "アイコンを変更",
+    "label": "プロジェクトアイコンの URL",
+    "hint": "HTTP または HTTPS の画像 URL を指定してください。空にすると既定のアイコンに戻ります。",
+    "reset": "既定のアイコンを使用"
   }
 }

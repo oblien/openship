@@ -1,7 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import type { ChatCoreProps } from "@mindwire-ai/client";
 import type { AssistantMessage, AssistantPart } from "@repo/contracts";
 import { AssistantTranscript } from "./AssistantTranscript";
+
+// SSR has no viewport to measure. Exercise the real shared rows here; the
+// browser suite covers virtualization and scrolling with actual dimensions.
+vi.mock("@mindwire-ai/client", async (original) => {
+  const client = await original<typeof import("@mindwire-ai/client")>();
+  return {
+    ...client,
+    ChatCore: (props: ChatCoreProps) => <client.ChatCore {...props} virtualization="none" />,
+  };
+});
 
 const response = (parts: AssistantPart[]): AssistantMessage => ({
   id: "response",
@@ -34,7 +45,7 @@ it("keeps activity visible after text arrives until the turn actually finishes",
   const messages = [response([{ type: "text", text: "I’ll check the deployment." }])];
   expect(render(messages)).toContain("Working");
   expect(render(messages, false)).not.toContain("Working");
-  expect(render(messages, false)).toContain("Copy response");
+  expect(render(messages, false)).not.toContain("Copy response");
 });
 
 it("uses the live thinking indicator without a duplicate Working indicator", () => {

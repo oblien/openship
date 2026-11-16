@@ -16,6 +16,7 @@
  */
 
 import { renderStaticFallback, renderStaticTryFiles } from "./static-routing";
+import { EDGE_PAGES_FILE, renderEdgePageFilters, renderMaintenanceGuard, renderServerEdgePages, readServerEdgePages } from "./edge-pages";
 import { renderRouteProtection, assertRouteProtection, withRouteProtectionRuntime, ROUTE_AUTH_STATE, type RouteProtection } from "./route-protection";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
@@ -77,6 +78,7 @@ import {
   resolveProxyDirectives,
   type NginxVersion,
   type ProxySettings,
+  type EdgePages,
 } from "@repo/core";
 import {
   EDGE_CONTAINER_REAL_IP_CONF_NAME,
@@ -224,8 +226,9 @@ const FORWARD_VARS = `    set $openship_fwd_proto $scheme;
  *     written before it serve OpenResty's stock 502 — which, behind Openship Cloud's
  *     edge, is a page branded for a third party on the operator's own domain (#556).
  * 4 — explicit static SPA fallback with isolated custom 404 handling.
+ * 5 — neutral default error pages and optional per-route maintenance/pages.
  */
-export const VHOST_GENERATION = 4;
+export const VHOST_GENERATION = 5;
 
 /** Marker line carrying {@link VHOST_GENERATION}, matched by {@link readVhostGeneration}. */
 const GENERATION_MARKER = `# openship-vhost-gen: ${VHOST_GENERATION}`;
@@ -2035,6 +2038,48 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     });
   }
 
+  async getEdgePages(): Promise<EdgePages> {
+    const path = join(this.sitesDir, EDGE_PAGES_FILE);
+    return await this._exists(path) ? readServerEdgePages(await this._readFile(path)) : { files: [], errors: [] };
+  }
+
+  async getRouteEdgePages(domain: string) {
+    assertValidDomain(domain);
+    const path = this.routeStatePath(await this.resolveSlug(domain));
+    if (!await this._exists(path)) return undefined;
+    const route = this.parseRouteState(await this._readFile(path));
+    if (route.domain !== domain) throw new Error("Stored route hostname does not match.");
+    return route.edgePages ?? null;
+  }
+
+  async setRouteEdgePages(domain: string, edgePages: RouteConfig["edgePages"]): Promise<boolean> {
+    assertValidDomain(domain);
+    return this.withConfigLock(async () => {
+      const path = this.routeStatePath(await this.resolveSlug(domain));
+      if (!await this._exists(path)) return false;
+      const route = this.parseRouteState(await this._readFile(path));
+      if (route.domain !== domain) throw new Error("Stored route hostname does not match.");
+      await this.writeRoute({ ...route, edgePages });
+      return true;
+    });
+  }
+
+  async setEdgePages(config: EdgePages): Promise<void> {
+    const content = renderServerEdgePages(config);
+    return this.withConfigLock(async () => {
+      await this.assertEdgePagesRuntime();
+      await this.updateConfig([{ path: join(this.sitesDir, EDGE_PAGES_FILE), content }]);
+    });
+  }
+
+  private async assertEdgePagesRuntime(): Promise<void> {
+    if (!luaSourceAvailable()) throw new Error("Custom pages require the OpenResty Lua bundle.");
+    try { await this._exec("sh", ["-c", "test -r /usr/local/openresty/site/lualib/openship/edge_pages.lua && test -r /usr/local/openresty/site/lualib/openship/response_headers.lua"]); }
+    catch (error) {
+      throw new Error("Update the Openship edge scripts before applying custom pages, then retry.", { cause: error });
+    }
+  }
+
   private async writeRoute(route: RouteConfig): Promise<void> {
     assertValidDomain(route.domain);
     // Once per provider: the atomic writes below create missing parents anyway, and
@@ -2047,7 +2092,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const slug = await this.resolveSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
     const statePath = this.routeStatePath(slug);
-    if (route.protection === undefined) {
+    if (route.protection === undefined || route.edgePages === undefined) {
       let saved: RouteConfig | undefined;
       if (await this._exists(statePath)) {
         const state = await this._readFile(statePath);
@@ -2059,12 +2104,18 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         }
       }
       if (saved && saved.domain !== route.domain) throw new Error("Stored route hostname does not match.");
-      if (saved?.protection) route = { ...route, protection: saved.protection };
-      if (!saved?.protection && await this._exists(configPath) &&
-          (await this._readFile(configPath)).includes("$openship_route_auth")) {
+      const previousConfig = await this._exists(configPath) ? await this._readFile(configPath) : "";
+      if (route.edgePages === undefined) {
+        if (!saved && previousConfig.includes('require("openship.edge_pages")'))
+          throw new Error("Cannot recover this route's saved pages. Reapply its page settings before updating the route.");
+        route = { ...route, edgePages: saved?.edgePages };
+      }
+      if (route.protection === undefined && saved?.protection) route = { ...route, protection: saved.protection };
+      if (route.protection === undefined && !saved?.protection && previousConfig.includes("$openship_route_auth")) {
         throw new Error("Cannot recover this protected route's policy. Reapply its saved password protection before updating the route.");
       }
     }
+    if (route.edgePages) await this.assertEdgePagesRuntime();
     const runtimeChanges: { path: string; content: string }[] = [];
     if (route.protection) {
       assertRouteProtection(route.protection);
@@ -2234,12 +2285,17 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     }${staticFallback}${upstreamDown}`;
 
     // Everything both server blocks share, after the per-block preamble.
-    const sharedBody = `${route.protection ? renderRouteProtection(route.protection) : ""}${serverHeaders}${proxyOpts}
+    const maintenance = renderMaintenanceGuard(route.edgePages);
+    const filters = route.edgePages ? renderEdgePageFilters(route.edgePages, !!route.protection) : undefined;
+    const accessPages = route.protection
+      ? renderRouteProtection(route.protection, maintenance, filters)
+      : `${maintenance ? `    server_rewrite_by_lua_block {\n${maintenance}    }\n` : ""}${filters ?? ""}`;
+    const sharedBody = `${accessPages}${serverHeaders}${proxyOpts}
 ${webhookLocation}${extraLocations}`;
     // Same, for the :80 block that pairs with `redirectOrServeLocation`: every location
     // that serves project traffic upgrades, not just `/`. The webhook location is the one
     // exemption — a 30x there drops the delivery's POST body.
-    const httpsUpgradeBody = `${route.protection ? renderRouteProtection(route.protection) : ""}${serverHeaders}${proxyOpts}
+    const httpsUpgradeBody = `${accessPages}${serverHeaders}${proxyOpts}
 ${webhookLocation}${upgradingExtraLocations}`;
 
     // No TLS listener: either TLS isn't ours to terminate for this host, or a

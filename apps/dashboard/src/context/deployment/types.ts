@@ -110,6 +110,8 @@ export type RawComposeService = {
   dockerfile?: string | null;
   buildArgs?: Record<string, string | null> | null;
   ports?: string[] | null;
+  /** Container ports from the compose file's `expose:` — not published to the host. */
+  expose?: string[] | null;
   dependsOn?: string[] | null;
   environment?: Record<string, string> | null;
   volumes?: string[] | null;
@@ -170,6 +172,7 @@ export function normalizeComposeService(raw: RawComposeService): ComposeServiceI
     dockerfile: raw.dockerfile ?? undefined,
     buildArgs: raw.buildArgs ?? undefined,
     ports: raw.ports ?? [],
+    expose: raw.expose ?? [],
     dependsOn: raw.dependsOn ?? [],
     environment: raw.environment ?? {},
     volumes: raw.volumes ?? [],

@@ -26,17 +26,21 @@
 #       -t ghcr.io/oblien/openship-webmail:latest .
 #
 # Context is the repo root only because .github/workflows/docker-images.yml
-# builds every image with `context: .`; the COPYs below take four paths.
+# builds every image with `context: .`; the COPYs below take only the mail app
+# and its pinned UI dependency.
 # ─────────────────────────────────────────────────────────────────────────────
 
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS builder
-WORKDIR /src
+WORKDIR /src/apps/email
 
 # apps/email/{client,server} are NOT workspace members — the root package.json's
 # "workspaces" is ["apps/*", "packages/*"], which matches apps/email but not its
 # subdirectories — and they carry no @repo/* dependency. So there are no root
-# manifests to copy and no monorepo install: this image builds from these four
-# paths alone. (node_modules and dist are excluded by the root .dockerignore.)
+# manifests to copy and no monorepo install. Preserve the repository layout so
+# the client's relative file: dependency resolves to /src/vendor.
+# (node_modules and dist are excluded by the root .dockerignore.)
+COPY vendor/ /src/vendor/
+COPY patches/ /src/patches/
 COPY apps/email/package.json ./package.json
 COPY apps/email/scripts ./scripts
 COPY apps/email/server ./server

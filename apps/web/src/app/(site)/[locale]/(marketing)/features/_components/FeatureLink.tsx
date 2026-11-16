@@ -10,7 +10,7 @@ export function FeatureLink({ feature }: { feature: Feature }) {
   return (
     <IllustratedLink
       href={`/features/${feature.slug}`}
-      illustration={feature.slug}
+      illustration={feature.illustration}
       title={copy(feature.title)}
       description={copy(feature.tagline)}
       note={feature.availability ? "Availability details inside" : undefined}

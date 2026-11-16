@@ -33,6 +33,44 @@ RUNTIME_DIR="$HOME_DIR/runtime"
 BIN_DIR="$HOME_DIR/bin"
 LAUNCHER="$BIN_DIR/openship"
 
+# A deploy button passes a source reference only. Never eval a payload from a
+# link or repository. The CLI validates it and the normal dashboard reviews it.
+DEPLOY_APP=""
+DEPLOY_REPO=""
+DEPLOY_BRANCH=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --app|--repo|--branch)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { err "$1 requires a value"; exit 1; }
+      case "$1" in
+        --app) [ -z "$DEPLOY_APP" ] || { err "--app was supplied twice"; exit 1; }; DEPLOY_APP="$2" ;;
+        --repo) [ -z "$DEPLOY_REPO" ] || { err "--repo was supplied twice"; exit 1; }; DEPLOY_REPO="$2" ;;
+        --branch) [ -z "$DEPLOY_BRANCH" ] || { err "--branch was supplied twice"; exit 1; }; DEPLOY_BRANCH="$2" ;;
+      esac
+      shift 2 ;;
+    *) err "Unknown argument: $1. Use --app <id> or --repo <url> [--branch <name>]."; exit 1 ;;
+  esac
+done
+[ -z "$DEPLOY_APP" ] || [ -z "$DEPLOY_REPO" ] || { err "Choose --app or --repo, not both"; exit 1; }
+[ -z "$DEPLOY_BRANCH" ] || [ -n "$DEPLOY_REPO" ] || { err "--branch requires --repo"; exit 1; }
+
+launch_deploy() {
+  if [ -n "$DEPLOY_APP" ]; then set -- launch --app "$DEPLOY_APP";
+  else set -- launch --repo "$DEPLOY_REPO"; fi
+  [ -z "$DEPLOY_BRANCH" ] || set -- "$@" --branch "$DEPLOY_BRANCH"
+  # stdin is the downloaded script in curl|sh, not the user's terminal.
+  "$LAUNCHER" "$@" < /dev/tty
+}
+
+if [ -n "$DEPLOY_APP$DEPLOY_REPO" ]; then
+  ( : < /dev/tty ) 2>/dev/null || { err "Open an interactive terminal to set up this app. Nothing was installed."; exit 1; }
+  # Reuse a compatible CLI. Launch itself preserves the existing installation.
+  if [ -z "${OPENSHIP_VERSION:-}${OPENSHIP_CLI_ASSET_URL:-}" ] && [ -x "$LAUNCHER" ] && "$LAUNCHER" launch --help >/dev/null 2>&1; then
+    launch_deploy
+    exit $?
+  fi
+fi
+
 command -v curl >/dev/null 2>&1 || { err "curl is required"; exit 1; }
 command -v tar  >/dev/null 2>&1 || { err "tar is required"; exit 1; }
 
@@ -210,4 +248,9 @@ if [ -z "$LINKED" ]; then
 'openship' isn't on your PATH yet. Add its bin dir:
   export PATH="${BIN_DIR}:\$PATH"
 EOF
+fi
+
+if [ -n "$DEPLOY_APP$DEPLOY_REPO" ]; then
+  "$LAUNCHER" launch --help >/dev/null 2>&1 || { err "This CLI release does not support deploy links yet. Update the CLI when support is released."; exit 1; }
+  launch_deploy
 fi

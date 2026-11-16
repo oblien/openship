@@ -476,13 +476,10 @@ export function isPublicSpec(spec: RouteSpec): spec is PublicSpec {
  * Be precise about what that org-wide check buys, because it is easy to misread as
  * a defense it is not: it is strict only for a RESTRICTED principal (a scoped
  * token), which needs an all-GitHub grant to pass. For a session-authenticated
- * owner/admin/**member** it is satisfied by bare membership —
- * `roleAllowsResourceType` (permission.ts) ignores the action level for those
- * roles, so `github:admin` is no higher a bar than `github:read`. The per-repo,
- * read-vs-write authority for those principals is enforced ONLY by
- * `github-access.ts` at the token funnel and at the mutating service helpers.
- * Reading this comment as "the route layer already gates writes" is what let
- * GHSA-hp2g-hw7g-f3vm sit behind a `github:admin` tag.
+ * owner/admin it is satisfied by broad membership authority. Ordinary members
+ * cannot satisfy an admin action. Per-repo read/write authority still belongs
+ * to `github-access.ts` at the token funnel and mutating service helpers; an
+ * org-wide tag never substitutes for that repository-specific check.
  * Paramless GitHub routes (/home, /status, /repos) also stay on the org-wide
  * path: `filterToolsForPrincipal` already hides them from a scoped token via
  * `perm.wildcard`, and their handlers narrow results through

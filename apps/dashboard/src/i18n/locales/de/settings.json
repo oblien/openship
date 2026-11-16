@@ -1791,5 +1791,22 @@
     "confirmCta": "Bereitstellung stoppen",
     "cancel": "Abbrechen",
     "noReverseProxy": "Auf dieser Maschine wurde kein Reverse-Proxy erkannt."
+  },
+  "imageUrl": {
+    "preview": "Bildvorschau",
+    "invalid": "Gib eine HTTP- oder HTTPS-Bild-URL ohne Zugangsdaten ein.",
+    "failed": "Die Bild-URL konnte nicht gespeichert werden.",
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "Gespeichert",
+    "previewFailed": "Keine Vorschau verfügbar. Prüfe, ob die URL direkt auf ein Bild verweist."
+  },
+  "profile": {
+    "change": "Profilbild ändern",
+    "title": "Profil",
+    "description": "Das Bild deines persönlichen Kontos.",
+    "label": "Avatar-URL",
+    "hint": "Verwende eine direkte Bild-URL. Leer lassen, um deinen Anfangsbuchstaben anzuzeigen.",
+    "reset": "Anfangsbuchstaben verwenden"
   }
 }

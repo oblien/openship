@@ -3,7 +3,7 @@ title: Projects
 description: Find deployed apps and manage their domains, deployments, workflows, configuration, logs, and backups.
 ---
 
-A **project** is one app Openship knows how to build and run. This is where you find every app
+A **project** groups an application or a multi-service stack with its environments, deployments and domains. This is where you find every app
 you've deployed and go into any one of them to change how it runs. There are two screens: the
 **Projects list** (everything at a glance) and the **project detail** screen (one project and
 its management tabs).
@@ -13,7 +13,7 @@ its management tabs).
 Open **Projects** from the left nav. This screen is a single scannable list of every project in
 your workspace — one row per project.
 
-Each row shows, left to right: the app's icon (its favicon, or the framework logo), the **name**
+Each row shows, left to right: the project icon (set in **Settings → Project Info**), or its app/framework logo, the **name**
 and its live version badge, the primary **domain**, the detected **framework**, where it's hosted
 (**Cloud**, a **Server** by name, or **Local**), its source (a GitHub repo or a local folder),
 the build shape (**Services**, **Static**, or **Standalone**), how long ago it changed, and a
@@ -80,9 +80,18 @@ deploy" screen here instead. See [Logs & monitoring](/docs/guides/logs-monitorin
 
 ### Services
 
-`…/services` — for multi-service (docker-compose / monorepo) projects. Lists each service and
-lets you start, stop, restart, and configure them individually. See [Compose &
+`…/services` — the applications and services in the project. A single application uses the same
+runtime management flow as services in a Compose stack: inspect status and logs, edit environment
+and resource settings, and apply supported service actions. See [Compose &
 multi-service](/docs/guides/compose-multi-service).
+
+### Topology
+
+The project topology shows the current environment's applications, services, routes and connections
+as a graph. Select a resource to inspect it and open the same configuration and operation panels used
+elsewhere in the project. Available actions depend on the resource and runtime, including replica
+changes, database operations and shared-volume management. Moving a card changes the view, not the
+deployment or its data.
 
 ### Domains
 

@@ -955,6 +955,8 @@ const LUA_SCRIPTS = [
   "rules_lib.lua",
   "rules_guard.lua",
   "route_auth.lua",
+  "response_headers.lua",
+  "edge_pages.lua",
   "route_auth_crypto.lua",
   "route_auth_login.lua",
   "route_auth_headers.lua",

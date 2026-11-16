@@ -1,3 +1,4 @@
+import type { ProjectConnectionCandidate } from "@repo/contracts";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
@@ -48,15 +49,7 @@ async function notifyConnections<T>(request: Promise<T>): Promise<T> {
 
 export const connectionsApi = {
   candidates: (projectId: string) =>
-    api.get<{
-      data: Array<{
-        id: string;
-        name: string;
-        description: string;
-        appTemplateId: string | null;
-        clusterId?: string | null;
-      }>;
-    }>(`${endpoints.projects.connections(projectId)}/candidates`),
+    api.get<{ data: ProjectConnectionCandidate[] }>(`${endpoints.projects.connections(projectId)}/candidates`),
   /** Connections wired INTO a project (`projectId` = the consumer). */
   list: (projectId: string) =>
     api.get<{ data: ProjectConnection[] }>(endpoints.projects.connections(projectId)),

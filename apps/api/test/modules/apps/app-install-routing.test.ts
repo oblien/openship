@@ -703,3 +703,41 @@ it("deduplicates an interpolated secret also declared as a generated config fiel
     vars.filter((v: { key: string }) => v.key === "OPENSHIP_ADMIN_PASSWORD"),
   ).toHaveLength(1);
 });
+
+function templateWithConfigPorts() {
+  const template = structuredClone(getAppTemplate("convex")!);
+  template.id = "config-ports-test";
+  template.configFields = [
+    { key: "HOST_PORT", service: "backend", label: "Host port", default: "8181" },
+    { key: "HTTP_PORT", service: "backend", label: "Container port", default: "8080" },
+  ];
+  template.services!.find(service => service.name === "backend")!.ports = ["{{config:HOST_PORT}}:{{config:HTTP_PORT}}/tcp"];
+  customTemplateMock.mockResolvedValue({ template });
+  return template;
+}
+
+it("substitutes port defaults before validating routes and preserves the cached template", async () => {
+  const template = templateWithConfigPorts();
+  await installApp(ctx, { templateId: template.id, routes: [{ service: "backend", port: 8080, mode: "port" }] });
+  expect(payloadFor("backend")?.ports).toEqual(["0.0.0.0:8181:8080/tcp"]);
+  expect(template.services![0]!.ports).toEqual(["{{config:HOST_PORT}}:{{config:HTTP_PORT}}/tcp"]);
+});
+
+it("uses supplied port values for both route validation and service creation", async () => {
+  const template = templateWithConfigPorts();
+  await installApp(ctx, {
+    templateId: template.id, config: { HOST_PORT: "9191", HTTP_PORT: "9090" },
+    routes: [{ service: "backend", port: 9090, mode: "port" }],
+  });
+  expect(payloadFor("backend")?.ports).toEqual(["0.0.0.0:9191:9090/tcp"]);
+});
+
+it("uses resolved authored ports when undoing port-only access on an adopted draft", async () => {
+  const template = templateWithConfigPorts();
+  draftMock.mockResolvedValue({ id: "p1", slug: "draft", name: "Draft" });
+  listServicesMock.mockResolvedValue(template.services!.map(service => ({ id: `svc-${service.name}`, name: service.name, ports: service.name === "backend" ? ["0.0.0.0:8181:8080/tcp"] : [] })));
+  await installApp(ctx, { templateId: template.id, routes: [{ service: "backend", port: 8080, mode: "custom", customDomain: "ports.example.com" }] });
+  expect(updateServiceMock).toHaveBeenCalledWith(ctx, "p1", "svc-backend", expect.objectContaining({ ports: ["8181:8080/tcp"] }));
+  expect(createServiceMock).not.toHaveBeenCalled();
+  expect(setEnvMock).not.toHaveBeenCalled();
+});

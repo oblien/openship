@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useRef, useState } from "react";
 import type { ClusterDatabase, ProjectDatabaseSchemas } from "@repo/contracts";
 import type { Static } from "@sinclair/typebox";
@@ -25,7 +26,7 @@ export function ClusterDatabaseCopy({
   const request = useRef(randomUUID());
   return (
     <details className="rounded-xl bg-muted/30 p-3 text-sm">
-      <summary className="cursor-pointer">Create an upgraded copy</summary>
+      <DisclosureSummary className="cursor-pointer">Create an upgraded copy</DisclosureSummary>
       <form
         className="mt-3 space-y-3"
         onSubmit={(event) => {

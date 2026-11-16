@@ -3,15 +3,9 @@ title: Cloud as source
 description: Cloud projects are owned by Openship Cloud; your self-hosted instance is a gateway in front of it — plus how projects promote up and come back home.
 ---
 
-For a **Cloud-owned project**, Openship Cloud (our hosted service) holds the one true copy — the
-**canonical** owner. Its record, deployments, domains, environment variables, and logs all live on the
-cloud, and the cloud runs its builds and lifecycle. Your self-hosted instance keeps **no local copy** of
-that project. Instead it acts as a **gateway** — a thin pass-through that forwards requests for that project
-up to the cloud and hands you back the answer.
-
-Think of it like a mailbox on your street. The letters aren't stored in the mailbox; the mailbox just
-carries them to and from the real post office. Your instance is the mailbox; Openship Cloud is the post
-office.
+For a Cloud-owned project, OpenShip Cloud is the authoritative source for configuration, deployments,
+domains, environment values, and lifecycle operations. A connected self-hosted instance acts as a gateway
+for those requests rather than maintaining an independent editable project copy.
 
 <Callout title="One rule to remember">
 A project lives in **exactly one place** — fully local, or fully on the cloud. Never half in each. That is

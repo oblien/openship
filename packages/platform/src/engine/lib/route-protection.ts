@@ -23,6 +23,11 @@ import { env } from "../config";
 import type { ExecutionContext } from "../../context";
 import type { RouteProtectionInput, RouteProtectionStatus } from "@repo/contracts";
 
+function publicOptions(policy: RouteProtection) {
+  return { mode: policy.mode ?? "page" as const, username: policy.username ?? "visitor",
+    sessionSeconds: policy.sessionSeconds, ...(policy.loginHtml ? { loginHtml: policy.loginHtml } : {}) };
+}
+
 /** Policy edits and publication share ownership without upgrading host/build admission. */
 export function withRouteProtectionLock<T>(projectId: string, work: () => Promise<T>): Promise<T> {
   return createProvisionLock(`route-protection:${projectId}`).run(work);
@@ -70,13 +75,25 @@ export async function listRouteProtection(
   projectId: string,
 ): Promise<RouteProtectionStatus[]> {
   await selfHostedProject(ctx, projectId);
-  return (await repos.routeProtection.list(projectId)).map((row) => ({
-    hostname: row.hostname,
-    enabled: row.enabled,
-    status:
-      (!row.enabled || row.hasSecret) && row.revision === row.appliedRevision
-        ? "applied"
-        : "pending",
+  return Promise.all((await repos.routeProtection.list(projectId)).map(async (row) => {
+    const result: RouteProtectionStatus = {
+      hostname: row.hostname, enabled: row.enabled,
+      status: (!row.enabled || row.hasSecret) && row.revision === row.appliedRevision ? "applied" : "pending",
+    };
+    if (row.enabled && row.hasSecret) {
+      const current = await repos.routeProtection.readPrivate(projectId, row.hostname);
+      try {
+        const policy = current && privatePolicy(current);
+        if (policy) result.options = publicOptions(policy);
+        if (!policy || current.revision !== row.revision) result.status = "pending";
+      } catch (error) {
+        // Missing/corrupt imported credentials must stay editable, but never
+        // appear applied or expose private policy material in a read response.
+        if (!(error instanceof AppError) || !["ROUTE_PROTECTION_SECRET_MISSING", "ROUTE_PROTECTION_SECRET_INVALID"].includes(error.code ?? "")) throw error;
+        result.status = "pending";
+      }
+    }
+    return result;
   }));
 }
 
@@ -293,20 +310,25 @@ export async function changeRouteProtection(
         );
       if (domain) await domainExecution(ctx, domain.id);
       const prior = await repos.routeProtection.readPrivate(projectId, hostname);
-      if (input.action === "revoke" && !prior?.secret)
+      if ((input.action === "revoke" || input.action === "configure") && !prior?.secret)
         throw new AppError(
           "This route has no saved password.",
           400,
           "ROUTE_PROTECTION_NOT_ENABLED",
         );
       if (input.action === "retry" && !prior) throw new NotFoundError("Route protection", hostname);
-      const policy =
+      let policy =
         prepared ??
         (input.action === "unlock"
           ? null
           : input.action === "revoke"
             ? revokeRouteSessions(privatePolicy(prior!)!)
             : privatePolicy(prior!));
+      if ((input.action === "protect" || input.action === "configure") && input.options && policy) {
+        // Changing the presentation or lifetime revokes old sessions too.
+        policy = revokeRouteSessions({ ...policy, ...input.options, loginHtml: input.options.loginHtml });
+        assertRouteProtection(policy);
+      }
       const revision = input.action === "retry" ? prior!.revision : randomBytes(16).toString("hex");
       if (input.action !== "retry")
         await repos.routeProtection.save(
@@ -322,6 +344,7 @@ export async function changeRouteProtection(
         hostname,
         enabled: policy !== null,
         status: "pending",
+        ...(policy ? { options: publicOptions(policy) } : {}),
       };
       const deployment = await findActiveDeployment(project);
       if (!domain || !deployment) return result;

@@ -1791,5 +1791,22 @@
     "confirmCta": "停止服务",
     "cancel": "取消",
     "noReverseProxy": "在此机器上未检测到反向代理。"
+  },
+  "imageUrl": {
+    "preview": "图片预览",
+    "invalid": "请输入不含凭据的 HTTP 或 HTTPS 图片 URL。",
+    "failed": "无法保存图片 URL。",
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "previewFailed": "无法预览。请检查 URL 是否直接指向图片。"
+  },
+  "profile": {
+    "change": "更改头像",
+    "title": "个人资料",
+    "description": "你的个人账户图片。",
+    "label": "头像 URL",
+    "hint": "使用图片的直接 URL。留空则显示姓名首字母。",
+    "reset": "使用首字母"
   }
 }

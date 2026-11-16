@@ -6,10 +6,34 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+### Authorization
+
+- Require administrative authority for admin operations across HTTP, SDK, native and
+  MCP access. Ordinary organization membership no longer grants host command execution;
+  token grants remain bounded by the user's current built-in role (#1783).
+
+### Cloud billing
+
+- Open checkout only when its payment URL is ready, with a visible fallback button.
+  Recover unfinished Cloud purchases when reopening setup instead of creating duplicate
+  unpaid spaces. Show pending-plan warnings in the Plans & billing sidebar entry.
+
+### Backups
+
+- Back up verified existing empty Docker volumes and bind directories without blocking
+  populated sibling sources. Reject missing sources before capture and preserve failures
+  for unavailable backing storage (#1767).
+
 ### CLI
 
 - Run the container-to-host connectivity probe with Node.js, matching the API image,
   so `openship up` and `openship doctor` can diagnose the host channel without Bun.
+
+### Instance relocation
+
+- Fence event-stream admission while moving the controller so a late subscriber cannot
+  keep the source draining indefinitely. Restore stream access when the controller resumes,
+  and link server preparation to its build view while deployment reads remain available.
 
 ## 0.9.12
 

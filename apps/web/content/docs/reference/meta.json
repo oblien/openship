@@ -1,4 +1,5 @@
 {
   "title": "Reference",
+  "icon": "file-code",
   "pages": ["openship-json", "app-catalog"]
 }

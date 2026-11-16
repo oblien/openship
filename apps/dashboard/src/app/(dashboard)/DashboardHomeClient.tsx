@@ -2,7 +2,6 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useState, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { projectsApi } from "@/lib/api";
@@ -48,14 +47,10 @@ import { useAttentionFeed } from "@/hooks/useAttentionFeed";
 
 interface DashboardHomeClientProps {
   initialData?: any;
-  hostedCloud: boolean;
-  planCard?: ReactNode;
 }
 
 export default function DashboardHomeClient({
   initialData,
-  hostedCloud,
-  planCard,
 }: DashboardHomeClientProps) {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -143,7 +138,7 @@ export default function DashboardHomeClient({
               ) : (
                 <div className="divide-y divide-border/50">
                   {sourceProjects.slice(0, 5).map((p) => (
-                    <ProjectCard key={p.id} project={p} preferAppLogo onChanged={() => removeProject(p.id)} />
+                    <ProjectCard key={p.id} project={p} onChanged={() => removeProject(p.id)} />
                   ))}
                 </div>
               )}
@@ -203,11 +198,9 @@ export default function DashboardHomeClient({
           <HomeSidebar
             tip={attention.cards === 0 ? <HomeTipCard projectCount={projects.length} loading={loading} /> : null}
           >
-            {planCard}
-
             {/* Alerts replace the activity summary; Apps stays accessible and
                 Quick Tip uses only the space left after these cards. */}
-            {attention.cards === 0 && (!hostedCloud || projects.length > 0) && (
+            {attention.cards === 0 && (
               <div className="bg-card rounded-2xl border border-border/50 p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <UiIcon name="activity" className="size-4 text-muted-foreground" />

@@ -7,9 +7,9 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 
 The Service terminal API gives you a live shell inside a service's running container — the same PTY you get
 from the dashboard's **Terminal** tab on a service. You first mint a short-lived ticket over normal HTTP,
-then open a WebSocket that carries the ticket and streams keystrokes and output. It works in both
-deployment modes: on self-hosted instances it's a `docker exec` into the container; on Openship Cloud it's
-a shell in your Oblien workspace. The runtime is chosen automatically from the service's active deployment.
+then open a WebSocket that carries the ticket and streams keystrokes and output. The runtime is selected
+from the service's active deployment. Terminal access is available when that runtime supports an
+interactive shell; unsupported runtimes return a capability error.
 
 ## Mint a ticket
 
@@ -35,8 +35,9 @@ curl -X POST "$OPENSHIP_URL/api/services/terminal/ticket" \
 ```
 
 <Callout title="CLI equivalent" type="info">
-There's no working CLI shell yet — `openship service exec` is a stub that prints "coming soon" (the CLI
-ships no WebSocket client). Use the dashboard's service **Terminal** tab, which drives these endpoints.
+  Use `openship service terminal SERVICE_ID` for an interactive shell, or `openship service exec
+  SERVICE_ID "COMMAND" --project PROJECT_ID` to run a command. The dashboard's **Terminal** tab and
+  the SDK use the same service terminal access flow. See the examples below.
 </Callout>
 
 ## Open the WebSocket

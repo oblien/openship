@@ -9,6 +9,16 @@ import {
 } from "@repo/platform/engine/lib/compose-parser";
 
 describe("parseComposeFile", () => {
+  it("keeps the container ports a compose file declares with `expose`", () => {
+    const parsed = parseComposeFile(
+      "services:\n  web:\n    image: app:test\n    expose:\n      - 3000\n      - \"8080/udp\"\n",
+    );
+    expect(parsed.services[0]?.expose).toEqual(["3000", "8080/udp"]);
+    // `expose` is read now, so it is no longer reported as a dropped key.
+    expect(parsed.unsupported).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: "expose" })]),
+    );
+  });
   it("keeps shared memory capacity and reports invalid values as blocking", () => {
     const parsed = parseComposeFile("services:\n  inference:\n    image: vllm:test\n    shm_size: ${SHM}\n", { envFileContent: "SHM=2g\n" });
     expect(parsed.services[0]?.advanced?.shmSize).toBe(2147483648);

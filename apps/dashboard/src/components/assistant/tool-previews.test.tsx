@@ -16,8 +16,8 @@ const flow = {
   channelIds: [],
   enabled: false,
 };
-const call = (data: unknown, name = "post_assistant_automations"): AssistantTool => ({
-  id: "call",
+const call = (data: unknown, name = "post_assistant_automations", id = name): AssistantTool => ({
+  id,
   name,
   input: {},
   output: JSON.stringify({ data }),
@@ -62,8 +62,8 @@ describe("automation tool previews", () => {
       <AssistantToolActivity
         active={false}
         parts={[
-          { type: "tool", tool: call(flow) },
-          { type: "tool", tool: call(flow) },
+          { type: "tool", tool: call(flow, undefined, "create-a") },
+          { type: "tool", tool: call(flow, undefined, "create-b") },
         ]}
       />,
     );

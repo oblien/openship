@@ -60,7 +60,7 @@ export function managedProcessState(workload: WorkloadInfo): ContainerStatus {
 /** Workload GET is saved configuration and can retain an old state after a VM
  * restart. The provider's status endpoint is the live process authority. */
 export async function readManagedProcessStatus(
-  workloads: ReturnType<Oblien["workspace"]>["workloads"],
+  workloads: ReturnType<Oblien["vm"]>["workloads"],
   saved: WorkloadInfo,
 ): Promise<WorkloadInfo> {
   let result: Awaited<ReturnType<typeof workloads.status>>;
@@ -147,7 +147,7 @@ export class CloudServerConnection {
   }
 
   workspace() {
-    return this.client.workspace(this.workspaceId);
+    return this.client.vm(this.workspaceId);
   }
 
   runtime(options?: { force?: boolean }): Promise<Runtime> {
@@ -230,7 +230,7 @@ export class CloudServerConnection {
 
   private ensureBridge(): Promise<void> {
     const initialize = async () => {
-      const info = await this.client.workspaces.get(this.workspaceId);
+      const info = await this.client.vms.get(this.workspaceId);
       assertDockerWorkspaceOwner(info, this.options.namespace, this.workspaceId);
       assertCloudWorkspaceRunning(info);
       let runtime = await this.runtime();
@@ -263,7 +263,7 @@ export class CloudServerConnection {
             try {
               // Refresh only through this namespace's existing client. A revoked
               // namespace credential must still fail the control-plane check.
-              runtime = await this.client.workspace(this.workspaceId).runtime({ force: true });
+              runtime = await this.client.vm(this.workspaceId).runtime({ force: true });
             } catch (diagnosticFailure) {
               observeCaughtError(diagnosticFailure, "adapters/runtime/cloud/server-connection");
               throw new AppError(
@@ -304,7 +304,7 @@ export class CloudServerConnection {
       // A modified image missing it must fail at that boundary, not attempt to
       // bootstrap Python through the transport which already requires it.
       await this.executor.writeFile(BRIDGE_SCRIPT, CLOUD_DOCKER_BRIDGE_SOURCE, { mode: 0o700 });
-      const workspace = this.client.workspace(this.workspaceId);
+      const workspace = this.client.vm(this.workspaceId);
       const workload = (await workspace.workloads.list({ name: BRIDGE_WORKLOAD })).find(
         (item) => item.name === BRIDGE_WORKLOAD,
       );
@@ -354,7 +354,7 @@ export class CloudServerConnection {
 
   async resume(): Promise<void> {
     await this.options.beforeProvision?.();
-    const ws = this.client.workspace(this.workspaceId);
+    const ws = this.client.vm(this.workspaceId);
     const data = await ws.get();
     assertDockerWorkspaceOwner(data, this.options.namespace, this.workspaceId);
     if (isDockerWorkspaceRunning(data)) return;

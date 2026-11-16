@@ -1,11 +1,15 @@
 import { pbkdf2, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
-import { AppError } from "@repo/core";
+import { AppError, normalizeEdgeHtml } from "@repo/core";
+import { luaConfigData } from "./lua-data";
 
 const derive = promisify(pbkdf2);
 
 /** Private edge configuration. Never serialize this through a public read API. */
 export interface RouteProtection {
+  mode?: "page" | "basic";
+  username?: string;
+  loginHtml?: string;
   version: string;
   salt: string;
   verifier: string;
@@ -65,6 +69,15 @@ export function assertRouteProtection(value: unknown): asserts value is RoutePro
     policy.sessionSeconds > 604_800
   )
     throw new Error("Invalid route protection configuration.");
+  if (policy.mode !== undefined && policy.mode !== "page" && policy.mode !== "basic")
+    throw new AppError("Choose browser authentication or a sign-in page.", 400, "INVALID_ROUTE_PROTECTION_OPTIONS");
+  if (policy.username !== undefined && !/^[A-Za-z0-9._-]{1,64}$/.test(policy.username))
+    throw new AppError("Use a username of 1–64 letters, numbers, dots, underscores or hyphens.", 400, "INVALID_ROUTE_PROTECTION_OPTIONS");
+  if (policy.loginHtml !== undefined) {
+    normalizeEdgeHtml(policy.loginHtml);
+    if (policy.loginHtml.split("{{form}}").length !== 2)
+      throw new AppError("Include {{form}} exactly once in your sign-in HTML.", 400, "INVALID_ROUTE_LOGIN_HTML");
+  }
 }
 
 export const ROUTE_AUTH_PATH = "/_openship/access";
@@ -91,19 +104,18 @@ export function withRouteProtectionRuntime(config: string): string {
 }
 
 /** Safe literal: base64 contains no nginx variable, quote or directive delimiters. */
-export function renderRouteProtection(policy: RouteProtection): string {
+export function renderRouteProtection(policy: RouteProtection, maintenance = "", filters?: string): string {
   assertRouteProtection(policy);
-  const encoded = Buffer.from(JSON.stringify(policy)).toString("base64");
   return `    set $openship_route_auth $openship_route_auth;
     # Index the map variable for Lua writes, preserving it on internal redirects.
     set $openship_route_authorized $openship_route_authorized;
     # Server Lua runs before nginx set/return; initialize policy here so redirects
     # and content handlers are both gated.
     server_rewrite_by_lua_block {
-        ngx.var.openship_route_auth = '${encoded}'
+        ngx.var.openship_route_auth = ${luaConfigData(policy)}
         require("openship.route_auth").guard()
-    }
-    header_filter_by_lua_file /usr/local/openresty/site/lualib/openship/route_auth_headers.lua;
+${maintenance}    }
+${filters ?? "    header_filter_by_lua_file /usr/local/openresty/site/lualib/openship/route_auth_headers.lua;"}
 
     location = ${ROUTE_AUTH_PATH} {
         client_max_body_size 4k;

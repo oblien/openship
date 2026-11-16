@@ -8,6 +8,8 @@ const footerLinks = {
     { label: "Apps", href: "/apps" },
     { label: "Install", href: "/download" },
     { label: "Pricing", href: "/pricing" },
+    { label: "Compare", href: "/compare" },
+    { label: "Migrate", href: "/migrate" },
     { label: "Docs", href: "/docs" },
     { label: "Changelog", href: "/changelog" },
   ],
@@ -28,6 +30,7 @@ const footerLinks = {
   Legal: [
     { label: "Privacy", href: "/privacy" },
     { label: "Terms", href: "/terms" },
+    { label: "Service level agreement", href: "/sla" },
     { label: "License (Apache 2.0)", href: "https://github.com/oblien/openship/blob/main/LICENSE" },
   ],
 };

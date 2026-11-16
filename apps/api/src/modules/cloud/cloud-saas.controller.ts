@@ -635,11 +635,11 @@ export async function checkEdgeVerification(c: Context) {
 // ─── Pages proxy ────────────────────────────────────────────────────────────
 
 /**
- * POST /api/cloud/pages  { workspace_id, path, name, slug, domain? }
+ * POST /api/cloud/pages  { vm_id, path, name, slug, domain? }
  *
  * Forwards to Oblien with the caller's namespace token. Oblien
  * enforces:
- *   - `workspace_id` must belong to the caller's namespace (or 404)
+ *   - `vm_id` must belong to the caller's namespace (or 404)
  *   - `slug` must be free on the shared zone (or 409 SLUG_TAKEN)
  *
  * Returns the raw Oblien SDK shape so the caller's infrastructure adapter
@@ -648,18 +648,18 @@ export async function checkEdgeVerification(c: Context) {
 export async function pagesProxy(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{
-    workspace_id?: string;
+    vm_id?: string;
     path?: string;
     name?: string;
     slug?: string;
     domain?: string;
   }>();
-  if (!body.workspace_id || !body.path || !body.name || !body.slug) {
-    return c.json({ error: "workspace_id, path, name and slug are required" }, 400);
+  if (!body.vm_id || !body.path || !body.name || !body.slug) {
+    return c.json({ error: "vm_id, path, name and slug are required" }, 400);
   }
   try {
     const result = await createCloudPage(ctx, {
-      workspace_id: body.workspace_id,
+      vm_id: body.vm_id,
       path: body.path,
       name: body.name,
       slug: body.slug,

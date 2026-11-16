@@ -133,7 +133,7 @@ describe("notifications shared SDK/HTTP operations", () => {
     expect(await c.native.listDefaults()).toEqual([value]);
     expect(await c.native.categories()).toEqual(await c.remote.categories());
     await db.update(schema.member).set({ role: "member" }).where(eq(schema.member.userId, owner.userId));
-    for (const client of [c.native, c.remote]) await expect(client.upsertDefault({ category: "deploy.failed", defaultEnabled: false })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    for (const client of [c.native, c.remote]) await expect(client.upsertDefault({ category: "deploy.failed", defaultEnabled: false })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("does not verify a replacement configuration or hide normal delivery failures", async () => {

@@ -356,7 +356,7 @@ export async function resetAdminPassword(c: Context) {
   // multi-user box the reset never lands on an arbitrary member row.
   const admin = await repos.user.findFoundingAdmin();
   if (!admin) {
-    return c.json({ error: "No admin account exists yet — run `openship` to create one." }, 409);
+    return c.json({ error: "No admin account exists yet — run `openship` and choose Create first admin, or run `openship up --non-interactive --admin-email <email>` with OPENSHIP_ADMIN_PASSWORD set." }, 409);
   }
 
   const email =

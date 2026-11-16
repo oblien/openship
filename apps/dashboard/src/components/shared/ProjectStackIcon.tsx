@@ -4,7 +4,7 @@ import { isServicesFramework } from "@repo/core";
 import { Icon } from "@repo/ui/icons";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 
-/** Fallback identity after a catalog logo or favicon, shared by project rows
+/** Fallback identity after a project icon or catalog logo, shared by project rows
  * and deployment history. A missing framework never implies a static site. */
 export function ProjectStackIcon({
   framework,

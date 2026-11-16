@@ -1,3 +1,4 @@
+import { isImageUrl } from "@repo/core";
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { organizationOptions, isSaasDeployment } from "./organization-lifecycle";
 import { betterAuth, type User } from "better-auth";
@@ -278,6 +279,14 @@ export const auth = betterAuth({
   /* ---------- Database hooks ---------- */
   databaseHooks: {
     user: {
+      update: {
+        before: async (user) => {
+          if (user.image === undefined) return;
+          const image = typeof user.image === "string" ? user.image.trim() || null : user.image;
+          if (image !== null && !isImageUrl(image)) throw new APIError("BAD_REQUEST", { message: "Avatar URL must be an HTTP or HTTPS URL without credentials." });
+          return { data: { ...user, image } };
+        },
+      },
       create: {
         before: async (user, ctx) => {
           const denyCreation = (message: string): never => {

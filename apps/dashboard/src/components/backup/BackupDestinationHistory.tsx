@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
@@ -417,9 +418,9 @@ function Payloads({ payloads }: { payloads: BackupDestinationRun["payloads"] }) 
       {items(values.slice(0, 1))}
       {values.length > 1 && (
         <details>
-          <summary className="cursor-pointer rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <DisclosureSummary className="cursor-pointer rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {interpolate(m.moreContents, { count: String(values.length - 1) })}
-          </summary>
+          </DisclosureSummary>
           <div className="mt-2 space-y-2">{items(values.slice(1))}</div>
         </details>
       )}

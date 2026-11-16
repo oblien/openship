@@ -15,6 +15,7 @@ export default [
         index('(routes)/mail/page.tsx'),
         route('/create', '(routes)/mail/create/page.tsx'),
         route('/compose', '(routes)/mail/compose/page.tsx'),
+        route('/scheduled', '(routes)/mail/scheduled/page.tsx'),
         route('/under-construction/:path', '(routes)/mail/under-construction/[path]/page.tsx'),
         route('/:folder', '(routes)/mail/[folder]/page.tsx'),
       ]),
@@ -29,6 +30,7 @@ export default [
         // removed during the self-hosted migration - this is not SaaS
         // and mailbox identity is the signed-in user itself.
         route('/general', '(routes)/settings/general/page.tsx'),
+        route('/agents', '(routes)/settings/agents/page.tsx'),
         route('/labels', '(routes)/settings/labels/page.tsx'),
         route('/notifications', '(routes)/settings/notifications/page.tsx'),
         route('/privacy', '(routes)/settings/privacy/page.tsx'),

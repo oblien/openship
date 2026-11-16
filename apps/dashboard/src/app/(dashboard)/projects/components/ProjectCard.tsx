@@ -5,8 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useState } from "react";
 import Link from "next/link";
 import { type Project } from "@/constants/mock";
-import { AppLogo } from "@/components/AppLogo";
-import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
+import { ProjectIcon } from "@/components/shared/ProjectIcon";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, projectCardHref, projectDisplayDomain } from "@/utils/project-status";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
@@ -15,7 +14,6 @@ import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi, getApiErrorMessage } from "@/lib/api";
 import { timeAgo } from "@/lib/time";
-import { useImageFallback } from "@/hooks/useImageFallback";
 import type { Dictionary } from "@/i18n";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -50,9 +48,6 @@ interface Props {
    *  every row by the projects list and `/info`, but isn't declared on `Project`
    *  (constants/mock) yet, so it's spelled out here rather than cast away. */
   project: Project & { primaryDomain?: string | null };
-  /** On the Apps page: show the catalog app's brand logo instead of the
-   *  framework/service fallback icon. */
-  preferAppLogo?: boolean;
   /** Show an "update available" badge (fed by the update scan). Off by default
    *  so the Projects page is unaffected. */
   updateAvailable?: boolean;
@@ -61,14 +56,13 @@ interface Props {
   onChanged?: () => void;
 }
 
-const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable, onChanged }) => {
+const ProjectCard: React.FC<Props> = ({ project, updateAvailable, onChanged }) => {
   const { t } = useI18n();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
   const status = getProjectStatus(project);
   const fw = getFrameworkConfig(project.framework);
-  const favicon = useImageFallback(project.favicon);
 
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
@@ -118,22 +112,8 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
       <Link href={clickTarget} aria-label={project.name} className="absolute inset-0 z-0" />
 
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3.5 @xl/project-row:flex @xl/project-row:gap-4 @xl/project-row:px-5">
-        {/* Icon — on the Apps page show the catalog app's brand logo; otherwise
-            the project favicon, falling back to the framework/service glyph. */}
         <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors overflow-hidden">
-          {preferAppLogo && project.isApp ? (
-            <AppLogo appId={appTemplateId} className="w-6 h-6 object-contain" />
-          ) : favicon.showImage ? (
-            <img
-              ref={favicon.ref}
-              src={project.favicon!}
-              alt=""
-              className="w-6 h-6 object-contain"
-              onError={favicon.onError}
-            />
-          ) : (
-            <ProjectStackIcon framework={project.framework} />
-          )}
+          <ProjectIcon project={project} appTemplateId={appTemplateId} />
         </div>
 
         {/* Name + domain */}

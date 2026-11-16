@@ -1791,5 +1791,22 @@
     "confirmCta": "配信を停止",
     "cancel": "キャンセル",
     "noReverseProxy": "このマシンでリバースプロキシが検出されませんでした。"
+  },
+  "imageUrl": {
+    "preview": "画像プレビュー",
+    "invalid": "認証情報を含まない HTTP または HTTPS の画像 URL を入力してください。",
+    "failed": "画像 URL を保存できませんでした。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "保存しました",
+    "previewFailed": "プレビューを表示できません。画像の直接 URL か確認してください。"
+  },
+  "profile": {
+    "change": "アバターを変更",
+    "title": "プロフィール",
+    "description": "個人アカウントの画像。",
+    "label": "アバター URL",
+    "hint": "画像の直接 URL を使用します。空欄にすると名前の頭文字を表示します。",
+    "reset": "頭文字を使用"
   }
 }

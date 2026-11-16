@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -179,9 +180,9 @@ function Detail({ id }: { id: string }) {
                 {data.workflow.controller !== "github" &&
                   data.workflow.plan.triggers.includes("repository_dispatch") && (
                     <details className="text-sm">
-                      <summary className="cursor-pointer py-1 font-medium">
+                      <DisclosureSummary className="cursor-pointer py-1 font-medium">
                         {a.integration.webhookEndpoint}
-                      </summary>
+                      </DisclosureSummary>
                       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                         {a.integration.tokenHint}
                       </p>

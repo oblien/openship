@@ -1791,5 +1791,22 @@
     "confirmCta": "Sunmayı durdur",
     "cancel": "İptal",
     "noReverseProxy": "Bu makinede ters proxy algılanmadı."
+  },
+  "imageUrl": {
+    "preview": "Resim önizlemesi",
+    "invalid": "Kimlik bilgisi içermeyen bir HTTP veya HTTPS resim URL’si girin.",
+    "failed": "Resim URL’si kaydedilemedi.",
+    "save": "Kaydet",
+    "saving": "Kaydediliyor…",
+    "saved": "Kaydedildi",
+    "previewFailed": "Önizleme kullanılamıyor. URL’nin doğrudan bir resme yöneldiğini kontrol edin."
+  },
+  "profile": {
+    "change": "Avatarı değiştir",
+    "title": "Profil",
+    "description": "Kişisel hesabınızın resmi.",
+    "label": "Avatar URL’si",
+    "hint": "Doğrudan bir resim URL’si kullanın. Baş harfiniz için boş bırakın.",
+    "reset": "Baş harfi kullan"
   }
 }

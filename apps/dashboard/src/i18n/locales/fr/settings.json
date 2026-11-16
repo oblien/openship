@@ -1791,5 +1791,22 @@
     "confirmCta": "Cesser de servir",
     "cancel": "Annuler",
     "noReverseProxy": "Aucun proxy inverse détecté sur cette machine."
+  },
+  "imageUrl": {
+    "preview": "Aperçu de l’image",
+    "invalid": "Saisissez une URL HTTP ou HTTPS sans identifiants.",
+    "failed": "Impossible d’enregistrer l’URL de l’image.",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré",
+    "previewFailed": "Aperçu indisponible. Vérifiez que l’URL pointe directement vers une image."
+  },
+  "profile": {
+    "change": "Changer l’avatar",
+    "title": "Profil",
+    "description": "L’image de votre compte personnel.",
+    "label": "URL de l’avatar",
+    "hint": "Utilisez une URL directe d’image. Laissez vide pour afficher votre initiale.",
+    "reset": "Utiliser l’initiale"
   }
 }

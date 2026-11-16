@@ -25,6 +25,7 @@ import { getShipClient, ApiError, hasShipCredentials } from "../lib/ship-client"
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 import { collect, parsePairs, readJsonInput } from "../lib/command-input";
 import { fail, confirmOrExit, reportResult, reportExecResult } from "../lib/cmd-helpers";
+import { resolveServiceRef } from "../lib/service-ref";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -86,19 +87,7 @@ async function listServices(projectId: string): Promise<ServiceRow[]> {
 
 /** Resolve a service ref (name or svc_ id) to its row within the stack. */
 async function resolveService(projectId: string, ref: string): Promise<ServiceRow> {
-  if (/^svc_/.test(ref)) return getShipClient().services.get(projectId, ref);
-  const services = await listServices(projectId);
-  const byId = services.find((s) => s.id === ref);
-  if (byId) return byId;
-  const byName = services.filter((s) => s.name === ref);
-  if (byName.length === 1) return byName[0];
-  if (byName.length > 1) {
-    err(`  "${ref}" matches ${byName.length} services — pass the service id (svc_…).`);
-    exitCommand(1);
-  }
-  const known = services.map((s) => s.name).join(", ") || "(none)";
-  err(`  No service "${ref}" in this stack. Services: ${known}`);
-  exitCommand(1);
+  return resolveServiceRef(getShipClient(), projectId, ref);
 }
 
 // ─── list / get ───────────────────────────────────────────────────────────────

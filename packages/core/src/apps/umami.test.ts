@@ -2,17 +2,21 @@ import { describe, expect, it } from "vitest";
 import { getAppTemplate } from "../app-templates";
 
 describe("Umami catalog security update", () => {
-  it("uses the security-patched v2 PostgreSQL release", () => {
+  it("uses the security-patched v3 PostgreSQL release", () => {
     const umami = getAppTemplate("umami");
     const image = umami?.services?.find((service) => service.name === "umami")?.image;
-    const version = image?.match(/^ghcr\.io\/umami-software\/umami:postgresql-v2\.(\d+)\.(\d+)$/);
+    // v3 dropped the `postgresql-` tag prefix and MySQL support. The catalog
+    // already runs PostgreSQL and the container auto-applies Prisma migrations
+    // on start, so the pinned v3 image is a reviewed major upgrade. Moving off
+    // v3 needs a new migration review.
+    const version = image?.match(/^ghcr\.io\/umami-software\/umami:3\.(\d+)\.(\d+)$/);
     expect(
       version,
-      "Use an official patched v2 image; a major upgrade needs a migration review",
+      "Use an official patched v3 image; a major upgrade needs a migration review",
     ).toBeTruthy();
     const [, minor, patch] = version!;
-    // v2.20.2 carries the Next.js / React Server Components security fixes.
-    expect(Number(minor) > 20 || (Number(minor) === 20 && Number(patch) >= 2)).toBe(true);
+    // v3.4.1 carries the Next.js 16.4.2 / React 19.3.1 security fixes.
+    expect(Number(minor) > 4 || (Number(minor) === 4 && Number(patch) >= 1)).toBe(true);
   });
 
   it("preserves the existing database, volume, and generated secret contract", () => {

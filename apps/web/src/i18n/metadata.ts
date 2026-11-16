@@ -35,6 +35,11 @@ export async function localizedMetadata(metadata: Metadata): Promise<Metadata> {
       ...result.alternates,
       canonical: localizedHref(pathname, locale),
       languages: languageAlternates(pathname),
+      ...(/^\/(features|compare)(\/|$)/.test(pathname)
+        ? {
+            types: { "text/markdown": localizedHref(pathname, locale) + ".md" },
+          }
+        : {}),
     };
     if (result.openGraph)
       result.openGraph = { ...result.openGraph, locale, url: localizedHref(pathname, locale) };

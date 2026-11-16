@@ -94,7 +94,7 @@ Fix by moving Docker's data-root to a native `ext4`/`xfs` disk (`/etc/docker/dae
 
 ## Users & access (self-hosted)
 
-- **Public signup is disabled after the first account.** The first admin comes from the `openship` setup wizard; with `openship up --compose` (or raw Docker) you register the first account in the dashboard. Everyone after joins by invite.
+- **Create the first admin on the server.** Run `openship` and choose **Create first admin**, or use `openship up --non-interactive --admin-email <email>` with `OPENSHIP_ADMIN_PASSWORD` set. The same setup works for CLI-managed Compose installs. Public signup stays disabled; everyone after joins by invite.
 - **Invite teammates** from **Settings → Team**. They get an accept link at your instance's URL (so the instance needs to be reachable — a public URL or your LAN).
 - **Lost the admin password?** Run `openship reset-admin-password` on the box (no sign-in needed; uses the local internal token).
 

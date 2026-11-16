@@ -25,10 +25,13 @@ Supervisor rather than relying on systemd or Debian's service-start policy.
 
 `OPENSHIP_MAIL_F2B_IGNOREIP` extends the image's default `ignoreip` list. For a new
 installation, an operator may set it in the API environment before mail setup.
-For an existing server, set the single-line value in that server's retained
-`/var/lib/openship/mail/engine.env`, then update/recreate the engine. Different
-servers can retain different exclusions. The file contains credentials and must
-remain private.
+On an engine image update, a nonempty API value replaces this record in the retained
+`/var/lib/openship/mail/engine.env`; an explicitly empty API value removes it.
+Leaving the API variable unset preserves the server's saved exclusions. Different
+servers can retain different lists configured directly in their own `engine.env`.
+The override is applied when replacing the engine image; restarting the API or
+checking an already-current image does not recreate the engine. The file contains
+credentials and must remain private.
 
 Move existing manual `ignoreip` edits from the old container into this setting
 before the first update. Arbitrary files under `/etc/fail2ban` are not persisted;

@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import React from "react";
 import { useI18n } from "@/components/i18n-provider";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
@@ -50,9 +51,9 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
 
   const manual = displayRecords.length > 0 && (
     <details className="rounded-xl bg-muted/30" open={!domainId}>
-      <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-primary">
+      <DisclosureSummary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-primary">
         {t.autoDns.manualSetup}
-      </summary>
+      </DisclosureSummary>
 
       <div className="space-y-2.5 p-4">
         {displayRecords.map((record, i) => (

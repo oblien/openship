@@ -75,6 +75,28 @@ describe("planProjectMove refusals", () => {
     expect(() => plan({ targetServerId: "srv_a" })).toThrow(/already runs on that server/);
   });
 
+  it("allows an independent copy on the same server while retaining ownership and scope checks", () => {
+    expect(plan({ targetServerId: "srv_a", intent: "copy", serviceNames: ["web"] }).chosen).toHaveLength(1);
+    expect(() => plan({ targetServerId: "srv_a", intent: "copy", serviceNames: ["foreign"] })).toThrow(/No running container/);
+    expect(() => plan({ targetServerId: "srv_a", intent: "copy", ourContainerIds: [] })).toThrow(/No running containers/);
+  });
+
+  it("refuses an explicit empty copy scope instead of copying everything", () => {
+    expect(() => plan({ intent: "copy", serviceNames: [] })).toThrow(/Select at least one/);
+    expect(() => plan({ intent: "copy", serviceNames: [" "] })).toThrow(/Select at least one/);
+    expect(plan({ intent: "copy" }).chosen).toHaveLength(1);
+  });
+
+  it("requires other writers sharing a volume, but allows unselected read-only consumers", () => {
+    const volumes = [{ type: "volume" as const, source: "shared", target: "/data", rw: true }];
+    const input = { intent: "copy" as const, serviceNames: ["web"], ourContainerIds: ["c_web", "c_worker"],
+      discovered: [svc({ volumes }), svc({ name: "worker", containerId: "c_worker", volumes })] };
+    expect(() => plan(input)).toThrow(/Include worker/);
+    expect(plan({ ...input, serviceNames: ["web", "worker"] }).chosen).toHaveLength(2);
+    input.discovered[1]!.volumes = [{ ...volumes[0]!, rw: false }];
+    expect(plan(input).chosen).toHaveLength(1);
+  });
+
   it("refuses when no live container carries the project's label", () => {
     expect(() => plan({ ourContainerIds: [] })).toThrow(/No running containers/);
   });
@@ -365,9 +387,9 @@ describe("planProjectMove service scope", () => {
     }
   });
 
-  it("takes every service when the scope is absent or empty", () => {
+  it("takes every service only when the scope is absent", () => {
     expect(plan({ ...twoSvc, intent: "copy" }).chosen).toHaveLength(2);
-    expect(plan({ ...twoSvc, intent: "copy", serviceNames: [] }).chosen).toHaveLength(2);
+    expect(() => plan({ ...twoSvc, intent: "copy", serviceNames: [] })).toThrow(/Select at least one/);
   });
 
   it("names a service it couldn't find rather than copying a partial set", () => {

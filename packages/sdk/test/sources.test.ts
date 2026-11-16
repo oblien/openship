@@ -122,7 +122,7 @@ describe("SDK source deployments", () => {
     expect(s.tar()).toContain("initial-content");
     expect(s.tar()).toContain("published-site");
     expect(s.commands[2]?.body).toMatchObject({
-      projectId: "existing", serverId: "server-a", name: "detected", deploymentEnvironment: "preview",
+      projectId: "existing", serverId: "server-a", name: "app", deploymentEnvironment: "preview",
     });
     expect(s.commands[3]?.body).toMatchObject({
       projectId: "project-a", uploadSessionId: "session/opaque", serverId: "server-a",

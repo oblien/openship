@@ -278,7 +278,7 @@
       "currentServer": "Servidor atual",
       "migrate": "Migrar",
       "noOtherServers": "Adicione um segundo servidor para mover este projeto para lá.",
-      "cloudLater": "De servidor para servidor. Mover para ou do OpenShip Cloud ainda não é suportado.",
+      "cloudLater": "Cargas Docker em servidores conectados ou gerenciados. Funções de trabalho e cargas de cluster têm seu próprio fluxo de implantação.",
       "startFailed": "Não foi possível iniciar a migração",
       "confirmTitle": "Mover {project} para {server}",
       "confirmSubtitle": "Nada muda até você iniciar a mudança.",
@@ -291,11 +291,11 @@
       "intentMove": "Mover",
       "intentCopy": "Duplicar",
       "intentMoveHint": "O projeto muda de casa. Seus contêineres e volumes são removidos do servidor antigo quando você confirmar.",
-      "intentCopyHint": "O original continua rodando. Um segundo projeto é criado no novo servidor com uma cópia dos dados.",
+      "intentCopyHint": "Um segundo projeto é criado com dados e configurações independentes. As cópias não compartilham tráfego nem permanecem sincronizadas.",
       "confirmTitleCopy": "Duplicar {project} no {server}",
       "confirmStartCopy": "Iniciar duplicação",
-      "downtimeNoteCopy": "O projeto fica brevemente fora do ar enquanto os dados são copiados — os volumes precisam estar parados para copiar corretamente. Ele volta a subir no servidor antigo assim que a cópia terminar.",
-      "copyNoDomainsNote": "A cópia começa sem domínios — os originais ficam com o projeto que os atende.",
+      "downtimeNoteCopy": "Os serviços selecionados pausam durante a cópia dos dados e reiniciam antes da implantação da cópia. Sem dados armazenados, o original continua funcionando.",
+      "copyNoDomainsNote": "A cópia começa sem domínios. Revise suas conexões antes de adicionar um domínio.",
       "fromLabel": "De",
       "toLabel": "Para",
       "modeLabel": "Modo",
@@ -304,7 +304,15 @@
       "scopeHintAll": "Todos os serviços, com seus dados.",
       "scopeHintSome": "{count} serviço(s) — o resto fica apenas no original.",
       "sourceServices": "{count} serviço(s)",
-      "runningStatus": "Em andamento — {status}"
+      "runningStatus": "Em andamento — {status}",
+      "copyName": "Nome da cópia",
+      "retry": "Tentar novamente",
+      "loadingServices": "Carregando serviços…",
+      "servicesFailed": "Não foi possível carregar os serviços.",
+      "singleApplication": "Toda a aplicação será copiada.",
+      "dependenciesRequired": "Inclua estas dependências na cópia: {services}.",
+      "selectService": "Selecione pelo menos um serviço existente para duplicar.",
+      "sameServerHint": "Os volumes nomeados são copiados separadamente e as portas do host são reatribuídas. Caminhos do host exigem outro servidor."
     },
     "cache": {
       "title": "Cache de compilação do Docker",
@@ -1390,6 +1398,7 @@
     "failed": "Não foi possível preparar a atualização do código."
   },
   "responseRoutes": {
+    "empty": "Ainda não há rotas virtuais",
     "title": "Rotas virtuais",
     "description": "Retorne conteúdo diretamente do edge em um caminho deste domínio.",
     "add": "Adicionar rota",
@@ -1437,5 +1446,11 @@
     "bytes": "bytes",
     "emptyBodyHint": "Este estado exige um corpo de resposta vazio.",
     "headersHint": "Adicione cabeçalhos de cache, CORS ou outros."
+  },
+  "icon": {
+    "change": "Alterar ícone",
+    "label": "URL do ícone do projeto",
+    "hint": "Use uma URL de imagem HTTP ou HTTPS. Limpe-a para usar o ícone padrão.",
+    "reset": "Usar ícone padrão"
   }
 }

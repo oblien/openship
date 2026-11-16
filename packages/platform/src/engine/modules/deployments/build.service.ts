@@ -1,6 +1,7 @@
 import { assertServiceRedirects } from "../../lib/service-redirects";
 import { nativeJobsEnabled } from "../../native/execution-policy";
 import { assertRouteProtectionTarget } from "../../lib/route-protection";
+import { assertProjectEdgePagesTarget } from "../projects/project-routing-capabilities";
 /**
  * Build service — build session LIFECYCLE + config/snapshot helpers.
  *
@@ -1190,6 +1191,7 @@ export async function resolveSnapshotTarget(
   else if (activeMeta?.serverId) deployTarget = "server";
 
   await assertRouteProtectionTarget(project, deployTarget);
+  assertProjectEdgePagesTarget(project, deployTarget);
 
   if (project.clusterId && override?.deployTarget && override.deployTarget !== "cluster")
     throw new AppError("Change this project's cluster target in Topology before deploying to a different target.", 409, "CLUSTER_TARGET_CONFLICT");

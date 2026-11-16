@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 // The function under test is pure; everything else this module reaches (DB, SSE,
-// notifications, favicon probing) is a side effect the assertion doesn't want.
+// notifications) is a side effect the assertion doesn't want.
 // `@repo/adapters` stays REAL — `isEdgeDownMessage` is the branch being pinned.
 vi.mock("@repo/db", () => ({ repos: {} }));
 vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({ notification: {} }));
 vi.mock("../../lib/audit", () => ({ audit: {} }));
-vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/deployments/session-manager", () => ({}));
 vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
   onWebmailDeployed: vi.fn(),

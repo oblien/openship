@@ -6,7 +6,7 @@ import { inheritSocialImages } from "@/lib/social-metadata";
 import { Link } from "@/i18n/Link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowUpRight, Check, ArrowRight, Layers, Database } from "lucide-react";
-import { APP_TEMPLATES, CLOUD_DASHBOARD_URL } from "@repo/core";
+import { APP_TEMPLATES, deployLinkHref } from "@repo/core";
 import { getMarketplaceApps } from "@/lib/app-catalog";
 import { APP_CATEGORY_LABELS } from "@/lib/app-marketplace";
 import { renderAppArticle } from "@/lib/app-markdown";
@@ -60,11 +60,7 @@ export default async function AppPage({ params }: { params: Promise<{ id: string
     .filter((other) => other.id !== app.id && other.category === app.category && other.available)
     .slice(0, 3);
   const cloud = app.kind === "template" && app.supportsCloud;
-  const installUrl = cloud
-    ? `${CLOUD_DASHBOARD_URL}/apps/new/${encodeURIComponent(app.id)}`
-    : app.kind === "flow"
-      ? "/mail"
-      : "/docs/getting-started/installation";
+  const installUrl = deployLinkHref({ kind: "app", appId: app.id });
   const article = app.article ? renderAppArticle(app.article) : null;
   const schema = {
     "@context": "https://schema.org",
@@ -229,15 +225,9 @@ export default async function AppPage({ params }: { params: Promise<{ id: string
             {app.available && (
               <div className="mt-6 space-y-2">
                 <Link href={installUrl} className="marketplace-primary">
-                  {cloud ? copy("Deploy on Cloud") : copy("Set up on your server")}
+                  {copy("Deploy with OpenShip")}
                   <ArrowRight size={16} />
                 </Link>
-                {cloud && (
-                  <Link href="/docs/getting-started/installation" className="marketplace-secondary">
-                    {copy("Use your own server ")}
-                    <ArrowUpRight size={15} />
-                  </Link>
-                )}
               </div>
             )}
             {(app.minResources || app.minEngine) && (

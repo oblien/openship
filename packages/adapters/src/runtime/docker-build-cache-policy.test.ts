@@ -203,6 +203,17 @@ fi
     ).toContain('minFreeSpace = "20%"');
   });
 
+  it.each([
+    { total: 100, budget: null, reserved: 5 },
+    { total: 25, budget: null, reserved: 2.5 },
+    { total: 10, budget: null, reserved: 1 },
+    { total: 100, budget: 1, reserved: 1 },
+  ])("retains a bounded warm cache when the free-space target cannot be met: %j", ({ total, budget, reserved }) => {
+    const config = buildKitCacheConfig({ totalBytes: total * GIB, freeBytes: 3 * GIB, freeInodes: 100 }, budget === null ? null : budget * GIB);
+    expect(config).toContain(`reservedSpace = ${reserved * GIB}\n`);
+    expect(config).toContain('minFreeSpace = "20%"');
+  });
+
   it("keeps a cache larger than the old fixed 5 GiB ceiling when the disk has room", async () => {
     // 100 GiB Docker filesystem: the automatic budget is 20 GiB.
     const h = fixture([volume("a", 13 * GIB)]);

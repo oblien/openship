@@ -318,6 +318,12 @@ describeDockerE2E("native Compose build batches", () => {
       stderr: "",
     }));
     const commands = vi.spyOn(executor, "exec");
+    const write = executor.writeFile.bind(executor);
+    // An unattainable free-space target reproduces pressure without filling the
+    // test host. The production reservedSpace/budget/guard remain unchanged.
+    const writes = vi.spyOn(executor, "writeFile").mockImplementation((path, contents, options) =>
+      write(path, /^\/tmp\/openship-buildkit-.*\.toml$/.test(path)
+        ? contents.replace('minFreeSpace = "20%"', 'minFreeSpace = "100%"') : contents, options));
     try {
       const batch = specs("protected");
       for (const spec of batch) spec.config.resources = { cpuCores: 1, memoryMb: 2048, diskMb: 0 };
@@ -341,8 +347,18 @@ describeDockerE2E("native Compose build batches", () => {
           )
         ).trim(),
       ).not.toBe("");
+      logs.length = 0;
+      const warm = await runtime.buildImages(specs("protected-warm").map(spec => ({
+        ...spec, config: { ...spec.config, resources: batch[0]!.config.resources },
+      })), logger());
+      expect(warm.map(entry => entry.result.status), JSON.stringify(warm))
+        .toEqual(["deploying", "deploying", "deploying"]);
+      expect(logs.map(entry => entry.message).join("\n"))
+        .toMatch(/#(\d+) \[[^\n]+\] RUN sleep 2[^\n]*\n(?:\n)*#\1 CACHED/);
+      writes.mockRestore();
       await verifyGeneratedEnvironmentBatch("protected-secrets", { cpuCores: 2, memoryMb: 2048, diskMb: 0 });
     } finally {
+      writes.mockRestore();
       commands.mockRestore();
       await workerImage.dispose();
     }

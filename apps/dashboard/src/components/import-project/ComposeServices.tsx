@@ -15,7 +15,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
-import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
+import { firstExposedTcpPort, parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -26,7 +26,7 @@ import { servicesApi } from "@/lib/api/services";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { serviceEnvironmentRows } from "@/lib/service-environment-editor";
 import { Button } from "@/components/ui/button";
-import { isEnvironmentValueMissing } from "./environment-resolution";
+import { isEnvironmentValueMissing, type EnvironmentVariableMeta } from "./environment-resolution";
 import { composeEnvironmentPreview, editComposeEnvironment } from "./compose-environment-preview";
 import BuildSettings from "./BuildSettings";
 import { cn } from "@/lib/utils";
@@ -158,6 +158,45 @@ const SkeletonBlock: React.FC<{ className: string }> = ({ className }) => (
 
 // ─── Per-service domain section (always visible when expandable) ─────────────
 
+/**
+ * The "no public port" card of the compose import wizard.
+ *
+ * A service that only declares `expose:` has container ports but nothing
+ * published, so it has no domain yet. The card names the ports the service
+ * exposes and says which one to publish — before this it said "no public
+ * ports" and stopped there, which read as "this service cannot have a domain"
+ * (#1733).
+ */
+export const InternalServiceNotice: React.FC<{ exposedPorts: string[] }> = ({
+  exposedPorts,
+}) => {
+  const { t } = useI18n();
+  const d = t.importProject.composeServices.domain;
+  const publishPort = firstExposedTcpPort(exposedPorts);
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex size-9 items-center justify-center rounded-lg bg-muted/50">
+        <UiIcon name="lock" className="size-4 text-muted-foreground" />
+      </div>
+      <div>
+        <p className="text-sm font-medium text-foreground">{d.internalService}</p>
+        <p className="text-xs text-muted-foreground">
+          {exposedPorts.length > 0
+            ? interpolate(d.exposedPortsNotPublished, { ports: exposedPorts.join(", ") })
+            : d.noPublicPorts}
+        </p>
+        {exposedPorts.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {publishPort
+              ? interpolate(d.publishPortHint, { port: publishPort })
+              : d.tcpPortRequiredHint}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ServiceDomainSection: React.FC<{
   service: ComposeServiceInfo;
   projectName: string;
@@ -168,17 +207,7 @@ const ServiceDomainSection: React.FC<{
   const hasPorts = service.ports.length > 0;
 
   if (!hasPorts) {
-    return (
-      <div className="flex items-center gap-3">
-        <div className="flex size-9 items-center justify-center rounded-lg bg-muted/50">
-          <UiIcon name="lock" className="size-4 text-muted-foreground" />
-        </div>
-        <div>
-          <p className="text-sm font-medium text-foreground">{d.internalService}</p>
-          <p className="text-xs text-muted-foreground">{d.noPublicPorts}</p>
-        </div>
-      </div>
-    );
+    return <InternalServiceNotice exposedPorts={service.expose ?? []} />;
   }
 
   const primaryPort = service.exposedPort || serviceExposedPort(service) || "";
@@ -315,7 +344,9 @@ const SharedEnvironmentCard: React.FC<{
   envVars: EnvVarRow[];
   rootEnvVars: EnvVarRow[];
   onChange: (envVars: EnvVarRow[]) => void;
-}> = ({ envVars, rootEnvVars, onChange }) => {
+  onReveal?: (keys: string[]) => Promise<Record<string, string>>;
+  envMeta?: Record<string, EnvironmentVariableMeta>;
+}> = ({ envVars, rootEnvVars, onChange, onReveal, envMeta }) => {
   const { t } = useI18n();
   const sh = t.importProject.composeServices.shared;
   const [envModalOpen, setEnvModalOpen] = useState(false);
@@ -423,7 +454,9 @@ const SharedEnvironmentCard: React.FC<{
             showSettingsActions={false}
             borderless
             envVars={envVars}
+            envMeta={envMeta}
             onEnvVarsChange={onChange}
+            onReveal={onReveal}
           />
         </div>
       </Modal>
@@ -1027,6 +1060,14 @@ const ComposeServices: React.FC = () => {
   const rootEnvVars = config.rootEnvVars || [];
   const isServiceDeployment = usesServiceDeployment(config);
   const [modeOptionsOpen, setModeOptionsOpen] = useState(false);
+  const revealService =
+    services.find((s) => s.serviceId && s.environmentDraft?.environment) ??
+    services.find((s) => s.serviceId);
+  const sharedReveal = useServiceEnvReveal(
+    config.projectId,
+    revealService?.serviceId,
+    revealService?.environmentDraft?.environment,
+  );
 
   const updateService = useCallback(
     (index: number, updates: Partial<ComposeServiceInfo>) => {
@@ -1139,6 +1180,7 @@ const ComposeServices: React.FC = () => {
                 envVars={sharedEnvVars}
                 rootEnvVars={rootEnvVars}
                 onChange={updateSharedEnv}
+                onReveal={sharedReveal}
               />
 
               {/* Duplicate-domain warning — two routes can't share a hostname. */}

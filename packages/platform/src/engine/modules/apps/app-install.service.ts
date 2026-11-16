@@ -394,7 +394,53 @@ export async function installApp(
     return { kind: "flow", flowHref: template.flowHref ?? "/" };
   }
 
-  assertInstallRoutes(template, input.routes);
+  // Resolve config values. Secrets sharing a `generateGroup` get ONE generated
+  // value (e.g. a DB password that must match across two services).
+  const groupSecret = new Map<string, string>();
+  // Pre-generate every grouped secret so generate:"jwt" fields can sign with
+  // them regardless of field order (the JWT secret must exist before the keys).
+  for (const field of template.configFields ?? []) {
+    if (field.generate === "secret" && field.generateGroup && !groupSecret.has(field.generateGroup)) {
+      groupSecret.set(field.generateGroup, generateSecret());
+    }
+  }
+  const valueFor = (field: AppConfigField): string => {
+    if (field.generate === "secret") {
+      if (field.generateGroup) {
+        const existing = groupSecret.get(field.generateGroup);
+        if (existing) return existing;
+        const secret = generateSecret();
+        groupSecret.set(field.generateGroup, secret);
+        return secret;
+      }
+      return generateSecret();
+    }
+    if (field.generate === "jwt") {
+      const secret = field.jwtSecretGroup ? groupSecret.get(field.jwtSecretGroup) : undefined;
+      if (!secret || !field.jwtRole) return "";
+      return signHs256Jwt(secret, field.jwtRole);
+    }
+    return input.config?.[field.key] ?? field.default ?? "";
+  };
+
+  // Resolve each field's final value EXACTLY once (a non-grouped secret would
+  // otherwise differ between the env write and the file substitution below).
+  const resolved = new Map<string, string>();
+  for (const field of template.configFields ?? []) resolved.set(field.key, valueFor(field));
+
+  // Inline generated config values (`{{config:KEY}}`) now — in both service env
+  // and mounted files — while leaving `{{publicUrl:…}}` for deploy-time. This
+  // lets a service env embed a generated secret it can't otherwise interpolate
+  // (e.g. a full `postgres://user:PASSWORD@db/…` connection URL).
+  const inlineConfig = (s: string): string =>
+    s.replace(CONFIG_TOKEN_RE, (_m, k) => resolved.get(k) ?? "");
+
+  // Resolve the same specs for route validation, fresh rows and draft repair.
+  // Never mutate the catalog template shared by other installations.
+  const serviceSpecs = (template.services ?? []).map(service => ({
+    ...service, ports: service.ports?.map(inlineConfig),
+  }));
+  assertInstallRoutes({ services: serviceSpecs }, input.routes);
 
   let workspaceId: string | undefined;
   // Linked Cloud servers retain their workspace on self-hosted control planes
@@ -489,47 +535,6 @@ export async function installApp(
     project = created!;
   }
 
-  // Resolve config values. Secrets sharing a `generateGroup` get ONE generated
-  // value (e.g. a DB password that must match across two services).
-  const groupSecret = new Map<string, string>();
-  // Pre-generate every grouped secret so generate:"jwt" fields can sign with
-  // them regardless of field order (the JWT secret must exist before the keys).
-  for (const field of template.configFields ?? []) {
-    if (field.generate === "secret" && field.generateGroup && !groupSecret.has(field.generateGroup)) {
-      groupSecret.set(field.generateGroup, generateSecret());
-    }
-  }
-  const valueFor = (field: AppConfigField): string => {
-    if (field.generate === "secret") {
-      if (field.generateGroup) {
-        const existing = groupSecret.get(field.generateGroup);
-        if (existing) return existing;
-        const secret = generateSecret();
-        groupSecret.set(field.generateGroup, secret);
-        return secret;
-      }
-      return generateSecret();
-    }
-    if (field.generate === "jwt") {
-      const secret = field.jwtSecretGroup ? groupSecret.get(field.jwtSecretGroup) : undefined;
-      if (!secret || !field.jwtRole) return "";
-      return signHs256Jwt(secret, field.jwtRole);
-    }
-    return input.config?.[field.key] ?? field.default ?? "";
-  };
-
-  // Resolve each field's final value EXACTLY once (a non-grouped secret would
-  // otherwise differ between the env write and the file substitution below).
-  const resolved = new Map<string, string>();
-  for (const field of template.configFields ?? []) resolved.set(field.key, valueFor(field));
-
-  // Inline generated config values (`{{config:KEY}}`) now — in both service env
-  // and mounted files — while leaving `{{publicUrl:…}}` for deploy-time. This
-  // lets a service env embed a generated secret it can't otherwise interpolate
-  // (e.g. a full `postgres://user:PASSWORD@db/…` connection URL).
-  const inlineConfig = (s: string): string =>
-    s.replace(CONFIG_TOKEN_RE, (_m, k) => resolved.get(k) ?? "");
-
   // Resolve template files per service.
   const filesByService = new Map<string, { path: string; content: string }[]>();
   for (const f of template.files ?? []) {
@@ -562,7 +567,7 @@ export async function installApp(
   const varsByService = new Map<string, { key: string; value: string; isSecret: boolean }[]>();
 
   // The operator's routing, resolved once for the whole stack.
-  const routingPlan = planInstallRouting(template, project.slug ?? project.name, input.routes);
+  const routingPlan = planInstallRouting({ services: serviceSpecs }, project.slug ?? project.name, input.routes);
 
   // Rows the adopted draft already has. A fresh project has none, so the loop
   // below reduces to a plain seed.
@@ -578,7 +583,7 @@ export async function installApp(
   // Seed the compose service rows — or, on an adopted draft, re-apply the chosen
   // routing to the rows that already exist and seed only what's missing (a first
   // install that died part-way left the project with fewer rows than the template).
-  for (const svc of template.services ?? []) {
+  for (const svc of serviceSpecs) {
     const routing = routingPlan.get(svc.name) ?? { exposed: false, publicEndpoints: [] };
     const existingRow = rowByName.get(svc.name);
 
@@ -729,9 +734,10 @@ function inlinedConfigKeys(template: AppTemplate): ReadonlySet<string> {
     if (!text) return;
     for (const [, key] of text.matchAll(CONFIG_TOKEN_RE)) keys.add(key);
   };
-  // The four places `inlineConfig` is applied, and only those.
+  // Every surface that copies a resolved config value at installation.
   for (const svc of template.services ?? []) {
     for (const value of Object.values(svc.environment ?? {})) scan(value);
+    for (const port of svc.ports ?? []) scan(port);
     scan(svc.build?.dockerfile);
     for (const file of svc.build?.files ?? []) scan(file.content);
   }

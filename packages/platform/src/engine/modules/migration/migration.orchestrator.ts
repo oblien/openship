@@ -691,7 +691,7 @@ class MigrationOrchestratorImpl {
         id: `dmr_${crypto.randomUUID()}`,
         organizationId: ctx.organizationId,
         targetServerId: target.id,
-        projectName: plan.project.name,
+        projectName: plan.projectName,
         serviceNames: plan.services.map((s) => s.create.name),
         status: "queued",
         mode: "provider_import",
@@ -1088,7 +1088,7 @@ class MigrationOrchestratorImpl {
       // Row-keyed too: moveData works in adopted service ROWS, so handing it the
       // request's identity-keyed map would match nothing.
       const rowVolumeStrategies: Record<string, VolumeStrategy> = Object.fromEntries(
-        chosen.map((s) => [rowNameOf(s), perService(input.volumeStrategies, s) ?? "reuse"]),
+        chosen.map((s) => [rowNameOf(s), input.projectMove?.intent === "copy" ? "copy" : perService(input.volumeStrategies, s) ?? "reuse"]),
       );
       // A scan/adopt run did not have a project at enqueue time, and a copy has
       // just minted a new target project. Bind the durable run through the same
@@ -1305,6 +1305,7 @@ class MigrationOrchestratorImpl {
               log,
               emitProgress,
               id,
+              input.projectMove?.intent === "copy",
             ),
         );
         // A digest may load under a different config ID. Hand that proven target
@@ -1314,6 +1315,11 @@ class MigrationOrchestratorImpl {
           if (ref && ref !== service.image) adopt.handover[rowNameOf(service)] = ref;
         }
         pendingItems = move.pendingItems;
+        // Copies have independent ports and storage. Resume production as soon
+        // as its snapshot is complete, without waiting for the copy to deploy.
+        if (input.projectMove?.intent === "copy" && pendingItems.length === 0) {
+          await this.restartSourceOriginals(sourceServerId, organizationId, scannedContainerIds, id);
+        }
         await this.transition(id, "moving_data", {
           bytesMoved: move.bytesMoved,
           targetVolumes: move.targetVolumes,
@@ -1614,6 +1620,7 @@ class MigrationOrchestratorImpl {
     log: (message: string) => void,
     onProgress?: (u: ProgressUpdate) => void,
     runId?: string,
+    copying = false,
   ): Promise<MoveResult> {
     const { source, target } = await assertMigrationEndpoints(organizationId, sourceServerId, targetServerId);
     const rtA = await createServerDockerRuntime(sourceServerId, organizationId);
@@ -1686,10 +1693,14 @@ class MigrationOrchestratorImpl {
       for (const [name, cid] of Object.entries(scannedContainerIds)) {
         const container = await rtA.inspectContainer(cid);
         if (!container) throw new Error(`Source container ${name} disappeared; scan it again`);
-        if (["running", "restarting"].includes(container.state)) running[name] = cid;
+        // Stateless copies need no quiesce. Moves still stop the source before
+        // activation; stateful copies stop the selected group for consistency.
+        if ((!copying || plan.items.length > 0) && ["running", "restarting"].includes(container.state)) running[name] = cid;
       }
       if (runId) await repos.dockerMigrationRun.updateRecovery(runId, { sourceRunningContainerIds: running });
-      log("Stopping selected source containers for a consistent data copy…");
+      log(Object.keys(running).length
+        ? "Stopping selected source containers for a consistent data copy…"
+        : "No source containers need to stop for this copy.");
       for (const cid of Object.values(running)) await setMigrationContainerState(rtA, cid, false);
       const pendingItems: PendingItem[] = [];
       await mapWithLimit(plan.items, TRANSFER_CONCURRENCY, async item => {

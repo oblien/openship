@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,27 @@ const requireWeb = createRequire(new URL("package.json", webRoot));
 const readJson = async (path) => JSON.parse(await readFile(new URL(path, webRoot), "utf8"));
 const appRoutes = await readJson(".next/app-path-routes-manifest.json");
 const prerender = await readJson(".next/prerender-manifest.json");
+// Verify the framework actually persists immutable release dates inside the catalog cache.
+// Unit tests alone cannot catch Next bypassing nested fetch revalidation hints.
+const cachedDates = [];
+for (const file of await readdir(new URL(".next/cache/fetch-cache/", webRoot), {
+  withFileTypes: true,
+})) {
+  if (!file.isFile()) continue;
+  const entry = await readJson(`.next/cache/fetch-cache/${file.name}`);
+  if (
+    /^https:\/\/api.github.com\/repos\/oblien\/openship\/commits\/[a-f0-9]{40}$/.test(
+      entry.data?.url,
+    )
+  ) {
+    assert(
+      entry.revalidate >= 31_536_000,
+      "Release dates should not be refreshed with the catalog",
+    );
+    cachedDates.push(entry.data.url);
+  }
+}
+assert(cachedDates.length > 0, "Production build must cache immutable release date lookups");
 const pageRoutes = Object.entries(appRoutes)
   .filter(([file, route]) => file.endsWith("/page") && !route.startsWith("/_"))
   .map(([, route]) => route);
@@ -21,7 +42,10 @@ const translatedSections = new Set([
   "pricing",
   "features",
   "apps",
+  "deploy",
   "migrate",
+  "compare",
+  "sla",
   "referrals",
   "mail",
   "download",
@@ -153,11 +177,20 @@ try {
   });
   const images = new Set();
   const pages = new Map();
+  const indexable = new Set();
   await each([...paths].sort(), async (path) => {
     const response = await request(origin, path);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
     const html = await response.text();
     const tags = metaTags(html);
+    if (!tags.get("robots")?.includes("noindex")) {
+      const canonicalTag = html.match(/<link\b(?=[^>]*\brel="canonical")[^>]*>/i)?.[0];
+      const canonical = canonicalTag?.match(/\bhref="([^"]+)"/)?.[1];
+      assert(canonical, `${path}: canonical URL`);
+      assert.equal(new URL(canonical).origin, "https://openship.io", `${path}: canonical origin`);
+      assert(tags.get("description")?.trim(), `${path}: meta description`);
+      indexable.add(new URL(canonical).pathname);
+    }
     const first = path.split("/")[1];
     const locale = locales.includes(first) ? first : "en";
     assert.match(html, new RegExp(`<html[^>]*lang="${locale}"`), `${path}: document language`);
@@ -183,11 +216,31 @@ try {
     }
     pages.set(path, tags);
   });
+
+  const sitemapIndex = await (await request(origin, "/sitemap.xml")).text();
+  const sitemapUrls = [...sitemapIndex.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, url]) => url);
+  assert(sitemapUrls.length > 0, "Sitemap index contains public sitemaps");
+  const listed = new Set();
+  for (const url of sitemapUrls) {
+    const xml = await (await request(origin, new URL(url).pathname)).text();
+    for (const [, location] of xml.matchAll(/<loc>([^<]+)<\/loc>/g)) {
+      const parsed = new URL(location);
+      assert.equal(parsed.origin, "https://openship.io", "Sitemap uses public canonical URLs");
+      assert(!listed.has(parsed.pathname), `Duplicate sitemap URL: ${parsed.pathname}`);
+      listed.add(parsed.pathname);
+    }
+  }
+  for (const path of indexable) assert(listed.has(path), `${path}: missing from the sitemap`);
+  console.log(`Sitemap coverage verified: ${indexable.size} indexable public pages.`);
   assert.match(pages.get("/pricing").get("og:title"), /Pricing/);
   // These pages own their images. Inheriting the homepage's metadata can hide
   // a route's provider artwork even when its image handler itself works.
   const customPreviews = [...paths].filter(
-    (path) => path === "/pricing" || path === "/migrate" || path.startsWith("/migrate/"),
+    (path) =>
+      path === "/pricing" ||
+      path === "/migrate" ||
+      path.startsWith("/migrate/") ||
+      path.startsWith("/compare/"),
   );
   for (const path of customPreviews) {
     for (const [key, filename] of [

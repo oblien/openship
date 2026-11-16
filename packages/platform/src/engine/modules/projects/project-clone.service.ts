@@ -1,6 +1,6 @@
 /**
- * Duplicate a project this instance owns — the record half of "copy this stack onto another
- * server".
+ * Duplicate a project this instance owns — the record half of copying a stack onto
+ * the same or another server.
  *
  * WHY THIS EXISTS AT ALL. A duplicate used to go through `adoptServerStack`, the same call that
  * takes a stranger's containers and reverse-engineers a project from them. Pointed at our own
@@ -27,14 +27,26 @@
  * so re-namespacing would point it at `openship-<newslug>-pgdata`, which the transfer never
  * wrote. That copy would start with an empty database and report success. So: resolved names,
  * namespacing off — exactly what the adopt path did for cross-server, for exactly this reason.
+ * Same-server copies are subsequently remapped by scopeImportedStorage into new
+ * project-owned volumes before the transfer plan is built.
  */
 
-import { slugify, NotFoundError } from "@repo/core";
+import {
+  slugify,
+  NotFoundError,
+  ValidationError,
+  composeNamespaceDependencies,
+  validateComposeNamespaces,
+} from "@repo/core";
 import { repos, type Project } from "@repo/db";
 
 import type { AdoptResult } from "../migration/migrate.service";
 import type { DiscoveredService } from "../migration/docker-reconcile";
-import { assertProjectQuota, uniqueProjectSlug, withProjectCreationLock } from "./project-crud.service";
+import {
+  assertProjectQuota,
+  uniqueProjectSlug,
+  withProjectCreationLock,
+} from "./project-crud.service";
 import { requireOrgServer } from "../../lib/server-target";
 
 /**
@@ -68,10 +80,6 @@ const PROJECT_FIELDS_NOT_CLONED = [
   "deletionInProgress",
   "lifecycleOperation",
   "disabledAt",
-  // Detected from the live site; the copy has no site yet, so copying these would show the
-  // original's icon next to a project that has never served a request.
-  "favicon",
-  "faviconCheckedAt",
   // Routing that names specific hostnames. The copy starts with no domains (the confirm dialog
   // promises exactly this) — the originals stay with the project still serving them.
   "compositeRoutes",
@@ -155,7 +163,9 @@ export async function cloneProjectToServer(input: {
   const discoveredByName = new Map(input.chosen.map((s) => [s.name, s]));
   const cloning = sourceServices.filter((row) => discoveredByName.has(row.name));
 
-  if (cloning.length === 0) {
+  const singleApp =
+    sourceServices.length === 0 && input.chosen.length === 1 ? input.chosen[0] : undefined;
+  if (cloning.length === 0 && !singleApp) {
     // Nothing to build the copy out of. Reached only if the row/container sets disagree, which
     // the workload resolver should have refused first — so say what is wrong rather than
     // creating an empty project.
@@ -163,6 +173,40 @@ export async function cloneProjectToServer(input: {
       "Services to duplicate",
       `${source.id} (no service rows matched the running containers)`,
     );
+  }
+  if (!singleApp && cloning.length !== input.chosen.length) {
+    throw new ValidationError(
+      "The running services no longer match this project's configuration. Refresh the service list before duplicating. The original has not been stopped.",
+    );
+  }
+
+  // Refuse before creating records or stopping anything. A narrowed copy cannot
+  // share a namespace with a service left behind in the original project.
+  for (const row of cloning) {
+    validateComposeNamespaces(row.advanced);
+    const dependencies = new Set([
+      ...(row.dependsOn ?? []),
+      ...Object.keys(row.advanced?.dependsOnConditions ?? {}),
+      ...composeNamespaceDependencies(row.advanced),
+    ]);
+    const missing = [...dependencies].filter((name) => !discoveredByName.has(name));
+    if (missing.length)
+      throw new ValidationError(
+        `Include ${missing.join(", ")} when duplicating ${row.name}; this service depends on them.`,
+      );
+  }
+  if (singleApp?.volumes.length)
+    throw new ValidationError(
+      "Duplicating a single application with mounted data is not supported yet. The original has not been stopped.",
+    );
+  if (source.serverId === target.id) {
+    const bind = input.chosen
+      .flatMap((service) => service.volumes)
+      .find((mount) => mount.type === "bind" || mount.source?.startsWith("/"));
+    if (bind)
+      throw new ValidationError(
+        `This copy uses the host path ${bind.source}. Same-server duplication supports named Docker volumes; use a different server for host-mounted data. The original has not been stopped.`,
+      );
   }
 
   const cloningIds = new Set(cloning.map((row) => row.id));
@@ -202,7 +246,16 @@ export async function cloneProjectToServer(input: {
             .map(mountToComposeString)
             .filter((v): v is string => v !== null),
           namespaceVolumes: false,
-        } as Parameters<typeof repos.project.createProjectWithRecords>[0]["services"][number]["row"],
+          // A copy must never claim the original's published host ports. Retain
+          // container ports; normal deployment allocates new loopback bindings.
+          ...(source.serverId === target.id && {
+            ports: (discoveredByName.get(row.name)?.ports ?? []).map((port) =>
+              port.split(":").at(-1)!,
+            ),
+          }),
+        } as Parameters<
+          typeof repos.project.createProjectWithRecords
+        >[0]["services"][number]["row"],
       })),
       // Verbatim, ciphertext included. The instance's encryption key is unchanged, so a secret
       // stays readable — and it MUST stay identical: the copy is handed a byte copy of the
@@ -229,17 +282,19 @@ export async function cloneProjectToServer(input: {
     // which for a duplicate is exactly right: a failed copy should leave nothing behind. (For a
     // MOVE the same field must be false, or rollback would delete the operator's real project.)
     created: true,
-    adopted: cloning.map((row) => row.name),
+    adopted: singleApp ? [singleApp.name] : cloning.map((row) => row.name),
     // Identity: the rows carry the source's own names, so nothing is renamed.
     renames: {},
     rowNameByDiscovered: {},
     // Reuse the image running right now for every copied service. Our tags exist on the source
     // host and in no registry, so without this the target's first deploy would try to pull one.
-    handover: Object.fromEntries(
-      cloning
-        .map((row) => [row.name, discoveredByName.get(row.name)?.image])
-        .filter((pair): pair is [string, string] => Boolean(pair[1])),
-    ),
+    handover: singleApp?.image
+      ? { [singleApp.name]: singleApp.image }
+      : Object.fromEntries(
+          cloning
+            .map((row) => [row.name, discoveredByName.get(row.name)?.image])
+            .filter((pair): pair is [string, string] => Boolean(pair[1])),
+        ),
   };
 }
 

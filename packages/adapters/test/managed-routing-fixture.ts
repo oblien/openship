@@ -26,8 +26,8 @@ export function managedRoutingFixture(): {
       if (!records.has(slug)) throw new NotFoundError("missing Page");
       return { page: records.get(slug)! };
     }),
-    create: vi.fn(async (input: { slug: string; domain: string; path: string; workspace_id: string }) => {
-      const page = { id: records.size + 1, slug: input.slug, domain: input.domain, namespace, source_workspace_id: input.workspace_id, exported_path: input.path, url: `https://${input.slug}.${input.domain}` };
+    create: vi.fn(async (input: { slug: string; domain: string; path: string; vm_id: string }) => {
+      const page = { id: records.size + 1, slug: input.slug, domain: input.domain, namespace, source_vm_id: input.vm_id, exported_path: input.path, url: `https://${input.slug}.${input.domain}` };
       records.set(input.slug, page); return { success: true, page };
     }),
     deploy: vi.fn(async () => ({ success: true })),
@@ -51,7 +51,7 @@ export function managedRoutingFixture(): {
     { hostname: `${page.slug}.${page.domain}`, namespace: page.namespace, owner_type: "page", owner_id: page.id, is_custom: false },
     ...(page.custom_domain ? [{ hostname: page.custom_domain, namespace: page.namespace, owner_type: "page", owner_id: page.id, is_custom: true }] : []),
   ]) })) };
-  const client = { pages, routes, domain, workspace: vi.fn(() => workspace) } as unknown as Oblien;
+  const client = { pages, routes, domain, vm: vi.fn(() => workspace) } as unknown as Oblien;
   const infra = new CloudInfraProvider(client, { namespace, scope });
   return { namespace, workspaceId, projectId, paths, records, pages, executor, scope, workspace, routes, domain, client, infra };
 }

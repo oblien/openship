@@ -67,13 +67,20 @@ function tarCreateBaseArgs(localPath: string): string[] {
  */
 export async function gitTrackedFiles(localPath: string): Promise<string[] | null> {
   try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", localPath, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-      { maxBuffer: 256 * 1024 * 1024 },
-    );
-    const files = stdout.split("\0").filter(Boolean);
-    return files.length > 0 ? files : null;
+    const [{ stdout }, { stdout: deleted }] = await Promise.all([
+      execFileAsync(
+        "git",
+        ["-C", localPath, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        { maxBuffer: 256 * 1024 * 1024 },
+      ),
+      execFileAsync("git", ["-C", localPath, "ls-files", "-z", "--deleted"], {
+        maxBuffer: 256 * 1024 * 1024,
+      }),
+    ]);
+    // The index still lists unstaged deletions. Preserve the working tree's
+    // deletions instead of handing tar paths that no longer exist.
+    const removed = new Set(deleted.split("\0").filter(Boolean));
+    return stdout.split("\0").filter((file) => file && !removed.has(file));
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "adapters/archive");
     // Not a repo, git missing, or the dir is outside any work tree.
@@ -140,10 +147,7 @@ export async function prepareSourceTarArgs(
  * git checkout (imported tarballs, uploads). Prefer `prepareSourceTarArgs`,
  * which uses git truth when available.
  */
-export function getTarCreateArgs(
-  localPath: string,
-  options?: TarTransferOptions,
-): string[] {
+export function getTarCreateArgs(localPath: string, options?: TarTransferOptions): string[] {
   const args = tarCreateBaseArgs(localPath);
 
   if (options?.includes?.length) {

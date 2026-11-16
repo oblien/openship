@@ -1,7 +1,7 @@
 /** Display telemetry is independent of checkout, entitlements and provisioning. */
 import { observedAllSettled, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { z } from "zod";
-import { Oblien } from "@repo/adapters";
+import { Oblien, oblienApiBaseUrl, oblienApiUrl } from "@repo/adapters";
 import { type PlanTierId } from "@repo/core";
 import type { BillingResources } from "@repo/contracts";
 import { env } from "../../config/env";
@@ -28,12 +28,12 @@ function timedClient(options: ConstructorParameters<typeof Oblien>[0], signal: A
   const client = new Oblien(options);
   // The SDK owns endpoint formatting; its default transport has no redirect
   // control. Never forward owner credentials or a scoped token to another host.
-  const base = (options.baseUrl ?? "https://api.oblien.com").replace(/\/+$/, "");
+  const base = oblienApiBaseUrl(options.baseUrl);
   const headers = { "Content-Type": "application/json", ...("token" in options
     ? { Authorization: `Bearer ${options.token}` }
     : { "X-Client-ID": options.clientId, "X-Client-Secret": options.clientSecret }) };
   client._http.request = async <T>({ path, method, query, body }: Parameters<Oblien["_http"]["request"]>[0]): Promise<T> => {
-    const url = new URL(`${base}${path}`);
+    const url = oblienApiUrl(base, path);
     for (const [key, value] of Object.entries(query ?? {})) if (value !== undefined) url.searchParams.set(key, String(value));
     const response = await fetch(url.toString(), {
       method, headers, signal, redirect: "error", ...(body === undefined ? {} : { body: JSON.stringify(body) }),

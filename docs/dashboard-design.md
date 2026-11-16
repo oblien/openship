@@ -5,6 +5,21 @@ and a consistent type hierarchy across light, dim, and dark themes.
 
 ## Surfaces and controls
 
+Personal avatar URLs live in Settings → General → Profile, with a compact 36px preview
+and Change action at rest. Project icon URLs open from **Project Info → ⋮ → Change icon**
+in a compact dialog. Both use one shared URL editor with guidance, reset, Save and Cancel.
+Save and Cancel return to the entry point; cancellation discards the draft and restores
+keyboard focus. Each project has one `iconUrl`; project, app, connection
+and deployment lists use the same renderer. Clearing the URL restores the catalog
+logo or framework/service icon. Image URLs are displayed directly by the browser
+with no referrer; the control plane does not fetch them or discover favicons.
+
+The dashboard home uses the same Activity card for Cloud, self-hosted, and desktop,
+including accounts with no projects. Keep the project and deployment counts and the
+shared system-status row in the right column; attention cards retain their existing
+priority. Plan selection belongs in the project/deployment flow and Plans & billing,
+not a separate home-page offer or billing fetch.
+
 Assistant settings belong in **Settings → Assistant**; event-driven flows and run
 history open from **Automations** in the AI Agents right column.
 Keep the conversation free of view tabs, with an AI Agents return action on the automations page.
@@ -104,6 +119,12 @@ perspective, material shading or decorative glows.
 | Text input        | Shared `Input` with `variant="filled"`; recessed `bg-background`                                  |
 | Form dropdown     | Shared `CustomSelect` with `variant="filled"` and `triggerClassName="bg-muted/60 hover:bg-muted"` |
 | Supporting text   | `text-muted-foreground`                                                                           |
+| Disclosure        | `DisclosureSummary` inside native `<details>`, shared chevron and visible keyboard focus             |
+
+Use `DisclosureSummary` for new expandable guidance and technical details. Its chevron
+comes from the icon catalog, follows only its own parent’s open state, and respects
+reduced motion. Native `<details>` keeps keyboard interaction and initial/controlled
+open state. Avoid browser marker triangles and extra button wrappers inside the summary.
 
 Nested `bg-card` surfaces adapt through the shared CSS: light uses a subtle gray fill, while
 dim and dark lift the inner surface. Form dropdowns use a lighter surface than text inputs;
@@ -141,7 +162,9 @@ reported current. Record image identities in deployment metadata without executi
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
 Repository-owned image changes use the shared **Propose image update** editor in saved
-project/service settings and security review. Reuse the repository file browser. Show the branch,
+project/service settings and security review. For repository-backed Compose projects, open it
+from the Project Info options menu; do not place a standalone button between settings cards.
+Reuse the repository file browser. Show the branch,
 exact source commit and a diff before **Create draft PR**; edits invalidate that review. The editor
 changes one literal Dockerfile `FROM` or Compose `image` reference, preserving the source formatting.
 Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.
@@ -509,6 +532,8 @@ Instance relocation has one entry in **Settings → Instance → Instance locati
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
 and recovery in the same card; do not add another direct-transfer or Team migration wizard.
+During server preparation, View deployment opens the saved build view. Hide that action
+while the source is fenced for transfer, when ordinary deployment reads are unavailable.
 Keep **Connect to an existing instance** and **Move to a server** visible on Desktop.
 A connected Desktop shows **Reconnect** and **Move back to Desktop**. An active server
 shows **Connect a Desktop**, **Move to another server**, and **Move to Desktop**.
@@ -876,6 +901,14 @@ check retryable before starting the move.
   cancellation actions in the selected server's billing card, preserve retry
   identity after uncertain responses, and never replace the page with a loader.
 - Checkout returns verify payment, paid coverage and managed-server readiness separately.
+  Open the hosted URL only after checkout is ready; never reserve an empty browser tab.
+  Keep a full-width primary checkout action visible if the browser refuses the popup,
+  and preserve the project draft. Lock repeat submissions after a successful handoff.
+  Reopening Add Cloud space recovers an unfinished subscription before creating another
+  space; manual retries retain a customer-scoped creation key across modal dismissal.
+  Plans & billing shows a warning count for pending Cloud plans and Manage payment.
+  Reuse the organization-wide payment read in the hub and refresh warnings after mutations
+  and on return from checkout. Hide zero counts and reset private state on scope changes.
   Show the subscription welcome only when setup is complete. Keep preparation and failure
   notices compact and above the billing columns, with a recheck action and a link to the existing server Activity tab
   for logs and retry. A paid setup failure must never direct the customer to pay again.
@@ -984,9 +1017,13 @@ is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
 editing other routing rules.
 
-Literal edge responses live in **Virtual routes** inside each domain card. Single apps,
-Compose services, and project domains use the same `DomainResponseRoutes` list and editor;
-do not add a second Settings form or a page for each path. The shared dialog edits path,
+Literal edge responses live behind a compact **Virtual routes** navigation row in each
+domain card. Show the route count and a directional chevron; keep route descriptions and
+lists inside the domain's dialog. The dialog has a fixed header with the hostname and
+Add route action, plus a scrollable list. Editing a route replaces that list in the same
+dialog; Back, Cancel, and successful saves return to the list. Single apps, Compose
+services, and project domains use the same `DomainResponseRoutes` list and editor;
+do not add a second Settings form or a page for each path. The shared editor handles path,
 exact/prefix matching, HTTP status, content type, content, headers, and optional methods.
 Keep its header and Save/Cancel footer fixed while the form body scrolls. On wide screens,
 place response content beside the headers/methods sidebar; stack these on mobile. Use visible
@@ -1023,6 +1060,11 @@ copy and a read-only status retry where available. Keep last-known details, labe
 unknown, and reserve repair/setup prompts for confirmed states. The root layout owns the browser/API
 connection notice. Monitoring groups explicit network failures across affected servers and keeps
 raw diagnostics in a closed Technical details disclosure.
+Full-page resource failures use the shared `ErrorState`: compact approved artwork,
+a readable explanation, and recovery actions directly on the page. Keep raw errors
+and possible causes in a closed disclosure and documentation as a quiet text link;
+avoid separate error and help cards. Project read failures retry in place, with the
+same state visible and the retry disabled while the request is pending.
 The global notice is compact and has no drop shadow. Brief transport interruptions
 that recover within 1.5 seconds do not flash it; a slow individual request is not
 evidence that the API is disconnected. Its retry reads API liveness only, never
@@ -1055,9 +1097,11 @@ from an existing run. Keep loading, fetch errors and empty inventory distinct, a
 the selected destination's validation and transfer review before enabling Migrate.
 
 Platform imports share three steps: Connect, Select services, and Review & import. Show
-one destination project for each source project, with its selected services and private
-connections kept together. Name the project once in the destination sidebar; service cards
-edit service names. Review and progress link to that project without repeating it for each service.
+one destination project when the source services share a compatible Git checkout. Environments
+with multiple repositories, branches or revisions create a project per service, connected privately
+on the same destination server. Show each destination name in review and the project count in its
+summary. Name the import once in the destination sidebar; service cards edit service names.
+Progress links once per destination project.
 Review and saved progress share a Domains & DNS guide, using the provider's recorded domain
 ownership per service. Imported custom domains are saved through the normal migration routing
 path, initially unverified. Distinguish domains that need DNS changes from provider URLs that
@@ -1108,6 +1152,11 @@ App routing defaults follow endpoint intent, independently of the deployment tar
 UIs and APIs start with domain routing; raw database ports start internal unless the catalog
 explicitly says otherwise. Honor `defaultMode` and `allowedModes`, and preserve saved choices.
 Cloud availability selects free versus custom domains; it does not decide whether a UI is routed.
+
+Public deploy links with `destination=server` open the shared server selector in a dialog
+after sign-in. Reuse the form's inventory and selection state, wait for an explicit choice
+even with one server, and offer the existing Add Server flow when none are connected.
+Keep loading and failed reads distinct from an empty list. Saved project destinations stay fixed.
 
 ## Checking a change
 
@@ -1234,12 +1283,25 @@ Webhook delivery rows show a short, localized explanation below the repository w
 
 ## Topology scaling
 
-Node Overview offers a compact Scale action that opens the existing inspector.
-Keep replica controls directly accessible. For ordinary Docker services, lead with
-the existing Clone action and identify it as an independent copy, not synchronized
-replication. CPU, memory, swap and moving the environment belong in a collapsed
+The inspector's tab bar is the single Scale entry; do not repeat it as an Overview
+button. Show status once beside the resource name. Put lifecycle and deployment
+actions first in Overview; keep IDs, ports and addresses in a collapsed Runtime
+details section at the bottom. Use quiet filled action buttons, not a bordered
+card for a single status word.
+Keep replica controls directly accessible. Label environment-wide instance counts
+explicitly when opened from a service. Explain the fixed count, replacement of failed
+instances, and the limits of placing every instance on one server. For ordinary
+Docker services, identify Duplicate as a separate project with independent data,
+not synchronized replication. CPU, memory, swap and moving the environment belong in a collapsed
 Advanced section. Use short scope hints and the shared swap switch; retain resource
 validation, pending-change review and destination capability checks.
+Duplicate opens a readable 1040px dialog: service selection on the left, destination
+and copy name on the right, one action after both. Stack these on narrow screens.
+Allow the source server for copies and clear it when switching to Move. Do not
+enable submission until services have loaded; retain empty selections and provide
+retry on load failure. Explain the data-copy pause, independent storage, missing
+dependencies and absence of domains before confirmation. Progress and recovery stay
+in the shared migration session.
 Application replica changes show the observed and requested counts in a review
 before calling the existing configuration release API. Preserve stale-release
 preconditions and action locks. Unsupported Kubernetes Compose workloads, storage,
@@ -1306,10 +1368,13 @@ parser and serializer; reject invalid syntax and duplicate keys instead of dropp
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
 
-Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls` for the
-wizard and Add domain form. Edit route reuses `RoutingSettingsCard` for the
-canonical target/status. Saving a service route continues through the shared
-DNS, verification, SSL and route-apply flow; a redirect hides its unused port.
+Project and Compose service routes reuse `PublicEndpointsCard` and `WwwDomainControls`
+in deployment, Add domain and saved-route editing. Offer www for each root domain,
+including multi-part suffixes, and omit it for subdomains and wildcards. Edit a
+service hostname and its www pair together; preserve other services, ports and domains.
+Keep changes as a draft until Save, then use the existing routing update and HTTPS
+verification flow without rebuilding the application. A new www hostname keeps its
+own DNS and SSL status; pending DNS must not make the existing domain look broken.
 
 ## Assistant workspace and consent
 
@@ -1649,3 +1714,34 @@ Chat replies follow the authenticated user’s dashboard language. Persist that 
 without overwriting other settings. Account-link instructions and the URL are separate messages.
 Telegram uses a compact welcome menu, project/action buttons and a distinct confirmation;
 keep the text commands available for other providers. Buttons preserve the normal consent path.
+
+## Routing and visitor pages
+
+Domains & Routes uses the shared project section tabs: Domains, Routing, Access,
+Pages & maintenance, and Proxy. Keep rewrites and URL behavior in Routing; network
+rules and hostname sign-in controls belong in Access. Server-wide defaults live in
+Servers → Edge pages and use the same HTML library/editor as project overrides.
+
+Use semantic status colors for protection: a colored lock means confirmed active,
+warning means pending, and a failed read stays unknown. A saved hostname’s lock links
+to Access with that hostname selected in the URL. Keep sign-in method and password
+controls inline; custom HTML sits beside them when there is enough width. The deployment
+wizard uses the same editor in a wider dialog so it retains its unfinished deployment.
+Destructive removal requires confirmation. Put scope details in a disclosure rather
+than a large footer.
+
+Proxy groups stack vertically, with two columns of fields within each group when the
+container is wide enough. Technical directive names use the shared disclosure control.
+Virtual routes uses the `edge-routing` illustration with `illustration-color` for its
+empty state and a single Add route action, moving that action into the header once
+routes exist.
+
+HTML editors share upload, source and sandboxed preview controls. A file is authored
+once and assigned to maintenance, error statuses or the server’s default address page.
+Show inheritance explicitly when a hostname uses project defaults. Preserve drafts
+on failure and distinguish saved intent from confirmed edge application. A failed
+initial read must not open an editable empty configuration.
+Edge pages loading uses section-shaped skeletons for the scope, maintenance control,
+HTML library and error assignments, with neutral foreground placeholders visible in
+every theme and motion-safe animation. Keep loaded settings visible but disabled
+while reloading; initial read failures use `ConnectionNotice` with Retry.

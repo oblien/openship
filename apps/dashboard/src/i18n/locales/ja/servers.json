@@ -245,7 +245,8 @@
       "runtimeApi": "ランタイム API",
       "workloads": "ワークロード",
       "settings": "設定",
-      "runs": "実行履歴"
+      "runs": "実行履歴",
+      "pages": "エッジページ"
     },
     "healthy": "正常",
     "issues": "問題あり",

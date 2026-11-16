@@ -14,6 +14,7 @@ import {
   Clock,
 } from '@/components/icons/icons';
 import { MessageSquareIcon } from 'lucide-react';
+import { AssistantIcon, ScheduledIcon } from '@/components/icons/mail-icons';
 import { m } from '@/paraglide/messages';
 
 export interface NavItem {
@@ -68,6 +69,7 @@ export const navigationConfig: Record<string, NavConfig> = {
             icon: Plane2,
             shortcut: 'g + t',
           },
+          { id: 'scheduled', title: 'Scheduled', url: '/mail/scheduled', icon: ScheduledIcon },
         ],
       },
       {
@@ -168,6 +170,7 @@ export const navigationConfig: Record<string, NavConfig> = {
             icon: SettingsGear,
             shortcut: 'g + s',
           },
+          { title: 'AI & agents', url: '/settings/agents', icon: AssistantIcon },
           {
             title: m['navigation.settings.privacy'](),
             url: '/settings/privacy',

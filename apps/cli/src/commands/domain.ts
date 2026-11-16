@@ -9,7 +9,7 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
 import { Command, Option } from "commander";
 import { UploadCertBody, parseInput } from "@repo/contracts";
 import { readFileSync } from "node:fs";
-import { attachCustomDomainEndpoint } from "../lib/custom-domain-endpoint";
+import { prepareCustomDomainEndpoint } from "../lib/custom-domain-endpoint";
 import { getShipClient } from "../lib/ship-client";
 import { spin, fail, confirmOrExit, printResult } from "../lib/cmd-helpers";
 import type { Domain, DomainRecords, DomainSsl } from "@repo/sdk/client";
@@ -71,14 +71,17 @@ const addCmd = new Command("add")
   .argument("<hostname>", "Domain hostname (e.g. app.example.com)")
   .requiredOption("-p, --project <id>", "Project ID to attach the domain to")
   .option("--primary", "Mark this domain as the project's primary", false)
+  .option("--service <name|id>", "Target service within the selected project")
+  .option("--port <port>", "Container port to route (required for ambiguous service ports)", positiveInteger)
   .action(async (hostname: string, opts) => {
     const sp = spin(`Adding ${hostname}…`);
     try {
       const ship = getShipClient();
+      const attach = await prepareCustomDomainEndpoint(ship, opts.project, { service: opts.service, port: opts.port });
       const res = await ship.domains.create(opts.project, { hostname, isPrimary: !!opts.primary });
-      const routed = await attachCustomDomainEndpoint(ship, opts.project, res.domain.hostname);
+      await attach(res.domain.hostname);
       sp?.succeed(`Added ${res.domain.hostname}`);
-      if (routed) info(`  ${res.domain.hostname} is configured to be routed on the next deploy.`);
+      info(`  ${res.domain.hostname} is configured to be routed on the next deploy.`);
       if (isJsonMode()) {
         printJson(res);
         return;

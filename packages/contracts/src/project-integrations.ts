@@ -55,18 +55,21 @@ export const ProjectEdgeConfigSchema = Type.Object({
   })),
 });
 
+export const ProjectConnectionCandidateSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  description: Type.String(),
+  appTemplateId: nullableString,
+  iconUrl: Type.Optional(nullableString),
+  framework: Type.Optional(nullableString),
+  clusterId: Type.Optional(nullableString),
+});
+export type ProjectConnectionCandidate = Static<typeof ProjectConnectionCandidateSchema>;
+
 export const ProjectIntegrationSchemas = {
   listConnectionCandidates: {
     action: "write",
-    output: Type.Array(
-      Type.Object({
-        id: Type.String(),
-        name: Type.String(),
-        description: Type.String(),
-        appTemplateId: nullableString,
-        clusterId: Type.Optional(nullableString),
-      }),
-    ),
+    output: Type.Array(ProjectConnectionCandidateSchema),
   },
   listConnections: { action: "read", output: Type.Array(ProjectConnectionSchema) },
   listConnectionConsumers: { action: "read", output: Type.Array(ProjectConnectionConsumerSchema) },

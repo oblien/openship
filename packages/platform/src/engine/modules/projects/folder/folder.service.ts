@@ -257,5 +257,6 @@ async function scanSource(session: FolderSession, opts: ResolveOptions = {}) {
   const st = await stat(session.stagingDir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/folder/folder.service"); return null; });
   if (!st?.isDirectory()) throw new Error("Uploaded source not found");
   const { resolveFromLocal } = await import("../../deployments/local-source");
-  return resolveFromLocal(session.stagingDir, opts);
+  // Staging paths are private implementation details, not project names.
+  return resolveFromLocal(session.stagingDir, opts, session.name?.trim() || "app");
 }

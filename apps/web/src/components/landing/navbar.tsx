@@ -30,6 +30,7 @@ const NAV: NavEntry[] = [
   {
     label: "Resources",
     items: [
+      { label: "Compare", href: "/compare", hint: "Find the right home for your stack" },
       { label: "Blog", href: "/blog", hint: "Guides and product news" },
       { label: "Changelog", href: "/changelog", hint: "What shipped, release by release" },
       { label: "Support", href: "/support", hint: "Talk to the OpenShip team" },

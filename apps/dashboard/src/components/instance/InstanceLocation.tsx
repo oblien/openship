@@ -129,9 +129,9 @@ export function InstanceProgress({
             Cancel move
           </Button>
         )}
-        {h?.provisioning?.deploymentId && (
+        {state.role === "active" && h?.provisioning?.deploymentId && (
           <Button asChild size="sm" variant="ghost">
-            <Link href={`/deployments/${h.provisioning.deploymentId}`}>View deployment</Link>
+            <Link href={`/build/${h.provisioning.deploymentId}`}>View deployment</Link>
           </Button>
         )}
       </div>

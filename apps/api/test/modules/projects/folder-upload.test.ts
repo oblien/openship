@@ -80,11 +80,11 @@ afterAll(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
-async function open() {
+async function open(name?: string) {
   const response = await fetch(`${origin}/api/projects/folder/session`, {
     method: "POST",
     headers: { ...owner.auth, "Content-Type": "application/json" },
-    body: JSON.stringify(env.CLOUD_MODE ? { serverId: managedServerId } : {}),
+    body: JSON.stringify({ ...(env.CLOUD_MODE ? { serverId: managedServerId } : {}), ...(name ? { name } : {}) }),
   });
   expect(response.status).toBe(200);
   const target = (await response.json()) as FolderSessionResult;
@@ -117,6 +117,33 @@ function upload(target: FolderSessionResult, bytes = archive, chunked = false) {
 
 describe.each([false, true])("authenticated folder upload over HTTP (Cloud: %s)", (cloudMode) => {
   beforeEach(() => { env.CLOUD_MODE = cloudMode; });
+  it.each([undefined, "my-folder-app"])("uses a client name or stable fallback instead of the staging path: %s", async (name) => {
+    const target = await open(name);
+    const uploaded = await upload(target);
+    expect(uploaded.status).toBe(200);
+    const response = await fetch(`${origin}/api/projects/folder/scan/${target.sessionId}`, {
+      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" }, body: "{}",
+    });
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(await response.json()).toMatchObject({ name: name ?? "app" });
+  });
+
+  it("returns the safe Compose refusal through the actual folder scan route", async () => {
+    const source = await mkdtemp(join(root, "host-network-"));
+    await writeFile(join(source, "compose.yaml"), "services:\n  web:\n    image: nginx:alpine\n    network_mode: host\n");
+    const packed = await archiveSourceDirectory(source, { temporaryRoot: join(root, "archives") });
+    try {
+      const target = await open();
+      expect((await upload(target, await readFile(packed.path))).status).toBe(200);
+      const response = await fetch(`${origin}/api/projects/folder/scan/${target.sessionId}`, {
+        method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" }, body: "{}",
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: "COMPOSE_CONFIGURATION_INVALID", error: expect.stringContaining("network_mode"),
+      });
+    } finally { await packed.dispose(); }
+  });
   it.each([false, true])("preserves every byte above 10 MiB (chunked: %s)", async (chunked) => {
     const target = await open();
     const response = await upload(target, archive, chunked);
@@ -133,7 +160,8 @@ describe.each([false, true])("authenticated folder upload over HTTP (Cloud: %s)"
   it("rejects a truncated gzip, cleans temporary files, and allows a complete retry", async () => {
     const target = await open();
     const response = await upload(target, archive.subarray(0, 10 * 1024 * 1024));
-    expect(response.status, await response.text()).toBe(400);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/incomplete|truncated/i) });
     const session = getFolderSession(target.sessionId)!;
     expect(session.uploaded).toBe(false);
     expect(session.uploading).toBe(false);

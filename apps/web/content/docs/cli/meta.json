@@ -1,5 +1,6 @@
 {
   "title": "CLI",
+  "icon": "terminal",
   "pages": [
     "index",
     "---Get connected---",

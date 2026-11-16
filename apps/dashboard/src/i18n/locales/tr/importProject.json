@@ -198,6 +198,9 @@
     "domain": {
       "internalService": "Dahili servis",
       "noPublicPorts": "Dışa açık port tespit edilmedi",
+      "exposedPortsNotPublished": "Konteyner port(ları) {ports} ana makinede yayınlanmaz.",
+      "publishPortHint": "Bunlardan birini yayınlayın (örneğin 127.0.0.1:{port}:{port}) ki bu servis genel bir alan adına sahip olsun.",
+      "tcpPortRequiredHint": "Genel bir web alan adı kullanmak için servisin port ayarlarında bir TCP portu ekleyin.",
       "publicDomain": "Herkese açık alan adı",
       "internetEnabled": "İnternet trafiği etkin",
       "privateByDefault": "Varsayılan olarak özel",

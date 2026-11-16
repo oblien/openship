@@ -1,7 +1,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { getCloudApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { isInvitationClaimPath } from "@repo/core";
+import { isInvitationClaimPath, isRepositoryDeployPath } from "@repo/core";
 
 export const DESKTOP_CLOUD_FLOW = "desktop-cloud";
 const DEFAULT_APP_NAME = "OpenShip Desktop";
@@ -207,7 +207,7 @@ export function getPostAuthRedirect(searchParams: SearchParamsLike) {
  *   - Must NOT start with `//` (protocol-relative URLs).
  *   - Path must match an allowlisted auth continuation. Invitation claims are
  *     accepted only in the exact `/accept-invite/<opaque-id>` shape. App installs,
- *     plan purchases and migration entry also have exact paths. A pricing selection continues
+ *     canonical repository slugs, plan purchases and migration entry also have exact paths. A pricing selection continues
  *     only after authentication and live offer validation. Arbitrary dashboard
  *     paths are not accepted.
  *
@@ -231,9 +231,11 @@ export function validateReturnTo(input: string | null): string | null {
   // Split off any query/fragment for the prefix check, but keep them on
   // the returned value so the consent page reloads with its params.
   const pathOnly = input.split(/[?#]/)[0];
-  // Better Auth 1.7 carries the signed OAuth query through consent/login. Keep
-  // its bounded payload intact without widening other continuation limits.
-  if (input.length > 512 && pathOnly !== "/mcp/authorize") return null;
+  // Repository links can carry a percent-encoded branch. Only a canonical repo
+  // slug gets the larger bound; local paths and project overrides are excluded.
+  // Better Auth 1.7 carries a larger signed OAuth query through MCP consent/login.
+  const isRepositoryDeploy = isRepositoryDeployPath(pathOnly);
+  if (input.length > (isRepositoryDeploy ? 2048 : 512) && pathOnly !== "/mcp/authorize") return null;
   const isInvitationClaim = isInvitationClaimPath(pathOnly);
   // `/mcp/authorize` is here for the same reason as `/cloud-authorize`: it's a
   // consent page for an ALREADY-authenticated visitor that sends the user to
@@ -244,6 +246,7 @@ export function validateReturnTo(input: string | null): string | null {
   const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
   const isAllowed =
     isInvitationClaim ||
+    isRepositoryDeploy ||
     /^\/apps\/new\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathOnly) ||
     pathOnly === "/billing/plans" ||
     pathOnly === "/library/migrate" ||

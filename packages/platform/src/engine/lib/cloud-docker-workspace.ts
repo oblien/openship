@@ -42,10 +42,10 @@ export async function findOwnedDockerWorkspace(
   ownerWorkspaceId: string,
   namespace: string,
 ) {
-  let found: Awaited<ReturnType<typeof client.workspaces.get>> | undefined;
+  let found: Awaited<ReturnType<typeof client.vms.get>> | undefined;
   for (let page = 1; ; page++) {
-    const result = await client.workspaces.list({ page, limit: 100 });
-    const matches = result.workspaces.filter(
+    const result = await client.vms.list({ page, limit: 100 });
+    const matches = result.vms.filter(
       (item) => item.slug === workspaceSlug(ownerWorkspaceId) && item.namespace === namespace,
     );
     for (const workspace of matches) {
@@ -55,7 +55,7 @@ export async function findOwnedDockerWorkspace(
         );
       found = workspace;
     }
-    if (!result.workspaces.length || page * result.limit >= result.total) return found;
+    if (!result.vms.length || page * result.limit >= result.total) return found;
   }
 }
 
@@ -78,7 +78,7 @@ export async function resizeDockerWorkspace(input: {
     save(workloads: NonNullable<CloudWorkspaceOperation["restartWorkloads"]>): Promise<void>;
   };
 }) {
-  const ws = input.client.workspace(input.workspaceId);
+  const ws = input.client.vm(input.workspaceId);
   const executor = new CloudWorkspaceExecutor(options => ws.runtime(options), input.workspaceId);
   try {
     const inspect = () =>
@@ -331,7 +331,7 @@ async function ensureDockerHost(
           );
         input.signal.throwIfAborted();
       }
-      const workspace = await client.workspaces
+      const workspace = await client.vms
         .create({
           name: managed.name,
           slug: workspaceSlug(ownerId),
@@ -355,7 +355,7 @@ async function ensureDockerHost(
         .catch(async (error) => {
           const failure = cloudWorkspaceCreationFailure(error);
           if (failure.workspaceId) {
-            const created = await client.workspaces.get(failure.workspaceId);
+            const created = await client.vms.get(failure.workspaceId);
             if (
               created.id !== failure.workspaceId ||
               created.namespace !== namespace ||
@@ -387,7 +387,7 @@ async function ensureDockerHost(
       // Complete this even after cancellation: retries must know which disk exists.
       await repos.cloudDockerWorkspace.attach(owner, input.organizationId, namespace, workspaceId);
     }
-    const ws = client.workspace(workspaceId);
+    const ws = client.vm(workspaceId);
     const current = await ws.get();
     if (current.namespace !== namespace) throw new Error("Cloud workspace namespace changed");
     input.signal?.throwIfAborted();
@@ -397,7 +397,7 @@ async function ensureDockerHost(
       input.onProgress?.(
         "Retrying the managed server's initial provisioning with its existing disk.\n",
       );
-      const retried = await client.workspaces.retryCreation(workspaceId);
+      const retried = await client.vms.retryCreation(workspaceId);
       if (retried.id !== workspaceId || retried.namespace !== namespace)
         throw new Error("Cloud provisioning retry returned an unexpected workspace");
     } else if (status === "stopped") await ws.start();

@@ -1,4 +1,5 @@
 {
   "title": "Troubleshooting",
+  "icon": "help-circle",
   "pages": ["index", "deployments", "domains-ssl", "github", "servers-ssh", "host-channel", "desktop-data", "common-errors"]
 }

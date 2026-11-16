@@ -30,7 +30,7 @@ export async function ensureActionsBillingNamespace(organizationId: string): Pro
     // Preparing checkout must not permit compute before paid runner setup.
     // These initial caps do not replace an existing namespace's limits.
     resource_limits: {
-      max_workspaces: 0,
+      max_vms: 0,
       max_vcpus: 0,
       max_ram_mb: 0,
       max_disk_gb: 0,
@@ -79,7 +79,7 @@ export async function ensureFundedActionRunners(organizationId: string): Promise
     disk: Math.max(...runners.map((r) => r.diskGb)),
   };
   const limits = {
-    max_workspaces: maxParallel,
+    max_vms: maxParallel,
     max_vcpus: maximum.cpu,
     max_ram_mb: maximum.memory,
     max_disk_gb: maximum.disk,

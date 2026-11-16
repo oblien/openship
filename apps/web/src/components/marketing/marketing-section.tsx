@@ -10,7 +10,7 @@ export function MarketingSection({
 }: {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
 }) {
   const copy = useCopy();
@@ -19,7 +19,7 @@ export function MarketingSection({
     <section id={id} className="marketing-section" aria-labelledby={`${id}-title`}>
       <header className="marketing-section-heading">
         <h2 id={`${id}-title`}>{copy(title)}</h2>
-        <p>{copy(description)}</p>
+        {description && <p>{copy(description)}</p>}
       </header>
       <div className="min-w-0">{children}</div>
     </section>

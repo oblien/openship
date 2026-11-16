@@ -39,10 +39,35 @@ afterEach(async () => {
 });
 
 for (const [name, Card] of [["list", ProjectCard], ["grid", ProjectGridCard]] as const) {
-  const render = (favicon = "/favicon-old.ico") => (
-    <I18nProvider><ModalProvider><Card project={{ ...project, favicon }} /></ModalProvider></I18nProvider>
+  const render = (iconUrl = "/icon-old.png") => (
+    <I18nProvider><ModalProvider><Card project={{ ...project, iconUrl }} /></ModalProvider></I18nProvider>
   );
-  describe(`${name} favicon`, () => {
+  describe(`${name} iconUrl`, () => {
+    it("uses a custom icon before the catalog logo on the Apps page", async () => {
+      complete = false;
+      root = createRoot(container);
+      await act(async () => root!.render(
+        <I18nProvider><ModalProvider><Card project={{ ...project, isApp: true, appTemplateId: "redis", iconUrl: "https://cdn.example.test/custom.png" }} /></ModalProvider></I18nProvider>,
+      ));
+      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe("https://cdn.example.test/custom.png");
+    });
+
+    it("uses the same catalog fallback when a custom icon fails or is cleared", async () => {
+      complete = false;
+      root = createRoot(container);
+      const custom = "https://cdn.example.test/custom.png";
+      const view = (iconUrl: string | null) => (
+        <I18nProvider><ModalProvider><Card project={{ ...project, isApp: true, appTemplateId: "redis", iconUrl }} /></ModalProvider></I18nProvider>
+      );
+      await act(async () => root!.render(view(custom)));
+      await act(async () => container.querySelector('img[alt=""]')!.dispatchEvent(new Event("error")));
+      const fallback = container.querySelector('img[alt=""]')?.getAttribute("src");
+      expect(fallback).toBeTruthy();
+      expect(fallback).not.toBe(custom);
+      await act(async () => root!.render(view(null)));
+      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe(fallback);
+    });
+
     it("falls back when the image failed before hydration attached its error listener", async () => {
       const view = render();
       container.innerHTML = renderToString(view);
@@ -59,16 +84,16 @@ for (const [name, Card] of [["list", ProjectCard], ["grid", ProjectGridCard]] as
       await act(async () => root!.render(render()));
       await act(async () => container.querySelector('img[alt=""]')!.dispatchEvent(new Event("error")));
       expect(container.querySelector('img[alt=""]')).toBeNull();
-      await act(async () => root!.render(render("/favicon-new.ico")));
-      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe("/favicon-new.ico");
+      await act(async () => root!.render(render("/icon-new.png")));
+      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe("/icon-new.png");
     });
 
-    it("keeps a successfully cached favicon", async () => {
+    it("keeps an image that loaded before hydration", async () => {
       naturalWidth = 32;
       const view = render();
       container.innerHTML = renderToString(view);
       await act(async () => { root = hydrateRoot(container, view); });
-      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe("/favicon-old.ico");
+      expect(container.querySelector('img[alt=""]')?.getAttribute("src")).toBe("/icon-old.png");
     });
   });
 }

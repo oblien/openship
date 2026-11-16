@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Icon } from "@repo/ui/icons";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { usePlatform } from "@/hooks/use-platform";
 
@@ -70,7 +70,7 @@ export function InstallTabs({
         ))}
       </div>
       <div className="install-command flex min-w-0 items-center gap-3 bg-neutral-950 p-5" dir="ltr">
-        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-neutral-100">
+        <code tabIndex={0} className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[13px] text-neutral-100">
           <span aria-hidden="true" className="select-none text-neutral-500">{method.prompt} </span>
           <span data-install-command>{method.cmd}</span>
         </code>
@@ -81,7 +81,7 @@ export function InstallTabs({
           aria-label={status === "copied" ? labels.copied : labels.copy}
           title={status === "copied" ? labels.copied : labels.copy}
         >
-          {status === "copied" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+          <Icon name={status === "copied" ? "check" : "copy"} size={16} />
         </button>
       </div>
       <p role="status" className={status === "error" ? "m-0 bg-neutral-50 px-5 py-3 text-sm text-neutral-700 dark:bg-neutral-900 dark:text-neutral-300" : "sr-only"}>

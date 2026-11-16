@@ -12,8 +12,7 @@ import { deploymentWorkload } from "../deployments/deployment-class";
 import { serviceKind } from "../../lib/deployable-service";
 import { maskDeploymentEnv } from "../../lib/secret-env";
 import { listProjectRouteRows, resolveProjectRouteState } from "../domains/project-route.service";
-import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
-import { pickCanonicalDomainRow, resolveProjectAccess } from "../../lib/public-endpoints";
+import { resolveProjectAccess } from "../../lib/public-endpoints";
 import { readProjectRoutingClaims } from "../../lib/domain-claims";
 import { serviceCustomHostnames } from "../../lib/routing-domains";
 import { withDomainDiagnostics } from "../domains/domain-diagnostics";
@@ -107,9 +106,6 @@ export function createProjectInspectionOperations(
         domain: d.hostname,
         primary: d.isPrimary,
       }));
-      refreshProjectFaviconIfStale(project, {
-        hostname: pickCanonicalDomainRow(rawDomains)?.hostname ?? null,
-      });
       // One server-computed access URL for every client surface. Derived from ALL
       // domain rows (service-scoped included, which the project-level publicEndpoints
       // resolver drops) + the effective deploy target, so a multi-service project
