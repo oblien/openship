@@ -23,7 +23,8 @@ describe("published release catalog", () => {
     ]);
     const commit = requests.find(({ url }) => url.includes("/commits/"))!;
     expect(commit.url.endsWith(sha)).toBe(true);
-    expect(commit.init.next?.revalidate).toBe(false);
+    expect(commit.init.cache).toBe("force-cache");
+    expect(commit.init.next).toBeUndefined();
   });
 
   for (const endpoint of ["raw.githubusercontent.com", "/tags?", "/commits/"]) {

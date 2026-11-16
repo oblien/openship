@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,27 @@ const requireWeb = createRequire(new URL("package.json", webRoot));
 const readJson = async (path) => JSON.parse(await readFile(new URL(path, webRoot), "utf8"));
 const appRoutes = await readJson(".next/app-path-routes-manifest.json");
 const prerender = await readJson(".next/prerender-manifest.json");
+// Verify the framework actually persists immutable release dates inside the catalog cache.
+// Unit tests alone cannot catch Next bypassing nested fetch revalidation hints.
+const cachedDates = [];
+for (const file of await readdir(new URL(".next/cache/fetch-cache/", webRoot), {
+  withFileTypes: true,
+})) {
+  if (!file.isFile()) continue;
+  const entry = await readJson(`.next/cache/fetch-cache/${file.name}`);
+  if (
+    /^https:\/\/api.github.com\/repos\/oblien\/openship\/commits\/[a-f0-9]{40}$/.test(
+      entry.data?.url,
+    )
+  ) {
+    assert(
+      entry.revalidate >= 31_536_000,
+      "Release dates should not be refreshed with the catalog",
+    );
+    cachedDates.push(entry.data.url);
+  }
+}
+assert(cachedDates.length > 0, "Production build must cache immutable release date lookups");
 const pageRoutes = Object.entries(appRoutes)
   .filter(([file, route]) => file.endsWith("/page") && !route.startsWith("/_"))
   .map(([, route]) => route);

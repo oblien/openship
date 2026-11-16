@@ -46,12 +46,13 @@ export async function loadPublishedChangelog(fetchSource: FetchSource = fetch) {
 
   return Promise.all(
     published.map(async (entry) => {
-      // Commit identities are immutable; avoid re-fetching every historical date every ten minutes.
+      // Explicit force-cache preserves immutable lookups inside the catalog's unstable_cache.
+      // A next.revalidate hint alone is bypassed in that scope.
       const response = await fetchSource(
         `https://api.github.com/repos/${REPO}/commits/${tags.get(entry.version)}`,
         {
           headers,
-          next: { revalidate: false },
+          cache: "force-cache",
         },
       );
       if (!response.ok)
