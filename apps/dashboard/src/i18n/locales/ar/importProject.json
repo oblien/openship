@@ -198,6 +198,8 @@
     "domain": {
       "internalService": "خدمة داخلية",
       "noPublicPorts": "لم يتم اكتشاف منافذ عامة",
+      "exposedPortsNotPublished": "منفذ (منافذ) الحاوية {ports} غير منشورة على المضيف.",
+      "publishPortHint": "انشر أحدها (مثل 127.0.0.1:{port}:{port}) لمنح هذه الخدمة نطاقًا عامًا.",
       "publicDomain": "نطاق عام",
       "internetEnabled": "حركة مرور الإنترنت مفعّلة",
       "privateByDefault": "خاص افتراضيًا",
