@@ -241,6 +241,14 @@ jobs:
         working-directory: apps/email/client
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Verify scoped agents against the released Mindwire daemon
+        if: matrix.suite == 'Other packages'
+        env:
+          OPENSHIP_ASSISTANT_E2E: "1"
+        run: >-
+          bun run --cwd packages/platform test
+          test/assistant-agents.e2e.test.ts test/assistant-remote.test.ts
+
       # Run every workspace test, with the large API suite split across runners.
       # Direct Vitest runs and Turbo's stream mode expose progress immediately.
       # The complete API test/e2e/** suite also runs in release-gate.yml.
