@@ -88,11 +88,11 @@ r.delete(
 
 r.get("/servers/:id/edge-pages", {
   tag: "server:read",
-  mcp: { description: "Read this server's default maintenance and error pages, including the page served for unmatched hostnames or direct IP requests." },
+  mcp: { description: "Read this server's custom error pages and the fallback page served for unmatched hostnames or direct IP requests." },
 }, rateLimit.getEdgePages);
 r.put("/servers/:id/edge-pages", {
   tag: "server:admin", body: EdgePagesSchema, auditHandledByOperation: true,
-  mcp: { description: "Set this server's default edge maintenance and error HTML, including unmatched hostname and direct IP pages. Project and hostname overrides remain more specific than these defaults." },
+  mcp: { description: "Set this server's default error HTML and its fallback page for unmatched hostnames or direct IP requests. Project and hostname overrides remain more specific than these defaults." },
 }, rateLimit.updateEdgePages);
 
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */

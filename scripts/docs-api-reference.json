@@ -1617,7 +1617,7 @@
     "servers.getEdgePages": {
       "page": "servers",
       "section": "Networking",
-      "description": "Read server defaults for maintenance, errors, and unmatched-host or direct-IP pages.",
+      "description": "Read server error pages and the fallback for unmatched hosts or direct IP requests.",
       "route": "GET /api/system/servers/:id/edge-pages"
     },
     "servers.updateEdgePages": {

@@ -80,6 +80,7 @@ edge lacks the page runtime, update it through the existing server infrastructur
 Project reads return the saved config, its revision and application state:
 
 ```ts
+const projectId = "your-project-id";
 const current = await ship.projects.getEdgePages(projectId);
 await ship.projects.updateEdgePages(projectId, {
   expectedRevision: current.revision,
