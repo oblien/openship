@@ -21,7 +21,11 @@ it("recovers a daemon API pull when saved credentials reject a public image", as
 
 it("keeps private images inaccessible and reports the authenticated failure", async () => {
   const { runtime, pull } = fixture([new Error("unauthorized: login expired"), new Error("denied")]);
-  await expect(runtime.pullImage("ghcr.io/private/api:1", { force: true })).rejects.toThrow("login expired");
+  await expect(runtime.pullImage("ghcr.io/private/api:1", { force: true })).rejects.toMatchObject({
+    code: "REGISTRY_ACCESS_DENIED",
+    details: { registry: "ghcr.io", imageRef: "ghcr.io/private/api:1" },
+    message: expect.stringContaining("login expired"),
+  });
   expect(pull).toHaveBeenCalledTimes(2);
 });
 

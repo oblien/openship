@@ -145,7 +145,7 @@ import { isRuntimeNotFoundError } from "../system/errors";
 import { OPENSHIP_LABEL } from "../system/port-owner";
 import { dirOf, ensureOwnedDir } from "../system/elevated-executor";
 import { dockerConfigJsonFor, registryForImage, resolveDockerAuth } from "./docker-auth";
-import { pullWithAnonymousFallback } from "./registry-pull";
+import { pullWithAnonymousFallback, registryAccessError } from "./registry-pull";
 
 import type {
   RuntimeAdapter,
@@ -5276,10 +5276,6 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     // force → skip the present-check and always pull the tag, so a moved
     // mutable tag (:latest/:1) rolls forward on an "update" deploy.
     const executor = this.connectionOptions?.executor;
-    if (executor) {
-      await this.runRemoteRegistryCommand("pull", ref, opts?.signal, opts?.logger);
-      return;
-    }
     // dockerode does not read `~/.docker/config.json` the way the CLI does, so this pull
     // went out anonymous on a `docker login`-ed host and every private-image deploy failed
     // with an unauthorized manifest fetch (#581). Resolved per pull rather than cached: a
@@ -5289,10 +5285,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     // every install shape and every target. The host config is the fallback, and only when
     // no resolver was supplied at all: an org that manages its registries in Openship
     // should not have a stray `docker login` on the box quietly override it.
-    const authconfig = this.connectionOptions?.resolveRegistryAuth
+    const authconfig = executor ? undefined : this.connectionOptions?.resolveRegistryAuth
       ? await this.connectionOptions.resolveRegistryAuth(ref)
       : await resolveDockerAuth(ref);
     try {
+      if (executor) {
+        await this.runRemoteRegistryCommand("pull", ref, opts?.signal, opts?.logger);
+        return;
+      }
       const pull = async (anonymous: boolean) => {
         opts?.signal?.throwIfAborted();
         const stream = await this.docker.pull(ref, !anonymous && authconfig ? { authconfig } : {});
@@ -5304,6 +5304,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         () => opts?.logger?.log("Registry login was rejected; retrying public image access without credentials.\n", "warn"), opts?.signal);
       else await pull(true);
     } catch (err) {
+      if (opts?.signal?.aborted) throw err;
+      const accessError = registryAccessError(ref, err);
+      if (accessError) throw accessError;
+      if (executor) throw err;
       observeCaughtError(err, "adapters/runtime/docker");
       // Name the registry and KEEP the daemon's reason. The credential we sent is
       // never echoed back in a pull error, while the reason is the only thing that

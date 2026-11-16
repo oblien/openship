@@ -12,6 +12,7 @@ import { DeploymentHeader } from "../DeploymentHeader";
 import { DeploymentHealthWarning } from "../DeploymentHealthWarning";
 import { CloudBuildQueueNotice } from "../CloudBuildQueueNotice";
 import { CloudDeploymentResourceNotice } from "../CloudDeploymentResourceNotice";
+import { DeploymentRegistryAccessNotice } from "../DeploymentRegistryAccessNotice";
 import { DeploymentContainerConflictNotice } from "../DeploymentContainerConflictNotice";
 import { DeploymentLayout } from "../DeploymentLayout";
 import { DeploymentLogsPanel } from "../DeploymentLogsPanel";
@@ -578,7 +579,7 @@ function ComposeDeploymentBody({
 
   return (
     <DeploymentLayout
-      notice={<><DeploymentContainerConflictNotice /><CloudDeploymentResourceNotice /></>}
+      notice={<><DeploymentContainerConflictNotice /><DeploymentRegistryAccessNotice /><CloudDeploymentResourceNotice /></>}
       details={<DeploymentDetails />}
       navigation={
         <div className="rounded-2xl bg-card p-3">

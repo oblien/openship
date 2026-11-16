@@ -60,6 +60,13 @@ export function Connections() {
     void load();
   }, [load]);
 
+  // Provider sections arrive after navigation's hash scroll has already run.
+  useEffect(() => {
+    if (loading) return;
+    const provider = providers.find((p) => `#${p.id}` === window.location.hash);
+    if (provider) document.getElementById(provider.id)?.scrollIntoView({ block: "start" });
+  }, [loading, providers]);
+
   const byProvider = useMemo(() => {
     const map = new Map<string, Credential[]>();
     for (const row of rows) {
@@ -122,7 +129,7 @@ export function Connections() {
             const pLabel = pLoc?.label ?? provider.label;
             const pSummary = pLoc?.summary ?? provider.summary;
             return (
-              <section key={provider.id} aria-label={pLabel} className="py-5 first:pt-0 last:pb-0">
+              <section key={provider.id} id={provider.id} aria-label={pLabel} className="scroll-mt-24 py-5 first:pt-0 last:pb-0">
                 <div className="flex items-start gap-3">
                   <AppLogo slug={provider.icon} icon="key" className="mt-1 size-6 shrink-0" />
                   <div className="min-w-0 flex-1">

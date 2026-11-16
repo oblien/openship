@@ -4,6 +4,7 @@ import React, { useCallback } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { CloudBuildQueueNotice } from "./CloudBuildQueueNotice";
 import { CloudDeploymentResourceNotice } from "./CloudDeploymentResourceNotice";
+import { DeploymentRegistryAccessNotice } from "./DeploymentRegistryAccessNotice";
 import BuildTerminal from "./BuildTerminal";
 import { DeploymentHeader } from "./DeploymentHeader";
 import { DeploymentLayout } from "./DeploymentLayout";
@@ -58,7 +59,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
       <DeploymentLayout
         details={<DeploymentDetails />}
         navigation={<DeploymentStepper />}
-        notice={<CloudDeploymentResourceNotice />}
+        notice={<><DeploymentRegistryAccessNotice /><CloudDeploymentResourceNotice /></>}
       >
         {state.queue && state.isDeploying && <CloudBuildQueueNotice queue={state.queue} />}
         {hasWarning && (
