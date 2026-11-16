@@ -2784,7 +2784,11 @@
     "mpih3f1": "Bütün platformu kendiniz kurmadan altyapınıza sahip olun. OpenShip dağıtımı, veriyi, postayı ve otomasyonu birleştirir. Yığınınız için farkını görün.",
     "mgo9yl1": "Ekipler neden OpenShip’e geçiyor",
     "m11phbfy": "Yığınınızın daha fazlası sizin kontrolünüzde.",
-    "m1jvdtom": "Keşfedilen Docker iş yüklerini ve kalıcı verileri inceleyin. Mevcut Swarm yığınları yeni OpenShip dağıtımı gerektirir; içe aktarma onları devralmaz. Trafiği değiştirmeden ağ, depolama ve geçişi planlayın."
+    "m1jvdtom": "Keşfedilen Docker iş yüklerini ve kalıcı verileri inceleyin. Mevcut Swarm yığınları yeni OpenShip dağıtımı gerektirir; içe aktarma onları devralmaz. Trafiği değiştirmeden ağ, depolama ve geçişi planlayın.",
+    "m898i20": "OpenShip hakkında",
+    "mnto541": "Platform özellikleri",
+    "m154dfzd": "OpenShip’e geçin",
+    "m1jxdnq": "Müşteri desteği"
   },
   "ReleaseNotes": {
     "m1005a3f": "- Sihirbaz, bir adımda herhangi bir rota seçilmediğinde proje adından bir ana bilgisayar adı icat etmek, bağlantı noktası alanlarını etiketlemek, monorepo alt uygulama ana bilgisayarlarının ön izlemesini yapmak ve hatta \"Siteyi Ziyaret Et\" düğmesini hiçbir zaman var olmayacak bir ana bilgisayara bağlamak için kullanılır. Artık yalnızca yapılandırmanızın gerçek adlarını gösteren ana bilgisayarları gösterir ve dağıtımın genel bir etki alanı olmadığında \"Siteyi Ziyaret Et\" seçeneğini tamamen gizler.",

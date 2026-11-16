@@ -2784,7 +2784,11 @@
     "mpih3f1": "Controle a infraestrutura sem montar uma plataforma inteira. O OpenShip reúne implantações, dados, e-mail e automação. Veja a diferença para seu stack.",
     "mgo9yl1": "Por que equipes migram para OpenShip",
     "m11phbfy": "Mais do seu stack sob seu controle.",
-    "m1jvdtom": "Revise cargas Docker descobertas e dados persistentes. Stacks Swarm existentes precisam de uma nova implantação OpenShip; a importação não os adota. Planeje rede, armazenamento e transição antes de mudar o tráfego."
+    "m1jvdtom": "Revise cargas Docker descobertas e dados persistentes. Stacks Swarm existentes precisam de uma nova implantação OpenShip; a importação não os adota. Planeje rede, armazenamento e transição antes de mudar o tráfego.",
+    "m898i20": "Sobre o OpenShip",
+    "mnto541": "Recursos da plataforma",
+    "m154dfzd": "Migre para o OpenShip",
+    "m1jxdnq": "Suporte ao cliente"
   },
   "ReleaseNotes": {
     "m1005a3f": "- o assistente costumava inventar um nome de host a partir do nome do projeto sempre que uma etapa não tinha uma rota escolhida, rotulando campos de porta, visualizando hosts de subaplicativos monorepo e até mesmo conectando o botão \"Visitar Site\" a um host que nunca existiria. Agora ele mostra apenas os nomes reais dos hosts de sua configuração e oculta totalmente \"Visitar o site\" quando a implantação não tem domínio público.",

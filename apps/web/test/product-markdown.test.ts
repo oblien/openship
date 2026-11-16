@@ -40,6 +40,10 @@ describe("public product content", () => {
       const copy = createCopy(createTranslator({ locale, messages, namespace: "Copy" }));
       const sources = [
         PRODUCT_SUMMARY,
+        "Platform features",
+        "About OpenShip",
+        "Move to OpenShip",
+        "Customer support",
         ...CONTROL_PLANE_MODES.flatMap((item) => [item.title, item.description]),
         ...Object.values(PRODUCT_ADVANTAGES).flatMap((item) => [item.title, item.description]),
         ...PRODUCT_QUESTIONS.flatMap((item) => [item.question, item.answer]),

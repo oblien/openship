@@ -2784,7 +2784,11 @@
     "mpih3f1": "Maîtrisez votre infrastructure sans assembler une plateforme entière. OpenShip réunit déploiements, données, messagerie et automatisation. Découvrez ce que cela change pour votre stack.",
     "mgo9yl1": "Pourquoi les équipes passent à OpenShip",
     "m11phbfy": "Davantage de votre stack, sous votre contrôle.",
-    "m1jvdtom": "Examinez les charges Docker découvertes et les données persistantes. Les stacks Swarm existantes nécessitent un nouveau déploiement OpenShip ; le parcours d’import ne les adopte pas. Planifiez réseau, stockage et bascule avant de déplacer le trafic."
+    "m1jvdtom": "Examinez les charges Docker découvertes et les données persistantes. Les stacks Swarm existantes nécessitent un nouveau déploiement OpenShip ; le parcours d’import ne les adopte pas. Planifiez réseau, stockage et bascule avant de déplacer le trafic.",
+    "m898i20": "À propos d’OpenShip",
+    "mnto541": "Fonctionnalités de la plateforme",
+    "m154dfzd": "Migrer vers OpenShip",
+    "m1jxdnq": "Support client"
   },
   "ReleaseNotes": {
     "m1005a3f": "- l'assistant utilisé pour inventer un nom d'hôte à partir du nom du projet chaque fois qu'une étape n'avait pas choisi d'itinéraire, étiquetant les champs de port, prévisualisant les hôtes de sous-application monorepo et même câblant le bouton \"Visiter le site\" à un hôte qui n'existerait jamais. Il affiche désormais uniquement les hôtes que votre configuration nomme réellement et masque entièrement « Visiter le site » lorsque le déploiement n'a pas de domaine public.",

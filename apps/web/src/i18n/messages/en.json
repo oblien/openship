@@ -2784,7 +2784,11 @@
     "mpih3f1": "Own your infrastructure without assembling an entire platform. OpenShip brings deployments, data, mail and automation together. See where that makes a difference for your stack.",
     "mgo9yl1": "Why teams move to OpenShip",
     "m11phbfy": "More of your stack, under your control.",
-    "m1jvdtom": "Review discovered Docker workloads and persistent data. Existing Swarm stacks need a new OpenShip deployment; the import flow does not adopt them. Plan networking, storage and the cutover before switching traffic."
+    "m1jvdtom": "Review discovered Docker workloads and persistent data. Existing Swarm stacks need a new OpenShip deployment; the import flow does not adopt them. Plan networking, storage and the cutover before switching traffic.",
+    "m898i20": "About OpenShip",
+    "mnto541": "Platform features",
+    "m154dfzd": "Move to OpenShip",
+    "m1jxdnq": "Customer support"
   },
   "ReleaseNotes": {
     "m1005a3f": "— the wizard used to invent a hostname from the project name whenever a step had no route chosen, labelling port fields, previewing monorepo sub-app hosts, and even wiring the \"Visit Site\" button to a host that would never exist. It now shows only hosts your config actually names, and hides \"Visit Site\" entirely when the deployment has no public domain.",
