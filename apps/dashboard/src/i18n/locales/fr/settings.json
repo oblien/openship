@@ -1802,6 +1802,7 @@
     "previewFailed": "Aperçu indisponible. Vérifiez que l’URL pointe directement vers une image."
   },
   "profile": {
+    "change": "Changer l’avatar",
     "title": "Profil",
     "description": "L’image de votre compte personnel.",
     "label": "URL de l’avatar",

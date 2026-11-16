@@ -1802,6 +1802,7 @@
     "previewFailed": "プレビューを表示できません。画像の直接 URL か確認してください。"
   },
   "profile": {
+    "change": "アバターを変更",
     "title": "プロフィール",
     "description": "個人アカウントの画像。",
     "label": "アバター URL",

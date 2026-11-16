@@ -1802,6 +1802,7 @@
     "previewFailed": "Prévia indisponível. Verifique se a URL aponta diretamente para uma imagem."
   },
   "profile": {
+    "change": "Alterar avatar",
     "title": "Perfil",
     "description": "A imagem da sua conta pessoal.",
     "label": "URL do avatar",

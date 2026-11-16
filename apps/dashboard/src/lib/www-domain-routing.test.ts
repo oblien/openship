@@ -65,11 +65,15 @@ describe("www domain behavior", () => {
     }
   });
   it("reuses the serving port when a portless redirect becomes primary", () => {
-    const next = setWwwDomainRouting([
-      domain("example.com"),
-      domain("www.example.com", { port: "", redirectTo: "example.com" }),
-    ], "www");
-    expect(next[0]).toMatchObject({ customDomain: "www.example.com", redirectTo: "", port: "3000" });
+    const next = setWwwDomainRouting(
+      [domain("example.com"), domain("www.example.com", { port: "", redirectTo: "example.com" })],
+      "www",
+    );
+    expect(next[0]).toMatchObject({
+      customDomain: "www.example.com",
+      redirectTo: "",
+      port: "3000",
+    });
     expect(validatedPublicEndpointPayload(next[0], true)).toMatchObject({ port: 3000 });
   });
   it("keeps the chosen primary when disabling www and repairs references to the removed host", () => {
@@ -105,5 +109,27 @@ describe("www domain behavior", () => {
       included: true,
       mode: "apex",
     });
+  });
+
+  it("edits a secondary root domain without replacing the primary or another www pair", () => {
+    const first = domain("app.example.com", { port: "8080" });
+    const firstPair = toggleWwwDomainRouting([domain("first.com")], true);
+    const second = domain("second.co.uk", { port: "9000" });
+    const initial = [first, ...firstPair, second];
+    const next = toggleWwwDomainRouting(initial, true, true, "second.co.uk");
+    expect(next.slice(0, 3)).toEqual(initial.slice(0, 3));
+    expect(next.slice(3)).toMatchObject([
+      { customDomain: "second.co.uk", port: "9000", redirectTo: "" },
+      { customDomain: "www.second.co.uk", port: "9000", redirectTo: "second.co.uk" },
+    ]);
+    const www = setWwwDomainRouting(next, "www", "second.co.uk");
+    expect(www.slice(0, 3)).toEqual(initial.slice(0, 3));
+    expect(www.slice(3).map((route) => route.customDomain)).toEqual([
+      "www.second.co.uk",
+      "second.co.uk",
+    ]);
+    expect(
+      toggleWwwDomainRouting(next, false, true, "second.co.uk").map((route) => route.customDomain),
+    ).toEqual(initial.map((route) => route.customDomain));
   });
 });

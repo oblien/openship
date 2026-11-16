@@ -1448,6 +1448,7 @@
     "headersHint": "Önbellek, CORS veya diğer yanıt başlıklarını ekleyin."
   },
   "icon": {
+    "change": "Simgeyi değiştir",
     "label": "Proje simgesi URL’si",
     "hint": "HTTP veya HTTPS resim URL’si kullanın. Varsayılan simgeyi kullanmak için URL’yi temizleyin.",
     "reset": "Varsayılan simgeyi kullan"

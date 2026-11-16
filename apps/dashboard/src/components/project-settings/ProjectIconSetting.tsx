@@ -7,14 +7,16 @@ import { ImageUrlEditor } from "@/components/settings/ImageUrlEditor";
 import { projectsApi } from "@/lib/api";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 
-export function ProjectIconSetting() {
+export function ProjectIconSetting({ onClose }: { onClose: () => void }) {
   const { projectData, updateProjectData } = useProjectSettings();
   const { t } = useI18n();
   const c = t.projectSettings.icon;
   return (
     <ImageUrlEditor
       key={projectData.id}
+      onClose={onClose}
       value={projectData.iconUrl}
+      editLabel={c.change}
       label={c.label}
       hint={c.hint}
       resetLabel={c.reset}
@@ -25,7 +27,7 @@ export function ProjectIconSetting() {
             iconUrl: null,
           }}
           appTemplateId={projectData.appTemplateId}
-          className="size-7"
+          className="size-5"
         />
       }
       onSave={async (iconUrl) => {

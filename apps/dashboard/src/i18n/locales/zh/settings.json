@@ -1802,6 +1802,7 @@
     "previewFailed": "无法预览。请检查 URL 是否直接指向图片。"
   },
   "profile": {
+    "change": "更改头像",
     "title": "个人资料",
     "description": "你的个人账户图片。",
     "label": "头像 URL",
