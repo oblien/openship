@@ -15,7 +15,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
-import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
+import { firstExposedTcpPort, parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -172,7 +172,7 @@ export const InternalServiceNotice: React.FC<{ exposedPorts: string[] }> = ({
 }) => {
   const { t } = useI18n();
   const d = t.importProject.composeServices.domain;
-  const [firstPort] = exposedPorts;
+  const publishPort = firstExposedTcpPort(exposedPorts);
   return (
     <div className="flex items-center gap-3">
       <div className="flex size-9 items-center justify-center rounded-lg bg-muted/50">
@@ -187,7 +187,9 @@ export const InternalServiceNotice: React.FC<{ exposedPorts: string[] }> = ({
         </p>
         {exposedPorts.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            {interpolate(d.publishPortHint, { port: firstPort ?? "" })}
+            {publishPort
+              ? interpolate(d.publishPortHint, { port: publishPort })
+              : d.tcpPortRequiredHint}
           </p>
         )}
       </div>
