@@ -25,6 +25,7 @@ import { createChatAssistant } from "./chat-assistant";
 import { assistant, type createAssistantRuntime } from "../assistant/assistant.service";
 import { assistantCredential } from "../assistant/assistant-access";
 import { mcpClientToken } from "../mcp/mcp-client-authorization";
+import { deferred } from "../../lib/deferred";
 const lock = <T>(id: string, work: () => Promise<T>) =>
   createProvisionLock(`chat-connection:${id}`).run(work);
 function validateTransport(
@@ -45,7 +46,7 @@ function validateTransport(
 }
 export function createChatApps(
   transport: ChatTransport = createDirectChatTransport(),
-  runtime: ReturnType<typeof createAssistantRuntime> = assistant,
+  runtime: ReturnType<typeof createAssistantRuntime> = deferred(() => assistant),
 ) {
   const commands = createChatCommands(undefined, createChatAssistant(runtime));
   const issues = new Map<string, string>();

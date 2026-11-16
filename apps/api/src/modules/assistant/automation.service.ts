@@ -43,6 +43,7 @@ import { assistantCredential, requireAssistantSession } from "./assistant-access
 import { getMcpTools } from "../mcp/mcp-tools";
 import { dispatchTool } from "../mcp/mcp-dispatch";
 import { automationGrants, repositoryAction } from "./automation-access";
+import { deferred } from "../../lib/deferred";
 
 const terminal = new Set(["reported", "succeeded", "failed", "skipped", "cancelled"]);
 const fail = (message: string, status = 409) =>
@@ -98,7 +99,7 @@ export function createAssistantAutomations(
     verify?: (run: AssistantAutomationRunRow) => Promise<boolean>;
   } = {},
 ) {
-  const runtime = deps.runtime ?? assistant;
+  const runtime = deps.runtime ?? deferred(() => assistant);
   const dispatch = deps.dispatch ?? dispatchTool;
   const worker = randomUUID();
   let sweeping = false;

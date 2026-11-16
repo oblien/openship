@@ -22,6 +22,7 @@ import { chatAssistantAccess, validateChatConversation } from "./chat-assistant-
 import { chatInput, chatLabel, type ChatAssistantHandler } from "./chat-apps-commands";
 import { fail, fingerprint, senderKey } from "./chat-apps-common";
 import type { HostEvent } from "./transport/types";
+import { deferred } from "../../lib/deferred";
 
 const conversationUrl = (id: string) =>
   `${resolveDashboardPublicUrl()}/assistant?chat=${encodeURIComponent(id)}`;
@@ -71,7 +72,7 @@ export function chatAssistantReply(
 
 /** A transport adapter around the existing runtime, not a second agent/deployment pipeline. */
 export function createChatAssistant(
-  runtime: ReturnType<typeof createAssistantRuntime> = assistant,
+  runtime: ReturnType<typeof createAssistantRuntime> = deferred(() => assistant),
 ): ChatAssistantHandler {
   async function context(c: ChatAppConnection, event: HostEvent) {
     const { identity } = await chatCredential(c, event);
