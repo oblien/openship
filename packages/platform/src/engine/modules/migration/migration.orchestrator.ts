@@ -691,7 +691,7 @@ class MigrationOrchestratorImpl {
         id: `dmr_${crypto.randomUUID()}`,
         organizationId: ctx.organizationId,
         targetServerId: target.id,
-        projectName: plan.project.name,
+        projectName: plan.projectName,
         serviceNames: plan.services.map((s) => s.create.name),
         status: "queued",
         mode: "provider_import",

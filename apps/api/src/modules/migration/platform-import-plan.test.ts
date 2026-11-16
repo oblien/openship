@@ -144,14 +144,18 @@ describe("reviewed platform imports", () => {
       {
         sourceId: "db",
         envKey: "DATABASE_URL",
+        valueTemplate: "postgres://app:source-secret@${host}/app",
       },
     ]);
     expect(privatePlan.services[1].environment.DATABASE_URL).toBe(
       "postgres://app:source-secret@database/app",
     );
-    expect(privatePlan.project.name).toBe("Project");
-    expect(privatePlan.project.services?.map((row) => row.name)).toEqual(["database", "website"]);
-    expect(JSON.stringify(privatePlan.project)).not.toContain("source-secret");
+    expect(privatePlan.projects[0].create.name).toBe("Project");
+    expect(privatePlan.projects[0].create.services?.map((row) => row.name)).toEqual([
+      "database",
+      "website",
+    ]);
+    expect(JSON.stringify(privatePlan.projects)).not.toContain("source-secret");
     expect(privatePlan.services[0].environment.PGHOST).toBe(
       privatePlan.services[0].create.internalAlias,
     );
@@ -182,29 +186,109 @@ describe("reviewed platform imports", () => {
   it("names storage per service inside one destination project", async () => {
     inventory.services[1].volumes = [{ id: "files", mountPath: "/data" }];
     const plan = await loadReviewedImport(ctx, (await review()).planId);
-    expect(plan.project.services?.flatMap((service) => service.volumes ?? [])).toEqual([
+    expect(plan.projects[0].create.services?.flatMap((service) => service.volumes ?? [])).toEqual([
       "database-data-0:/var/lib/postgresql/data",
       "website-data-0:/data",
     ]);
-    expect(plan.project.services?.[1].dependsOn).toEqual(["database"]);
+    expect(plan.projects[0].create.services?.[1].dependsOn).toEqual(["database"]);
   });
-  it("blocks incompatible Git sources instead of splitting the source project", async () => {
-    inventory.services = ["one", "two"].map((id) =>
+  it.each(["repository", "commit", "branch"])(
+    "splits incompatible Git %s without losing revisions or private connections",
+    async (difference) => {
+      inventory.services = ["one", "two"].map((id) =>
+        service({
+          id,
+          name: id,
+          image: undefined,
+          repository: difference === "repository" ? `owner/${id}` : "owner/repo",
+          commit: (difference === "commit" && id === "two" ? "b" : "a").repeat(40),
+          branch: difference === "branch" ? id : "main",
+          privateDomain: `${id}.railway.internal`,
+          env: id === "two" ? { API_URL: "http://one.railway.internal:3000/api?secret=keep" } : {},
+        }),
+      );
+      const result = await review(
+        inventory.services.map((service) => ({
+          id: service.id,
+          name: service.name,
+          data: "empty",
+        })),
+      );
+      expect(result.ready, JSON.stringify(result)).toBe(true);
+      expect(result.projects).toEqual([
+        { name: "project-one", serviceIds: ["one"] },
+        { name: "project-two", serviceIds: ["two"] },
+      ]);
+      const plan = await loadReviewedImport(ctx, result.planId);
+      expect(plan.projects.map((project) => project.create.gitRepo)).toEqual(
+        difference === "repository" ? ["one", "two"] : ["repo", "repo"],
+      );
+      expect(plan.services[1].bindings).toEqual([
+        {
+          sourceId: "one",
+          envKey: "API_URL",
+          valueTemplate: "http://${host}:3000/api?secret=keep",
+        },
+      ]);
+      expect(plan.services.map((s) => s.source.commit)).toEqual(
+        inventory.services.map((s) => s.commit),
+      );
+      expect(h.info.mock.calls.map(([input]) => input.owner)).toEqual(["owner", "owner"]);
+      expect(h.info.mock.calls.map(([input]) => input.branch)).toEqual(
+        inventory.services.map((s) => s.commit),
+      );
+    },
+  );
+  it("keeps compatible source services together and rejects composite cross-project variables during review", async () => {
+    const git = (id: string, repository: string) =>
       service({
         id,
         name: id,
         image: undefined,
-        repository: `owner/${id}`,
+        repository,
         commit: "a".repeat(40),
+        privateDomain: `${id}.railway.internal`,
+      });
+    inventory.services = [git("one", "owner/repo"), git("two", "owner/repo")];
+    const choices = () =>
+      inventory.services.map((s) => ({ id: s.id, name: s.name, data: "empty" as const }));
+    expect((await review(choices())).projects).toEqual([
+      { name: "Project", serviceIds: ["one", "two"] },
+    ]);
+    inventory.services.push(git("three", "owner/other"));
+    inventory.services[2].env = { HOSTS: "one.railway.internal,two.railway.internal" };
+    const result = await review(choices());
+    expect(result.ready).toBe(false);
+    expect(result.services[2].blockers.join(" ")).toContain("separate connection variable");
+  });
+  it("blocks unavailable private listeners and ambiguous host templates before source downtime", async () => {
+    inventory.services = [
+      service({
+        id: "store",
+        name: "store",
+        port: undefined,
+        privateDomain: "store.railway.internal",
       }),
-    );
+      ...["one", "two"].map((id) =>
+        service({
+          id,
+          name: id,
+          image: undefined,
+          repository: `owner/${id}`,
+          commit: "a".repeat(40),
+          env:
+            id === "one"
+              ? { HOST: "store.railway.internal" }
+              : { HOST: "store.railway.internal-${host}" },
+        }),
+      ),
+    ];
     const result = await review(
-      inventory.services.map((service) => ({ id: service.id, name: service.name, data: "empty" })),
+      inventory.services.map((s) => ({ id: s.id, name: s.name, data: "empty" })),
     );
     expect(result.ready).toBe(false);
-    expect(result.services.flatMap((service) => service.blockers).join(" ")).toContain(
-      "one Git source",
-    );
+    expect(result.services[1].blockers.join(" ")).toContain("private listener port");
+    expect(result.services[2].blockers.join(" ")).toContain("cannot be safely converted");
   });
   it("ignores pagination order and changing volume size, but never ignores changed configuration", () => {
     const next = structuredClone(inventory);
@@ -318,7 +402,9 @@ it("uses the existing Compose build for a custom Dockerfile and preserves readin
     readiness: { path: "/health" },
     services: [{ build: "apps/api", dockerfile: "docker/production.Dockerfile" }],
   });
-  expect(plan.project.services?.[0].advanced).toMatchObject({ readiness: { path: "/health", port: 3000 } });
+  expect(plan.projects[0].create.services?.[0].advanced).toMatchObject({
+    readiness: { path: "/health", port: 3000 },
+  });
   expect(h.info).not.toHaveBeenCalled();
 });
 it("blocks an unavailable custom Dockerfile before import", async () => {

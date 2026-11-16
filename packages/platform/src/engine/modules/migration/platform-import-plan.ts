@@ -1,5 +1,11 @@
 import { createHash, randomUUID, randomBytes } from "node:crypto";
-import { AppError, normalizeAliasStrict, slugify, normalizeProjectRootDirectory, validateImageReference } from "@repo/core";
+import {
+  AppError,
+  normalizeAliasStrict,
+  slugify,
+  normalizeProjectRootDirectory,
+  validateImageReference,
+} from "@repo/core";
 import type {
   PlatformDiscovery,
   PlatformMigrationSource,
@@ -24,7 +30,7 @@ import {
 } from "./providers/types";
 import { discoverExternalDatabases } from "./providers/external-databases";
 import { resolveRailwayBindings } from "./providers/railway-wiring";
-import { platformImportProject } from "./platform-import-project";
+import { platformImportProjects, type PlannedImportProject } from "./platform-import-project";
 
 export interface ImportBinding {
   sourceId: string;
@@ -46,7 +52,8 @@ export interface PrivateImportPlan {
   inventory: ProviderInventory;
   fingerprint: string;
   targetServerId: string;
-  project: TEnsureProjectBody;
+  projectName: string;
+  projects: PlannedImportProject[];
   services: PlannedImportService[];
   requiresWritePause: boolean;
   requiresWorkerPause: boolean;
@@ -528,7 +535,7 @@ export async function reviewPlatform(
   const projectName = (input.projectName ?? inventory.projectName).trim();
   if (!slugify(projectName))
     throw new AppError("Choose a name for the imported project", 400, "IMPORT_NAME_INVALID");
-  const project = platformImportProject(projectName, input.targetServerId, services);
+  const projects = platformImportProjects(projectName, input.targetServerId, services);
   const plan: PrivateImportPlan = {
     id: randomUUID(),
     organizationId: ctx.organizationId,
@@ -536,7 +543,8 @@ export async function reviewPlatform(
     inventory: draft.inventory,
     fingerprint: inventoryFingerprint(draft.inventory),
     targetServerId: input.targetServerId,
-    project,
+    projectName,
+    projects,
     services,
     ...(inventory.provider === "railway" ? { sourceControl: "railway-project" as const } : {}),
     requiresWritePause: services.some(
@@ -559,6 +567,10 @@ export async function reviewPlatform(
     planId: plan.id,
     ...publicInventory({ ...inventory, services: services.map((s) => s.source) }),
     projectName,
+    projects: projects.map(({ create, sourceIds }) => ({
+      name: create.name,
+      serviceIds: sourceIds,
+    })),
     targetServerId: plan.targetServerId,
     requiresWritePause: plan.requiresWritePause,
     requiresWorkerPause: plan.requiresWorkerPause,
@@ -572,8 +584,12 @@ export async function loadReviewedImport(
   id: string,
 ): Promise<PrivateImportPlan> {
   const plan = await get<PrivateImportPlan>(ctx, "plan", id);
-  if (!plan.project)
-    throw new AppError("Review this import again before starting it.", 409, "IMPORT_REVIEW_EXPIRED");
+  if (!plan.projects?.length)
+    throw new AppError(
+      "Review this import again before starting it.",
+      409,
+      "IMPORT_REVIEW_EXPIRED",
+    );
   if (!plan.ready)
     throw new AppError("Resolve the import review before starting", 409, "IMPORT_NOT_READY");
   const access = await getProviderAccess(ctx.organizationId, plan.inventory.source.connectionId);

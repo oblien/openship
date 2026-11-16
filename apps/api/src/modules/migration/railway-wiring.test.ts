@@ -42,6 +42,27 @@ describe("provider-independent connection values", () => {
   });
 });
 describe("Railway project wiring", () => {
+  it("preserves self references and repeated case-insensitive dependency hosts in one connection", () => {
+    const db = service("db", {}, 5432);
+    const app = service("app", {
+      HOSTS: "DB.railway.internal,db.railway.internal,app.railway.internal",
+    });
+    expect(
+      resolveRailwayBindings(
+        app,
+        new Map([
+          ["db", db],
+          ["app", app],
+        ]),
+      ),
+    ).toEqual([
+      {
+        sourceId: "db",
+        envKey: "HOSTS",
+        valueTemplate: "${host},${host},import-app",
+      },
+    ]);
+  });
   it("binds any private service without inferring its type from its image or variable names", () => {
     const store = service("store");
     const app = service("app", {
@@ -58,6 +79,7 @@ describe("Railway project wiring", () => {
       {
         sourceId: "store",
         envKey: "ARBITRARY_SETTING",
+        valueTemplate: "custom://alice:password@${host}:7878/second-db?option=1",
       },
     ]);
     expect(store.source.port).toBe(7878);

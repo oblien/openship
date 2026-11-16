@@ -1072,9 +1072,11 @@ from an existing run. Keep loading, fetch errors and empty inventory distinct, a
 the selected destination's validation and transfer review before enabling Migrate.
 
 Platform imports share three steps: Connect, Select services, and Review & import. Show
-one destination project for each source project, with its selected services and private
-connections kept together. Name the project once in the destination sidebar; service cards
-edit service names. Review and progress link to that project without repeating it for each service.
+one destination project when the source services share a compatible Git checkout. Environments
+with multiple repositories, branches or revisions create a project per service, connected privately
+on the same destination server. Show each destination name in review and the project count in its
+summary. Name the import once in the destination sidebar; service cards edit service names.
+Progress links once per destination project.
 Review and saved progress share a Domains & DNS guide, using the provider's recorded domain
 ownership per service. Imported custom domains are saved through the normal migration routing
 path, initially unverified. Distinguish domains that need DNS changes from provider URLs that
