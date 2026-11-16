@@ -378,13 +378,6 @@ summary,
   display: flex;
   flex-direction: column;
 }
-.docs-section-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-fd-muted-foreground);
-}
 .docs-callout-strip {
   display: flex;
   align-items: flex-start;
