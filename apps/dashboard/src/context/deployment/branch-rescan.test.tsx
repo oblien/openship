@@ -948,6 +948,21 @@ it("opens source review in the existing wizard with saved destination and the fr
 
 
 describe("Compose source review deployment", () => {
+  it("retries the wizard deployment with the reviewed revision and the same destination", async () => {
+    const revision = "c".repeat(64);
+    api.buildAccess.mockRejectedValueOnce(new ApiError(409, "Conflict", {
+      code: "COMPOSE_REVIEW_REQUIRED", projectId: "project-1", composeRevision: revision,
+      composeChanges: { added: [], changed: ["web"], removed: [] },
+    }));
+    await act(async () => { await build.startDeployment(); });
+    expect(api.showModal).toHaveBeenCalledOnce();
+    const onApply = api.showModal.mock.calls[0]![0].customContent.props.onApply;
+    await act(async () => { expect(await onApply(revision)).toBe("deployment-1"); });
+    expect(api.buildAccess).toHaveBeenCalledTimes(2);
+    expect(api.buildAccess.mock.calls[1]![0]).toEqual({ ...api.buildAccess.mock.calls[0]![0], composeRevision: revision });
+    expect(api.ensure).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: "project-1" }));
+  });
+
   async function review(hostnames = ["api.example.com"]) {
     api.query = "";
     const saved = await api.getInfo();

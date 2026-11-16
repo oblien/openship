@@ -415,15 +415,24 @@
     "fixStep2": "Añade una ruta o dominio personalizado para el puerto del servicio.",
     "fixStep3": "Verifica el dominio y despliega.",
     "composeReview": {
-      "title": "Compose ha cambiado",
+      "title": "Revisar cambios de Compose",
       "addedTitle": "Hay nuevos servicios por configurar",
-      "description": "El archivo Compose ha cambiado desde la última configuración. Revisa los servicios y ajustes actuales antes de volver a desplegar.",
+      "description": "Revisa los cambios en tu archivo Compose. Aplica y despliega ahora, o configura primero los servicios.",
       "configure": "Configurar",
       "cancel": "Cancelar",
       "added": "Añadidos",
       "changed": "Modificados",
       "removed": "Eliminados",
-      "reviewHint": "Revisa estos cambios de Compose y despliega para aplicarlos. Los servicios eliminados se detendrán durante el despliegue; sus datos persistentes se conservarán."
+      "reviewHint": "Revisa estos cambios de Compose y despliega para aplicarlos. Los servicios eliminados se detendrán durante el despliegue; sus datos persistentes se conservarán.",
+      "apply": "Aplicar y desplegar",
+      "applying": "Iniciando despliegue…",
+      "before": "Anterior",
+      "after": "Nuevo",
+      "secretsHidden": "Los valores del entorno están ocultos",
+      "preservationHint": "Se conservan los ajustes guardados. Los servicios eliminados se detienen durante el despliegue; sus volúmenes se conservan.",
+      "changedAgain": "El archivo Compose volvió a cambiar. Revisa las diferencias actualizadas antes de desplegar.",
+      "applyFailed": "No se pudo iniciar el despliegue. Revisa el error o configura los servicios.",
+      "settingsChanged": "La configuración del servicio cambió."
     }
   },
   "connections": {

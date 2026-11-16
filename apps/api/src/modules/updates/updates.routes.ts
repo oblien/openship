@@ -169,6 +169,8 @@ r.post(
 r.post(
   "/:projectId/apply",
   {
+    body: UpdateProjectSchemas.apply.input,
+    bodyValidatedByOperation: true,
     tag: "project:write",
     auditHandledByOperation: true,
     ids: { project: "projectId" },

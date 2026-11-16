@@ -117,7 +117,11 @@ export async function applyUpdate(c: Context) {
   return c.json({
     data: await operationData(
       c,
-      getPlatformKernel().updates.apply(operationContext(c), param(c, "projectId")),
+      getPlatformKernel().updates.apply(
+        operationContext(c),
+        param(c, "projectId"),
+        c.req.raw.body ? await c.req.json() : {},
+      ),
     ),
   });
 }

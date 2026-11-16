@@ -40,8 +40,8 @@ export const updatesDependencies: UpdateDependencies = {
       return result;
     },
     checkRuntime: checkProjectRuntimeImages,
-    async apply(ctx, id) {
-      const result = await service.applyProjectUpdate(ctx, id);
+    async apply(ctx, id, input) {
+      const result = await service.applyProjectUpdate(ctx, id, input);
       audit.recordAsync(operationAuditContext(ctx), {
         eventType: "project:write",
         resourceType: "project",

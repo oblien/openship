@@ -2488,7 +2488,7 @@ export async function cancelBuildSession(
 export async function redeployBuildSession(
   ctx: RequestContext,
   deploymentId: string,
-  opts?: { useExistingCommit?: boolean; reuseBuild?: boolean; trigger?: string },
+  opts?: { useExistingCommit?: boolean; reuseBuild?: boolean; trigger?: string; composeRevision?: string },
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
   if (ctx.organizationId !== project.organizationId) throw new NotFoundError("Deployment", deploymentId);
@@ -2616,6 +2616,7 @@ export async function redeployBuildSession(
   let currentSourceInfo: SourceEnvInfo | undefined;
   if (meta.serviceDeploymentMode !== "single") {
     currentSourceInfo = await reconcileComposeSource(ctx, project, sourceRef, {
+      composeRevision: opts?.composeRevision,
       interpolationEnv: decryptEnvMap(currentProjectEnv),
     });
   }
@@ -2786,6 +2787,8 @@ export interface DeploymentTriggerInput {
      * deploys keep requiring an explicit in-app review.
      */
     acceptComposeChanges?: boolean;
+    /** Exact source revision reviewed in the dashboard. */
+    composeRevision?: string;
     /**
      * Smart per-service routing for a MANUAL multi-service redeploy: trace the
      * files changed between the active deployment's commit and the new HEAD and
@@ -3005,6 +3008,7 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
     let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
       acceptComposeChanges: data.acceptComposeChanges,
+      composeRevision: data.composeRevision,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),
     });
     sourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, sourceRef);

@@ -158,13 +158,13 @@ export function ProjectEnvironmentPanel({
     }
   };
 
-  const deploy = async (refresh: boolean) => {
+  const deploy = async (refresh: boolean, composeRevision?: string) => {
     if (mutation.current || busy || loading || error || dirty || !baseline) return;
     mutation.current = true;
     setOperation(refresh ? "apply" : "build");
     try {
       const result = await deployApi.trigger(
-        refresh ? { projectId, refresh: true } : { projectId, smartRoute: true },
+        { projectId, ...(refresh ? { refresh: true } : { smartRoute: true }), ...(composeRevision && { composeRevision }) },
       );
       if (!alive.current) return;
       if (refresh) {
@@ -177,7 +177,8 @@ export function ProjectEnvironmentPanel({
         showToast(copy.updateStarted, "info");
       } else openTriggeredBuild(router, result, projectId);
     } catch (cause) {
-      if (alive.current && !showComposeReview(cause) && !showCloudPricing(cause)) {
+      if (composeRevision) throw cause;
+      if (alive.current && !showComposeReview(cause, (revision) => deploy(refresh, revision)) && !showCloudPricing(cause)) {
         showToast(
           getApiErrorMessage(
             cause,

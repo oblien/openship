@@ -415,15 +415,24 @@
     "fixStep2": "Füge eine Route oder Custom-Domain für den Service-Port hinzu.",
     "fixStep3": "Verifiziere die Domain und stelle bereit.",
     "composeReview": {
-      "title": "Compose wurde geändert",
+      "title": "Compose-Änderungen prüfen",
       "addedTitle": "Neue Dienste müssen konfiguriert werden",
-      "description": "Die Compose-Datei wurde seit der letzten Konfiguration geändert. Prüfe die aktuellen Dienste und Einstellungen vor der erneuten Bereitstellung.",
+      "description": "Prüfe die Änderungen in deiner Compose-Datei. Jetzt übernehmen und deployen oder zuerst die Dienste konfigurieren.",
       "configure": "Konfigurieren",
       "cancel": "Abbrechen",
       "added": "Hinzugefügt",
       "changed": "Geändert",
       "removed": "Entfernt",
-      "reviewHint": "Prüfe diese Compose-Änderungen und stelle sie dann bereit. Entfernte Dienste werden während der Bereitstellung gestoppt; ihre persistenten Daten bleiben erhalten."
+      "reviewHint": "Prüfe diese Compose-Änderungen und stelle sie dann bereit. Entfernte Dienste werden während der Bereitstellung gestoppt; ihre persistenten Daten bleiben erhalten.",
+      "apply": "Übernehmen & deployen",
+      "applying": "Deployment wird gestartet…",
+      "before": "Bisher",
+      "after": "Neu",
+      "secretsHidden": "Umgebungswerte sind ausgeblendet",
+      "preservationHint": "Gespeicherte Anpassungen bleiben erhalten. Entfernte Dienste werden beim Deployment gestoppt; ihre Volumes bleiben erhalten.",
+      "changedAgain": "Die Compose-Datei hat sich erneut geändert. Prüfe die aktualisierten Unterschiede vor dem Deployment.",
+      "applyFailed": "Deployment konnte nicht gestartet werden. Prüfe den Fehler oder konfiguriere die Dienste.",
+      "settingsChanged": "Diensteinstellungen geändert."
     }
   },
   "connections": {

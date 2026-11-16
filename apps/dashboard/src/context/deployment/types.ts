@@ -1,4 +1,5 @@
 import type { IconName } from "@repo/ui/icons";
+import type { ComposeChanges } from "@repo/contracts";
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { RouteProtectionDraft } from "@/components/routing/RouteProtectionButton";
@@ -400,7 +401,7 @@ export interface DeploymentConfig {
    */
   composePath?: string;
   composeRevision?: string;
-  composeChanges?: { added: string[]; changed: string[]; removed: string[] };
+  composeChanges?: ComposeChanges;
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
