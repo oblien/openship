@@ -1,4 +1,68 @@
 /* Shared public-page layout. See docs/illustrations.md. */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+.product-card {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  min-width: 0;
+  padding: 24px;
+  border-radius: 18px;
+  background: var(--th-bg-subtle);
+}
+.product-card h3 {
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.product-card p,
+.product-questions p {
+  margin-block: 16px 24px;
+  color: var(--th-text-body);
+  font-size: 14px;
+  line-height: 1.75;
+}
+.product-card .marketing-text-link {
+  margin-top: auto;
+  font-size: 13px;
+}
+.product-questions details {
+  padding-block: 20px;
+  border-bottom: 1px solid var(--th-divider);
+}
+.product-questions summary {
+  cursor: pointer;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.product-questions p {
+  max-width: 75ch;
+  margin-bottom: 0;
+}
+#openship-fit,
+#openship-advantages,
+#control-plane {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+}
+:is(#openship-fit, #openship-advantages, #control-plane) .marketing-section-heading p {
+  max-width: 78ch;
+  font-size: 16px;
+  line-height: 1.75;
+}
+@media (max-width: 760px) {
+  .product-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .product-card {
+    padding: 22px;
+  }
+}
 .marketing-page {
   color: var(--th-text-heading);
 }

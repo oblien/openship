@@ -1,5 +1,7 @@
 /** Editorial comparisons, reviewed against the linked first-party documentation.
  * Keep provider-specific claims here; presentation and translations are shared. */
+import type { ProductAdvantage } from "./product";
+
 export const COMPARISONS_REVIEWED_AT = "2026-11-16";
 
 export const COMPARISON_GROUPS = [
@@ -28,6 +30,7 @@ export type Comparison = {
   summary: string;
   strength: string;
   reason: string;
+  advantages: readonly ProductAdvantage[];
   runtime: string;
   migration: { href: string; method: string; preparation: string };
   sources: { title: string; href: string }[];
@@ -39,17 +42,69 @@ const serverMigration = {
   method: "Review a Docker server import",
 };
 
+/** The same rows feed the comparison page and its Markdown representation. */
+export function comparisonRows(item: Comparison) {
+  return [
+    {
+      label: "Where your apps run",
+      ours: "Managed OpenShip Cloud, or your own servers.",
+      theirs:
+        item.group === "cloud"
+          ? "Provider-managed infrastructure."
+          : "Servers you provide and control.",
+    },
+    {
+      label: "Deployment model",
+      ours: "Git, images, native Compose, static sites and workers; connected Swarm and k3s from self-hosted or desktop controllers.",
+      theirs: item.runtime,
+    },
+    {
+      label: "Control plane",
+      ours: "Always-on self-hosted web dashboard, managed Cloud or optional Desktop. Dashboard, CLI, API, SDK and MCP access.",
+      theirs:
+        item.group === "cloud"
+          ? "The provider hosts and operates the control plane."
+          : item.group === "vps"
+            ? "You choose and maintain your administration and automation tools."
+            : item.slug === "dokku"
+              ? "A command-line deployment platform installed on your server."
+              : "A server-hosted dashboard manages your workloads.",
+    },
+    {
+      label: "Build resources",
+      ours: "Choose controller or destination builds on supported paths; retain reusable caches with storage-aware cleanup.",
+      theirs:
+        item.slug === "coolify" || item.slug === "dokploy"
+          ? "Dedicated build servers are available for applications; that path does not cover Docker Compose builds."
+          : item.group === "cloud"
+            ? "Builds and deployment artifacts use the provider's supported pipeline."
+            : "Build infrastructure and resource allocation are yours to configure.",
+    },
+    {
+      label: "Operating responsibility",
+      ours: "Cloud infrastructure is managed. On your servers, you retain server responsibility.",
+      theirs:
+        item.group === "cloud"
+          ? "The provider operates the platform; you configure your applications."
+          : item.group === "vps"
+            ? "You assemble deployments, TLS, monitoring and backups."
+            : "You maintain the servers and the installed platform.",
+    },
+  ];
+}
+
 export const COMPARISONS: readonly Comparison[] = [
   {
     slug: "vercel",
     name: "Vercel",
     group: "cloud",
     logo: "vercel",
-    summary: "Framework-aware hosting or a portable container stack.",
+    summary: "Bring your frontend, backend and data onto infrastructure you control.",
     strength:
       "Vercel combines framework integrations, a delivery network and managed compute. It is a strong fit when your application relies on Vercel-specific deployment and runtime features.",
     reason:
-      "Choose OpenShip when you want your web app, workers and databases in one container-based project, with a choice of managed Cloud or your own servers.",
+      "Keep the framework you like and give the rest of your stack a home: web services, workers, databases and Compose projects. OpenShip adds a choice of your own servers or managed Cloud, with domains, backups and operations in one place. Its guided Vercel import gives supported GitHub projects a starting point for that move.",
+    advantages: ["control", "data", "ownership"],
     runtime: "Framework deployments, Functions and other Vercel runtime services.",
     migration: {
       href: "/migrate/from-vercel",
@@ -67,11 +122,12 @@ export const COMPARISONS: readonly Comparison[] = [
     name: "Railway",
     group: "cloud",
     logo: "railway",
-    summary: "Managed container services, with a different choice of infrastructure.",
+    summary: "Keep the service workflow. Gain the freedom to run it on your servers.",
     strength:
       "Railway deploys services from source or container images and keeps their configuration, logs and metrics together. It suits teams that want to stay on Railway-managed infrastructure.",
     reason:
-      "Choose OpenShip for a similar service-oriented workflow that also reaches your own servers. Cloud plans provide a pool of CPU, memory and storage shared by your projects.",
+      "Move from a provider-bound project to a stack you can operate on your own infrastructure or managed OpenShip Cloud. Keep services, variables, domains and data operations together. Shared Cloud Space capacity and guided Railway imports make OpenShip a practical choice when infrastructure ownership is your next step.",
+    advantages: ["control", "ownership", "automation"],
     runtime: "Container services built from source or deployed from images.",
     migration: {
       href: "/migrate/from-railway",
@@ -89,37 +145,51 @@ export const COMPARISONS: readonly Comparison[] = [
     name: "Coolify",
     group: "self-hosted",
     logo: "coolify",
-    summary: "Two ways to run applications on infrastructure you control.",
+    summary: "Go from a deployment panel to a platform for infrastructure, data and automation.",
     strength:
       "Coolify manages applications, databases and Compose services over SSH. Both its self-hosted edition and hosted control plane use servers you provide for workloads.",
     reason:
-      "Choose OpenShip if you also want a managed Cloud destination, alongside a dashboard, desktop app and CLI for working with your own infrastructure.",
+      "OpenShip brings native Compose, connected Swarm and k3s workflows together with scheduled backups, mail, scoped AI agents and MCP. Use an always-on web dashboard for a team, optional Desktop for a private control plane, or managed Cloud when you want managed compute too. You can start by reviewing the Docker workloads already on your server.",
+    advantages: ["orchestration", "control", "mail"],
     runtime: "Git, Dockerfiles, container images and Docker Compose.",
     migration: {
       ...serverMigration,
       preparation:
         "Discover the source Docker server, then review services, volumes and domains. This is a server import, not a Coolify API sync. Plan proxy ownership before moving traffic.",
     },
-    sources: [{ title: "Coolify", href: "https://coolify.io/docs/core/what-is-coolify" }],
+    sources: [
+      { title: "Coolify", href: "https://coolify.io/docs/core/what-is-coolify" },
+      {
+        title: "Build servers",
+        href: "https://coolify.io/docs/core/infrastructure/servers/build-servers",
+      },
+      { title: "Scaling", href: "https://coolify.io/docs/core/infrastructure/scaling/overview" },
+    ],
   },
   {
     slug: "dokploy",
     name: "Dokploy",
     group: "self-hosted",
     logo: "dokploy",
-    summary: "Compare deployment workflows for your Docker infrastructure.",
+    summary:
+      "Keep Compose and Swarm. Add Kubernetes, integrated mail and a choice of control plane.",
     strength:
       "Dokploy provides application and database management with Docker and Traefik. It supports Docker Compose and Docker Stack workflows, including Swarm-based deployments.",
     reason:
-      "Choose OpenShip when you want to manage projects through the same product on your servers or managed Cloud. Review orchestration differences before moving a Swarm workload.",
+      "OpenShip combines Docker and Compose deployments with connected Swarm, k3s clusters, scheduled backups and built-in mail administration. Run a self-hosted web dashboard, choose optional Desktop to keep the control plane private, or use managed Cloud. CLI, API, SDK and MCP share the same platform permissions, so automation grows with your operations.",
+    advantages: ["orchestration", "mail", "automation"],
     runtime: "Applications, databases, Docker Compose and Docker Stack.",
     migration: {
       ...serverMigration,
       preparation:
-        "Review discovered Docker workloads and persistent data. Rebuild Swarm-specific networking or scheduling where needed; discovery is not a complete transfer of a Dokploy cluster.",
+        "Review discovered Docker workloads and persistent data. Existing Swarm stacks need a new OpenShip deployment; the import flow does not adopt them. Plan networking, storage and the cutover before switching traffic.",
     },
     sources: [
       { title: "Dokploy", href: "https://docs.dokploy.com/docs/core" },
+      {
+        title: "Build servers",
+        href: "https://docs.dokploy.com/docs/core/remote-servers/build-server",
+      },
       { title: "Docker Compose", href: "https://docs.dokploy.com/docs/core/docker-compose" },
     ],
   },
@@ -127,11 +197,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "dokku",
     name: "Dokku",
     group: "self-hosted",
-    summary: "A Git-push workflow or a shared visual workspace for your stack.",
+    summary: "Give your Git-push workflow a complete operations workspace.",
     strength:
       "Dokku offers Git-push deployments on your server, with buildpacks, Dockerfile builds and plugins for backing services. It fits teams comfortable operating through the command line.",
     reason:
-      "Choose OpenShip when you want application services, environments, domains and deployments visible in a dashboard, while keeping CLI and API access.",
+      "Keep command-line control while making deployments, service configuration, data recovery and team access visible in a dashboard. OpenShip adds native Compose, a project topology view and scoped API and MCP access. Your team can operate the same resources without turning every maintenance task into a collection of shell commands.",
+    advantages: ["automation", "data", "control"],
     runtime: "Git-push deployments, buildpacks, Dockerfiles and plugins.",
     migration: {
       href: "/docs/guides/migrate-from-coolify-dokploy-dokku",
@@ -147,11 +218,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "caprover",
     name: "CapRover",
     group: "self-hosted",
-    summary: "Bring your applications into a project-based deployment workflow.",
+    summary: "Move beyond individual app deployments to a connected project workflow.",
     strength:
       "CapRover runs on your server and offers application deployment, one-click apps, domains and cluster management. It fits teams already using its server and application model.",
     reason:
-      "Choose OpenShip when you want Git and Compose projects, multiple deployment interfaces and the option to move workloads to managed Cloud.",
+      "Bring application code, Compose services, domains and data operations into one project. OpenShip connects that workflow to a web dashboard, CLI, SDK and MCP, with dedicated k3s and connected-Swarm paths on your infrastructure. Choose a self-hosted controller or managed Cloud as your needs change.",
+    advantages: ["orchestration", "automation", "data"],
     runtime: "Container applications and one-click app definitions.",
     migration: {
       ...manualMigration,
@@ -164,11 +236,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "render",
     name: "Render",
     group: "cloud",
-    summary: "Managed service types or a stack you can also run on your own servers.",
+    summary: "Keep managed convenience, with a route to infrastructure ownership.",
     strength:
       "Render offers web and private services, static sites, background workers, cron jobs and managed data services. It suits teams that prefer Render to operate the platform.",
     reason:
-      "Choose OpenShip when the same application stack needs to run on your infrastructure as well as managed Cloud, using container images and Compose services.",
+      "OpenShip puts web apps, workers, static sites and data services in a shared project workflow. Use managed Cloud now, or deploy on servers you control with the same platform. Native Compose, external backup destinations and migration tools give you practical control over the stack and its recovery.",
+    advantages: ["control", "data", "ownership"],
     runtime: "Web services, workers, cron jobs, static sites and managed databases.",
     migration: {
       ...manualMigration,
@@ -181,11 +254,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "fly-io",
     name: "Fly.io",
     group: "cloud",
-    summary: "Regional virtual machines or a portable project workspace.",
+    summary: "Put your application stack, data and operations in one workspace.",
     strength:
       "Fly.io provides Machines: virtual machines with controls for lifecycle, resources and region placement. It suits applications designed around Fly's regional infrastructure and APIs.",
     reason:
-      "Choose OpenShip when your priority is managing a container stack on your own servers or Cloud. Match the destination architecture to your latency and availability requirements.",
+      "Choose OpenShip when you want a project-level workflow for containers, Compose, domains and backups across your own servers or managed Cloud. The platform exposes the same operations through its dashboard, CLI, API and MCP. For your own multi-node infrastructure, self-hosted and desktop controllers also support k3s and connected Swarm.",
+    advantages: ["control", "automation", "orchestration"],
     runtime: "Fly Machines configured through Fly Launch or the Machines API.",
     migration: {
       ...manualMigration,
@@ -198,11 +272,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "heroku",
     name: "Heroku",
     group: "cloud",
-    summary: "A dyno-based platform or container services you control.",
+    summary: "Bring your processes and data together, with ownership built in.",
     strength:
       "Heroku runs applications in managed dynos, with web, worker and one-off process types. It fits teams that value its established application and add-on ecosystem.",
     reason:
-      "Choose OpenShip when you want to bring web processes, workers and data services into a portable container project, with control over where the stack runs.",
+      "Run web apps, workers and backing services as a portable project on your servers or managed Cloud. OpenShip combines deployments, service backups, domains and mail administration under an Apache 2.0 codebase. Move each process and data service deliberately, then keep operating them through one platform.",
+    advantages: ["ownership", "data", "mail"],
     runtime: "Web, worker and one-off dynos, with backing services and add-ons.",
     migration: {
       ...manualMigration,
@@ -215,11 +290,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "netlify",
     name: "Netlify",
     group: "cloud",
-    summary: "A web delivery platform or a container home for your whole application.",
+    summary: "Give your site and its supporting services the same home.",
     strength:
       "Netlify combines web deployments with functions and platform services. It fits teams whose sites and workflows rely on Netlify's deployment and integration model.",
     reason:
-      "Choose OpenShip when you want the web application and its supporting container services together, with the option to use your own infrastructure.",
+      "Serve a static site directly at the edge, or deploy a full application alongside workers and databases. OpenShip adds native Compose, integrated mail administration and a choice of managed Cloud or your own infrastructure. Your frontend can grow into a broader stack without requiring a separate deployment panel for each part.",
+    advantages: ["edge", "control", "mail"],
     runtime: "Web deployments, functions and Netlify platform services.",
     migration: {
       ...manualMigration,
@@ -234,11 +310,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "digitalocean-app-platform",
     name: "DigitalOcean App Platform",
     group: "cloud",
-    summary: "DigitalOcean-managed deployments or a choice of hosting providers.",
+    summary: "Choose your hosting provider without giving up a deployment platform.",
     strength:
       "DigitalOcean App Platform builds, deploys and scales components from Git repositories or container images. It suits teams that want a PaaS integrated with DigitalOcean.",
     reason:
-      "Choose OpenShip when you want to manage deployments across your chosen servers or OpenShip Cloud. You can still use a DigitalOcean VPS as your own server.",
+      "Use a DigitalOcean Droplet, another connected server or managed OpenShip Cloud as your destination. OpenShip brings Git deployments, Compose, domains, service backups and automation to that infrastructure. You can keep an external managed database while taking control of where the application runs.",
+    advantages: ["control", "builds", "ownership"],
     runtime: "Git or image deployments configured as App Platform components.",
     migration: {
       ...manualMigration,
@@ -256,11 +333,12 @@ export const COMPARISONS: readonly Comparison[] = [
     slug: "self-managed-vps",
     name: "Self-managed VPS",
     group: "vps",
-    summary: "Keep your server. Spend less time wiring deployments together.",
+    summary: "Keep your server. Replace repeated setup with repeatable operations.",
     strength:
       "A self-managed VPS gives you direct control of the operating system and deployment tools. It fits teams that want to assemble and maintain their own operating workflow.",
     reason:
-      "Choose OpenShip to put builds, deployments, domains and service operations in one interface. Self-hosting still leaves server updates, capacity and recovery planning with you.",
+      "Keep the infrastructure you already pay for and bring deployments, HTTPS, monitoring, backups and mail into one platform. Manage targets over SSH from an always-on web dashboard or optional Desktop. Build on a supported controller path to keep compilation off production, and reuse warm caches when deploying again.",
+    advantages: ["builds", "edge", "data"],
     runtime: "Your choice of processes, containers, Compose and deployment scripts.",
     migration: {
       href: "/docs/guides/server-to-server-migration",

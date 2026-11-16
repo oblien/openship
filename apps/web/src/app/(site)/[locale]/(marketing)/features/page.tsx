@@ -1,4 +1,11 @@
-import { useCopy } from "@/i18n/use-copy";
+import { getCopy } from "@/i18n/copy-server";
+import { getLocale } from "next-intl/server";
+import type { AppLocale } from "@repo/core/locale";
+import { localizedHref } from "@/i18n/routing";
+import { SITE_URL } from "@/lib/sitemap-builder";
+import { PRODUCT_SUMMARY } from "@/lib/product";
+import { ControlPlaneModes, ProductQuestions } from "@/components/marketing/product-overview";
+import { StructuredData } from "@/components/marketing/structured-data";
 import { localizedMetadata } from "@/i18n/metadata";
 
 import type { Metadata, ResolvingMetadata } from "next";
@@ -40,13 +47,43 @@ export async function generateMetadata(
   return localizedMetadata(await inheritSocialImages(metadata, parent));
 }
 
-export default function FeaturesPage() {
-  const copy = useCopy();
+export default async function FeaturesPage() {
+  const copy = await getCopy();
+  const locale = (await getLocale()) as AppLocale;
 
   return (
     <>
       <Navbar />
       <main className="marketing-page">
+        <StructuredData
+          data={{
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            name: "OpenShip",
+            url: SITE_URL,
+            description: copy(PRODUCT_SUMMARY),
+            applicationCategory: "DeveloperApplication",
+            operatingSystem: "Linux, macOS, Windows",
+            license: "https://www.apache.org/licenses/LICENSE-2.0",
+            featureList: FEATURES.map((feature) => copy(feature.title)),
+            inLanguage: locale,
+          }}
+        />
+        <StructuredData
+          data={{
+            "@context": "https://schema.org",
+            "@type": "ItemList",
+            name: copy("Platform features"),
+            itemListElement: CATEGORY_ORDER.flatMap((category) =>
+              FEATURES.filter((feature) => feature.category === category),
+            ).map((feature, index) => ({
+              "@type": "ListItem",
+              position: index + 1,
+              name: copy(feature.title),
+              url: SITE_URL + localizedHref(`/features/${feature.slug}`, locale),
+            })),
+          }}
+        />
         <MarketingIntro
           eyebrow="Platform features"
           title={
@@ -56,9 +93,7 @@ export default function FeaturesPage() {
               <span>{copy("Keep it running.")}</span>
             </>
           }
-          description={copy(
-            "Deploy applications, run data services, automate delivery, and keep production healthy. All from OpenShip.",
-          )}
+          description={copy(PRODUCT_SUMMARY)}
         >
           <span>
             {copy("{features} features · {categories} categories", {
@@ -68,6 +103,9 @@ export default function FeaturesPage() {
           </span>
         </MarketingIntro>
 
+        <div className="site-container marketing-content">
+          <ControlPlaneModes />
+        </div>
         <div className="site-container ft-catalog">
           <nav className="ft-category-nav" aria-label={copy("Feature categories")}>
             {CATEGORY_ORDER.map((category) => (
@@ -91,6 +129,9 @@ export default function FeaturesPage() {
               </div>
             </MarketingSection>
           ))}
+        </div>
+        <div className="site-container marketing-content">
+          <ProductQuestions />
         </div>
         <MarketingCta />
       </main>

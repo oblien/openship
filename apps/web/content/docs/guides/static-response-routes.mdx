@@ -1,0 +1,46 @@
+---
+title: Static response routes
+description: Return text, JSON, HTML or another literal response from a domain path at the edge, with a status code and response headers.
+---
+
+Use a **static response route** when a domain should return a small, fixed response without sending
+the request to an application. Examples include a verification file, a maintenance message or a
+simple endpoint. The response is served by the edge; it does not run code or check application health.
+
+## Add a response
+
+1. Open the project's **Domains** panel and select the domain's routes.
+2. Add a route and choose **Static response**.
+3. Enter a path, such as `/verification.txt`, and choose **Exact path** or **Path prefix**.
+4. Set the status code, content type and literal response body.
+5. Add response headers if needed, review the request methods and response preview, then save.
+
+An exact match applies only to that path; query parameters do not change the match. A prefix applies
+to the configured path and its descendants. Review existing routes before adding a broad prefix.
+GET and HEAD are the defaults; matching GET also covers HEAD, which returns headers without the body.
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/plain; charset=utf-8
+Cache-Control: no-store
+
+verification-token
+```
+
+## Limits and behavior
+
+- Bodies are limited to **64 KiB** of UTF-8 text. JSON, HTML, XML and SVG are text responses too.
+- Status codes must be whole numbers from **200 to 599**. **204**, **205** and **304** require an empty body.
+- Up to **32 response headers** are allowed, with a combined header-size limit of **8 KiB**.
+- Header names and values are validated. Transport-controlled headers and line breaks cannot be
+  injected through custom headers.
+- Up to **64 static response routes** can be configured for a domain.
+- The body is literal: it is not a Lua script, shell command or server-side template.
+
+Existing domain access policies still apply before a matching static response is served. HTML and
+SVG can contain browser-active content, so only publish content appropriate for that domain's visitors.
+A fixed `200` response confirms that the rule is reachable; use the application's own health endpoint
+when you need to verify database connections or application readiness.
+
+See [the edge](/docs/guides/the-edge), [custom domains](/docs/guides/custom-domains) and
+[route password protection](/docs/guides/route-password-protection).

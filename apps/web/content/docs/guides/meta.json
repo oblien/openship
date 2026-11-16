@@ -16,6 +16,7 @@
     "environment-variables",
     "custom-domains",
     "route-password-protection",
+    "static-response-routes",
     "edge-pages",
     "cloudflare-tunnel",
     "persistent-storage",

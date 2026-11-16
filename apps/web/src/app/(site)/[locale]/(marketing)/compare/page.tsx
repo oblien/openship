@@ -6,6 +6,7 @@ import { Navbar, Footer } from "@/components/landing";
 import { MarketingIntro } from "@/components/marketing/marketing-intro";
 import { MarketingSection } from "@/components/marketing/marketing-section";
 import { MarketingCta } from "@/components/marketing/marketing-cta";
+import { ProductAdvantages } from "@/components/marketing/product-overview";
 import { ComparisonCards } from "@/components/marketing/comparison-cards";
 import { StructuredData } from "@/components/marketing/structured-data";
 import { getCopy } from "@/i18n/copy-server";
@@ -70,7 +71,7 @@ export default async function ComparePage() {
             </>
           }
           description={copy(
-            "A good platform fits the way you build. Compare the tradeoffs, then plan your move with a clear view of what transfers.",
+            "Own your infrastructure without assembling an entire platform. OpenShip brings deployments, data, mail and automation together. See where that makes a difference for your stack.",
           )}
         >
           <Link href="/migrate" className="marketing-text-link compare-intro-link">
@@ -84,6 +85,13 @@ export default async function ComparePage() {
           <span>{copy("Sources you can verify")}</span>
         </div>
         <div className="site-container marketing-content">
+          <MarketingSection
+            id="openship-advantages"
+            title="Why teams move to OpenShip"
+            description="More of your stack, under your control."
+          >
+            <ProductAdvantages items={["control", "orchestration", "automation"]} />
+          </MarketingSection>
           {COMPARISON_GROUPS.map((group) => (
             <MarketingSection
               key={group.id}
