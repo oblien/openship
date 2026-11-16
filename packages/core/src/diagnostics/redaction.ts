@@ -41,8 +41,9 @@ export function redactDiagnosticText(value: string, limit = 2048, secrets: reado
       "challenge [REDACTED]",
     )
     .replace(/\b(?:command failed|executing command|command:)\s*[^\n]*/gi, "[REDACTED COMMAND]")
+    // Compose argv and health checks can carry the same options as JSON arrays.
     .replace(
-      /(?:--(?:password|passwd|secret|token|api-key|private-key|eab-hmac-key|eab-kid)|-pass)\s+(?:"[^"\n]*(?:"|$)|'[^'\n]*(?:'|$)|[^\s]+)/gi,
+      /(?:--(?:password|passwd|secret|token|api-key|private-key|eab-hmac-key|eab-kid|requirepass|masterauth)|-pass)(?:\s+|"\s*,\s*)(?:"(?:\\.|[^"\\\n])*(?:"|$)|'[^'\n]*(?:'|$)|[^\s]+)/gi,
       "[REDACTED ARGUMENT]",
     )
     .replace(

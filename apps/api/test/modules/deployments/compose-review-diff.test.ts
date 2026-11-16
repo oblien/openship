@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../config/env", () => ({ env: { BETTER_AUTH_SECRET: "test-review-secret" } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { BETTER_AUTH_SECRET: "test-review-secret" } }));
 // Use the production spec normalizer and merge, without booting a database.
 vi.mock("@repo/db", async () => {
-  const module = await import("../../../../../db/src/repos/service.repo");
+  const module = await import("../../../../../packages/db/src/repos/service.repo");
   return { toComposeSpec: module.toComposeSpec, composeSpecDiff: module.composeSpecDiff };
 });
 
 import { toComposeSpec, type Service } from "@repo/db";
 import type { ComposeReview } from "@repo/contracts";
-import { assertComposeReviewed, composeSourceRevision, type SourceService } from "./compose-review";
+import { assertComposeReviewed, composeSourceRevision, type SourceService } from "@repo/platform/engine/modules/deployments/compose-review";
 
 function row(name: string, spec: SourceService): Service {
   return { name, kind: "compose", importedSpec: toComposeSpec(spec) } as Service;
@@ -100,6 +100,18 @@ describe("Compose review details", () => {
       before: "••••••••",
       after: null,
     });
+  });
+
+  it.each([
+    ["--password", "private-password"],
+    ["--token", "private-token"],
+    ["--api-key", "private-key"],
+    ["--requirepass", "private-redis-password"],
+    ["--token", 'private-"quoted"-token'],
+  ])("masks inline %s arguments before returning the diff", (flag, secret) => {
+    const source = [{ name: "worker", commandArgv: ["worker", flag, secret] }];
+    const result = review([row("worker", { name: "worker", commandArgv: ["worker"] })], source);
+    expect(JSON.stringify(result)).not.toContain(secret);
   });
 
   it("ignores interpolation values, legacy baselines and independently added services", () => {
