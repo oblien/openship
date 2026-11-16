@@ -7,13 +7,12 @@ export const dynamic = "force-static";
 export const revalidate = 3600;
 
 export function GET() {
-  const now = new Date();
   const entries: SitemapEntry[] = blogSource.getPages().map((page) => {
     const data = page.data as { date?: string };
     return {
       loc: `${SITE_URL}${localizedHref(page.url, page.locale as AppLocale)}`,
       alternates: languageAlternates(withoutLocale(page.url)),
-      lastmod: data.date ? new Date(data.date) : now,
+      lastmod: data.date,
       changefreq: "monthly",
       priority: 0.7,
     };

@@ -1,7 +1,10 @@
 import { defineDocs, defineConfig, frontmatterSchema } from "fumadocs-mdx/config";
 import { z } from "zod";
 
-export const docs = defineDocs({ dir: "content/docs" });
+export const docs = defineDocs({
+  dir: "content/docs",
+  docs: { postprocess: { includeProcessedMarkdown: true } },
+});
 
 export const resources = defineDocs({
   dir: "content/resources",

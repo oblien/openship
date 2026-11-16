@@ -18,7 +18,9 @@ import {
   COMPARISONS_REVIEWED_AT,
   getComparison,
   comparisonName,
+  comparisonRows,
 } from "@/lib/comparisons";
+import { ControlPlaneModes, ProductAdvantages } from "@/components/marketing/product-overview";
 import { SITE_URL } from "@/lib/sitemap-builder";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -35,7 +37,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     name: comparisonName(item, copy),
   });
   const description = copy(
-    "Compare OpenShip and {name}. {summary} Explore the tradeoffs and a practical migration path.",
+    "OpenShip vs {name}. {summary} Compare capabilities and plan your migration.",
     { name: comparisonName(item, copy), summary: copy(item.summary) },
   );
   const url = `/compare/${item.slug}`;
@@ -58,31 +60,7 @@ export default async function ComparisonPage({ params }: Props) {
   const related = COMPARISONS.filter(
     (other) => other.slug !== item.slug && other.group === item.group,
   ).slice(0, 3);
-  const rows = [
-    {
-      label: "Where your apps run",
-      ours: "Managed OpenShip Cloud, or your own servers.",
-      theirs:
-        item.group === "cloud"
-          ? "Provider-managed infrastructure."
-          : "Servers you provide and control.",
-    },
-    {
-      label: "Deployment model",
-      ours: "Git repositories, Dockerfiles, images and Compose services.",
-      theirs: item.runtime,
-    },
-    {
-      label: "Operating responsibility",
-      ours: "Cloud infrastructure is managed. On your servers, you retain server responsibility.",
-      theirs:
-        item.group === "cloud"
-          ? "The provider operates the platform; you configure your applications."
-          : item.group === "vps"
-            ? "You assemble deployments, TLS, monitoring and backups."
-            : "You maintain the servers and the installed platform.",
-    },
-  ];
+  const rows = comparisonRows(item);
   return (
     <>
       <Navbar />
@@ -129,23 +107,14 @@ export default async function ComparisonPage({ params }: Props) {
             </Link>
           </div>
         </MarketingIntro>
-        <div className="site-container">
-          <div className="compare-fit-grid">
-            <section className="compare-fit" aria-labelledby="provider-fit">
-              <ComparisonMark comparison={item} />
-              <h2 id="provider-fit">{copy("Where {name} fits", { name })}</h2>
-              <p>{copy(item.strength)}</p>
-            </section>
-            <section className="compare-fit compare-fit-openship" aria-labelledby="openship-fit">
-              <span className="compare-mark" aria-hidden="true">
-                <span className="compare-openship-mark" />
-              </span>
-              <h2 id="openship-fit">{copy("Why choose OpenShip")}</h2>
-              <p>{copy(item.reason)}</p>
-            </section>
-          </div>
-        </div>
         <div className="site-container marketing-content">
+          <MarketingSection
+            id="openship-fit"
+            title={copy("Why choose OpenShip")}
+            description={copy(item.reason)}
+          >
+            <ProductAdvantages items={item.advantages} />
+          </MarketingSection>
           <MarketingSection
             id="differences"
             title={copy("The practical differences")}
@@ -192,6 +161,13 @@ export default async function ComparisonPage({ params }: Props) {
               )}{" "}
               <Link href="/pricing">{copy("OpenShip pricing")}</Link>
             </p>
+          </MarketingSection>
+          <ControlPlaneModes />
+          <MarketingSection id="provider-fit" title={copy("Where {name} fits", { name })}>
+            <div className="compare-provider-fit">
+              <ComparisonMark comparison={item} />
+              <p>{copy(item.strength)}</p>
+            </div>
           </MarketingSection>
           <MarketingSection
             id="migration"

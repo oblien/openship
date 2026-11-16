@@ -15,11 +15,11 @@ export type SitemapEntry = {
   priority?: number;
 };
 
-function isoDate(value: string | Date | undefined): string {
-  if (!value) return new Date().toISOString();
-  if (value instanceof Date) return value.toISOString();
+/** Unknown modification times are omitted instead of claiming a content update on every fetch. */
+function isoDate(value: string | Date | undefined): string | undefined {
+  if (!value) return undefined;
   const parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : undefined;
 }
 
 function xmlEscape(value: string): string {
@@ -40,9 +40,8 @@ export function buildUrlset(entries: SitemapEntry[]): string {
           `    <xhtml:link rel="alternate" hreflang="${xmlEscape(language)}" href="${xmlEscape(href)}" />`,
         );
       }
-      if (entry.lastmod !== undefined) {
-        lines.push(`    <lastmod>${isoDate(entry.lastmod)}</lastmod>`);
-      }
+      const modified = isoDate(entry.lastmod);
+      if (modified) lines.push(`    <lastmod>${modified}</lastmod>`);
       if (entry.changefreq) {
         lines.push(`    <changefreq>${entry.changefreq}</changefreq>`);
       }
@@ -72,10 +71,11 @@ export type IndexEntry = {
 export function buildSitemapIndex(entries: IndexEntry[]): string {
   const sitemaps = entries
     .map((entry) => {
+      const modified = isoDate(entry.lastmod);
       return [
         `  <sitemap>`,
         `    <loc>${xmlEscape(entry.loc)}</loc>`,
-        `    <lastmod>${isoDate(entry.lastmod)}</lastmod>`,
+        ...(modified ? [`    <lastmod>${modified}</lastmod>`] : []),
         `  </sitemap>`,
       ].join("\n");
     })

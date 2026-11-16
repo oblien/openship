@@ -155,11 +155,20 @@ try {
   });
   const images = new Set();
   const pages = new Map();
+  const indexable = new Set();
   await each([...paths].sort(), async (path) => {
     const response = await request(origin, path);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
     const html = await response.text();
     const tags = metaTags(html);
+    if (!tags.get("robots")?.includes("noindex")) {
+      const canonicalTag = html.match(/<link\b(?=[^>]*\brel="canonical")[^>]*>/i)?.[0];
+      const canonical = canonicalTag?.match(/\bhref="([^"]+)"/)?.[1];
+      assert(canonical, `${path}: canonical URL`);
+      assert.equal(new URL(canonical).origin, "https://openship.io", `${path}: canonical origin`);
+      assert(tags.get("description")?.trim(), `${path}: meta description`);
+      indexable.add(new URL(canonical).pathname);
+    }
     const first = path.split("/")[1];
     const locale = locales.includes(first) ? first : "en";
     assert.match(html, new RegExp(`<html[^>]*lang="${locale}"`), `${path}: document language`);
@@ -185,6 +194,22 @@ try {
     }
     pages.set(path, tags);
   });
+
+  const sitemapIndex = await (await request(origin, "/sitemap.xml")).text();
+  const sitemapUrls = [...sitemapIndex.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, url]) => url);
+  assert(sitemapUrls.length > 0, "Sitemap index contains public sitemaps");
+  const listed = new Set();
+  for (const url of sitemapUrls) {
+    const xml = await (await request(origin, new URL(url).pathname)).text();
+    for (const [, location] of xml.matchAll(/<loc>([^<]+)<\/loc>/g)) {
+      const parsed = new URL(location);
+      assert.equal(parsed.origin, "https://openship.io", "Sitemap uses public canonical URLs");
+      assert(!listed.has(parsed.pathname), `Duplicate sitemap URL: ${parsed.pathname}`);
+      listed.add(parsed.pathname);
+    }
+  }
+  for (const path of indexable) assert(listed.has(path), `${path}: missing from the sitemap`);
+  console.log(`Sitemap coverage verified: ${indexable.size} indexable public pages.`);
   assert.match(pages.get("/pricing").get("og:title"), /Pricing/);
   // These pages own their images. Inheriting the homepage's metadata can hide
   // a route's provider artwork even when its image handler itself works.

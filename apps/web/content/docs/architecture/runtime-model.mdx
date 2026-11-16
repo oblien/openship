@@ -1,173 +1,98 @@
 ---
 title: Runtime model
-description: The three places an app can run — this machine, your own server over SSH, or Openship Cloud — and how a build and deploy flow in each.
+description: Choose the control plane, workload destination and build location independently. Run web apps, Compose, workers and static sites on your servers, managed Cloud or supported clusters.
 ---
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+OpenShip separates **where you manage deployments** from **where applications run**.
+Desktop is an option, not a requirement.
 
-Openship can run your app in three different places. Think of your finished app as a meal: you can cook and
-serve it in **your own kitchen** (this machine), send the recipe to a **friend's kitchen** (your own server),
-or hand it to a **restaurant that cooks and serves it for you** (Openship Cloud). The food is the same — only
-the kitchen changes.
+## Choose your control plane
 
-You pick the kitchen when you deploy. Openship calls it the **deploy target**, and there are exactly three:
+| Mode                          | What it provides                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Self-hosted web dashboard** | An always-on controller on your infrastructure, with team access, webhooks and automation. It can deploy locally or manage connected servers. |
+| **OpenShip Cloud**            | A managed platform with managed compute. Projects share the resources of their Cloud Space.                                                   |
+| **Optional Desktop**          | A controller on macOS, Windows or Linux. Manage infrastructure without exposing a public dashboard.                                           |
 
-| Target | Where it runs | How Openship reaches it |
-|---|---|---|
-| **Local** | The same machine Openship itself is running on | Directly — no network hop |
-| **Server** | Your own machine (a VPS, a box in a closet) | Over **SSH** (a secure remote connection) |
-| **Cloud** | Openship Cloud, run for you | Openship's hosted API |
+The dashboard, CLI, API, TypeScript SDK and MCP use the platform's resource permissions.
+Already deployed workloads run independently of the controller. Webhooks, controller-managed schedules
+and management operations need the relevant controller to be available.
 
-<Callout title="You can change your mind">
-The target is a per-deploy choice. Deploy to your laptop today to try something, then redeploy the same
-project to a real server or the cloud later — nothing about the app has to change.
-</Callout>
+## Workload destinations
 
-## Two ways to run it: sandboxed or direct
+| Destination          | Where workloads run                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Local**            | On the controller's machine, using a supported local runtime.                                                     |
+| **Connected server** | On a registered server reached over SSH. The target does not need a full OpenShip dashboard and API installation. |
+| **Managed Cloud**    | On OpenShip-operated infrastructure.                                                                              |
+| **Cluster**          | On a prepared k3s cluster or through a connected Docker Swarm manager, from a self-hosted or desktop controller.  |
 
-For the two self-hosted targets (local and server), Openship also picks *how* the app runs on that machine.
-This is the **isolation mode**, and there are two:
+Connected servers still need the components their workloads use, such as Docker and an edge proxy.
+Enabling runners, cluster runtimes, host integrations or AI agents can install additional components.
+SSH-based management does not mean an empty target machine.
 
-- **Sandboxed (Docker)** — your app runs inside a **container**: a sealed box with its own files and
-  dependencies, kept apart from everything else on the machine. This is the default.
-- **Direct (bare)** — your app runs as a plain process on the machine, with no box around it. Lighter, but
-  it shares the machine's environment.
+## Container, host process, static site or worker
 
-Sandboxed is the default everywhere because the isolation is worth it and the overhead is tiny. The one time
-Direct earns its keep is on a very small machine — under about **2 GB of RAM** — where the container engine
-would compete with your app for memory. Openship surfaces that as a note when you pick Direct, rather than
-silently switching for you.
+- **Docker** packages application dependencies in a container and provides runtime isolation. Keep the
+  host and container runtime maintained, and restrict privileges and mounts.
+- **Bare runtime** runs a supported application as a host process. It shares the host environment;
+  supervision and available operations depend on the operating system and runtime.
+- **Static sites** publish built files. On supported self-hosted paths, OpenShip extracts the build into
+  a retained release served by the edge, without keeping an application container running.
+- **Workers** run without requiring a public HTTP port. Their logs and resource settings remain part
+  of the deployment workflow.
+- **Compose** describes multiple services and their relationships. Supported Compose and application
+  workloads can also deploy through a connected Swarm manager.
 
-<Callout title="How a Direct app stays running" type="info">
-A Direct (bare) app is kept alive by the machine's own process supervisor — **systemd** on Linux,
-**nohup** on macOS — so it restarts if it crashes or the box reboots. A Sandboxed app is kept alive by Docker.
-</Callout>
+Kubernetes has its own application, database and shared-storage workflows. See
+[clusters and scaling](/docs/guides/mcp-clusters-and-scaling) for supported operations and prerequisites.
+Hosted Cloud does not expose customer-managed cluster administration.
 
 ## Build first, then hand off
 
-Whatever the target, every deploy runs the **same two stages** in order.
+Source upload, Git clone location and build location are separate decisions. Uploading a local folder
+does not by itself mean the build runs on your computer.
 
-<Steps>
+Supported server deployment paths let you build on the **controller** or the **destination**. The
+controller can be an always-on server or the optional desktop app. A controller-side build can keep
+compilation and dependency installation off a small production server. Destination builds are useful
+when that machine has the required resources or environment. Cloud and cluster paths have their own
+supported build and image-transfer options.
 
-<Step>
-
-### Build — turn source into something runnable
-
-The build pipeline always runs the same steps: **prepare → clone → install → build**.
-
-- **Prepare** gets the environment ready (installs the toolchain, transfers local files) — this is counted
-  separately so first-time setup doesn't inflate your build time.
-- **Clone** fetches your code (skipped when you're deploying a local folder — the files are already there).
-- **Install** runs your install command (e.g. `npm install`).
-- **Build** runs your build command (e.g. `npm run build`) — skipped if the app doesn't need one.
-
-</Step>
-
-<Step>
-
-### Deploy — start the new version and send traffic to it
-
-Once the build succeeds, Openship starts the new version, waits for it, points your web address at it, and
-then stops the old one. For Sandboxed and Cloud apps this happens **without downtime**: the old version keeps
-serving until the exact moment traffic is repointed, so a failure before that moment leaves the old one
-untouched. See [Zero-downtime and auto-revert](#zero-downtime-and-auto-revert) below.
-
-</Step>
-
-</Steps>
-
-<Callout title="Where the build runs is a separate choice">
-*Where the build happens* is separate from *where the app runs*. For a server (or cloud) deploy you can build
-on **This Machine** — the machine running Openship — and transfer only the finished output to the target, or
-build **on the deploy target** itself. Openship suggests one based on your framework — for most stacks that's
-**This Machine** — and you can change it per deploy or save a default under **Settings**. Building on This
-Machine is faster when it's the more powerful box and spares a small target VPS a heavy build; building on the
-target is best when the Openship machine has limited resources. In Cloud mode the build runs in the cloud
-workspace by default, though a self-hosted box can build locally and upload just the output.
-</Callout>
-
-## The three targets, up close
-
-<Tabs items={['Local', 'Your server', 'Openship Cloud']}>
-
-<Tab value="Local">
-
-**Local** runs your app on the very machine Openship is installed on — great for trying things out on the
-desktop app or a single box.
-
-- **Sandboxed** talks to the machine's Docker socket directly.
-- **Direct** runs the process on the machine and supervises it with systemd or nohup.
-
-Web addresses and HTTPS are handled by Openship's built-in router on that same machine (see
-[Routing and certificates](#routing-and-certificates)).
-
-</Tab>
-
-<Tab value="Your server">
-
-**Server** runs your app on a machine you own, reached over **SSH** — the same secure connection you'd use
-from a terminal. You add the server once — on the **Servers** page, or right in the deploy flow with **Add
-your own server** — and Openship keeps a pooled connection to it, so repeat deploys reuse the same link
-instead of dialing in fresh each time.
-
-- **Sandboxed** drives the remote machine's Docker engine over an SSH tunnel.
-- **Direct** runs shell commands on the server over that same SSH connection.
-
-The router and certificate tooling are set up on *your* server, so traffic never detours through Openship.
-
-<Callout title="No server yet?" type="warn">
-If you choose the Server target but haven't added a machine, the deploy screen offers **Add your own server**
-so you can connect one over SSH right there — and you can manage servers any time on the **Servers** page.
-See [Deploy to your own server](/docs/guides/custom-servers).
-</Callout>
-
-</Tab>
-
-<Tab value="Openship Cloud">
-
-**Cloud** hands the whole job to Openship Cloud — we build it, run it, route it, and handle HTTPS. Your app
-gets a free `your-app.opsh.io` address out of the box, and you can add a custom domain on top.
-
-A self-hosted Openship instance does **not** run the cloud pipeline itself; cloud projects are handled by
-Openship Cloud directly. The one exception is the "build here, run there" path: your own machine can build the
-app and upload the finished output to a cloud workspace to run.
-
-</Tab>
-
-</Tabs>
+The source pipeline prepares the environment, obtains the source, installs dependencies and builds
+the release. An image deployment can reuse an existing image instead. OpenShip retains warm project
+caches for repeated builds and uses storage-aware cleanup to reclaim idle cache space while protecting
+active deployments and retained rollback artifacts.
 
 ## Routing and certificates
 
-Once your app is running, something has to send visitors to it and serve HTTPS.
+OpenResty handles HTTP routing on self-hosted destinations. Visitor requests go through the edge to
+the application or static files; they do not need an OpenShip API or database round trip. TLS and
+domain setup are managed through the platform. Managed Cloud provides its supported edge and HTTPS
+services.
 
-- **Self-hosted (local and server)** uses **OpenResty** (a build of the nginx web server) to route requests,
-  and **certbot** to get free HTTPS certificates from **Let's Encrypt** and renew them automatically.
-- **Cloud** delegates routing, HTTPS, and static-file hosting to Openship Cloud's edge — there's nothing to
-  install or renew.
-
-For attaching your own domain, verifying DNS, and managing certificates, see the
-[Domains API](/docs/api/domains) and [Add a custom domain](/docs/guides/custom-domains).
+Traffic analytics aggregate at the edge using bounded in-memory counters. Detailed recent-request
+records are bounded, and optional path tracking has its own limits. This keeps analytics collection
+out of application code and avoids a database write for every visit. See [the edge](/docs/guides/the-edge).
 
 ## Zero-downtime and auto-revert
 
-The deploy stage adapts to whether the new version can run **alongside** the old one:
+Replacement behavior depends on the runtime, workload and available capacity. A supported overlapping
+deployment starts the new release, checks it, then switches traffic before retiring the old release.
+This needs enough resources for both versions and a workload that can safely run concurrently.
 
-- **Sandboxed and Cloud apps can overlap.** Each version gets its own container or workspace, so Openship
-  starts the new one, checks it, repoints traffic, and only *then* stops the old one. If anything fails before
-  the switch, the old version was never touched — it keeps serving, and the failed deploy simply doesn't take.
-- **Direct apps can't overlap**, because the new process needs the same fixed port the old one is holding. So
-  Openship stops the old process, starts the new one, and — if the new one fails — restarts the old one to
-  bring you back. This path has a brief unavoidable gap while the port changes hands.
+A host process that holds a fixed port, a stateful service, or the connected-Swarm replacement path
+may need to stop before its replacement starts. Plan for an interruption on those paths. Do not
+assume a universal zero-downtime guarantee from the choice of Docker or Cloud alone.
 
-<Callout title="One deploy at a time per machine" type="info">
-Deploys to the same machine are serialized with a lock, so two projects deploying at once can't clobber each
-other's router config or shared state.
-</Callout>
+Application rollback restores a retained release and its runtime configuration. It does not undo
+database writes or schema changes. Data recovery uses a verified backup and a separate restore plan.
 
 ## Related guides
 
-<Cards>
-  <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="The most common path: repo in, live URL out." />
-  <Card title="Deploy to your own server" href="/docs/guides/custom-servers" description="Add a machine over SSH and ship to it." />
-  <Card title="Custom domains" href="/docs/guides/custom-domains" description="Put your app on your own address with automatic HTTPS." />
-</Cards>
+- [Installation](/docs/getting-started/installation)
+- [Deploy to your own server](/docs/guides/custom-servers)
+- [Compose projects](/docs/guides/compose-multi-service)
+- [Clusters and scaling](/docs/guides/mcp-clusters-and-scaling)
+- [Backups and restore](/docs/guides/backups-restore)
+- [Custom domains](/docs/guides/custom-domains)

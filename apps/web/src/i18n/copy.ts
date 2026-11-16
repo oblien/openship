@@ -1,18 +1,7 @@
 import type { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
-
-/** Stable catalog identifiers keep the public English source readable at call sites. */
-export function messageKey(source: string): string {
-  let hash = 2166136261;
-  // Cached release text may still contain the older display casing.
-  for (const character of source
-    .replace(/\bOpenship\b/g, "OpenShip")
-    .trim()
-    .replace(/\s+/g, " ")) {
-    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
-  }
-  return `m${(hash >>> 0).toString(36)}`;
-}
+import { messageKey } from "./copy-key.mjs";
+export { messageKey } from "./copy-key.mjs";
 
 export type Copy = {
   <T>(value: T, values?: Record<string, string | number>): T;

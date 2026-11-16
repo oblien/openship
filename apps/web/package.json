@@ -4,8 +4,8 @@
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3009",
-    "build": "next build",
+    "dev": "node ../../scripts/web-client-messages.mjs && next dev --port 3009",
+    "build": "node ../../scripts/web-client-messages.mjs && next build",
     "start": "next start",
     "lint": "next typegen && tsc --noEmit",
     "test": "bun test ./test",

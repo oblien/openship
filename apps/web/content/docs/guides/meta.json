@@ -15,6 +15,7 @@
     "environment-variables",
     "custom-domains",
     "route-password-protection",
+    "static-response-routes",
     "cloudflare-tunnel",
     "persistent-storage",
     "sleep-mode-resources",

@@ -15,7 +15,7 @@ place; they show up, bring the tools, and get the room ready. You don't have to 
 hand.
 
 <Callout title="What you need first">
-- A **self-hosted** Openship (connecting your own servers is a self-hosted feature — on Openship Cloud we run the machines for you).
+- A self-hosted OpenShip dashboard, the optional desktop app, or OpenShip Cloud with server management enabled for your plan.
 - A server you can reach over SSH — Ubuntu, Debian, or a similar Linux works well.
 - A way to log in: an **SSH key**, a **password**, or your machine's **SSH agent**.
 - That's it. You do **not** need to pre-install Docker or anything else — Openship installs what's missing.
@@ -186,7 +186,7 @@ openship server rate-limit <server-id> --rps 50 --burst 20
 
 The installable components are `docker`, `git`, `openresty`, `certbot`, and `rsync`.
 
-## Inspect an existing Docker Swarm
+## Inspect and deploy to an existing Docker Swarm
 
 On a self-hosted or desktop controller, connect a Swarm manager using the normal
 server connection. Its **Overview → Docker Swarm → Review stacks** shows services,
@@ -210,13 +210,20 @@ manager can observe the whole cluster. Environment values, credentials, join
 tokens, node addresses and mount source paths are excluded. Refresh is manual;
 a failed observation stays visible as an error rather than an empty cluster.
 
-This is **inspection only**. Swarm deployment, adoption, scaling and rollback are
-not available through Openship yet. Existing Swarm tasks are excluded from ordinary
-container imports, including flat imports. Edge takeover refuses Swarm-owned
-ports; worker nodes cannot prove routing-mesh ownership, so verify ingress through
-a connected manager. Change Swarm ports using its manager, not by stopping a task.
-Standalone Docker deployments and the existing K3s scaling workflow keep their
-current roles. This does not convert a Swarm cluster to K3s or enable Swarm on Cloud.
+To deploy new OpenShip projects to this Swarm, select **Use for deployments** on
+the manager's Docker Swarm card, or run `openship server connect-swarm SERVER_ID`.
+The connected manager becomes a compute destination for supported applications
+and Compose services, with deployment history, logs, replica changes and rollback.
+See [the Swarm deployment workflow](/docs/guides/mcp-clusters-and-scaling#existing-docker-swarm)
+for image registry setup, placement and data constraints.
+
+Connecting a manager does not initialize Swarm, join nodes or import its existing
+stacks. Existing Swarm tasks remain excluded from ordinary container imports.
+OpenShip does not provide Swarm node administration or distributed Swarm storage;
+stateful services are pinned to the manager. Edge takeover refuses Swarm-owned
+ports, so inspect ingress through the manager rather than stopping an individual
+task. This destination is available through self-hosted and desktop controllers;
+it does not convert the cluster to k3s or enable Swarm management on hosted Cloud.
 
 ## Troubleshooting
 

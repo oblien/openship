@@ -1,6 +1,11 @@
 import { localizedMetadata } from "@/i18n/metadata";
 
 import { getCopy } from "@/i18n/copy-server";
+import { getLocale } from "next-intl/server";
+import type { AppLocale } from "@repo/core/locale";
+import { localizedHref } from "@/i18n/routing";
+import { SITE_URL } from "@/lib/sitemap-builder";
+import { StructuredData } from "@/components/marketing/structured-data";
 import type { Metadata, ResolvingMetadata } from "next";
 import { inheritSocialImages } from "@/lib/social-metadata";
 import { Link } from "@/i18n/Link";
@@ -15,6 +20,7 @@ import { FeatureShot } from "../_components/FeatureShot";
 import "../features.css";
 
 type Params = Promise<{ slug: string }>;
+export const dynamicParams = false;
 
 export function generateStaticParams() {
   return FEATURES.map((f) => ({ slug: f.slug }));
@@ -49,6 +55,7 @@ export async function generateMetadata(
 
 export default async function FeatureDetailPage({ params }: { params: Params }) {
   const copy = await getCopy();
+  const locale = (await getLocale()) as AppLocale;
 
   const { slug } = await params;
   const feature = getFeature(slug);
@@ -59,6 +66,26 @@ export default async function FeatureDetailPage({ params }: { params: Params }) 
     <>
       <Navbar />
       <main className="marketing-page">
+        <StructuredData
+          data={{
+            "@context": "https://schema.org",
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              {
+                "@type": "ListItem",
+                position: 1,
+                name: copy("Features"),
+                item: SITE_URL + localizedHref("/features", locale),
+              },
+              {
+                "@type": "ListItem",
+                position: 2,
+                name: copy(feature.title),
+                item: SITE_URL + localizedHref(`/features/${feature.slug}`, locale),
+              },
+            ],
+          }}
+        />
         <section className="site-container ft-detail-intro">
           <Link href="/features" className="ft-back">
             <ArrowLeft className="size-4" aria-hidden="true" />
@@ -70,7 +97,7 @@ export default async function FeatureDetailPage({ params }: { params: Params }) 
             <div>
               <div className="ft-detail-heading">
                 <FeatureIllustration
-                  name={feature.slug}
+                  name={feature.illustration}
                   className="marketing-illustration ft-detail-illustration"
                 />
                 <div>
