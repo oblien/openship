@@ -191,6 +191,7 @@ jobs:
               test/e2e/static-fallback.e2e.test.ts
               test/e2e/route-protection.e2e.test.ts
               test/e2e/edge-not-found-page.e2e.test.ts
+              test/e2e/edge-upstream-down-page.e2e.test.ts
           - suite: Kubernetes manifests
             command: >-
               RUN_KUBERNETES_E2E=1 bun run --cwd packages/adapters test

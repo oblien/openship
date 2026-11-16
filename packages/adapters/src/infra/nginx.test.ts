@@ -1630,9 +1630,9 @@ describe("NginxProvider config generation", () => {
 });
 
 describe("renderProxyOptions (curated reverse-proxy directives)", () => {
-  test("empty / undefined → no directives", () => {
-    expect(renderProxyOptions(undefined)).toBe("");
-    expect(renderProxyOptions({})).toBe("");
+  test("empty / undefined → bounded header defaults", () => {
+    expect(renderProxyOptions(undefined)).toContain("proxy_buffer_size 32k;");
+    expect(renderProxyOptions({})).toBe(renderProxyOptions(undefined));
   });
 
   test("renders each valid directive", () => {
@@ -1666,12 +1666,33 @@ describe("renderProxyOptions (curated reverse-proxy directives)", () => {
       proxyReadTimeout: "60x",
       proxySendTimeout: "0s",
     } as never);
-    expect(out).toBe("");
+    expect(out).toBe(renderProxyOptions(undefined));
     expect(out).not.toContain("add_header");
   });
 });
 
 describe("registerRoute renders proxy directives at server scope", () => {
+  test("accepts bounded large session headers without changing response streaming", async () => {
+    const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
+    await nginx.registerRoute({ ...PROXY, proxy: { proxyBuffering: false } });
+    for (const block of serverBlocks(conf("app-example-com")!)) {
+      expect(block).toContain("large_client_header_buffers 4 32k;");
+      expect(block).toContain("proxy_buffer_size 32k;");
+      expect(block).toContain("proxy_buffers 8 32k;");
+      expect(block).toContain("proxy_busy_buffers_size 64k;");
+      expect(block).toContain("proxy_buffering off;");
+      expect(block.match(/proxy_buffer_size /g)).toHaveLength(1);
+    }
+  });
+  test("preserves an explicitly configured response-buffer tuple", async () => {
+    const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
+    await nginx.registerRoute({ ...PROXY, proxy: { proxyBufferSize: "16k", largeClientHeaderBuffers: "4 16k" } });
+    const output = conf("app-example-com")!;
+    expect(output).toContain("proxy_buffer_size 16k;");
+    expect(output).toContain("large_client_header_buffers 4 16k;");
+    expect(output).not.toContain("proxy_buffers ");
+    expect(output).not.toContain("proxy_busy_buffers_size ");
+  });
   test("route.proxy → directive present in the generated vhost", async () => {
     const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
     await nginx.registerRoute({ ...PROXY, proxy: { clientMaxBodySize: "50m" } });
@@ -1916,13 +1937,13 @@ describe("render → parse round-trip (the renderer and the read-back agree)", (
     expect(site.proxy).toEqual(expectedProxyState(FULL_PROXY, { tls: true }));
   });
 
-  test("an unset directive comes back absent, not defaulted", async () => {
+  test("shared defaults read back without false drift", async () => {
     const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
     await nginx.registerRoute({ ...PROXY, proxy: { clientMaxBodySize: "50m" } });
 
     const site = await scanBack(conf("app-example-com")!);
-    expect(site.proxy).toEqual({ clientMaxBodySize: "50m" });
-    expect(site.proxyRaw).toEqual({ clientMaxBodySize: "50m" });
+    expect(site.proxy).toEqual(expectedProxyState({ clientMaxBodySize: "50m" }, { tls: true }));
+    expect(site.proxyRaw).toEqual(site.proxy);
   });
 
   test("gzip's companion defaults read back as expected, not as drift", async () => {
@@ -1933,7 +1954,6 @@ describe("render → parse round-trip (the renderer and the read-back agree)", (
     await nginx.registerRoute({ ...PROXY, proxy: { gzip: true } });
 
     const site = await scanBack(conf("app-example-com")!);
-    expect(site.proxy).toEqual({ gzip: true, gzipMinLength: 1024 });
     expect(site.proxy).toEqual(expectedProxyState({ gzip: true }, { tls: true }));
   });
 
