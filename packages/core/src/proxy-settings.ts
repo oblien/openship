@@ -383,8 +383,17 @@ export function resolveProxyDirectives(
   opts: { scope: "shared" | "tls" | "all"; nginxVersion?: NginxVersion | null },
 ): ResolvedProxyDirective[] {
   const p = sanitizeProxySettings(settings);
-  if (!p) return [];
-  const values = p as Record<string, string | number | boolean>;
+  // Cookies can span several response fields and return as one request field.
+  // Resolve these bounded defaults here so rendering and drift detection agree.
+  // Preserve any explicit response-buffer tuple instead of mixing sizes from
+  // different policies, which can violate nginx's buffer-size constraints.
+  const responseBuffers = p?.proxyBufferSize !== undefined ||
+    p?.proxyBuffers !== undefined || p?.proxyBusyBuffersSize !== undefined
+    ? {}
+    : { proxyBufferSize: "32k", proxyBuffers: "8 32k", proxyBusyBuffersSize: "64k" };
+  const values: Record<string, string | number | boolean> = {
+    largeClientHeaderBuffers: "4 32k", ...responseBuffers, ...p,
+  };
   // A companion is a DEFAULT: an explicitly-set directive wins, and we must not
   // emit the same directive twice.
   const explicit = new Set(
