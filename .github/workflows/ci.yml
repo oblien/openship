@@ -216,6 +216,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Native engine fixtures run Node workers; keep their runtime explicit
+      # instead of inheriting whichever Node version the runner image adds.
+      - name: Setup native test runtime
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:

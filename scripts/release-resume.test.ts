@@ -175,6 +175,47 @@ describe("release continuation", () => {
     }
   });
 
+  it.each([502, 503, 504])("retries a transient GitHub %s while reading publication history", async (status) => {
+    const initialFetch = globalThis.fetch;
+    const initialToken = process.env.GITHUB_TOKEN;
+    const paths: string[] = [];
+    process.env.GITHUB_TOKEN = "test-only";
+    globalThis.fetch = (async (url) => {
+      paths.push(String(url));
+      return paths.length === 1
+        ? new Response("Temporary gateway failure", { status })
+        : Response.json({ workflow_runs: [] });
+    }) as typeof fetch;
+    try {
+      expect(await unpublishedReleaseRuns(repository, "v0.8.0")).toEqual([]);
+      expect(paths).toHaveLength(3);
+      expect(paths[0]).toBe(paths[1]);
+    } finally {
+      globalThis.fetch = initialFetch;
+      if (initialToken === undefined) delete process.env.GITHUB_TOKEN;
+      else process.env.GITHUB_TOKEN = initialToken;
+    }
+  });
+
+  it.each([[502, 3], [401, 1]])("refuses to certify publication history after HTTP %s", async (status, attempts) => {
+    const initialFetch = globalThis.fetch;
+    const initialToken = process.env.GITHUB_TOKEN;
+    let calls = 0;
+    process.env.GITHUB_TOKEN = "test-only";
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response("Unavailable", { status });
+    }) as typeof fetch;
+    try {
+      await expect(unpublishedReleaseRuns(repository, "v0.8.0")).rejects.toThrow(`HTTP ${status}`);
+      expect(calls).toBe(attempts);
+    } finally {
+      globalThis.fetch = initialFetch;
+      if (initialToken === undefined) delete process.env.GITHUB_TOKEN;
+      else process.env.GITHUB_TOKEN = initialToken;
+    }
+  });
+
   it("keeps production, dependency and unknown helper changes in every scope", () => {
     for (const scope of [
       "application",
@@ -296,8 +337,10 @@ describe("release continuation", () => {
       process.env.GITHUB_TOKEN = "test-only";
       let expired = false;
       let successful = true;
+      let jobReads = 0;
       globalThis.fetch = (async (url) => {
         const path = String(url);
+        if (path.includes("/jobs?")) jobReads++;
         return Response.json(
           path.includes("/jobs?")
             ? {
@@ -364,7 +407,9 @@ describe("release continuation", () => {
       write("packages/adapters/src/cluster/job.ts", "changed production code");
       expect(await findReusableJob(options)).toBeUndefined();
       commit();
+      const previousJobReads = jobReads;
       expect(await findReusableJob(options)).toBeUndefined();
+      expect(jobReads).toBe(previousJobReads);
     } finally {
       process.chdir(initialDirectory);
       globalThis.fetch = initialFetch;
