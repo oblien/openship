@@ -1,7 +1,10 @@
 import { docsSource } from "@/lib/source";
 import { SITE_URL } from "@/lib/sitemap-builder";
 import { getMDXComponents } from "@/mdx-components";
-import { DocsPage, DocsBody, DocsTitle, DocsDescription } from "fumadocs-ui/page";
+import { DocsPage, DocsBody, DocsTitle, DocsDescription } from "fumadocs-ui/layouts/notebook/page";
+import { CopyPage } from "@/components/docs/copy-page";
+import { Icon } from "@repo/ui/icons";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ComponentType } from "react";
 import type { MDXComponents } from "mdx/types";
@@ -26,14 +29,64 @@ export default async function Page({ params }: PageProps) {
 
   const data = page.data as DocData;
   const MDX = data.body;
+  const markdownUrl = `${page.url}.md`;
+  const sourceUrl = `https://github.com/oblien/openship/edit/main/apps/web/content/docs/${page.path}`;
+  const isHome = !slug?.length;
 
   return (
-    <DocsPage toc={data.toc} full={data.full}>
-      <DocsTitle>{data.title}</DocsTitle>
-      <DocsDescription>{data.description}</DocsDescription>
+    <DocsPage
+      toc={data.toc}
+      full={data.full}
+      className={`docs-article${data.full ? " docs-overview" : ""}${isHome ? " docs-home" : ""}`}
+      breadcrumb={{ enabled: !isHome }}
+      tableOfContentPopover={{ enabled: !data.full && (data.toc?.length ?? 0) > 0 }}
+      footer={{ enabled: !data.full, className: "docs-pagination" }}
+      tableOfContent={{ style: "clerk" }}
+    >
+      <header className="docs-article-header">
+        <div className="docs-heading-copy">
+          <DocsTitle>{data.title}</DocsTitle>
+          <DocsDescription>{data.description}</DocsDescription>
+          {isHome && (
+            <div className="docs-hero-actions">
+              <Link
+                href="/docs/getting-started/quickstart"
+                className="th-btn"
+                data-docs-button="primary"
+              >
+                Quickstart <Icon name="arrow-right" size={16} aria-hidden="true" />
+              </Link>
+              <Link href="/docs/getting-started/core-concepts" data-docs-button="secondary">
+                Core concepts <Icon name="arrow-right" size={16} aria-hidden="true" />
+              </Link>
+            </div>
+          )}
+          {!data.full && (
+            <div className="docs-page-actions" aria-label="Page resources">
+              <CopyPage key={page.url} markdownUrl={markdownUrl} />
+              <a href={markdownUrl}>
+                <Icon name="file-text" size={14} aria-hidden="true" /> View Markdown
+              </a>
+            </div>
+          )}
+        </div>
+      </header>
       <DocsBody>
         <MDX components={getMDXComponents()} />
       </DocsBody>
+      <div className="docs-page-feedback">
+        <span>Help improve this page</span>
+        <a href={sourceUrl} target="_blank" rel="noopener noreferrer">
+          <Icon name="edit" size={14} aria-hidden="true" /> Edit on GitHub
+        </a>
+        <a
+          href="https://github.com/oblien/openship/issues"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Report an issue <Icon name="arrow-up-right" size={14} aria-hidden="true" />
+        </a>
+      </div>
     </DocsPage>
   );
 }
@@ -61,7 +114,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 
   return {
-    title,
+    title: { absolute: title },
     description,
     openGraph: {
       title,

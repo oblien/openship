@@ -1,119 +1,74 @@
 ---
-title: The dashboard
-description: A tour of the Openship dashboard — the sidebar that navigates everything, the home overview, and a map to each area.
+title: Dashboard overview
+description: Find projects, services, infrastructure, and team settings in the OpenShip dashboard.
 ---
 
-The dashboard is your home base. It's a single screen split in two: a **sidebar** down the left that
-navigates everywhere, and a large **main area** on the right that shows whatever you picked. There's no top
-navbar to hunt through — if you want to go somewhere, it's in the sidebar.
-
-This page orients you to the whole thing: what each sidebar link opens, what the home page is telling you,
-and where to click next.
+Use the sidebar to move between areas. Available actions depend on the installation mode, enabled services,
+and your permissions. The account menu selects the current organization.
 
 ## The sidebar
 
-The sidebar is the rounded panel pinned to the left edge. It stays put as you move around, and the item for
-the page you're on is highlighted so you always know where you are.
-
-At the very top you get the **Openship** logo and name, plus two small buttons:
-
-- A **theme toggle** (sun / moon) that flips the whole dashboard between light and dark.
-- A **collapse** button ("Collapse sidebar") that shrinks the panel to just icons to give the main area more
-  room. Press it again ("Expand sidebar") to bring the labels back.
+| Area | Use it for | Guide |
+| --- | --- | --- |
+| Home | Project overview, recent work, and shortcuts. | [Home page](#the-home-page) |
+| Projects | Source, releases, services, domains, and logs. | [Projects](/docs/dashboard/projects) |
+| Apps | Installed catalog applications and available templates. | [Library](/docs/dashboard/library) |
+| Monitoring | Health, issues, and items requiring attention. | [Logs and monitoring](/docs/guides/logs-monitoring) |
+| Agents | AI assistance and supported automation. | [Agents](/docs/dashboard/assistant) |
+| Servers | Connected machines and managed infrastructure. | [Servers](/docs/dashboard/servers) |
+| Emails | Self-hosted mail administration or Cloud webmail connections. | [Email](/docs/dashboard/emails) |
+| Jobs & Actions | Scheduled commands and execution workflows. | [Jobs](/docs/guides/jobs) · [Actions](/docs/guides/actions) |
+| Backups | Backup destinations and connection checks. | [Backups](/docs/dashboard/backups) |
+| Settings | Account, organization, integrations, and credentials. | [Settings](/docs/dashboard/settings) |
+| Plans & billing | Cloud spaces, server management, and payments where available. | [Billing](/docs/dashboard/billing) |
+| Audit | Organization activity and administrative changes. | [Audit API](/docs/api/audit) |
 
 ### Navigation links
 
-The links are grouped into labelled sections — **Main**, **Settings**, and **Infrastructure**.
-
-| Section | Item | Route | What's there |
-|---|---|---|---|
-| Main | **Home** | `/` | The overview page (below) — your projects, quick links, and recent activity. |
-| Main | **Projects** | `/projects` | Every project in the workspace. Click one to open its detail view. See [Projects](/docs/dashboard/projects). |
-| Main | **Deployments** | `/deployments` | A feed of every build across your projects. See [Rollback & redeploy](/docs/guides/rollback-redeploy). |
-| Main | **Backups** | `/backups` | Register the storage targets your backups write to. See [Backups](/docs/dashboard/backups). |
-| Settings | **Settings** | `/settings` | Account, team, GitHub connection, tokens, and MCP. See [Settings](/docs/dashboard/settings). |
-| Settings | **Billing** | `/billing` | Plan and usage — shown on Openship Cloud (or a cloud-connected instance). See [Billing](/docs/dashboard/billing). |
-| Infrastructure | **Servers** | `/servers` | Managed Cloud servers or your own connected machines. See [Servers](/docs/dashboard/servers). |
-| Infrastructure | **Emails** | `/emails` | The self-hosted mail stack and Zero webmail. See [Emails](/docs/dashboard/emails). |
-
-<Callout title="Some links only appear in certain setups" type="info">
-The sidebar adapts to your instance. **Billing** shows only on Openship Cloud or a self-hosted instance
-that's connected to Cloud. **Servers** is available in both, with controls suited to each server.
-**Emails** appears only on a self-hosted instance.
-</Callout>
+Self-hosted and Cloud navigation expose different administrative controls. Cloud manages its control plane;
+self-hosted administrators also maintain instance settings and host components. Mail mode has its own
+navigation for domains, mailboxes, sending, and health.
 
 ### New Project
 
-Just below the navigation is the bright **New Project** button. It takes you to the
-[**Library**](/docs/dashboard/library) (`/library`), where you start a deployment — from a GitHub repo, a
-local folder, a URL, or a template. It's the same place the "Import Git" shortcut on the home page leads to.
-
-<Callout title="Deploying for the first time?" type="info">
-Start with [Deploy from GitHub](/docs/guides/deploy-from-github) — it walks the New Project → Library →
-Deploy flow click by click.
-</Callout>
+Select **New Project** to open the Library. Start from GitHub, another repository URL, a local folder,
+or a template. The [deploy wizard](/docs/dashboard/deploy-wizard) reviews source, configuration, and destination.
 
 ### Workspace switcher
 
-At the bottom sits the **Account** area. If you belong to more than one organization, this is a workspace
-switcher: it shows the active organization's name (and either "N workspaces" or your email underneath).
-Click it to open a popover titled **Switch organization**, pick another org, and the dashboard reloads
-scoped to it. The current org is marked **Current** with your role beside it.
-
-That same popover holds your signed-in identity and the **Log out** button. (On the desktop app the button
-reads **Back to setup** instead, which returns you to the local setup screen.)
+Use the account menu to select an organization. Confirm the active workspace before deploying or changing
+credentials. Invitations and roles are managed under **Settings → Team**.
+See [teams and members](/docs/guides/teams-members).
 
 ## The home page
 
-Clicking **Home** (or the logo) lands you on the overview at `/`. It opens with a greeting — "Good morning /
-afternoon / evening" with your first name — and the subtitle "Here's what's happening across your projects".
-The body is a two-column layout.
-
 ### Your Projects
 
-The main panel is **Your Projects** — the projects in this workspace with a count and a **View all** link to
-`/projects`. It lists up to six; if you have more, a "View all N projects" link sits at the bottom. Click any
-row to open that project.
-
-If you have no projects yet, this panel becomes a welcome card ("Launch your first project") with two
-buttons — **Create project** and **Import from GitHub** — both of which take you to the Library to get
-started.
+Open a project from the overview or select **View all**. A new workspace offers shortcuts to create a
+project or import from GitHub.
 
 ### Quick links
 
-Under the projects panel is a row of four shortcut cards:
-
-| Card | Goes to | For |
-|---|---|---|
-| **Import Git** | `/library` | Starting a project from a repository. |
-| **MCP Deploy** | `/settings?tab=mcp` | Connecting an AI agent to deploy for you — see [MCP](/docs/mcp). |
-| **Settings** | `/settings` | Your account and team. |
-| **Docs** | Opens the docs | This documentation, in a new tab. |
+Common shortcuts open the Library, MCP settings, account settings, and documentation.
+Use **⌘K / Ctrl+K** where available to navigate directly.
 
 ### Activity and recent
 
-The right-hand column is sticky (it follows you as the left side scrolls) and summarises the workspace at a
-glance:
-
-- **Activity** — a small scoreboard: total **Projects**, total **Deployments**, and your overall build
-  **Success rate** (green when healthy, amber or red when it needs attention).
-- A contextual **tip** card ("Quick Tip") that changes with your state — connect GitHub, create your first
-  project, or open project settings; once GitHub is linked it shows your connected account instead.
-- **Recent** — your latest projects, each with a coloured status dot, its status label, and how long ago it
-  changed. Click one to jump straight into it.
-- An **All systems operational** note once you have active projects running.
+Home summarizes recent work and available resources. For diagnostics, open **Monitoring** or the project's
+logs and deployment history instead of relying on an overview status alone.
 
 ## A map of the dashboard
 
-Each area has its own page or guide with the details. Here's where to go next:
+Most application work starts inside a project:
 
-<Cards>
-  <Card title="Projects" href="/docs/dashboard/projects" description="The projects list and a project's detail view and tabs (the tab whose URL is 'runtime' is labelled Configuration)." />
-  <Card title="Library" href="/docs/dashboard/library" description="Start a deployment from a repo, a local folder, a URL, or a template." />
-  <Card title="Deployments & rollback" href="/docs/guides/rollback-redeploy" description="Redeploy, roll back, and read what happened on the build screen." />
-  <Card title="Backups" href="/docs/dashboard/backups" description="Register S3, SFTP, an existing server, or local disk as backup destinations." />
-  <Card title="Servers" href="/docs/dashboard/servers" description="Inspect managed Cloud servers or connect your own machines." />
-  <Card title="Email & webmail" href="/docs/dashboard/emails" description="The self-hosted mail stack and Zero webmail (self-hosted only)." />
-  <Card title="Settings" href="/docs/dashboard/settings" description="Account, team, GitHub connection, tokens, and MCP." />
-  <Card title="Billing" href="/docs/dashboard/billing" description="Plan and usage on Openship Cloud." />
-</Cards>
+| Task | Location |
+| --- | --- |
+| Change a running service's variables | **Services → service → Environment**; save, then apply or redeploy. |
+| Manage shared build inputs | Project settings and the shared project environment. |
+| Inspect an unsuccessful release | Deployment history and build log. |
+| Inspect the running application | Service state and runtime logs. |
+| Attach a hostname | Project domains and routing. |
+| Protect persistent data | Project backup controls and workspace backup destinations. |
+
+A single application and a Compose project use the same service controls.
+See [project details](/docs/dashboard/projects) for the complete layout.

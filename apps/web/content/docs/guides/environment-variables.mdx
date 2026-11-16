@@ -1,21 +1,19 @@
 ---
 title: Environment variables & secrets
-description: Give your app its settings and secrets — add them in the Configuration tab or the CLI, keep the sensitive ones masked, and apply changes without a full rebuild.
+description: Configure shared build inputs and service runtime overrides, protect secrets, and apply changes to the intended workload.
 ---
 
 import { Step, Steps } from "fumadocs-ui/components/steps";
 
-Most apps need a few pieces of information to run: a database address, an API key, a "am I in production?"
-flag. Those are **environment variables** — little named settings your app reads when it starts. Think of
-them as sticky notes you hand your app: `DATABASE_URL = ...`, `STRIPE_KEY = ...`. Openship keeps those notes
-for you, hands them to your app every time it builds and runs, and hides the sensitive ones so nobody can
-read them over your shoulder.
+Manage build inputs and runtime configuration without committing secrets to source. Shared project
+values, Compose values, and service overrides have distinct scopes. Check the scope and apply behavior
+before rotating a value used by more than one service.
 
 <Callout title="What you need first">
 
 - A project you've already created in Openship (if not, start with [Deploy from GitHub](/docs/guides/deploy-from-github)).
 - The names and values you want to set — for example `DATABASE_URL` and its connection string.
-- Nothing else. Openship encrypts and stores the values for you.
+- Access to edit the project or service and a plan to apply or rebuild affected workloads.
 
 </Callout>
 
@@ -25,11 +23,15 @@ read them over your shoulder.
 
 <Step>
 
-### Open the Configuration tab
+<span id="open-the-configuration-tab" />
 
-Go to your project and open the **Configuration** tab. Find the **Environment variables** card and press
-**Edit**. A panel opens showing the variables you already have (empty is fine — a brand-new app often has
-none).
+### Choose the environment scope
+
+For a running workload, open **Services → select a service → Environment**. Single applications
+and Compose services use this same editor.
+
+For shared build inputs, open the project settings and **Project environment**. The single-application
+shortcut opens its service editor. Check each row's source before editing an inherited value.
 
 </Step>
 
@@ -263,12 +265,11 @@ values, including dollar signs, quotes, and multiline values, without expanding 
 
 ## Apply without a full rebuild
 
-Rebuilding an app just to change a setting is slow — nothing about your _code_ changed. So when you save an
-env change and the project is already deployed, the editor shows an **Apply (restart, no rebuild)** button.
+A runtime-only change can use the existing image. Save the values and use the available apply action
+for that workload. Values consumed during a build require a rebuild.
 
 Press it and Openship recreates the running container from the image it already built, with the new values
-injected. No git clone, no build — just a quick restart. It's the fastest way to roll out a changed key or a
-rotated secret.
+injected. No git clone, no build — just a quick restart. Use this for runtime configuration or credential changes that do not alter the built artifact.
 
 From the terminal, `openship deploy --refresh` (shown below) applies environment
 changes through a deployment without rebuilding.

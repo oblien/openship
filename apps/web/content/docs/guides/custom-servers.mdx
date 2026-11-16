@@ -5,14 +5,8 @@ description: Add one of your own machines over SSH and let Openship install ever
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Openship can run your apps on a machine you already own — a cheap VPS, a spare box, a rented cloud
-server. You hand Openship the address and a way to log in over **SSH** (the standard secure way to
-control a remote computer from a terminal), and it does the rest: it connects, checks what's already
-installed, and sets up the missing pieces for you.
-
-Think of it like hiring a mover who also assembles the furniture. You give them the keys to the new
-place; they show up, bring the tools, and get the room ready. You don't have to install anything by
-hand.
+Connect a machine over SSH, inspect its installed components, and prepare it as a deployment destination.
+The target does not need a full OpenShip control plane; selected runtimes and service components run on the server.
 
 <Callout title="What you need first">
 - A self-hosted OpenShip dashboard, the optional desktop app, or OpenShip Cloud with server management enabled for your plan.

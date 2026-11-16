@@ -1,0 +1,92 @@
+---
+title: Production readiness
+description: A practical checklist for releasing, operating, and recovering production applications on OpenShip.
+---
+
+Use this checklist before routing customer traffic. Record an owner and a verification result for each
+area. Requirements depend on the runtime, data sensitivity, availability target, and your organization's policies.
+
+## 1. Choose an operating model
+
+| Decision | Verify |
+| --- | --- |
+| Control plane | Self-hosted web, Cloud, or Desktop; identify who maintains it and when it is available. |
+| Destination | Server, Cloud space, or supported cluster with capacity for the workload and release process. |
+| Build placement | Enough build capacity; use a separate builder where supported to reduce contention with live workloads. |
+| Automation | An available controller for scheduled jobs, backups, and webhook-triggered operations. |
+
+For continuous team operations, use an always-on control plane. Desktop remains a useful local control
+plane; remote workloads run independently, but controller-managed automation depends on its availability.
+See [runtime model](/docs/architecture/runtime-model).
+
+## 2. Restrict access and protect secrets
+
+- Review organization membership, server access, and [permission boundaries](/docs/security/permissions).
+- Use scoped credentials for automation. Rotate or revoke credentials when their owners or purpose change.
+- Restrict a self-hosted dashboard to the intended network or authenticated public entry point.
+- Keep private services private. Publish only required ports and routes.
+- Store secrets in the supported environment/credential controls, not in the repository or build logs.
+- Preserve control-plane encryption keys with your recovery material; a database copy without its keys may be insufficient.
+
+[Authentication](/docs/security/auth) · [Isolation](/docs/security/isolation) · [Environment variables](/docs/guides/environment-variables)
+
+## 3. Verify the release
+
+1. Confirm the exact source, branch, build commands, runtime configuration, and destination.
+2. Test the release in an appropriately isolated preview or staging environment.
+3. Confirm application health, database connectivity, and an actual user operation.
+4. Check the public hostname, DNS, HTTPS, and route protections.
+5. Define who can approve a cutover and how to return to the previous release.
+
+A static `200 OK` response proves only that the configured route answered. It does not prove application
+or database health. Use a health endpoint that checks the dependencies appropriate to your service.
+
+[Preview environments](/docs/guides/preview-environments) · [Custom domains](/docs/guides/custom-domains) · [Route protection](/docs/guides/route-password-protection)
+
+## 4. Plan for persistent data
+
+| Check | Evidence to retain |
+| --- | --- |
+| Persistence | Each stateful service uses the intended persistent volume or external storage. |
+| Backup destination | Connection verification succeeded; copies survive loss of the workload's host. |
+| Schedule and retention | Policy matches the acceptable data-loss window and storage budget. |
+| Consistency | Database dump or application-aware hooks are used where a live file copy is insufficient. |
+| Restore | A backup has been restored to a safe target and validated by the application. |
+| Control-plane recovery | Installation data, credentials, encryption keys, and access procedures can be recovered. |
+
+Document your recovery point and recovery time objectives. A successful backup job is not a tested restore.
+See [backups and restore](/docs/guides/backups-restore) and
+[control-plane migration](/docs/guides/migrate-control-plane).
+
+## 5. Set capacity and monitoring
+
+- Set appropriate CPU, memory, storage, and replica limits for the runtime.
+- Leave capacity for builds, release replacement, retained rollback artifacts, and backups.
+- Configure [monitoring and logs](/docs/guides/logs-monitoring) and a notification path your team checks.
+- Monitor service health, error rate, resource usage, disk growth, and backup failures.
+- Check that a sleeping application matches its expected availability and latency requirements.
+
+A cluster alone does not guarantee high availability. Verify replica placement, storage behavior, ingress,
+and failure recovery for the selected runtime. Stateful Swarm workloads and replacement operations have
+specific constraints; review [clusters and scaling](/docs/guides/mcp-clusters-and-scaling).
+
+## 6. Rehearse recovery and maintenance
+
+| Scenario | Prepare |
+| --- | --- |
+| Bad application release | Known-good artifact, available rollback capacity, and a tested rollback procedure. |
+| Database migration fails | Application-compatible migration strategy and a separate data recovery plan. |
+| Host or volume is lost | Backup destination, restore target, credentials, and DNS/route cutover plan. |
+| Control plane is unavailable | Privileged recovery access and a protected copy of installation data. |
+| Upgrade causes a problem | Release notes, pre-upgrade backup, maintenance window, and recovery procedure. |
+
+**Application rollback does not reverse schema changes or restore data.** Deployments, data recovery, and
+control-plane recovery are separate procedures.
+
+[Rollback and redeploy](/docs/guides/rollback-redeploy) · [Database migrations](/docs/guides/database-migrations) · [Updates](/docs/guides/updating)
+
+## Record the handover
+
+Keep the project owner, on-call contact, destination, domains, backup policy, last restore test, and recovery
+procedure in your team's operating documentation. Use the [SLA](/sla) for the published managed-service
+commitment; it is not a guarantee for self-hosted infrastructure or your application's own availability.

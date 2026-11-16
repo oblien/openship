@@ -11,6 +11,7 @@ import "fumadocs-ui/style.css";
 // reset), so it registers Gellix in this isolated docs document without pulling
 // the marketing globals into the fumadocs build.
 import "../../styles/fonts.css";
+import "../../styles/theme.css";
 // Docs-only tweaks layered after fumadocs' stylesheet (e.g. sidebar cursor).
 import "../../styles/docs-overrides.css";
 

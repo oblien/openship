@@ -5,13 +5,9 @@ description: Run an app that's really several pieces at once — web, worker, da
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Some apps aren't one thing — they're a team. A website out front, a background **worker** doing slow jobs,
-and a **database** holding the data. Think of a restaurant: the dining room, the kitchen, and the pantry are
-three separate stations, but together they're one restaurant. Openship calls a set of services that run
-together a **stack**, and it can run the whole stack for you.
-
-Each service in the stack is its own little box (a **container**) with its own image, ports, storage, and
-settings — but you manage them all from one place: the project's **Services** tab.
+Manage an application, worker, database, and other workloads as services in one project. Import a Compose
+file or add services from images and the app catalog. Use **Services** for per-service environment,
+ports, storage, and runtime actions; a single application uses the same controls.
 
 <Callout title="What you need first">
 - A project in Openship. A stack is just a project that has more than one service.

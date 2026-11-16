@@ -5,16 +5,12 @@ description: Link the copy of Openship you run yourself to Openship Cloud, move 
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Openship can run in two places. One is **your own instance** — the copy you installed and manage yourself.
-The other is **Openship Cloud** — the managed version, where we run the servers, SSL, and the global network
-for you. Think of it like a workshop: you can build things in your own garage, or rent a fully-equipped bench
-at a shared makerspace. This guide is about connecting the two, and moving work between them.
+Connect a self-hosted instance to a Cloud account, or move a workload between destinations.
+These are separate operations:
 
-There are three separate things people mix up, so let's name them up front:
-
-- **Connecting** — link your instance to a Cloud account so cloud features light up. Nothing moves.
-- **Promoting a project** — take one existing project and hand it to Cloud to run. It moves.
-- **Team-mode migration** — turn your whole single-user instance into a shared, multi-user setup.
+- **Connect:** enable Cloud features without moving projects.
+- **Promote a project:** transfer a selected project to Cloud ownership and deployment.
+- **Move the control plane:** move installation data to an instance suitable for shared team access.
 
 <Callout title="What you need first">
 - Your own Openship instance, up and running (you can see the dashboard). The **Cloud** settings tab only
