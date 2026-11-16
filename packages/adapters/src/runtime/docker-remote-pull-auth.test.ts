@@ -97,8 +97,28 @@ describe("public image recovery after a rejected registry login", () => {
   it("fails a private image after one anonymous attempt and preserves the original reason", async () => {
     const original = new Error("unauthorized: saved login cannot access private repository");
     h.pullFailures.push(original, new Error("denied: anonymous access forbidden"));
-    await expect((await runtimeWith(auth)).pullImage("ghcr.io/private/api:1", { force: true })).rejects.toBe(original);
+    await expect((await runtimeWith(auth)).pullImage("ghcr.io/private/api:1", { force: true })).rejects.toMatchObject({
+      code: "REGISTRY_ACCESS_DENIED",
+      details: { registry: "ghcr.io", imageRef: "ghcr.io/private/api:1" },
+      message: expect.stringContaining(original.message),
+    });
     expect(h.execs.filter(command => command.includes("docker pull"))).toHaveLength(2);
+  });
+
+  it.each(["ssh", "cloud"])("returns recovery metadata for a streamed %s Compose preparation failure", async transport => {
+    const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
+    Object.assign(runtime, { transport: { kind: transport }, connectionOptions: { executor, resolveRegistryAuth: auth } });
+    executor.streamExec
+      .mockResolvedValueOnce({ code: 1, output: 'Head "https://ghcr.io/v2/private/api/manifests/main": unauthorized' })
+      .mockResolvedValueOnce({ code: 1, output: "denied: denied" });
+    await expect(runtime.pullImage("ghcr.io/private/api:main", { force: true, logger: new BuildLogger() }))
+      .rejects.toMatchObject({
+        code: "REGISTRY_ACCESS_DENIED",
+        details: { registry: "ghcr.io", imageRef: "ghcr.io/private/api:main" },
+        message: expect.stringContaining("unauthorized"),
+      });
+    expect(executor.streamExec).toHaveBeenCalledTimes(2);
+    expect(h.execs.filter(command => command.startsWith("rm -rf"))).toHaveLength(2);
   });
 
   it("does not retry network, missing manifest, storage, or cancelled failures", async () => {
@@ -182,6 +202,24 @@ describe("remote pull — no Openship credential", () => {
 
 describe("remote pull — with an Openship credential", () => {
   const auth = async () => ({ username: "bob", password: SECRET, serveraddress: "ghcr.io" });
+
+  it.each(["ssh", "cloud"])("uses an updated credential on the next %s attempt without a runtime restart", async transport => {
+    let password = "expired-token";
+    const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime;
+    Object.assign(runtime, {
+      transport: { kind: transport },
+      connectionOptions: { executor, resolveRegistryAuth: async () => ({ username: "bob", password, serveraddress: "ghcr.io" }) },
+    });
+    h.pullFailures.push(new Error("unauthorized"), new Error("denied"));
+    await expect(runtime.pullImage("ghcr.io/private/api:main", { force: true })).rejects.toMatchObject({ code: "REGISTRY_ACCESS_DENIED" });
+    password = "replacement-token";
+    await runtime.pullImage("ghcr.io/private/api:main", { force: true });
+    const last = JSON.parse(h.writes.at(-1)!.content).auths["ghcr.io"].auth;
+    expect(Buffer.from(last, "base64").toString()).toBe("bob:replacement-token");
+    expect(h.execs.filter(command => command.includes("docker pull"))).toHaveLength(3);
+    expect(allCommands()).not.toMatch(/expired-token|replacement-token/);
+    expect(allCommands()).not.toContain("docker login");
+  });
 
   it("never puts the secret in a command argument", async () => {
     // THE invariant: argv is world-readable via `ps` on that host.
