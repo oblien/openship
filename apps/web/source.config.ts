@@ -1,5 +1,6 @@
 import { defineDocs, defineConfig, frontmatterSchema } from "fumadocs-mdx/config";
 import { z } from "zod";
+import { remarkSearchCards } from "./src/lib/docs-search";
 
 export const docs = defineDocs({
   dir: "content/docs",
@@ -17,4 +18,11 @@ export const resources = defineDocs({
   },
 });
 
-export default defineConfig();
+export default defineConfig({
+  mdxOptions: {
+    remarkPlugins: [remarkSearchCards],
+    rehypeCodeOptions: {
+      themes: { light: "github-light-high-contrast", dark: "github-dark-high-contrast" },
+    },
+  },
+});

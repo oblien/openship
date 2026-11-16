@@ -1,211 +1,112 @@
 ---
 title: Troubleshooting
-description: Where Openship shows you what went wrong — the build screen, the Logs tab, and the CLI — and how to read an error before you try to fix it.
+description: Locate the failing operation, collect useful diagnostics, and choose the matching recovery procedure.
 ---
 
-When something breaks, Openship has almost always already told you why — the trick is knowing where it
-wrote it down. This page is the starting point: it shows you the handful of places the real answer lives,
-and one habit that solves most problems on its own.
-
-<Callout title="The one habit that fixes most things" type="info">
-Whatever went wrong, scroll to the **bottom** of the output and read the **last red lines**. Openship (and
-the tools it runs — npm, Docker, your framework) print the actual cause right before they give up.
-Everything above the red is usually just normal progress.
-</Callout>
+Start with the operation that failed. Read its error and surrounding output; the last log line may only
+summarize a cause reported earlier. Record the project, deployment, destination, and approximate time.
 
 ## Where the useful information lives
 
-There are only a few screens you ever need. Match your situation to the right one:
-
-| When... | Look here | How to open it |
-|---|---|---|
-| A deploy is running or just failed | **The live build screen** | You land on it after pressing **Deploy**; it streams every build step as it happens. |
-| Your app is deployed but misbehaving | **Project → Logs tab** | Open the project, choose **Logs**. Two sub-tabs: **Terminal** (your app's own output) and **Server**, whose panel is titled **HTTP Request Logs** (incoming requests). |
-| Nobody's requests are reaching the app | **HTTP Request Logs** | The **Server** sub-tab of **Logs** — each row is a request with its method, path, status code, and response time. |
-| You work from the terminal | **The CLI** | `openship logs <deploymentId> --follow`, plus `openship doctor` and `openship status`. |
+| Symptom | First check | Detailed guide |
+| --- | --- | --- |
+| Build or deployment fails | Deployment log and failing command. | [Deployment failures](/docs/troubleshooting/deployments) |
+| Application is running but errors | Runtime logs, service state, and dependency connections. | [Logs and monitoring](/docs/guides/logs-monitoring) |
+| Public URL fails | Route, DNS, certificate, and HTTP request logs. | [Domains and SSL](/docs/troubleshooting/domains-ssl) |
+| Repository or push deployment fails | Source credential, repository permissions, and webhook delivery. | [GitHub](/docs/troubleshooting/github) |
+| Remote operation cannot connect | SSH access and required server components. | [Servers and SSH](/docs/troubleshooting/servers-ssh) |
+| Containerized control plane cannot operate its host | Host SSH channel and container-to-host firewall rules. | [Host channel](/docs/troubleshooting/host-channel) |
+| Desktop does not start | Local process, data directory, and update state. | [Desktop and local data](/docs/troubleshooting/desktop-data) |
 
 ### The live build screen
 
-This is the page you watch during a deploy — like watching the oven through the glass door. It streams the
-build as it happens and, when it finishes, hands you the live URL. If a build fails, this is the first place
-to look: the failing command and its error are in the last lines before the stream stops. See
-[the deploy wizard](/docs/dashboard/deploy-wizard) for a tour of it.
+Open the failed deployment and identify the first failing stage. Keep the command, exit result, and nearby
+log lines. Review the [deploy wizard](/docs/dashboard/deploy-wizard) if the configured source or destination is unexpected.
 
 ### The project Logs tab
 
-Once an app is live, open it and pick **Logs**. You get two sub-tabs you switch between:
+Runtime output shows application stdout/stderr. HTTP request logs show traffic handled by the configured
+edge. An empty traffic log is different from an application crash: confirm DNS and ingress as well as runtime health.
 
-- **Server** — its panel is headed **HTTP Request Logs**: one line per incoming request (method, path, status
-  code, response time, country, and size). Great for "is anything even hitting my app?" and for spotting a
-  flood of `4xx`/`5xx` responses. (For a static site with no runtime, this tab is relabeled **Requests**.)
-- **Terminal** — your app's own stdout/stderr, streamed straight from the running container. This is where a
-  crash, a stack trace, or a "listening on port…" line shows up.
-
-Use the **Copy** or **Download** buttons in the header row to grab the logs when you want to save them or ask
-for help. The full walkthrough is in [Logs & monitoring](/docs/guides/logs-monitoring).
-
-<Callout title="The Logs tab says it can't connect" type="warn">
-If the live terminal pops up **"Failed to connect to terminal logs, make sure your project is running"**, or
-the **HTTP Request Logs** panel shows **"Connection to log stream lost"**, the app isn't currently running
-(or was put to sleep). Redeploy it, or wake it, and the live tail reconnects on its own. In the terminal,
-**"Waiting for logs…"** just means it's connected but the app hasn't printed anything yet — that's normal for
-a quiet app.
-</Callout>
+Use **Copy** or **Download** to collect logs. Review them for credentials and customer data before sharing.
 
 ### The CLI
 
-Everything above has a terminal equivalent:
-
 ```bash
-# Snapshot of a deployment's logs
-openship logs <deploymentId>
-
-# Stream them live until the deployment finishes
-openship logs <deploymentId> --follow
-
-# Just the last 50 lines
-openship logs <deploymentId> --tail 50
-```
-
-Two commands answer "is my setup even OK?" before you go hunting further:
-
-```bash
-# Check config, active login, whether the API is reachable, and your runtime
 openship doctor
-
-# Health + mode (self-hosted vs cloud) of the API you're pointed at
 openship status
+openship logs <deploymentId> --tail 50
+openship logs <deploymentId> --follow
 ```
 
-`openship doctor` prints a checklist with a green `✓`, yellow `!`, or red `✗` next to each of **config**,
-**context**, **api**, **node**, and **bun** — so a red line tells you exactly which part is wrong. Full
-command details live in the [CLI reference](/docs/cli).
+Check the selected instance/context before interpreting these results. `doctor` diagnoses configuration and
+connectivity; a healthy API response does not prove that an individual application is healthy.
 
 ## How to read an Openship error
 
-Openship errors are short and structured on purpose — they're not meant to be scary.
-
-**In the dashboard**, failures show up as a toast (a small popup) with a message, and — for anything that
-was streaming — as a red line in the build screen or Logs terminal. Read the message; it's the same text the
-server sent.
-
-**From the API or CLI**, every error comes back as a small JSON object with two fields you care about:
+API failures commonly provide a message and a machine-readable code:
 
 ```json
 { "error": "human-readable message", "code": "MACHINE_CODE" }
 ```
 
-- **`error`** is the sentence to read.
-- **`code`** is a stable label you can search for. Bad input is reported as `code: "VALIDATION_ERROR"` with a
-  `details` object naming the exact fields that failed.
-- The **HTTP status** tells you the category at a glance: `400` bad request, `401` not logged in, `403` not
-  allowed, `404` not found, `409` conflict (something already exists / is in use), `500` a genuine server
-  error. A bare `{ "error": "Internal server error" }` with status `500` means the cause is in the server
-  logs, not in what you sent.
+| Status | Check |
+| --- | --- |
+| `400` | Request fields and validation details. |
+| `401` | Session or token and selected instance. |
+| `403` | Organization membership, resource grant, and operation-specific authority. |
+| `404` | Resource identifier, scope, and whether it still exists. |
+| `409` | Conflicting state, concurrent operation, or resource already in use. |
+| `500` | Server-side diagnostics for the failed operation. |
+
+Do not retry a destructive operation blindly after an uncertain response. Check its current state first.
+See [common errors](/docs/troubleshooting/common-errors).
 
 ### Symptom: a deploy failed and you can't tell why
 
-<Callout title="The build stopped with a red error and no obvious explanation" type="error">
-The build screen (or `openship logs <id> --follow`) ends on red lines instead of a live URL.
-</Callout>
-
-**What it means** — a command in the build gave up. The line that matters is the **last** one before the
-stream stopped, not the wall of output above it.
-
-**How to fix**
-
-1. Scroll to the bottom of the build screen and read the final red lines out loud — they name the failing
-   step (a missing command, a package that won't install, a port mismatch).
-2. If it mentions a missing setting or secret, add it under the project's **Configuration** tab and redeploy.
-3. Still stuck? Press **Copy**/**Download** to save the log, then match the message against
-   [Troubleshooting → Deployments](/docs/troubleshooting/deployments), which lists the common build and
-   runtime failures with fixes.
+1. Find the failing command and surrounding output in the deployment log.
+2. Check the working directory, build/start command, port, and required values.
+3. Edit runtime variables in **Services → service → Environment**. Build inputs require a rebuild.
+4. Retry after correcting the cause. Use [deployment troubleshooting](/docs/troubleshooting/deployments) for specific failures.
 
 ### Symptom: the CLI can't reach your instance
 
-<Callout title='"Cannot reach the API at …" or a red ✗ next to "api" in openship doctor' type="error">
-Commands hang or fail before doing anything, and `openship doctor` reports the **api** check as `unreachable`
-or an unexpected `HTTP` status.
-</Callout>
-
-**What it means** — the CLI is pointed at an instance it can't talk to: the wrong address, an instance that
-isn't running, or a login that has expired.
-
-**How to fix**
-
-1. Run `openship doctor`. It checks, in order: your **config** file, your active **context** and token, and
-   whether the **api** answers.
-2. If **context** is yellow with *"has no token; run `openship login`"*, log in again.
-3. If **api** is red, confirm the instance is actually up (`openship status` shows its health and mode) and
-   that the address is the one you expect.
+1. Run `openship doctor` and check the selected context and API address.
+2. Verify that the instance is running and reachable from this machine.
+3. Reauthenticate with `openship login` if the context has no usable token.
+4. Check reverse-proxy and public-URL configuration when the browser loads but login or API requests fail.
 
 ### Symptom: openship up refuses to regenerate secrets
 
-<Callout title='"Refusing to continue: this would regenerate secrets your existing install already has"' type="error">
-A re-run of `openship up` (Compose install) exits without starting anything and names one or more of
-`POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `INTERNAL_TOKEN`.
-</Callout>
+This protection means the installation still has database data, but its original secrets could not be
+read from `~/.openship/compose/.env`. Regenerating the values can break database access and make encrypted
+environment values unreadable.
 
-**What it means** — those secrets are generated once and stored only in `~/.openship/compose/.env`. This run
-couldn't read them there, but the install's database volume is still on the box. Regenerating them cannot work:
-Postgres applies `POSTGRES_PASSWORD` only when it first creates its data directory (the API would fail with
-`password authentication failed for user "openship"`), and `BETTER_AUTH_SECRET` is the key your stored
-environment variables are encrypted with. So the run stops **before writing anything** rather than leaving you
-with a stack that can't start.
+1. Run as the original installation user. `sudo` may select `/root/.openship` instead of your user's data.
+2. Check the file's existence and permissions without printing secrets into shared logs.
+3. Restore the protected original configuration or the installer's `.env.bak` when appropriate.
+4. Use `openship up --dry-run` to inspect whether values would be preserved or generated.
 
-**How to fix**
-
-1. Check who you're running as. `sudo openship up` reads `/root/.openship/compose/.env`; without `sudo` it reads
-   the one in your own home. Re-run as the user that owns the install.
-2. If the file is there but unreadable, fix its permissions — don't let the secrets be regenerated instead.
-3. If it was overwritten, restore it. Every `openship up` keeps the `.env` it replaced at
-   `~/.openship/compose/.env.bak`; older values may also survive in a stopped container
-   (`docker inspect <container> --format '{{json .Config.Env}}'`).
-4. Only if the original values are genuinely gone: `openship up --reset-secrets`. The database password is
-   realigned for you, but **every stored environment variable becomes permanently unreadable** — you'll need to
-   re-enter them under each project's Configuration tab.
-
-<Callout title="Preview it first" type="info">
-`openship up --dry-run` lists each secret as `<preserved>` or `<generated on this run>` and warns when a real run
-would refuse — so you can check what a re-run will do before it touches the box.
+<Callout title="Resetting keys can lose access to encrypted values" type="warn">
+Use `--reset-secrets` only when the original values cannot be recovered. It realigns the database password,
+but stored values encrypted with the lost key cannot be decrypted. Re-enter those values before relying on a deployment.
 </Callout>
 
 ### Symptom: the openship command crashes, or vanishes after a Node upgrade
 
-<Callout title='"SyntaxError: Invalid regular expression flags" — or "openship: command not found" right after installing' type="error">
-`npm i -g openship` reported success, but the command either dies instantly with a `SyntaxError`
-pointing at a file you've never heard of (`string-width`, `commander`) or isn't on your `PATH` at all.
-</Callout>
+Package-manager installations require Node.js 22 or newer. Version managers keep global packages per Node
+version, so a Node upgrade may remove the previous CLI from your active `PATH`.
 
-**What it means** — a package-manager install runs on **your** Node, and Openship needs **Node 22+**.
-On Node 18 the install genuinely succeeds and the binary is linked; it's the first dependency it loads
-that can't be parsed by that Node.
-
-Current CLI versions handle this for you: instead of the `SyntaxError` they offer to download an
-official Node 22 into `~/.openship/runtime` and use it for Openship only. So a raw `SyntaxError` means
-you're on an older release — reinstall the CLI and it will offer the fix.
-
-The `command not found` variant usually follows *fixing* the first one: nvm, fnm and volta keep global
-packages **per Node version**, so installing a newer Node leaves the CLI behind with the old one.
-
-**How to fix**
-
-1. Check what you're on: `node --version`. Below 22, either accept the CLI's offer to fetch its own
-   Node, upgrade yourself, or skip the question entirely with
-   `curl -fsSL https://get.openship.io | sh` — that installer never touches the Node you have.
-2. Scripting it? `OPENSHIP_VENDOR_NODE=1` accepts the download without a prompt (`0` declines).
-3. After upgrading Node with a version manager, reinstall the CLI on the new version: `npm i -g openship`.
-4. Still not found? The official installer puts it in `~/.openship/bin` — open a new terminal, or
-   `export PATH="$HOME/.openship/bin:$PATH"`.
+1. Check `node --version`.
+2. Reinstall with `npm i -g openship` under the active Node version, or use the official installer.
+3. Accept the supported Node fallback when prompted, or set `OPENSHIP_VENDOR_NODE=1` in automation.
+4. For the official installer, open a new terminal and verify that `~/.openship/bin` is on `PATH`.
 
 ## Jump to the right page
 
 <Cards>
-  <Card title="Deployment & build failures" href="/docs/troubleshooting/deployments" description="Build went red, wrong port, missing env var, app won't start — the common deploy failures and their fixes." />
-  <Card title="GitHub connection & repos" href="/docs/troubleshooting/github" description="Expired connection, a private repo that won't import, auto-deploy webhooks that never fire." />
-  <Card title="Domains, DNS & SSL" href="/docs/troubleshooting/domains-ssl" description="A custom domain that won't verify, DNS that hasn't propagated, a certificate stuck provisioning." />
-  <Card title="Servers & SSH" href="/docs/troubleshooting/servers-ssh" description="A server that won't connect over SSH, a component that won't install, missing Docker, port-forward tunnels." />
-  <Card title="Host control channel" href="/docs/troubleshooting/host-channel" description="&quot;This operation targets the HOST machine, but no host channel is configured&quot; — the repair, per install shape." />
-  <Card title="Desktop app & local data" href="/docs/troubleshooting/desktop-data" description="Startup problems, the database lock, a stuck update, and where your local data lives." />
-  <Card title="Common errors" href="/docs/troubleshooting/common-errors" description="The API error codes and messages you'll actually hit — what each one means and how to fix it." />
+  <Card title="Deployment failures" href="/docs/troubleshooting/deployments" description="Build commands, startup failures, dependencies, and runtime configuration." />
+  <Card title="Host channel" href="/docs/troubleshooting/host-channel" description="Diagnose host operations from a containerized control plane." />
+  <Card title="Common errors" href="/docs/troubleshooting/common-errors" description="Look up API error codes and recovery steps." />
+  <Card title="Production readiness" href="/docs/guides/production-readiness" description="Review prevention, monitoring, and recovery practices." />
 </Cards>

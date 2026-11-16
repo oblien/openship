@@ -1,421 +1,133 @@
 ---
 title: Installation
-description: Every way to get Openship running — the one-line install script, the npm CLI, the desktop app, or a Docker Compose stack.
+description: Choose managed Cloud, a self-hosted web dashboard, or the optional Desktop app.
 ---
 
-Openship has a few different front doors, and they all lead to the same place. Think of it like getting a
-new appliance: you can grab the quick-start cable (the install script), unpack it with tools you already
-own (npm), buy the ready-to-use boxed version (the desktop app), or wire it into your workshop for good
-(Docker Compose). Pick the one that fits you — you can always switch later.
+| Control plane | Best for | What you maintain |
+| --- | --- | --- |
+| [OpenShip Cloud](#openship-cloud) | A managed dashboard and Cloud capacity or connected servers. | Your application and any servers you bring. |
+| [Self-hosted web](#run-openship) | An always-on dashboard on your own infrastructure. | The OpenShip installation, its data, and your application infrastructure. |
+| [Desktop](#desktop-app) | A local control plane without a public dashboard endpoint. | The local app and your deployment destinations. |
 
-<Callout title="Which one should I pick?">
-- **Just want to try it on your own machine, the fast way?** Use the **install script**.
-- **Already have Node.js and npm?** Use the **npm** CLI.
-- **Want a clickable app with no terminal at all?** Get the **desktop app**.
-- **Running a VPS or server and want it always on? (Recommended)** Install with **Docker** — either the **Docker Compose** stack below or the CLI (`openship up`), which **defaults to Docker/Compose on a Linux VPS**. A **bare** install (no Docker, embedded database) is also fully supported — see [Compose vs bare](#run-openship).
-</Callout>
+The control plane and application destination are separate choices. See the
+[runtime model](/docs/architecture/runtime-model) for build locations and supported runtimes.
 
 ## Install
 
-<Tabs items={['Install script', 'npm', 'From source (dev)', 'Desktop app', 'Docker Compose']}>
+For self-hosted web or command-line access, install the CLI:
 
-<Tab value="Install script">
+<InstallTabs includePackageManagers />
 
-The fastest way. One command installs the `openship` command as a self-contained, checksum-verified
-bundle that runs under **Node** — it uses your system Node when it's recent enough and otherwise fetches
-an official Node build just for Openship, never touching your global tools. No Node or npm setup required.
+The install scripts use a suitable system Node or download a checksum-verified Node runtime for OpenShip.
+Package-manager installations require **Node.js 22 or newer**. The CLI's Node fallback can be accepted
+non-interactively with `OPENSHIP_VENDOR_NODE=1`.
+
+<Details title="Pin a release or fix your PATH">
+
+Set the version on the shell running the installer, not on `curl`:
 
 ```bash
-curl -fsSL https://get.openship.io | sh
+curl -fsSL https://get.openship.io | OPENSHIP_VERSION=0.9.12 sh
 ```
 
-On **Windows**, run this in PowerShell instead:
+If `openship` is not found, open a new terminal. On macOS/Linux, the installer uses `~/.openship/bin`.
+After changing Node versions with nvm, fnm, or Volta, reinstall global npm packages under the new version.
 
-```powershell
-irm https://git.openship.io/windows | iex
+</Details>
+
+## Run Openship
+
+On the machine that will host the control plane, start the guided setup:
+
+```bash
+openship
 ```
 
-<Callout title="Pin a version" type="info">
-Want a specific release instead of the latest? Set `OPENSHIP_VERSION` on the `sh` that runs the script —
-not on `curl` — e.g. `curl -fsSL https://get.openship.io | OPENSHIP_VERSION=0.1.9 sh`. (A `VAR=… curl … | sh`
-prefix sets the variable only for `curl`; the piped `sh` never sees it.)
+Create the administrator account and choose private access or a public hostname. The installer prints
+the dashboard URL. Keep the original installation user and its `~/.openship` data for later maintenance.
+
+| Installation mode | Behavior |
+| --- | --- |
+| Docker Compose | Default on Linux with Docker. Runs the API, dashboard, Postgres, Redis, and OpenResty edge. |
+| Bare | Run `openship up --bare`. Uses an embedded database and host processes; no container isolation for the control plane. |
+
+`openship up` starts the service without the guided administrator setup. Create the first account in the
+dashboard, or use [unattended installation](/docs/guides/self-hosted-operations#fully-unattended-install-headless).
+Only expose an uninitialized instance through access you control.
+
+<Callout title="Control-plane access is privileged" type="warn">
+A self-hosted OpenShip installation can manage its host and deployment credentials. Restrict dashboard
+access, configure HTTPS, and review [host control](/docs/guides/self-hosted-operations#host-control-hardening)
+before deploying alongside sensitive workloads.
 </Callout>
 
-<Callout title="Can't find the openship command afterward?" type="info">
-The installer adds Openship's bin folder to your `PATH`. If your shell still can't find `openship`,
-open a new terminal — or on macOS/Linux run `export PATH="$HOME/.openship/bin:$PATH"` — and try again.
-</Callout>
+### Host control (hardening)
 
-When it finishes you'll have the `openship` command. Now jump to [Run Openship](#run-openship) below.
+The Compose installer provisions an SSH channel for host operations. A management-only control plane can
+use `openship up --no-host-control`. The Docker socket remains privileged; this option is defense in depth,
+not a sandbox. See [host control and service operation](/docs/guides/self-hosted-operations).
 
-</Tab>
+### Removing Openship
 
-<Tab value="npm">
+`openship stop` keeps installation data. `openship uninstall` removes the installation and asks for
+confirmation. Review [removal and data retention](/docs/guides/self-hosted-operations#removing-openship)
+before running it.
 
-Already have **Node.js 22 or newer** and a package manager? Install the CLI globally with
-whichever one you use:
+### Fully unattended install (headless)
 
-```bash
-npm i -g openship
-```
+Use `--non-interactive` with administrator and domain options for CI or fleet provisioning.
+The [unattended installation procedure](/docs/guides/self-hosted-operations#fully-unattended-install-headless)
+covers secrets, certificates, and supported domain modes.
 
-```bash
-pnpm add -g openship     # pnpm
-yarn global add openship  # yarn
-bun add -g openship       # bun
-```
+## Desktop app
 
-That gives you the same `openship` command as the install script. Head to [Run Openship](#run-openship).
+[Download Desktop](/download) for macOS, Windows, or Linux. It bundles the API, dashboard, and local database.
+If the CLI is already installed, `openship install` downloads and launches the app.
 
-<Callout title="On an older Node? The CLI offers to fix it" type="info">
-This is the one install path that runs on **your** Node — the install script above resolves its
-own (system Node when it's 22+, otherwise it downloads one).
+Desktop is optional. It keeps the control plane local while supported remote deployments continue to run
+independently. Scheduled operations and webhook-driven workflows need an available controller.
 
-If you run `openship` on something older, it doesn't just refuse. It first looks for a Node 22 this
-machine has already downloaded and quietly uses that; if there isn't one, it offers to fetch an
-official Node 22 (~50 MB, checksum-verified) into `~/.openship/runtime` and use it **for Openship
-only** — your system Node is left exactly as it is. Later runs pick it up automatically, so you're
-asked once.
-
-Non-interactive (CI, a provisioning script)? `OPENSHIP_VENDOR_NODE=1` accepts that offer without
-prompting; `OPENSHIP_VENDOR_NODE=0` declines it. Below Node 20 the CLI cannot run at all, so
-without one of those it stops and tells you why; on 20 or 21 it warns and continues.
-</Callout>
-
-<Callout title="Upgraded Node and lost the openship command?" type="info">
-Version managers (nvm, fnm, volta) keep global packages **per Node version**, so installing a
-newer Node leaves the CLI behind with the old one and `openship` drops off your `PATH`. Reinstall
-it on the new version:
-
-```bash
-npm i -g openship
-```
-</Callout>
-
-</Tab>
-
-<Tab value="From source (dev)">
-
-Want to preview an unreleased build — a branch, a tag, or `main` ahead of the next release? This builds the
-CLI **from source** (the same way `bun dev` does) and installs it as a **separate `openship-dev` command**:
-
-```bash
-curl -fsSL https://get.openship.io/dev | sh
-```
-
-Pick a branch/tag with `OPENSHIP_REF` (default `main`) — set it on the `sh` that runs the script, not on
-`curl`, or the piped `sh` never sees it:
-
-```bash
-curl -fsSL https://get.openship.io/dev | OPENSHIP_REF=my-branch sh
-```
-
-The from-source build runs **fully isolated** from a production install — its own home (`~/.openship-dev`),
-its own tokens/ports/data, and its own boot service — so your production `openship` is never touched. Use it
-just like the normal CLI, under the `openship-dev` name:
-
-```bash
-openship-dev            # interactive setup + control panel
-openship-dev up         # run locally
-openship-dev update     # pull the latest source + rebuild in place (no npm release needed)
-```
-
-<Callout title="It's a dev/preview build" type="warn">
-The build is unverified (no signed release asset) and compiling the dashboard needs real RAM/CPU — small
-boxes can OOM. It requires **Bun** and **git**. Not a production path; for production use the install script
-or npm above. Remove it with `rm -f "$(command -v openship-dev)" && rm -rf ~/.openship-dev`.
-</Callout>
-
-</Tab>
-
-<Tab value="Desktop app">
-
-The desktop app bundles the whole thing — the API, the dashboard, and the database — into a single
-application you run on your own machine. No server, no Docker: great for local development and for deploying
-straight from a folder on your disk.
-
-If you already have the CLI, one command fetches and launches it:
-
-```bash
-openship install
-```
-
-Or download it directly for your system:
-
-- **macOS** — [Apple Silicon](https://github.com/oblien/openship/releases/latest/download/Openship-arm64.dmg) · [Intel](https://github.com/oblien/openship/releases/latest/download/Openship-x64.dmg)
-- **Windows** — [Openship-win32-x64.zip](https://github.com/oblien/openship/releases/latest/download/Openship-win32-x64.zip)
-- **Linux** — [Openship.AppImage](https://github.com/oblien/openship/releases/latest/download/Openship.AppImage)
-
-You can also grab them from the [download page](/download).
-
-On **Linux**, make the AppImage runnable, then start it — no installer, no root:
+<Details title="Run the Linux AppImage">
 
 ```bash
 chmod +x Openship.AppImage
 ./Openship.AppImage
 ```
 
-<Callout title="AppImage needs FUSE" type="info">
-Most Linux distros ship it already. If the AppImage won't start, either install FUSE
-(`sudo apt-get install -y libfuse2` on Debian/Ubuntu) or run it self-extracting:
-`./Openship.AppImage --appimage-extract-and-run`.
-</Callout>
-
-</Tab>
-
-<Tab value="Docker Compose">
-
-Prefer to run the containers on a server yourself? The self-hosted stack lives in
-**`docker/docker-compose.yml`** and **pulls** published images from GitHub Container Registry — no build
-tooling required. Run it from the repo root:
+If FUSE is unavailable, install the required FUSE package for your distribution or run:
 
 ```bash
-git clone https://github.com/oblien/openship.git
-cd openship
-cp .env.example .env          # then edit the secrets inside
-docker compose --env-file .env -f docker/docker-compose.yml up -d
+./Openship.AppImage --appimage-extract-and-run
 ```
 
-It runs five services: **Postgres**, **Redis**, the **API** (`:4000`), the **dashboard** (`:3001`), and an
-**OpenResty edge** on **:80/:443** — a container (host networking) that handles routing and Let's Encrypt TLS.
-The API mounts the host Docker socket so it can build and run your deployed apps as host containers.
-**Linux only** (the edge needs host networking); on macOS/Windows use the CLI (`openship up`) instead.
+</Details>
 
-When it's up, open the dashboard at `http://localhost:3001`.
+## Manual Compose or development installation
 
-<Callout title="Pull-based — pin a version" type="info">
-The stack pulls published images (`ghcr.io/oblien/*`), so it comes up without a build. Pin `OPENSHIP_VERSION`
-in `.env` (e.g. `0.2.3`) for reproducible upgrades, then
-`docker compose --env-file .env -f docker/docker-compose.yml pull` and `… up -d`. To build from source
-instead, add `-f docker/docker-compose.build.yml … up -d --build`.
-</Callout>
-
-<Callout title="Edit .env first" type="warn">
-Copy `.env.example` to `.env` and fill in the secrets **before** you start the stack. To reach it from another
-machine, also set `OPENSHIP_PUBLIC_URL` (and `TRUST_PROXY=true` behind a reverse proxy) — otherwise the
-dashboard loads but login is rejected.
-</Callout>
-
-<Callout title="This path doesn't set up host control" type="warn">
-`openship up` provisions the container→host SSH channel for you; running this file yourself doesn't. The stack
-comes up fine and deploys work, but the operations that touch the host machine — a `:80`/`:443` takeover, the
-mail engine, a catalog app whose config file is written on the host — refuse until you provision it. The five
-manual steps are in `.env.example` under **Host operations from the container**, with the failure mode and
-verification in [Troubleshooting → Host control channel](/docs/troubleshooting/host-channel).
-</Callout>
-
-<Callout title="The root docker-compose.yml is a different file" type="info">
-The compose file at the repo **root** is the SaaS / from-source **control plane** — it builds from source and
-ships the marketing site, with no edge and no Docker socket. It does **not** self-host your apps. For
-self-hosting, use `docker/docker-compose.yml` above (or just `openship up`).
-</Callout>
-
-</Tab>
-
-</Tabs>
-
-## Run Openship
-
-If you installed the CLI (the install script or npm), the quickest start is the **guided setup** — run:
-
-```bash
-openship
-```
-
-With no arguments, `openship` walks you through it: private or public, your domain (if public), and your
-**admin name, email, and password**. It then deploys, creates your admin account, and prints the URL to sign
-in. This is the recommended way to stand up a new instance.
-
-Prefer to skip the prompts? `openship up` starts the same background service directly:
-
-```bash
-openship up
-```
-
-<Callout title="Compose vs bare — picked automatically" type="info">
-However you start it, on **Linux with Docker** Openship installs the container stack (Postgres, Redis, API,
-dashboard, and the OpenResty edge on :80/:443 — the same stack as the Docker Compose tab above), which can
-**host your deployed apps on this box** with domains and TLS. This is the **recommended mode for a VPS** and the
-CLI default there. Everywhere else (macOS, Windows, or Linux without Docker) it installs a single lightweight
-process with a built-in database — an always-on control plane that deploys apps out to a server or the cloud.
-Both modes are fully supported; to force the choice, run `openship up --compose` or `openship up --bare`.
-</Callout>
-
-Either way, Openship runs as a **background service that starts on boot and restarts itself if it crashes** —
-like a delivery truck that always comes back to the depot. It runs the API on `:4000` and the dashboard on
-`:3001`, backed by a built-in database in bare mode (or Postgres + Redis in Compose mode). A CLI instance
-always requires a login — the admin you create during `openship` setup, or the first account you register in
-the dashboard when you run `openship up` directly.
-
-```bash
-openship stop              # stop the service — it won't restart or come back on reboot
-openship up --foreground   # run it attached to this terminal instead (a one-off; stop with Ctrl-C)
-openship up --no-ui        # run the API only, without the dashboard
-openship uninstall         # remove Openship + its data (see below)
-```
-
-### Host control (hardening)
-
-The control plane can operate the machine it runs on: free ports `80`/`443` from an existing proxy, read host
-config, scan listening ports, open a host shell. On a Compose install that channel is an **SSH key to the host**
-that `openship up` generates and authorizes for the invoking user (reached over the internal
-`host.docker.internal` bridge, never the public IP).
-
-<Callout title="It can be present in name only" type="warn">
-Generating a key and writing the address isn't the same as a working channel, and the difference doesn't show
-up at install time. Two things on the host decide it: an **sshd** that's listening where containers can reach
-it, and a firewall that allows container→host traffic — this address is host-local, so it crosses
-`filter/INPUT` where a default-deny `ufw` lives, while every published port is DNAT'd and skips it. So the
-stack can read healthy while host operations are dead. `openship up` probes the channel for real and offers the
-firewall rule; `openship doctor` re-checks it later. If you install by running `docker/docker-compose.yml`
-yourself, none of that is provisioned for you — see the manual steps in `.env.example`. Either way, the repair
-and the failure it produces are in
-[Troubleshooting → Host control channel](/docs/troubleshooting/host-channel).
-</Callout>
-
-You can withhold it:
-
-```bash
-openship up --no-host-control
-```
-
-With it set: no host key is generated or mounted, host operations refuse with a clear error, and this box stops
-being listed as a deploy target ("This Server" disappears). It is **CLI-only on purpose** — a toggle in the
-dashboard would be reachable by the very thing it defends against.
-
-**Which posture to use**
-
-| Your box | Recommendation |
-|---|---|
-| Deploys apps to **itself** (the common single-server install) | **Leave host control on.** It's needed for `:80/:443` takeover, host port scans, and the host terminal. |
-| Only manages **remote** servers | **`--no-host-control`.** It gains nothing here, and removes an easy path to host root. |
-| Runs alongside workloads you can't risk | `--no-host-control`, and keep the dashboard off the public internet (`OPENSHIP_BIND_ADDR`, or behind your own proxy + auth). |
-
-<Callout title="This is defense in depth, not isolation" type="warn">
-The API also mounts the host's **Docker socket**, because building and running your apps requires it. A mounted
-socket is host-root-equivalent for anyone who can reach it — the same trade every self-hosted deploy platform
-makes. `--no-host-control` removes the *easy, exposed* path (a host shell button and a key on disk); it does not
-sandbox the control plane. Treat dashboard access as host access, and don't expose it publicly without a proxy
-you trust.
-</Callout>
-
-### Removing Openship
-
-`openship stop` halts Openship but keeps everything — the database, issued certificates and edge config all
-survive, so `openship up` picks up where it left off. To remove it:
-
-```bash
-openship uninstall                 # asks first; removes the stack, its data, its images and ~/.openship
-openship uninstall --keep-data     # remove the running stack only, keep the database + certificates
-openship uninstall --keep-images   # don't delete the Openship container images
-openship uninstall --yes           # skip the confirmation (scripts)
-```
-
-Two things it deliberately leaves alone, because a self-hosted box is usually shared:
-
-- **Your deployed apps keep running.** Removing the control plane doesn't stop the containers it created —
-  `docker ps` still shows them. Delete the projects first if you want those gone too.
-- **Nothing is pruned.** Only Openship's own three images (by exact tag) and this stack's volumes are removed;
-  your other images, volumes and containers are untouched.
-
-<Callout title="If Openship took over ports 80/443" type="warn">
-When Openship migrated an existing proxy during install, uninstalling frees those ports but can't always
-restart what was there before — a completed takeover leaves no record of it. Re-enable your proxy yourself
-(`sudo systemctl enable --now nginx`, or caddy / apache2). Its config was never modified.
-</Callout>
-
-<Callout title="What --foreground is for" type="info">
-`openship up` keeps running after you close the terminal. `openship up --foreground` does the opposite: it
-stays in your terminal and stops when you press Ctrl-C. Use it for a quick throwaway run, or on a system
-where the background service can't be installed.
-</Callout>
-
-Under the hood, `openship up` registers with your operating system's service manager so it can survive
-reboots:
-
-- **Linux** — a **systemd** unit (`--user` with linger enabled, or a system unit when you run it as root).
-- **macOS** — a **launchd** agent that reloads at login.
-- **Windows** — a **Scheduled Task** at logon (best-effort; here `openship up --foreground` or the desktop
-  app are the more reliable options).
-
-<Callout title="No service manager found?" type="warn">
-On a Linux box without systemd, `openship up` can't install a persistent service. Run
-`openship up --foreground` instead, or use the Docker Compose stack for always-on.
-</Callout>
-
-### Fully unattended install (headless)
-
-`openship up` on its own installs only the *service* — the first admin is created in the dashboard (or via the
-interactive `openship` wizard). Add `--non-interactive` (alias `--yes`) plus the install flags to provision a box
-**with no prompts** — admin account and (where supported) domain included. Ideal for CI, cloud-init, or scripted
-fleets.
-
-The admin bootstrap and the `byo` / `free` / `none` domain steps run on **both** install methods (Compose and
-bare). The one difference is a managed **custom** domain (Openship issues the Let's Encrypt cert itself), which is
-wired only for the bare install — see below.
-
-**Bare install** (`--bare`, embedded DB, no Docker) — Openship manages the host's OpenResty, so `--domain-kind
-custom` provisions the cert end-to-end:
-
-```bash
-OPENSHIP_ADMIN_PASSWORD='a-strong-password' openship up --bare --non-interactive \
-  --admin-email you@example.com --admin-name "You" \
-  --domain-kind custom --hostname ops.example.com \
-  --acme-email you@example.com --edge takeover
-```
-
-**Compose install** (the default on Linux with Docker) — the edge runs as a container, and takes every domain kind
-the bare install does, including `custom`. If an existing proxy holds `:80/:443`, `--edge` pre-answers what to do
-with it (`migrate` imports its sites into Openship's edge first; `takeover` stops it and its sites stop serving):
-
-```bash
-OPENSHIP_ADMIN_PASSWORD='a-strong-password' openship up --non-interactive \
-  --admin-email you@example.com --admin-name "You" \
-  --domain-kind custom --hostname ops.example.com \
-  --acme-email you@example.com --edge migrate
-```
-
-- **Admin** — `--admin-email` (required) + optional `--admin-name`. The password comes from
-  `--admin-password` or, preferably, the **`OPENSHIP_ADMIN_PASSWORD`** env var (keeps it out of your shell
-  history). Idempotent: re-running resets the existing admin's password instead of failing. Works on both methods.
-- **Domain** — `--domain-kind`:
-  - `byo` — front Openship with your own reverse proxy (`--hostname`, or derived from `--public-url`). Both methods.
-  - `custom` — Openship's edge issues a Let's Encrypt cert for `--hostname`; `--acme-email` and
-    `--edge migrate|takeover|cancel` pre-answer the `:80/:443` takeover. Both methods: the API picks the host
-    OpenResty or the container edge from `OPENSHIP_EDGE_MODE`, so the CLI makes the same calls either way.
-  - `free` — a `<slug>.opsh.io` subdomain (`--slug`). **Requires the box to already be connected to Openship
-    Cloud** (the free-domain connect is an interactive browser step) — connect first, then run the headless
-    install, or use `byo`.
-  - `none` (default when no domain flags) — a private box with no public domain.
-
-Any missing or invalid flag exits non-zero with a precise message, so it's safe to script. Certificate issuance
-streams its progress as it goes (ACME can take a minute on a fresh domain) and is best-effort: if it doesn't
-finish, the install still succeeds and reports why, then retries in the background and on the next boot. Add
-`--dry-run` to preview the installed service without provisioning.
+For manual control of Compose files, version pinning, or an isolated `openship-dev` build, follow
+[manual and development installation](/docs/getting-started/manual-installation).
+Use published releases for production.
 
 ## Open it and check it's working
 
-With a local instance running, open the dashboard in your browser:
-
 ```bash
 openship open
-```
-
-Or check the API's health straight from the terminal:
-
-```bash
 openship status
 ```
 
+The dashboard normally listens on port `3001`, and the API on `4000`. Use the configured public URL or a
+secure tunnel for remote access. If startup or login fails, run `openship doctor` and check
+[installation troubleshooting](/docs/troubleshooting).
+
 ## Openship Cloud
 
-Don't want to run a server at all? [Sign up for Openship Cloud](https://app.openship.io) — the same platform,
-fully managed for you.
+[Open the Cloud dashboard](https://app.openship.io). Cloud manages the control plane for you; no local
+installation is required. Choose a Cloud space for managed capacity, or a server management plan to connect
+your own infrastructure. See [Cloud spaces](/docs/guides/cloud-workspaces) for capacity and billing scope.
 
 ## Next steps
 
 <Cards>
-  <Card title="Deploy your first app" href="/docs/getting-started/first-deployment" description="Go from an installed Openship to a live, running project." />
-  <Card title="Quickstart" href="/docs/getting-started/quickstart" description="The shortest path from zero to a deployed app." />
-  <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="Connect a repository and ship it — click-by-click or one command." />
+  <Card title="Quickstart" href="/docs/getting-started/quickstart" description="Connect source code and verify a deployment." />
+  <Card title="Production readiness" href="/docs/guides/production-readiness" description="Prepare access, backups, monitoring, and recovery." />
 </Cards>

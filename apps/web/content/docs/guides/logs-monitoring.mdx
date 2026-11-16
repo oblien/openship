@@ -5,19 +5,8 @@ description: See what your app is doing — its runtime logs, its incoming web r
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Once your app is online, the next question is always the same: *what is it actually doing right now?* Logs are
-how you find out. Think of them like a diary the app keeps — every time it starts, prints a message, or handles
-a visitor, it writes a line. When something goes wrong, that diary is the first place to look.
-
-Openship gives you two kinds of diary and one big-picture view:
-
-- **Runtime logs** — what your app itself prints (startup messages, errors, `console.log`). This is what you
-  want when the app is crashing or misbehaving.
-- **Request logs** — a line for every web request that reached your app: who asked, for what page, and what
-  answer they got. This is what you want when you're asking "is anyone visiting?" or "why are people getting
-  errors?"
-- **Analytics** — the same request data rolled up into totals and a traffic chart, so you can see trends
-  instead of individual lines.
+Use runtime logs for application output, request logs for edge traffic, and analytics for aggregate
+trends. Identify the project, deployment, and destination before investigating a failure.
 
 <Callout title="What you need first">
 - A project that has been deployed at least once (you can see it in the dashboard).

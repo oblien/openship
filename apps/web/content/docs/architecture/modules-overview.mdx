@@ -3,9 +3,11 @@ title: Modules overview
 description: A tour of the backend modules that make up the Openship API — what each one owns, grouped by job, with a link to its reference page.
 ---
 
-The API from the [architecture overview](/docs/architecture/overview) isn't one giant blob of code. It's split into **modules** — think of them as the departments of a company. Each department owns one area (projects, domains, backups…), and each is mounted at its own address under `/api`. Ask about domains? You talk to the domains department at `/api/domains`. Ask about backups? A different department, a different address.
+API modules group related operations under `/api`. HTTP handlers use shared platform contracts and
+operations, so dashboard, CLI, SDK, and MCP workflows follow the same resource and authorization rules.
+Public health checks, signed webhooks, and internal transport endpoints have explicit boundaries.
 
-Almost every request runs through the same front desk first: it's authenticated, and each route carries a **permission tag** (like `domain:write`) that says who's allowed to do it — so the rules are identical no matter which module you reach. A few doors are deliberately public: the [health](/docs/api/health) check is open, and incoming [webhooks](/docs/api/webhooks) prove who they are with a signature instead of a login.
+Use this map to find a resource, then follow its reference for fields, permissions, and examples.
 
 <Callout title="This page is the map, the reference pages are the detail">
 Here you get one or two sentences per module — enough to know which door to knock on. Each module links to its own reference page with the exact endpoints, fields, and examples. Start with the [API overview](/docs/api) for the shared auth model.
@@ -71,13 +73,14 @@ The managed-hosting option and what it costs.
 
 ## Self-hosted machinery
 
-These modules only exist on a self-hosted instance — on Openship Cloud they're never loaded.
+Availability depends on installation mode, target capabilities, and authority. Host and instance administration
+requires the corresponding self-hosted or managed-server access.
 
 | Module | What it owns |
 |---|---|
 | [system](/docs/api/system) | The plumbing behind a self-managed instance: browsing the host filesystem, first-run setup, and connecting and managing your own servers over SSH (including installing the pieces each server needs). |
 | [terminal](/docs/api/terminal) | An interactive shell into one of your connected servers over SSH, streamed live to the browser. |
-| [mail](/docs/api/mail) | A wizard that installs and manages a full (iRedMail-based) mail server on one of your servers. |
+| [mail](/docs/api/mail) | A wizard that installs and manages supported mail-server components on one of your servers. |
 
 ## Related guides
 

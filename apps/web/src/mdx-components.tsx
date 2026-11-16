@@ -2,6 +2,8 @@ import defaultMdxComponents from "fumadocs-ui/mdx";
 import { Tab, Tabs } from "fumadocs-ui/components/tabs";
 import type { MDXComponents } from "mdx/types";
 import { InstallTabs } from "@/components/install-tabs";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { DocsDetails } from "@/components/docs/details";
 
 // Native Fumadocs MDX components (Cards, Callouts, code blocks with copy, etc.),
 // plus our own components usable in .mdx without an explicit import. Tabs/Tab are
@@ -13,6 +15,9 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Tab,
     Tabs,
     InstallTabs,
+    Step,
+    Steps,
+    Details: DocsDetails,
     ...components,
   };
 }

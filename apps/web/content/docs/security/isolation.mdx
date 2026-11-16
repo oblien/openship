@@ -1,129 +1,87 @@
 ---
 title: Isolation
-description: How Openship keeps deployments and projects apart — separate containers, per-project networks and volumes, and enforced resource limits.
+description: Understand control-plane permissions, runtime boundaries, networking, storage, and resource limits.
 ---
 
-Think of your Openship server like an apartment building. Every app you deploy gets its own unit: its own front door, its own electricity meter, its own mailbox. Neighbors can't wander into your unit, and one noisy tenant can't drain the whole building's power. This page explains the walls Openship puts up between your apps — what each one is, and how strong it is on each runtime.
+OpenShip combines authorization with runtime-specific isolation. **Containers share a host kernel; bare
+processes share the host environment.** Choose the deployment model for your workload's trust boundary
+and verify the resulting network, mount, and resource configuration.
 
 ## Scoping comes first
 
-Before anything runs, access is decided by **organization** (a workspace that owns projects) and **project**. Every API request passes through one permission check, and an organization id from the client is only trusted if you're actually a member. So one team can never list, deploy, or tear down another team's projects. That control-plane boundary is covered in the [permission model](/docs/security/permissions); the rest of this page is about the walls between apps *at runtime*, once a deploy is live.
+The control plane checks organization membership and resource permissions before authorized operations.
+These access checks are separate from the isolation provided by Docker, host processes, or a cluster.
+See [permissions](/docs/security/permissions) for roles, grants, and scoped tokens.
 
-Everything Openship creates on a host is stamped with the project and deployment it belongs to, using Docker **labels** (key/value tags attached to a container):
-
-- `openship.project` — which project owns it.
-- `openship.deployment` — which specific deploy created it.
-- `openship.service` — which service, for multi-service (compose) projects.
-- `openship.build` — which build session produced a build image, so half-finished build artifacts can be reclaimed too.
-
-These labels are how Openship reliably finds and cleans up only its own resources — for example, reclaiming a leftover container from a deploy that failed halfway, without touching anything else on the machine.
+OpenShip labels managed Docker resources with project, deployment, service, or build identifiers where
+applicable. Lifecycle and cleanup operations use those identifiers to find the intended resources.
+Labels identify ownership; they are not a runtime security boundary.
 
 ## One container per deployment
 
-On the **Docker** runtime, each deployment runs inside its own **container** — a sandboxed box with its own filesystem, processes, and network view, isolated from the host and from other containers by the Linux kernel. Containers are named predictably so two never collide:
+A Docker release runs application workloads in containers. Multi-service projects and replicated workloads
+can use several containers. Docker provides process, filesystem, and network namespaces according to the
+container configuration.
 
-| What | Name pattern |
-|---|---|
-| Single-app deployment | `openship-<project>-<deployment>` |
-| A service in a compose project | `openship-<slug>-<service>` |
-| Project network | `openship-<slug>` |
-| Project-scoped named volume | `openship-<slug>-<name>` |
-
-A single-app container publishes on a **random host port**, and Openship's built-in router (**OpenResty**, an nginx-based reverse proxy) forwards traffic to it — so nothing is exposed on a predictable port that another app could clash with.
+Isolation can be weakened by privileged containers, host networking, host bind mounts, Docker-socket access,
+or other elevated capabilities. A compromised privileged control plane can also manage its target hosts.
+Do not treat a container as equivalent to a separate virtual machine or a guarantee against hostile code.
 
 ## Per-project networks
 
-For a project with multiple services (say a web app plus a database), Openship creates one private **bridge network** — a virtual LAN that only the containers attached to it can use — named `openship-<slug>`. Every service in that project joins it and can reach the others by service name, like `http://database:5432`.
+Docker service projects use project-scoped networks so services can resolve one another by service name.
+Different projects do not share that internal name resolution by default.
 
-Because each project gets its **own** network, a service in one project cannot address a service in another by name. And a service only opens a port to the outside world if it explicitly asks to — otherwise it's reachable only by its siblings inside the project network.
+| Configuration | Review |
+| --- | --- |
+| Internal service | No unnecessary published host ports or public domain. |
+| Published host port | Bind address, host firewall, and whether the port should be reachable directly. |
+| Public route | Domain, TLS, ingress, and application authentication. |
+| Host or external network | The isolation boundary and dependencies it shares. |
 
-<Callout title="Names are project-private" type="info">
-Two different projects can both have a service called `api` or `db` without any conflict — each name resolves only inside its own project's network.
-</Callout>
+Separate Docker networks do not replace a firewall or application authentication. Published ports, host
+access, explicit shared networks, and configuration changes can create additional paths between workloads.
 
 ## Per-project volumes
 
-A **named volume** is a managed disk that Docker keeps around between restarts (databases use them so data survives a redeploy). The catch: if two projects both ask for a volume literally named `postgres_data`, plain Docker hands them the *same* disk — silent cross-project data mixing.
+OpenShip scopes managed named volumes to the project. This avoids accidentally giving two new projects the
+same named data volume. Legacy/adopted volumes can retain their existing names and require ownership checks.
 
-Openship prevents this by prefixing every named volume with the project: `openship-<slug>-<name>`. Two projects that both declare `postgres_data` get two separate disks that can never touch. Bind mounts (a specific host path you chose) and anonymous volumes are left exactly as written.
-
-<Callout title="Older services and name clashes" type="warn">
-Services created before volume-scoping keep their original bare volume names. To protect them, Openship refuses to deploy a **new** project whose volume name is already in use by another project's container, and tells you to rename it — so no deploy can quietly adopt another project's data.
-</Callout>
+**Bind mounts intentionally use a host path.** Review those paths and permissions before deployment.
+A persistent volume protects data across container replacement; it does not protect against host failure,
+application corruption, or accidental deletion. Use [backups](/docs/guides/backups-restore).
 
 ## Resource limits
 
-Each deployment is given a budget so one app can't starve the others. A budget has three parts:
+Self-hosted projects may be unlimited unless limits are configured. Cloud allocations are bounded by the
+purchased capacity and effective runtime limits.
 
-- **CPU** (`cpuCores`) — fractional cores, e.g. `0.5`, `1`, `2`.
-- **Memory** (`memoryMb`) — a hard ceiling in megabytes.
-- **Disk** (`diskMb`) — writable disk in megabytes.
+| Resource | Behavior |
+| --- | --- |
+| Docker memory | Configured hard cap; exceeding it can result in an out-of-memory kill. |
+| Docker CPU | Configured CPU quota; do not assume unused host capacity bypasses it. |
+| Storage | Enforcement depends on the runtime and storage backend. Monitor volumes and host free space separately. |
+| Builds | Use the supported build limits and placement; runtime limits alone do not constrain every build path. |
+| Bare processes | Do not assume Docker-style CPU, memory, or filesystem isolation. |
 
-Self-hosted projects are unlimited by default; explicit limits are bounded by the target
-machine. Cloud requires a concrete allocation within the organization's purchased terms
-and Oblien's effective limits. Resource presets include fractional CPU, down to 0.25 vCPU.
-
-On Openship Cloud, builds use available CPU/RAM from the same pool as runtime, optionally
-bounded by a saved build cap. Existing runtime allocations remain reserved. Build workers
-are removed and temporary CPU/RAM is reconciled after the operation; a failed or pending
-provider resize is not reported as released capacity. See [resource settings](/docs/guides/sleep-mode-resources).
-
-For Docker containers, a configured memory limit is a hard cap; exceeding it can cause
-an out-of-memory kill. Configured CPU limits use Docker CPU quotas, so an idle host does
-not let a capped container exceed its assigned CPU budget. Cloud Docker builds enforce
-their selected limits on a separate BuildKit worker container within the project workspace.
+Allow capacity for the operating system, edge, databases, builds, backup operations, and release replacement.
+See [resource settings](/docs/guides/sleep-mode-resources) and [Cloud spaces](/docs/guides/cloud-workspaces).
 
 ## How the runtimes compare
 
-Openship can run your app three ways, and the isolation strength differs. Pick the tab that matches where you deploy.
+| Runtime | Boundary | Operational responsibility |
+| --- | --- | --- |
+| Docker / Compose | Containers and configured project networks on a shared host kernel. | Host patching, daemon access, mounts, network exposure, and limits. |
+| Bare process | Host process and release directory; shared host users, filesystem, and network. | Trusted workloads, host permissions, supervision, and capacity. |
+| Swarm / Kubernetes | Orchestrator-defined workloads, networking, and storage. | Cluster access, placement, policies, persistent data, and failure recovery. |
+| Managed Cloud | Managed capacity and the workload's effective runtime allocation. | Application permissions, secrets, dependencies, and data lifecycle. |
 
-<Tabs items={['Docker', 'Server (no Docker)', 'Cloud']}>
-
-<Tab value="Docker">
-
-The strongest isolation. Every deployment is its own container with:
-
-- kernel-level separation from the host and other apps,
-- a hard **memory** cap and a **CPU** weight, and
-- a random published port fronted by the router — never a fixed port another app could grab.
-
-Multi-service (compose) projects add a **private per-project network** and **project-scoped named volumes** on top of that. This is the recommended runtime whenever Docker is available.
-
-</Tab>
-
-<Tab value="Server (no Docker)">
-
-For hosts without Docker, Openship runs your app **directly as a process** on the machine, supervised by systemd (Linux) or a lightweight `nohup` fallback (macOS). Each deployment gets its own release directory and its own supervised process (on Linux, a dedicated systemd unit named `openship-<deployment>.service`).
-
-This is lighter, but the walls are thinner: processes **share the host's filesystem, network, and users**, and this mode does **not** enforce CPU or memory caps. systemd additionally gives you automatic restart-on-crash and reboot survival; the `nohup` fallback does not.
-
-<Callout title="Weaker isolation without Docker" type="warn">
-Because bare processes share the host and aren't resource-capped, run only apps you trust on a shared bare host, and prefer the Docker runtime for anything multi-tenant.
-</Callout>
-
-</Tab>
-
-<Tab value="Cloud">
-
-On Openship Cloud, each deployment runs in its own isolated cloud **workspace** — a separate instance, not a shared box. You choose a size tier that maps to concrete CPU / memory / disk:
-
-| Tier | CPU | Memory | Disk |
-|---|---|---|---|
-| micro | 0.25 | 256 MB | 4 GB |
-| low | 0.5 | 512 MB | 8 GB |
-| medium | 1 | 1 GB | 16 GB |
-| high | 2 | 2 GB | 32 GB |
-
-A **custom** tier lets you set exact values. See [the local ↔ cloud boundary](/docs/security/cloud-boundary) for how cloud and self-hosted stay separated.
-
-</Tab>
-
-</Tabs>
+Cloud spaces and legacy allocations can have different capacity models. Do not infer a dedicated VM per
+application or per deployment from a project boundary. Use the actual plan and runtime configuration.
 
 ## Related guides
 
 <Cards>
-  <Card title="Permission model" href="/docs/security/permissions" description="Roles, resource grants, and the single check every request passes through." />
-  <Card title="The local ↔ cloud boundary" href="/docs/security/cloud-boundary" description="How self-hosted instances talk to Openship Cloud without leaking data." />
-  <Card title="Authentication" href="/docs/security/auth" description="Sessions, tokens, and how credentials are custodied." />
+  <Card title="Permission model" href="/docs/security/permissions" description="Organization roles, resource grants, and scoped credentials." />
+  <Card title="Production readiness" href="/docs/guides/production-readiness" description="Review access, limits, storage, and recovery before launch." />
 </Cards>
