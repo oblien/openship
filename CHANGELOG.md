@@ -35,6 +35,8 @@ to invoke administrative operations, including host command execution.
   running. Restore normal routing when maintenance is disabled.
 - Upload HTML pages and assign error statuses, with server defaults and
   project or hostname overrides. Customize unmatched-host and direct-IP pages.
+- Accept larger authentication response headers and returning cookies at the edge,
+  with bounded defaults and preserved custom buffer settings (#1763).
 - Organize Domains & Routes into routing, access, proxy, and page controls,
   with inline protection settings, HTML previews, and visible loading and retry states.
 - Target the correct project service and port when adding domains from the CLI.
@@ -48,6 +50,11 @@ to invoke administrative operations, including host command execution.
   projects. Validate dependencies and port bindings, preserve separate volumes,
   and improve restoration and rollback if a transfer fails. Keep application
   instance scaling distinct from independent copies.
+- Review Compose changes in a shared before/after dialog and apply the exact
+  reviewed revision without repeating setup. Preserve deployment options and
+  saved overrides, mask credentials, and require a new review if source changes (#1796).
+- Reveal and hide service environment values through the shared Compose editor
+  while retaining the existing permission checks (#1771).
 - Import Railway projects with multiple repositories as native services and
   project connections, preserving source ownership and private service wiring.
 - Show container ports declared with Compose `expose`, explain how to publish
