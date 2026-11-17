@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   deploy: vi.fn(),
   toast: vi.fn(),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), useRouter: () => ({ refresh: vi.fn() }) }));
 // Billing fixtures must not start real session polling or leave delayed auth
 // cleanup running after happy-dom removes the browser globals.
 vi.mock("@/lib/auth-client", () => ({

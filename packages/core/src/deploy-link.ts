@@ -115,9 +115,10 @@ export function deploySourceParams(source: DeploySource): URLSearchParams {
 }
 
 /** Same intent URL on the public site and the authenticated dashboard. */
-export function deployLinkHref(source: DeploySource, destination?: DeployDestination): string {
+export function deployLinkHref(source: DeploySource, destination?: DeployDestination, referralCode?: string): string {
   const params = deploySourceParams(source);
   if (destination) params.set("destination", destination);
+  if (referralCode) params.set("ref", referralCode);
   return `/deploy?${params}`;
 }
 
@@ -137,9 +138,10 @@ export function isRepositoryDeployPath(path: string): boolean {
 }
 
 /** Open the normal wizard directly; no new endpoint or server version is required to resolve a link. */
-export function deploySetupHref(source: DeploySource, destination?: DeployDestination): string {
+export function deploySetupHref(source: DeploySource, destination?: DeployDestination, referralCode?: string): string {
   const params = new URLSearchParams();
   if (destination) params.set("destination", destination);
+  if (referralCode) params.set("ref", referralCode);
   if (source.kind === "repo" && source.branch) params.set("branch", source.branch);
   const path =
     source.kind === "app"

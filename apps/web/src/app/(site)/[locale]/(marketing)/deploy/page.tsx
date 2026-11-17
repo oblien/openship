@@ -53,6 +53,7 @@ export default async function DeployPage({
   return (
     <DeployLauncher
       source={source}
+      referralCode={typeof query.ref === "string" ? query.ref : undefined}
       app={
         app
           ? {

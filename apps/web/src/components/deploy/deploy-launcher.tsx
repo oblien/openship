@@ -28,10 +28,12 @@ type AppSummary = {
 
 export function DeployLauncher({
   source,
+  referralCode,
   app,
   error,
 }: {
   source: DeploySource | null;
+  referralCode?: string;
   app?: AppSummary;
   error?: string;
 }) {
@@ -47,10 +49,10 @@ export function DeployLauncher({
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const command = source ? deployInstallCommand(source, installed) : "";
   const cloudUrl = source
-    ? new URL(deploySetupHref(source, "cloud"), CLOUD_DASHBOARD_URL).href
+    ? new URL(deploySetupHref(source, "cloud", referralCode), CLOUD_DASHBOARD_URL).href
     : "";
   const manageUrl = source
-    ? new URL(deploySetupHref(source, "server"), CLOUD_DASHBOARD_URL).href
+    ? new URL(deploySetupHref(source, "server", referralCode), CLOUD_DASHBOARD_URL).href
     : "";
   const title =
     app?.name ??
@@ -196,7 +198,7 @@ export function DeployLauncher({
                   onSubmit={(event) => {
                     event.preventDefault();
                     try {
-                      router.push(deployLinkHref(parseDeploySource({ repo })));
+                      router.push(deployLinkHref(parseDeploySource({ repo }), undefined, referralCode));
                     } catch (cause) {
                       // diagnostics-ignore: invalid user-entered repository URLs are shown inline.
                       setFormError(
@@ -384,7 +386,7 @@ export function DeployLauncher({
             )}
           </div>
         </div>
-        {source && <DeployReadme source={source} copied={copied} onCopy={copyText} />}
+        {source && <DeployReadme referralCode={referralCode} source={source} copied={copied} onCopy={copyText} />}
         <p
           role="status"
           className={`deploy-copy-status${copyError ? " deploy-copy-status--error" : ""}`}

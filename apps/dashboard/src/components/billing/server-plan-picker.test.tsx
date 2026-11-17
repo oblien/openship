@@ -32,7 +32,7 @@ vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import
 vi.mock("@/lib/api/system", () => ({ systemApi: { createManagedServer: h.create, availableManagedServers: h.available, connectManagedServer: h.connect, getServerById: h.readServer, removeManagedServer: h.remove } }));
 vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ isPending: h.sessionPending, data: { user: { id: h.user }, session: { activeOrganizationId: h.org } } }) }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: h.connected, startConnect: vi.fn() }) }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URL(window.location.href).searchParams, useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 
 const copy = baseDictionary.billing;
 const plans: ApiPlan[] = (["hobby", "starter", "pro", "team", "enterprise"] as const).map(id => {
@@ -206,14 +206,17 @@ describe("referral checkout handoff", () => {
     discountBps: 500, durationMonths: 12, expiresAt: null, minimumMonthlyCents: 1000 };
   const purchase = () => <ManagedServerPurchase requestedPlanId="starter" initialReferralCode={code} autoCheckout />;
 
-  it("waits for verified terms then uses the ordinary checkout with the referral", async () => {
+  it.each(["explicit", "deploy-link"])("waits for verified terms then checks out with the %s referral", async (source) => {
+    window.location.href = `http://localhost:3000/deploy/b3duZXIvcmVwbw?destination=cloud&ref=${code}`;
     let resolve!: (value: unknown) => void;
     const ordinary = h.get.getMockImplementation()!;
     h.get.mockImplementation((path, options) => path === `referrals/${code}` ? new Promise(r => { resolve = r; }) : ordinary(path, options));
-    await render(purchase());
+    await render(source === "explicit" ? purchase() : <ManagedServerPurchase requestedPlanId="starter" autoCheckout preserveProject />);
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
+    expect(h.get).toHaveBeenCalledWith(`referrals/${code}`);
     await act(async () => resolve({ data: referral }));
+    if (source === "deploy-link") await click("Choose Starter");
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
       workspaceId: server.id, planTierId: "starter", referralCode: code,

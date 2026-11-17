@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), usage: vi.fn() })
 vi.mock("@/lib/api/system", () => ({ systemApi: { serverUsage: mocks.usage } }));
 vi.mock("@/lib/api/client", async original => ({ ...await original<typeof import("@/lib/api/client")>(), api: { get: mocks.get, post: mocks.post } }));
 vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: "billing-viewer" }, session: { activeOrganizationId: "billing-org" } } }) }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), useRouter: () => ({ refresh: vi.fn() }) }));
 
 const copy = baseDictionary.billing;
 const free: BillingState = {

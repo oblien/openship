@@ -40,6 +40,19 @@ The public page shows **Light** and **Dark** button previews. Select a style, th
 Use `repo` for a project hosted in your own repository. Use `app` only for an existing catalog ID.
 You do not need to submit your project to the OpenShip catalog to create a deploy button.
 
+### Referral codes
+
+Append your existing Cloud referral code to the button URL:
+
+```md
+[![Deploy with OpenShip](https://openship.io/deploy.svg)](https://openship.io/deploy?repo=b3duZXIvcmVwbw&ref=AF-YOURCODE)
+```
+
+The code follows the Cloud deployment through sign-in and plan selection. Checkout
+validates the referral and its eligible plans using the normal referral flow.
+Visitors can remove or change it before paying. Self-hosted installations do not
+apply Cloud referral discounts.
+
 ## Configure your repository
 
 An optional [`openship.json`](/docs/reference/openship-json) stores the same deployment
