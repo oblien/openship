@@ -185,6 +185,20 @@ openship edge rules add -p prj_123 --allow-cidr 198.51.100.0/24
 openship edge rules list -p prj_123
 ```
 
+When a rate limit trips, the edge answers `429 Too Many Requests` and tells the client when to try again. Along
+with `Retry-After`, it sends the `RateLimit-Policy` and `RateLimit` fields from the IETF
+[RateLimit header fields draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/). The
+quota `q` is the rate plus the burst, per one-second window, so the login rule above answers:
+
+```text
+HTTP/1.1 429 Too Many Requests
+RateLimit-Policy: "rule";q=60;w=1
+RateLimit: "rule";r=0;t=1
+Retry-After: 1
+```
+
+Requests that the limit lets through are passed on unchanged.
+
 <Callout title="Rules that key on IP need the real client IP" type="warn">
 Rate limits and country rules need the visitor's real address. If another proxy sits in front of the
 self-hosted edge, it must pass the client IP through, and the edge must trust that proxy. See

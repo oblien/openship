@@ -1536,7 +1536,16 @@ http {
     expect(responses.every(({ status }) => status === 200 || status === 429)).toBe(true);
     const limited = responses.filter(({ status }) => status === 429);
     expect(limited.length).toBeGreaterThan(0);
-    for (const response of limited) expect(response.headers["retry-after"]).toBe("1");
+    for (const response of limited) {
+      expect(response.headers["retry-after"]).toBe("1");
+      // rps 1 + burst 1 per one-second window.
+      expect(response.headers["ratelimit-policy"]).toBe('"rule";q=2;w=1');
+      expect(response.headers["ratelimit"]).toBe('"rule";r=0;t=1');
+    }
+    // Requests the limit lets through are answered exactly as before.
+    for (const response of responses.filter(({ status }) => status === 200)) {
+      expect(response.headers["ratelimit"]).toBeUndefined();
+    }
     expect((await ask(port, "/first", "other-rate.test")).status).toBe(200);
     expect((await ask(port, "/api/first", "rate.test")).status).toBe(200);
     await sleep(1_100);

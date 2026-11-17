@@ -140,6 +140,10 @@ if rl then
         .. ":" .. math.floor(ngx.now())
     local c = counters:incr(key, 1, 0, 2)  -- init 0, 2s TTL → self-expiring buckets
     if c and c > rl.limit then
+        -- RateLimit fields from draft-ietf-httpapi-ratelimit-headers. The quota is
+        -- the compiled integer limit; the window is the fixed 1s bucket above.
+        ngx.header["RateLimit-Policy"] = string.format('"rule";q=%d;w=1', rl.limit)
+        ngx.header["RateLimit"] = '"rule";r=0;t=1'
         ngx.header["Retry-After"] = "1"
         return ngx.exit(rl.status)
     end
