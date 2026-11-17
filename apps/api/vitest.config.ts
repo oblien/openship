@@ -21,6 +21,9 @@ export const sharedTestOptions = {
   // auth-mode/zero-auth behaviour unchanged (see test/modules/mail/_setup-env.ts).
   env: {
     INTERNAL_TOKEN: "test-internal-token-0000000000000000000000000000",
+    // cron-parser reads schedules in the process's local time, and the
+    // expected run times in the tests are written in UTC, as CI runs.
+    TZ: "UTC",
   },
 };
 
