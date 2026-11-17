@@ -28,7 +28,7 @@ export async function create(c: Context) {
   return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.create(operationContext(c), await c.req.json())) });
 }
 export async function update(c: Context) {
-  return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.update(operationContext(c), param(c, "id"), await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/backup-destinations/destination.controller"); return ({}); }))) });
+  return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.update(operationContext(c), param(c, "id"), await c.req.json())) });
 }
 export async function remove(c: Context) {
   return c.json({ data: await operationData(c, getPlatformKernel().backupDestinations.remove(operationContext(c), param(c, "id"))) });

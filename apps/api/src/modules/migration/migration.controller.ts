@@ -299,7 +299,7 @@ export async function scanServerStream(c: Context) {
  */
 export async function revealServiceEnv(c: Context) {
   type RevealBody = { serverId?: string; containerId?: string; keys?: unknown };
-  const body = await c.req.json<RevealBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return {} as RevealBody; });
+  const body = await c.req.json<RevealBody>();
   const { serverId, containerId } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
   if (!containerId) return c.json({ error: "containerId is required" }, 400);

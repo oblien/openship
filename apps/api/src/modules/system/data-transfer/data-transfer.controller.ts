@@ -20,6 +20,7 @@ import { PkCollisionError, RestoreSchemaError } from "@repo/db";
 
 import { audit, auditContextFrom } from "../../../lib/audit";
 import { getRequestContext } from "../../../lib/request-context";
+import { readOptionalJsonBody } from "../../../lib/request-body";
 import { streamSSE } from "../../../lib/sse";
 import { assertInstanceAdmin } from "../../../middleware/instance-admin";
 import {
@@ -113,7 +114,7 @@ export async function exportInstanceHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
 
-  const body = ((await c.req.json<ExportBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ?? {}) as ExportBody;
+  const body = (await readOptionalJsonBody<ExportBody>(c)) ?? {};
 
   let file: DataTransferFile;
   try {
@@ -151,7 +152,7 @@ export async function previewInstanceExportHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
   try {
-    const body = c.req.method === "POST" ? await readJsonBody<ExportBody>(c) : null;
+    const body = c.req.method === "POST" ? await readOptionalJsonBody<ExportBody>(c) : null;
     return c.json(await previewInstanceExport(body?.selection));
   } catch (err) {
     if (err instanceof CloudInstanceNotTransferableError) {
@@ -166,8 +167,7 @@ export async function previewInstanceExportHandler(c: Context) {
 export async function createDirectReceiveSessionHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
-  const body = ((await c.req.json<CreateReceiveBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ??
-    {}) as CreateReceiveBody;
+  const body = (await c.req.json<CreateReceiveBody>()) ?? {};
   if (typeof body.apiBase !== "string") {
     return c.json(
       { error: "Missing destination API URL.", code: "INVALID_DIRECT_TRANSFER_CODE" },
@@ -464,7 +464,7 @@ export async function finalizeDirectChunkUploadStreamHandler(c: Context) {
 export async function sendDirectTransferHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
-  const body = ((await c.req.json<SendDirectBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ?? {}) as SendDirectBody;
+  const body = (await c.req.json<SendDirectBody>()) ?? {};
   if (typeof body.code !== "string") {
     return c.json({ error: "Missing receive code.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
   }
@@ -482,7 +482,7 @@ export async function sendDirectTransferHandler(c: Context) {
 export async function sendDirectTransferStreamHandler(c: Context) {
   const ctx = getRequestContext(c);
   await assertInstanceAdmin(ctx);
-  const body = ((await c.req.json<SendDirectBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/data-transfer/data-transfer.controller"); return ({}); })) ?? {}) as SendDirectBody;
+  const body = (await c.req.json<SendDirectBody>()) ?? {};
   if (typeof body.code !== "string") {
     return c.json({ error: "Missing receive code.", code: "INVALID_DIRECT_TRANSFER_CODE" }, 400);
   }

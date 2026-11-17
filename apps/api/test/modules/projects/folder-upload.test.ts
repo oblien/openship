@@ -115,6 +115,20 @@ function upload(target: FolderSessionResult, bytes = archive, chunked = false) {
   } as RequestInit);
 }
 
+it("opens a local upload session with omitted options and rejects malformed options", async () => {
+  env.CLOUD_MODE = false;
+  for (const body of [undefined, "", "{invalid"]) {
+    const response = await fetch(`${origin}/api/projects/folder/session`, {
+      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body }),
+    });
+    const result = await response.json() as FolderSessionResult;
+    if (result.sessionId) sessions.push(result.sessionId);
+    expect(response.status).toBe(body ? 400 : 200);
+    if (!body) expect(result.sessionId).toBeTruthy();
+  }
+});
+
 describe.each([false, true])("authenticated folder upload over HTTP (Cloud: %s)", (cloudMode) => {
   beforeEach(() => { env.CLOUD_MODE = cloudMode; });
   it.each([undefined, "my-folder-app"])("uses a client name or stable fallback instead of the staging path: %s", async (name) => {
@@ -122,7 +136,7 @@ describe.each([false, true])("authenticated folder upload over HTTP (Cloud: %s)"
     const uploaded = await upload(target);
     expect(uploaded.status).toBe(200);
     const response = await fetch(`${origin}/api/projects/folder/scan/${target.sessionId}`, {
-      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" }, body: "{}",
+      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" }, body: "",
     });
     expect(response.status, await response.clone().text()).toBe(200);
     expect(await response.json()).toMatchObject({ name: name ?? "app" });

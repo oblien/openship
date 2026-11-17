@@ -89,7 +89,7 @@ export async function startDeployAsProjectHandler(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const ctx = getRequestContext(c);
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/webmail/webmail.controller"); return ({}) as Record<string, unknown>; });
+  const body = await c.req.json();
   const mailServerId = body.mailServerId as string | undefined;
   const hostname = (body.hostname as string | undefined)?.trim().toLowerCase();
   const targetBody = body.target as { kind?: string; serverId?: string } | undefined;
@@ -148,7 +148,7 @@ export async function startExternalDeployAsProjectHandler(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const ctx = getRequestContext(c);
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/webmail/webmail.controller"); return ({}) as Record<string, unknown>; });
+  const body = await c.req.json();
 
   const hostname = (body.hostname as string | undefined)?.trim().toLowerCase();
   if (!hostname || !HOSTNAME_RE.test(hostname))

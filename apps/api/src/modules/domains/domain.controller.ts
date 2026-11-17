@@ -1,5 +1,5 @@
 /** HTTP paths, status codes, and envelopes over the shared domain operations. */
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { readOptionalJsonBody } from "../../lib/request-body";
 import type { Context } from "hono";
 import type { TAddDomainBody } from "@repo/contracts";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -102,5 +102,5 @@ export async function renewAllSsl(c: Context) {
   return c.json({ data: await operationData(c, operations().renewAllSsl(operationContext(c))) });
 }
 export async function verifyPending(c: Context) {
-  return c.json({ data: await operationData(c, operations().verifyPending(operationContext(c), await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/domains/domain.controller"); return ({}); }))) });
+  return c.json({ data: await operationData(c, operations().verifyPending(operationContext(c), await readOptionalJsonBody(c))) });
 }

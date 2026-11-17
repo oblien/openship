@@ -226,6 +226,7 @@ r.post(
     collectionProject: true,
     auditHandledByOperation: true,
     body: FolderSessionBody,
+    bodyValidatedByOperation: true,
     mcp: {
       description:
         "Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = { url, absoluteUrl, method, headers, requiresAuth }. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access.",
@@ -241,6 +242,7 @@ r.post(
     collectionProject: true,
     auditHandledByOperation: true,
     body: SourceScanOptionsSchema,
+    bodyValidatedByOperation: true,
     mcp: {
       description:
         "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",

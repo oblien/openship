@@ -1,13 +1,11 @@
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
-import { ValidationError } from "@repo/core";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { requestApiPublicUrl } from "@repo/platform/engine/lib/public-url";
 import { operationContext, applyOperationContext } from "../../../lib/operation-context";
+import { readOptionalJsonBody } from "../../../lib/request-body";
 
 export async function createSession(c: Context) {
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/projects/folder/folder.controller"); return ({}); });
-  const result = await getPlatformKernel().sources.open(operationContext(c), body, { apiBaseUrl: requestApiPublicUrl(c.req.raw) });
+  const result = await getPlatformKernel().sources.open(operationContext(c), await readOptionalJsonBody(c), { apiBaseUrl: requestApiPublicUrl(c.req.raw) });
   applyOperationContext(c, result.context);
   return c.json({ success: true, ...result.data });
 }
@@ -18,10 +16,7 @@ export async function uploadRelay(c: Context) {
 }
 export async function scanSession(c: Context) {
   const sessionId = c.req.param("sessionId")!;
-  const body = await c.req.text();
-  const input = body.trim() ? await c.req.json().catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "api/modules/projects/folder/folder.controller"); throw new ValidationError("Invalid JSON body"); }) : {};
-  const result = await getPlatformKernel().sources.scan(operationContext(c), sessionId, input);
+  const result = await getPlatformKernel().sources.scan(operationContext(c), sessionId, await readOptionalJsonBody(c));
   applyOperationContext(c, result.context);
   c.header("Cache-Control", "no-store");
   return c.json({ success: true, sessionId, ...result.data });
