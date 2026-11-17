@@ -292,6 +292,7 @@ describe("migration chain applies to an existing, populated database", () => {
       expect((await client.query("SELECT * FROM project ORDER BY id")).rows).toEqual(
         projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({
           ...project,
+          replicas: 1,
           icon_url: project.icon_url ?? favicon ?? (project.app_id === "group-icon" ? "https://cdn.example.test/group.svg" : null),
         })),
       );
@@ -327,7 +328,7 @@ describe("migration chain applies to an existing, populated database", () => {
 
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: favicon })),
+        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: favicon, replicas: 1 })),
       );
       expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
         deployments.map((deployment) => ({
@@ -373,7 +374,7 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: favicon })),
+        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: favicon, replicas: 1 })),
       );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
@@ -574,6 +575,7 @@ describe("migration chain applies to an existing, populated database", () => {
         const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, favicon, favicon_checked_at: _checked, ...previous } = old as typeof old & Record<string, unknown>;
         expect(row).toEqual({
           ...previous,
+          replicas: 1,
           runtime_version: null, runtime_image: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null,
           auto_deploy_cancel_builds: false,
           icon_url: favicon,
