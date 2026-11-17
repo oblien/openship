@@ -104,7 +104,7 @@ async function fetchToken(challenge: string): Promise<string | null> {
       maxRedirects: 3,
     });
     if (!res.ok) return null;
-    return readRegistryToken(await res.json());
+    return readRegistryToken(await res.text());
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "platform/engine/lib/image-registry");
     return null;

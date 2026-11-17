@@ -18,7 +18,7 @@ function response(status: number, headers: Record<string, string> = {}, body: un
     status,
     ok: status >= 200 && status < 300,
     headers,
-    text: async () => "",
+    text: async () => JSON.stringify(body),
     json: async () => body,
     bytes: async () => Buffer.alloc(0),
   };
@@ -139,18 +139,25 @@ describe("registry connection errors", () => {
     );
   });
 
-  it("does not treat a token endpoint's empty success response as a verified login", async () => {
-    h.safeFetch
-      .mockResolvedValueOnce(response(401, {
-        "www-authenticate": 'Bearer realm="https://registry.example.com/token"',
-      }))
-      .mockResolvedValueOnce(response(200));
+  it.each(["{}", "invalid JSON"])(
+    "does not verify a login from a successful response without a token (%s)",
+    async (body) => {
+      h.safeFetch
+        .mockResolvedValueOnce(
+          response(401, {
+            "www-authenticate": 'Bearer realm="https://registry.example.com/token"',
+          }),
+        )
+        .mockResolvedValueOnce({ ...response(200), text: async () => body });
 
-    await expect(verifyCredentialValues(provider, values("registry.example.com"))).resolves.toMatchObject({
-      ok: false,
-      reason: expect.stringContaining("did not return a registry token"),
-    });
-  });
+      await expect(
+        verifyCredentialValues(provider, values("registry.example.com")),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: expect.stringContaining("did not return a registry token"),
+      });
+    },
+  );
 
   it("treats a blocked authentication redirect as inconclusive", async () => {
     h.safeFetch

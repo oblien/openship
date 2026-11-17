@@ -178,7 +178,7 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
       sameOriginRedirectsOnly: true,
     });
     if (login.status === 200) {
-      if (!bearer || readRegistryToken(await login.json().catch(() => undefined))) {
+      if (!bearer || readRegistryToken(await login.text())) {
         return { ok: true };
       }
       return { ok: false, reason: `${registry} did not return a registry token.` };
