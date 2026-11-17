@@ -73,6 +73,20 @@ describe("explicit Bun runtime selection", () => {
 });
 
 describe("generateDockerfile — PHP branch", () => {
+  it("runs custom PHP image setup as root and keeps the runtime unprivileged", () => {
+    const custom = generateDockerfile(
+      phpConfig({
+        buildImage: "example/php-builder:8.4",
+        runtimeImage: "example/php-frankenphp:8.4",
+        runtimeImageOverride: true,
+      }),
+    );
+    expect(custom).toContain("FROM example/php-builder:8.4 AS builder\nUSER root\n");
+    expect(custom).toContain("FROM example/php-frankenphp:8.4 AS runtime\nUSER root\n");
+    // Docker uses the last USER directive for the running container.
+    expect(custom.match(/^USER .+$/gm)?.at(-1)).toBe("USER www-data");
+  });
+
   it("checks both selected stages and the actual Composer platform", () => {
     const selected = generateDockerfile(phpConfig({ runtimeVersion: "8.3", buildImage: "php:8.3-cli-bookworm", runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm" }));
     expect(selected.match(/RUN php -r/g)).toHaveLength(2);
