@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => {
@@ -29,6 +29,8 @@ const launchd = vi.hoisted(() => ({
   unloadPolls: 0,
   startsProcess: true,
   bootstrapFails: false,
+  bootoutFails: false,
+  listFails: false,
   calls: [] as string[],
 }));
 const NEW_PID = 4321;
@@ -43,11 +45,12 @@ vi.mock("node:child_process", async (original) => ({
   ...(await original<typeof import("node:child_process")>()),
   spawnSync: commands,
 }));
-const { installAndStart } = await import("../../src/lib/service");
+const { installAndStart, preview } = await import("../../src/lib/service");
 
 const platform = process.platform;
 beforeEach(() => {
   Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  vi.spyOn(Atomics, "wait").mockReturnValue("timed-out");
   mkdirSync(state.home, { recursive: true });
   Object.assign(launchd, {
     loaded: false,
@@ -56,6 +59,8 @@ beforeEach(() => {
     unloadPolls: 0,
     startsProcess: true,
     bootstrapFails: false,
+    bootoutFails: false,
+    listFails: false,
     calls: [],
   });
   commands.mockReset().mockImplementation((command: string, args: string[]) => {
@@ -63,14 +68,17 @@ beforeEach(() => {
     const sub = args[0];
     launchd.calls.push(sub);
     if (sub === "bootout") {
-      if (launchd.loaded) {
-        launchd.pid = null;
-        launchd.stopping = launchd.unloadPolls;
-        if (launchd.stopping === 0) launchd.loaded = false;
+      if (!launchd.loaded) return { status: 3, stdout: "", stderr: "No such process" };
+      if (launchd.bootoutFails) {
+        return { status: 5, stdout: "", stderr: "Boot-out failed: 5: Input/output error" };
       }
+      launchd.pid = null;
+      launchd.stopping = launchd.unloadPolls;
+      if (launchd.stopping === 0) launchd.loaded = false;
       return { status: 0, stdout: "", stderr: "" };
     }
     if (sub === "list") {
+      if (launchd.listFails) return { status: 5, stdout: "", stderr: "Input/output error" };
       if (!launchd.loaded) {
         return { status: 113, stdout: "", stderr: `Could not find service "${args[1]}"` };
       }
@@ -95,9 +103,10 @@ beforeEach(() => {
     return { status: 0, stdout: "", stderr: "" };
   });
 });
-afterEach(() =>
-  Object.defineProperty(process, "platform", { value: platform, configurable: true }),
-);
+afterEach(() => {
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  vi.restoreAllMocks();
+});
 afterAll(() => rmSync(state.home, { recursive: true, force: true }));
 
 describe("installAndStart on launchd", () => {
@@ -115,6 +124,27 @@ describe("installAndStart on launchd", () => {
     expect(launchd.pid).toBe(NEW_PID);
     expect(launchd.calls).not.toContain("load");
   });
+
+  it.each([
+    { setup: { bootoutFails: true }, error: /still loaded after 10s.*Boot-out failed/ },
+    { setup: { unloadPolls: 100 }, error: /still loaded after 10s/ },
+    { setup: { listFails: true }, error: /Couldn't check launchd agent.*Input\/output error/ },
+  ])(
+    "preserves the existing plist when unloading cannot be confirmed: $setup",
+    ({ setup, error }) => {
+      const flags = { port: "7100" };
+      installAndStart(flags);
+      const { path } = preview(flags);
+      const installed = readFileSync(path, "utf8");
+      launchd.calls.length = 0;
+      Object.assign(launchd, setup);
+
+      expect(() => installAndStart({ port: "7300" })).toThrow(error);
+      expect(readFileSync(path, "utf8")).toBe(installed);
+      expect(launchd.calls).not.toContain("bootstrap");
+      expect(launchd.calls).not.toContain("load");
+    },
+  );
 
   it("fails instead of reporting success when the agent doesn't stay up", () => {
     launchd.startsProcess = false;
