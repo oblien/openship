@@ -88,6 +88,14 @@ describeDockerE2E("refreshing cached Docker base images", () => {
     const cached = await build(false);
     expect(cached.Config.Labels?.[marker]).toBe("old");
     expect((await runtime.docker.getImage(base).inspect()).Config.Labels?.[marker]).toBe("old");
+
+    // An imported or retagged image can occupy a registry tag without a
+    // matching RepoDigest. A direct image refresh must acquire the upstream tag.
+    const prepared = await runtime.prepareDeploymentImage(base, { force: true });
+    const refreshedImage = await runtime.docker.getImage(prepared.imageId).inspect();
+    expect(refreshedImage.Config.Labels?.[marker]).toBeUndefined();
+    await runtime.docker.getImage(stale).tag({ repo: "alpine", tag: "3.20" });
+
     const refreshed = await build(true);
     expect(refreshed.Config.Labels?.[marker]).toBeUndefined();
     expect(refreshed.Id).not.toBe(cached.Id);
