@@ -731,6 +731,26 @@ describe("billing through the same SDK and HTTP application operations", () => {
     expect(provider.checkout).not.toHaveBeenCalled();
   });
 
+  it("accepts empty request streams for optional billing actions", async () => {
+    const owner = await seedOwner(), c = await clients(owner);
+    await c.native.getState();
+    const namespace = (await billingWorkspace(owner)).namespace!;
+    provider.subscriptions.set(namespace, {
+      tierId: "hobby", status: "active", billingInterval: "yearly", periodStart: "2026-09-01T00:00:00Z", periodEnd: "2027-09-01T00:00:00Z",
+      cancelAtPeriodEnd: false, canceledAt: null,
+    });
+    for (const endpoint of ["portal", "cancel", "resume"]) {
+      const response = await app.request(`/api/billing/${endpoint}`, {
+        method: "POST", headers: { Authorization: `Bearer ${owner.token}`, "X-Organization-Id": owner.orgId }, body: "",
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(provider.portal).toHaveBeenCalledWith(expect.objectContaining({ namespace }));
+    expect(provider.cancel).toHaveBeenCalledWith(namespace);
+    expect(provider.resume).toHaveBeenCalledWith(namespace);
+    expect(provider.checkout).not.toHaveBeenCalled();
+  });
+
   it("isolates portal and renewal operations across tenants and exposes pending cancellation", async () => {
     const owner = await seedOwner(), other = await seedOwner(), c = await clients(owner), otherClients = await clients(other);
     await c.native.getState();
