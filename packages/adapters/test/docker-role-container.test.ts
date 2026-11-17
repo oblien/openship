@@ -337,7 +337,7 @@ describe("roles capability", () => {
     expect(runtime.supports("roles")).toBe(true);
   });
 
-  it("is refused by CloudDockerRuntime, which keeps every other Docker capability", () => {
+  it("is refused by CloudDockerRuntime alongside single-server replicas", () => {
     // The real class, built through its private constructor so its own field
     // initializers run. The constructor only wires the connection (no I/O), so
     // an empty client is enough; `forWorkspace` would also dial the workspace.
@@ -354,8 +354,9 @@ describe("roles capability", () => {
       resolveRegistryAuth: async () => undefined,
     });
     expect(cloud.supports("roles")).toBe(false);
+    expect(cloud.supports("replicas")).toBe(false);
     expect([...cloud.capabilities].sort()).toEqual(
-      DockerRuntime.CAPABILITIES.filter((cap) => cap !== "roles").sort(),
+      DockerRuntime.CAPABILITIES.filter((cap) => cap !== "roles" && cap !== "replicas").sort(),
     );
   });
 
