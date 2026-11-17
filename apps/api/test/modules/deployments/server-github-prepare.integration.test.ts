@@ -374,6 +374,75 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     );
     expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
   });
+  it("falls back to the connected server when the local row holds no usable GitHub credential (#1814)", async () => {
+    // A self-hosted boot registers the "This Server" row whether or not GitHub
+    // was ever connected on it; the org's PAT lives on the connected server.
+    await repos.serverGithubAuth.deleteByServer(serverId);
+    const connectedId = await seedServer(owner.orgId, "connected-deploy");
+    await repos.serverGithubAuth.upsert({
+      serverId: connectedId,
+      organizationId: owner.orgId,
+      mode: "token",
+      tokenEncrypted: encrypt(pat),
+      tokenSource: "pat",
+    });
+    // Naming the credential-holding server explicitly resolves it the same way.
+    expect(
+      (await client().deployments.prepare({ ...source, serverId: connectedId })).projectType,
+    ).toBe("monorepo");
+    expect(requests.every((req) => req.token === `Bearer ${pat}`)).toBe(true);
+    requests = [];
+    const scan = await client().deployments.prepare(source);
+    expect(scan.projectType).toBe("monorepo");
+    expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+  });
+  it("reads through the connected server when the local row's only credential is SSH (#1814)", async () => {
+    // Repository REST reads are token-only; a local row holding just SSH
+    // material can clone for deploys but cannot answer an api.github.com read.
+    await repos.serverGithubAuth.upsert({
+      serverId,
+      organizationId: owner.orgId,
+      mode: "ssh-server-key",
+      serverKeyPrivateEncrypted: encrypt("ssh-private-key-material"),
+      serverKeyPublic: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAtest",
+    });
+    const connectedId = await seedServer(owner.orgId, "connected-deploy");
+    await repos.serverGithubAuth.upsert({
+      serverId: connectedId,
+      organizationId: owner.orgId,
+      mode: "token",
+      tokenEncrypted: encrypt(pat),
+      tokenSource: "pat",
+    });
+    expect((await client().deployments.prepare(source)).projectType).toBe("monorepo");
+    expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+    expect(requests.every((req) => req.token !== "ssh-private-key-material")).toBe(true);
+  });
+  it("requires a selection when a credential-less local row hides several eligible servers (#1814)", async () => {
+    await repos.serverGithubAuth.deleteByServer(serverId);
+    await addOtherServerToken();
+    const connectedId = await seedServer(owner.orgId, "connected-deploy");
+    await repos.serverGithubAuth.upsert({
+      serverId: connectedId,
+      organizationId: owner.orgId,
+      mode: "token",
+      tokenEncrypted: encrypt(pat),
+      tokenSource: "pat",
+    });
+    await expect(client().deployments.prepare(source)).rejects.toMatchObject({
+      status: 409,
+      body: { code: "GITHUB_SERVER_SELECTION_REQUIRED" },
+    });
+    expect(requests.every((request) => request.token === null)).toBe(true);
+  });
+  it("still reports GITHUB_TOKEN_REQUIRED when the credential-less local row is the only server (#1814)", async () => {
+    await repos.serverGithubAuth.deleteByServer(serverId);
+    await expect(client().deployments.prepare(source)).rejects.toMatchObject({
+      status: 403,
+      body: { code: "GITHUB_TOKEN_REQUIRED" },
+    });
+    expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
+  });
   it("requires a selection before trying ambiguous server tokens, then scans with the selected server", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
     const otherId = await addOtherServerToken();

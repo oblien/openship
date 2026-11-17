@@ -245,7 +245,8 @@ function borrowableForOp(c: ChainCtx): boolean {
 }
 
 /** Default server for the server-token fallback when the caller names none:
- * the organization's canonical local server first; when it has none, the
+ * the organization's canonical local server first — but only when it can
+ * actually resolve a stored token; when it cannot (or the org has none), the
  * only connected deployment server the caller can write to that holds a token.
  * Multiple candidates require explicit selection, not an arbitrary identity.
  * Never leaves the caller's organization, and never picks a server the
@@ -253,10 +254,18 @@ function borrowableForOp(c: ChainCtx): boolean {
  * access (checked by the caller of serverReadTarget) and server authority. */
 async function resolveDefaultServerTarget(c: ChainCtx): Promise<string | null> {
   const organizationId = c.organizationId!;
-  const local = await repos.server.findLocal(organizationId);
-  if (local) return local.id;
   const { authorization } = await import("../../lib/authorization");
   const { canResolveServerGitCredential } = await import("./server-github.service");
+  const local = await repos.server.findLocal(organizationId);
+  // The boot-registered "This Server" row exists on every self-hosted install
+  // whether or not GitHub was ever connected on it, so its existence alone
+  // must not shadow a connected server holding the org's token (#1814). The
+  // probe mirrors the tokenOnly resolution serverReadTarget performs for a
+  // repository read: SSH material can clone for deploys but cannot answer an
+  // api.github.com request.
+  if (local && (await canResolveServerGitCredential(local.id, { tokenOnly: true }))) {
+    return local.id;
+  }
   let candidate: string | null = null;
   for (const server of await repos.server.listByOrganization(organizationId)) {
     if (server.isLocal) continue;
