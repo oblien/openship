@@ -20,7 +20,7 @@ COPY apps/web/ ./apps/web/
 COPY scripts/web-client-messages.mjs scripts/web-client-messages.d.mts ./scripts/
 
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN cd apps/web && bun run build
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN cd apps/web && bun run build
 
 # Keep the glibc runtime compatible with native packages selected by Bun.
 # ─── Production stage ──────────────────────────────────
