@@ -436,6 +436,15 @@ const native = (organizationId = "org-a") =>
     organizationId,
   });
 
+it.each(["redeploy", "pin"])("rejects broken JSON before a deployment %s can use default options", async action => {
+  const response = await app.request(`/api/deployments/dep-project-a/${action}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: "{invalid",
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ code: "INVALID_JSON" });
+  expect(h.trigger).not.toHaveBeenCalled();
+});
+
 describe("deployment preparation HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
   let info: ProjectInfo;
@@ -1876,6 +1885,19 @@ describe("domain and DNS HTTP/native parity", () => {
       expect(await contextFor("domain-b", "provision")).toBeNull();
     }
   });
+  it("accepts empty verification options but never turns malformed JSON into a batch scan", async () => {
+    const data = { verified: 0, stillPending: 0, failed: 0, total: 0, details: [] };
+    h.domainPending.mockResolvedValue(data);
+    for (const body of [undefined, "", "{invalid", '{"limit":"all"}']) {
+      const response = await app.request("/api/domains/verify-pending", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body }),
+      });
+      expect(response.status).toBe(body ? 400 : 200);
+      if (!body) expect(await response.json()).toEqual({ data });
+    }
+    expect(h.domainPending).toHaveBeenCalledTimes(2);
+  });
   it("keeps certificate contents out of audit and refuses uploads to provider-managed Cloud domains", async () => {
     h.domainUpload.mockResolvedValue({ domain: "app.example.com", sslStatus: "active", issuer: "manual" });
     const local = await native();
@@ -2869,6 +2891,51 @@ describe("backup HTTP/native parity with retained policy services", () => {
     h.backupPrepare.mockResolvedValue({ restoreId: "restore-a", confirmationToken: "in-force-token" });
     h.backupApply.mockResolvedValue(undefined);
     h.backupCancel.mockResolvedValue({ accepted: true, status: "applying", destructive: true, forced: false });
+  });
+
+  it.each([
+    ["/api/backup-policies/policy-a/run", { runId: "run-a", runIds: ["run-a"] }],
+    ["/api/backup-runs/run-a/protect", { ok: true, retentionLockedUntil: "2099-12-31T23:59:59.000Z" }],
+    ["/api/backup-runs/run-a/restore/prepare", { restoreId: "restore-a", confirmationToken: "in-force-token" }],
+  ])("accepts omitted and zero-byte options through %s", async (path, data) => {
+    for (const body of [undefined, "", "{}"]) {
+      const response = await app.request(path as string, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ data });
+    }
+  });
+
+  it.each([
+    ["/api/backup-policies/policy-a/run", { serviceId: 42 }],
+    ["/api/backup-runs/run-a/protect", { protected: "false" }],
+    ["/api/backup-runs/run-a/restore/prepare", { mode: "wrong" }],
+  ])("rejects malformed JSON and invalid options before %s acts", async (path, invalid) => {
+    for (const body of ["{invalid", " ", "null", "[]", JSON.stringify(invalid)]) {
+      const response = await app.request(path as string, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(h.backupEnqueue).not.toHaveBeenCalled();
+    expect(h.backupRetentionLock).not.toHaveBeenCalled();
+    expect(h.backupPrepare).not.toHaveBeenCalled();
+  });
+
+  it("keeps empty backup actions scoped and restore confirmation required", async () => {
+    const post = (path: string) => app.request(path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "",
+    });
+    expect((await post("/api/backup-restores/restore-a/apply")).status).toBe(400);
+    h.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    h.grants.set("org-a:alice:backup_destination:destination-a", { permissions: ["admin"] });
+    expect((await post("/api/backup-policies/policy-a/run")).status).toBe(404);
+    expect((await post("/api/backup-runs/run-a/restore/prepare")).status).toBe(404);
+    expect(h.backupEnqueue).not.toHaveBeenCalled();
+    expect(h.backupPrepare).not.toHaveBeenCalled();
+    expect(h.backupApply).not.toHaveBeenCalled();
   });
 
   it("preserves project-write enumeration while direct destination readers receive masked snapshots", async () => {

@@ -148,7 +148,7 @@ export async function createDomainHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   try {
     const { row, dnsWarning } = await createDomain(serverId, {
       domain: String(body.domain ?? ""),
@@ -178,7 +178,7 @@ export async function updateDomainHandler(c: Context) {
   }
   const domain = c.req.param("domain");
   if (!domain) return c.json({ error: "domain required" }, 400);
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   try {
     const row = await updateDomain(serverId, domain, {
       description: body.description != null ? String(body.description) : undefined,
@@ -390,7 +390,7 @@ export async function putOutboundRelayHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({} as Record<string, unknown>); });
+  const body = await c.req.json();
   // Unknown ids become `custom`, which requires an explicit host — so a bad id
   // fails validation loudly instead of quietly relaying somewhere unintended.
   const provider = isRelayProviderId(body.provider) ? body.provider : "custom";
@@ -560,7 +560,7 @@ export async function createMailboxHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   try {
     const row = await createMailbox(serverId, {
       localPart: String(body.localPart ?? ""),
@@ -590,7 +590,7 @@ export async function updateMailboxHandler(c: Context) {
   }
   const email = c.req.param("email");
   if (!email) return c.json({ error: "email required" }, 400);
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   try {
     const row = await updateMailbox(serverId, email, {
       name: body.name != null ? String(body.name) : undefined,
@@ -708,7 +708,7 @@ export async function createAliasHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   try {
     const row = await createAlias(serverId, {
       domain: String(body.domain ?? ""),
@@ -743,7 +743,7 @@ export async function updateAliasHandler(c: Context) {
   if (!idParam || !Number.isInteger(id)) {
     return c.json({ error: "id must be an integer" }, 400);
   }
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   if (body.active == null) {
     return c.json({ error: "active is required" }, 400);
   }
@@ -816,7 +816,7 @@ export async function sendTestEmailHandler(c: Context) {
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/admin/admin.controller"); return ({}); });
+  const body = await c.req.json();
   try {
     const result = await sendTestEmail(serverId, {
       to: String(body.to ?? ""),

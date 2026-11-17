@@ -200,6 +200,42 @@ describe("updates shared SDK/HTTP operations", () => {
     expect(provider.redeploy).toHaveBeenCalledTimes(2);
     for (const [, , input] of provider.redeploy.mock.calls) expect(input).toEqual({ trigger: "update", composeRevision });
   });
+  it.each(["absent", "empty stream"] as const)("updates a webmail image with an %s request body", async body => {
+    const owner = await seedOwner(), p = await project(owner, `webmail-${body.replace(" ", "-")}`);
+    await repos.project.update(p.id, {
+      gitProvider: null, gitOwner: null, gitRepo: null, framework: "webmail", appTemplateId: "webmail",
+    });
+    const image = "ghcr.io/oblien/openship-webmail:latest";
+    const webmail = await repos.service.create({ projectId: p.id, name: "webmail", image, enabled: true });
+    await repos.service.upsertServiceDeployment({
+      deploymentId: p.activeDeploymentId!, serviceId: webmail.id, status: "success",
+      imageRef: image, imageDigest: `sha256:${"1".repeat(64)}`, containerId: "webmail-container",
+    });
+    provider.poll.mockResolvedValue({ supported: true, mode: "image", digestByRef: { [image]: `sha256:${"2".repeat(64)}` } });
+    provider.deploy.mockResolvedValue({ deployment: { id: "webmail-update" } });
+    const request = new Request(`http://openship.test/api/updates/${p.id}/apply`, {
+      method: "POST", headers: owner.auth, ...(body === "empty stream" ? { body: "" } : {}),
+    });
+    if (body === "empty stream") expect(request.body).not.toBeNull();
+    const response = await app.request(request);
+    expect(await response.json()).toEqual({ data: { success: true, project_id: p.id, deployment_id: "webmail-update" } });
+    expect(response.status).toBe(200);
+    expect(provider.deploy).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ organizationId: owner.orgId, userId: owner.userId }), expect.objectContaining({
+      projectId: p.id, trigger: "update", serviceIds: [webmail.id], strictServiceScope: true,
+    }));
+    expect(provider.redeploy).not.toHaveBeenCalled();
+  });
+
+  it.each(["{", '{"composeRevision":false}'])("rejects malformed update input before deployment: %s", async body => {
+    const owner = await seedOwner(), p = await project(owner, "invalid-update-body");
+    const response = await app.request(`/api/updates/${p.id}/apply`, {
+      method: "POST", headers: { ...owner.auth, "content-type": "application/json" }, body,
+    });
+    expect(response.status).toBe(400);
+    expect(provider.redeploy).not.toHaveBeenCalled();
+    expect(provider.deploy).not.toHaveBeenCalled();
+  });
+
   it("retains the update trigger and records one audit through either interface", async () => {
     const owner = await seedOwner(),
       p = await project(owner, "apply"),

@@ -4,6 +4,7 @@ import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, operationData } from "../../lib/operation-context";
 import { operationEvents } from "../../lib/operation-stream";
 import { param } from "../../lib/controller-helpers";
+import { readOptionalJsonBody } from "../../lib/request-body";
 import type { ServerContainerInput } from "@repo/contracts";
 
 const operations = () => getPlatformKernel().servers;
@@ -28,9 +29,7 @@ export async function listApplyingContainers(c: Context) {
   return c.json(await operationData(c, operations().applyingContainers(operationContext(c))));
 }
 export async function applyAllContainers(c: Context) {
-  const text = await c.req.text();
-  const input = text.trim() ? JSON.parse(text) : {};
-  return c.json(await operationData(c, operations().applyAllContainers(operationContext(c), input)));
+  return c.json(await operationData(c, operations().applyAllContainers(operationContext(c), await readOptionalJsonBody(c))));
 }
 export async function scanServerContainers(c: Context) {
   return c.json(await operationData(c, operations().scanContainers(operationContext(c), param(c, "id"))));

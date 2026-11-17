@@ -1,3 +1,4 @@
+import { readOptionalJsonBody } from "../../lib/request-body";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, applyOperationContext } from "../../lib/operation-context";
@@ -137,7 +138,6 @@ export async function update(c: Context) {
  * row only drops after remote cleanup; FK CASCADE handles dependents.
  */
 export async function remove(c: Context) {
-  const raw = await c.req.text();
   const options = parseProjectDeleteOptions(
     {
       force: c.req.query("force"),
@@ -146,7 +146,7 @@ export async function remove(c: Context) {
       wipeVolumes: c.req.query("wipeVolumes"),
       recordOnly: c.req.query("recordOnly"),
     },
-    raw.trim() ? JSON.parse(raw) : undefined,
+    await readOptionalJsonBody(c),
   );
   const result = await getPlatformKernel().projects.remove(
     operationContext(c),

@@ -3,6 +3,7 @@ import { ReferralOperationSchemas, ReferralRoutes, type ReferralOperations } fro
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, operationData } from "../../lib/operation-context";
 import { secureRouter } from "../../lib/secure-router";
+import { readOptionalJsonBody } from "../../lib/request-body";
 
 const metadata = {
   authorizationHandledByOperation: true,
@@ -23,9 +24,7 @@ function handler(name: keyof ReferralOperations) {
     const input: Record<string, unknown> =
       ReferralRoutes[name].method === "GET"
         ? c.req.query()
-        : c.req.raw.body
-          ? await c.req.json()
-          : {};
+        : await readOptionalJsonBody(c);
     for (const key of ["limit", "offset"])
       if (typeof input[key] === "string") input[key] = Number(input[key]);
     const operation = getPlatformKernel().referralProgram[name] as (

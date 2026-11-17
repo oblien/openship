@@ -710,7 +710,7 @@ function validateSetupConfig(config: IRedMailConfig | undefined): string | null 
 export async function startSetup(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail.controller"); return ({}); });
+  const body = await c.req.json();
   const serverId = body.serverId as string | undefined;
   const domain = body.domain as string | undefined;
   const startStep = Math.max(1, Math.min(TOTAL_STEPS, Number(body.startStep) || 1));
@@ -1218,7 +1218,7 @@ export async function cancelSetup(c: Context) {
 export async function acknowledgeDns(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail.controller"); return ({}); });
+  const body = await c.req.json();
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
@@ -1267,7 +1267,7 @@ export async function acknowledgeDns(c: Context) {
 export async function acknowledgePtr(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail.controller"); return ({}); });
+  const body = await c.req.json();
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
@@ -1311,7 +1311,7 @@ export async function acknowledgePtr(c: Context) {
 export async function resetSetup(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail.controller"); return ({}); });
+  const body = await c.req.json();
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
@@ -1437,7 +1437,7 @@ export async function saveMailBackupPolicy(c: Context) {
     return c.json({ error: "Mail server is not registered / has no domain" }, 404);
   }
 
-  const body = (await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail.controller"); return ({}); })) as {
+  const body = (await c.req.json()) as {
     destinationId?: string;
     messageData?: boolean;
     keys?: boolean;
@@ -1573,7 +1573,7 @@ export async function listMailBackupRuns(c: Context) {
 export async function setPostmasterPassword(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/mail/mail.controller"); return ({}); });
+  const body = await c.req.json();
   const serverId = body.serverId as string | undefined;
   const password = body.password as string | undefined;
 

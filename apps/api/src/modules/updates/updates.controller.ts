@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, operationData } from "../../lib/operation-context";
 import { param } from "../../lib/controller-helpers";
+import { readOptionalJsonBody } from "../../lib/request-body";
 export async function runtimeSource(c: Context) {
   return c.json({
     data: await operationData(
@@ -120,7 +121,7 @@ export async function applyUpdate(c: Context) {
       getPlatformKernel().updates.apply(
         operationContext(c),
         param(c, "projectId"),
-        c.req.raw.body ? await c.req.json() : {},
+        await readOptionalJsonBody(c),
       ),
     ),
   });
@@ -131,7 +132,7 @@ export async function updateRuntime(c: Context) {
     getPlatformKernel().updates.updateRuntime(
       operationContext(c),
       param(c, "projectId"),
-      await c.req.json(),
+      await readOptionalJsonBody(c),
     ),
   );
   return c.json({ data }, data.awaiting_actions ? 202 : 200);
@@ -143,7 +144,7 @@ export async function checkRuntime(c: Context) {
       getPlatformKernel().updates.checkRuntime(
         operationContext(c),
         param(c, "projectId"),
-        await c.req.json(),
+        await readOptionalJsonBody(c),
       ),
     ),
   });

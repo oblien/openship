@@ -188,6 +188,7 @@ r.post(
     auditHandledByOperation: true,
     ids: { project: "projectId" },
     body: UpdateProjectSchemas.updateRuntime.input,
+    bodyValidatedByOperation: true,
     mcp: {
       description:
         "Refresh published runtime images and rebuild selected services at the active commit, without upgrading application code. Omit serviceIds to update the project.",
@@ -203,6 +204,7 @@ r.post(
     readOnly: true,
     ids: { project: "projectId" },
     body: UpdateProjectSchemas.checkRuntime.input,
+    bodyValidatedByOperation: true,
     mcp: {
       description:
         "Check configured image tags and recorded build bases against their current registry digests. Does not deploy.",

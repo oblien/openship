@@ -1,5 +1,7 @@
 /** HTTP input, status, and cookie adapters for shared GitHub operations. */
+import { readOptionalJsonBody } from "../../lib/request-body";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { GitHubDisconnectInput, parseInput } from "@repo/contracts";
 import type { Context } from "hono";
 import { env, runtimeTarget } from "@repo/platform/engine/config/env";
 import { auth } from "@repo/platform/engine/lib/auth";
@@ -36,7 +38,7 @@ export async function getLocalStatus(c: Context) {
 }
 export async function connect(c: Context) {
   
-  const data = await operationData(c, ops().connect(call(c), await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/github.controller"); return ({}); })));
+  const data = await operationData(c, ops().connect(call(c), await readOptionalJsonBody(c)));
   return c.json(data, 200);
 }
 export async function claimInstallation(c: Context) {
@@ -50,8 +52,12 @@ export async function setInstanceToken(c: Context) {
   return c.json(data, 200);
 }
 export async function disconnect(c: Context) {
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/github.controller"); return ({}); });
-  const data = await operationData(c, ops().disconnect(call(c), { source: body.source ?? c.req.query("source") }));
+  const body = await readOptionalJsonBody<{ source?: unknown }>(c);
+  // Preserve the legacy query option without hiding an invalid JSON value.
+  const input = body && typeof body === "object" && !Array.isArray(body)
+    ? { ...body, source: body.source ?? c.req.query("source") }
+    : body;
+  const data = await operationData(c, ops().disconnect(call(c), parseInput(GitHubDisconnectInput, input)));
   return c.json(data, 200);
 }
 export async function listRepos(c: Context) {

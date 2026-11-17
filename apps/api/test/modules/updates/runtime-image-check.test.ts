@@ -89,6 +89,19 @@ async function clients(owner: SeededOwner) {
   ];
 }
 
+it.each([undefined, "", "{}"])("accepts optional image-check input over HTTP: %j", async body => {
+  const { owner, project, deployment } = await fixture();
+  await setMeta(deployment.id, {
+    runtimeImages: { app: [{ ref: "php:8.4-cli-bookworm", digest: OLD }], artifacts: { app: deployment.imageRef } },
+  });
+  const response = await app.request(`/api/updates/${project.id}/runtime/check`, {
+    method: "POST", headers: { ...owner.auth, "content-type": "application/json" },
+    ...(body === undefined ? {} : { body }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ data: { images: [{ ref: "php:8.4-cli-bookworm", status: "update_available" }] } });
+});
+
 it("compares recorded source image bases independently of newer Git commits", async () => {
   const { owner, project, deployment } = await fixture();
   await setMeta(deployment.id, {

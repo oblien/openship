@@ -40,6 +40,23 @@ const entry = (path: string, type = "file") => ({ name: path.split("/").pop(), p
 afterEach(async () => { vi.clearAllMocks(); await setStoredDeviceToken(null); });
 
 describe("GitHub operations shared by SDK and HTTP", () => {
+  it("rejects malformed connection options without disconnecting stored credentials", async () => {
+    const admin = await seedOwner({ instanceAdmin: true });
+    await setStoredDeviceToken("saved-instance-token", "token");
+    const before = (await repos.instanceSettings.get())?.ghDeviceTokenEncrypted;
+    expect(before).toBeTruthy();
+    for (const path of ["/connect", "/disconnect?source=cli"]) {
+      const response = await app.request(`/api/github${path}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${admin.token}`, "Content-Type": "application/json" },
+        body: "{invalid",
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "INVALID_JSON" });
+      expect((await repos.instanceSettings.get())?.ghDeviceTokenEncrypted).toBe(before);
+    }
+  });
+
   it("publishes a single commit and draft PR through SDK and HTTP with the same source permissions", async () => {
     const owner = await seedOwner(), c = await clients(owner);
     const base = "a".repeat(40), tree = "b".repeat(40), next = "c".repeat(40), commit = "d".repeat(40);

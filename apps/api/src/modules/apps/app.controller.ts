@@ -45,7 +45,7 @@ export async function getSettings(c: Context) {
   return c.json({ data: await operationData(c, getPlatformKernel().projects.getAppSettings(operationContext(c), param(c, "id"))) });
 }
 export async function patchSettings(c: Context) {
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/apps/app.controller"); return ({}); });
+  const body = await c.req.json();
   return c.json({ data: await operationData(c, getPlatformKernel().projects.updateAppSettings(operationContext(c), param(c, "id"), body)) });
 }
 export async function getConnection(c: Context) {
