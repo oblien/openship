@@ -28,19 +28,19 @@ describe("deployment image preparation", () => {
     });
     expect(io.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: true });
   });
-  it("preserves cached local images even when manual deploys refresh tags", async () => {
+  it.each([{ refreshMutableTag: true }, { force: true }, { force: true, refreshMutableTag: true }])("preserves cached local images with refresh policy %j", async options => {
     const io = fixture([]);
     await expect(
-      prepareDockerImage("local-api:dev", { refreshMutableTag: true }, io),
+      prepareDockerImage("local-api:dev", options, io),
     ).resolves.toEqual({
       imageId,
       deploymentRef: imageId,
     });
     expect(io.pull).not.toHaveBeenCalled();
   });
-  it("does not mistake a local alias of a pulled base image for a registry image", async () => {
+  it.each([{ refreshMutableTag: true }, { force: true }])("does not mistake a local alias of a pulled base image for a registry image with %j", async options => {
     const io = fixture([`ubuntu@sha256:${"c".repeat(64)}`]);
-    const result = await prepareDockerImage("my-app:local", { refreshMutableTag: true }, io);
+    const result = await prepareDockerImage("my-app:local", options, io);
     expect(result.deploymentRef).toBe(imageId);
     expect(io.pull).not.toHaveBeenCalled();
   });
@@ -55,6 +55,24 @@ describe("deployment image preparation", () => {
     const result = await prepareDockerImage(ref, {}, io);
     expect(result.imageId).toBe(nextImageId);
     expect(io.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: false });
+  });
+  it("still forces a fresh pull when the image has never existed on the host", async () => {
+    const io = fixture();
+    io.inspect.mockRejectedValueOnce(missing());
+    expect((await prepareDockerImage(ref, { force: true }, io)).imageId).toBe(nextImageId);
+    expect(io.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: true });
+  });
+  it("refreshes registry images while preserving a migrated image in the same cohort", async () => {
+    const local = fixture([]);
+    const registry = fixture();
+    const [kept, refreshed] = await Promise.all([
+      prepareDockerImage("internal/database:migrated", { force: true }, local),
+      prepareDockerImage(ref, { force: true }, registry),
+    ]);
+    expect(kept.imageId).toBe(imageId);
+    expect(local.pull).not.toHaveBeenCalled();
+    expect(refreshed.imageId).toBe(nextImageId);
+    expect(registry.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: true });
   });
   it("does not replace a missing retained artifact with an upstream tag", async () => {
     const io = fixture();

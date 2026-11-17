@@ -29,6 +29,8 @@ export interface VerifyResult {
   ok: boolean;
   /** Redacted, operator-facing. Absent when ok. */
   reason?: string;
+  /** The login itself was rejected, independently of any repository permissions. */
+  credentialRejected?: boolean;
 }
 
 /** Secrets as decrypted, keyed by the provider's field keys. */
@@ -164,7 +166,11 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
       });
       if (token.status === 200) return { ok: true };
       if (token.status === 401 || token.status === 403) {
-        return { ok: false, reason: `${registry} rejected these credentials.` };
+        return {
+          ok: false,
+          credentialRejected: true,
+          reason: `${registry} rejected these credentials.`,
+        };
       }
       return { ok: false, reason: `${registry} answered ${token.status} when issuing a token.` };
     } catch (err) {
@@ -179,7 +185,14 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
         authorization: `Basic ${basic}`,
       });
       if (authed.status === 200) return { ok: true };
-      return { ok: false, reason: `${registry} rejected these credentials.` };
+      if (authed.status === 401 || authed.status === 403) {
+        return {
+          ok: false,
+          credentialRejected: true,
+          reason: `${registry} rejected these credentials.`,
+        };
+      }
+      return { ok: false, reason: `${registry} answered ${authed.status} when checking credentials.` };
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/credentials/verify");
       return registryConnectionFailure(registry, err);

@@ -138,6 +138,38 @@ export function createCredentialRepo(db: Database) {
         .where(and(eq(credential.organizationId, organizationId), eq(credential.id, id)));
     },
 
+    /** A remote check must never invalidate a replacement secret or destination. */
+    async recordVerification(
+      expected: Credential,
+      verdict: { ok: boolean; reason?: string },
+    ): Promise<void> {
+      const now = new Date();
+      await db
+        .update(credential)
+        .set(
+          verdict.ok
+            ? { status: "active", lastVerifiedAt: now, lastError: null, updatedAt: now }
+            : {
+                status: "invalid",
+                lastError: (verdict.reason ?? "Rejected by the provider.").slice(0, 500),
+                updatedAt: now,
+              },
+        )
+        .where(
+          and(
+            eq(credential.organizationId, expected.organizationId),
+            eq(credential.id, expected.id),
+            eq(credential.provider, expected.provider),
+            expected.selector === null
+              ? isNull(credential.selector)
+              : eq(credential.selector, expected.selector),
+            eq(credential.publicFields, expected.publicFields),
+            eq(credential.secretsEnc, expected.secretsEnc),
+            eq(credential.status, expected.status),
+          ),
+        );
+    },
+
     async remove(organizationId: string, id: string): Promise<void> {
       await db
         .delete(credential)

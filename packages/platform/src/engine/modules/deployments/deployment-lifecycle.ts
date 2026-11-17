@@ -42,6 +42,7 @@ import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
 import { deploymentArtifacts } from "./deployment-artifacts";
+import { recheckRejectedRegistryCredential } from "../credentials/credential.service";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -777,6 +778,19 @@ export async function onFailure(
       },
     },
   );
+
+  // The deploy is already terminal. A diagnostic check must not turn a package
+  // permission failure into a disabled registry login, or replace its error.
+  if (
+    errorMeta?.errorCode === "REGISTRY_ACCESS_DENIED" &&
+    typeof errorMeta.errorDetails?.registry === "string"
+  ) {
+    try {
+      await recheckRejectedRegistryCredential(dep.organizationId, errorMeta.errorDetails.registry);
+    } catch (checkError) {
+      observeCaughtError(checkError, "platform/engine/modules/deployments/registry-credential-recheck");
+    }
+  }
 }
 
 export async function onCancelled(
