@@ -17,6 +17,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { PublicEndpointInput } from "./deployment-inputs";
 import { EnvironmentScopeSchema } from "./environment-scope";
+import { WorkloadReplicaCountSchema } from "./workload-scaling";
 import {
   MAX_GENERATED_CONFIG_FILES,
   MAX_GENERATED_CONFIG_FILE_BYTES,
@@ -88,6 +89,7 @@ const GpuRequestSchema = Type.Object(
  */
 const AdvancedSchema = Type.Object(
   {
+    expose: Type.Optional(Type.Union([Type.Array(Type.String({ pattern: "^[0-9]{1,5}/(tcp|udp)$" }), { maxItems: 128 }), Type.Null()])),
     // Each key is nullable because `advanced` is MERGED on update, not replaced
     // (see mergeAdvanced in service.service.ts): omitting a key means "leave it
     // alone" so a partial caller can't wipe the rest of the blob, which makes an
@@ -263,6 +265,7 @@ const ComposeFieldsBlock = {
     ),
   ),
   restart: Type.Optional(RestartEnum),
+  replicas: Type.Optional(WorkloadReplicaCountSchema),
   enabled: Type.Optional(Type.Boolean()),
   sortOrder: Type.Optional(Type.Number({ minimum: 0 })),
 } as const;
@@ -388,6 +391,7 @@ export const SyncServicesBody = Type.Object({
           }),
         ),
         volumes: Type.Optional(Type.Array(Type.String())),
+        replicas: Type.Optional(WorkloadReplicaCountSchema),
         command: Type.Optional(
           Type.String({
             description:

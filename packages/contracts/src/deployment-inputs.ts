@@ -10,6 +10,7 @@ import { CreateDeploymentSchema } from "./deployments";
 import { CloudResourceTierEnum, NO_TRAVERSAL_PATTERN } from "./project-inputs";
 import { SourceScanOptionsSchema } from "./env-reveal";
 import { ListDeploymentsSchema } from "./deployment-resources";
+import { WorkloadReplicaCountSchema } from "./workload-scaling";
 
 // ─── Route params ────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export const BuildServiceInput = Type.Object({
   // unchanged string from disturbing argv; this lets a client be explicit.
   commandArgv: Type.Optional(Type.Array(Type.String())),
   restart: Type.Optional(Type.String()),
+  replicas: Type.Optional(WorkloadReplicaCountSchema),
   // Names-only raw-parser provenance. Other advanced keys are accepted at
   // runtime so the deploy snapshot can continue carrying
   // healthchecks/resources/etc.; image-expression provenance is deliberately

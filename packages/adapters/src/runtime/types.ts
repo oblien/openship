@@ -25,6 +25,7 @@ import type {
   ResourceConfig,
   ShellOptions,
   ShellSession,
+  WorkloadReplicaIdentity,
 } from "../types";
 import type { ComposeAdvanced, StackRole } from "@repo/core";
 import type { BuildLogger } from "./build-pipeline";
@@ -43,6 +44,7 @@ import type { ContainerStabilitySample } from "./stability";
 export type RuntimeCapability =
   /** Real Docker container semantics, including a Docker daemon in a cloud workspace. */
   | "dockerHost"
+  | "replicas"
   | "build"
   /** Acquire and deploy an already-built application container image verbatim. */
   | "prebuiltImage"
@@ -217,6 +219,8 @@ export interface RuntimeAdapter {
   /** Check if a specific feature is supported */
   supports(cap: RuntimeCapability): boolean;
   status?(containerId: string): Promise<import("@repo/core").ClusterWorkloadStatus>;
+  /** Application containers to probe individually before declaring a workload ready. */
+  readinessTargets?(containerId: string): Promise<string[]>;
   /** Prepare an artifact's settings/storage before stopping its previous release. */
   prepareDeployment?(config: DeployConfig): Promise<void>;
 
@@ -569,6 +573,9 @@ export interface MultiServiceGroupHandle {
 }
 
 export interface MultiServiceDeployConfig {
+  replicas?: number;
+  /** Internal identity for a member of a Docker replica workload. */
+  replica?: WorkloadReplicaIdentity;
   deploymentId: string;
   /** Exact outgoing service container, before the deployment pipeline removes it. */
   previousContainerId?: string;

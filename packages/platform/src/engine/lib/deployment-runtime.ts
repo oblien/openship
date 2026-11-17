@@ -66,6 +66,7 @@ export interface DeploymentMeta {
   clusterRuntimeId?: string;
   clusterProjectId?: string;
   clusterConfig?: import("@repo/core").ClusterWorkloadConfig;
+  replicas?: number;
   /**
    * Adopt an already-running, externally-supervised process instead of building
    * + starting one. Set for the self-deployed control plane (the "openship"

@@ -1634,6 +1634,8 @@ async function executeBuildAndDeploy(
       throw new Error("Cannot allocate a routed host port without a physical target identity");
     }
     const deployConfig = createServerDeployConfig(phase);
+    if ((deployConfig.replicas ?? 1) > 1 && !snapshot.clusterId && !runtime.supports("replicas"))
+      throw new Error("Multiple application instances require a single-server Docker runtime.");
     if (snapshot.roleConfiguration) {
       if (!(runtime instanceof DockerRuntime) || !runtime.supports("roles") || useServicePipeline)
         throw new Error("Runtime role configuration requires a single-app Docker deployment");
@@ -2138,6 +2140,7 @@ export function createServerDeployConfig(phase: DeployPhaseInputs): DeployConfig
     packageManager: snapshot.packageManager,
     envVars: envMap,
     resources: prodResources,
+    replicas: snapshot.replicas ?? 1,
     restartPolicy: phase.deployRouting.deployMode === "static-file-serve" ? "no" : "always",
     runtimeName: project.slug ?? project.id,
     slug: project.slug ?? project.id,

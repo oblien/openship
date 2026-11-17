@@ -73,6 +73,7 @@ export function projectServicesToDeployableServices(
       everDeployed: everDeployedByServiceId?.get(s.id),
       enabled: s.enabled,
       name: s.name,
+      ...(s.replicas != null ? { replicas: s.replicas } : {}),
       image: s.image ?? undefined,
       build: s.build ?? undefined,
       dockerfile: s.dockerfile ?? undefined,

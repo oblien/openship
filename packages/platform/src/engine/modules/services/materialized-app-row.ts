@@ -5,6 +5,8 @@ import type { Project, Service } from "@repo/db";
  * configured? Keyed on the full signature it creates: the project slug as the
  * name, `sortOrder: -1` (which nothing else in the codebase writes), and every
  * build-identity field left null so it inherits the project snapshot.
+ * An explicit service replica count also opts out of that inherited app shape;
+ * the service pipeline must honor it instead of using the project's count.
  *
  * A row is only reclaimable while its build identity is pristine. `enabled` is
  * deliberately NOT part of the signature — disabling the mystery service is the
@@ -30,12 +32,13 @@ export function isMaterializedAppRow(
     | "buildCommand"
     | "startCommand"
     | "outputDirectory"
-  >,
+  > & { replicas?: number | null },
 ): boolean {
   return (
     row.kind === "monorepo" &&
     row.name === project.slug &&
     row.sortOrder === -1 &&
+    row.replicas == null &&
     !row.image &&
     !row.build &&
     !row.dockerfile &&

@@ -52,6 +52,29 @@ const row = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+describe("service runtime replica configuration", () => {
+  it("passes explicit counts and leaves legacy Swarm services inheriting their cluster count", () => {
+    const config = (replicas?: number) => createServiceRuntimeConfig({ project: project as never, dep: { id: "deploy" } as never,
+      service: row({ replicas }) as never, image: "app:stable", environment: {} });
+    expect(config(3).replicas).toBe(3);
+    expect(config().replicas).toBeUndefined();
+  });
+  it("uses the frozen application count for a materialized row, including legacy rollback snapshots", () => {
+    const app = row({ kind: "monorepo", name: "app", image: null, sortOrder: -1 });
+    const config = (meta: object) => createServiceRuntimeConfig({ project: { ...project, slug: "app", replicas: 8 } as never,
+      dep: { id: "deploy", meta } as never, service: app as never, image: "app:stable", environment: {} });
+    expect(config({ replicas: 2 }).replicas).toBe(2);
+    expect(config({}).replicas).toBe(1);
+    expect(config({ replicas: 2, clusterId: "swarm" }).replicas).toBeUndefined();
+  });
+  it("keeps an explicit service override in the service pipeline instead of silently ignoring it", () => {
+    const app = row({ kind: "monorepo", name: "app", image: null, sortOrder: -1, replicas: 3 });
+    const config = createServiceRuntimeConfig({ project: { ...project, slug: "app", replicas: 8 } as never,
+      dep: { id: "deploy", meta: { replicas: 2 } } as never, service: app as never, image: "app:stable", environment: {} });
+    expect(config.replicas).toBe(3);
+  });
+});
+
 /** The patch handed to repos.service.update. */
 const written = () => serviceRepo.update.mock.calls.at(-1)?.[1] as Record<string, unknown>;
 /** The entries handed to repos.service.syncFromCompose. */

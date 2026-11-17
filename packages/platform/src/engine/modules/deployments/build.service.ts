@@ -224,6 +224,7 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  replicas?: number;
   /** Consent and expected state for an automatic trigger; never environment overrides. */
   securityApproval?: SecurityUpdateApproval;
   /** Worker-authored completed-image receipt and one-shot retry provenance. */
@@ -544,6 +545,7 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // Resolve the full execution identity below, independently of UI input.
     deployTarget: project.workspaceId ? "cloud" : project.clusterId ? "cluster" : undefined,
     ...(project.workspaceId ? { managedWorkspaceId: project.workspaceId } : {}),
+    replicas: project.replicas ?? 1,
     ...(project.clusterId ? { clusterId: project.clusterId, clusterProjectId: project.id, clusterConfig: project.clusterConfig ?? { replicas: 1 } } : {}),
     // Runtime isolation mode persisted on the project (editable in the Runtime
     // tab). So a redeploy/webhook deploy respects the saved choice instead of

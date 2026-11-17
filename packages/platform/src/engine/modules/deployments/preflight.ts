@@ -22,6 +22,8 @@ import {
 } from "../../lib/deployment-runtime";
 import {
   AppError,
+  assertWorkloadReplicaTopology,
+  assertWorkloadReplicas,
   normalizeCustomHostname,
   cloudRequiredCode,
   CLOUD_UNREACHABLE_CODE,
@@ -1479,6 +1481,19 @@ export async function runPreflightChecks(
       services: opts?.multiService ? opts.composeServices?.length ? opts.composeServices : [{}] : [], framework: snapshot.framework,
       image: snapshot.releaseImageRef || snapshot.handoverAppImage, imageRepository: snapshot.clusterConfig?.imageRepository,
     });
+  }
+  if (opts?.composeServices) assertWorkloadReplicaTopology(opts.composeServices);
+  const replicaWorkloads = opts?.multiService ? (opts.composeServices ?? []).map(service => ({
+    ...service,
+    workload: isStaticService(resolveSubAppRecipe(service, snapshot)) ? "static" : undefined,
+  })) : [{
+    replicas: snapshot.replicas, framework: snapshot.framework, image: snapshot.releaseImageRef,
+    volumes: snapshot.volumes, workload: snapshotToClass(snapshot).workload, controlPlane: opts?.appTemplateId === "openship",
+  }];
+  for (const workload of replicaWorkloads) {
+    assertWorkloadReplicas(workload.replicas ?? 1, workload);
+    if ((workload.replicas ?? 1) > 1 && (snapshot.runtimeMode === "bare" || snapshot.deployTarget === "cloud"))
+      throw new AppError("Multiple instances require a Docker server or compatible cluster.", 422, "WORKLOAD_REPLICAS_UNSUPPORTED");
   }
   const cloudPreflight = await resolveCloudPreflight(snapshot, opts);
 

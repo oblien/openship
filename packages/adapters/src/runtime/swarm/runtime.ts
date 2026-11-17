@@ -38,6 +38,7 @@ import { type DockerRuntime } from "../docker";
 import { BuildLogger, sq, parseLogLevel } from "../build-pipeline";
 import { type DockerRegistryAuth } from "../docker-auth";
 import { resolveEdgeImage } from "../../system/proxy/ensure-container-edge";
+import { workloadGatewayContainer } from "../workload-gateway";
 import { scopeVolumeBinds } from "../volume-namespace";
 import { ensureProjectVolume } from "../docker-project-volume";
 import { resolveImageVolumeBinds } from "../docker-image-volumes";
@@ -404,7 +405,7 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       });
     }
     // Node-local data is never rescheduled onto an empty volume on another worker.
-    const replicas = mounts.length ? 1 : this.options.config.replicas;
+    const replicas = mounts.length ? 1 : config.replicas ?? this.options.config.replicas;
     const network = await this.network("overlay");
     const files = await this.files(config);
     const aliases = [...new Set([config.serviceName, ...(config.extraAliases ?? [])])];
@@ -689,31 +690,20 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       overlay = await this.network("overlay");
     const config = swarmGatewayConfig(service.Spec.Name!, ports.ports);
     const image = this.options.gatewayImage ?? resolveEdgeImage();
+    const gateway = workloadGatewayContainer(config);
     const created = await docker.createContainer({
+      ...gateway,
       name: this.gatewayName(service),
       Image: image,
       Labels: {
         ...this.labels(service.Spec.Labels!["openship.deployment"]),
         "openship.swarm-service": service.ID,
       },
-      User: "101:101",
-      Entrypoint: [],
-      Cmd: [
-        "sh",
-        "-c",
-        `printf %s ${sq(Buffer.from(config).toString("base64"))} | base64 -d > /tmp/swarm.conf && exec openresty -c /tmp/swarm.conf -g 'daemon off;'`,
-      ],
       ExposedPorts: Object.fromEntries(ports.ports.map((port) => [port, {}])),
       HostConfig: {
         NetworkMode: bridge.Id,
-        RestartPolicy: { Name: "unless-stopped" },
-        ReadonlyRootfs: true,
-        Tmpfs: { "/tmp": "rw,nosuid,nodev,noexec,size=16m" },
-        CapDrop: ["ALL"],
-        Sysctls: { "net.ipv4.ip_unprivileged_port_start": "0" },
-        SecurityOpt: ["no-new-privileges:true"],
+        ...gateway.HostConfig,
         PortBindings: ports.portBindings,
-        LogConfig: { Type: "json-file", Config: { "max-size": "5m", "max-file": "2" } },
       },
     });
     await docker.getNetwork(overlay.Id).connect({ Container: created.id });

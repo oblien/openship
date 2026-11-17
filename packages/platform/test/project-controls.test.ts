@@ -16,6 +16,8 @@ const controls = {
   updateCloneToken: vi.fn(),
   remove: vi.fn(),
   getInfo: vi.fn(),
+  getWorkloadScaling: vi.fn(),
+  scaleWorkload: vi.fn(),
 };
 let operations: ReturnType<typeof createProjectOperations>;
 
@@ -34,6 +36,20 @@ beforeEach(async () => {
 });
 
 describe("authorized project controls", () => {
+  it("requires current project write permission for replica changes", async () => {
+    const input = { replicas: 3, expectedDeploymentId: "active", expectedUpdatedAt: "revision" };
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["read"] });
+    await expect(operations.scaleWorkload(context, "project-a", input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(operations.getWorkloadScaling(context, "project-b", {})).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(controls.scaleWorkload).not.toHaveBeenCalled();
+    expect(controls.getWorkloadScaling).not.toHaveBeenCalled();
+    state.grants.set("org-a:alice:project:project-a", { permissions: ["write"] });
+    controls.scaleWorkload.mockResolvedValue({ deploymentId: "new" });
+    expect(await operations.scaleWorkload(context, "project-a", input)).toMatchObject({ data: { deploymentId: "new" } });
+    await expect(operations.scaleWorkload(context, "project-a", { ...input, replicas: 0 })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(controls.scaleWorkload).toHaveBeenCalledOnce();
+  });
   it("requires administration for removal and rechecks read access on project details", async () => {
     state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
     state.grants.set("org-a:alice:project:project-a", { permissions: ["write"] });

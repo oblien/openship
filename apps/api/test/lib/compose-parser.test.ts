@@ -13,7 +13,8 @@ describe("parseComposeFile", () => {
     const parsed = parseComposeFile(
       "services:\n  web:\n    image: app:test\n    expose:\n      - 3000\n      - \"8080/udp\"\n",
     );
-    expect(parsed.services[0]?.expose).toEqual(["3000", "8080/udp"]);
+    expect(parsed.services[0]?.expose).toEqual(["3000/tcp", "8080/udp"]);
+    expect(parsed.services[0]?.advanced?.expose).toEqual(["3000/tcp", "8080/udp"]);
     // `expose` is read now, so it is no longer reported as a dropped key.
     expect(parsed.unsupported).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ field: "expose" })]),
@@ -1552,7 +1553,8 @@ describe("parseComposeFile — dropped-key reporting", () => {
         "    deploy:\n      replicas: 3\n      resources:\n        limits:\n          memory: 1g\n",
       ),
     );
-    expect(partly.unsupported.map((u) => u.field)).toEqual(["deploy"]);
+    expect(partly.unsupported).toEqual([]);
+    expect(partly.services[0]?.replicas).toBe(3);
     expect(partly.services[0]?.advanced?.resources?.memoryMb).toBe(1024);
   });
 

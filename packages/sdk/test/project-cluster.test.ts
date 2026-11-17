@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { OpenshipClient } from "../src/client";
 
 describe("project cluster SDK", () => {
+  it("uses the shared authorization contract and correct service scope for single-server replicas", async () => {
+    const view = { replicas: 3, activeReplicas: 2, activeDeploymentId: "active", updatedAt: "revision", serviceId: "service/a", status: null, unavailableReason: null, error: null };
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => Response.json({ data: init?.method === "POST" ? { deploymentId: "next" } : view }));
+    const client = new OpenshipClient({ baseUrl: "https://ship.test", fetch: fetcher });
+    expect(await client.projects.getWorkloadScaling("project/a", { serviceId: "service/a" })).toEqual(view);
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://ship.test/api/projects/project%2Fa/scaling?serviceId=service%2Fa");
+    const request = { serviceId: "service/a", replicas: 3, expectedDeploymentId: "active", expectedUpdatedAt: "revision" };
+    expect(await client.projects.scaleWorkload("project/a", request)).toEqual({ deploymentId: "next" });
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual(request);
+    await expect(client.projects.scaleWorkload("project/a", { ...request, replicas: 101 })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("shares target and replica preconditions with the HTTP lifecycle", async () => {
     const view = {
       clusterId: "cluster",

@@ -13,6 +13,7 @@ import { projectRoutingOperations } from "./project-routing.operations";
 import { projectLogOperations } from "./project-logs.operations";
 import { createProjectTransferOperations } from "./project-transfer.operations";
 import { appProjectOperations } from "../apps/app.operations";
+import { createWorkloadScalingOperations } from "./workload-scaling.operations";
 import { createProjectClusterOperations } from "./project-cluster.operations";
 import { createClusterDatabaseOperations } from "./cluster-database.operations";
 import { createClusterVolumeOperations } from "./cluster-volume.operations";
@@ -32,6 +33,7 @@ export function createProjectControls(
     });
   return {
     ...createProjectClusterOperations(recordAudit),
+    ...createWorkloadScalingOperations(recordAudit),
     ...createClusterDatabaseOperations(recordAudit),
     ...createClusterVolumeOperations(recordAudit),
     ...appProjectOperations,

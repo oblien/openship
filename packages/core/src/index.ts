@@ -7,6 +7,7 @@ export * from "./stacks";
 export * from "./package-manager-version";
 export * from "./runtime-image";
 export * from "./stack-roles";
+export * from "./workload-replicas";
 export * from "./duration";
 export * from "./volumes";
 export * from "./compose-namespace";

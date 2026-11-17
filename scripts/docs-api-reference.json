@@ -258,6 +258,18 @@
       "description": "Read the selected cluster, active release and observed replicas.",
       "route": "GET /api/projects/:id/cluster"
     },
+    "projects.getWorkloadScaling": {
+      "page": "projects",
+      "section": "Application scaling",
+      "description": "Read the desired, deployed and observed instance counts for a single-server Docker application or selected service.",
+      "route": "GET /api/projects/:id/scaling"
+    },
+    "projects.scaleWorkload": {
+      "page": "projects",
+      "section": "Application scaling",
+      "description": "Deploy the current image with a reviewed instance count. Requires active deployment and configuration revision preconditions; serviceId limits the change to that service.",
+      "route": "POST /api/projects/:id/scaling"
+    },
     "projects.setClusterTarget": {
       "page": "projects",
       "section": "Cluster scaling",

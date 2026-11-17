@@ -446,6 +446,7 @@ export const project = pgTable(
     serverId: text("server_id").references(() => servers.id, { onDelete: "set null" }),
     /** Kubernetes deployment binding; independent from the Edge/build host. */
     clusterId: text("cluster_id").references(() => computeCluster.id, { onDelete: "restrict" }),
+    replicas: integer("replicas").notNull().default(1),
     clusterConfig: jsonb("cluster_config").$type<ClusterWorkloadConfig | null>(),
 
     /**
@@ -524,6 +525,7 @@ export const project = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+    check("project_replicas_bounds", sql`${table.replicas} BETWEEN 1 AND 100`),
     uniqueIndex("project_owner_unique").on(table.id, table.organizationId),
     check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NOT NULL AND ${table.clusterId} IS NULL)`),
     foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId], name: "project_workspace_owner_fk" }).onDelete("restrict"),

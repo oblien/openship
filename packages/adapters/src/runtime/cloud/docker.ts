@@ -72,7 +72,7 @@ function notFound(error: unknown): boolean {
 export class CloudDockerRuntime extends DockerRuntime {
   // Managed cloud refuses role containers for now; every other Docker capability is kept.
   override readonly capabilities: ReadonlySet<RuntimeCapability> = new Set(
-    DockerRuntime.CAPABILITIES.filter(cap => cap !== "roles"),
+    DockerRuntime.CAPABILITIES.filter(cap => cap !== "roles" && cap !== "replicas"),
   );
   readonly workspaceId: string;
   readonly projectId: string;

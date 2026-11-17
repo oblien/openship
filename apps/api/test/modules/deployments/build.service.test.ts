@@ -349,6 +349,13 @@ function releaseSnapshot(
 }
 
 describe("buildConfigSnapshot", () => {
+  it("freezes the primary application's count independently from future edits", () => {
+    const project = baseProject({ replicas: 3 });
+    const snapshot = buildConfigSnapshot(project);
+    project.replicas = 5;
+    expect(snapshot.replicas).toBe(3);
+    expect(buildConfigSnapshot(baseProject()).replicas).toBe(1);
+  });
   it("defaults new static snapshots to Pages and freezes an explicit managed-server choice", () => {
     const project = baseProject({ workloadType: "static", hasServer: false });
     const pages = buildConfigSnapshot(project);

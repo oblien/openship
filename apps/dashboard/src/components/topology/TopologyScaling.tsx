@@ -19,8 +19,10 @@ import { Switch } from "@/components/ui/Switch";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import type { Service } from "@/lib/api/services";
 import type { TopologyProject } from "./model";
+import { TopologyWorkloadScaling } from "./TopologyWorkloadScaling";
 import { TopologyClusterScaling } from "./TopologyClusterScaling";
 import type { ProjectCluster } from "@repo/contracts";
+import { usePlatform } from "@/context/PlatformContext";
 
 export function TopologyScaling({
   project,
@@ -45,6 +47,7 @@ export function TopologyScaling({
   ) => void;
   onPlacement: (intent: "copy" | "move", service?: Service) => void;
 }) {
+  const { selfHosted } = usePlatform();
   const [view, setView] = useState<ProjectResources | null>(null);
   const [cpu, setCpu] = useState("");
   const [memory, setMemory] = useState("");
@@ -88,10 +91,10 @@ export function TopologyScaling({
     resolveWorkload(project.options?.workloadType, project.options?.hasServer) === "static";
   return (
     <div className="space-y-5">
-      {service && !databaseService && (
+      {service && !databaseService && project.deployTarget === "cluster" && (
         <p className="text-sm leading-relaxed text-muted-foreground">
-          Instance settings apply to the environment. A separate count for each service is not
-          available yet.
+          These settings control the environment's default instance count. Explicit Compose service
+          counts take precedence on Docker Swarm.
         </p>
       )}
       {databaseService && (
@@ -105,13 +108,42 @@ export function TopologyScaling({
         </section>
       )}
       {!databaseService && !staticApplication && project.appTemplateId !== "openship" && (
-        <TopologyClusterScaling
-          project={project}
-          resources={view?.production}
-          disabled={disabled || placementDisabled}
-          onDeploy={onDeploy}
-          onClusterState={onClusterState}
-        />
+        <>
+          {project.deployTarget !== "cluster" && (
+            <TopologyWorkloadScaling
+              key={`${project.id}:${service?.id ?? "app"}`}
+              project={project}
+              service={service}
+              disabled={disabled || placementDisabled}
+              resources={view ? { ...view.production, ...service?.advanced?.resources } : undefined}
+            />
+          )}
+          {project.deployTarget === "cluster" ? (
+            <TopologyClusterScaling
+              project={project}
+              resources={view?.production}
+              disabled={disabled || placementDisabled}
+              onDeploy={onDeploy}
+              onClusterState={onClusterState}
+            />
+          ) : (
+            selfHosted &&
+            project.deployTarget !== "cloud" && (
+              <details className="rounded-xl bg-muted/30 p-3">
+                <summary className="cursor-pointer text-xs font-medium">Run across servers</summary>
+                <div className="pt-3">
+                  <TopologyClusterScaling
+                    project={project}
+                    resources={view?.production}
+                    disabled={disabled || placementDisabled}
+                    onDeploy={onDeploy}
+                    onClusterState={onClusterState}
+                  />
+                </div>
+              </details>
+            )
+          )}
+        </>
       )}
       {project.deployTarget !== "cluster" && (
         <section className="space-y-3" aria-label="Clone">

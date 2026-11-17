@@ -1,4 +1,3 @@
-import { serviceRuntimeCommand } from "../../services/service-runtime-command";
 /**
  * Compose deploy service - deploys multi-service projects.
  *
@@ -23,6 +22,8 @@ import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib
 import { posix as pathPosix } from "node:path";
 import {
   SYSTEM,
+  assertWorkloadReplicas,
+  assertWorkloadReplicaTopology,
   mapConcurrent,
   runDependencyTasks,
   parseComposeDurationNs,
@@ -95,6 +96,8 @@ import { decryptEnvMap, encrypt } from "../../../lib/encryption";
 import { isLoopbackHost, resolveServerHost } from "../../../lib/server-target";
 import { resolveEdgeTargetHost } from "../../../lib/edge-target";
 import { containerIdForService } from "../../services/service-container";
+import { isMaterializedAppRow } from "../../services/materialized-app-row";
+import { serviceRuntimeCommand } from "../../services/service-runtime-command";
 import { isConnectionLoss } from "../../../lib/remote-state";
 import {
   appConfigHostPath,
@@ -124,7 +127,7 @@ import { ensureRoutingReady } from "../../../lib/edge-reconcile";
 import { resolveEdgeProviderOptions } from "../../../lib/edge-provider-options";
 import { pinnedEdgeImage } from "../../../lib/edge-image";
 import * as sessionManager from "../session-manager";
-import { parseServicePort, serviceAliasExtras } from "../../../lib/deployable-service";
+import { isStaticService, resolveSubAppRecipe, parseServicePort, serviceAliasExtras } from "../../../lib/deployable-service";
 import { auditPorts } from "../port-audit.service";
 import {
   allocateAndReservePinnedHostPort,
@@ -700,6 +703,12 @@ export function isPreparedLocalImage(
   return preparedRefs?.get(service.id) === ref;
 }
 
+function serviceReplicaCount(project: Project, dep: Deployment, service: Service): number | undefined {
+  if (!isMaterializedAppRow(project, service)) return service.replicas ?? undefined;
+  const frozen = dep.meta as { clusterId?: string; replicas?: number } | null;
+  return frozen?.clusterId ? undefined : frozen?.replicas ?? 1;
+}
+
 export function createServiceRuntimeConfig(opts: {
   project: Project;
   dep: Deployment;
@@ -728,6 +737,7 @@ export function createServiceRuntimeConfig(opts: {
     projectId: project.id,
     slug: project.slug,
     serviceName: service.name,
+    replicas: serviceReplicaCount(project, dep, service),
     image,
     ports: (service.ports as string[]) ?? [],
     environment,
@@ -783,6 +793,7 @@ function createServiceDeployConfig(opts: {
     deploymentId: dep.id,
     projectId: project.id,
     buildSessionId: buildSessionId ?? dep.id,
+    replicas: serviceReplicaCount(project, dep, service),
     imageRef: image,
     environment: dep.environment,
     port: resolveServicePublicPort(service) ?? 0,
@@ -1138,12 +1149,25 @@ async function deployComposeServicesCore(
     assertExactServiceTargets(services, [...opts.targetServiceIds]);
   }
   const enabled = services.filter((s) => s.enabled);
+  assertWorkloadReplicaTopology(enabled.map(service => ({
+    ...service,
+    replicas: serviceReplicaCount(project, dep, service),
+  })));
   // Validate the cohort before pulling images or replacing any service. Stored
   // aliases also arrive through retained snapshots, not only validated writes.
   for (const service of enabled) {
     // A selected dependent may share a carried provider, so validate every provider too.
     validateComposeNamespaces(service.advanced);
     if (!opts?.strictScope || !opts.targetServiceIds || opts.targetServiceIds.has(service.id)) {
+      const replicas = serviceReplicaCount(project, dep, service) ?? 1;
+      assertWorkloadReplicas(replicas, {
+        ...service,
+        volumes: appRowVolumes(project, service),
+        workload: isStaticService(resolveSubAppRecipe(service, securitySnapshot ?? {})) ? "static" : undefined,
+        controlPlane: project.appTemplateId === "openship",
+      });
+      if (replicas > 1 && !securitySnapshot?.clusterId && !runtime.supports("replicas"))
+        throw new Error("Multiple service instances require a single-server Docker runtime.");
       assertDeployVolumePolicy(appRowVolumes(project, service), runtime);
       parseContainerHosts(service.advanced?.extraHosts);
       validateComposeGpuConfig(service.advanced);
@@ -3499,24 +3523,24 @@ async function deployComposeServicesCore(
         }
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
+        const replicaCutover = runtime instanceof DockerRuntime && runtime.supports("replicas") &&
+          ((serviceRuntimeConfig.replicas ?? 1) > 1 || previous?.containerId?.startsWith("replicas:"));
         const deployEnv: DeployEnvironment = {
           onRuntimeReady: (containerId) => {
             containerIdByServiceName.set(svc.name, containerId);
             runtimeReadyReleased = true;
             runtimeReady();
           },
-          ...(runtime.prepareServiceWorkload ? {
-            preflight: () => runtime.prepareServiceWorkload!(serviceRuntimeConfig),
-          } : {}),
-          ...(runtime.supports("retainedServiceCutover") ? {
+          preflight: async () => {
+            await runtime.prepareServiceWorkload?.(serviceRuntimeConfig);
+            if (runtime instanceof DockerRuntime) await runtime.prepareServiceVolumes(serviceRuntimeConfig);
+          },
+          ...(runtime.supports("retainedServiceCutover") || replicaCutover ? {
             canOverlap: false,
             deactivateRetaining: (id: string) => runtime.stop(id),
             reactivatePrevious: (id: string) => runtime.start(id),
             retireRetainedPrevious: (id: string) => runtime.destroy(id),
             stopActivated: (id: string) => runtime.stop(id),
-          } : {}),
-          ...(runtime instanceof DockerRuntime ? {
-            preflight: () => runtime.prepareServiceVolumes(serviceRuntimeConfig),
           } : {}),
           activate: async (_cfg, onLog) => {
             opts?.onArtifactActivationStart?.(svc.id);

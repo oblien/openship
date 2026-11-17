@@ -1291,10 +1291,13 @@ button. Show status once beside the resource name. Put lifecycle and deployment
 actions first in Overview; keep IDs, ports and addresses in a collapsed Runtime
 details section at the bottom. Use quiet filled action buttons, not a bordered
 card for a single status word.
-Keep replica controls directly accessible. Label environment-wide instance counts
-explicitly when opened from a service. Explain the fixed count, replacement of failed
-instances, and the limits of placing every instance on one server. For ordinary
-Docker services, identify Duplicate as a separate project with independent data,
+Keep replica controls directly accessible. Single-server Docker applications and
+services use the same count input and deployment review as cluster scaling. The
+count belongs to the selected workload; label environment-wide cluster defaults
+explicitly when opened from a service. Explain the fixed count, Docker restart
+policy and the limits of placing every instance on one server. Review copy must
+describe the possible interruption during single-server replacement. Identify
+Duplicate as a separate project with independent data,
 not synchronized replication. CPU, memory, swap and moving the environment belong in a collapsed
 Advanced section. Use short scope hints and the shared swap switch; retain resource
 validation, pending-change review and destination capability checks.
