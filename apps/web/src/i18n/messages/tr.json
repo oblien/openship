@@ -2788,7 +2788,14 @@
     "m898i20": "OpenShip hakkında",
     "mnto541": "Platform özellikleri",
     "m154dfzd": "OpenShip’e geçin",
-    "m1jxdnq": "Müşteri desteği"
+    "m1jxdnq": "Müşteri desteği",
+    "m15qzxc": "Geliştiricilerin güvendiği platform",
+    "mfx2fp6": "Geliştiriciler OpenShip hakkında ne diyor",
+    "m1osjiaz": "Cloud müşterileri",
+    "m13x13xw": "Kendi sunucusunda barındıranlar",
+    "m1f4b6r3": "GitHub yıldızları",
+    "m1h25b2u": "Geliştirici alıntıları",
+    "mgi43jj": "Gönderiyi X’te görüntüle"
   },
   "ReleaseNotes": {
     "m1005a3f": "- Sihirbaz, bir adımda herhangi bir rota seçilmediğinde proje adından bir ana bilgisayar adı icat etmek, bağlantı noktası alanlarını etiketlemek, monorepo alt uygulama ana bilgisayarlarının ön izlemesini yapmak ve hatta \"Siteyi Ziyaret Et\" düğmesini hiçbir zaman var olmayacak bir ana bilgisayara bağlamak için kullanılır. Artık yalnızca yapılandırmanızın gerçek adlarını gösteren ana bilgisayarları gösterir ve dağıtımın genel bir etki alanı olmadığında \"Siteyi Ziyaret Et\" seçeneğini tamamen gizler.",
