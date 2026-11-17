@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
 import { Hono } from "hono";
 // Keep all storage, permissions, encryption, readers and detection real. Only
 // the external GitHub API and the host's ambient gh identity are replaced.
@@ -17,9 +18,14 @@ import {
 import { eq } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { encryptSecretField } from "@repo/platform/engine/lib/credential-encryption";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import { buildDependencies } from "@repo/platform/engine/modules/deployments/build.operations";
 import { resolveBuildGitToken } from "@repo/platform/engine/modules/github/clone-auth";
+import {
+  githubFetch,
+  type GitHubFetchOptions,
+} from "@repo/platform/engine/modules/github/github.auth";
 import { OpenshipClient } from "@repo/sdk/client";
 import { parseDeploySource } from "@repo/core";
 import { githubRoutes } from "../../../src/modules/github/github.routes";
@@ -33,6 +39,9 @@ const app = new Hono()
   .route("/api/github", githubRoutes);
 const origin = "https://openship.test";
 const pat = "test-server-only-pat-never-returned";
+const appPrivateKey = generateKeyPairSync("rsa", { modulusLength: 2048 })
+  .privateKey.export({ type: "pkcs8", format: "pem" })
+  .toString();
 const files: Record<string, string> = {
   "package.json": JSON.stringify({ private: true, workspaces: ["apps/*"] }),
   "apps/web/package.json": JSON.stringify({ name: "web", scripts: { start: "node server.js" } }),
@@ -44,6 +53,8 @@ let requests: { path: string; token: string | null }[];
 let rejectAccount: boolean;
 let providerStatus: number;
 let publicReadAllowed: boolean;
+let appMintStatus: number;
+let appReadStatus: number;
 
 beforeEach(async () => {
   env.CLOUD_MODE = false;
@@ -61,22 +72,46 @@ beforeEach(async () => {
   rejectAccount = false;
   providerStatus = 200;
   publicReadAllowed = false;
+  appMintStatus = 403;
+  appReadStatus = 403;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const req = new Request(input, init);
       const url = new URL(req.url);
       if (url.origin === origin) return app.request(req);
-      if (url.origin !== "https://api.github.com")
+      if (url.origin !== "https://api.github.com" && url.origin !== "https://github.internal.test")
         throw new Error(`Unexpected network destination ${url.origin}`);
       const token = req.headers.get("authorization");
       requests.push({ path: url.pathname, token });
+      if (url.pathname.endsWith("/app/installations/42/access_tokens"))
+        return appMintStatus === 201
+          ? Response.json(
+              {
+                token: "custom-app-token",
+                expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+              },
+              { status: 201 },
+            )
+          : Response.json(
+              { message: "Resource not accessible by integration" },
+              { status: appMintStatus },
+            );
+      if (token === "Bearer custom-app-token" && appReadStatus !== 200)
+        return Response.json(
+          { message: "Resource not accessible by integration" },
+          { status: appReadStatus },
+        );
       if (rejectAccount && token === "Bearer rejected-account-pat")
         return Response.json(
           { message: "Resource not accessible by personal access token" },
           { status: 403 },
         );
-      if (token !== `Bearer ${pat}` && !(publicReadAllowed && token === null))
+      if (
+        token !== `Bearer ${pat}` &&
+        token !== "Bearer custom-app-token" &&
+        !(publicReadAllowed && token === null)
+      )
         return Response.json({ message: "Not Found" }, { status: 404 });
       if (providerStatus !== 200)
         return Response.json({ message: "Provider unavailable" }, { status: providerStatus });
@@ -163,7 +198,134 @@ async function addOtherServerToken() {
   return id;
 }
 
+async function addCustomApp(apiBaseUrl = "https://api.github.com") {
+  const appSource = await repos.gitSource.create({
+    organizationId: owner.orgId,
+    name: "Workspace GitHub App",
+    appId: 9,
+    slug: "workspace-app",
+    apiBaseUrl,
+    webhookUrl: "https://openship.test/api/github/webhook",
+    secretsEnc: encryptSecretField(
+      JSON.stringify({ privateKeyPem: appPrivateKey, webhookSecret: "test-webhook-secret" }),
+    )!,
+  });
+  await repos.gitInstallation.upsert({
+    userId: owner.userId,
+    organizationId: owner.orgId,
+    sourceId: appSource.id,
+    owner: source.owner,
+    installationId: 42,
+  });
+}
+
 describe("server PAT-only preparation through the real authenticated HTTP/SDK flow (#1500)", () => {
+  it.each([
+    { explicit: false, mintStatus: 403 },
+    { explicit: true, mintStatus: 403 },
+    { explicit: false, mintStatus: 201 },
+    { explicit: true, mintStatus: 201 },
+  ])(
+    "scans through the SSH server PAT when its github.com App cannot read the repo (#1814): %j",
+    async ({ explicit, mintStatus }) => {
+      await db
+        .update(schema.servers)
+        .set({ isLocal: false })
+        .where(eq(schema.servers.id, serverId));
+      const foreign = await seedOwner();
+      const foreignServer = await seedServer(foreign.orgId);
+      await db
+        .update(schema.servers)
+        .set({ isLocal: true })
+        .where(eq(schema.servers.id, foreignServer));
+      await addCustomApp();
+      appMintStatus = mintStatus;
+
+      const scan = await client().deployments.prepare({
+        ...source,
+        ...(explicit ? { serverId } : {}),
+      });
+      expect(scan.projectType).toBe("monorepo");
+      expect(scan.monorepoApps?.map((app) => app.rootDirectory)).toEqual(
+        expect.arrayContaining(["apps/web", "apps/api"]),
+      );
+      expect(requests).toEqual(
+        expect.arrayContaining([
+          { path: "/repos/acme/private-workspace", token: `Bearer ${pat}` },
+          { path: "/repos/acme/private-workspace/branches", token: `Bearer ${pat}` },
+          { path: "/repos/acme/private-workspace/contents/package.json", token: `Bearer ${pat}` },
+        ]),
+      );
+      expect(JSON.stringify(scan)).not.toContain(pat);
+      expect(JSON.stringify(scan)).not.toContain(appPrivateKey);
+    },
+  );
+  it("keeps a working github.com App ahead of the server PAT", async () => {
+    await addCustomApp();
+    appMintStatus = 201;
+    appReadStatus = 200;
+    expect((await client().deployments.prepare({ ...source, serverId })).projectType).toBe(
+      "monorepo",
+    );
+    expect(requests.filter((req) => req.path.startsWith("/repos/"))).toEqual(
+      expect.arrayContaining([
+        { path: "/repos/acme/private-workspace", token: "Bearer custom-app-token" },
+      ]),
+    );
+    expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
+  });
+  it("keeps Enterprise repositories on their own source when its App fails", async () => {
+    await addCustomApp("https://github.internal.test/api/v3");
+    publicReadAllowed = true;
+    await expect(client().deployments.prepare({ ...source, serverId })).rejects.toMatchObject({
+      status: 403,
+      body: { code: "GITHUB_TOKEN_REQUIRED" },
+    });
+    expect(requests).toEqual([
+      { path: "/api/v3/app/installations/42/access_tokens", token: expect.any(String) },
+    ]);
+    expect(requests[0]?.token).not.toBe(`Bearer ${pat}`);
+  });
+  it.each([429, 503])(
+    "does not fall back to a server PAT during an App %s failure",
+    async (status) => {
+      await addCustomApp();
+      appMintStatus = status;
+      await expect(client().deployments.prepare({ ...source, serverId })).rejects.toThrow(
+        `GitHub App API error (${status})`,
+      );
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.path).toBe("/app/installations/42/access_tokens");
+      expect(requests[0]?.token).not.toBe(`Bearer ${pat}`);
+    },
+  );
+  it.each([
+    { credential: ["app-installation"] },
+    { method: "POST", authorizeAs: "read" },
+    { method: "DELETE" },
+    { authorizeAs: "write" },
+    { url: "https://api.github.com/user" },
+    { url: "https://api.github.com/repos/acme/another-repo" },
+  ] satisfies Partial<GitHubFetchOptions>[])(
+    "keeps the App credential boundary for %j",
+    async (options) => {
+      await addCustomApp();
+      const ctx = buildBackgroundContext({ userId: owner.userId, organizationId: owner.orgId });
+      await expect(
+        githubFetch({
+          ctx,
+          owner: source.owner,
+          repo: source.repo,
+          serverId,
+          url: "https://api.github.com/repos/acme/private-workspace",
+          ...options,
+        }),
+      ).rejects.toMatchObject({ statusCode: 403, code: "GITHUB_TOKEN_REQUIRED" });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.path).toBe("/app/installations/42/access_tokens");
+      expect(requests[0]?.token).not.toBe(`Bearer ${pat}`);
+    },
+  );
   it.each([false, true])(
     "detects the monorepo and sub-app using the same credential as deploy (explicit server=%s)",
     async (explicit) => {
@@ -383,6 +545,7 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
   });
   it("requires server write permission in addition to repository access", async () => {
+    await addCustomApp();
     const member = await repos.member.find(owner.orgId, owner.userId);
     await db
       .update(schema.member)
@@ -435,10 +598,19 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
     ).rejects.toMatchObject({ statusCode: 404 });
     expect(requests).toHaveLength(0);
   });
-  it.each([false, true])(
-    "does not let server write permission replace repository access (explicit=%s)",
-    async (explicit) => {
-      await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
+  it.each([
+    { explicit: false, customApp: false },
+    { explicit: true, customApp: false },
+    { explicit: false, customApp: true },
+    { explicit: true, customApp: true },
+  ])(
+    "does not let server write permission replace repository access: %j",
+    async ({ explicit, customApp }) => {
+      if (customApp) await addCustomApp();
+      await db
+        .update(schema.servers)
+        .set({ isLocal: false })
+        .where(eq(schema.servers.id, serverId));
       const member = await repos.member.find(owner.orgId, owner.userId);
       await db
         .update(schema.member)
@@ -471,13 +643,17 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
       expect(requests.every((request) => request.token !== `Bearer ${pat}`)).toBe(true);
     },
   );
-  it("leaves Cloud's account-only authentication unchanged", async () => {
-    env.CLOUD_MODE = true;
-    await expect(client().deployments.prepare({ ...source, serverId })).rejects.toMatchObject({
-      status: 403,
-    });
-    expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
-  });
+  it.each([false, true])(
+    "leaves Cloud's account-only authentication unchanged (custom App=%s)",
+    async (customApp) => {
+      if (customApp) await addCustomApp();
+      env.CLOUD_MODE = true;
+      await expect(client().deployments.prepare({ ...source, serverId })).rejects.toMatchObject({
+        status: 403,
+      });
+      expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
+    },
+  );
   it.each([429, 503])("does not hide a provider %s as a successful scan", async (status) => {
     providerStatus = status;
     await expect(client().deployments.prepare({ ...source, serverId })).rejects.toThrow(
