@@ -131,8 +131,9 @@ export interface OpenshipService {
  * wizard, not here (declare shared vars under the top-level `env`/`domains`).
  */
 export interface OpenshipMonorepoApp {
-  name: string;
+  name?: string;
   rootDirectory: string;
+  enabled?: boolean;
   framework?: StackId;
   packageManager?: string;
   installCommand?: string;
@@ -146,6 +147,7 @@ export interface OpenshipMonorepoApp {
 export interface OpenshipMonorepo {
   workspace?: { packageManager: string; prepareCommand?: string };
   apps?: OpenshipMonorepoApp[];
+  exclude?: string[];
 }
 
 /** Cloud sizing tier OR an explicit production resource allocation. */
