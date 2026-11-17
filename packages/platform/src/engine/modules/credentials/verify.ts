@@ -21,17 +21,14 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { safeErrorMessage, DOCKER_HUB_REGISTRY, type CredentialProvider } from "@repo/core";
 import { env } from "../../config/env";
 import { DigitalOceanApiError, digitaloceanRequest } from "../../lib/digitalocean-api";
-import { safeFetch, type SafeFetchResponse } from "../../lib/safe-fetch";
-import { trustedRegistryRealm } from "../../lib/registry-auth";
+import { safeFetch, type SafeFetchOptions, type SafeFetchResponse } from "../../lib/safe-fetch";
+import { readRegistryToken, trustedRegistryRealm } from "../../lib/registry-auth";
 import { verifyProviderAccess, type MigrationProvider } from "./provider-api";
 
-export interface VerifyResult {
-  ok: boolean;
-  /** Redacted, operator-facing. Absent when ok. */
-  reason?: string;
-  /** The login itself was rejected, independently of any repository permissions. */
-  credentialRejected?: boolean;
-}
+/** Reasons are redacted and may be shown to the operator. */
+export type VerifyResult =
+  | { ok: true; unverifiedReason?: string }
+  | { ok: false; reason?: string; credentialRejected?: true };
 
 /** Secrets as decrypted, keyed by the provider's field keys. */
 export type CredentialSecrets = Record<string, string>;
@@ -76,10 +73,10 @@ function registryConnectionFailure(target: string, error: unknown): VerifyResult
 
 async function fetchWithTimeout(
   url: string,
-  headers?: Record<string, string>,
+  options: Pick<SafeFetchOptions, "headers" | "sameOriginRedirectsOnly"> = {},
 ): Promise<SafeFetchResponse> {
   return safeFetch(url, {
-    headers,
+    ...options,
     timeoutMs: VERIFY_TIMEOUT_MS,
     // A self-hosted operator may intentionally verify a LAN/loopback registry.
     // The multi-tenant control plane must never let an org admin use this probe
@@ -106,7 +103,7 @@ function verifyHostFor(registry: string): string {
  * Container registry, via the Distribution v2 handshake.
  *
  * `GET /v2/` is the standard capability probe. Three answers matter:
- *   200 — the registry accepted us (with or without needing the credential).
+ *   200 — the registry is reachable, but its login is still unverified.
  *   401 + `WWW-Authenticate: Bearer realm=…` — the modern flow: exchange basic auth at
  *         the realm for a token. This is what ghcr.io, Docker Hub and ECR do, and it is
  *         the only step that actually proves the credential.
@@ -124,10 +121,11 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
   // http only for a loopback registry, which cannot have a public certificate.
   const scheme = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) ? "http" : "https";
   const base = `${scheme}://${host}`;
+  const registryEndpoint = `${base}/v2/`;
 
   let probe: SafeFetchResponse;
   try {
-    probe = await fetchWithTimeout(`${base}/v2/`);
+    probe = await fetchWithTimeout(registryEndpoint, { sameOriginRedirectsOnly: true });
   } catch (err) {
     observeCaughtError(err, "platform/engine/modules/credentials/verify");
     return registryConnectionFailure(registry, err);
@@ -137,12 +135,17 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
     // The registry answered without demanding auth. The credential is unproven — but it
     // is also unnecessary here, and refusing to store it would be wrong for a registry
     // that only requires auth on private repositories.
-    return { ok: true };
+    return {
+      ok: true,
+      unverifiedReason: `${registry} allows anonymous access to its registry endpoint. This check could not verify the saved login.`,
+    };
   }
 
   const challenge = probe.headers["www-authenticate"] ?? "";
+  const bearer = /^bearer/i.test(challenge);
+  let loginEndpoint = registryEndpoint;
 
-  if (/^bearer/i.test(challenge)) {
+  if (bearer) {
     const realm = /realm="([^"]+)"/i.exec(challenge)?.[1];
     const service = /service="([^"]+)"/i.exec(challenge)?.[1];
     if (!realm) return { ok: false, reason: `${registry} asked for a token but named no realm.` };
@@ -157,52 +160,43 @@ const verifyDockerRegistry: Verifier = async ({ selector, publicFields, secrets 
       };
     }
     if (service) url.searchParams.set("service", service);
-    // No `scope`: an empty scope yields a token proving only authentication, which is
-    // exactly what is being verified. Asking for a repository scope would fail for a
-    // valid credential that simply cannot see the repository we invented.
-    try {
-      const token = await fetchWithTimeout(url.toString(), {
-        authorization: `Basic ${basic}`,
-      });
-      if (token.status === 200) return { ok: true };
-      if (token.status === 401 || token.status === 403) {
-        return {
-          ok: false,
-          credentialRejected: true,
-          reason: `${registry} rejected these credentials.`,
-        };
-      }
-      return { ok: false, reason: `${registry} answered ${token.status} when issuing a token.` };
-    } catch (err) {
-      observeCaughtError(err, "platform/engine/modules/credentials/verify");
-      return registryConnectionFailure(`${registry}'s token endpoint`, err);
-    }
+    // Verify the login independently of repository grants.
+    url.searchParams.delete("scope");
+    loginEndpoint = url.toString();
+  } else if (!/^basic/i.test(challenge)) {
+    return {
+      ok: false,
+      reason: `${registry} answered ${probe.status} and did not offer a login method Openship understands.`,
+    };
   }
 
-  if (/^basic/i.test(challenge)) {
-    try {
-      const authed = await fetchWithTimeout(`${base}/v2/`, {
-        authorization: `Basic ${basic}`,
-      });
-      if (authed.status === 200) return { ok: true };
-      if (authed.status === 401 || authed.status === 403) {
-        return {
-          ok: false,
-          credentialRejected: true,
-          reason: `${registry} rejected these credentials.`,
-        };
+  try {
+    // A different origin would receive no credentials, so its response cannot
+    // prove whether the saved login works.
+    const login = await fetchWithTimeout(loginEndpoint, {
+      headers: { authorization: `Basic ${basic}` },
+      sameOriginRedirectsOnly: true,
+    });
+    if (login.status === 200) {
+      if (!bearer || readRegistryToken(await login.json().catch(() => undefined))) {
+        return { ok: true };
       }
-      return { ok: false, reason: `${registry} answered ${authed.status} when checking credentials.` };
-    } catch (err) {
-      observeCaughtError(err, "platform/engine/modules/credentials/verify");
-      return registryConnectionFailure(registry, err);
+      return { ok: false, reason: `${registry} did not return a registry token.` };
     }
+    // A 403 can be a policy refusal even when the credentials are valid.
+    if (login.status === 401) {
+      return {
+        ok: false,
+        credentialRejected: true,
+        reason: `${registry} rejected these credentials.`,
+      };
+    }
+    const action = bearer ? "issuing a token" : "checking credentials";
+    return { ok: false, reason: `${registry} answered ${login.status} when ${action}.` };
+  } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/credentials/verify");
+    return registryConnectionFailure(bearer ? `${registry}'s token endpoint` : registry, err);
   }
-
-  return {
-    ok: false,
-    reason: `${registry} answered ${probe.status} and did not offer a login method Openship understands.`,
-  };
 };
 
 /**
@@ -217,7 +211,7 @@ const verifyCloudflare: Verifier = async ({ secrets }) => {
   if (!apiToken) return { ok: false, reason: "An API token is required." };
   try {
     const res = await fetchWithTimeout("https://api.cloudflare.com/client/v4/user/tokens/verify", {
-      authorization: `Bearer ${apiToken}`,
+      headers: { authorization: `Bearer ${apiToken}` },
     });
     if (res.status === 200) return { ok: true };
     if (res.status === 401 || res.status === 403) {
@@ -241,9 +235,10 @@ const verifyDigitalOcean: Verifier = async ({ secrets }) => {
     // diagnostics-ignore: verification returns a sanitized verdict without logging credentials.
     return {
       ok: false,
-      reason: error instanceof DigitalOceanApiError && [401, 403].includes(error.providerStatus)
-        ? "DigitalOcean rejected this token. It needs domain read, create, update and delete scopes."
-        : "DigitalOcean could not verify this connection. Try again.",
+      reason:
+        error instanceof DigitalOceanApiError && [401, 403].includes(error.providerStatus)
+          ? "DigitalOcean rejected this token. It needs domain read, create, update and delete scopes."
+          : "DigitalOcean could not verify this connection. Try again.",
     };
   }
 };

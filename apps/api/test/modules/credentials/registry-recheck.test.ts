@@ -78,6 +78,21 @@ describe("rechecking a registry after an image access denial", () => {
     },
   );
 
+  it("leaves the saved status and date alone when the registry allows anonymous access", async () => {
+    h.verify.mockResolvedValue({ ok: true, unverifiedReason: "Registry allows anonymous access." });
+    await recheckRejectedRegistryCredential("org-a", "ghcr.io");
+    await expect(verifyCredential("org-a", row.id)).rejects.toThrow(
+      "Registry allows anonymous access.",
+    );
+    expect(h.credential.recordVerification).not.toHaveBeenCalled();
+  });
+
+  it("reports a manual registry outage without disabling the login", async () => {
+    h.verify.mockResolvedValue({ ok: false, reason: "Registry unavailable." });
+    await expect(verifyCredential("org-a", row.id)).rejects.toThrow("Registry unavailable.");
+    expect(h.credential.recordVerification).not.toHaveBeenCalled();
+  });
+
   it("does not look up another organization's credentials or probe an unsaved registry", async () => {
     h.credential.findActive.mockResolvedValue(undefined);
     await recheckRejectedRegistryCredential("org-b", "ghcr.io");

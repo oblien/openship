@@ -86,6 +86,25 @@ describe("safeFetch — SSRF pinning", () => {
     expect(json.body).toBe("hi");
   });
 
+  it("limits authenticated verification redirects to the original origin", async () => {
+    const [sourcePort, destinationPort] = await Promise.all([listening, redirectReceiverListening]);
+    const origin = `http://127.0.0.1:${sourcePort}`;
+    const options = {
+      headers: { authorization: "Basic test-fixture" },
+      allowHttp: true,
+      allowPrivate: true,
+      maxRedirects: 1,
+      sameOriginRedirectsOnly: true,
+    };
+
+    redirectTarget = `http://127.0.0.1:${destinationPort}/capture`;
+    expect((await safeFetch(`${origin}/redirect`, options)).status).toBe(302);
+
+    redirectTarget = "/echo";
+    const response = await safeFetch(`${origin}/redirect`, options);
+    expect(await response.json()).toMatchObject({ authorization: "Basic test-fixture" });
+  });
+
   it("strips credentials before following a cross-origin redirect", async () => {
     const [sourcePort, destinationPort] = await Promise.all([listening, redirectReceiverListening]);
     redirectTarget = `http://127.0.0.1:${destinationPort}/capture`;

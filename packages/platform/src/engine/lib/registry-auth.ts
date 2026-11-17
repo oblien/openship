@@ -16,3 +16,13 @@ export function trustedRegistryRealm(registryUrl: string, realm: string): URL {
   }
   return target;
 }
+
+/** A Distribution token response can use either the registry or OAuth field name. */
+export function readRegistryToken(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const { token, access_token } = body as { token?: unknown; access_token?: unknown };
+  for (const candidate of [token, access_token]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+  return null;
+}
