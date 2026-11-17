@@ -35,6 +35,7 @@ function jsonbRejection(value: unknown): string | null {
 }
 
 const h = vi.hoisted(() => ({
+  registryRecheck: vi.fn(),
   finishError: null as Error | null,
   /** Rejects every status write, whatever the payload (a dead connection). */
   rejectAllStatusWrites: false,
@@ -48,6 +49,11 @@ const h = vi.hoisted(() => ({
   deletedUpdateStatuses: [] as string[],
   deleteUpdateStatusError: null as Error | null,
   finishedLogs: [] as unknown[][],
+}));
+
+vi.mock("@repo/platform/engine/modules/credentials/credential.service", async importOriginal => ({
+  ...await importOriginal<typeof import("@repo/platform/engine/modules/credentials/credential.service")>(),
+  recheckRejectedRegistryCredential: h.registryRecheck,
 }));
 
 vi.mock("@repo/db", () => ({
@@ -149,6 +155,35 @@ function deeplyNestedHostile(): Record<string, unknown> {
 
 const statusPairs = () => h.statusWrites.map((w) => `${w.id}:${w.status}`);
 
+describe("registry checks after deployment failure", () => {
+  it("publishes the original failure before rechecking the owning organization's registry", async () => {
+    h.registryRecheck.mockImplementation(async () => {
+      expect(statusPairs()).toContain("dep_1:failed");
+      expect(h.sessionStatuses).toContainEqual(expect.objectContaining({ id: "dep_1", status: "failed" }));
+    });
+    await onFailure(ctxFor(), "Image denied", 1000, {
+      errorCode: "REGISTRY_ACCESS_DENIED", errorDetails: { registry: "ghcr.io" },
+    });
+    expect(h.registryRecheck).toHaveBeenCalledExactlyOnceWith("org_1", "ghcr.io");
+    expect(h.statusWrites.at(-1)?.extra).toMatchObject({ errorCode: "REGISTRY_ACCESS_DENIED", errorMessage: "Image denied" });
+  });
+
+  it("does not replace the pull failure if the diagnostic check fails", async () => {
+    h.registryRecheck.mockRejectedValue(new Error("Verification unavailable"));
+    const ctx = ctxFor();
+    await expect(onFailure(ctx, "Image denied", 1000, {
+      errorCode: "REGISTRY_ACCESS_DENIED", errorDetails: { registry: "ghcr.io" },
+    })).resolves.toBeUndefined();
+    expect(ctx.settled).toBe("failed");
+    expect(h.statusWrites.at(-1)?.extra?.errorMessage).toBe("Image denied");
+  });
+
+  it("does not probe credentials for unrelated failures", async () => {
+    await onFailure(ctxFor(), "Host unavailable", 1000, { errorCode: "HOST_UNREACHABLE" });
+    expect(h.registryRecheck).not.toHaveBeenCalled();
+  });
+});
+
 function loggerSpy() {
   const lines: Array<{ message: string; level?: string }> = [];
   return {
@@ -158,6 +193,7 @@ function loggerSpy() {
 }
 
 beforeEach(() => {
+  h.registryRecheck.mockReset();
   h.finishError = null;
   h.rejectAllStatusWrites = false;
   h.containerIdError = null;

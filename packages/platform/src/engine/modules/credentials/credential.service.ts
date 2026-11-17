@@ -316,19 +316,45 @@ export async function verifyCredential(
 ): Promise<SanitizedCredential> {
   const row = await repos.credential.findById(organizationId, id);
   if (!row) throw new NotFoundError("Credential", id);
+  await checkStoredCredential(row);
+  const fresh = await repos.credential.findById(organizationId, id);
+  return sanitizeCredential(fresh ?? row);
+}
+
+/**
+ * A denied image may mean a missing package grant, not an expired token. Recheck
+ * the registry login before changing its status, using only this org's saved
+ * registry destination. Network failures leave the credential usable.
+ */
+export async function recheckRejectedRegistryCredential(
+  organizationId: string,
+  registry: string,
+): Promise<void> {
+  const selector = normalizeCredentialSelector(getCredentialProvider("docker-registry")!, registry);
+  const row = await repos.credential.findActive(organizationId, "docker-registry", selector);
+  if (row) await checkStoredCredential(row, true);
+}
+
+async function checkStoredCredential(row: Credential, definitiveOnly = false): Promise<void> {
   const provider = getCredentialProvider(row.provider);
   if (!provider) throw new ValidationError(`Unknown credential provider "${row.provider}".`);
 
   let secrets = readCredentialSecrets(row);
   if (row.publicFields.authorization === "oauth") {
     const { getProviderAccess } = await import("./connection-authorization");
-    secrets = (await getProviderAccess(organizationId, id, { allowInvalid: true })).secrets;
+    await getProviderAccess(row.organizationId, row.id, { allowInvalid: true });
+    // Refresh may replace the stored token. Check and record the same snapshot,
+    // including a concurrent rotation, rather than the token read before refresh.
+    const refreshed = await repos.credential.findById(row.organizationId, row.id);
+    if (!refreshed) return;
+    row = refreshed;
+    secrets = readCredentialSecrets(row);
   }
   if (Object.keys(secrets).length === 0) {
     // The restore case: the row survived a cross-instance move but its secret could not.
     const reason = "The stored secret is empty — re-enter it.";
-    await repos.credential.markInvalid(organizationId, id, reason);
-    return sanitizeCredential({ ...row, status: "invalid", lastError: reason });
+    await repos.credential.recordVerification(row, { ok: false, reason });
+    return;
   }
 
   const verdict = await verifyCredentialValues(provider, {
@@ -336,11 +362,9 @@ export async function verifyCredential(
     publicFields: row.publicFields ?? {},
     secrets,
   });
-  if (verdict.ok) await repos.credential.markVerified(organizationId, id);
-  else await repos.credential.markInvalid(organizationId, id, verdict.reason ?? "Rejected by the provider.");
-
-  const fresh = await repos.credential.findById(organizationId, id);
-  return sanitizeCredential(fresh ?? row);
+  if (!definitiveOnly || verdict.ok || verdict.credentialRejected) {
+    await repos.credential.recordVerification(row, verdict);
+  }
 }
 
 // ─── The consumer accessor ───────────────────────────────────────────────────

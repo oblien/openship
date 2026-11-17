@@ -123,6 +123,20 @@ describe("container-registry credential verification SSRF policy", () => {
 
 describe("registry connection errors", () => {
   it.each([
+    'Bearer realm="https://registry.example.com/token",service="registry.example.com"',
+    'Basic realm="registry"',
+  ])("distinguishes a rejected login from an unavailable authentication endpoint: %s", async challenge => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      h.safeFetch.mockResolvedValueOnce(response(401, { "www-authenticate": challenge }))
+        .mockResolvedValueOnce(response(status));
+      const result = await verifyCredentialValues(provider, values("registry.example.com"));
+      expect(result.ok).toBe(false);
+      expect(result.credentialRejected === true).toBe(status === 401 || status === 403);
+    }
+    for (const [url] of h.safeFetch.mock.calls) expect(new URL(url).searchParams.has("scope")).toBe(false);
+  });
+
+  it.each([
     ["probe", undefined, "ERR_TLS_CERT_ALTNAME_INVALID"],
     [
       "token endpoint",

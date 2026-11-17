@@ -8,6 +8,7 @@ export interface PreparedDockerImage {
 }
 
 export interface DockerImagePreparationOptions {
+  /** Refresh registry images, preserving cached images without registry provenance. */
   force?: boolean;
   /** Refresh only a cached image with a digest for this exact repository. */
   refreshMutableTag?: boolean;
@@ -72,11 +73,17 @@ export async function prepareDockerImage(
   if (!image && (options.requirePresent || /^sha256:[a-f0-9]{64}$/.test(ref))) {
     throw new Error(`Retained image ${ref} is unavailable. Redeploy to rebuild it.`);
   }
-  const refresh =
-    options.refreshMutableTag &&
-    isMutableImageRef(ref) &&
-    !!matchingRegistryDigest(ref, image?.RepoDigests);
-  const force = options.force === true && isMutableImageRef(ref);
+  // A tag alone does not prove a registry source: builds, imports and migrations
+  // can create any tag. Explicit refresh obeys the same provenance check as an
+  // ordinary redeploy; otherwise it tries to download host-only artifacts.
+  const registryBacked = !!matchingRegistryDigest(ref, image?.RepoDigests);
+  const refresh = options.refreshMutableTag && isMutableImageRef(ref) && registryBacked;
+  const force = options.force === true && isMutableImageRef(ref) && (!image || registryBacked);
+  if (image && options.force && !registryBacked && !options.requirePresent) {
+    options.logger?.log(
+      `Keeping cached image ${ref}: no registry digest is recorded for this reference.\n`,
+    );
+  }
   if (!image || (!options.requirePresent && (force || refresh))) {
     await io.pull(ref, { force: force || !!image });
     checkCancellation();
