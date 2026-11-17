@@ -937,46 +937,6 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     child.stdout.on("data", (d) => instanceLog.write(d));
     child.stderr.on("data", (d) => instanceLog.write(d));
 
-    // Buffer output until healthy; on early exit, surface the tail.
-    let buffered = "";
-    const buffer = (d: Buffer) => {
-      buffered += d.toString();
-    };
-    child.stdout.on("data", buffer);
-    child.stderr.on("data", buffer);
-    child.on("exit", (code) => {
-      if (code && code !== 0) {
-        spinner.fail(`Openship server exited (code ${code})`);
-        process.stderr.write(buffered.slice(-2000));
-        process.exit(code);
-      }
-    });
-
-    const healthUrl = `http://127.0.0.1:${port}/api/health`;
-    let healthy = false;
-    for (let i = 0; i < 60 && child.exitCode === null; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const res = await fetch(healthUrl, { signal: AbortSignal.timeout(2000) });
-        if (res.ok) {
-          healthy = true;
-          break;
-        }
-      } catch (diagnosticFailure) {
-        observeCaughtError(diagnosticFailure, "cli/commands/up");
-        // not up yet
-      }
-    }
-
-    if (!healthy) {
-      spinner.fail("Openship did not become healthy in time");
-      process.stderr.write(buffered.slice(-2000));
-      child.kill("SIGTERM");
-      process.exit(1);
-    }
-
-    spinner.succeed(`Openship API running at http://localhost:${port}`);
-
     // Track every child so Ctrl-C / a fatal exit / `openship stop` tears them all
     // down together. The API + dashboard hold keep-alive sockets to EACH OTHER,
     // so SIGTERM alone can hang their graceful shutdown (mutual wait) — we MUST
@@ -1011,6 +971,57 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
         process.exit(exitCode);
       }, 1500);
     };
+    // Handle stop signals from the moment the API exists, not once startup is
+    // done. The API is in its own process group, so launchd stopping this
+    // process or a Ctrl-C in the terminal never reaches it: if we died on the
+    // signal while it was still starting, it kept the port and the PGlite lock.
+    // stopAll owns the exit (it force-kills after a grace, THEN process.exit).
+    // Calling process.exit() here would kill that timer and orphan the tree.
+    process.on("SIGINT", () => stopAll(0));
+    process.on("SIGTERM", () => stopAll(0));
+
+    // Buffer output until healthy; on early exit, surface the tail.
+    let buffered = "";
+    const buffer = (d: Buffer) => {
+      buffered += d.toString();
+    };
+    child.stdout.on("data", buffer);
+    child.stderr.on("data", buffer);
+    child.on("exit", (code) => {
+      if (code && code !== 0 && !stopping) {
+        spinner.fail(`Openship server exited (code ${code})`);
+        process.stderr.write(buffered.slice(-2000));
+        process.exit(code);
+      }
+    });
+
+    const healthUrl = `http://127.0.0.1:${port}/api/health`;
+    let healthy = false;
+    for (let i = 0; i < 60 && child.exitCode === null && !stopping; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const res = await fetch(healthUrl, { signal: AbortSignal.timeout(2000) });
+        if (res.ok) {
+          healthy = true;
+          break;
+        }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "cli/commands/up");
+        // not up yet
+      }
+    }
+
+    // Stopped while starting: stopAll is already taking the API down and exits.
+    if (stopping) return;
+
+    if (!healthy) {
+      spinner.fail("Openship did not become healthy in time");
+      process.stderr.write(buffered.slice(-2000));
+      child.kill("SIGTERM");
+      process.exit(1);
+    }
+
+    spinner.succeed(`Openship API running at http://localhost:${port}`);
 
     // Dashboard (unless --no-ui): lazy-downloaded from GitHub releases, then run
     // alongside the API. A UI failure is non-fatal — the API keeps serving.
@@ -1132,10 +1143,6 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     child.stdout.on("data", (d) => process.stdout.write(d));
     child.stderr.on("data", (d) => process.stderr.write(d));
 
-    // stopAll owns the exit (it force-kills after a grace, THEN process.exit).
-    // Calling process.exit() here would kill that timer and orphan the tree.
-    process.on("SIGINT", () => stopAll(0));
-    process.on("SIGTERM", () => stopAll(0));
     // If the API dies, bring the dashboard down with it and exit with its code.
     child.on("exit", (code) => stopAll(code ?? 0));
 }
