@@ -24,6 +24,14 @@ describe("public deployment intent", () => {
     }
   });
 
+  it.each([{ app: "n8n" }, { repo: "https://github.com/owner/repo", branch: "main" }])("carries referral codes from shared buttons to Cloud setup: %j", (input) => {
+    const source = parseDeploySource(input);
+    const link = new URL(deployLinkHref(source, undefined, "AF-COMMUNITY"), "https://openship.io");
+    const setup = new URL(deploySetupHref(parseDeploySource(Object.fromEntries(link.searchParams)), "cloud", link.searchParams.get("ref")!), "https://app.openship.io");
+    expect(setup.searchParams.get("ref")).toBe("AF-COMMUNITY");
+    expect(setup.searchParams.get("destination")).toBe("cloud");
+  });
+
   it("shares the dashboard's base64url repository slug while accepting pasted URLs", () => {
     const source = parseDeploySource({
       repo: "https://github.com/oblien/mindwire",

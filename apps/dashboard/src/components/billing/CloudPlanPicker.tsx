@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { ReferralCode, useReferralCode } from "@/components/referrals/ReferralCode";
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
@@ -92,7 +93,8 @@ function PlanPicker({
   purchaseDisabled?: boolean;
 }) {
   const { t } = useI18n();
-  const referral = useReferralCode(initialReferralCode);
+  const searchParams = useSearchParams();
+  const referral = useReferralCode(initialReferralCode ?? searchParams.get("ref") ?? undefined);
   const purchase = useCloudPurchase();
   const billingWorkspaceId = useBillingWorkspace();
   const selectedWorkspaceId = workspaceId ?? billingWorkspaceId;

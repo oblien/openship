@@ -12,17 +12,19 @@ const buttonStyles = [
 
 export function DeployReadme({
   source,
+  referralCode,
   copied,
   onCopy,
 }: {
   source: DeploySource;
+  referralCode?: string;
   copied: string | null;
   onCopy: (text: string) => Promise<void>;
 }) {
   const copy = useCopy();
   const groupId = useId();
   const [style, setStyle] = useState<(typeof buttonStyles)[number]>(buttonStyles[1]);
-  const markdown = `[![Deploy with OpenShip](https://openship.io${style.image})](https://openship.io${deployLinkHref(source)})`;
+  const markdown = `[![Deploy with OpenShip](https://openship.io${style.image})](https://openship.io${deployLinkHref(source, undefined, referralCode)})`;
 
   return (
     <details className="deploy-share">

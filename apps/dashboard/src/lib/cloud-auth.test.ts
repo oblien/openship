@@ -16,9 +16,9 @@ import {
   emailVerificationHref,
 } from "./cloud-auth";
 
-it("keeps a repository button's source, branch and destination through auth links", () => {
+it("keeps a repository button's source, branch, referral and destination through auth links", () => {
   const source = parseDeploySource({ repo: "https://github.com/owner/repository", branch: "release/v2" });
-  const returnTo = deploySetupHref(source, "server");
+  const returnTo = deploySetupHref(source, "server", "AF-COMMUNITY");
   for (const route of ["/login", "/register"] as const) {
     const params = new URLSearchParams({ returnTo });
     const auth = new URL(buildAuthPageHref(route, params), "https://app.openship.io");
