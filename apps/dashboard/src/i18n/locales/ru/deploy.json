@@ -95,6 +95,9 @@
     "domains": "Домены"
   },
   "sidebar": {
+    "confirmDestination": "Подтвердите место развёртывания",
+    "destinationReviewHint": "Место развёртывания также можно изменить вверху формы.",
+    "changeDestination": "Изменить место развёртывания",
     "copyCloneToken": "Скопировать токен клонирования",
     "cloneTokenTitle": "Токен клонирования",
     "cloneTokenNoRepo": "Для этого деплоя нет репозитория GitHub.",

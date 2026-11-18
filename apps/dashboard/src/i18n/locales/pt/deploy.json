@@ -95,6 +95,9 @@
     "domains": "Domínios"
   },
   "sidebar": {
+    "confirmDestination": "Confirmar o destino da implantação",
+    "destinationReviewHint": "Você também pode alterar o destino na parte superior do formulário de implantação.",
+    "changeDestination": "Alterar destino",
     "copyCloneToken": "Copiar token de clonagem",
     "cloneTokenTitle": "Token de clonagem",
     "cloneTokenNoRepo": "Nenhum repositório GitHub para esta implantação.",

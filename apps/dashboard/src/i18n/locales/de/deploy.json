@@ -95,6 +95,9 @@
     "domains": "Domains"
   },
   "sidebar": {
+    "confirmDestination": "Bereitstellungsziel bestätigen",
+    "destinationReviewHint": "Du kannst das Ziel auch oben im Bereitstellungsformular ändern.",
+    "changeDestination": "Ziel ändern",
     "copyCloneToken": "Clone-Token kopieren",
     "cloneTokenTitle": "Clone-Token",
     "cloneTokenNoRepo": "Kein GitHub-Repository für dieses Deployment.",

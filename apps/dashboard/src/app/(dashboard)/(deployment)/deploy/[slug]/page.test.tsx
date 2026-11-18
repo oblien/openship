@@ -21,6 +21,8 @@ const api = vi.hoisted(() => ({
   push: vi.fn(),
   listBranches: vi.fn(),
   getBranchPage: vi.fn(),
+  sidebar: vi.fn(),
+  serverCount: 0,
   config: null as unknown as DeploymentContextType["config"],
 }));
 
@@ -66,13 +68,14 @@ vi.mock("@/components/i18n-provider", () => ({
     text.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? key),
 }));
 vi.mock("@/components/shared/ServerSelector", () => ({
-  useServerSelection: () => ({
-    selected: null,
-    ready: false,
+  useServerSelection: ({ readOnly }: { readOnly: boolean }) => ({
+    rows: Array.from({ length: api.serverCount }, (_, i) => ({ id: String(i) })),
+    selected: api.serverCount ? { id: "0", name: "Production" } : null,
+    ready: api.serverCount > 0,
     loading: false,
     error: null,
     automaticCloud: false,
-    readOnly: false,
+    readOnly,
   }),
   ServerSelectorView: () => null,
   ServerSelectionPrompt: () => null,
@@ -84,7 +87,7 @@ vi.mock("./components/DeployTargetStep", () => ({
 vi.mock("./components/ServerRuntimePicker", () => ({
   useServerRuntimeSelection: () => ({}),
 }));
-vi.mock("./components/Sidebar", () => ({ default: () => null }));
+vi.mock("./components/Sidebar", () => ({ default: (props: unknown) => { api.sidebar(props); return null; } }));
 vi.mock("./components/SkeletonLoader", () => ({ default: () => null }));
 vi.mock("@/components/actions/DeployActions", () => ({ DeployActions: () => null }));
 vi.mock("@/components/import-project/DeployGitHubChecks", () => ({
@@ -112,23 +115,13 @@ async function renderPage() {
   await act(async () => {
     root.render(<DeployRepository />);
   });
-  // The initial scan is async; wait for the error view to settle.
-  await act(async () => {
-    await vi.waitFor(() => {
-      if (
-        !container.textContent?.includes("Try again") &&
-        !container.textContent?.includes("Back to Library")
-      ) {
-        throw new Error("error view not settled yet");
-      }
-    });
-  });
 }
 
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.slug = "ZXhhbXBsZS9kZW1v";
+  api.serverCount = 0;
   api.config = {
     ...DEFAULT_CONFIG,
     owner: "example",
@@ -162,6 +155,24 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it.each([
+  { destinations: 2, existing: false, lockedUpload: false, review: true },
+  { destinations: 1, existing: false, lockedUpload: false, review: false },
+  { destinations: 2, existing: true, lockedUpload: false, review: false },
+  { destinations: 2, existing: false, lockedUpload: true, review: false },
+])("requests first-deploy destination review=$review with $destinations destinations, existing=$existing, upload=$lockedUpload", async ({ destinations, existing, lockedUpload, review }) => {
+  api.serverCount = destinations;
+  api.config.serverId = "0";
+  if (existing) api.config.projectId = "existing-project";
+  if (lockedUpload) api.config.uploadSessionId = "upload";
+  api.initializeFromRepo.mockResolvedValue({ success: true });
+  await renderPage();
+  const props = api.sidebar.mock.lastCall?.[0];
+  expect(props?.destinationReady).toBe(true);
+  if (review) expect(props.reviewDestination?.server.id).toBe("0");
+  else expect(props.reviewDestination).toBeUndefined();
 });
 
 describe("deploy page failed first scan (#1666)", () => {
