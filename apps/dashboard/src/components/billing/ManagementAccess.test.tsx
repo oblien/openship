@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PRICING } from "@repo/core";
 import type { ManagementState } from "@repo/contracts";
 import { ManagementAccess } from "./ManagementAccess";
+import { PlatformProvider } from "@/context/PlatformContext";
+import { ServerForm } from "@/components/servers/server-form";
+import { setActiveOrganizationId } from "@/lib/api/client";
+import { baseDictionary } from "@/i18n";
 
 const h = vi.hoisted(() => ({
   user: "owner",
@@ -14,12 +18,24 @@ const h = vi.hoisted(() => ({
   purchase: vi.fn(),
   resumeCheckout: vi.fn(),
   cancelCheckout: vi.fn(),
+  saveServer: vi.fn(),
+  testServer: vi.fn(),
+  toast: vi.fn(),
 }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: h.user }, session: { activeOrganizationId: h.org } } }),
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.cloud }));
 vi.mock("@/lib/api/management", () => ({ managementApi: h }));
+vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast }) }));
+vi.mock("@/lib/api", async () => ({
+  getApiErrorMessage: (await import("@/lib/api/client")).getApiErrorMessage,
+  systemApi: {
+    createServerEntry: h.saveServer,
+    testConnection: h.testServer,
+    hasNativeFilePicker: () => false,
+  },
+}));
 
 let root: Root, host: HTMLDivElement;
 let state: ManagementState;
@@ -45,6 +61,7 @@ const click = (text: string) => act(async () => button(text).click());
 
 beforeEach(() => {
   vi.resetAllMocks();
+  setActiveOrganizationId(null);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.user = "owner";
   h.org = "org-one";
@@ -67,6 +84,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  setActiveOrganizationId(null);
   host.remove();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -158,18 +176,64 @@ it("keeps the SSH form and typed credentials through a slow plan check and retry
   let reject!: (error: Error) => void;
   h.get.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
   await render();
-  expect(host.querySelector('[role="status"]')?.textContent).toContain("Loading your management plan");
+  const { checkingAccess, checkingAccessHint } = baseDictionary.billing.managementPlans;
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(checkingAccess);
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(checkingAccessHint);
   const input = form()?.querySelector("input");
   expect(input).toBeDefined();
   input!.value = "vps.example.test";
   await act(async () => reject(new Error("Unable to check allowance")));
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("Unable to check allowance");
   expect(form()?.querySelector("input")).toBe(input);
-  Object.assign(state, { active: true, serverLimit: 2 });
+  let finish!: (value: ManagementState) => void;
+  h.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   await click("Try again");
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(checkingAccess);
+  await act(async () => finish({ ...state, active: true, serverLimit: 2 }));
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(form()?.querySelector("input")).toBe(input);
   expect(input!.value).toBe("vps.example.test");
+});
+
+it.each([
+  { action: "save", switchTo: "workspace" },
+  { action: "test", switchTo: "workspace" },
+  { action: "save", switchTo: "account" },
+  { action: "test", switchTo: "account" },
+])("discards a late SSH $action response after switching $switchTo", async ({ action, switchTo }) => {
+  const onSaved = vi.fn();
+  const operation = action === "save" ? h.saveServer : h.testServer;
+  let finish!: (value: unknown) => void;
+  operation.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  Object.assign(state, { active: true, serverLimit: 2 });
+  const renderForm = () => act(async () => root.render(
+    <PlatformProvider selfHosted={false}><ServerForm onSaved={onSaved} /></PlatformProvider>,
+  ));
+  await renderForm();
+  const input = (placeholder: string) =>
+    host.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)!;
+  const fill = async (field: HTMLInputElement, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const hostField = "123.45.67.89";
+  const passwordField = "Enter server password";
+  await fill(input(hostField), "host.example.test");
+  await fill(input(passwordField), "temporary-test-value");
+  await click(action === "save" ? baseDictionary.servers.form.saveAndContinue : baseDictionary.servers.form.testConnection);
+  expect(operation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sshHost: "host.example.test" }));
+  if (switchTo === "workspace") await act(async () => setActiveOrganizationId("org-two"));
+  else {
+    h.user = "second-account";
+    await renderForm();
+  }
+  expect(input(hostField).value).toBe("");
+  expect(input(passwordField).value).toBe("");
+  await act(async () => finish({ id: "previous-org-server", ok: true, message: "Connection succeeded" }));
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(h.toast).not.toHaveBeenCalled();
 });
 
 it.each(["user", "org", "cloud"] as const)(

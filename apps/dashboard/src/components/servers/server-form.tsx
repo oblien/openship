@@ -2,8 +2,9 @@
 
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
+import { getActiveOrganizationId, getApiRequestScopeVersion } from "@/lib/api/client";
 import type { ServerInfo, SshProbeInput } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -89,6 +90,15 @@ function ConnectedServerForm({
   const { deployMode, selfHosted } = usePlatform();
   const restrictedConnection = migrationSource || !selfHosted;
   const isEditing = !!server;
+  // A workspace switch can update request headers before React replaces the form.
+  const organizationId = getActiveOrganizationId();
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isCurrentRequest = (scope: number) =>
+    mounted.current && scope === getApiRequestScopeVersion();
 
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -200,6 +210,8 @@ function ConnectedServerForm({
   }
 
   async function handleSave() {
+    if (organizationId !== getActiveOrganizationId()) return;
+    const scope = getApiRequestScopeVersion();
     if (!sshHost.trim()) {
       showToast(t.servers.form.toastIpRequired, "error", t.servers.toastTitles.server);
       return;
@@ -268,20 +280,24 @@ function ConnectedServerForm({
         ? await systemApi.updateServerEntry(server!.id, data)
         : await systemApi.createServerEntry(data);
 
+      if (!isCurrentRequest(scope)) return;
       showToast(isEditing ? t.servers.form.toastUpdated : t.servers.form.toastSaved, "success", t.servers.toastTitles.server);
       onSaved({ server: saved, isEditing });
     } catch (err) {
+      if (!isCurrentRequest(scope)) return;
       showToast(
         getApiErrorMessage(err, t.servers.form.toastSaveFailed),
         "error",
         t.servers.toastTitles.server,
       );
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   }
 
   async function handleTestConnection() {
+    if (organizationId !== getActiveOrganizationId()) return;
+    const scope = getApiRequestScopeVersion();
     if (!sshHost.trim()) {
       showToast(t.servers.form.toastIpRequired, "error", t.servers.toastTitles.server);
       return;
@@ -334,6 +350,7 @@ function ConnectedServerForm({
       if (extraArgs.trim()) payload.sshArgs = extraArgs.trim();
 
       const result = migrationSource ? await dockerMigrationApi.testSource(sourceCredentials()) : await systemApi.testConnection(payload);
+      if (!isCurrentRequest(scope)) return;
       setTestResult(result);
       if (result.ok) {
         showToast(t.servers.form.toastConnectionSuccess, "success", t.servers.toastTitles.server);
@@ -341,11 +358,12 @@ function ConnectedServerForm({
         showToast(result.message || t.servers.form.toastConnectionFailed, "error", t.servers.toastTitles.server);
       }
     } catch (err) {
+      if (!isCurrentRequest(scope)) return;
       const message = getApiErrorMessage(err, t.servers.form.toastConnectionTestFailed);
       setTestResult({ ok: false, message });
       showToast(message, "error", t.servers.toastTitles.server);
     } finally {
-      setTesting(false);
+      if (mounted.current) setTesting(false);
     }
   }
 

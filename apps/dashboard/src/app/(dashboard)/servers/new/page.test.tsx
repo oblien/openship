@@ -5,22 +5,26 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { baseDictionary } from "@/i18n";
+import { setActiveOrganizationId } from "@/lib/api/client";
 import AddServerPage from "./page";
 
 const h = vi.hoisted(() => ({
   push: vi.fn(),
-  list: vi.fn(),
+  installSession: vi.fn(),
+  getServer: vi.fn(),
   openManaged: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/lib/api", () => ({
-  systemApi: { listServers: h.list },
+  systemApi: { getInstallSession: h.installSession, getServerById: h.getServer },
   getApiErrorMessage: (error: Error) => error.message,
 }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
-vi.mock("@/hooks/useSetupStream", () => ({ useSetupStream: () => ({}) }));
+vi.mock("@/hooks/useSetupStream", () => ({ useSetupStream: () => ({ disconnect: vi.fn() }) }));
 vi.mock("@/components/servers/server-form", () => ({
-  ServerForm: () => <label>Connected server form<input aria-label="SSH host" defaultValue="192.0.2.1" /></label>,
+  ServerForm: ({ server }: { server?: { sshHost: string } }) =>
+    <label>Connected server form<input aria-label="SSH host" defaultValue={server?.sshHost ?? ""} /></label>,
 }));
 vi.mock("@/components/servers/add-server-modal", () => ({
   useAddServerModal: (options: { initialMode: string }) => {
@@ -32,15 +36,27 @@ let host: HTMLDivElement, root: Root;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  h.list.mockResolvedValue([]);
+  setActiveOrganizationId(null);
+  h.installSession.mockResolvedValue(null);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  setActiveOrganizationId(null);
   host.remove();
   vi.unstubAllGlobals();
+});
+
+it("discards the previous workspace’s installation lookup after switching", async () => {
+  let finish!: (value: unknown) => void;
+  h.installSession.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await render(false);
+  await act(async () => setActiveOrganizationId("second-workspace"));
+  await act(async () => finish({ active: true, status: "running", serverId: "previous-server" }));
+  expect(h.getServer).not.toHaveBeenCalled();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="SSH host"]')?.value).toBe("");
 });
 async function render(selfHosted: boolean) {
   await act(async () =>

@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "Vérification de l’accès à la gestion…",
+    "accessUnavailable": "Impossible de vérifier l’accès à la gestion",
+    "checkingAccessHint": "Vous pouvez saisir vos informations SSH pendant la vérification de cet espace de travail.",
     "label": "Offre de support",
     "basic": "Basic",
     "priority": "Priorité",

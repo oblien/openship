@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "サーバー管理の利用権限を確認しています…",
+    "accessUnavailable": "サーバー管理の利用権限を確認できませんでした",
+    "checkingAccessHint": "ワークスペースの確認中も SSH 接続情報を入力できます。",
     "label": "サポートプラン",
     "basic": "ベーシック",
     "priority": "優先",

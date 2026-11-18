@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "Zugriff auf die Serververwaltung wird geprüft…",
+    "accessUnavailable": "Zugriff auf die Serververwaltung konnte nicht geprüft werden",
+    "checkingAccessHint": "Du kannst die SSH-Daten eingeben, während wir diesen Arbeitsbereich prüfen.",
     "label": "Supportplan",
     "basic": "Basic",
     "priority": "Priority",

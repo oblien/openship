@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "Sunucu yönetimi erişimi kontrol ediliyor…",
+    "accessUnavailable": "Sunucu yönetimi erişimi kontrol edilemedi",
+    "checkingAccessHint": "Bu çalışma alanını kontrol ederken SSH bilgilerinizi girebilirsiniz.",
     "label": "Destek planı",
     "basic": "Temel",
     "priority": "Öncelikli",

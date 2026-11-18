@@ -1166,8 +1166,9 @@ unpaid Cloud space when selecting a default.
 The dialog shows the project and branch and requires a ready selection to deploy. Catalog
 forms keep the same picker inline. Offer Add Server when no servers are connected.
 Keep loading and failed reads distinct from an empty list. Saved project destinations stay fixed.
-Hosted SSH setup keeps the credentials form available while management billing loads and
-during a retry. A confirmed plan or server-slot requirement shows the existing purchase flow.
+Hosted SSH setup shows the management check and retry in a compact status card above the form.
+Keep entered credentials while checking the same workspace and clear them on a workspace or
+account switch. A confirmed plan or server-slot requirement shows the existing purchase flow.
 
 ## Checking a change
 

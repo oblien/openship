@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "Verificando o acesso ao gerenciamento…",
+    "accessUnavailable": "Não foi possível verificar o acesso ao gerenciamento",
+    "checkingAccessHint": "Você pode inserir os dados de SSH enquanto verificamos este workspace.",
     "label": "Plano de suporte",
     "basic": "Básico",
     "priority": "Prioritário",

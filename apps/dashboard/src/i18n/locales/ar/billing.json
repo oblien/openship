@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "جارٍ التحقق من إمكانية إدارة الخوادم…",
+    "accessUnavailable": "تعذّر التحقق من إمكانية إدارة الخوادم",
+    "checkingAccessHint": "يمكنك إدخال تفاصيل SSH أثناء التحقق من مساحة العمل هذه.",
     "label": "خطة الدعم",
     "basic": "الأساسية",
     "priority": "الأولوية",

@@ -9,7 +9,8 @@ import {
   type ServerAcquisitionMode,
 } from "./ServerAcquisition";
 import type { CloudWorkspaceSummary } from "@repo/contracts";
-import { useSession } from "@/lib/auth-client";
+import { useResourceScope } from "@/hooks/use-scoped-resource";
+import { getApiRequestScopeVersion } from "@/lib/api/client";
 import { CloudDeployPlanModal } from "@/components/billing/CloudDeployPlanModal";
 import { CloudPurchaseProvider } from "@/components/billing/CloudPurchaseContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -116,8 +117,7 @@ export function useAddServerModal({
   initialMode?: ServerAcquisitionMode;
 } = {}) {
   const { showModal, hideModal } = useModal();
-  const { data: session } = useSession();
-  const contextKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const contextKey = useResourceScope();
   const openDialogs = useRef(new Set<string>());
   useEffect(
     () => () => {
@@ -131,6 +131,8 @@ export function useAddServerModal({
     (onCreated?: (server: ServerInfo) => void) => {
       let id = "";
       let active = true;
+      const scope = getApiRequestScopeVersion();
+      const isCurrent = () => active && scope === getApiRequestScopeVersion();
       id = showModal({
         width: "auto",
         maxWidth: "calc(100vw - 2rem)",
@@ -154,9 +156,9 @@ export function useAddServerModal({
               migrationSource={migrationSource}
               onCancel={() => hideModal(id)}
               onManaged={async (managed, needsPlan, checkoutUrl) => {
-                if (!active) return;
+                if (!isCurrent()) return;
                 const server = await systemApi.getServerById(managed.serverId);
-                if (!active) return;
+                if (!isCurrent()) return;
                 onCreated?.(server);
                 hideModal(id);
                 if (!needsPlan) return;
@@ -183,7 +185,7 @@ export function useAddServerModal({
                 openDialogs.current.add(plansId);
               }}
               onConnected={(server) => {
-                if (!active) return;
+                if (!isCurrent()) return;
                 hideModal(id);
                 onCreated?.(server);
               }}
