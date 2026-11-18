@@ -1,9 +1,6 @@
+import { FEATURES } from "@/lib/features";
 import { docsSource } from "@/lib/source";
-import { renderOgImage, type OgAccent } from "@/lib/og-image";
-
-/** Blue accent for docs — distinct from home (green), download (seafoam) and
- *  features (violet), so a docs link is recognizable in a feed at a glance. */
-const BLUE: OgAccent = { glow: "59,130,246", solid: "#3B82F6", soft: "#93C5FD" };
+import { renderOgImage } from "@/lib/og-image";
 
 /** Section labels for the eyebrow. Only the ones whose casing we can't derive
  *  from the slug (acronyms) need an entry; everything else is de-kebabed. */
@@ -20,9 +17,7 @@ function sectionLabel(slug: string[]): string {
   return `Docs · ${label}`;
 }
 
-/** The OG renderer clamps neither title nor subtitle, and a docs `description`
- *  is often a full sentence or three — long enough to run off the 630px card.
- *  Cut on a word boundary so the card never shows a mid-word break. */
+/** Prefer a whole-word excerpt when a document supplies a long description. */
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
@@ -30,26 +25,35 @@ function truncate(text: string, max: number): string {
   return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
-/**
- * Per-page OG/Twitter card for any docs route. Shared by the two image files so
- * both produce the identical card from one definition.
- *
- * An unresolvable slug falls back to the generic OpenShip card rather than
- * throwing: a missing image degrades a social preview, but a throw here would
- * fail the page's whole metadata render.
- */
 export function renderDocsOgImage(slug: string[] = []) {
   const page = docsSource.getPage(slug);
-  if (!page) return renderOgImage({ accent: BLUE, eyebrow: "Docs" });
-
-  const data = page.data as { title: string; description?: string };
+  const path = ["docs", ...slug].join("/");
+  if (!page)
+    return renderOgImage({ eyebrow: "Docs", title: "Documentation", art: { object: "journal" } });
+  const { title, description, toc, structuredData } = page.data;
+  const headingText = new Map(structuredData.headings.map(({ id, content }) => [id, content]));
+  const feature = FEATURES.find((entry) => entry.guide.split("#")[0] === "/" + path);
+  const headings = toc.filter((entry) => entry.depth === 2);
+  const outline = (headings.length ? headings : toc).map(
+    (entry) =>
+      headingText.get(entry.url.slice(1)) ??
+      (typeof entry.title === "string" ? entry.title : entry.url.slice(1).replace(/-/g, " ")),
+  );
+  const commandPrefix = `openship ${title} `;
+  const isCommand = slug[0] === "cli" && slug[1] === "reference" && slug.length > 2;
   return renderOgImage({
-    accent: BLUE,
     eyebrow: sectionLabel(slug),
-    title: truncate(data.title, 70),
-    subtitle: data.description
-      ? truncate(data.description, 150)
-      : "Open source, self-hostable deployment platform.",
+    title: truncate(title, 70),
+    subtitle: description && truncate(description, 150),
+    footer: "openship.io/" + path,
+    art: isCommand
+      ? {
+          command: title,
+          subcommands: outline
+            .filter((heading) => heading.startsWith(commandPrefix))
+            .map((heading) => heading.slice(commandPrefix.length)),
+        }
+      : { outline, feature: feature?.illustration },
   });
 }
 

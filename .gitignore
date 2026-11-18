@@ -10,6 +10,7 @@ dist/
 out/
 # fumadocs generated content source (apps/web/.source) — compiled from source.config.ts
 .source/
+apps/web/.share-feature-art.json
 # Self-hosted server release bundle (apps/api/scripts/build-release.ts)
 apps/api/release-dist/
 # Desktop staged payload (apps/desktop/build/stage.ts)

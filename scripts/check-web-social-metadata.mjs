@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = new URL("../apps/web/", import.meta.url);
 const requireWeb = createRequire(new URL("package.json", webRoot));
+const { parseFragment } = requireWeb("parse5");
 const readJson = async (path) => JSON.parse(await readFile(new URL(path, webRoot), "utf8"));
 const appRoutes = await readJson(".next/app-path-routes-manifest.json");
 const prerender = await readJson(".next/prerender-manifest.json");
@@ -37,27 +38,8 @@ const pageRoutes = Object.entries(appRoutes)
   .filter(([file, route]) => file.endsWith("/page") && !route.startsWith("/_"))
   .map(([, route]) => route);
 const locales = ["en", "ar", "es", "fr", "de", "pt", "ja", "zh", "tr", "ru"];
-const translatedSections = new Set([
-  "",
-  "pricing",
-  "features",
-  "apps",
-  "deploy",
-  "migrate",
-  "compare",
-  "sla",
-  "referrals",
-  "mail",
-  "download",
-  "about",
-  "trust",
-  "support",
-  "contact",
-  "blog",
-  "changelog",
-  "privacy",
-  "terms",
-]);
+const { localized } = await readJson("src/i18n/paths.json");
+const translatedSections = new Set(["", ...localized]);
 function publicPath(route) {
   const [, locale, ...rest] = route.split("/");
   if (!locales.includes(locale)) return route;
@@ -90,6 +72,8 @@ for (const route of pageRoutes.filter((route) => route.includes("["))) {
   );
 }
 paths.add("/blog?category=engineering");
+paths.add("/deploy?repo=https%3A%2F%2Fgithub.com%2Foblien%2Fopenship-badge-demo");
+paths.add("/deploy?app=ghost");
 
 const server = spawn(
   process.execPath,
@@ -124,13 +108,9 @@ function metaTags(html) {
   const head = html.match(/<head>([\s\S]*?)<\/head>/i)?.[1];
   assert(head, "Missing document head");
   const result = new Map();
-  for (const tag of head.matchAll(/<meta\s[^>]*>/gi)) {
-    const attributes = Object.fromEntries(
-      [...tag[0].matchAll(/([\w:-]+)="([^"]*)"/g)].map(([, name, value]) => [
-        name,
-        value.replaceAll("&amp;", "&"),
-      ]),
-    );
+  for (const node of parseFragment(head).childNodes) {
+    if (node.tagName !== "meta") continue;
+    const attributes = Object.fromEntries(node.attrs.map(({ name, value }) => [name, value]));
     const key = attributes.property ?? attributes.name;
     if (key) result.set(key, attributes.content);
   }
@@ -178,6 +158,7 @@ try {
   const images = new Set();
   const pages = new Map();
   const indexable = new Set();
+  const docs = new Set();
   await each([...paths].sort(), async (path) => {
     const response = await request(origin, path);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
@@ -190,12 +171,37 @@ try {
       assert.equal(new URL(canonical).origin, "https://openship.io", `${path}: canonical origin`);
       assert(tags.get("description")?.trim(), `${path}: meta description`);
       indexable.add(new URL(canonical).pathname);
+      if (path === "/docs" || path.startsWith("/docs/")) {
+        docs.add(path);
+        assert.equal(new URL(canonical).pathname, path, `${path}: docs canonical`);
+        const slug = path.slice("/docs".length);
+        const imagePath = `/docs-og${slug}`;
+        for (const route of [path, imagePath, `/docs-raw${slug}`]) {
+          assert(Object.hasOwn(prerender.routes, route), `${route}: missing build output`);
+        }
+        for (const key of ["og:image", "twitter:image"])
+          assert.equal(new URL(tags.get(key)).pathname, imagePath, `${path}: wrong ${key}`);
+        const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]));
+        for (const [, hash] of html.matchAll(/<a\s[^>]*?\bhref="#([^"]+)"/g))
+          assert(ids.has(decodeURIComponent(hash)), `${path}: missing heading target #${hash}`);
+        const markdown = await request(origin, `${path}.md`);
+        assert.match(markdown.headers.get("content-type") ?? "", /text\/markdown/);
+        const heading = /^# (.+)$/m.exec(await markdown.text())?.[1];
+        assert(heading, `${path}: Markdown heading`);
+        for (const key of ["og:title", "twitter:title"])
+          assert.equal(tags.get(key), `${heading} – OpenShip Docs`, `${path}: incorrect ${key}`);
+      }
     }
     const first = path.split("/")[1];
     const locale = locales.includes(first) ? first : "en";
     assert.match(html, new RegExp(`<html[^>]*lang="${locale}"`), `${path}: document language`);
     if (locale === "ar") assert.match(html, /<html[^>]*dir="rtl"/, `${path}: Arabic direction`);
-    if (locales.includes(first) && translatedSections.has(path.split("/")[2] ?? "")) {
+    // The sign-in page sends visitors to the dashboard and has its own canonical there.
+    if (
+      locales.includes(first) &&
+      path.split("/")[2] !== "login" &&
+      translatedSections.has(path.split("/")[2] ?? "")
+    ) {
       assert(html.includes(`href="https://openship.io${path}"`), `${path}: canonical locale URL`);
       for (const language of [...locales, "x-default"])
         assert(
@@ -231,7 +237,42 @@ try {
     }
   }
   for (const path of indexable) assert(listed.has(path), `${path}: missing from the sitemap`);
+  for (const path of listed)
+    assert(indexable.has(path), `${path}: sitemap URL has no verified canonical page`);
+  console.log(
+    `Docs coverage verified: ${docs.size} prerendered pages with Markdown, heading links and matching previews.`,
+  );
   console.log(`Sitemap coverage verified: ${indexable.size} indexable public pages.`);
+  for (const [page, tags] of pages) {
+    const segments = new URL(page, origin).pathname.split("/").filter(Boolean);
+    if (locales.includes(segments[0])) segments.shift();
+    const [section] = segments;
+    const pathname = "/" + segments.join("/");
+    const hasShareCard =
+      [
+        "about",
+        "apps",
+        "blog",
+        "changelog",
+        "contact",
+        "features",
+        "mail",
+        "login",
+        "privacy",
+        "sla",
+        "support",
+        "terms",
+        "trust",
+      ].includes(section) || pathname === "/compare";
+    if (pathname !== "/deploy" && !hasShareCard) continue;
+    const expected = pathname === "/deploy" ? "/og/deploy.png" : `/share${pathname}`;
+    for (const key of ["og:image", "twitter:image"])
+      assert.equal(
+        new URL(tags.get(key)).pathname,
+        expected,
+        `${page}: ${key} must match the page`,
+      );
+  }
   assert.match(pages.get("/pricing").get("og:title"), /Pricing/);
   // These pages own their images. Inheriting the homepage's metadata can hide
   // a route's provider artwork even when its image handler itself works.
@@ -261,7 +302,7 @@ try {
     publicPath(new URL(pages.get("/download").get("twitter:image")).pathname),
     /^\/download\/twitter-image/,
   );
-  assert.equal(new URL(pages.get("/docs").get("og:image")).pathname, "/docs-og");
+
   assert.match(pages.get("/referrals").get("og:title"), /OpenShip Referral/);
   for (const key of ["og:image", "twitter:image"]) {
     assert.match(

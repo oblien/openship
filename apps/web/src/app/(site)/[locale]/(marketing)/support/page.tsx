@@ -1,17 +1,18 @@
 import { useCopy } from "@/i18n/use-copy";
 import { localizedMetadata } from "@/i18n/metadata";
 
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { Link } from "@/i18n/Link";
 import { BRAND_LINKS, CLOUD_DASHBOARD_URL } from "@repo/core";
 import { Navbar, Footer } from "@/components/landing";
 import { MarketingIntro } from "@/components/marketing/marketing-intro";
 
-const pageMetadata: Metadata = {
+const pageMetadata = {
   title: "Customer Support",
   description: "Sign in to OpenShip to get help with your deployments, account, or billing.",
   alternates: { canonical: "/support" },
-};
+} satisfies Metadata;
 
 export default function SupportPage() {
   const copy = useCopy();
@@ -64,6 +65,16 @@ export default function SupportPage() {
   );
 }
 
-export async function generateMetadata() {
-  return localizedMetadata(pageMetadata);
+export async function generateMetadata(_: unknown, parent: ResolvingMetadata) {
+  const { title, description } = pageMetadata;
+  return localizedMetadata(
+    await inheritSocialImages(
+      {
+        ...pageMetadata,
+        openGraph: { title, description, type: "website", siteName: "OpenShip" },
+        twitter: { card: "summary_large_image", title, description },
+      },
+      parent,
+    ),
+  );
 }
