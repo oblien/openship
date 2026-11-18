@@ -47,6 +47,9 @@ const server: ServerDetail = {
   createdAt: workspace.createdAt, country: null, sshTransport: "direct", projectCount: 2,
   hostChannel: null, capabilities: { monitor: true, terminal: true, exec: true, hostConfiguration: false, ssh: false },
 };
+const connectedServer: ServerDetail = {
+  ...server, id: "vps", name: "My VPS", connection: "ssh", managed: null, sshHost: "vps.example.test",
+};
 const usage = {
   measuredAt: "2026-10-01T00:00:00Z", available: true, reason: null, cpuPercent: 23,
   memoryUsedMb: 512, memoryAvailableMb: 3584, diskUsedMb: 2048, diskAvailableMb: 23552,
@@ -73,7 +76,7 @@ function FirstDeploy({ ownServer = false, onDeploy, disabled = false }: {
   ownServer?: boolean; onDeploy: (id: string | null | undefined) => void; disabled?: boolean;
 }) {
   const [id, setId] = useState<string>();
-  const selection = useServerSelection({ value: id, forDeployment: true, autoSelectFirst: true,
+  const selection = useServerSelection({ value: id, forDeployment: true, autoSelectFirst: true, useSavedDefault: true,
     destinationKind: ownServer ? "server" : undefined, onSelect: next => setId(next?.id) });
   return <DeployButton review={selection} destinationReady={selection.ready} projectName="badge-demo"
     branch="main" disabled={disabled} deploying={false} onDeploy={() => onDeploy(id)} />;
@@ -151,6 +154,20 @@ it("deploys directly with a single ready default", async () => {
   await clickDeploy();
   expect(currentDialog()).toBeNull();
   expect(deploy).toHaveBeenCalledExactlyOnceWith(server.id);
+});
+it.each([false, true])("confirms the connected VPS on Deploy (unpaid Cloud space present: %s)", async withPlaceholder => {
+  const unpaid = { ...server, id: "unpaid", managed: { ...workspace, state: "needs_plan" } };
+  h.list.mockResolvedValue({ servers: withPlaceholder ? [unpaid, connectedServer] : [connectedServer] });
+  h.settings.mockResolvedValue({ defaultServerId: "unpaid" });
+  const deploy = vi.fn();
+  await render(<FirstDeploy onDeploy={deploy} />);
+  expect(currentDialog()).toBeNull();
+  await clickDeploy();
+  expect(currentDialog()?.textContent).toContain(connectedServer.name);
+  expect(currentDialog()?.textContent).toContain(connectedServer.sshHost);
+  expect(deploy).not.toHaveBeenCalled();
+  await act(async () => confirmButton().click());
+  expect(deploy).toHaveBeenCalledExactlyOnceWith(connectedServer.id);
 });
 beforeEach(() => {
   vi.resetAllMocks();

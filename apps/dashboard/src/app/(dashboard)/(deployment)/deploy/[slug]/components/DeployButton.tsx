@@ -6,6 +6,7 @@ import { ServerSelectorView, type ServerSelection } from "@/components/shared/Se
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/Modal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
+import { usePlatform } from "@/context/PlatformContext";
 
 export function DeployButton({
   review,
@@ -25,13 +26,16 @@ export function DeployButton({
   disabled: boolean;
 }) {
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
   const copy = t.deploy.sidebar;
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const { dialog, onKeyDown } = useDialogFocus(close, open && !!review);
   const title = useId();
   const needsChoice = review?.requiresExplicitChoice && !destinationReady;
-  const shouldReview = review && (review.rows.length > 1 || needsChoice);
+  const shouldReview = review && (
+    review.rows.length > 1 || needsChoice || (!selfHosted && review.selected?.connection === "ssh")
+  );
 
   return (
     <>

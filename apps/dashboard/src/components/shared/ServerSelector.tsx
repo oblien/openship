@@ -206,10 +206,10 @@ export function useServerSelection({
       const remembered = shouldUseSavedDefault ? serverPreference(contextKey).read() : null;
       // A checkout can leave a Cloud space in the inventory before it can host
       // projects. Keep it available for manual selection and first-plan setup.
-      const hasReadyCloudSpace = !selfHosted && forDeployment && rows.some(({ managed }) =>
-        managed && !managed.connectionIssue && ["ready", "running", "active"].includes(managed.state),
+      const hasDeploymentServer = !selfHosted && forDeployment && rows.some(({ connection, managed }) =>
+        connection === "ssh" || (managed && !managed.connectionIssue && ["ready", "running", "active"].includes(managed.state)),
       );
-      const defaults = hasReadyCloudSpace ? rows.filter(row => row.managed?.state !== "needs_plan") : rows;
+      const defaults = hasDeploymentServer ? rows.filter(row => row.managed?.state !== "needs_plan") : rows;
       const preferred = defaults.find(row => row.id === preference?.serverId)
         ?? defaults.find(row => row.id === remembered)
         ?? (shouldUseSavedDefault ? defaults.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)

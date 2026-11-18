@@ -1158,7 +1158,9 @@ Cloud availability selects free versus custom domains; it does not decide whethe
 
 Public deploy links open the configuration form first. Its destination settings are editable
 before Deploy. On a first source deployment, Deploy opens the shared server picker when
-multiple destinations are available or an own-server link still needs an explicit choice.
+multiple destinations are available, a hosted user is deploying to a connected SSH server,
+or an own-server link still needs an explicit choice. Prefer a connected server over an
+unpaid Cloud space when selecting a default.
 The dialog shows the project and branch and requires a ready selection to deploy. Catalog
 forms keep the same picker inline. Offer Add Server when no servers are connected.
 Keep loading and failed reads distinct from an empty list. Saved project destinations stay fixed.

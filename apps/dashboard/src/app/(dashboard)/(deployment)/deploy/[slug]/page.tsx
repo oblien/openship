@@ -517,6 +517,7 @@ const DeployRepository: React.FC = () => {
                                         : t.widgets.shared.serverSelector.selectServer
                                 )}
                                 onEdit={() => setStep("target")}
+                                editLabel={reviewDestination ? t.billing.workspaces.choose : undefined}
                             />
                             {serverSelection.error && <p role="alert" className="text-sm text-danger">{serverSelection.error}</p>}
 
