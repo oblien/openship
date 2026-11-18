@@ -1,46 +1,28 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
-import { useEffect, useRef, useState } from "react";
-import type {
-  RuntimeSource,
-  RuntimeSourceEdit,
-  RuntimeSourcePreview,
-  RepositoryChangeAccess,
-} from "@repo/contracts";
+import { useId, useState } from "react";
+import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
-import {
-  ApiError,
-  getApiErrorCode,
-  getApiErrorMessage,
-  getApiRequestScopeVersion,
-} from "@/lib/api/client";
-import { projectsApi } from "@/lib/api/projects";
-import { updatesApi } from "@/lib/api/updates";
-import {
-  RepositoryPathBrowser,
-  type RepositorySource,
-} from "@/components/github/RepositoryPathBrowser";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
+import { RepositoryPathBrowser } from "@/components/github/RepositoryPathBrowser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { Modal } from "@/components/ui/Modal";
+import { RuntimeSourceDiff } from "./RuntimeSourceDiff";
+import {
+  useRuntimeSourceEditor,
+  type EditorAction,
+  type EditorTarget,
+} from "./useRuntimeSourceEditor";
 
-/** Shared source editor for saved settings and security reviews. No deployment side effects. */
-export function RuntimeSourceUpdate({
-  projectId,
-  serviceId,
-  initialPath = "Dockerfile",
-}: {
-  projectId: string;
-  serviceId?: string;
-  initialPath?: string;
-}) {
+/** Shared entry point for app settings, service settings, and security review. */
+export function RuntimeSourceUpdate({ projectId, serviceId }: EditorTarget) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return (
-    <div>
+    <>
       <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
         {t.projectSettings.sourceImageUpdate.open}
       </Button>
@@ -48,417 +30,348 @@ export function RuntimeSourceUpdate({
         <RuntimeSourceUpdateDialog
           projectId={projectId}
           serviceId={serviceId}
-          initialPath={initialPath}
           onClose={() => setOpen(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 
 export function RuntimeSourceUpdateDialog({
   projectId,
   serviceId,
-  initialPath = "Dockerfile",
   onClose,
-}: {
-  projectId: string;
-  serviceId?: string;
-  initialPath?: string;
-  onClose: () => void;
-}) {
+}: EditorTarget & { onClose: () => void }) {
   const scope = useCloudResourceKey();
-  // Every entry point resets private source and pending reviews on a scope change.
   return (
     <SourceEditor
-      key={`${scope}:${projectId}:${serviceId ?? ""}`}
+      key={JSON.stringify([scope, projectId, serviceId])}
       projectId={projectId}
       serviceId={serviceId}
-      initialPath={initialPath}
       onClose={onClose}
     />
   );
 }
 
-function SourceEditor({
-  projectId,
-  serviceId,
-  initialPath,
-  onClose,
-}: {
-  projectId: string;
-  serviceId?: string;
-  initialPath: string;
-  onClose: () => void;
-}) {
+function SourceEditor({ projectId, serviceId, onClose }: EditorTarget & { onClose: () => void }) {
   const { t } = useI18n();
   const copy = t.projectSettings.sourceImageUpdate;
-  const [repo, setRepo] = useState<RepositorySource | null>(null);
-  const [path, setPath] = useState(initialPath);
-  const [format, setFormat] = useState<"dockerfile" | "compose">(
-    /\.ya?ml$/i.test(initialPath) ? "compose" : "dockerfile",
-  );
-  const [source, setSource] = useState<RuntimeSource | null>(null);
-  const [referenceId, setReferenceId] = useState("");
-  const [image, setImage] = useState("");
-  const [preview, setPreview] = useState<RuntimeSourcePreview | null>(null);
-  const [published, setPublished] = useState("");
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState("");
-  const [accessFailure, setAccessFailure] = useState<RepositoryChangeAccess | null>(null);
-  const [partialPr, setPartialPr] = useState("");
-  const requestId = useRef(crypto.randomUUID());
-  const generation = useRef(0);
-  const mounted = useRef(true);
-  const scope = useRef(getApiRequestScopeVersion());
-  const current = (request: number) =>
-    mounted.current &&
-    generation.current === request &&
-    scope.current === getApiRequestScopeVersion();
-  const acceptSource = (data: RuntimeSource) => {
-    setSource(data);
-    setReferenceId(data.references[0]?.id ?? "");
-    setImage(data.references[0]?.image ?? "");
-    setAccessFailure(null);
+  const headingId = useId();
+  const pathId = useId();
+  const {
+    repo,
+    file,
+    source,
+    reference,
+    referenceId,
+    image,
+    edited,
+    preview,
+    published,
+    partialPr,
+    browsing,
+    setBrowsing,
+    busy,
+    error,
+    access,
+    run,
+    changePath,
+    selectFile,
+    changeImage,
+    changeReference,
+    changeFormat,
+  } = useRuntimeSourceEditor({ projectId, serviceId });
+  const close = () => {
+    if (busy !== "publish") onClose();
   };
-  const showError = (error: unknown) => {
-    setError(getApiErrorMessage(error, copy.failed));
-    const code = getApiErrorCode(error);
-    if (
-      [
-        "GITHUB_TOKEN_REQUIRED",
-        "REPOSITORY_GITHUB_ACCESS_REQUIRED",
-        "REPOSITORY_PR_ACCESS_REQUIRED",
-      ].includes(code ?? "")
-    )
-      setAccessFailure("github_access_required");
-    else if (
-      ["TOKEN_READ_ONLY", "REPOSITORY_CHANGE_ACCESS_REQUIRED", "GITHUB_ACCESS_DENIED"].includes(
-        code ?? "",
-      )
-    )
-      setAccessFailure("workspace_access_required");
-  };
-  useEffect(() => {
-    mounted.current = true;
-    const request = ++generation.current;
-    setBusy(true);
-    projectsApi
-      .getGit(projectId)
-      .then(async (git) => {
-        if (!current(request)) return;
-        if (!git.success || git.provider !== "github" || !git.owner || !git.repo || !git.branch) {
-          setError(copy.noRepository);
-          return;
-        }
-        setRepo({ owner: git.owner, repo: git.repo, branch: git.branch });
-        const { data } = await updatesApi.runtimeSource(projectId, {
-          path: initialPath,
-          format: /\.ya?ml$/i.test(initialPath) ? "compose" : "dockerfile",
-          ...(serviceId && { serviceId }),
-        });
-        if (current(request)) acceptSource(data);
-      })
-      .catch((error) => {
-        // diagnostics-ignore: showError reports through getApiErrorMessage and displays recovery.
-        if (current(request)) showError(error);
-      })
-      .finally(() => {
-        if (current(request)) setBusy(false);
-      });
-    return () => {
-      mounted.current = false;
-      generation.current++;
-    };
-  }, [projectId, serviceId, initialPath, copy.noRepository, copy.failed]);
+  const { dialog, onKeyDown } = useDialogFocus(close);
 
-  const reset = () => {
-    generation.current++;
-    setSource(null);
-    setPreview(null);
-    setError("");
-    setAccessFailure(null);
-  };
-  async function run(action: "load" | "preview" | "publish") {
-    if (busy || partialPr || scope.current !== getApiRequestScopeVersion()) return;
-    if (action === "publish" && (accessFailure || preview?.publishAccess !== "available")) return;
-    const request = ++generation.current;
-    setBusy(true);
-    setError("");
-    const selection = { path, format, ...(serviceId && { serviceId }) };
-    try {
-      if (action === "load") {
-        setSource(null);
-        setPreview(null);
-        const { data } = await updatesApi.runtimeSource(projectId, selection);
-        if (!current(request)) return;
-        acceptSource(data);
-      } else {
-        if (!source) return;
-        const edit: RuntimeSourceEdit = {
-          ...selection,
-          baseSha: source.baseSha,
-          referenceId,
-          image,
-        };
-        if (action === "preview") {
-          const { data } = await updatesApi.previewRuntimeSource(projectId, edit);
-          if (current(request)) {
-            setPreview(data);
-            setAccessFailure(null);
-            requestId.current = crypto.randomUUID();
-          }
-        } else if (preview) {
-          const { data } = await updatesApi.publishRuntimeSource(projectId, {
-            ...edit,
-            reviewId: preview.reviewId,
-            requestId: requestId.current,
-          });
-          if (current(request)) setPublished(data.pullRequestUrl ?? data.url);
-        }
-      }
-    } catch (error) {
-      // diagnostics-ignore: showError reports through getApiErrorMessage and displays recovery.
-      if (current(request)) {
-        showError(error);
-        if (
-          getApiErrorCode(error) === "REPOSITORY_PR_ACCESS_REQUIRED" &&
-          error instanceof ApiError
-        ) {
-          const recoveryUrl = (error.body as { recoveryUrl?: unknown }).recoveryUrl;
-          if (typeof recoveryUrl === "string" && recoveryUrl.startsWith("https://github.com/"))
-            setPartialPr(recoveryUrl);
-        }
-      }
-    } finally {
-      if (current(request)) setBusy(false);
-    }
+  const done = published || partialPr;
+  const disabled = busy !== null;
+  let primary: { label: string; action: EditorAction; blocked?: boolean } | undefined;
+  if (!repo && error) {
+    primary = { label: t.chrome.apiDown.retry, action: { kind: "initialize" } };
+  } else if (repo && !source) {
+    primary = { label: copy.load, action: { kind: "load", file }, blocked: !file.path.trim() };
+  } else if (preview) {
+    primary = {
+      label: copy.createPr,
+      action: { kind: "publish" },
+      blocked: access !== "available",
+    };
+  } else if (reference) {
+    primary = { label: copy.preview, action: { kind: "preview" }, blocked: !edited };
   }
-  const before = preview?.before.split("\n") ?? [];
-  const after = preview?.after.split("\n") ?? [];
-  const changed = before.findIndex((line, index) => line !== after[index]);
-  const access = accessFailure ?? preview?.publishAccess ?? source?.publishAccess;
 
   return (
-    <Modal isOpen onClose={onClose} closable={!busy} width="min(760px, 95vw)" zIndex={10020}>
-      <div className="space-y-5 p-6">
-        <div className="pe-8">
-          <h2 className="text-lg font-semibold">{copy.title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{copy.hint}</p>
-        </div>
-        {published ? (
-          <div className="space-y-3">
-            <a
-              className="text-sm underline"
-              href={published}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {copy.viewPr}
-            </a>
-            <p className="text-sm text-muted-foreground">{copy.created}</p>
+    <Modal
+      isOpen
+      onClose={close}
+      closable={busy !== "publish"}
+      showCloseButton={false}
+      overflow="hidden"
+      width="900px"
+      maxWidth="calc(100vw - 2rem)"
+      maxHeight="88dvh"
+      zIndex={10020}
+    >
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="flex min-h-0 flex-1 flex-col outline-none"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 px-5 pt-5 pb-4 sm:px-7 sm:pt-6">
+          <div className="min-w-0">
+            <h2 id={headingId} className="text-xl font-medium">
+              {copy.title}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">{copy.hint}</p>
           </div>
-        ) : partialPr ? (
-          <a
-            className="text-sm underline"
-            href={partialPr}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={close}
+            disabled={busy === "publish"}
+            aria-label={t.settings.common.close}
           >
-            {copy.finishPr}
-          </a>
-        ) : (
-          <>
-            {repo && (
-              <fieldset disabled={busy} className="space-y-4">
-                <p className="text-xs text-muted-foreground">
-                  {repo.owner}/{repo.repo} · {repo.branch}
+            <Icon name="close" />
+          </Button>
+        </header>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5 sm:px-7">
+          {done
+            ? published && (
+                <p className="rounded-2xl bg-card p-4 text-sm text-muted-foreground">
+                  {copy.created}
                 </p>
-                <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
-                  <label className="space-y-1 text-sm">
-                    <span>{copy.file}</span>
-                    <Input
-                      value={path}
-                      onChange={(e) => {
-                        reset();
-                        setPath(e.target.value);
-                      }}
-                    />
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    <span>{copy.format}</span>
-                    <CustomSelect
-                      aria-label={copy.format}
-                      variant="input"
-                      disabled={busy}
-                      value={format}
-                      onChange={(value) => {
-                        reset();
-                        setFormat(value);
-                      }}
-                      options={[
-                        { value: "dockerfile", label: "Dockerfile" },
-                        { value: "compose", label: "Compose" },
-                      ]}
-                    />
-                  </label>
-                </div>
-                <details>
-                  <DisclosureSummary className="cursor-pointer text-sm text-muted-foreground">
-                    {copy.browse}
-                  </DisclosureSummary>
-                  <RepositoryPathBrowser
-                    source={repo}
-                    kind="file"
-                    value={path}
-                    onChange={(path) => {
-                      reset();
-                      setPath(path);
-                      setFormat(/\.ya?ml$/i.test(path) ? "compose" : "dockerfile");
-                    }}
-                  />
-                </details>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void run("load")}
-                >
-                  {copy.load}
-                </Button>
-                {source && (
-                  <>
-                    <a
-                      className="block text-xs text-muted-foreground underline"
-                      href={source.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {source.path} · {source.baseSha.slice(0, 8)} ↗
-                    </a>
-                    {source.guidance.map((text, i) => (
-                      <p key={i} className="text-sm text-muted-foreground">
-                        {text}
-                      </p>
-                    ))}
-                    {!source.references.length && (
-                      <p className="text-sm text-muted-foreground">{copy.manual}</p>
-                    )}
-                    {!!source.references.length && (
-                      <>
-                        <label className="block space-y-1 text-sm">
-                          <span>{copy.reference}</span>
-                          <CustomSelect
-                            aria-label={copy.reference}
-                            variant="input"
-                            disabled={busy}
-                            value={referenceId}
-                            onChange={(value) => {
-                              setReferenceId(value);
-                              setImage(source.references.find((r) => r.id === value)?.image ?? "");
-                              setPreview(null);
-                            }}
-                            options={source.references.map((ref) => ({
-                              value: ref.id,
-                              label: ref.label,
-                              description: ref.image,
-                            }))}
-                          />
-                        </label>
-                        <label className="block space-y-1 text-sm">
-                          <span>{copy.image}</span>
-                          <Input
-                            className="font-mono"
-                            value={image}
-                            onChange={(e) => {
-                              setImage(e.target.value);
-                              setPreview(null);
-                            }}
-                          />
-                        </label>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void run("preview")}
+              )
+            : repo && (
+                <>
+                  <section className="space-y-3 rounded-2xl bg-card p-4">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                      <span className="flex min-w-0 items-center gap-2 font-medium" dir="ltr">
+                        <Icon name="github" className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="wrap-anywhere">
+                          {repo.owner}/{repo.repo} · {repo.branch}
+                        </span>
+                      </span>
+                      {source && (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={source.baseSha}
+                          className="ms-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                         >
-                          {copy.preview}
-                        </Button>
-                      </>
-                    )}
-                  </>
-                )}
-              </fieldset>
-            )}
-            {preview && (
-              <div className="space-y-3">
-                <pre
-                  aria-label={copy.diff}
-                  className="overflow-x-auto rounded-xl bg-background p-4 text-xs"
-                  dir="ltr"
-                >
-                  {before.slice(Math.max(0, changed - 2), changed + 3).map((line, index) => {
-                    const i = Math.max(0, changed - 2) + index;
-                    return line === after[i] ? (
-                      <div key={i}> {line}</div>
-                    ) : (
-                      <div key={i}>
-                        <div className="text-danger">−{line}</div>
-                        <div className="text-success">+{after[i]}</div>
+                          <span className="font-mono" dir="ltr">
+                            {source.baseSha.slice(0, 8)}
+                          </span>
+                          <Icon name="arrow-up-right" className="size-3.5" />
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="min-w-48 flex-1 space-y-1.5">
+                        <label htmlFor={pathId} className="block text-xs text-muted-foreground">
+                          {copy.file}
+                        </label>
+                        <Input
+                          id={pathId}
+                          variant="filled"
+                          className="font-mono"
+                          dir="ltr"
+                          value={file.path}
+                          disabled={disabled}
+                          onChange={(event) => changePath(event.target.value)}
+                        />
                       </div>
-                    );
-                  })}
-                </pre>
-                <p className="text-xs text-muted-foreground">{copy.review}</p>
-                <Button
-                  type="button"
-                  disabled={busy || access !== "available"}
-                  onClick={() => void run("publish")}
-                >
-                  {copy.createPr}
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-        {!published && access && access !== "available" && (
-          <div role="status" className="space-y-3 rounded-xl bg-background p-4 text-sm">
-            <p>{copy[access]}</p>
-            <div className="flex flex-wrap items-center gap-3">
-              {access === "github_access_required" && (
-                <a
-                  href="/settings?tab=git"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-4"
-                >
-                  {copy.manageConnection}
-                </a>
+                      <Button
+                        variant="secondary"
+                        disabled={disabled}
+                        aria-expanded={browsing}
+                        onClick={() => setBrowsing(!browsing)}
+                      >
+                        <Icon name="folder" />
+                        {copy.browse}
+                      </Button>
+                    </div>
+                    {!source && (
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span>{copy.format}</span>
+                        <CustomSelect
+                          aria-label={copy.format}
+                          variant="filled"
+                          triggerClassName="bg-muted/60 hover:bg-muted"
+                          disabled={disabled}
+                          value={file.format}
+                          onChange={changeFormat}
+                          options={[
+                            { value: "dockerfile", label: "Dockerfile" },
+                            { value: "compose", label: "Compose" },
+                          ]}
+                        />
+                      </div>
+                    )}
+                    {browsing && (
+                      <fieldset disabled={disabled}>
+                        <RepositoryPathBrowser
+                          source={repo}
+                          kind="file"
+                          value={file.path}
+                          onChange={selectFile}
+                        />
+                      </fieldset>
+                    )}
+                  </section>
+
+                  {source && (
+                    <section className="space-y-3">
+                      {reference ? (
+                        <div className="grid items-start gap-3 sm:grid-cols-2">
+                          <div className="min-w-0 space-y-1.5">
+                            <p className="text-xs text-muted-foreground">{copy.reference}</p>
+                            {source.references.length > 1 ? (
+                              <>
+                                <CustomSelect
+                                  aria-label={copy.reference}
+                                  variant="filled"
+                                  triggerClassName="bg-muted/60 hover:bg-muted"
+                                  disabled={disabled}
+                                  value={referenceId}
+                                  options={source.references.map((ref) => ({
+                                    value: ref.id,
+                                    label: ref.label,
+                                    description: ref.image,
+                                  }))}
+                                  onChange={changeReference}
+                                />
+                                <p
+                                  className="wrap-anywhere font-mono text-xs text-muted-foreground"
+                                  dir="ltr"
+                                >
+                                  {reference.image}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl bg-muted/60 px-3.5 py-2 text-sm">
+                                <code className="wrap-anywhere" dir="ltr">
+                                  {reference.image}
+                                </code>
+                                <span className="text-xs text-muted-foreground">
+                                  {reference.label}
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                          <label className="block min-w-0 space-y-1.5 text-xs text-muted-foreground">
+                            <span>{copy.image}</span>
+                            <Input
+                              variant="filled"
+                              className="font-mono"
+                              dir="ltr"
+                              placeholder={reference.image}
+                              disabled={disabled}
+                              value={image}
+                              onChange={(event) => changeImage(event.target.value)}
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-sm text-muted-foreground underline underline-offset-4"
+                        >
+                          {copy.manual}
+                        </a>
+                      )}
+                      {source.guidance.map((line, index) => (
+                        <p key={index} className="text-xs text-muted-foreground">
+                          {line}
+                        </p>
+                      ))}
+                    </section>
+                  )}
+
+                  {preview && <RuntimeSourceDiff preview={preview} />}
+                </>
               )}
-              {!partialPr && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void run(preview ? "preview" : "load")}
-                >
-                  {copy.checkAccess}
-                </Button>
+
+          {busy && (
+            <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Icon name="spinner" className="size-4 animate-spin" />
+              {copy.working}
+            </p>
+          )}
+          {error && (
+            <div role="alert" className="rounded-xl bg-danger-bg px-4 py-3 text-sm text-danger">
+              <p>{error.message}</p>
+              {error.requestId && (
+                <p className="mt-1 font-mono text-xs" dir="ltr">
+                  {t.chrome.error.refCode} {error.requestId}
+                </p>
               )}
             </div>
-          </div>
-        )}
-        {(busy || (!repo && !error)) && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {copy.working}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className="text-sm text-danger">
-            {error}
-          </p>
-        )}
+          )}
+          {!published && access && access !== "available" && (
+            <div role="status" className="space-y-2 rounded-xl bg-card p-4 text-sm">
+              <p>{copy[access]}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {access === "github_access_required" && (
+                  <a
+                    href="/settings?tab=git"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4"
+                  >
+                    {copy.manageConnection}
+                  </a>
+                )}
+                {!partialPr && repo && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={disabled || !file.path}
+                    onClick={() =>
+                      preview
+                        ? void run({ kind: "preview" })
+                        : void run({ kind: "load", file, keepDraft: true })
+                    }
+                  >
+                    {copy.checkAccess}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border/60 px-5 py-3 sm:px-7">
+          <Button variant="ghost" disabled={busy === "publish"} onClick={close}>
+            {t.settings.common.close}
+          </Button>
+          {done ? (
+            <Button asChild>
+              <a href={done} target="_blank" rel="noopener noreferrer">
+                {published ? copy.viewPr : copy.finishPr}
+              </a>
+            </Button>
+          ) : (
+            primary && (
+              <Button
+                disabled={disabled || primary.blocked}
+                onClick={() => void run(primary.action)}
+              >
+                {primary.label}
+              </Button>
+            )
+          )}
+        </footer>
       </div>
     </Modal>
   );

@@ -18,7 +18,8 @@ import {
   repositoryCredentialError,
   REPOSITORY_PR_PERMISSIONS,
 } from "../github/repository-change-access";
-import { GitHubApiError } from "../github/github.error";
+import { GitHubAppApiError } from "../github/github.app-client";
+import { GitHubApiError, isTransientGitHubFailure } from "../github/github.error";
 import { authorization } from "../../lib/authorization";
 import { inspectRuntimeSource, replaceRuntimeSourceImage } from "./runtime-source-images";
 
@@ -64,7 +65,23 @@ async function readSourceUnchecked(
       409,
       "RUNTIME_SOURCE_CHANGED",
     );
-  const file = await getRawFile(ctx, { owner, repo, branch: head.commit.sha, file: path });
+  const file = await getRawFile(ctx, { owner, repo, branch: head.commit.sha, file: path }).catch(
+    (error: unknown) => {
+      if (
+        error instanceof GitHubApiError &&
+        error.status === 404 &&
+        !(error instanceof GitHubAppApiError)
+      ) {
+        throw new AppError(
+          "This file could not be found on the deployment branch. Choose another file.",
+          404,
+          "RUNTIME_SOURCE_FILE_NOT_FOUND",
+        );
+      }
+      throw error;
+    },
+  );
+  if (!Number.isFinite(file.size)) throw new ValidationError("Select a file, not a directory.");
   if (file.size > 64000) throw new ValidationError("Choose a source file smaller than 64 KB.");
   const inspected = inspectRuntimeSource(file.content, input.format, serviceName);
   const canWriteProject = await authorization.checkPermissionOnResource(ctx, {
@@ -101,12 +118,16 @@ async function readSource(...args: Parameters<typeof readSourceUnchecked>) {
   try {
     return await readSourceUnchecked(...args);
   } catch (error) {
-    // A missing source file is not evidence that the connection needs changing.
-    if (
-      !(error instanceof GitHubApiError && error.status === 404) &&
-      isRepositoryCredentialFailure(error)
-    )
-      throw repositoryCredentialError();
+    if (isRepositoryCredentialFailure(error)) throw repositoryCredentialError();
+    if (error instanceof GitHubApiError && isTransientGitHubFailure(error)) {
+      const unavailable = new AppError(
+        "GitHub is temporarily unavailable. Try reading the source again shortly.",
+        503,
+        "RUNTIME_SOURCE_UNAVAILABLE",
+      );
+      unavailable.cause = error;
+      throw unavailable;
+    }
     throw error;
   }
 }

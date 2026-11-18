@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
-import { normalizeRepoPath, resolveWorkload } from "@repo/core";
+import { resolveWorkload } from "@repo/core";
 import { RuntimeSourceUpdate } from "@/components/updates/RuntimeSourceUpdate";
 import BuildSettingsFields from "@/components/import-project/BuildSettings";
 import { CommandEnvironmentNotice } from "@/components/import-project/CommandEnvironmentNotice";
@@ -152,14 +152,7 @@ export function ApplicationSettingsForm({
       {projectData.gitOwner &&
         projectData.gitRepo &&
         (projectData.buildKind === "dockerfile" || projectData.framework === "docker") && (
-          <RuntimeSourceUpdate
-            projectId={id}
-            initialPath={
-              normalizeRepoPath(
-                [buildData.rootDirectory, "Dockerfile"].filter(Boolean).join("/"),
-              ) || "Dockerfile"
-            }
-          />
+          <RuntimeSourceUpdate projectId={id} />
         )}
       {!dirty && (
         <CommandEnvironmentNotice
