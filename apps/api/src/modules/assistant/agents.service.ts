@@ -23,10 +23,9 @@ import {
 } from "./assistant-access";
 import { ownedAgent, validateAgentGrants } from "./agent-access";
 import { agentModelProvider, assertAgentModel } from "./agent-models";
-import { deferred } from "../../lib/deferred";
 
 export function createAssistantAgents(
-  runtime: ReturnType<typeof createAssistantRuntime> = deferred(() => assistant),
+  runtime: ReturnType<typeof createAssistantRuntime> = assistant,
 ) {
   async function native(ctx: RequestContext) {
     return nativeAgents(await runtime.native(ctx));
