@@ -31,7 +31,7 @@ import { baseDictionary } from "@/i18n";
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let searchParams = new URLSearchParams();
-const router = { push: () => {}, replace: () => {}, back: () => {}, refresh: () => {} };
+const router = { push: () => {}, replace: vi.fn(), back: () => {}, refresh: () => {} };
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
   usePathname: () => "/servers/srv_1",
@@ -135,7 +135,8 @@ const CHECK_FAILURES: Array<{ name: string; status: number; body: unknown }> = [
 ];
 
 function stubFetch(checkFailure: { status: number; body: unknown }, server: Record<string, unknown> = OFFLINE_SERVER) {
-  return vi.fn(async (input: unknown) => {
+  let hasServerKey = true;
+  return vi.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(
       typeof input === "string" ? input : (input as Request)?.url ?? input,
     );
@@ -149,6 +150,13 @@ function stubFetch(checkFailure: { status: number; body: unknown }, server: Reco
 
     if (url.includes("system/check")) return json(checkFailure.body, checkFailure.status);
     if (/system\/servers\/srv_1(\?|$)/.test(url)) return json(server);
+    if (url.endsWith("/system/servers/srv_1/github")) {
+      if (init?.method === "DELETE") {
+        hasServerKey = false;
+        return json({ ok: true });
+      }
+      return json({ mode: hasServerKey ? "ssh-server-key" : null, connected: hasServerKey, deployKeyCount: 0 });
+    }
     if (url.includes("system/servers/destinations")) return json({ servers: [OFFLINE_SERVER] });
     if (url.includes("system/servers")) return json([OFFLINE_SERVER]);
     if (url.includes("auth/get-session")) return json(null);
@@ -164,6 +172,7 @@ let root: Root | undefined;
 let errors: unknown[] = [];
 
 beforeEach(() => {
+  router.replace.mockClear();
   errors = [];
   searchParams = new URLSearchParams();
   container = document.createElement("div");
@@ -195,7 +204,13 @@ async function mountOfflineServer(checkFailure: { status: number; body: unknown 
     });
     root.render(
       <I18nProvider>
-        <DashboardProviders selfHosted deployMode={deployMode} authMode="local" cloudAuthUrl="" cloudApiUrl="">
+        <DashboardProviders
+          selfHosted={deployMode !== "cloud"}
+          deployMode={deployMode}
+          authMode={deployMode === "cloud" ? "cloud" : "local"}
+          cloudAuthUrl=""
+          cloudApiUrl=""
+        >
           <ToastProvider>
             <ModalProvider>
               <ServerDetailPage params={Promise.resolve({ serverId: "srv_1" })} />
@@ -213,6 +228,41 @@ async function mountOfflineServer(checkFailure: { status: number; body: unknown 
   }
   return container.textContent ?? "";
 }
+
+describe("GitHub on a customer-connected SSH server", () => {
+  it.each(["cloud", "docker", "desktop"])("uses credentials supported by the %s controller", async mode => {
+    searchParams = new URLSearchParams({ tab: "github" });
+    await mountOfflineServer(CHECK_FAILURES[0]!, { ...OFFLINE_SERVER, connection: "ssh" }, mode);
+    const requests = () => vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    const status = "/api/system/servers/srv_1/github";
+    expect(router.replace).toHaveBeenCalledWith("/settings?tab=git");
+    expect(container.querySelector('a[href*="tab=github"]')).toBeNull();
+    expect(requests().some(url => url.includes(status))).toBe(false);
+
+    // Managing a self-hosted server credential remains an explicit operator action.
+    const actions = container.querySelector<HTMLButtonElement>(`button[aria-label="${baseDictionary.actions.title}"]`)!;
+    await act(async () => actions.click());
+    const credentials = [...container.querySelectorAll("button")].find(button =>
+      button.textContent?.trim() === baseDictionary.servers.github.title);
+    if (mode === "cloud") {
+      expect(credentials).toBeUndefined();
+      expect(requests().some(url => url.includes(status))).toBe(false);
+    } else {
+      expect(credentials).toBeDefined();
+      await act(async () => credentials!.click());
+      expect(requests().some(url => url.endsWith(status))).toBe(true);
+      const disconnect = [...document.querySelectorAll("button")].find(button =>
+        button.textContent?.trim() === baseDictionary.servers.github.disconnect);
+      expect(disconnect).toBeDefined();
+      const revoked = () => vi.mocked(fetch).mock.calls.some(([url, init]) =>
+        String(url).endsWith(status) && init?.method === "DELETE");
+      expect(revoked()).toBe(false);
+      await act(async () => disconnect!.click());
+      expect(revoked()).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+});
 
 describe("managed resources on retained server links", () => {
   it.each(["desktop", "docker"])("shows the named plan instead of a requested host terminal in %s", async deployMode => {
@@ -299,7 +349,7 @@ describe("server detail page with an unreachable server", () => {
    * these mount entirely different subtrees (component/module update cards, the
    * terminal, exposed ports) against a host that cannot answer.
    */
-  for (const tab of ["components", "migrations", "security", "terminal", "github"]) {
+  for (const tab of ["components", "migrations", "security", "terminal"]) {
     it(`survives ?tab=${tab} while the server is down`, async () => {
       searchParams = new URLSearchParams({ tab });
       const text = await mountOfflineServer(CHECK_FAILURES[0]!);

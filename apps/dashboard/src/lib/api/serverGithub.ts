@@ -20,7 +20,7 @@ export interface ServerGithubDeviceFlow {
   interval: number;
 }
 
-/** Per-server GitHub auth (self-hosted). Backs the server detail "GitHub" card. */
+/** Per-server GitHub auth (self-hosted). Used by the server credential dialog. */
 export const serverGithubApi = {
   get: (id: string) => api.get<ServerGithubStatus>(endpoints.system.serverGithub(id)),
 

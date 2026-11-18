@@ -67,6 +67,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
 import { openAuthWindow } from "@/utils/authWindow";
 import { settingsApi, type CloneStrategyPreference } from "@/lib/api";
@@ -95,9 +97,7 @@ export interface DeployCredentialModalProps {
   installUrl: string | null;
   /** Project id — required for the "add a project clone token" option. */
   projectId: string | null;
-  /** Target server id (self-hosted server deploys only). When present, the
-   *  "Connect GitHub on this server" option is offered — it deep-links to the
-   *  server's Security tab where the per-server credential is configured. */
+  /** SSH deployment target. Only self-hosted controllers can configure a server credential. */
   serverId?: string | null;
   /** Where is the deploy headed? Affects copy. */
   deployTarget: "local" | "server" | "cloud" | "cluster" | null | undefined;
@@ -144,6 +144,7 @@ export function DeployCredentialModal({
   onDismiss,
 }: DeployCredentialModalProps) {
   const router = useRouter();
+  const { t } = useI18n();
   const { showToast } = useToast();
   const [busy, setBusy] = useState<DeployCredentialChoice["kind"] | null>(null);
 
@@ -202,9 +203,7 @@ export function DeployCredentialModal({
   const handleConnectServerGithub = useCallback(() => {
     if (!serverId) return;
     setBusy("connect-server-github");
-    // The parent opens the shared per-server connect model (same component as
-    // the server's GitHub tab) and owns the post-connect retry, so the flow is
-    // identical everywhere it appears.
+    // The parent opens the server credential dialog and owns the post-connect retry.
     onChoice({ kind: "connect-server-github" });
   }, [serverId, onChoice]);
 
@@ -222,10 +221,8 @@ export function DeployCredentialModal({
   // ── Visibility gates ───────────────────────────────────────────────
   const targetIsRemote = deployTarget === "server" || deployTarget === "cloud";
   const showInstallApp = !!installUrl;
-  // Per-server GitHub — self-hosted server target only (cloud is App-token
-  // only). Deep-links to the server's own credential setup, the tightest path
-  // when the App/cloud round-trip isn't wanted.
-  const showConnectServer = deployTarget === "server" && !!serverId;
+  // An SSH destination can belong to either a hosted or self-hosted controller.
+  const showConnectServer = selfHosted && deployTarget === "server" && !!serverId;
   const showAddToken = !!projectId;
   // Only an operator-owned API can build locally and transfer the artifact.
   // Cloud tenants must execute on their selected managed server.
@@ -295,6 +292,22 @@ export function DeployCredentialModal({
               <UiIcon name="external-link" className="size-4 text-muted-foreground shrink-0" />
             </div>
           </button>
+        )}
+
+        {!showInstallApp && (
+          <Link
+            href="/settings?tab=git"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-xl border border-border/50 bg-card p-4 text-start hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <UiIcon name="github" className="size-5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">{t.library.connect.default.manualCta}</span>
+              <span className="mt-1 block text-sm text-muted-foreground">{t.library.sidebar.footnote}</span>
+            </span>
+            <UiIcon name="external-link" className="size-4 shrink-0 text-muted-foreground" />
+          </Link>
         )}
 
         {showConnectServer && (

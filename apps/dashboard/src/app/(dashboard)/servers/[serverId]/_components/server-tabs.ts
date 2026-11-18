@@ -4,7 +4,6 @@ export type ServerTab =
   | "overview"
   | "migrations"
   | "components"
-  | "github"
   | "pages"
   | "security"
   | "ports"
@@ -15,7 +14,6 @@ export const SERVER_TABS: { key: ServerTab; icon: IconName; desktopOnly?: boolea
   { key: "runs", icon: "terminal" },
   { key: "migrations", icon: "migration" },
   { key: "components", icon: "server-settings" },
-  { key: "github", icon: "git-branch" },
   { key: "security", icon: "shield" },
   { key: "pages", icon: "code" },
   { key: "ports", icon: "port-forwarding", desktopOnly: true },

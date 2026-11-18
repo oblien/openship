@@ -15,28 +15,17 @@ import { useModal } from "@/context/ModalContext";
 import { useI18n } from "@/components/i18n-provider";
 
 /**
- * The ONE per-server GitHub connect model (self-hosted). How THIS server
- * authenticates to GitHub to clone private repos — device-login token, pasted
- * PAT, an SSH server key, or per-repo deploy keys. Wins over the account /
- * App / relay chain for clones that run on this server.
- *
- * Reused verbatim in three places so the flow never forks:
- *   - the server detail "GitHub" tab (`variant="card"`),
- *   - the deploy credential modal's "Connect GitHub on this server" option,
- *   - any "connect GitHub" empty state,
- * the latter two via {@link useServerGitHubConnectModal}.
+ * Manage a self-hosted server's clone credentials from its actions menu or deploy recovery.
  *
  * `onConnected` fires when the server transitions to a usable credential
  * (device / PAT / deploy-key). SSH server-key generation does NOT fire it — the
  * public key still has to be added to the GitHub account first.
  */
-export function ServerGitHubConnect({
+function ServerGitHubConnect({
   serverId,
-  variant = "card",
   onConnected,
 }: {
   serverId: string;
-  variant?: "card" | "bare";
   onConnected?: () => void;
 }) {
   const { t } = useI18n();
@@ -178,20 +167,9 @@ export function ServerGitHubConnect({
     { id: "ssh-deploy-key", label: g.modeDeployKey, icon: "terminal" },
   ];
 
-  // Card variant mirrors the server "Security" tab: a titled header with an
-  // icon chip, split by a divider from a padded body. Bare variant (the deploy
-  // modal) stays chrome-less.
-  const isCard = variant === "card";
-
   return (
-    <div className={isCard ? "w-full rounded-2xl border border-border/50 bg-card" : ""}>
-      <div
-        className={
-          isCard
-            ? "flex items-center justify-between gap-3 px-5 py-4 border-b border-border/50"
-            : "flex items-center justify-between gap-4"
-        }
-      >
+    <div>
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex w-9 h-9 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.06]">
             <UiIcon name="github" className="size-[18px] text-foreground/80" />
@@ -208,7 +186,7 @@ export function ServerGitHubConnect({
         )}
       </div>
 
-      <div className={isCard ? "p-5" : "mt-4"}>
+      <div className="mt-4">
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <UiIcon name="spinner" className="size-5 animate-spin text-muted-foreground" />
@@ -426,7 +404,6 @@ export function useServerGitHubConnectModal() {
           <div className="p-6">
             <ServerGitHubConnect
               serverId={serverId}
-              variant="bare"
               onConnected={() => {
                 hideModal(id);
                 opts?.onConnected?.();
