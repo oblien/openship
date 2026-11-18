@@ -7,7 +7,7 @@
  *      column), via the shared `admin/password.ts` helper. Hashing on the
  *      target server avoids sending the cleartext or the hash through any
  *      intermediate process.
- *   2. UPDATE vmail.mailbox SET password = … through `admin/psql-runner`.
+ *   2. Update the mailbox password and its rotation timestamp through `admin/psql-runner`.
  *   3. Scrub any leftover plaintext from the state file. We used to mirror
  *      it back for the credentials card to display; that was a needless
  *      attack surface and is gone - the only way to "know" the password
@@ -48,7 +48,7 @@ export async function updatePostmasterPassword(
   // sidecar, or `sudo -u postgres` on a legacy install) rather than assuming the latter.
   await execute(
     exec,
-    `UPDATE mailbox SET password = ${q(hash)} WHERE username = ${q(username)};`,
+    `UPDATE mailbox SET password = ${q(hash)}, passwordlastchange = NOW() WHERE username = ${q(username)};`,
   );
 
   // Persist the new plaintext into state.secrets so the test-email flow
