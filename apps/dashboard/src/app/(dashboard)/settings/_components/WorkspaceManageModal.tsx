@@ -4,8 +4,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
- * Manage a TEAM workspace (owner-only): rename it, pause every project to
- * come back later, or delete it.
+ * Manage a team workspace (owner-only): pause its projects or delete it.
  *
  * Delete is deliberate + real: deleting the org alone would CASCADE-wipe the
  * project rows while leaving live containers / edge routes orphaned. So the
@@ -23,7 +22,6 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 // Module-level (see TeamTab for the Better Auth Proxy-dep explanation).
 const orgClient = (authClient as unknown as {
   organization: {
-    update: (opts: { organizationId: string; data: { name?: string } }) => Promise<{ error?: { message?: string } }>;
     delete: (opts: { organizationId: string }) => Promise<{ error?: { message?: string; code?: string } }>;
   };
 }).organization;
@@ -38,8 +36,6 @@ interface WorkspaceManageModalProps {
   organizationId: string;
   organizationName: string;
   onClose: () => void;
-  /** Renamed in place — parent refreshes its labels. */
-  onRenamed: (name: string) => void;
   /** Workspace deleted — parent switches to the personal workspace + reloads. */
   onDeleted: () => void;
 }
@@ -48,15 +44,12 @@ export function WorkspaceManageModal({
   organizationId,
   organizationName,
   onClose,
-  onRenamed,
   onDeleted,
 }: WorkspaceManageModalProps) {
   const { showToast } = useToast();
   const { t } = useI18n();
   const m = t.settings.team.workspace.manage;
 
-  const [name, setName] = useState(organizationName);
-  const [renaming, setRenaming] = useState(false);
   const [projects, setProjects] = useState<WsProject[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [pausing, setPausing] = useState(false);
@@ -86,26 +79,7 @@ export function WorkspaceManageModal({
     void loadProjects();
   }, [loadProjects]);
 
-  const busy = renaming || pausing || deleting;
-
-  const handleRename = async () => {
-    const next = name.trim();
-    if (!next || next === organizationName) return;
-    setRenaming(true);
-    try {
-      const res = await orgClient.update({ organizationId, data: { name: next } });
-      if (res.error) {
-        showToast(res.error.message ?? m.toastRenameFailed, "error", t.settings.common.toast.team);
-        return;
-      }
-      showToast(m.toastRenamed, "success", t.settings.common.toast.team);
-      onRenamed(next);
-    } catch (err) {
-      showToast(getApiErrorMessage(err, m.toastRenameFailed), "error", t.settings.common.toast.team);
-    } finally {
-      setRenaming(false);
-    }
-  };
+  const busy = pausing || deleting;
 
   const handlePauseAll = async () => {
     const running = projects.filter((p) => p.enabled);
@@ -199,27 +173,6 @@ export function WorkspaceManageModal({
         </div>
 
         <div className="max-h-[calc(90vh-64px)] space-y-6 overflow-y-auto p-6">
-          {/* Rename */}
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{m.nameLabel}</label>
-            <div className="flex gap-2">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="min-w-0 flex-1 rounded-xl border border-border/60 bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
-              />
-              <button
-                type="button"
-                onClick={handleRename}
-                disabled={busy || !name.trim() || name.trim() === organizationName}
-                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-muted/60 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-              >
-                {renaming ? <UiIcon name="spinner" className="size-4 animate-spin" /> : <UiIcon name="edit" className="size-4" />}
-                {m.rename}
-              </button>
-            </div>
-          </div>
-
           {/* Projects */}
           <div>
             <p className="mb-2 text-xs font-medium text-muted-foreground">

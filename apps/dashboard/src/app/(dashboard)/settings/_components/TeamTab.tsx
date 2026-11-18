@@ -39,6 +39,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { TeamReachabilityCard, type TeamReachability } from "./TeamReachabilityCard";
 import { WorkspaceManageModal } from "./WorkspaceManageModal";
+import { WorkspaceNameSetting } from "./WorkspaceNameSetting";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { invitationShareUrl } from "@/lib/invitation-flow";
 
@@ -117,14 +118,13 @@ export function TeamTab() {
   // billing is cloud-only. The picker collapses the two GitHub types into one tab.
   const availableTypes: ResourceType[] = grantableTypesForMode(selfHosted);
 
-  // Org-meta: drives personal-vs-team UX. Personal workspaces (auto-
-  // created on signup) hide the invite UI; clicking "Create team org"
-  // spawns a brand-new is_team=true org with the same owner.
+  // Workspace type controls lifecycle actions such as creating or deleting a
+  // separate team. Both types can invite when the instance is reachable.
   const [orgMeta, setOrgMeta] = useState<{ isTeam: boolean; memberCount: number; organizationId?: string } | null>(null);
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [creatingTeam, setCreatingTeam] = useState(false);
-  const [activeOrgName, setActiveOrgName] = useState("");
+  const [activeOrg, setActiveOrg] = useState<{ id: string; name: string } | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
 
   // In-flight guard. React Strict Mode mounts every component twice in
@@ -153,13 +153,12 @@ export function TeamTab() {
             teamReachability?: TeamReachability;
           }>("system/settings")
           .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab"); return ({ invitationMailSource: "platform" as InvitationMailSource }); }),
-        // Active org name for the manage-workspace modal (rename default + confirm).
         orgClient.getFullOrganization().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/TeamTab"); return ({ data: null }); }),
       ]);
       setMembers(mRes.data?.members ?? []);
       setInvitations(iRes.data ?? []);
       setOrgMeta(metaRes.data);
-      setActiveOrgName((fullRes.data as { name?: string } | null)?.name ?? "");
+      setActiveOrg(fullRes.data ?? null);
       // SaaS has no self-hosted mail server — invites always go via cloud and
       // the "Send via" chooser is hidden, so only honor a stored source when
       // self-hosted.
@@ -388,14 +387,7 @@ export function TeamTab() {
   const isOwner = myMembership?.role === "owner";
   const isAdminOrOwner = myMembership?.role === "owner" || myMembership?.role === "admin";
 
-  // Tri-state org kind: loading | personal | team. Render the invite
-  // button ONLY when team is confirmed; render the "Create team" banner
-  // ONLY when personal is confirmed. Anything else (initial null, fetch
-  // failure) shows nothing — better than flashing a button that the
-  // server would reject with "you are not allowed to invite".
-  const orgKind: "loading" | "personal" | "team" =
-    orgMeta === null ? "loading" : orgMeta.isTeam ? "team" : "personal";
-  const isPersonalOrg = orgKind === "personal";
+  const isPersonalOrg = orgMeta?.isTeam === false;
 
   // Offer "Invite member" whenever it can actually succeed. The backend now
   // allows inviting to a personal OR team org (is_team only labels the
@@ -415,7 +407,8 @@ export function TeamTab() {
   // Delete/leave apply to a TEAM workspace only — never the personal workspace
   // (org_<userId>), which is the account base. Owner deletes; a member leaves.
   const isTeamOrg = orgMeta?.isTeam === true;
-  const canManageWorkspace = isOwner && isTeamOrg && !!orgMeta?.organizationId;
+  const workspace = activeOrg?.id === orgMeta?.organizationId ? activeOrg : null;
+  const canManageWorkspace = isOwner && isTeamOrg && !!workspace;
   const canLeaveWorkspace = !isOwner && isTeamOrg && !!orgMeta?.organizationId;
 
   // Workspace-level (advanced) actions, collected into the header's ⋮ so the
@@ -498,6 +491,20 @@ export function TeamTab() {
           )}
         </div>
       </div>
+
+      {workspace && (
+        <WorkspaceNameSetting
+          key={workspace.id}
+          organizationId={workspace.id}
+          name={workspace.name}
+          canRename={isOwner}
+          onRenamed={(name) => {
+            setActiveOrg((current) =>
+              current?.id === workspace.id ? { ...current, name } : current,
+            );
+          }}
+        />
+      )}
 
       {inviteOpen && canInvite && (
         <InviteMemberInline
@@ -652,17 +659,13 @@ export function TeamTab() {
         <TeamReachabilityCard reachability={reachability} canMigrate={!!isOwner} />
       )}
 
-      {/* Owner-only manage modal: rename, pause all projects, or delete the
+      {/* Owner-only manage modal: pause all projects or delete the
           workspace (tears each project down before removing the org). */}
-      {manageOpen && orgMeta?.organizationId && (
+      {manageOpen && canManageWorkspace && workspace && (
         <WorkspaceManageModal
-          organizationId={orgMeta.organizationId}
-          organizationName={activeOrgName}
+          organizationId={workspace.id}
+          organizationName={workspace.name}
           onClose={() => setManageOpen(false)}
-          onRenamed={(n) => {
-            setActiveOrgName(n);
-            void refresh();
-          }}
           onDeleted={() => void switchToPersonalAndReload()}
         />
       )}
