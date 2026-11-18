@@ -674,14 +674,15 @@ describe("containers on one Oblien Docker workspace", () => {
         { path: "web/Dockerfile", content: "FROM alpine\nCOPY web/config /config" },
         { path: "web/config", content: "configured" },
       ] } as never;
-    await runtime.buildImages([{ serviceName: "web", config: source, logger }], logger);
+    const options = { prepareImages: vi.fn(async () => {}) };
+    await runtime.buildImages([{ serviceName: "web", config: source, logger }], logger, options);
     expect(runtime.executor.writeFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/openship-cloud-source-[a-f0-9]+\/web\/config$/), "configured");
     expect(transfer).not.toHaveBeenCalled();
     expect(sharedBuild).toHaveBeenCalledExactlyOnceWith([
       expect.objectContaining({ serviceName: "web", config: expect.objectContaining({
         cloneOnServer: true, localPath: undefined, staticExtractOnly: false,
       }) }),
-    ], logger);
+    ], logger, options);
     expect(runtime.connectionOptions?.executor).toBe(runtime.executor);
     expect(runtime.transport.kind).toBe("cloud");
   });

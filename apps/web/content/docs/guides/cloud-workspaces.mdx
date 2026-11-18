@@ -79,6 +79,18 @@ not each assume the same free resources. If too little memory is available,
 stop an idle service or upgrade the server and retry. Image-only installs
 do not create a source builder.
 
+When your saved plan includes a **concurrent builds** limit, it counts project
+build jobs on that managed server. One Compose deployment occupies one slot;
+its service images share the build worker and resource budget. Additional jobs
+queue until a slot is available. Plans without a saved ceiling retain those terms.
+
+Compose can pull registry images alongside source compilation, with up to four
+registry downloads at once. Shared image references are fetched once per attempt,
+and pinned images are preserved. Separate service build budgets may require
+serial worker setup. Container startup still follows dependency and health checks.
+Image-only deployments do not reserve a source-build slot, and time spent only
+waiting for downloads after compilation is excluded from source-build duration.
+
 New monthly plans cover the server's CPU, RAM and storage for the full paid
 period. Applications and builds share that capacity without a second compute-credit
 allowance. Older metered subscriptions keep their saved terms until you explicitly

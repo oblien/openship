@@ -426,6 +426,7 @@ export class CloudDockerRuntime extends DockerRuntime {
   override async buildImages(
     specs: Parameters<DockerRuntime["buildImages"]>[0],
     logger: BuildLogger,
+    options?: Parameters<DockerRuntime["buildImages"]>[2],
   ) {
     for (const spec of specs) this.assertProject(spec.config.projectId);
     await this.canSpend();
@@ -433,6 +434,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     return super.buildImages(
       specs.map((spec) => ({ ...spec, config: this.remoteBuild(spec.config) })),
       logger,
+      options,
     );
   }
   /** Static output stays on the project-owned workspace tree until Pages exports it. */

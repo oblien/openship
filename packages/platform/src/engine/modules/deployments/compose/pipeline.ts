@@ -401,7 +401,12 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
         .map(([serviceId, imageRef]) => ({
           serviceId,
           serviceName: services.find(service => service.id === serviceId)?.name ?? "",
-          imageRef,
+          // A background refresh may have moved a tag shared with a retained
+          // service. Persist the frozen image, not whatever that tag names now.
+          imageRef: composeBuild.imagePreparation?.prepared(imageRef, {
+            retained: composeBuild.preparedLocalImages?.get(serviceId) === imageRef,
+            refresh: true,
+          })?.imageId ?? imageRef,
         }));
       if (images.every(image => image.serviceName)) await recordDeploymentArtifacts(dep, runtime, images);
     } catch (error) {
@@ -416,6 +421,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   try {
     composeResult = await deployComposeServices(project, dep, runtime, logger, {
       builtImages: composeBuild.imageRefs,
+      imagePreparation: composeBuild.imagePreparation,
       preparedLocalImages: composeBuild.preparedLocalImages,
       staticArtifactRefs: composeBuild.staticArtifactRefs,
       staticServiceIds: composeBuild.staticServiceIds,

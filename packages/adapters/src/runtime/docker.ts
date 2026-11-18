@@ -154,6 +154,7 @@ import type {
   MultiServiceGroupHandle,
   MultiServiceDeployConfig,
   MultiServiceDeployResult,
+  MultiServiceRuntimeAdapter,
   DeploymentRef,
   DockerContainerSummary,
   DockerContainerDetail,
@@ -3668,6 +3669,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       onResult?: (result: BuildResult) => void;
     }>,
     prepareLogger: BuildLogger,
+    options?: Parameters<NonNullable<MultiServiceRuntimeAdapter["buildImages"]>>[2],
   ): Promise<Array<{ serviceName: string; result: BuildResult }>> {
     if (specs.length === 0) return [];
     for (const spec of specs) spec.logger.protectBuild(spec.config);
@@ -3731,6 +3733,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     let tree: Awaited<ReturnType<typeof prepareSourceTree>> | null = null;
     let sharedWorker = false;
     let protectedBatch = false;
+    let imagePreparation: Promise<PromiseSettledResult<void>[]> | undefined;
+    const prepareImages = () => {
+      if (options?.prepareImages && !imagePreparation && !allCancelled()) {
+        imagePreparation = Promise.allSettled([
+          Promise.resolve().then(() => options.prepareImages!(sourceAbort.signal)),
+        ]);
+      }
+    };
     try {
       // Cancelled while these controllers were being registered. Bail BEFORE the
       // clone: it is the most expensive thing this method does on the host, and a
@@ -3872,6 +3882,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         if (protectedBatch) await this.startProtectedBuildWorker(source, prepareLogger, sourceAbort.signal);
       }
       prepareLogger.log(`Building ${specs.length} images with up to ${concurrency} concurrent builds; startup dependencies apply after images are ready.\n`);
+      // Cloud worker setup checks for unsettled host commands. Start pulls only
+      // after setup, and drain them before cleanup makes the same safety check.
+      // Separate per-service workers (different budgets) keep their serial setup.
+      if (sharedWorker || !isSsh) prepareImages();
       const results = await mapConcurrent(resolvedList, concurrency, async ({
 
         spec,
@@ -4016,11 +4030,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           return { serviceName: spec.serviceName, result };
         }
       });
+      prepareImages();
+      const preparation = (await imagePreparation)?.[0];
+      if (preparation?.status === "rejected") throw preparation.reason;
       return results;
     } catch (error) {
+      sourceAbort.abort();
       if (allCancelled()) return cancelledBatch();
       throw error;
     } finally {
+      await imagePreparation;
       try {
         if (sharedWorker) {
           if (protectedBatch) await this.cleanupProtectedBuildWorker(source.projectId);
