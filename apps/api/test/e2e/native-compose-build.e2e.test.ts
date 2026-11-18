@@ -18,11 +18,12 @@ import {
 import { repos } from "@repo/db";
 import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 import { deployComposeServices } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
+import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
 import { SshExecutor } from "../../../../packages/adapters/src/system/ssh-executor";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { availablePort, sshReady } from "../helpers/migration-host";
 import { protectedBuildKitImage } from "../helpers/buildkit-image";
-import { seedDeployment, seedOrg, seedProject } from "../helpers/seed";
+import { seedDeployment, seedOrg, seedProject, seedService } from "../helpers/seed";
 
 const run = promisify(execFile);
 const fixture = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/migration-target");
@@ -208,6 +209,74 @@ describeDockerE2E("native Compose build batches", () => {
     expect(results.map(item => item.result.status)).toEqual(["failed", "deploying"]);
     expect((await runtime.docker.getImage(results[1]!.result.imageRef!).inspect()).Id).toMatch(/^sha256:/);
   });
+
+  it("overlaps registry pulls with a source build and deploys the acquired images", async () => {
+    const { organizationId } = await seedOrg();
+    const project = await seedProject(organizationId, {
+      slug: `mixed-${suffix}`, framework: "docker-compose", runtimeMode: "docker", routeStrategy: "container-ip",
+    });
+    await seedService(project.id, {
+      name: "worker", enabled: true,
+      advanced: { build: { dockerfile: `FROM alpine:3.21\nRUN sleep 5 && echo ${suffix} > /proof\nCMD ["sleep", "300"]\n` } },
+    });
+    const registryRef = "busybox:1.37";
+    await seedService(project.id, {
+      name: "sidecar", enabled: true, image: registryRef, command: "sleep 300",
+    });
+    const deployment = await seedDeployment(project, { status: "building", trigger: "manual" });
+    const compile = runtime.buildImages.bind(runtime);
+    const pull = runtime.pullImage.bind(runtime);
+    let compiling!: () => void;
+    const compilerStarted = new Promise<void>(resolve => { compiling = resolve; });
+    let buildFinished = false;
+    const builds = vi.spyOn(runtime, "buildImages").mockImplementation(async (specs, log, options) => {
+      try {
+        return await compile(specs.map(spec => ({
+          ...spec,
+          onStart: () => { spec.onStart?.(); compiling(); },
+          onResult: result => { buildFinished = true; spec.onResult?.(result); },
+        })), log, options);
+      } finally { buildFinished = true; compiling(); }
+    });
+    const pulls = vi.spyOn(runtime, "pullImage").mockImplementation(async (ref, options) => {
+      if (ref === registryRef) {
+        await compilerStarted;
+        expect(buildFinished, "registry pull was delayed until after compilation").toBe(false);
+      }
+      await pull(ref, options);
+    });
+    try {
+      const result = await buildComposeImages({
+        project, dep: deployment, runtime, logger: logger(), buildSessionId: `mixed-${suffix}`,
+        composeInterpolationEnv: {}, buildEnvVars: {},
+        buildResources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
+        snapshot: { repoUrl: "", branch: "main", framework: "docker", buildImage: "", runtimeImage: "",
+          packageManager: "", installCommand: "", buildCommand: "", startCommand: "", port: 8080,
+          outputDirectory: "", productionPaths: [], rootDirectory: "", hasServer: true, hasBuild: false },
+      });
+      expect([...result.buildFailures], JSON.stringify(logs)).toEqual([]);
+      expect(pulls.mock.calls.filter(([ref]) => ref === registryRef)).toHaveLength(1);
+      const acquired = await result.imagePreparation?.receipt(registryRef, { retained: false, refresh: true });
+      expect(acquired).toBeDefined();
+      await repos.deployment.updateStatus(deployment.id, "deploying");
+      const noop = new NoopInfraProvider();
+      const deployed = await deployComposeServices(project, deployment, runtime, logger(), {
+        builtImages: result.imageRefs, preparedLocalImages: result.preparedLocalImages,
+        imagePreparation: result.imagePreparation, executor, localHost: false,
+        routing: noop, ssl: noop, usesManagedRouting: false,
+      });
+      expect(deployed.status, JSON.stringify({ deployed, logs })).toBe("ready");
+      expect(pulls.mock.calls.filter(([ref]) => ref === registryRef)).toHaveLength(1);
+      const sidecar = deployed.services.find(service => service.serviceName === "sidecar")!;
+      expect((await runtime.getContainerInfo(sidecar.containerId!)).imageId).toBe(acquired!.imageId);
+      const worker = deployed.services.find(service => service.serviceName === "worker")!;
+      expect((await executor.exec(`docker exec ${sq(worker.containerId!)} cat /proof`)).trim()).toBe(suffix);
+    } finally {
+      compiling();
+      builds.mockRestore();
+      pulls.mockRestore();
+    }
+  }, 180_000);
 
   it("cancels in-flight and queued batch builds without returning deployable images", async () => {
     const repo = join(directory, "source");

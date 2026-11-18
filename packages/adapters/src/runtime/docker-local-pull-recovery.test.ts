@@ -1,4 +1,6 @@
+import { createServer } from "node:http";
 import { PassThrough } from "node:stream";
+import Dockerode from "dockerode";
 import { expect, it, vi } from "vitest";
 import { DockerRuntime } from "./docker";
 
@@ -34,5 +36,42 @@ it("does not repeat an already anonymous denial or retry unrelated errors", asyn
     const { runtime, pull } = fixture([failures], authenticated);
     await expect(runtime.pullImage("ghcr.io/o/img:1", { force: true })).rejects.toThrow(failures.message);
     expect(pull).toHaveBeenCalledTimes(1);
+  }
+});
+
+it.each([false, true])("closes a cancelled daemon pull (streaming: %s)", async (streaming) => {
+  const requested = vi.fn();
+  const closed = vi.fn();
+  const server = createServer((req, res) => {
+    requested(req.method, req.url);
+    res.once("close", closed);
+    if (streaming) res.write('{"status":"Downloading"}\n');
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Test server has no port");
+    const docker = new Dockerode({ host: "127.0.0.1", port: address.port });
+    const started = vi.spyOn(docker.modem, "followProgress");
+    const { runtime } = fixture([]);
+    Object.assign(runtime, { _docker: docker });
+    const controller = new AbortController();
+    let failure: unknown;
+    const pull = runtime
+      .pullImage("ghcr.io/private/api:1", { force: true, signal: controller.signal })
+      .catch((error) => {
+        failure = error;
+      });
+
+    await expect.poll(() => requested.mock.calls.length).toBe(1);
+    if (streaming) await expect.poll(() => started.mock.calls.length).toBe(1);
+    controller.abort();
+    await expect.poll(() => closed.mock.calls.length).toBe(1);
+    await pull;
+    expect(failure).toMatchObject({ name: "AbortError" });
+    expect(requested).toHaveBeenCalledOnce();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

@@ -700,8 +700,8 @@ export interface MultiServiceRuntimeAdapter extends RuntimeAdapter {
    * Optional batch build: clone/prune the shared source ONCE and build every
    * image from it (transferring once for SSH). Implemented by runtimes where all
    * services build on the same daemon/host (Docker), so the repo isn't re-cloned
-   * per service. Absent on runtimes where each service is a separate instance
-   * (Cloud) — those keep building per-service via `build()`. Prepare-phase logs
+   * per service. Runtimes without a shared build host keep building per service
+   * via `build()`. Prepare-phase logs
    * (clone/transfer) go to `prepareLogger`; each image's output to `spec.logger`.
    */
   buildImages?(
@@ -714,11 +714,16 @@ export interface MultiServiceRuntimeAdapter extends RuntimeAdapter {
        *  transfer) so callers can flip the service to "building" only then. */
       onStart?: () => void;
       /** Called with THIS image's result the moment its build settles, so
-       *  callers can record/broadcast per service as each finishes (builds run
-       *  sequentially) rather than waiting for the whole batch. */
+       *  callers can record/broadcast per service as each finishes rather than
+       *  waiting for the whole batch. */
       onResult?: (result: BuildResult) => void;
     }>,
     prepareLogger: BuildLogger,
+    options?: {
+      /** Acquire registry images alongside compilation, after worker setup.
+       * The runtime cancels/drains this work before worker cleanup. */
+      prepareImages?: (signal: AbortSignal) => Promise<void>;
+    },
   ): Promise<Array<{ serviceName: string; result: BuildResult }>>;
 
   /**

@@ -138,6 +138,8 @@ const routingApply = await import("@repo/platform/engine/modules/domains/routing
 vi.spyOn(routingApply, "applyProjectRouting").mockImplementation((...args) => h.applyProjectRouting(...args));
 const { deployComposeServices } =
   await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
+const { buildComposeImages } =
+  await import("@repo/platform/engine/modules/deployments/compose/build.service");
 const { DockerRuntime, CloudDockerRuntime } = await import("@repo/adapters");
 const IMAGE_ID = `sha256:${"a".repeat(64)}`;
 
@@ -168,7 +170,7 @@ function imageRefreshFixture() {
     if (!image) throw Object.assign(new Error("No such image"), { statusCode: 404 });
     return image;
   });
-  const pull = vi.fn(async (_ref: string, _options?: { force?: boolean }) => undefined);
+  const pull = vi.fn<DockerRuntimeType["pullImage"]>(async () => undefined);
   const activate = vi.fn(async (_group: unknown, config: { serviceName: string; image: string }) => ({
     status: "running", containerId: `new-${config.serviceName}`, ip: "172.18.0.3",
   }));
@@ -198,6 +200,65 @@ function imageRefreshFixture() {
     deployComposeServices({ ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip", ...projectOverrides } as Project,
       { ...dep, trigger }, runtime, logger, options);
   return { runtime, run, logger, images, inspect, pull, activate, metadata, dbRef, apiRef, dbId, apiId, nextId };
+}
+
+function gate() {
+  let release!: () => void;
+  let fail!: (error: Error) => void;
+  const promise = new Promise<void>((resolve, reject) => { release = resolve; fail = reject; });
+  return { promise, release, fail };
+}
+
+/** Real build orchestration + image preparation; only compiler and daemon I/O wait on gates. */
+async function mixedImageFixture(cloud = false) {
+  const f = imageRefreshFixture();
+  const { BuildLogger, DEFAULT_RESOURCE_CONFIG } = await import("@repo/adapters");
+  const buildGate = gate();
+  const builtRef = "openship/app-worker:bld_attempt";
+  const builtId = `sha256:${"4".repeat(64)}`;
+  h.services.push({ id: "svc-worker", projectId: "p1", name: "worker", kind: "compose",
+    build: ".", image: null, enabled: true, advanced: null, dependsOn: [], ports: [], exposed: false });
+  if (cloud) Object.setPrototypeOf(f.runtime, CloudDockerRuntime.prototype);
+  const buildImages = vi.fn<DockerRuntimeType["buildImages"]>(async (specs, _logger, options) => {
+    const controller = new AbortController();
+    const preparation = options?.prepareImages?.(controller.signal);
+    try {
+      await buildGate.promise;
+      f.images.set(builtRef, { Id: builtId, RepoDigests: [] });
+      return specs.map(spec => {
+        const result = { sessionId: spec.config.sessionId, status: "deploying" as const,
+          imageRef: builtRef, durationMs: 10 };
+        spec.onResult?.(result);
+        return { serviceName: spec.serviceName, result };
+      });
+    } catch (error) {
+      controller.abort();
+      throw error;
+    } finally {
+      await preparation;
+    }
+  });
+  Object.assign(f.runtime, {
+    assertReachable: vi.fn(async () => {}), buildImages,
+    prepareComposeSource: vi.fn(async () => {}),
+    executor: { runWithAbortSignal: (_signal: AbortSignal, work: () => unknown) => work() },
+  });
+  type BuildOptions = Parameters<typeof buildComposeImages>[0];
+  const build = (options: Partial<BuildOptions> = {}) => buildComposeImages({
+    project: { ...project, activeDeploymentId: "d-old" }, dep: { ...dep, trigger: "manual" },
+    runtime: f.runtime, logger: new BuildLogger(() => {}), buildSessionId: "bld_attempt",
+    snapshot: { repoUrl: "https://example.test/source.git", branch: "main", framework: "docker",
+      buildImage: "", runtimeImage: "", packageManager: "", installCommand: "", buildCommand: "",
+      outputDirectory: "", productionPaths: [], rootDirectory: "", port: 3000, startCommand: "",
+      hasServer: true, hasBuild: false },
+    composeInterpolationEnv: {}, buildEnvVars: {},
+    buildResources: DEFAULT_RESOURCE_CONFIG,
+    ...options,
+  });
+  const deploy = (result: Awaited<ReturnType<typeof build>>, options: Parameters<typeof f.run>[0] = {}) =>
+    f.run({ builtImages: result.imageRefs, preparedLocalImages: result.preparedLocalImages,
+      imagePreparation: result.imagePreparation, buildFailures: result.buildFailures, ...options });
+  return { ...f, build, deploy, buildGate, buildImages, builtRef, builtId };
 }
 
 /** Stops the deploy at the first thing after the notice, so the test exercises the
@@ -421,6 +482,180 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.useRealTimers());
+
+describe("Compose pulls alongside source builds", () => {
+  it.each([false, true])("overlaps pulls and drains them after the compiler finishes (Cloud: %s)", async cloud => {
+    const f = await mixedImageFixture(cloud);
+    const pulls = gate();
+    f.pull.mockImplementation(async ref => {
+      await pulls.promise;
+      f.images.set(ref, f.metadata(ref, f.nextId));
+    });
+    const measured = vi.fn();
+    const pending = f.build({ onBuildMeasured: measured });
+    let settled = false;
+    void pending.then(() => { settled = true; });
+    try {
+      await expect.poll(() => f.pull.mock.calls.length).toBe(2);
+      expect(f.buildImages).toHaveBeenCalledOnce();
+      expect(settled).toBe(false);
+      expect(f.activate).not.toHaveBeenCalled();
+      f.buildGate.release();
+      await expect.poll(() => measured.mock.calls.length).toBe(1);
+      expect(settled).toBe(false);
+      pulls.release();
+      const result = await pending;
+      expect(result.durationMs).toBe(measured.mock.calls[0]![0]);
+      expect(f.pull).toHaveBeenCalledTimes(2);
+    } finally {
+      f.buildGate.release();
+      pulls.release();
+      await pending;
+    }
+  });
+
+  it("uses prefetched immutable images at cutover without a second pull", async () => {
+    const f = await mixedImageFixture();
+    f.pull.mockImplementation(async ref => { f.images.set(ref, f.metadata(ref, f.nextId)); });
+    const pending = f.build();
+    await expect.poll(() => f.pull.mock.calls.length).toBe(2);
+    f.buildGate.release();
+    const result = await pending;
+    // Another writer moves the tags after acquisition. Activation uses the receipts.
+    f.images.set(f.apiRef, f.metadata(f.apiRef, f.apiId));
+    f.images.set(f.dbRef, f.metadata(f.dbRef, f.dbId));
+    await f.deploy(result);
+    expect(f.pull).toHaveBeenCalledTimes(2);
+    expect(Object.fromEntries(f.activate.mock.calls.map(call => [call[1].serviceName, call[1].image])))
+      .toEqual({ db: `postgres@${f.nextId}`, api: `ghcr.io/acme/api@${f.nextId}`, worker: f.builtId });
+  });
+
+  it("freezes a pinned sibling before refreshing its shared tag", async () => {
+    const f = await mixedImageFixture();
+    f.pull.mockImplementation(async ref => { f.images.set(ref, f.metadata(ref, f.nextId)); });
+    f.buildGate.release();
+    const result = await f.build({ snapshot: {
+      repoUrl: "https://example.test/source.git", branch: "main", framework: "docker",
+      handoverImages: { db: f.apiRef },
+    } as Parameters<typeof buildComposeImages>[0]["snapshot"] });
+    await expect(result.imagePreparation?.receipt(f.apiRef, { retained: true, refresh: true }))
+      .resolves.toMatchObject({ imageId: f.apiId });
+    await f.deploy(result);
+    expect(f.pull).toHaveBeenCalledTimes(1);
+    expect(Object.fromEntries(f.activate.mock.calls.map(call => [call[1].serviceName, call[1].image])))
+      .toEqual({ db: `ghcr.io/acme/api@${f.apiId}`, api: `ghcr.io/acme/api@${f.nextId}`, worker: f.builtId });
+  });
+
+  it("prefetches selected services even when an untargeted service's tag is missing", async () => {
+    const f = await mixedImageFixture();
+    const targetServiceIds = new Set(["svc-api", "svc-worker"]);
+    f.images.delete(f.dbRef);
+    const pending = f.build({ targetServiceIds });
+    try {
+      await expect.poll(() => f.pull.mock.calls.map(([ref]) => ref)).toEqual([f.apiRef]);
+      f.buildGate.release();
+      await f.deploy(await pending, { targetServiceIds });
+      expect(f.pull).toHaveBeenCalledTimes(1);
+      expect(new Set(f.activate.mock.calls.map(call => call[1].serviceName))).toEqual(new Set(["api", "worker"]));
+    } finally {
+      f.buildGate.release();
+      await pending;
+    }
+  });
+
+  it("rejects a missing required pin even if prefetch later fills its tag", async () => {
+    const f = await mixedImageFixture();
+    f.images.delete(f.apiRef);
+    f.pull.mockImplementation(async ref => { f.images.set(ref, f.metadata(ref, f.nextId)); });
+    const pending = f.build({ snapshot: {
+      repoUrl: "https://example.test/source.git", branch: "main", framework: "docker",
+      handoverImages: { db: f.apiRef },
+    } as Parameters<typeof buildComposeImages>[0]["snapshot"] });
+    try {
+      await expect.poll(() => f.pull.mock.calls.map(([ref]) => ref)).toEqual([f.apiRef]);
+      f.buildGate.release();
+      const result = await pending;
+      await expect(result.imagePreparation?.receipt(f.apiRef, { retained: true, refresh: true }))
+        .rejects.toMatchObject({ code: "RETAINED_IMAGE_UNAVAILABLE" });
+      await expect(f.deploy(result)).rejects.toThrow("Retained image");
+      expect(f.activate).not.toHaveBeenCalled();
+      expect(f.runtime.destroy).not.toHaveBeenCalled();
+    } finally {
+      f.buildGate.release();
+      await pending;
+    }
+  });
+
+  it("retains a failed pull and refuses cutover after the source build finishes", async () => {
+    const f = await mixedImageFixture();
+    f.pull.mockRejectedValue(new Error("registry refused access"));
+    const pending = f.build();
+    await expect.poll(() => f.pull.mock.calls.length).toBe(2);
+    expect(f.activate).not.toHaveBeenCalled();
+    f.buildGate.release();
+    const result = await pending;
+    await expect(f.deploy(result)).rejects.toThrow("registry refused access");
+    expect(f.pull).toHaveBeenCalledTimes(2);
+    expect(f.activate).not.toHaveBeenCalled();
+    expect(f.runtime.destroy).not.toHaveBeenCalled();
+  });
+
+  it("cancels and drains active pulls when a compiler throws", async () => {
+    const f = await mixedImageFixture();
+    const pulling = gate();
+    let active = 0;
+    f.pull.mockImplementation(async (_ref, options) => {
+      active++;
+      pulling.release();
+      try {
+        const signal = options!.signal!;
+        await new Promise<void>((_resolve, reject) => {
+          if (signal.aborted) reject(new Error("cancelled"));
+          else signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+        });
+      } finally { active--; }
+    });
+    const pending = f.build();
+    const rejected = expect(pending).rejects.toThrow("compiler connection lost");
+    await pulling.promise;
+    f.buildGate.fail(new Error("compiler connection lost"));
+    await rejected;
+    expect(active).toBe(0);
+    expect(f.activate).not.toHaveBeenCalled();
+    expect(f.runtime.destroy).not.toHaveBeenCalled();
+  });
+
+  it("bounds registry downloads to four and deduplicates shared refs", async () => {
+    const f = await mixedImageFixture();
+    for (let index = 0; index < 8; index++) {
+      const ref = `registry.example.test/service-${Math.floor(index / 2)}:latest`;
+      h.services.push({ ...h.services[0], id: `sidecar-${index}`, name: `sidecar-${index}`, image: ref });
+      f.images.set(ref, f.metadata(ref, f.dbId));
+    }
+    const pulls = gate();
+    let active = 0;
+    let maximum = 0;
+    f.pull.mockImplementation(async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await pulls.promise;
+      active--;
+    });
+    const pending = f.build();
+    try {
+      await expect.poll(() => active).toBe(4);
+      f.buildGate.release();
+      pulls.release();
+      await pending;
+      expect(maximum).toBe(4);
+      expect(f.pull).toHaveBeenCalledTimes(6);
+    } finally {
+      f.buildGate.release();
+      pulls.release();
+      await pending;
+    }
+  });
+});
 
 function addDisabledPreviousService() {
   h.services.push({

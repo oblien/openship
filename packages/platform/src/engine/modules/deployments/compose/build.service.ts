@@ -18,7 +18,7 @@ import type {
   BuildResult,
   BuildConfig,
 } from "@repo/adapters";
-import { BuildLogger, CloudDockerRuntime, STATIC_RELEASE_BASE } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, CloudDockerRuntime, STATIC_RELEASE_BASE } from "@repo/adapters";
 import { composeBuildIssues, hasRelativeVolumeMounts, validateImageReference, type BaseImageReceipt, type ComposeAdvanced } from "@repo/core";
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 
@@ -47,6 +47,8 @@ import { resolveServicePort } from "./domain-helpers";
 import { ServiceBuildDnsDiagnostics } from "./build-service-dns";
 import { loadServiceDeployEnvironment } from "./required-env-preflight";
 import { decryptEnvMap } from "../../../lib/encryption";
+import { listActiveServiceDeployments } from "../../../lib/active-deployment";
+import { ComposeImagePreparation } from "./image-preparation";
 
 function sanitizeComposeImageName(value: string): string {
   return (
@@ -410,6 +412,8 @@ function resolveSubAppOverrides(opts: SubAppOverrideInputs): {
 
 export interface ComposeBuildImagesResult {
   imageRefs: Map<string, string>;
+  /** Registry pulls settled alongside the source builds; cutover reuses their receipts. */
+  imagePreparation?: ComposeImagePreparation;
   /** Bases selected by each successful source build; absent on older adapters. */
   baseImages?: Map<string, BaseImageReceipt[]>;
   /** Exact service/image pairs that are already available on the deploy target
@@ -489,6 +493,15 @@ export async function buildComposeImages(opts: {
   const cancelledServices = new Set<string>();
   const startedAt = Date.now();
   let durationMs = 0;
+  let measured = false;
+  const measureBuild = () => {
+    if (measured) return;
+    measured = true;
+    durationMs = Math.max(0, Date.now() - startedAt);
+    opts.onBuildMeasured?.(durationMs);
+  };
+  let imagePreparation: ComposeImagePreparation | undefined;
+  let prepareImages: ((signal: AbortSignal) => Promise<void>) | undefined;
 
   // Buildable = anything that needs a per-service image build.
   //   - Compose rows with a Dockerfile context (service.build set).
@@ -608,6 +621,7 @@ export async function buildComposeImages(opts: {
       // Select that source after the shared planner has chosen the services.
       await (opts.signal ? cloudDocker.executor.runWithAbortSignal(opts.signal, prepare) : prepare());
     }
+
     // This seeds the UI check-list immediately so users see every service.
     for (const service of enabled) {
       sessionManager.broadcastServiceStatus(opts.dep.id, {
@@ -664,6 +678,38 @@ export async function buildComposeImages(opts: {
           error: failureMessage,
         });
       }
+    }
+
+    // Acquire selected registry images alongside the source builds.
+    // Untargeted services retain the deployer's existing carry/revive decision.
+    const registryServices = external.filter(service =>
+      !isNewerThanRelease(service) &&
+      (!opts.targetServiceIds || opts.targetServiceIds.has(service.id)) &&
+      imageRefs.has(service.id),
+    );
+    if (opts.runtime instanceof DockerRuntime && buildable.length > 0 && registryServices.length > 0) {
+      const preparation = imagePreparation = new ComposeImagePreparation(
+        opts.runtime, opts.dep, opts.logger, opts.snapshot.forcePullImages, opts.signal,
+      );
+      prepareImages = async (signal) => {
+        try {
+          const building = new Set(buildable.map(service => service.id));
+          const refreshing = new Set(registryServices.map(service => service.id));
+          const previous = new Map((await listActiveServiceDeployments(opts.project))
+            .map(row => [row.serviceId, row.imageRef]));
+          // A retained sibling can name the same mutable tag under another alias.
+          // Capture all possible retained refs before refreshing any registry tag.
+          const retained = [...preparedLocalImages.values(), ...enabled
+            .filter(service => !building.has(service.id) && !refreshing.has(service.id))
+            .flatMap(service => [imageRefs.get(service.id), previous.get(service.id), service.image])]
+            .filter((ref): ref is string => typeof ref === "string" && ref.length > 0 && !ref.startsWith("/"));
+          await preparation.prefetch(registryServices.map(service => imageRefs.get(service.id)!), retained, signal);
+        } catch (error) {
+          // Cutover revalidates the live cohort and reads the same receipts,
+          // including failed pulls. A failed speculative lookup may be outside it.
+          observeCaughtError(error, "platform/engine/modules/deployments/compose/build.service");
+        }
+      };
     }
 
     if (buildable.length > 0) {
@@ -948,10 +994,17 @@ export async function buildComposeImages(opts: {
     };
 
     const specs = buildable.map(buildSpecFor);
+    let remainingBuilds = specs.length;
+    const onResult = (service: Service, result: BuildResult) => {
+      applyBuildResult(service, result);
+      // Registry downloads may outlast compilation. Measure the source phase
+      // before the runtime drains downloads and tears down its shared worker.
+      if (--remainingBuilds === 0) measureBuild();
+    };
 
     if (typeof opts.runtime.buildImages === "function") {
       // Docker: clone + prune the shared repo ONCE (transfer once for SSH), then
-      // build every image from that single tree — sequentially — no per-service
+      // build every image from that single tree with host-bounded concurrency, no per-service
       // re-clone. Per-service status/imageRef is applied via onResult the moment
       // each build settles (not after the whole batch), so the UI follows the one
       // service that's currently building and each tab streams its own output.
@@ -968,12 +1021,13 @@ export async function buildComposeImages(opts: {
               serviceId: spec.service.id,
               status: "building",
             }),
-          onResult: (result) => applyBuildResult(spec.service, result),
+          onResult: (result) => onResult(spec.service, result),
         })),
         opts.logger,
+        prepareImages ? { prepareImages } : undefined,
       );
     } else {
-      // Runtimes without a batch build (e.g. cloud — each service is a separate
+      // Runtimes without a batch build (each service is a separate
       // instance): build per service, as before.
       await Promise.all(
         specs.map(async (spec) => {
@@ -982,7 +1036,7 @@ export async function buildComposeImages(opts: {
             serviceId: spec.service.id,
             status: "building",
           });
-          applyBuildResult(
+          onResult(
             spec.service,
             await opts.runtime.build(spec.buildConfig, spec.serviceLogger),
           );
@@ -1037,13 +1091,13 @@ export async function buildComposeImages(opts: {
       }
     }
   } finally {
-    durationMs = Math.max(0, Date.now() - startedAt);
-    opts.onBuildMeasured?.(durationMs);
+    measureBuild();
     await inlineBuilds.cleanup();
   }
 
   return {
     imageRefs,
+    imagePreparation,
     baseImages,
     preparedLocalImages,
     builtImageRefs,
