@@ -11,6 +11,7 @@ import { Sidebar } from "./sidebar";
 import { SidebarLayoutProvider, useSidebarCollapseRequest } from "@/context/SidebarLayoutContext";
 import { DashboardPaymentsProvider, PendingCheckoutsProvider } from "./billing/PendingCheckoutsContext";
 import { invalidatePayments } from "@/lib/billing-events";
+import { WORKSPACE_NAME_CHANGED } from "@/lib/workspace-name";
 
 const mocks = vi.hoisted(() => ({
   pathname: "/monitoring",
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   summary: vi.fn(),
   feed: vi.fn(),
   organization: vi.fn(),
+  organizations: vi.fn(),
   projects: vi.fn(),
   payments: vi.fn(),
   management: vi.fn(),
@@ -32,7 +34,7 @@ vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "user-a" }, session: { activeOrganizationId: "org-a" } } }),
   authClient: {
     organization: {
-      list: async () => ({ data: [] }),
+      list: mocks.organizations,
       getFullOrganization: mocks.organization,
     },
   },
@@ -79,6 +81,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.organization.mockResolvedValue({ data: { id: "org-a" } });
+  mocks.organizations.mockResolvedValue({ data: [] });
   mocks.summary.mockResolvedValue({ data: counts });
   mocks.projects.mockResolvedValue({ success: true, projects: [] });
   mocks.payments.mockResolvedValue({ data: { items: [] } });
@@ -134,6 +137,29 @@ async function render(props: ComponentProps<typeof Sidebar> = {}, payments = fal
     ),
   );
 }
+
+it("shows the saved workspace name even when the initial list is still loading", async () => {
+  let resolveList!: (result: { data: { id: string; name: string }[] }) => void;
+  mocks.organizations.mockReturnValue(
+    new Promise((resolve) => {
+      resolveList = resolve;
+    }),
+  );
+  await render();
+  const renamed = (organizationId: string, name: string) =>
+    window.dispatchEvent(new CustomEvent(WORKSPACE_NAME_CHANGED, { detail: { organizationId, name } }));
+  await act(async () => {
+    renamed("org-a", "Design team");
+    resolveList({ data: [{ id: "org-a", name: "Previous name" }] });
+  });
+  expect(host.textContent).toContain("Design team");
+  await act(async () => renamed("org-b", "Other workspace"));
+  expect(host.textContent).toContain("Design team");
+  expect(host.textContent).not.toContain("Other workspace");
+  await act(async () => renamed("org-a", "New name"));
+  expect(host.textContent).toContain("New name");
+  expect(mocks.organizations).toHaveBeenCalledOnce();
+});
 
 it("counts unpaid Cloud plans and Manage once in the sidebar and refreshes after payment changes", async () => {
   mocks.cloudConnected = true;

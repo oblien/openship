@@ -56,6 +56,16 @@ it("joins a remote team through Desktop with the recipient's own account and per
     });
     const owner = await jsonRequest<Session>(desktop.baseUrl, "/api/auth/get-session");
     expect(owner.user.email).toBe("owner@example.test");
+    const personalId = `org_${owner.user.id}`;
+    await post(desktop, "/api/auth/organization/update", {
+      organizationId: personalId,
+      data: { name: "Renamed personal workspace" },
+    });
+    const personal = await jsonRequest<{ id: string; name: string }>(
+      desktop.baseUrl,
+      `/api/auth/organization/get-full-organization?organizationId=${personalId}`,
+    );
+    expect(personal).toMatchObject({ id: personalId, name: "Renamed personal workspace" });
     // Opening another invitation on the same instance must not log the user out.
     await post(desktop, "/api/system/instance/connect-address", { origin: remote.baseUrl, confirmed: true });
     expect((await jsonRequest<Session>(desktop.baseUrl, "/api/auth/get-session")).user.id).toBe(owner.user.id);
@@ -63,6 +73,10 @@ it("joins a remote team through Desktop with the recipient's own account and per
       name: "Remote team",
     });
     await post(desktop, "/api/auth/organization/set-active", { organizationId: team.data.id });
+    await post(desktop, "/api/auth/organization/update", {
+      organizationId: team.data.id,
+      data: { name: "Renamed remote team" },
+    });
     const invite = await post<{ data: { id: string; email: string } }>(
       desktop,
       "/api/permissions/invite-with-grants",
@@ -100,7 +114,7 @@ it("joins a remote team through Desktop with the recipient's own account and per
     }>(desktop.baseUrl, `/api/auth/invitation-preview/${invite.data.id}`);
     expect(preview.data).toMatchObject({
       accountCreation: "invited",
-      organization: { name: "Remote team" },
+      organization: { name: "Renamed remote team" },
       inviter: { name: "Instance owner" },
       invitation: { email: "member@example.test" },
     });
@@ -126,7 +140,7 @@ it("joins a remote team through Desktop with the recipient's own account and per
       "/api/auth/organization/list",
     );
     expect(organizations).toContainEqual(
-      expect.objectContaining({ id: team.data.id, name: "Remote team" }),
+      expect.objectContaining({ id: team.data.id, name: "Renamed remote team" }),
     );
     const current = await jsonRequest<{
       data: {

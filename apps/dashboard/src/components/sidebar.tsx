@@ -20,6 +20,7 @@ import { DismissiblePopover } from "@/components/ui/Popover";
 import { MailServerSwitcher } from "@/components/mail-server-switcher";
 import { useMailScope } from "@/context/MailScopeContext";
 import { setActiveOrganizationId } from "@/lib/api/client";
+import { WORKSPACE_NAME_CHANGED, type WorkspaceNameChange } from "@/lib/workspace-name";
 import { projectsApi } from "@/lib/api";
 import { useSidebarCollapse } from "@/hooks/useSidebarCollapse";
 import { useSidebarLayout } from "@/context/SidebarLayoutContext";
@@ -143,10 +144,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
     [],
   );
 
-  // Org switcher state. Lazy-loaded — `list()` and the active org fetch
-  // only fire after the first popover open so the sidebar doesn't pay
-  // for the round-trip on every page load. The role chip for the active
-  // org is fetched alongside.
+  // Workspace switcher state, hydrated on mount.
   const [orgsOpen, setOrgsOpen] = useState(false);
   const [orgs, setOrgs] = useState<SidebarOrg[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
@@ -171,6 +169,16 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
   // the AccountSwitcher pattern.
   useEffect(() => {
     let cancelled = false;
+    // A rename may finish while the initial workspace list is in flight.
+    let namesDuringLoad: Map<string, string> | null = new Map();
+    function updateWorkspaceName(event: Event) {
+      const { organizationId, name } = (event as CustomEvent<WorkspaceNameChange>).detail;
+      namesDuringLoad?.set(organizationId, name);
+      setOrgs((current) =>
+        current.map((org) => (org.id === organizationId ? { ...org, name } : org)),
+      );
+    }
+    window.addEventListener(WORKSPACE_NAME_CHANGED, updateWorkspaceName);
     (async () => {
       try {
         const [listRes, activeRes] = await Promise.all([
@@ -179,7 +187,8 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
         ]);
         if (cancelled) return;
         const list = listRes.data ?? [];
-        setOrgs(list);
+        setOrgs(list.map((org) => ({ ...org, name: namesDuringLoad?.get(org.id) ?? org.name })));
+        namesDuringLoad = null;
         const aid = (activeRes.data as { id: string } | null)?.id ?? null;
         setActiveOrgId(aid);
         setActiveOrganizationId(aid);
@@ -215,6 +224,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: { mobileOpen?: bo
     })();
     return () => {
       cancelled = true;
+      window.removeEventListener(WORKSPACE_NAME_CHANGED, updateWorkspaceName);
     };
   }, [user?.id]);
 
