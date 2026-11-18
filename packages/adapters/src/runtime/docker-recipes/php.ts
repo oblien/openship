@@ -90,6 +90,7 @@ export function generatePhpDockerfile(config: BuildConfig): string {
 
   const lines: string[] = [
     `FROM ${config.buildImage} AS builder`,
+    "USER root",
     ...phpBinaryVersionCheck(config),
     // php:*-cli ships no Composer — pull the binary from the official image.
     `COPY --from=composer:2 /usr/bin/composer /usr/bin/composer`,
@@ -126,6 +127,7 @@ export function generatePhpDockerfile(config: BuildConfig): string {
 
   lines.push(
     `FROM ${config.runtimeImage} AS runtime`,
+    "USER root",
     ...(config.runtimeImageOverride
       ? [
           "RUN command -v frankenphp >/dev/null && command -v install-php-extensions >/dev/null && id www-data >/dev/null || { printf 'Openship runtime image must provide FrankenPHP, install-php-extensions and www-data\\n' >&2; exit 1; }",
