@@ -2,6 +2,7 @@ import {
   Navbar,
   Hero,
   Dashboard,
+  Testimonials,
   HowItWorks,
   DeploymentModels,
   CompletePlatform,
@@ -59,6 +60,7 @@ export default function HomePage() {
       <Navbar />
       <main>
         <Hero />
+        <Testimonials />
         <Dashboard />
         <CompletePlatform />
         <HowItWorks />

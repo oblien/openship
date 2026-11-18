@@ -8,6 +8,7 @@ export { AppsShowcase } from "./apps-showcase";
 export { MailServer } from "./mail-server";
 export { Comparison } from "./comparison";
 export { DataPrivacy } from "./data-privacy";
+export { Testimonials } from "./testimonials";
 export { OpenSource } from "./open-source";
 export { FinalCta } from "./final-cta";
 export { DarkSection } from "./dark-section";

@@ -2788,7 +2788,14 @@
     "m898i20": "About OpenShip",
     "mnto541": "Platform features",
     "m154dfzd": "Move to OpenShip",
-    "m1jxdnq": "Customer support"
+    "m1jxdnq": "Customer support",
+    "m15qzxc": "Trusted by developers",
+    "mfx2fp6": "What developers say about OpenShip",
+    "m1osjiaz": "Cloud customers",
+    "m13x13xw": "Self-hosters",
+    "m1f4b6r3": "GitHub stars",
+    "m1h25b2u": "Developer quotes",
+    "mgi43jj": "View post on X"
   },
   "ReleaseNotes": {
     "m1005a3f": "— the wizard used to invent a hostname from the project name whenever a step had no route chosen, labelling port fields, previewing monorepo sub-app hosts, and even wiring the \"Visit Site\" button to a host that would never exist. It now shows only hosts your config actually names, and hides \"Visit Site\" entirely when the deployment has no public domain.",

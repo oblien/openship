@@ -2788,7 +2788,14 @@
     "m898i20": "Sobre o OpenShip",
     "mnto541": "Recursos da plataforma",
     "m154dfzd": "Migre para o OpenShip",
-    "m1jxdnq": "Suporte ao cliente"
+    "m1jxdnq": "Suporte ao cliente",
+    "m15qzxc": "Desenvolvedores confiam",
+    "mfx2fp6": "O que os desenvolvedores dizem sobre o OpenShip",
+    "m1osjiaz": "Clientes do Cloud",
+    "m13x13xw": "Auto-hospedadores",
+    "m1f4b6r3": "Estrelas no GitHub",
+    "m1h25b2u": "Citações de desenvolvedores",
+    "mgi43jj": "Ver publicação no X"
   },
   "ReleaseNotes": {
     "m1005a3f": "- o assistente costumava inventar um nome de host a partir do nome do projeto sempre que uma etapa não tinha uma rota escolhida, rotulando campos de porta, visualizando hosts de subaplicativos monorepo e até mesmo conectando o botão \"Visitar Site\" a um host que nunca existiria. Agora ele mostra apenas os nomes reais dos hosts de sua configuração e oculta totalmente \"Visitar o site\" quando a implantação não tem domínio público.",

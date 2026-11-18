@@ -2788,7 +2788,14 @@
     "m898i20": "Über OpenShip",
     "mnto541": "Plattformfunktionen",
     "m154dfzd": "Zu OpenShip wechseln",
-    "m1jxdnq": "Kundensupport"
+    "m1jxdnq": "Kundensupport",
+    "m15qzxc": "Entwickler vertrauen darauf",
+    "mfx2fp6": "Was Entwickler über OpenShip sagen",
+    "m1osjiaz": "Cloud-Kunden",
+    "m13x13xw": "Self-Hoster",
+    "m1f4b6r3": "GitHub-Sterne",
+    "m1h25b2u": "Zitate von Entwicklern",
+    "mgi43jj": "Beitrag auf X ansehen"
   },
   "ReleaseNotes": {
     "m1005a3f": "– Der Assistent erfand einen Hostnamen aus dem Projektnamen, wenn für einen Schritt keine Route ausgewählt wurde, beschriftete Portfelder, zeigte eine Vorschau der Monorepo-Sub-App-Hosts an und verknüpfte sogar die Schaltfläche „Site besuchen“ mit einem Host, der nie existieren würde. Es werden jetzt nur die tatsächlichen Hostnamen Ihrer Konfiguration angezeigt und „Site besuchen“ wird vollständig ausgeblendet, wenn die Bereitstellung keine öffentliche Domäne hat.",
