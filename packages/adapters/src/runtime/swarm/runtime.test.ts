@@ -6,6 +6,81 @@ import { runDeployPipeline } from "../deploy-pipeline";
 import type { DockerRuntime } from "../docker";
 import { SwarmRuntime } from "./runtime";
 
+const managerInfo = {
+  Swarm: {
+    LocalNodeState: "active",
+    ControlAvailable: true,
+    NodeID: "manager",
+    Cluster: { ID: "cluster" },
+  },
+};
+
+describe("Swarm overlay network allocation", () => {
+  it.each([true, false])(
+    "requires encryption after allocation (encrypted: %s)",
+    async (encrypted) => {
+      const projectId = "project";
+      const runtimeId = "runtime";
+      const pending = {
+        Id: "network-id",
+        Scope: "swarm",
+        Attachable: true,
+        Driver: "",
+        Labels: {
+          "openship.project": projectId,
+          "openship.runtime": runtimeId,
+          "openship.scheduler": "swarm",
+        },
+      };
+      const inspect = vi
+        .fn()
+        .mockResolvedValueOnce(pending)
+        .mockResolvedValue({
+          ...pending,
+          Driver: "overlay",
+          Options: encrypted ? { encrypted: "" } : {},
+        });
+      const docker = {
+        modem: {
+          dial: async (
+            request: { path: string },
+            callback: (error: Error | null, body?: unknown) => void,
+          ) => {
+            if (request.path === "/info") return callback(null, managerInfo);
+            if (request.path.startsWith("/networks/"))
+              return callback(null, await inspect(request.path.slice("/networks/".length)));
+            callback(new Error(`Unexpected request: ${request.path}`));
+          },
+        },
+      } as unknown as Dockerode;
+      const runtime = new SwarmRuntime({
+        projectId,
+        runtimeId,
+        clusterUid: "cluster",
+        managerNodeId: "manager",
+        config: { replicas: 1 },
+        resolveRegistryAuth: async () => undefined,
+        builder: async () =>
+          ({ docker, dispose: async () => undefined }) as unknown as DockerRuntime,
+      });
+
+      try {
+        const group = runtime.ensureServiceGroup({
+          projectId,
+          deploymentId: "release",
+          slug: "app",
+        });
+        if (encrypted) await expect(group).resolves.toEqual({ id: pending.Id });
+        else await expect(group).rejects.toMatchObject({ code: "CLUSTER_WORKLOAD_CONFLICT" });
+        expect(inspect).toHaveBeenCalledTimes(2);
+        expect(inspect).toHaveBeenLastCalledWith(pending.Id);
+      } finally {
+        await runtime.dispose();
+      }
+    },
+  );
+});
+
 /** Model a create which may commit after the client's response deadline. */
 describe("Swarm uncertain activation recovery", () => {
   it.each(["lost", "malformed", "rejected"])(
@@ -31,14 +106,14 @@ describe("Swarm uncertain activation recovery", () => {
             request: { path: string; method: string },
             callback: (error: Error | null, body?: unknown) => void,
           ) => {
-            if (request.path === "/info")
+            if (request.path === "/info") return callback(null, managerInfo);
+            if (request.path.startsWith("/networks/"))
               return callback(null, {
-                Swarm: {
-                  LocalNodeState: "active",
-                  ControlAvailable: true,
-                  NodeID: "manager",
-                  Cluster: { ID: "cluster" },
-                },
+                Id: "network",
+                Driver: "overlay",
+                Attachable: true,
+                Options: { encrypted: "" },
+                Labels: labels,
               });
             if (request.path.startsWith("/services?")) return callback(null, []);
             if (request.path === `/services/${oldId}`)
@@ -71,15 +146,6 @@ describe("Swarm uncertain activation recovery", () => {
         },
         getImage: () => ({
           inspect: async () => ({ Architecture: "amd64", Os: "linux", Config: {} }),
-        }),
-        getNetwork: () => ({
-          inspect: async () => ({
-            Id: "network",
-            Driver: "overlay",
-            Attachable: true,
-            Options: { encrypted: "" },
-            Labels: labels,
-          }),
         }),
       } as unknown as Dockerode;
       const runtime = new SwarmRuntime({

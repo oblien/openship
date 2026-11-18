@@ -26,6 +26,8 @@ rotation metadata and preserves referral attribution through Cloud deploy links.
 - **Custom PHP base images** — run build-time dependency and setup steps as root
   when the base image defaults to a non-root user. Keep the app running as
   `www-data` (#1810).
+- **Swarm network setup** — wait for Docker to allocate a new overlay network
+  before checking its driver and encryption settings.
 
 ### CLI and mail
 
