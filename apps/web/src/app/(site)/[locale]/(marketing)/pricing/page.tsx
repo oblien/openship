@@ -8,7 +8,7 @@ import { ArrowRight, Check, ChevronDown } from "lucide-react";
 import { formatMemoryMb, resolveStandard } from "@repo/core";
 import { Navbar, Footer } from "@/components/landing";
 import { IllustratedLink } from "@/components/marketing/illustrated-link";
-import { CLOUD_SLA } from "@/lib/cloud-service";
+import { CLOUD_SLA, cloudSlaPlanSummary, cloudSlaUptimePercent } from "@/lib/cloud-service";
 import {
   UI,
   startingCloudPlan,
@@ -34,16 +34,16 @@ const supportLabels: Record<string, string> = {
 const count = (value: number | null | undefined) =>
   value === undefined ? "Not listed" : value === null ? "No set limit" : value.toLocaleString("en");
 
-type Fact = { label: string; value: string };
+type Fact = { label: string; value: string; href?: string };
 
 function PlanFacts({ facts }: { facts: Fact[] }) {
   const copy = useCopy();
 
   return (
     <dl className="pp-plan-limits">
-      {facts.map(({ label, value }) => (
+      {facts.map(({ label, value, href }) => (
         <div className="pp-plan-limit" key={label}>
-          <dt>{copy(label)}</dt>
+          <dt>{href ? <Link href={href}>{copy(label)}</Link> : copy(label)}</dt>
           <dd>{copy(value)}</dd>
         </div>
       ))}
@@ -142,6 +142,11 @@ function PlanResources({ plan }: { plan: PricedPlan }) {
       : plan.billingMode !== "monthly"
         ? [{ label: copy("Build time"), value: "Metered" }]
         : []),
+    {
+      label: copy("Monthly uptime SLA"),
+      value: `${cloudSlaUptimePercent(plan.id)}%`,
+      href: CLOUD_SLA.termsHref,
+    },
   ];
   return (
     <>
@@ -437,10 +442,8 @@ export default async function PricingPage() {
               href={CLOUD_SLA.termsHref}
               illustration="deployment-health-checks"
               heading="h2"
-              title={copy("{value0}% uptime guarantee", {
-                value0: String(CLOUD_SLA.monthlyUptimePercent),
-              })}
-              description={copy("Monthly SLA with service credits on every Cloud plan.")}
+              title={copy("Cloud uptime SLA")}
+              description={cloudSlaPlanSummary(copy)}
             />
             <IllustratedLink
               href="/support"

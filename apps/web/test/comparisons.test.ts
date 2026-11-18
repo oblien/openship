@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { resolvePlan } from "@repo/core";
 import { APP_LOCALES } from "@repo/core/locale";
 import { createTranslator } from "next-intl";
 import {
@@ -11,7 +12,7 @@ import {
 import { MIGRATION_SOURCES } from "../src/lib/migration-sources";
 import { createCopy, messageKey } from "../src/i18n/copy";
 import { isLocalizedPath, languageAlternates, localizedHref } from "../src/i18n/routing";
-import { CLOUD_SLA } from "../src/lib/cloud-service";
+import { CLOUD_SLA, cloudSlaPlanSummary, cloudSlaUptimePercent } from "../src/lib/cloud-service";
 
 describe("comparison and policy publishing", () => {
   test("comparison URLs are unique, explicit and reject unknown providers", () => {
@@ -98,14 +99,32 @@ describe("comparison and policy publishing", () => {
     });
   }
 
-  test("the public SLA entry keeps the existing guarantee and credit schedule", () => {
+  test("the public SLA assigns uptime by plan and improves credit coverage", () => {
     expect(CLOUD_SLA.termsHref).toBe("/sla");
-    expect(CLOUD_SLA.monthlyUptimePercent).toBe(99);
+    expect(cloudSlaUptimePercent("hobby")).toBe(99);
+    expect(cloudSlaUptimePercent("starter")).toBe(99);
+    expect(cloudSlaUptimePercent("pro")).toBe(99.9);
+    expect(cloudSlaUptimePercent("team")).toBe(99.9);
+    expect(cloudSlaUptimePercent("enterprise")).toBe(99);
     expect(CLOUD_SLA.creditTiers).toEqual([
-      { minimumUptimePercent: 95, creditPercent: 10 },
-      { minimumUptimePercent: 90, creditPercent: 25 },
+      { minimumUptimePercent: 98.5, creditPercent: 10 },
+      { minimumUptimePercent: 95, creditPercent: 25 },
       { minimumUptimePercent: 0, creditPercent: 100 },
     ]);
     expect(CLOUD_SLA.claimWindowDays).toBe(30);
+  });
+
+  test("every marketing locale renders the plan commitments without unresolved placeholders", () => {
+    for (const locale of APP_LOCALES) {
+      const { Copy: messages } = JSON.parse(
+        readFileSync(new URL(`../src/i18n/messages/${locale}.json`, import.meta.url), "utf8"),
+      );
+      const copy = createCopy(createTranslator({ locale, messages }));
+      const summary = cloudSlaPlanSummary(copy);
+      expect(summary).not.toContain("{");
+      for (const id of ["hobby", "starter", "pro", "team"] as const) {
+        expect(summary).toContain(resolvePlan(id, locale).name);
+      }
+    }
   });
 });
