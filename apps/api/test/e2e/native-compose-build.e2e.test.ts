@@ -256,7 +256,7 @@ describeDockerE2E("native Compose build batches", () => {
       });
       expect([...result.buildFailures], JSON.stringify(logs)).toEqual([]);
       expect(pulls.mock.calls.filter(([ref]) => ref === registryRef)).toHaveLength(1);
-      const acquired = result.imagePreparation?.prepared(registryRef, { retained: false, refresh: true });
+      const acquired = await result.imagePreparation?.receipt(registryRef, { retained: false, refresh: true });
       expect(acquired).toBeDefined();
       await repos.deployment.updateStatus(deployment.id, "deploying");
       const noop = new NoopInfraProvider();
