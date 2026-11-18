@@ -95,6 +95,9 @@
     "domains": "Domaines"
   },
   "sidebar": {
+    "confirmDestination": "Confirmer la destination du déploiement",
+    "destinationReviewHint": "Vous pouvez aussi changer de destination en haut du formulaire de déploiement.",
+    "changeDestination": "Changer de destination",
     "copyCloneToken": "Copier le jeton de clonage",
     "cloneTokenTitle": "Jeton de clonage",
     "cloneTokenNoRepo": "Aucun dépôt GitHub pour ce déploiement.",

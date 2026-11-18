@@ -469,6 +469,12 @@ const DeployRepository: React.FC = () => {
         </>
     );
 
+    const firstDeployment = !config.projectId || (decodedForTarget?.kind === "project" && savedTargetState === "none");
+    const reviewDestination = firstDeployment && !isConfigEdit && config.deployTarget !== "cluster" &&
+        !serverSelection.readOnly && serverSelection.selected && serverSelection.rows.length > 1
+        ? { server: serverSelection.selected, onChange: () => setStep("target") }
+        : undefined;
+
     return (
         <PageContainer>
                 <ServerSelectionPrompt selection={serverSelection} />
@@ -522,7 +528,10 @@ const DeployRepository: React.FC = () => {
                             <ConfigDiagnostics />
                             {deploymentSections}
                         </div>
-                        <Sidebar destinationReady={(config.deployTarget === "cluster" && !!config.projectId) || serverSelection.ready} />
+                        <Sidebar
+                            destinationReady={(config.deployTarget === "cluster" && !!config.projectId) || serverSelection.ready}
+                            reviewDestination={reviewDestination}
+                        />
                     </div>
                 )}
         </PageContainer>

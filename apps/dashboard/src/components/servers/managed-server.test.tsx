@@ -17,6 +17,7 @@ import { ManagedServerActionFeedback } from "./managed/ManagedServerActionFeedba
 import { ServerCapacityRecovery } from "./managed/ServerCapacityRecovery";
 import { useManagedServerActions } from "./managed/useManagedServerActions";
 import { CloudResourceContext } from "@/context/CloudResourceContext";
+import { DeployButton } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployButton";
 
 const h = vi.hoisted(() => ({
   organizationId: "org-a", list: vi.fn(), usage: vi.fn(), ensure: vi.fn(),
@@ -67,6 +68,33 @@ const button = (label: string) => {
   expect(result, label).toBeDefined();
   return result!;
 };
+
+it("reviews the chosen Cloud plan before deploying and lets the user switch or dismiss", async () => {
+  const deploy = vi.fn(), change = vi.fn();
+  const review = { server, onChange: change };
+  const labels = baseDictionary.deploy.sidebar;
+  await render(<DeployButton review={review} disabled={false} deploying={false} onDeploy={deploy} />);
+  const open = () => act(async () => button(labels.deploy).click());
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+  const action = (name: string) => [...dialog().querySelectorAll("button")].find(el => el.textContent === name)!;
+  await open();
+  expect(dialog().textContent).toContain("Production");
+  expect(dialog().textContent).toContain("Hobby");
+  expect(deploy).not.toHaveBeenCalled();
+  await act(async () => dialog().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(dialog()).toBeNull();
+  await open();
+  await act(async () => action(labels.changeDestination).click());
+  expect(change).toHaveBeenCalledOnce();
+  expect(deploy).not.toHaveBeenCalled();
+  await open();
+  await render(<DeployButton review={review} disabled deploying={false} onDeploy={deploy} />);
+  expect(action(labels.deploy).disabled).toBe(true);
+  await render(<DeployButton review={review} disabled={false} deploying={false} onDeploy={deploy} />);
+  await act(async () => action(labels.deploy).click());
+  expect(dialog()).toBeNull();
+  expect(deploy).toHaveBeenCalledOnce();
+});
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
