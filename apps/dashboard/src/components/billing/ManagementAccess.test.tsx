@@ -27,7 +27,9 @@ const render = (serverId?: string) =>
   act(async () =>
     root.render(
       <ManagementAccess serverId={serverId}>
-        <form aria-label="Server connection">SSH details</form>
+        <form aria-label="Server connection">
+          <input aria-label="SSH host" />
+        </form>
       </ManagementAccess>,
     ),
   );
@@ -152,14 +154,22 @@ it("waits for confirmed payment, then reveals the form and stops idle polling", 
   expect(h.get).toHaveBeenCalledTimes(2);
 });
 
-it("blocks connection on read failure and allows a verified retry", async () => {
-  h.get.mockRejectedValueOnce(new Error("Unable to check allowance"));
+it("keeps the SSH form and typed credentials through a slow plan check and retry", async () => {
+  let reject!: (error: Error) => void;
+  h.get.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
   await render();
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("Loading your management plan");
+  const input = form()?.querySelector("input");
+  expect(input).toBeDefined();
+  input!.value = "vps.example.test";
+  await act(async () => reject(new Error("Unable to check allowance")));
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("Unable to check allowance");
-  expect(form()).toBeNull();
+  expect(form()?.querySelector("input")).toBe(input);
   Object.assign(state, { active: true, serverLimit: 2 });
   await click("Try again");
-  expect(form()).not.toBeNull();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(form()?.querySelector("input")).toBe(input);
+  expect(input!.value).toBe("vps.example.test");
 });
 
 it.each(["user", "org", "cloud"] as const)(

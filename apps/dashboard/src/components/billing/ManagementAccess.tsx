@@ -18,7 +18,16 @@ export function ManagementAccess(props: ManagementAccessProps) {
 function ScopedManagementAccess({ children, serverId }: ManagementAccessProps) {
   const resource = useManagementPlan({ refreshIdle: false });
   const { data, loading, error } = resource;
-  if (loading || error || !data?.active || (!serverId && data.connectedServers >= data.serverLimit))
+  if (!loading && !error && data && (!data.active || (!serverId && data.connectedServers >= data.serverLimit)))
     return <ManagementPlan resource={resource} embedded />;
-  return children;
+  return (
+    <>
+      {(loading || error || !data) && (
+        <div className="mb-4">
+          <ManagementPlan resource={{ ...resource, data: null }} embedded />
+        </div>
+      )}
+      {children}
+    </>
+  );
 }
