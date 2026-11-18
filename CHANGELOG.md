@@ -4,6 +4,52 @@ All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## 1.0.1
+
+**Recommended update** for self-hosted startup, application image updates, and
+private GitHub repository access. This patch also fixes postmaster password
+rotation metadata and preserves referral attribution through Cloud deploy links.
+
+### Deployments and connections
+
+- **Application updates** — accept requests with an empty body when the action
+  takes no options. Continue validating malformed JSON and required payloads (#1817).
+- **Container image refresh** — pull the current image when refreshing a mutable
+  tag, and keep verified local images available for redeploys. Report failed
+  refreshes before replacing a running service (#1816, #1819).
+- **Registry credential checks** — record confirmed login rejections and preserve
+  the previous credential status when the registry response is inconclusive (#1816, #1819).
+- **Private GitHub repositories** — restore the connected-server token fallback
+  for authorized self-hosted repository reads on GitHub.com. A local server
+  without credentials no longer prevents selecting an eligible connected server
+  (#1821, #1822).
+- **Custom PHP base images** — run build-time dependency and setup steps as root
+  when the base image defaults to a non-root user. Keep the app running as
+  `www-data` (#1810).
+
+### CLI and mail
+
+- **macOS service reinstall** — wait for launchd to unload the previous service
+  and verify the replacement is running before reporting success (#1808).
+- **CLI shutdown during startup** — stop the API process when the foreground
+  supervisor receives a stop signal, releasing the port and local database lock (#1809).
+- **Postmaster password rotation** — record the password change timestamp together
+  with the new hash when rotating through the CLI or API (#1825).
+
+### Cloud and website
+
+- **Cloud deploy referrals** — retain the referral code through the deploy link
+  and Cloud plan selection (#1806).
+- **Social previews** — use page-specific share cards across the website and
+  documentation (#1824).
+
+### Upgrade notes
+
+- **Component updates** — update the API, dashboard, Desktop and CLI for your
+  installation. This patch adds no control-plane database migrations.
+- **Image refreshes** — use Refresh images when you want a new image for a
+  mutable tag. A normal redeploy can reuse the local image.
+
 ## 1.0.0
 
 OpenShip 1.0 brings a refreshed dashboard, edge maintenance and custom pages,
@@ -16,121 +62,136 @@ to invoke administrative operations, including host command execution.
 
 ### Security and access
 
-- Require administrative authority across HTTP, SDK, native and MCP access.
-  Scoped tokens remain bounded by their owner's current organization role,
-  including after demotion. Preserve explicitly delegated, resource-scoped
+- **Administrative authorization** — Require administrative authority across HTTP, SDK,
+  native and MCP access. Scoped tokens remain bounded by their owner's current organization
+  role, including after demotion. Preserve explicitly delegated, resource-scoped
   administration (#1783, #1784).
-- Choose a sign-in page or the browser's native authentication prompt for
-  self-hosted hostnames. Customize sign-in HTML and session duration, revoke
-  sessions, and see enabled protection directly on domain cards.
-- Update the Actions worker to OpenTelemetry 1.47.0, fixing bypassed
+- **Hostname sign-in** — Choose a sign-in page or the browser's native authentication prompt
+  for self-hosted hostnames. Customize sign-in HTML and session duration, revoke sessions,
+  and see enabled protection directly on domain cards.
+- **Actions tracing** — Update the Actions worker to OpenTelemetry 1.47.0, fixing bypassed
   attribute-length limits in its tracing dependency.
-- Keep generated local mail credentials and runtime caches out of image build
-  contexts. Bundle the shared assistant client and its dependency patch so
+- **Release build isolation** — Keep generated local mail credentials and runtime caches out
+  of image build contexts. Bundle the shared assistant client and its dependency patch so
   release builds do not depend on a sibling checkout or baked development URLs.
-- Include the website's client-message generator in its Docker build, and verify
-  the production website image and its public pages before release.
+- **Website image verification** — Include the website's client-message generator in its
+  Docker build, and verify the production website image and its public pages before release.
 
 ### Edge pages and routing
 
-- Serve maintenance HTML directly from the edge while the application keeps
-  running. Restore normal routing when maintenance is disabled.
-- Upload HTML pages and assign error statuses, with server defaults and
-  project or hostname overrides. Customize unmatched-host and direct-IP pages.
-- Accept larger authentication response headers and returning cookies at the edge,
-  with bounded defaults and preserved custom buffer settings (#1763).
-- Organize Domains & Routes into routing, access, proxy, and page controls,
-  with inline protection settings, HTML previews, and visible loading and retry states.
-- Target the correct project service and port when adding domains from the CLI.
-  Keep primary domains, aliases and www redirects consistent when editing routes.
+- **Edge maintenance** — Serve maintenance HTML directly from the edge while the application
+  keeps running. Restore normal routing when maintenance is disabled.
+- **Custom error pages** — Upload HTML pages and assign error statuses, with server defaults
+  and project or hostname overrides. Customize unmatched-host and direct-IP pages.
+- **Authentication header limits** — Accept larger authentication response headers and
+  returning cookies at the edge, with bounded defaults and preserved custom buffer settings
+  (#1763).
+- **Domains & Routes** — Organize Domains & Routes into routing, access, proxy, and page
+  controls, with inline protection settings, HTML previews, and visible loading and retry
+  states.
+- **CLI domain targeting** — Target the correct project service and port when adding domains
+  from the CLI. Keep primary domains, aliases and www redirects consistent when editing
+  routes.
 
 ### Deployments, imports and recovery
 
-- Add shareable deploy links and `openship launch`, carrying the selected
-  repository and deployment intent through sign-in and installation.
-- Copy selected services to the same server or another server as independent
-  projects. Validate dependencies and port bindings, preserve separate volumes,
-  and improve restoration and rollback if a transfer fails. Keep application
+- **Shareable deploy links** — Add shareable deploy links and `openship launch`, carrying
+  the selected repository and deployment intent through sign-in and installation.
+- **Independent service copies** — Copy selected services to the same server or another
+  server as independent projects. Validate dependencies and port bindings, preserve separate
+  volumes, and improve restoration and rollback if a transfer fails. Keep application
   instance scaling distinct from independent copies.
-- Review Compose changes in a shared before/after dialog and apply the exact
-  reviewed revision without repeating setup. Preserve deployment options and
+- **Compose change review** — Review Compose changes in a shared before/after dialog and
+  apply the exact reviewed revision without repeating setup. Preserve deployment options and
   saved overrides, mask credentials, and require a new review if source changes (#1796).
-- Explain private-image pull failures with the affected image and a direct link
-  to registry connections. Preserve public-image recovery and distinguish registry
-  credentials from GitHub repository access (#1798).
-- Reveal and hide service environment values through the shared Compose editor
-  while retaining the existing permission checks (#1771).
-- Import Railway projects with multiple repositories as native services and
-  project connections, preserving source ownership and private service wiring.
-- Show container ports declared with Compose `expose`, explain how to publish
-  a TCP port for a web domain, and handle protocol suffixes and port ranges.
-- Improve folder deployment names, scan errors and streamed uploads. Resolve
-  template placeholders consistently in service ports, and explain recovery
+- **Private registry guidance** — Explain private-image pull failures with the affected
+  image and a direct link to registry connections. Preserve public-image recovery and
+  distinguish registry credentials from GitHub repository access (#1798).
+- **Compose environment values** — Reveal and hide service environment values through the
+  shared Compose editor while retaining the existing permission checks (#1771).
+- **Multi-repository Railway imports** — Import Railway projects with multiple repositories
+  as native services and project connections, preserving source ownership and private
+  service wiring.
+- **Compose web ports** — Show container ports declared with Compose `expose`, explain how
+  to publish a TCP port for a web domain, and handle protocol suffixes and port ranges.
+- **Folder deployments** — Improve folder deployment names, scan errors and streamed
+  uploads. Resolve template placeholders consistently in service ports, and explain recovery
   when duplicate containers block deployment.
-- Retain warm BuildKit caches and reduce remote cleanup overhead without
-  dropping build ownership, cancellation or capacity checks.
-- Back up verified empty Docker volumes and bind directories alongside populated
-  sources. Refuse missing sources and preserve errors for unavailable storage.
-- Verify every Redis Sentinel has discovered the writable primary, its replicas
-  and the full voting group before reporting replicated databases ready.
-- Fence event-stream admission while relocating the controller, restore access
-  when it resumes, and link server preparation to its deployment progress.
-- Preserve the mail host's configured ignored IP addresses when updating its engine.
+- **BuildKit cache retention** — Retain warm BuildKit caches and reduce remote cleanup
+  overhead without dropping build ownership, cancellation or capacity checks.
+- **Empty-volume backups** — Back up verified empty Docker volumes and bind directories
+  alongside populated sources. Refuse missing sources and preserve errors for unavailable
+  storage.
+- **Redis Sentinel readiness** — Verify every Redis Sentinel has discovered the writable
+  primary, its replicas and the full voting group before reporting replicated databases
+  ready.
+- **Controller relocation** — Fence event-stream admission while relocating the controller,
+  restore access when it resumes, and link server preparation to its deployment progress.
+- **Mail engine updates** — Preserve the mail host's configured ignored IP addresses when
+  updating its engine.
 
 ### Mail and agents
 
-- Schedule messages, cancel queued mail with Undo Send, and snooze conversations.
-  Recover interrupted or temporarily failed wake-ups, including messages moved
-  or deleted before their wake-up time.
-- Connect mailbox-scoped agents and MCP clients with encrypted state, isolated
-  runtimes, scoped permissions and explicit approval for sending mail.
-- Improve the agent workspace, shared conversation rendering, connection setup,
-  and empty and error states. Add the OpenShip plugin directory submission metadata.
+- **Scheduled mail and snoozing** — Schedule messages, cancel queued mail with Undo Send,
+  and snooze conversations. Recover interrupted or temporarily failed wake-ups, including
+  messages moved or deleted before their wake-up time.
+- **Mailbox agents and MCP** — Connect mailbox-scoped agents and MCP clients with encrypted
+  state, isolated runtimes, scoped permissions and explicit approval for sending mail.
+- **Assistant workspace** — Improve the agent workspace, shared conversation rendering,
+  connection setup, and empty and error states. Add the OpenShip plugin directory submission
+  metadata.
 
 ### Cloud, billing and CLI
 
-- Move the Oblien integration to SDK 3.2.0 and the provider's native versioned
-  VM API. Preserve saved VM identities, customer metadata and purchased offers;
-  validate scoped credentials against the selected VM.
-- Recover unfinished Cloud purchases instead of creating duplicate unpaid
-  spaces. Open checkout after its payment URL is ready and retain a fallback action.
-- Keep billing accessible during pending renewals and show payment warnings in
-  Plans & billing. Align monthly and yearly pricing across the website and dashboard.
-- Recover repeated signup attempts during Cloud linking and improve first-admin
-  recovery and Compose managed-edge setup.
-- Keep the installed service's existing ports when `openship up` runs again.
-  Support CLI login through public instance URLs and use Node.js for the
+- **Oblien provider API** — Move the Oblien integration to SDK 3.2.0 and the provider's
+  native versioned VM API. Preserve saved VM identities, customer metadata and purchased
+  offers; validate scoped credentials against the selected VM.
+- **Cloud checkout recovery** — Recover unfinished Cloud purchases instead of creating
+  duplicate unpaid spaces. Open checkout after its payment URL is ready and retain a
+  fallback action.
+- **Renewals and pricing** — Keep billing accessible during pending renewals and show
+  payment warnings in Plans & billing. Align monthly and yearly pricing across the website
+  and dashboard.
+- **Cloud setup recovery** — Recover repeated signup attempts during Cloud linking and
+  improve first-admin recovery and Compose managed-edge setup.
+- **CLI install and sign-in** — Keep the installed service's existing ports when `openship
+  up` runs again. Support CLI login through public instance URLs and use Node.js for the
   container-to-host connectivity probe.
-- Limit the managed Cloud update banner to verified workload-security notices.
+- **Cloud update notices** — Limit the managed Cloud update banner to verified
+  workload-security notices.
 
 ### Dashboard and website
 
-- Refresh billing, monitoring, jobs, backups, connections, server and agent
-  screens with shared illustrations, compact controls and theme-aware surfaces.
-- Improve service inspectors and copy/scale flows, put actions before runtime
-  details, and replace native disclosure markers with shared icon controls.
-- Add avatar and project icon URL settings, with inline editing, previews and reset.
-- Refresh landing, Cloud, mail, download, migration and app-catalog pages;
-  improve Arabic headlines, language navigation and documentation navigation.
-- Expand product comparisons, feature pages and search discovery, and publish
-  Cloud SLA, support and privacy information.
+- **Dashboard refresh** — Refresh billing, monitoring, jobs, backups, connections, server
+  and agent screens with shared illustrations, compact controls and theme-aware surfaces.
+- **Service controls** — Improve service inspectors and copy/scale flows, put actions before
+  runtime details, and replace native disclosure markers with shared icon controls.
+- **Avatar and project icons** — Add avatar and project icon URL settings, with inline
+  editing, previews and reset.
+- **Marketing site and docs** — Refresh landing, Cloud, mail, download, migration and
+  app-catalog pages; improve Arabic headlines, language navigation and documentation
+  navigation.
+- **Comparisons and Cloud information** — Expand product comparisons, feature pages and
+  search discovery, and publish Cloud SLA, support and privacy information.
 
 ### Upgrade notes
 
-- Update the API and all its replicas, dashboard, Desktop, CLI and mail components
-  together. This release includes database migrations; retain a current instance
-  and database backup before updating.
-- Ordinary organization members no longer have implicit administrative access.
-  Review membership roles and scoped grants for integrations that perform admin actions.
-- Cloud operators must coordinate this release with the matching Oblien `/v1`
-  API, database, gateway and scoped-credential rollout. Review old unversioned
-  `OBLIEN_API_URL` and gateway overrides, and verify existing-VM access before
+- **Component updates** — Update the API and all its replicas, dashboard, Desktop, CLI and
+  mail components together. This release includes database migrations; retain a current
+  instance and database backup before updating.
+- **Organization roles** — Ordinary organization members no longer have implicit
+  administrative access. Review membership roles and scoped grants for integrations that
+  perform admin actions.
+- **Oblien provider rollout** — Cloud operators must coordinate this release with the
+  matching Oblien `/v1` API, database, gateway and scoped-credential rollout. Review old
+  unversioned `OBLIEN_API_URL` and gateway overrides, and verify existing-VM access before
   directing customers to the upgraded provider.
-- Maintenance, custom edge pages and hostname protection require the updated
-  self-hosted edge. These controls do not protect direct application ports or
+- **Edge requirements** — Maintenance, custom edge pages and hostname protection require the
+  updated self-hosted edge. These controls do not protect direct application ports or
   hostnames outside their configured scope.
-- Independent service copies are separate deployments. Managed database replicas
-  and failover use their existing database scaling flows.
+- **Service copies and database scaling** — Independent service copies are separate
+  deployments. Managed database replicas and failover use their existing database scaling
+  flows.
 
 ## 0.9.12
 
