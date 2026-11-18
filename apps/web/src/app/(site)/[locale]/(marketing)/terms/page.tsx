@@ -108,7 +108,7 @@ function getSections(copy: Copy) {
       title: copy("Billing"),
       body: [
         copy(
-          "OpenShip Cloud plan prices are published on our pricing page. Paid plans are billed monthly in advance and you may cancel at any time; cancellation takes effect at the end of the period you have already paid for. Self-hosted use is free.",
+          "OpenShip Cloud prices are published on our pricing page. Subscriptions are billed in advance on the monthly or annual interval you select. You can cancel renewal at any time and retain access through the paid period. Self-hosted use is free.",
         ),
         copy(
           "We accept major cards via Stripe. Price changes to a plan you are on are announced at least 30 days in advance and apply from your next billing period. A failed payment triggers retries and email notice before any suspension.",

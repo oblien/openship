@@ -1808,18 +1808,26 @@
 }
 .pp-plan-limits {
   display: grid;
-  gap: 12px;
+  gap: 7px;
 }
 .pp-plan-limit {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   font-size: 13px;
   line-height: 1.5;
 }
 .pp-plan-limit dt {
   color: var(--th-text-body);
+}
+.pp-plan-limit dt a {
+  text-decoration: underline;
+  text-decoration-color: var(--th-bd-strong);
+  text-underline-offset: 3px;
+}
+.pp-plan-limit dt a:hover {
+  color: var(--th-text-title);
 }
 .pp-plan-limit dd {
   color: var(--th-text-title);

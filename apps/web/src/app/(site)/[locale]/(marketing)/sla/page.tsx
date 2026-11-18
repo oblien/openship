@@ -11,7 +11,7 @@ import { inheritSocialImages } from "@/lib/social-metadata";
 
 const title = "OpenShip Cloud service level agreement";
 const description =
-  "OpenShip Cloud uptime coverage, service credit tiers and how to submit a claim. The same SLA applies to every paid Cloud plan.";
+  "Monthly uptime commitments for paid OpenShip Cloud Spaces, with service credits and a clear claims process.";
 
 export async function generateMetadata(
   _props: unknown,
@@ -34,16 +34,9 @@ export async function generateMetadata(
 export default async function SlaPage() {
   const copy = await getCopy();
   const sections = getSlaSections(copy);
-  const facts = [
-    { value: `${CLOUD_SLA.monthlyUptimePercent}%`, label: "Monthly Cloud uptime" },
-    {
-      value: copy("{days} days", { days: CLOUD_SLA.claimWindowDays }),
-      label: "To claim after the affected month",
-    },
-    {
-      value: copy("{days} business days", { days: CLOUD_SLA.claimReviewBusinessDays }),
-      label: "To review a complete claim",
-    },
+  const guarantees = [
+    { value: CLOUD_SLA.standardUptimePercent, label: copy("Hobby and Starter") },
+    { value: CLOUD_SLA.proUptimePercent, label: copy("Pro and Scale") },
   ];
   return (
     <>
@@ -51,15 +44,9 @@ export default async function SlaPage() {
       <main className="marketing-page legal-root">
         <MarketingIntro
           eyebrow={copy("Service level agreement")}
-          title={
-            <>
-              {copy("Reliability,")}
-              <br />
-              <span>{copy("in writing.")}</span>
-            </>
-          }
+          title={copy("Cloud uptime SLA")}
           description={copy(
-            "Every paid Cloud plan includes the same uptime commitment. Here is what is covered, how credits work and how to make a claim.",
+            "Every paid Cloud plan includes a monthly uptime guarantee. If we miss it, service credits can cover up to 100% of the affected Cloud Space’s monthly fee.",
           )}
         >
           <Link href="/support" className="marketing-text-link mt-6">
@@ -68,14 +55,19 @@ export default async function SlaPage() {
           </Link>
         </MarketingIntro>
         <div className="site-container pb-14">
-          <dl className="grid gap-8 rounded-3xl bg-[var(--th-bg-subtle)] p-8 sm:grid-cols-3 sm:p-10">
-            {facts.map((fact) => (
-              <div key={fact.label} className="flex min-w-0 flex-col gap-3">
-                <dt className="order-2 text-sm leading-relaxed text-[var(--th-text-body)]">
-                  {copy(fact.label)}
+          <dl className="grid gap-px overflow-hidden rounded-3xl border border-[var(--th-bd-default)] bg-[var(--th-bd-default)] sm:grid-cols-2">
+            {guarantees.map((guarantee) => (
+              <div key={guarantee.label} className="grid gap-3 bg-[var(--th-bg-card)] p-8 sm:p-10">
+                <dt className="text-sm font-medium text-[var(--th-text-body)]">
+                  {guarantee.label}
                 </dt>
-                <dd className="text-3xl font-medium tracking-tight">
-                  <bdi>{fact.value}</bdi>
+                <dd className="text-[var(--th-text-title)]">
+                  <span className="block text-5xl font-medium tracking-tight">
+                    <bdi>{guarantee.value}%</bdi>
+                  </span>
+                  <span className="mt-2 block text-sm text-[var(--th-text-body)]">
+                    {copy("Monthly uptime guarantee")}
+                  </span>
                 </dd>
               </div>
             ))}

@@ -1,7 +1,7 @@
 import type { Copy } from "@/i18n/copy";
 import { UI, money, paidLadder, type CloudPricing } from "@/lib/pricing";
 import { cloudPlanHref } from "@/lib/cloud-links";
-import { CLOUD_SLA } from "@/lib/cloud-service";
+import { cloudSlaPlanSummary } from "@/lib/cloud-service";
 
 export interface FaqItem {
   q: string;
@@ -42,13 +42,12 @@ export function faq(pricing: CloudPricing, copy: Copy): FaqItem[] {
     },
     {
       q: copy("Do all Cloud plans include an uptime SLA and support?"),
-      a: copy(
-        "Yes. Every paid OpenShip Cloud plan includes a {value0}% monthly uptime guarantee for OpenShip-managed infrastructure, whether billed monthly or annually. If we miss it, you can request service credits under the Cloud SLA in our Terms of Service. Maintenance announced at least {value1} days in advance is excluded only within its announced window. Contact support by email, through the app, or from our public support page. The guarantee does not cover servers you host yourself, free trials, or preview and beta features.",
-        {
-          value0: String(CLOUD_SLA.monthlyUptimePercent),
-          value1: String(CLOUD_SLA.maintenanceNoticeDays),
-        },
-      ),
+      a: [
+        cloudSlaPlanSummary(copy),
+        copy(
+          "Every paid Cloud Space includes support and service credits under the Cloud SLA, with monthly or annual billing. The SLA covers OpenShip-managed infrastructure.",
+        ),
+      ].join(" "),
     },
     {
       q: copy("How is capacity shared?"),
