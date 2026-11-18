@@ -207,10 +207,16 @@ export function useServerSelection({
     } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
       autoSelected.current = true;
       const remembered = shouldUseSavedDefault ? serverPreference(contextKey).read() : null;
-      const preferred = rows.find(row => row.id === preference?.serverId)
-        ?? rows.find(row => row.id === remembered)
-        ?? (shouldUseSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
-        ?? rows[0]!;
+      // A checkout can leave a Cloud space in the inventory before it can host
+      // projects. Keep it available for manual selection and first-plan setup.
+      const hasReadyCloudSpace = !selfHosted && forDeployment && rows.some(({ managed }) =>
+        managed && !managed.connectionIssue && ["ready", "running", "active"].includes(managed.state),
+      );
+      const defaults = hasReadyCloudSpace ? rows.filter(row => row.managed?.state !== "needs_plan") : rows;
+      const preferred = defaults.find(row => row.id === preference?.serverId)
+        ?? defaults.find(row => row.id === remembered)
+        ?? (shouldUseSavedDefault ? defaults.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
+        ?? defaults[0]!;
       void selectServer(preferred);
     }
   }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, shouldUseSavedDefault, preference, deployMode, promptForSelection]); // eslint-disable-line react-hooks/exhaustive-deps

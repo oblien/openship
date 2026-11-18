@@ -20,7 +20,7 @@ import { CloudResourceContext } from "@/context/CloudResourceContext";
 
 const h = vi.hoisted(() => ({
   organizationId: "org-a", list: vi.fn(), usage: vi.fn(), ensure: vi.fn(),
-  previewResize: vi.fn(), resize: vi.fn(), add: vi.fn(), retry: vi.fn(), connect: vi.fn(),
+  previewResize: vi.fn(), resize: vi.fn(), add: vi.fn(), retry: vi.fn(), connect: vi.fn(), settings: vi.fn(),
 }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "user-a" }, session: { activeOrganizationId: h.organizationId } } }),
@@ -30,7 +30,7 @@ vi.mock("@/lib/api/system", () => ({ systemApi: {
   previewServerResize: h.previewResize, resizeServer: h.resize,
   connectManagedServer: h.connect,
 } }));
-vi.mock("@/lib/api/settings", () => ({ settingsApi: { get: async () => ({ defaultServerId: null }) } }));
+vi.mock("@/lib/api/settings", () => ({ settingsApi: { get: h.settings } }));
 vi.mock("@/components/servers/add-server-modal", () => ({ useAddServerModal: () => h.add }));
 
 const copy = baseDictionary.billing.workspaces;
@@ -72,6 +72,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.organizationId = "org-a";
   h.list.mockResolvedValue({ servers: [server] });
+  h.settings.mockResolvedValue({ defaultServerId: null });
   h.usage.mockResolvedValue(usage);
   host = document.createElement("div");
   document.body.append(host);
@@ -211,6 +212,44 @@ it("keeps first-subscription setup read-only on Cloud", async () => {
   expect(host.textContent).toContain(copy.defaultHint);
   expect(h.ensure).not.toHaveBeenCalled();
   expect(h.add).not.toHaveBeenCalled();
+});
+
+it.each([null, "unpaid"])("defaults to the paid Cloud space when a same-name placeholder is listed first (saved default: %s)", async (savedDefault) => {
+  const unpaid: ServerDetail = {
+    ...server,
+    id: "unpaid",
+    projectCount: 0,
+    managed: { ...workspace, id: "cws-unpaid", serverId: "unpaid", planTierId: "free",
+      state: "needs_plan", subscriptionStatus: "credit_exhausted", projectCount: 0, resources: null },
+  };
+  h.list.mockResolvedValue({ servers: [unpaid, server] });
+  h.settings.mockResolvedValue({ defaultServerId: savedDefault });
+  const change = vi.fn();
+  const ready = vi.fn();
+  await render(<AppDestinationPicker value={null} onChange={change} onReadyChange={ready} />);
+  expect(change).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    serverId: server.id, workspaceId: workspace.id, deployTarget: "cloud",
+  }));
+
+  // Users can still pick the unpaid space deliberately to buy a plan for it.
+  const trigger = host.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!;
+  await act(async () => trigger.click());
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  const placeholder = options.find(row => row.textContent?.includes(copy.states.needs_plan));
+  expect(placeholder).toBeDefined();
+  await act(async () => placeholder!.click());
+  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ serverId: unpaid.id, workspaceId: unpaid.managed!.id }));
+});
+
+it("keeps a Cloud space available for purchase when it is the only destination", async () => {
+  const unpaid: ServerDetail = {
+    ...server,
+    managed: { ...workspace, state: "needs_plan", planTierId: "free", resources: null },
+  };
+  h.list.mockResolvedValue({ servers: [unpaid] });
+  const change = vi.fn();
+  await render(<ServerSelector forDeployment autoSelectFirst onSelect={change} />);
+  expect(change).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: unpaid.id }));
 });
 it("keeps an explicit own-server choice out of the Cloud inventory and purchase fallback", async () => {
   const change = vi.fn(), ready = vi.fn();
