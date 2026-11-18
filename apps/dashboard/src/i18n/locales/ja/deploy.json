@@ -95,9 +95,6 @@
     "domains": "ドメイン"
   },
   "sidebar": {
-    "confirmDestination": "デプロイ先の確認",
-    "destinationReviewHint": "デプロイ先は、デプロイフォームの上部でも変更できます。",
-    "changeDestination": "デプロイ先を変更",
     "copyCloneToken": "クローントークンをコピー",
     "cloneTokenTitle": "クローントークン",
     "cloneTokenNoRepo": "このデプロイにはGitHubリポジトリがありません。",

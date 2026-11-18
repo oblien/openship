@@ -65,7 +65,6 @@ vi.mock("@/components/shared/ServerSelector", () => ({
   ServerSelectorView: ({ selection }: any) => (
     <button onClick={selection.select}>Select working server</button>
   ),
-  ServerSelectionPrompt: () => null,
 }));
 
 let host: HTMLDivElement;

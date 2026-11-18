@@ -10,8 +10,6 @@ import { useServerDestinations } from "@/hooks/useServerDestinations";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { ServerPicker } from "@/components/shared/ServerPicker";
 import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/ui/Modal";
-import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { usePlatform } from "@/context/PlatformContext";
 import { settingsApi } from "@/lib/api/settings";
 import { serverPreference } from "@/lib/server-preference";
@@ -102,8 +100,8 @@ export function useServerSelection({
   const { selfHosted, deployMode } = usePlatform();
   const restrictedSource = migrationSource && !selfHosted;
   const connectedOnly = selfHostedOnly || requiredCapability === "ssh" || restrictedSource || destinationKind === "server";
-  const promptForSelection = forDeployment && destinationKind === "server";
-  const shouldUseSavedDefault = useSavedDefault && !promptForSelection;
+  const requiresExplicitChoice = forDeployment && destinationKind === "server";
+  const shouldUseSavedDefault = useSavedDefault && !requiresExplicitChoice;
   const { data, loading: destinationsLoading, error, refresh, contextKey, resourceKey } = useServerDestinations(enabled && !readOnly, restrictedSource ? "migration-source" : "deployment");
   const [linking, setLinking] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -111,7 +109,6 @@ export function useServerSelection({
   const [preference, setPreference] = useState<{ contextKey: string; serverId: string | null } | null>(null);
   const loadingPreference = shouldUseSavedDefault && !readOnly && preference?.contextKey !== contextKey;
   const loading = destinationsLoading || loadingPreference || linking;
-  const [dismissedPrompt, setDismissedPrompt] = useState<string | null>(null);
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
   const canAddServer = true;
@@ -195,7 +192,7 @@ export function useServerSelection({
     (destinationKind === "cloud" ? rows.length === 0 : data?.servers.length === 0) && !selectedId;
   useEffect(() => {
     if (
-      !enabled || disabled || readOnly || loading || error || promptForSelection ||
+      !enabled || disabled || readOnly || loading || error || requiresExplicitChoice ||
       selectedId ||
       (!autoSelectFirst && value === null) ||
       autoSelected.current
@@ -219,9 +216,9 @@ export function useServerSelection({
         ?? defaults[0]!;
       void selectServer(preferred);
     }
-  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, shouldUseSavedDefault, preference, deployMode, promptForSelection]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, shouldUseSavedDefault, preference, deployMode, requiresExplicitChoice]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && (
+  const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && !(forDeployment && actionError) && (
     automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
   ));
   useEffect(() => {
@@ -238,6 +235,7 @@ export function useServerSelection({
         return;
       }
       autoSelected.current = true;
+      setActionError(null);
       setInternalId(server.id);
       onSelectRef.current(option(server));
       refresh();
@@ -267,8 +265,7 @@ export function useServerSelection({
     loading, error, refresh, automaticCloud, ready: selectionReady,
     disabled, readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
     restrictedSource, connectedOnly, removeSource, removing, actionError,
-    promptOpen: enabled && promptForSelection && !disabled && !readOnly && !selectedId && dismissedPrompt !== resourceKey,
-    dismissPrompt: () => setDismissedPrompt(resourceKey),
+    requiresExplicitChoice, resourceKey,
     remember: () => { if (selectionReady && selectedId) serverPreference(contextKey).write(selectedId); },
   };
 }
@@ -281,7 +278,8 @@ export function ServerSelectorView({
   label,
   compact = false,
   emptyHint,
-}: Pick<ServerSelectorProps, "label" | "compact" | "emptyHint"> & { selection: ServerSelection }) {
+  deploymentReview = false,
+}: Pick<ServerSelectorProps, "label" | "compact" | "emptyHint"> & { selection: ServerSelection; deploymentReview?: boolean }) {
   const { t } = useI18n();
   const copy = t.widgets.shared.serverSelector;
   const managedCopy = t.billing.workspaces;
@@ -327,6 +325,8 @@ export function ServerSelectorView({
           showLabel={false}
           selectedId={effective}
           servers={rows}
+          details={deploymentReview ? "plan" : "capacity"}
+          showStatus={deploymentReview}
           disabled={disabled}
           onSelect={server => select(server.id)}
           onAddServer={canAddServer && !disabled && !disabledReason ? addServer : undefined}
@@ -354,7 +354,7 @@ export function ServerSelectorView({
           <p className="text-xs text-muted-foreground">{disabledReason}</p>
         ) : !disabled && (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {!selfHosted && !connectedOnly && (
+            {!deploymentReview && !selfHosted && !connectedOnly && (
               <p className="text-xs text-muted-foreground">
                 {restrictedSource ? t.migration.sources.hint : forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
               </p>
@@ -376,58 +376,8 @@ export function ServerSelectorView({
   );
 }
 
-/** Public own-server links ask once, using the wizard's inventory and selection state. */
-export function ServerSelectionPrompt({ selection }: { selection: ServerSelection }) {
-  const { t } = useI18n();
-  const { promptOpen, dismissPrompt } = selection;
-  const { dialog, onKeyDown } = useDialogFocus(dismissPrompt, promptOpen);
-  if (!promptOpen) return null;
-  return (
-    <Modal
-      isOpen={promptOpen}
-      onClose={dismissPrompt}
-      showCloseButton={false}
-      width="480px"
-      maxWidth="calc(100vw - 2rem)"
-    >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t.deploy.targetStep.chooseServer}
-        tabIndex={-1}
-        onKeyDown={onKeyDown}
-        className="space-y-5 p-5 outline-none"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">{t.deploy.targetStep.chooseServer}</h2>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={dismissPrompt}
-            aria-label={t.chrome.window.close}
-          >
-            <Icon name="close" className="size-4" />
-          </Button>
-        </div>
-        <ServerSelectorView
-          selection={selection}
-          label={t.widgets.shared.serverSelector.selectServer}
-          compact
-        />
-      </div>
-    </Modal>
-  );
-}
-
 /** Standalone forms use the same selection state and view. */
 export default function ServerSelector(props: ServerSelectorProps) {
   const selection = useServerSelection(props);
-  return (
-    <>
-      <ServerSelectionPrompt selection={selection} />
-      <ServerSelectorView selection={selection} label={props.label} compact={props.compact} emptyHint={props.emptyHint} />
-    </>
-  );
+  return <ServerSelectorView selection={selection} label={props.label} compact={props.compact} emptyHint={props.emptyHint} />;
 }

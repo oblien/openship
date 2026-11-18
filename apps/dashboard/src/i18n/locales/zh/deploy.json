@@ -95,9 +95,6 @@
     "domains": "域名"
   },
   "sidebar": {
-    "confirmDestination": "确认部署目标",
-    "destinationReviewHint": "你也可以在部署表单顶部更改目标。",
-    "changeDestination": "更改目标",
     "copyCloneToken": "复制克隆令牌",
     "cloneTokenTitle": "克隆令牌",
     "cloneTokenNoRepo": "此部署没有对应的 GitHub 仓库。",

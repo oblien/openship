@@ -1,20 +1,25 @@
 import { useId, useState } from "react";
-import type { ServerDetail } from "@repo/contracts";
 import { Icon } from "@repo/ui/icons";
+import { FeatureIllustration } from "@repo/ui/illustrations";
 import { useI18n } from "@/components/i18n-provider";
-import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
-import { ServerRowContent } from "@/components/shared/ServerPicker";
+import { ServerSelectorView, type ServerSelection } from "@/components/shared/ServerSelector";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/Modal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
-export interface DestinationReview {
-  server: ServerDetail;
-  onChange: () => void;
-}
-
-export function DeployButton({ review, onDeploy, deploying, disabled }: {
-  review?: DestinationReview;
+export function DeployButton({
+  review,
+  projectName,
+  branch,
+  destinationReady,
+  onDeploy,
+  deploying,
+  disabled,
+}: {
+  review?: ServerSelection;
+  projectName: string;
+  branch?: string;
+  destinationReady: boolean;
   onDeploy: () => void;
   deploying: boolean;
   disabled: boolean;
@@ -23,48 +28,97 @@ export function DeployButton({ review, onDeploy, deploying, disabled }: {
   const copy = t.deploy.sidebar;
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const { dialog, onKeyDown } = useDialogFocus(close, open);
+  const { dialog, onKeyDown } = useDialogFocus(close, open && !!review);
   const title = useId();
-  const hint = useId();
+  const needsChoice = review?.requiresExplicitChoice && !destinationReady;
+  const shouldReview = review && (review.rows.length > 1 || needsChoice);
 
   return (
     <>
       <Button
         type="button"
         className="h-11 w-full"
-        disabled={disabled}
-        onClick={() => review ? setOpen(true) : onDeploy()}
+        disabled={disabled || (!destinationReady && !shouldReview)}
+        onClick={() => (shouldReview ? setOpen(true) : onDeploy())}
       >
-        <Icon name={deploying ? "spinner" : "rocket"} className={deploying ? "animate-spin" : undefined} />
+        <Icon
+          name={deploying ? "spinner" : "rocket"}
+          className={deploying ? "animate-spin" : undefined}
+        />
         {deploying ? copy.deploying : copy.deploy}
       </Button>
       {open && review && (
-        <Modal isOpen onClose={close} width="440px" maxWidth="100%" showCloseButton={false}>
+        <Modal isOpen onClose={close} width="480px" maxWidth="100%" showCloseButton={false}>
           <div
             ref={dialog}
             role="dialog"
             aria-modal="true"
             aria-labelledby={title}
-            aria-describedby={hint}
             tabIndex={-1}
             onKeyDown={onKeyDown}
-            className="space-y-5 p-6 outline-none"
+            className="outline-none"
           >
-            <div className="flex items-start justify-between gap-3">
-              <h2 id={title} className="text-lg font-semibold text-foreground">{copy.confirmDestination}</h2>
-              <Button variant="ghost" size="icon" className="-me-2 -mt-2" onClick={close} aria-label={t.chrome.window.close}>
+            <div className="relative px-5 pt-5 sm:px-7 sm:pt-6">
+              <FeatureIllustration
+                name="deploy-anywhere"
+                className="illustration-color mb-3 h-14 w-20"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute end-4 top-4"
+                onClick={close}
+                aria-label={t.chrome.window.close}
+              >
                 <Icon name="close" />
               </Button>
+              <h2 id={title} className="text-xl font-semibold tracking-tight text-foreground">
+                {t.deploy.targetStep.heading}
+              </h2>
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                <span className="truncate" title={projectName}>
+                  {projectName}
+                </span>
+                {branch && (
+                  <span
+                    className="inline-flex min-w-0 max-w-full items-center gap-1.5"
+                    title={branch}
+                  >
+                    <Icon name="git-branch" className="size-3.5 shrink-0" />
+                    <bdi className="truncate">{branch}</bdi>
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3 rounded-xl bg-muted/40 p-3">
-              <ServerRowContent server={review.server} details="plan" />
-              {review.server.managed && <ManagedServerStatus workspace={review.server.managed} />}
+            <div className="px-5 py-6 sm:px-7">
+              <ServerSelectorView
+                selection={review}
+                compact
+                deploymentReview
+                label={
+                  review.connectedOnly
+                    ? t.deploy.targetStep.chooseServer
+                    : t.billing.workspaces.destination
+                }
+              />
             </div>
-            <p id={hint} className="text-sm leading-relaxed text-muted-foreground">{copy.destinationReviewHint}</p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" onClick={() => { close(); review.onChange(); }}>{copy.changeDestination}</Button>
-              <Button disabled={disabled} onClick={() => { close(); onDeploy(); }}>{copy.deploy}</Button>
-            </div>
+            <footer className="flex justify-end gap-2 border-t border-border/50 px-5 py-4 sm:px-7">
+              <Button type="button" variant="ghost" onClick={close}>
+                {t.projectSettings.settingSection.cancel}
+              </Button>
+              <Button
+                type="button"
+                disabled={disabled || !destinationReady}
+                onClick={() => {
+                  close();
+                  onDeploy();
+                }}
+              >
+                <Icon name="rocket" />
+                {copy.deploy}
+              </Button>
+            </footer>
           </div>
         </Modal>
       )}
