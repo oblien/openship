@@ -96,9 +96,9 @@ function runArgv(flags: UpFlags): string[] {
   return [runtime, ...args, ...upArgs(flags)];
 }
 
-function run(cmd: string, args: string[]): { ok: boolean; out: string } {
+function run(cmd: string, args: string[]): { ok: boolean; status: number | null; out: string } {
   const r = spawnSync(cmd, args, { encoding: "utf8" });
-  return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
+  return { ok: r.status === 0, status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 
 /** Block synchronously for `ms` — restart()/serviceStatus() are sync and the
@@ -125,6 +125,38 @@ function launchdPid(): number | null {
 function launchdLastExit(): number | null {
   const m = run("launchctl", ["list", MAC_LABEL]).out.match(/"LastExitStatus"\s*=\s*(-?\d+)/);
   return m ? Number(m[1]) : null;
+}
+
+/**
+ * `launchctl bootout` returns before launchd has removed the job, and
+ * bootstrapping the same label while it's still there fails with
+ * `5: Input/output error`. Wait (up to ~10s) until `launchctl list` no longer
+ * knows the label.
+ */
+function waitForLaunchdUnload(bootoutError: string): void {
+  for (let i = 0; i <= 50; i++) {
+    const result = run("launchctl", ["list", MAC_LABEL]);
+    // launchctl returns 113 when this service label is absent.
+    if (result.status === 113) return;
+    if (!result.ok) {
+      throw new Error(
+        `Couldn't check launchd agent ${MAC_LABEL}: ${result.out || "launchctl list failed"}`,
+      );
+    }
+    if (i < 50) sleepSync(200);
+  }
+  throw new Error(
+    `launchd agent ${MAC_LABEL} is still loaded after 10s${bootoutError ? `: ${bootoutError}` : ""}`,
+  );
+}
+
+/** Wait for launchd to report a live PID after requesting a start. */
+function waitForLaunchdStart(): boolean {
+  for (let i = 0; i < 6; i++) {
+    sleepSync(500);
+    if (launchdPid() != null) return true;
+  }
+  return false;
 }
 
 function isRoot(): boolean {
@@ -272,14 +304,25 @@ export function installAndStart(flags: UpFlags): ServiceResult {
 
   if (kind === "launchd") {
     mkdirSync(join(HOME, "Library", "LaunchAgents"), { recursive: true });
-    // Replace any previous instance first so a re-run picks up new flags.
-    run("launchctl", ["bootout", `gui/${process.getuid?.() ?? ""}/${MAC_LABEL}`]);
-    writeFileSync(MAC_PLIST, plist(flags));
     const uid = String(process.getuid?.() ?? "");
+    // Replace any previous instance first so a re-run picks up new flags.
+    const bootout = run("launchctl", ["bootout", `gui/${uid}/${MAC_LABEL}`]);
+    waitForLaunchdUnload(bootout.ok ? "" : bootout.out);
+    writeFileSync(MAC_PLIST, plist(flags));
     let r = run("launchctl", ["bootstrap", `gui/${uid}`, MAC_PLIST]);
     if (!r.ok) r = run("launchctl", ["load", "-w", MAC_PLIST]); // older macOS fallback
     if (!r.ok) throw new Error(`launchctl failed to load the agent: ${r.out}`);
-    return { kind, detail: `launchd agent ${MAC_LABEL} (logs: ${LOG_DIR})` };
+    // `load -w` prints "Load failed" but still exits 0, and an agent can load and
+    // crash at once. As in restart(), only report success once a PID is live.
+    if (waitForLaunchdStart()) {
+      return { kind, detail: `launchd agent ${MAC_LABEL} (logs: ${LOG_DIR})` };
+    }
+    const exit = launchdLastExit();
+    throw new Error(
+      `launchd agent ${MAC_LABEL} didn't start${exit != null ? ` (last exit ${exit})` : ""}${
+        r.out ? `: ${r.out}` : ""
+      } — check logs in ${LOG_DIR}`,
+    );
   }
 
   if (kind === "systemd-user" || kind === "systemd-system") {
@@ -331,10 +374,7 @@ export function restart(): { restarted: boolean; detail: string } {
     // (port already bound, PGlite data-dir lock held by another process, a bad
     // bundle/env). Poll for a live PID so we only claim success once it's
     // actually running.
-    for (let i = 0; i < 6; i++) {
-      sleepSync(500);
-      if (launchdPid() != null) return { restarted: true, detail: `restarted ${MAC_LABEL}` };
-    }
+    if (waitForLaunchdStart()) return { restarted: true, detail: `restarted ${MAC_LABEL}` };
     const exit = launchdLastExit();
     return {
       restarted: false,
