@@ -72,7 +72,7 @@ it("opens the GitHub App installer when Cloud supplies an installation URL", asy
 
 it("opens per-server credentials on a self-hosted SSH deploy", async () => {
   const onChoice = await renderModal(true);
-  expect(element.querySelector('a[href="/settings?tab=git"]')).toBeNull();
+  expect(element.querySelector('a[href="/settings?tab=git"]')).not.toBeNull();
   const connect = buttonWithText("Connect GitHub on this server");
   expect(connect).toBeDefined();
   await act(async () => connect!.click());

@@ -203,9 +203,7 @@ export function DeployCredentialModal({
   const handleConnectServerGithub = useCallback(() => {
     if (!serverId) return;
     setBusy("connect-server-github");
-    // The parent opens the shared per-server connect model (same component as
-    // the server's GitHub tab) and owns the post-connect retry, so the flow is
-    // identical everywhere it appears.
+    // The parent opens the server credential dialog and owns the post-connect retry.
     onChoice({ kind: "connect-server-github" });
   }, [serverId, onChoice]);
 
@@ -296,7 +294,7 @@ export function DeployCredentialModal({
           </button>
         )}
 
-        {!selfHosted && !showInstallApp && (
+        {!showInstallApp && (
           <Link
             href="/settings?tab=git"
             target="_blank"
