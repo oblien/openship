@@ -216,6 +216,9 @@ action includes all enabled services. Both use your saved configuration and envi
   Reusable build layers remain available; deleting the build cache is unnecessary.
 - Digest pins stay fixed. Change the configured reference first if the fix requires a different digest
   or version tag. A tag naming an old PHP patch release does not automatically advance to a newer patch.
+- For an image that exists only on the deployment host, configure its full Docker image ID
+  (`sha256:…`) to keep it fixed while refreshing the other services, or refresh the registry services
+  individually. A host-only tag has no registry copy for the project-wide refresh to pull.
 
 **Check image updates** compares deployed image digests and captured source-build base digests with
 the current registry manifests. It shows changed references and a direct refresh action. Source

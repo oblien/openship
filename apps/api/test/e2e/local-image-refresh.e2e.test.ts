@@ -36,16 +36,11 @@ describeDockerE2E("refreshing releases with a host-only image", () => {
     if (root) await rm(root, { recursive: true, force: true });
   });
 
-  it("preserves a local image with no registry digest during forced refresh", async (context) => {
+  it("reuses a host-only image by immutable ID during forced refresh", async () => {
     const before = await runtime.docker.getImage(local).inspect();
-    // Docker's classic store records no registry digest for a local build.
-    // Containerd synthesizes one; that case needs explicit retained-image intent,
-    // exercised below. A synthetic digest alone cannot prove where an image came from.
-    if (before.RepoDigests?.length)
-      context.skip("Requires Docker's classic image store (local images have no RepoDigests)");
     const pull = vi.spyOn(runtime, "pullImage");
     try {
-      const kept = await runtime.prepareDeploymentImage(local, { force: true });
+      const kept = await runtime.prepareDeploymentImage(before.Id, { force: true });
       expect(kept.imageId).toBe(before.Id);
       expect(kept.deploymentRef).toBe(before.Id);
       expect(pull).not.toHaveBeenCalled();

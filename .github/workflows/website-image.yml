@@ -16,7 +16,12 @@ jobs:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Build the shipped website Dockerfile
-        run: docker buildx build --load --progress=plain -f apps/web/Dockerfile -t openship-website:verify .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          docker buildx build --load --progress=plain
+          --secret id=github_token,env=GITHUB_TOKEN
+          -f apps/web/Dockerfile -t openship-website:verify .
       - name: Verify public pages from the production image
         run: |
           set -euo pipefail
