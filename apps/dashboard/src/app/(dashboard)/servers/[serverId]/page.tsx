@@ -78,7 +78,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const { t } = useI18n();
   // Port forwarding is meaningful only in desktop mode (the orchestrator IS
   // the user's machine). Backend routes are independently gated by assertDesktop.
-  const { deployMode } = usePlatform();
+  const { deployMode, selfHosted } = usePlatform();
   const isDesktop = deployMode === "desktop";
   const [server, setServer] = useState<ServerInfo | null>(null);
   // Single source of truth for saved port-forwards: drives the "Ports" tab
@@ -116,6 +116,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const [requestedTab, setActiveTab] = useState<Tab>("overview");
   const visibleTabs = TABS.filter(tab => {
     if (tab.desktopOnly && !isDesktop) return false;
+    if (tab.key === "github" && !selfHosted) return false;
     if (tab.key === "terminal") return canTerminal;
     if (tab.key === "components" || tab.key === "security") return canInspect;
     return tab.key === "overview" || hostConfiguration;
@@ -127,6 +128,12 @@ function ServerDetail({ serverId }: { serverId: string }) {
     const tab = searchParams.get("tab");
     setActiveTab(tab && TABS.some(td => td.key === tab) ? tab as Tab : "overview");
   }, [searchParams]);
+  // Old Cloud server links now open the same Git settings as the rest of the dashboard.
+  useEffect(() => {
+    if (!selfHosted && server && !server.managed && searchParams.get("tab") === "github") {
+      router.replace("/settings?tab=git");
+    }
+  }, [selfHosted, server, searchParams, router]);
   // Switch tab AND persist it in the URL (?tab=), so a reload / "service restart"
   // reopens the same tab. Shallow replace (no scroll) preserves other params.
   const changeTab = useCallback(

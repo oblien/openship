@@ -31,7 +31,7 @@ import { baseDictionary } from "@/i18n";
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let searchParams = new URLSearchParams();
-const router = { push: () => {}, replace: () => {}, back: () => {}, refresh: () => {} };
+const router = { push: () => {}, replace: vi.fn(), back: () => {}, refresh: () => {} };
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
   usePathname: () => "/servers/srv_1",
@@ -164,6 +164,7 @@ let root: Root | undefined;
 let errors: unknown[] = [];
 
 beforeEach(() => {
+  router.replace.mockClear();
   errors = [];
   searchParams = new URLSearchParams();
   container = document.createElement("div");
@@ -195,7 +196,13 @@ async function mountOfflineServer(checkFailure: { status: number; body: unknown 
     });
     root.render(
       <I18nProvider>
-        <DashboardProviders selfHosted deployMode={deployMode} authMode="local" cloudAuthUrl="" cloudApiUrl="">
+        <DashboardProviders
+          selfHosted={deployMode !== "cloud"}
+          deployMode={deployMode}
+          authMode={deployMode === "cloud" ? "cloud" : "local"}
+          cloudAuthUrl=""
+          cloudApiUrl=""
+        >
           <ToastProvider>
             <ModalProvider>
               <ServerDetailPage params={Promise.resolve({ serverId: "srv_1" })} />
@@ -213,6 +220,30 @@ async function mountOfflineServer(checkFailure: { status: number; body: unknown 
   }
   return container.textContent ?? "";
 }
+
+describe("GitHub on a customer-connected SSH server", () => {
+  it.each(["cloud", "docker", "desktop"])("uses credentials supported by the %s controller", async mode => {
+    searchParams = new URLSearchParams({ tab: "github" });
+    await mountOfflineServer(CHECK_FAILURES[0]!, { ...OFFLINE_SERVER, connection: "ssh" }, mode);
+    const requests = () => vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    const status = "/api/system/servers/srv_1/github";
+    const connect = [...container.querySelectorAll("button")].find(button =>
+      button.textContent?.includes(baseDictionary.servers.github.connectDevice));
+    if (mode === "cloud") {
+      expect(router.replace).toHaveBeenCalledWith("/settings?tab=git");
+      expect(container.querySelector('a[href*="tab=github"]')).toBeNull();
+      expect(requests().some(url => url.includes(status))).toBe(false);
+      expect(connect).toBeUndefined();
+    } else {
+      expect(router.replace).not.toHaveBeenCalledWith("/settings?tab=git");
+      expect(requests().some(url => url.endsWith(status))).toBe(true);
+      expect(connect).toBeDefined();
+      await act(async () => connect!.click());
+      expect(requests().some(url => url.endsWith(status + "/connect"))).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+});
 
 describe("managed resources on retained server links", () => {
   it.each(["desktop", "docker"])("shows the named plan instead of a requested host terminal in %s", async deployMode => {
