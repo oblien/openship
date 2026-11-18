@@ -95,9 +95,6 @@
     "domains": "Alan Adları"
   },
   "sidebar": {
-    "confirmDestination": "Dağıtım hedefini onayla",
-    "destinationReviewHint": "Hedefi dağıtım formunun üst kısmından da değiştirebilirsiniz.",
-    "changeDestination": "Hedefi değiştir",
     "copyCloneToken": "Klonlama jetonunu kopyala",
     "cloneTokenTitle": "Klonlama jetonu",
     "cloneTokenNoRepo": "Bu dağıtım için GitHub deposu yok.",

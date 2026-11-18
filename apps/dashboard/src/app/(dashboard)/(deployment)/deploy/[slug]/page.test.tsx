@@ -9,6 +9,7 @@ import type { DeploymentContextType } from "@/context/deployment/types";
 import DeployRepository from "./page";
 
 const api = vi.hoisted(() => ({
+  search: "",
   slug: "ZXhhbXBsZS9kZW1v", // base64url("example/demo")
   initializeFromRepo: vi.fn(),
   initializeFromLocal: vi.fn(),
@@ -28,7 +29,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ slug: api.slug }),
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => new URLSearchParams(api.search),
   useRouter: () => ({ push: api.push }),
 }));
 vi.mock("@/context/DeploymentContext", () => ({
@@ -68,7 +69,7 @@ vi.mock("@/components/i18n-provider", () => ({
     text.replace(/\{(\w+)\}/g, (_, key: string) => values[key] ?? key),
 }));
 vi.mock("@/components/shared/ServerSelector", () => ({
-  useServerSelection: ({ readOnly }: { readOnly: boolean }) => ({
+  useServerSelection: ({ readOnly, destinationKind }: { readOnly: boolean; destinationKind?: string }) => ({
     rows: Array.from({ length: api.serverCount }, (_, i) => ({ id: String(i) })),
     selected: api.serverCount ? { id: "0", name: "Production" } : null,
     ready: api.serverCount > 0,
@@ -76,9 +77,9 @@ vi.mock("@/components/shared/ServerSelector", () => ({
     error: null,
     automaticCloud: false,
     readOnly,
+    requiresExplicitChoice: destinationKind === "server",
   }),
   ServerSelectorView: () => null,
-  ServerSelectionPrompt: () => null,
 }));
 vi.mock("./components/DeployTargetStep", () => ({
   default: () => null,
@@ -122,6 +123,7 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.slug = "ZXhhbXBsZS9kZW1v";
   api.serverCount = 0;
+  api.search = "";
   api.config = {
     ...DEFAULT_CONFIG,
     owner: "example",
@@ -159,10 +161,10 @@ afterEach(async () => {
 
 it.each([
   { destinations: 2, existing: false, lockedUpload: false, review: true },
-  { destinations: 1, existing: false, lockedUpload: false, review: false },
+  { destinations: 1, existing: false, lockedUpload: false, review: true },
   { destinations: 2, existing: true, lockedUpload: false, review: false },
   { destinations: 2, existing: false, lockedUpload: true, review: false },
-])("requests first-deploy destination review=$review with $destinations destinations, existing=$existing, upload=$lockedUpload", async ({ destinations, existing, lockedUpload, review }) => {
+])("passes an editable destination picker=$review with $destinations destinations, existing=$existing, upload=$lockedUpload", async ({ destinations, existing, lockedUpload, review }) => {
   api.serverCount = destinations;
   api.config.serverId = "0";
   if (existing) api.config.projectId = "existing-project";
@@ -171,8 +173,22 @@ it.each([
   await renderPage();
   const props = api.sidebar.mock.lastCall?.[0];
   expect(props?.destinationReady).toBe(true);
-  if (review) expect(props.reviewDestination?.server.id).toBe("0");
+  if (review) expect(props.reviewDestination?.selected.id).toBe("0");
   else expect(props.reviewDestination).toBeUndefined();
+});
+
+it("opens the badge link on the configuration form with the branch and own-server choice preserved", async () => {
+  api.slug = "b2JsaWVuL29wZW5zaGlwLWJhZGdlLWRlbW8";
+  api.search = "destination=server&branch=main";
+  api.initializeFromRepo.mockResolvedValue({ success: true });
+  await renderPage();
+  expect(api.initializeFromRepo).toHaveBeenCalledWith("oblien", "openship-badge-demo", undefined,
+    expect.objectContaining({ branch: "main" }));
+  expect(container.querySelector("#deploy-project-name")).not.toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(api.sidebar.mock.lastCall?.[0]).toMatchObject({
+    destinationReady: false, reviewDestination: { requiresExplicitChoice: true },
+  });
 });
 
 describe("deploy page failed first scan (#1666)", () => {

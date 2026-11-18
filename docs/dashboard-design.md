@@ -1156,9 +1156,13 @@ UIs and APIs start with domain routing; raw database ports start internal unless
 explicitly says otherwise. Honor `defaultMode` and `allowedModes`, and preserve saved choices.
 Cloud availability selects free versus custom domains; it does not decide whether a UI is routed.
 
-Public deploy links with `destination=server` open the shared server selector in a dialog
-after sign-in. Reuse the form's inventory and selection state, wait for an explicit choice
-even with one server, and offer the existing Add Server flow when none are connected.
+Public deploy links open the configuration form first. Its destination settings are editable
+before Deploy. On a first source deployment, Deploy opens the shared server picker when
+multiple destinations are available, a hosted user is deploying to a connected SSH server,
+or an own-server link still needs an explicit choice. Prefer a connected server over an
+unpaid Cloud space when selecting a default.
+The dialog shows the project and branch and requires a ready selection to deploy. Catalog
+forms keep the same picker inline. Offer Add Server when no servers are connected.
 Keep loading and failed reads distinct from an empty list. Saved project destinations stay fixed.
 
 ## Checking a change

@@ -884,18 +884,25 @@ describe("deploy branch detection", () => {
 
 
 describe("Cloud pricing is offered only at deployment time", () => {
-  async function configureCloud() {
+  async function configureCloud(target: "cloud" | "server" = "cloud") {
     await selectBranch("openship");
     api.selfHosted = false;
     api.query = "";
-    await act(async () => current.updateConfig({ deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", noPublicRoute: true }));
+    await act(async () => current.updateConfig({
+      deployTarget: target,
+      serverId: target === "cloud" ? "managed-server" : "connected-vps",
+      workspaceId: target === "cloud" ? "workspace" : undefined,
+      noPublicRoute: true,
+    }));
   }
-  it("lets a paid Cloud deployment pass the former waitlist gate", async () => {
-    await configureCloud();
+  it.each(["cloud", "server"] as const)("submits the selected %s target without opening pricing on success", async target => {
+    await configureCloud(target);
     expect(api.showModal).not.toHaveBeenCalled();
     expect(api.buildAccess).not.toHaveBeenCalled();
     await act(async () => button(baseDictionary.deploy.sidebar.deploy).click());
-    expect(api.buildAccess).toHaveBeenCalledOnce();
+    const serverId = target === "cloud" ? "managed-server" : "connected-vps";
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ serverId }));
+    expect(api.buildAccess).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ serverId, deployTarget: target }));
     expect(api.push).toHaveBeenCalledWith("/build/deployment-1");
     expect(api.showModal).not.toHaveBeenCalled();
   });

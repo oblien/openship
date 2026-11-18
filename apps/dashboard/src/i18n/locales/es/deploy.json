@@ -95,9 +95,6 @@
     "domains": "Dominios"
   },
   "sidebar": {
-    "confirmDestination": "Confirmar el destino del despliegue",
-    "destinationReviewHint": "También puedes cambiar el destino en la parte superior del formulario de despliegue.",
-    "changeDestination": "Cambiar destino",
     "copyCloneToken": "Copiar token de clonación",
     "cloneTokenTitle": "Token de clonación",
     "cloneTokenNoRepo": "No hay repositorio de GitHub para este despliegue.",

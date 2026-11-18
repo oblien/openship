@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import DomainSettings from "./DomainSettings";
 import { MonorepoDomains } from "@/components/import-project/MonorepoDomains";
 import BuildSummary from "./BuildSummary";
-import { DeployButton, type DestinationReview } from "./DeployButton";
+import type { ServerSelection } from "@/components/shared/ServerSelector";
+import { DeployButton } from "./DeployButton";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
 import { useLocalDeployGate } from "@/hooks/useLocalDeployGate";
 import DnsRecordsModal from "@/components/domains/DnsRecordsModal";
@@ -156,7 +157,7 @@ const ComposeChecklist: React.FC = () => {
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
 
-const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: DestinationReview }> = ({ destinationReady, reviewDestination }) => {
+const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: ServerSelection }> = ({ destinationReady, reviewDestination }) => {
   const { config, state, updateConfig, startDeployment, rescanWithBranch, isRescanning } =
     useDeployment();
   const { t } = useI18n();
@@ -608,14 +609,16 @@ const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: Destina
         </div>
       ) : (
         <DeployButton
-          key={reviewDestination?.server.id}
+          key={reviewDestination?.resourceKey}
           review={reviewDestination}
+          destinationReady={destinationReady}
+          projectName={config.projectName || config.repo}
+          branch={!config.isApp && !config.localPath && !config.uploadSessionId ? config.branch : undefined}
           onDeploy={handleDeploy}
           deploying={state.isDeploying}
           disabled={
             state.isDeploying ||
             isRescanning ||
-            !destinationReady ||
             (config.projectType === "monorepo" &&
               config.serviceDeploymentMode !== "single" &&
               !config.monorepoApps?.some((app) => app.enabled))

@@ -133,13 +133,14 @@ OpenShip catalog template format. Do not paste an app catalog entry into `opensh
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | OpenShip Cloud  | Sign in if needed, then configure the app on a Cloud plan. Existing plan selection and checkout are reused.                     |
 | Your own server | Run the install command over SSH, then review the app in that server's OpenShip dashboard. No Cloud account is required.        |
-| OpenShip Manage | Sign in to Cloud, choose a connected server or add one over SSH using the existing Manage setup, then configure the deployment. |
+| OpenShip Manage | Sign in to Cloud, configure the deployment, and choose the connected server where it will run. |
 
 Source and branch are preserved through sign-in. A deployment link is a starting point:
 normal workspace permissions, destination access and deployment checks still apply.
-The Manage handoff (`destination=server`) opens the shared server picker and waits for a choice,
-even if there is only one connected server. With none connected, Add Server opens in the same
-flow and returns the new server to the deployment form.
+With OpenShip Manage, you can choose a server in the configuration form. For a repository,
+clicking **Deploy** also lets you choose one if you haven’t already. For a catalog app, use
+the destination picker beside the install action. **Add Server** lets you connect a server
+without leaving the form.
 
 ## Start on your server
 

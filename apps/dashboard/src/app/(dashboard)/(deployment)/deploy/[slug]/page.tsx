@@ -34,7 +34,7 @@ import { usesServiceDeployment, workloadOf } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
-import { ServerSelectionPrompt, ServerSelectorView, useServerSelection } from "@/components/shared/ServerSelector";
+import { ServerSelectorView, useServerSelection } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -471,13 +471,12 @@ const DeployRepository: React.FC = () => {
 
     const firstDeployment = !config.projectId || (decodedForTarget?.kind === "project" && savedTargetState === "none");
     const reviewDestination = firstDeployment && !isConfigEdit && config.deployTarget !== "cluster" &&
-        !serverSelection.readOnly && serverSelection.selected && serverSelection.rows.length > 1
-        ? { server: serverSelection.selected, onChange: () => setStep("target") }
+        !serverSelection.readOnly
+        ? serverSelection
         : undefined;
 
     return (
         <PageContainer>
-                <ServerSelectionPrompt selection={serverSelection} />
                 {/* Destination settings share the page's normal content/sidebar layout. */}
                 {step === "target" && (
                     <DeployTargetStep
@@ -518,6 +517,7 @@ const DeployRepository: React.FC = () => {
                                         : t.widgets.shared.serverSelector.selectServer
                                 )}
                                 onEdit={() => setStep("target")}
+                                editLabel={reviewDestination ? t.billing.workspaces.choose : undefined}
                             />
                             {serverSelection.error && <p role="alert" className="text-sm text-danger">{serverSelection.error}</p>}
 

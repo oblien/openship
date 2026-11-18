@@ -95,9 +95,6 @@
     "domains": "النطاقات"
   },
   "sidebar": {
-    "confirmDestination": "تأكيد وجهة النشر",
-    "destinationReviewHint": "يمكنك أيضًا تغيير الوجهة من أعلى نموذج النشر.",
-    "changeDestination": "تغيير الوجهة",
     "copyCloneToken": "نسخ رمز الاستنساخ",
     "cloneTokenTitle": "رمز الاستنساخ",
     "cloneTokenNoRepo": "لا يوجد مستودع GitHub لعملية النشر هذه.",

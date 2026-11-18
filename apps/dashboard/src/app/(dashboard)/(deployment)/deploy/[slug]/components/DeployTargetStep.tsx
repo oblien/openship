@@ -51,6 +51,7 @@ interface CompactSummaryProps {
   rollbackWindow?: number | null;
   rollbackStrategy?: "git" | "snapshot";
   onEdit?: () => void;
+  editLabel?: string;
   variant?: "inline" | "preview";
 }
 
@@ -67,6 +68,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   rollbackWindow,
   rollbackStrategy,
   onEdit,
+  editLabel,
   variant = "inline",
 }) => {
   const { t } = useI18n();
@@ -266,7 +268,10 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
           {rollbackChip}
         </div>
       </div>
-      <UiIcon name="edit" className="size-4 shrink-0 text-muted-foreground transition-opacity" />
+      <span className="inline-flex max-w-[45%] shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground group-hover:text-foreground">
+        <UiIcon name="edit" className="size-4 shrink-0" />
+        {editLabel}
+      </span>
     </button>
   );
 };
