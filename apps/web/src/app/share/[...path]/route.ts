@@ -1,9 +1,19 @@
 import { getMarketplaceApps } from "@/lib/app-catalog";
+import { APP_CATEGORY_LABELS } from "@/lib/app-marketplace";
+import { appMark } from "@/lib/og-marks";
+import { subjectForFeature, type CoverObject } from "@/lib/og-objects";
 import { getChangelog } from "@/lib/changelog";
 import { getFeature } from "@/lib/features";
 import { renderOgImage, type ShareCard } from "@/lib/og-image";
 import { sectionCard, sectionCards } from "@/lib/share-cards";
 import { blogSource } from "@/lib/source";
+
+const articleSubjects: Record<string, CoverObject | undefined> = {
+  "how-ai-builds-work": "compiler",
+  "self-hosting-cost-breakdown": "costs",
+  "introducing-openship": "introduction",
+  "openship-0-9-1": "milestone",
+};
 
 export const revalidate = 600;
 
@@ -18,29 +28,49 @@ async function resolveCard(path: string[]): Promise<ShareCard | undefined> {
   if (!slug) return;
   if (section === "blog") {
     const post = blogSource.getPage(path.slice(1), "en");
-    if (post)
+    if (post) {
+      const object = articleSubjects[slug];
+      const art: ShareCard["art"] = object
+        ? { object }
+        : { outline: post.data.toc.map((h) => h.url.slice(1).replace(/-/g, " ")) };
       return {
-        eyebrow: "Blog",
+        eyebrow: ["Blog", post.data.category].filter(Boolean).join(" · "),
         title: post.data.title,
         subtitle: post.data.description,
-        symbol: "book",
+        art,
+        layout: "masthead",
+        footer: ["openship.io/blog", post.data.date].filter(Boolean).join("  /  "),
       };
+    }
   }
   if (path.length !== 2) return;
   if (section === "features") {
     const feature = getFeature(slug);
-    if (feature)
+    if (feature) {
+      const object = subjectForFeature(slug);
       return {
         eyebrow: feature.category,
         title: feature.title,
         subtitle: feature.tagline,
-        symbol: "layers",
+        art: object ? { object } : { feature: feature.illustration },
+        layout: "reverse",
       };
+    }
   }
   if (section === "apps") {
     const app = (await getMarketplaceApps()).find((app) => app.id === slug);
     if (app)
-      return { eyebrow: "App catalog", title: app.name, subtitle: app.description, symbol: "apps" };
+      return {
+        eyebrow: APP_CATEGORY_LABELS[app.category],
+        title: app.name,
+        subtitle: app.description,
+        art:
+          app.id === "alertmanager"
+            ? { object: "alerts" }
+            : { marks: [await appMark(app.name, app.id, app.logo)] },
+        layout: "reverse",
+        footer: `openship.io/apps/${app.id}`,
+      };
   }
   if (section === "changelog") {
     const release = (await getChangelog()).find((entry) => entry.slug === slug);
@@ -49,7 +79,13 @@ async function resolveCard(path: string[]): Promise<ShareCard | undefined> {
         eyebrow: "Release notes",
         title: `OpenShip ${release.displayVersion}`,
         subtitle: release.summary,
-        symbol: "branch",
+        art: {
+          version: release.displayVersion,
+          changes: release.sections.map((section) => section.items.length),
+        },
+        footer: release.date
+          ? `Release notes  /  ${release.date.slice(0, 10)}`
+          : "openship.io/changelog",
       };
   }
 }

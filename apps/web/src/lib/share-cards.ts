@@ -1,96 +1,111 @@
 import type { ShareCard } from "./og-image";
 
-// The badge is shared from repositories as well as the catalog. Every valid
-// launcher link uses the same published PNG, including links with query strings.
+// Badge URLs can carry repository or catalog parameters. Both share this static cover.
 export const deployCard = {
   title: "Deploy with",
   secondLine: "OpenShip.",
   subtitle: "Launch this project on OpenShip Cloud\nor a server you manage.",
-  symbol: "deploy",
-  accent: "#b5d4bf",
+  art: { object: "deploy" },
 } satisfies ShareCard;
 
 export const referralCard = {
   eyebrow: "Referral program",
   title: "Good tools are worth sharing.",
   subtitle: "Introduce someone to OpenShip. A small thank-you for making the connection.",
-  symbol: "message",
+  art: { object: "referrals" },
+  layout: "reverse",
 } satisfies ShareCard;
 
 export const sectionCards = {
-  login: { title: "Sign in to OpenShip.", symbol: "trust" },
+  login: { title: "Sign in to OpenShip.", art: { feature: "two-factor-auth" }, layout: "reverse" },
   about: {
     title: "About OpenShip.",
     subtitle: "An open source platform for deploying and running your apps.",
+    art: { object: "about" },
   },
   apps: {
     title: "Find your next app.",
     eyebrow: "App catalog",
     subtitle: "Ready-to-deploy apps for Cloud or your own servers.",
-    symbol: "apps",
+    art: { feature: "app-catalog" },
+    layout: "reverse",
   },
   features: {
     title: "Inside OpenShip.",
     eyebrow: "Features",
     subtitle: "Explore the tools for deploying, running and managing your stack.",
-    symbol: "layers",
+    art: { feature: "project-environments" },
+    layout: "masthead",
   },
   compare: {
     title: "Compare platforms.",
     subtitle: "See how OpenShip compares with other ways to run your apps.",
-    symbol: "layers",
+    art: { object: "compare" },
   },
   mail: {
     title: "Your email.",
     secondLine: "Your control panel.",
-    symbol: "mail",
-    accent: "#c8cadd",
+    art: { object: "mail" },
+    layout: "reverse",
   },
-  "mail/setup-guide/android": { eyebrow: "Mail setup", title: "Gmail on Android.", symbol: "mail" },
+  "mail/setup-guide/android": {
+    eyebrow: "Mail setup",
+    title: "Gmail on Android.",
+    art: { object: "android" },
+  },
   "mail/setup-guide/ios": {
     eyebrow: "Mail setup",
     title: "Apple Mail on iOS and macOS.",
-    symbol: "mail",
+    art: { object: "ios" },
+    layout: "reverse",
   },
   "mail/setup-guide/desktop": {
     eyebrow: "Mail setup",
     title: "Desktop mail clients.",
-    symbol: "mail",
+    art: { object: "desktop" },
   },
   "mail/setup-guide/nodemailer": {
     eyebrow: "Mail setup",
     title: "Send with Nodemailer.",
-    symbol: "mail",
+    art: { object: "nodemailer" },
+    layout: "reverse",
   },
-  contact: { title: "Get in touch.", eyebrow: "Contact", symbol: "message" },
+  contact: {
+    title: "Get in touch.",
+    eyebrow: "Contact",
+    art: { object: "contact" },
+    layout: "reverse",
+  },
   support: {
     title: "Customer support.",
     subtitle: "Get help with deployments, your account or billing.",
-    symbol: "message",
+    art: { object: "support" },
   },
   trust: {
     title: "Trust and security.",
     subtitle: "How OpenShip handles data ownership and access.",
-    symbol: "trust",
+    art: { object: "trust" },
+    layout: "reverse",
   },
   sla: {
     title: "Cloud uptime.",
     eyebrow: "Service level agreement",
     subtitle: "The uptime commitment for OpenShip Cloud plans.",
-    symbol: "trust",
+    art: { object: "uptime" },
   },
-  privacy: { title: "Privacy policy.", symbol: "trust" },
-  terms: { title: "Terms of service.", symbol: "book" },
+  privacy: { title: "Privacy policy.", art: { object: "privacy" }, layout: "reverse" },
+  terms: { title: "Terms of service.", art: { object: "terms" } },
   blog: {
     title: "The OpenShip blog.",
     subtitle: "Stories and guides from the team.",
-    symbol: "book",
+    art: { object: "journal" },
+    layout: "reverse",
   },
   changelog: {
     title: "What’s new.",
     eyebrow: "Changelog",
     subtitle: "Release notes, improvements and fixes.",
-    symbol: "branch",
+    art: { object: "releases" },
   },
 } satisfies Record<string, ShareCard>;
 

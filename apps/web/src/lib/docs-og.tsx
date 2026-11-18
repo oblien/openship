@@ -1,3 +1,4 @@
+import { FEATURES } from "@/lib/features";
 import { docsSource } from "@/lib/source";
 import { renderOgImage } from "@/lib/og-image";
 
@@ -24,33 +25,35 @@ function truncate(text: string, max: number): string {
   return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
-/**
- * Per-page OG/Twitter card for any docs route. Shared by the two image files so
- * both produce the identical card from one definition.
- *
- * An unresolvable slug falls back to the generic OpenShip card rather than
- * throwing: a missing image degrades a social preview, but a throw here would
- * fail the page's whole metadata render.
- */
 export function renderDocsOgImage(slug: string[] = []) {
   const page = docsSource.getPage(slug);
+  const path = ["docs", ...slug].join("/");
   if (!page)
-    return renderOgImage({
-      accent: "#bfd1e6",
-      symbol: "book",
-      eyebrow: "Docs",
-      title: "Documentation",
-    });
-
-  const data = page.data as { title: string; description?: string };
+    return renderOgImage({ eyebrow: "Docs", title: "Documentation", art: { object: "journal" } });
+  const { title, description, toc, structuredData } = page.data;
+  const headingText = new Map(structuredData.headings.map(({ id, content }) => [id, content]));
+  const feature = FEATURES.find((entry) => entry.guide.split("#")[0] === "/" + path);
+  const headings = toc.filter((entry) => entry.depth === 2);
+  const outline = (headings.length ? headings : toc).map(
+    (entry) =>
+      headingText.get(entry.url.slice(1)) ??
+      (typeof entry.title === "string" ? entry.title : entry.url.slice(1).replace(/-/g, " ")),
+  );
+  const commandPrefix = `openship ${title} `;
+  const isCommand = slug[0] === "cli" && slug[1] === "reference" && slug.length > 2;
   return renderOgImage({
-    accent: "#bfd1e6",
-    symbol: "book",
     eyebrow: sectionLabel(slug),
-    title: truncate(data.title, 70),
-    subtitle: data.description
-      ? truncate(data.description, 150)
-      : "Open source, self-hostable deployment platform.",
+    title: truncate(title, 70),
+    subtitle: description && truncate(description, 150),
+    footer: "openship.io/" + path,
+    art: isCommand
+      ? {
+          command: title,
+          subcommands: outline
+            .filter((heading) => heading.startsWith(commandPrefix))
+            .map((heading) => heading.slice(commandPrefix.length)),
+        }
+      : { outline, feature: feature?.illustration },
   });
 }
 

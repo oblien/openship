@@ -7,7 +7,8 @@ export const contentType = "image/png";
 export default function OgImage() {
   return renderOgImage({
     eyebrow: "Pricing",
-    symbol: "layers",
+    art: { object: "pricing" },
+    layout: "reverse",
     title: "Room to build. Room to grow.",
     subtitle: "Cloud plans, server management and free self-hosting. Choose where your apps run.",
   });

@@ -6,8 +6,10 @@ export const contentType = "image/png";
 
 export default function OgImage() {
   return renderOgImage({
-    symbol: "branch",
-    title: "Git → OpenShip",
-    subtitle: "openship.io/migrate/from-git",
+    eyebrow: "Migration guide",
+    art: { feature: "git-authentication" },
+    layout: "reverse",
+    title: "Bring your Git repository.",
+    footer: "openship.io/migrate/from-git",
   });
 }

@@ -11,7 +11,6 @@ export default function OgImage() {
     title: "Install OpenShip. Deploy in seconds.",
     subtitle:
       "CLI, native desktop app, and self-hosted dashboard - macOS, Windows, Linux. Same backend, your choice of surface.",
-    symbol: "deploy",
-    accent: "#b3d8ce",
+    art: { object: "download" },
   });
 }
