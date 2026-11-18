@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "正在检查服务器管理权限…",
+    "accessUnavailable": "无法检查服务器管理权限",
+    "checkingAccessHint": "检查此工作区时，你可以继续填写 SSH 连接信息。",
     "label": "支持方案",
     "basic": "基础",
     "priority": "优先",

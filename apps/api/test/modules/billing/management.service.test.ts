@@ -174,6 +174,25 @@ beforeEach(() => {
   });
 });
 describe("hosted management lifecycle with real persistence and locks", () => {
+  it("shares concurrent plan refreshes for the same organization only", async () => {
+    const ctx = await fixture(), other = await fixture();
+    await paidSubscription(ctx);
+    const [first, second, unrelated] = await Promise.all([
+      getManagement(ctx),
+      getManagement(ctx),
+      getManagement(other),
+    ]);
+    expect(first).toEqual(second);
+    expect(first.active).toBe(true);
+    expect(unrelated.active).toBe(false);
+    expect(h.provider.getSubscription).toHaveBeenCalledExactlyOnceWith(managementNamespace(ctx.organizationId));
+    expect(h.provider.getEntitlement.mock.calls.flat().sort()).toEqual([
+      `compute-${ctx.organizationId}`,
+      `compute-${other.organizationId}`,
+      managementNamespace(ctx.organizationId),
+    ].sort());
+  });
+
   it("binds the selected support plan to checkout, retry, payment and tenant ownership", async () => {
     const ctx = await fixture(), other = await fixture();
     const selection = { servers: 2, plan: "priority" as const, idempotencyKey: "priority-checkout-key" };

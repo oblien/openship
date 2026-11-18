@@ -808,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "Checking management access…",
+    "accessUnavailable": "Couldn’t check management access",
+    "checkingAccessHint": "You can enter your SSH details while we check this workspace.",
     "label": "Support plan",
     "basic": "Basic",
     "priority": "Priority",
