@@ -164,7 +164,9 @@ environment refresh do not imply an image update or automatic security coverage.
 Repository-owned image changes use the shared **Propose image update** editor in saved
 project/service settings and security review. For repository-backed Compose projects, open it
 from the Project Info options menu; do not place a standalone button between settings cards.
-Reuse the repository file browser. Show the branch,
+Start from the saved project source and reuse the repository file browser when choosing
+another file. Keep the next action in the dialog footer and focus the diff when it opens.
+Show the branch,
 exact source commit and a diff before **Create draft PR**; edits invalidate that review. The editor
 changes one literal Dockerfile `FROM` or Compose `image` reference, preserving the source formatting.
 Variables, inherited images and custom Dockerfile syntax link to the source for manual editing.

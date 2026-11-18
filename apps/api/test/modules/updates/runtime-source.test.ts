@@ -9,6 +9,22 @@ import { sourceFixture, sourceClients } from "../../helpers/runtime-source";
 import { db, schema, repos, seedOwner } from "../jobs/_harness";
 
 const selection = { path: "Dockerfile", format: "dockerfile" as const };
+it("returns a file-selection error when the configured branch has no root Dockerfile", async () => {
+  const f = await sourceFixture({ "apps/api/Dockerfile": "FROM node:22\n" });
+  provider.fetch.mockImplementation(f.fetch);
+  await expect(
+    f.clients.remote.updates.runtimeSource(f.project.id, selection),
+  ).rejects.toMatchObject({
+    code: "RUNTIME_SOURCE_FILE_NOT_FOUND",
+    status: 404,
+  });
+  const result = await f.clients.remote.updates.runtimeSource(f.project.id, {
+    ...selection,
+    path: "apps/api/Dockerfile",
+  });
+  expect(result.references[0]?.image).toBe("node:22");
+  expect(f.git.writes).toEqual([]);
+});
 it("retains JSON Compose formatting and rejects read-only credentials at publication", async () => {
   const content = '{\n  "services": { "api": { "image": "node:22" } }\n}\n';
   const f = await sourceFixture({ "compose.json": content });
@@ -208,7 +224,12 @@ it("does not report rate limits or outages as missing permissions", async () => 
       if (input.url.endsWith("/repos/acme/app")) throw error;
       return f.fetch(input);
     });
-    await expect(f.clients.native.updates.runtimeSource(f.project.id, selection)).rejects.toThrow();
+    await expect(
+      f.clients.remote.updates.runtimeSource(f.project.id, selection),
+    ).rejects.toMatchObject({
+      code: "RUNTIME_SOURCE_UNAVAILABLE",
+      status: 503,
+    });
     expect(f.git.writes).toEqual([]);
   }
 });

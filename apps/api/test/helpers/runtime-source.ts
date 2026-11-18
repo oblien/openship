@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { createShip, type VerifiedIdentity } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
+import { GitHubApiError } from "@repo/platform/engine/modules/github/github.error";
 import { updatesRoutes } from "../../src/modules/updates/updates.routes";
 import { healthRoutes } from "../../src/modules/health/health.routes";
 import { handleApiError } from "../../src/middleware/error-handler";
@@ -84,7 +85,7 @@ export async function sourceFixture(
     if (path.startsWith("/contents/")) {
       if (params.ref !== git.head) throw new Error("Unexpected source revision");
       const content = git.files[path.slice("/contents/".length)];
-      if (content === undefined) throw new Error("GitHub API error (404)");
+      if (content === undefined) throw new GitHubApiError(404, "Not Found", new Headers());
       return {
         content: Buffer.from(content).toString("base64"),
         size: Buffer.byteLength(content),

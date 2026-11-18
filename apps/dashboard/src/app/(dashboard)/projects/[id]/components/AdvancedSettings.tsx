@@ -122,7 +122,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   const { user } = useAuth();
   const { selfHosted } = usePlatform();
   const { t } = useI18n();
-  const { projectData, servicesData, buildData } = useProjectSettings();
+  const { projectData, servicesData } = useProjectSettings();
   const isDeleting = getProjectStatus(projectData) === "deleting";
   // `enabled` is the server's answer (derived from disabled_at in enrichProject).
   // This local copy exists only so the button flips the instant the call returns;
@@ -736,7 +736,6 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
       {projectDialog === "source" && canProposeImageUpdate && (
         <RuntimeSourceUpdateDialog
           projectId={projectId}
-          initialPath={buildData.composePath || "docker-compose.yml"}
           onClose={() => setProjectDialog(null)}
         />
       )}
