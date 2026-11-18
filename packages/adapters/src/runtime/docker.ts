@@ -79,7 +79,7 @@ import type {
   ProvisionLock,
 } from "../types";
 import type { PortProbeExecutor } from "../system/port-listen";
-import { PassThrough, Writable, type Readable } from "node:stream";
+import { addAbortSignal, PassThrough, Writable, type Readable } from "node:stream";
 import { relative, sep } from "node:path";
 import { resolveDockerBuildArgs } from "./docker-build-args";
 import { imageStartCommand, nodeOutputOptions } from "./node-output";
@@ -5313,11 +5313,21 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         return;
       }
       const pull = async (anonymous: boolean) => {
-        opts?.signal?.throwIfAborted();
-        const stream = await this.docker.pull(ref, !anonymous && authconfig ? { authconfig } : {});
-        await new Promise<void>((resolve, reject) => {
-          this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+        const signal = opts?.signal;
+        signal?.throwIfAborted();
+        const stream = await this.docker.pull(ref, {
+          ...(!anonymous && authconfig ? { authconfig } : {}),
+          ...(signal ? { abortSignal: signal } : {}),
         });
+        // Dockerode passes the signal to the request. Its streaming response
+        // also needs to be destroyed when a pull is cancelled after headers.
+        await new Promise<void>((resolve, reject) => {
+          this.docker.modem.followProgress(
+            signal ? addAbortSignal(signal, stream as Readable) : stream,
+            (err) => (err ? reject(err) : resolve()),
+          );
+        });
+        signal?.throwIfAborted();
       };
       if (authconfig) await pullWithAnonymousFallback(pull,
         () => opts?.logger?.log("Registry login was rejected; retrying public image access without credentials.\n", "warn"), opts?.signal);
