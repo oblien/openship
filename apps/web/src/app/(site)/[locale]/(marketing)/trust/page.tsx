@@ -2,7 +2,8 @@ import { Link } from "@/i18n/Link";
 import { useCopy } from "@/i18n/use-copy";
 import { localizedMetadata } from "@/i18n/metadata";
 
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
+import { inheritSocialImages } from "@/lib/social-metadata";
 import { Navbar, Footer } from "@/components/landing";
 import { MarketingIntro } from "@/components/marketing/marketing-intro";
 import { MarketingSection } from "@/components/marketing/marketing-section";
@@ -11,12 +12,12 @@ import {
   type IllustratedLinkProps,
 } from "@/components/marketing/illustrated-link";
 
-const pageMetadata: Metadata = {
+const pageMetadata = {
   title: "Trust & Security – OpenShip",
   description:
     "How OpenShip handles your data, permissions, and the boundary between self-hosted instances and OpenShip Cloud.",
   alternates: { canonical: "/trust" },
-};
+} satisfies Metadata;
 
 const PILLARS: IllustratedLinkProps[] = [
   {
@@ -124,6 +125,16 @@ export default function TrustPage() {
   );
 }
 
-export async function generateMetadata() {
-  return localizedMetadata(pageMetadata);
+export async function generateMetadata(_: unknown, parent: ResolvingMetadata) {
+  const { title, description } = pageMetadata;
+  return localizedMetadata(
+    await inheritSocialImages(
+      {
+        ...pageMetadata,
+        openGraph: { title, description, type: "website", siteName: "OpenShip" },
+        twitter: { card: "summary_large_image", title, description },
+      },
+      parent,
+    ),
+  );
 }

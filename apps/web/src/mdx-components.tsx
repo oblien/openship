@@ -26,7 +26,8 @@ const calloutIcons = {
 export function getMDXComponents(components?: MDXComponents): MDXComponents {
   return {
     ...defaultMdxComponents,
-    Tab,
+    // Keep heading anchors in every panel so Fumadocs can open the tab for a shared hash.
+    Tab: (props: ComponentProps<typeof Tab>) => <Tab forceMount {...props} />,
     Tabs: ({ className = "", ...props }: ComponentProps<typeof Tabs>) => (
       <Tabs {...props} className={`docs-tabs ${className}`} />
     ),

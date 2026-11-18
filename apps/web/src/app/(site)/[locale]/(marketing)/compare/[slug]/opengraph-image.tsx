@@ -10,6 +10,7 @@ export default async function OgImage({ params }: { params: Promise<{ slug: stri
   const item = getComparison((await params).slug);
   if (!item) notFound();
   return renderOgImage({
+    symbol: "layers",
     title: `OpenShip × ${item.group === "vps" ? "VPS" : item.name}`,
     subtitle: `openship.io/compare/${item.slug}`,
   });

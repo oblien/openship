@@ -1,169 +1,161 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
+import { serverArtwork, svgImage, type ShareSymbol } from "./og-art";
 
 export const OG_SIZE = { width: 1200, height: 630 } as const;
-export const OG_ALT = "OpenShip - Open Source, Self-Hostable Deployment Platform";
+export const OG_ALT = "OpenShip. Deploy anything. Own everything.";
 
-/** Accent palette for the aurora glow, footer dot, and eyebrow tint.
- *  `glow` is a bare "r,g,b" triple (used inside rgba()). Defaults to brand green. */
-export interface OgAccent {
-  glow: string;
-  solid: string;
-  soft: string;
-}
-
-const GREEN_ACCENT: OgAccent = { glow: "57,174,74", solid: "#39AE4A", soft: "#A3E1B3" };
-
-interface OgOptions {
-  title?: string;
+export interface ShareCard {
+  title: string;
+  secondLine?: string;
   subtitle?: string;
   eyebrow?: string;
-  accent?: OgAccent;
+  symbol?: ShareSymbol;
+  accent?: string;
   logos?: readonly { name: string; src: string }[];
 }
 
-export function renderOgImage({
-  title = "Deploy anything. Own everything.",
-  subtitle = "Open source, self-hostable deployment platform. AI-powered builds. Free SSL. Instant rollback.",
-  eyebrow,
-  accent = GREEN_ACCENT,
-  logos = [],
-}: OgOptions = {}) {
+const home: ShareCard = {
+  title: "Deploy anything.",
+  secondLine: "Own everything.",
+  subtitle: "Run your apps on OpenShip Cloud\nor your own servers.",
+};
+
+const field = svgImage(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="630">
+  <defs>
+    <pattern id="dot" width="15" height="15" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#9b979f"/></pattern>
+    <radialGradient id="fade"><stop stop-color="white"/><stop offset=".69" stop-color="#999"/><stop offset="1" stop-color="black"/></radialGradient>
+    <mask id="mask"><ellipse cx="325" cy="318" rx="290" ry="294" fill="url(#fade)"/></mask>
+  </defs>
+  <path d="M0 0h600v630H0z" fill="url(#dot)" mask="url(#mask)" opacity=".6"/>
+</svg>`);
+
+let font: Promise<Buffer> | undefined;
+export async function renderOgImage(card: ShareCard = home) {
+  font ??= readFile(join(process.cwd(), "src/lib/og-fonts/Gellix-Medium.woff"));
+  const { title, secondLine, subtitle, eyebrow, logos, symbol = "home", accent } = card;
+  const size = secondLine ? 81 : title.length > 65 ? 52 : title.length > 36 ? 62 : 72;
+
   return new ImageResponse(
     <div
       style={{
-        width: "100%",
-        height: "100%",
+        width: 1200,
+        height: 630,
         display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        background: "#0F0F0F",
-        color: "#FFFFFF",
-        padding: "72px 80px",
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        backgroundColor: "#f8f8f5",
+        color: "#161918",
+        fontFamily: "Gellix",
         position: "relative",
+        overflow: "hidden",
       }}
     >
+      <img
+        src={field}
+        width={600}
+        height={630}
+        style={{ position: "absolute", right: 0, top: 0 }}
+      />
+      <img
+        src={svgImage(serverArtwork(symbol, accent))}
+        width={547}
+        height={527}
+        style={{ position: "absolute", right: 18, top: 62 }}
+      />
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          background: `radial-gradient(1200px 600px at 80% 0%, rgba(${accent.glow},.18), transparent 60%), radial-gradient(900px 500px at 0% 100%, rgba(${accent.glow},.10), transparent 65%)`,
-        }}
-      />
-
-      <div
-        style={{
-          position: "relative",
+          top: 52,
+          left: 65,
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          gap: 12,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 999,
-              border: "4px solid #FFFFFF",
-            }}
-          />
-          <div style={{ fontSize: 36, fontWeight: 600, letterSpacing: -0.5 }}>OpenShip</div>
-        </div>
-        {logos.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {logos.map((logo) => (
-              <div
-                key={logo.name}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 80,
-                  height: 80,
-                  borderRadius: 20,
-                  background: "#FFFFFF",
-                }}
-              >
-                <img src={logo.src} alt={logo.name} width={48} height={48} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          gap: 22,
-        }}
-      >
+        <div style={{ width: 31, height: 31, border: "4px solid #171918", borderRadius: 32 }} />
+        <div style={{ fontSize: 34, letterSpacing: -1.7, lineHeight: 1 }}>OpenShip</div>
         {eyebrow && (
           <div
             style={{
-              fontSize: 22,
-              fontWeight: 500,
-              color: accent.soft,
-              letterSpacing: 0.5,
-              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              borderLeft: "1px solid #c8cac4",
+              marginLeft: 8,
+              paddingLeft: 18,
+              color: "#565b57",
+              fontSize: 23,
             }}
           >
             {eyebrow}
           </div>
         )}
-        <div
-          style={{
-            fontSize: 76,
-            fontWeight: 700,
-            lineHeight: 1.04,
-            letterSpacing: -2.2,
-            color: "#FFFFFF",
-            maxWidth: 1040,
-          }}
-        >
-          {title}
-        </div>
-        <div
-          style={{
-            fontSize: 28,
-            lineHeight: 1.35,
-            color: "rgba(255,255,255,0.72)",
-            maxWidth: 980,
-          }}
-        >
-          {subtitle}
-        </div>
       </div>
-
       <div
         style={{
-          position: "relative",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          color: "rgba(255,255,255,0.55)",
-          fontSize: 22,
+          flexDirection: "column",
+          justifyContent: "center",
+          position: "absolute",
+          top: 120,
+          bottom: 86,
+          left: 64,
+          width: 634,
         }}
       >
-        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <span
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            fontSize: size,
+            lineHeight: 1.02,
+            letterSpacing: -size * 0.055,
+          }}
+        >
+          <span style={{ lineClamp: 3 }}>{title}</span>
+          {secondLine && <span style={{ color: "#636863" }}>{secondLine}</span>}
+        </div>
+        {subtitle && (
+          <div
             style={{
-              display: "flex",
-              width: 10,
-              height: 10,
-              borderRadius: 999,
-              background: accent.solid,
+              display: "block",
+              whiteSpace: "pre-wrap",
+              width: 572,
+              marginTop: 27,
+              fontSize: 27,
+              lineHeight: 1.28,
+              letterSpacing: -0.6,
+              color: "#555c57",
+              lineClamp: 3,
             }}
-          />
-          openship.io
-        </div>
-        <div style={{ display: "flex", gap: 28 }}>
-          <span>github.com/oblien/openship</span>
-        </div>
+          >
+            {subtitle}
+          </div>
+        )}
+        {!!logos?.length && (
+          <div style={{ display: "flex", gap: 16, marginTop: 19 }}>
+            {logos.map((logo) => (
+              <img key={logo.name} src={logo.src} alt={logo.name} width={36} height={36} />
+            ))}
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          left: 67,
+          bottom: 44,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          color: "#575e57",
+          fontSize: 21,
+          letterSpacing: -0.3,
+        }}
+      >
+        <div style={{ width: 25, height: 1, backgroundColor: "#92988f" }} />
+        openship.io
       </div>
     </div>,
-    { ...OG_SIZE },
+    { ...OG_SIZE, fonts: [{ name: "Gellix", data: await font, weight: 500, style: "normal" }] },
   );
 }

@@ -1,9 +1,5 @@
 import { docsSource } from "@/lib/source";
-import { renderOgImage, type OgAccent } from "@/lib/og-image";
-
-/** Blue accent for docs — distinct from home (green), download (seafoam) and
- *  features (violet), so a docs link is recognizable in a feed at a glance. */
-const BLUE: OgAccent = { glow: "59,130,246", solid: "#3B82F6", soft: "#93C5FD" };
+import { renderOgImage } from "@/lib/og-image";
 
 /** Section labels for the eyebrow. Only the ones whose casing we can't derive
  *  from the slug (acronyms) need an entry; everything else is de-kebabed. */
@@ -20,9 +16,7 @@ function sectionLabel(slug: string[]): string {
   return `Docs · ${label}`;
 }
 
-/** The OG renderer clamps neither title nor subtitle, and a docs `description`
- *  is often a full sentence or three — long enough to run off the 630px card.
- *  Cut on a word boundary so the card never shows a mid-word break. */
+/** Prefer a whole-word excerpt when a document supplies a long description. */
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);
@@ -40,11 +34,18 @@ function truncate(text: string, max: number): string {
  */
 export function renderDocsOgImage(slug: string[] = []) {
   const page = docsSource.getPage(slug);
-  if (!page) return renderOgImage({ accent: BLUE, eyebrow: "Docs" });
+  if (!page)
+    return renderOgImage({
+      accent: "#bfd1e6",
+      symbol: "book",
+      eyebrow: "Docs",
+      title: "Documentation",
+    });
 
   const data = page.data as { title: string; description?: string };
   return renderOgImage({
-    accent: BLUE,
+    accent: "#bfd1e6",
+    symbol: "book",
     eyebrow: sectionLabel(slug),
     title: truncate(data.title, 70),
     subtitle: data.description

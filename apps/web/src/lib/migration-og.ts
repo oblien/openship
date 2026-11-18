@@ -22,6 +22,7 @@ export function renderMigrationOgImage(slug?: string) {
   if (slug && !source) notFound();
   return renderOgImage({
     eyebrow: "Move to OpenShip",
+    symbol: "branch",
     title: source ? `Move from ${source.name}.` : "Your stack. A new home.",
     subtitle: source
       ? source.summary
