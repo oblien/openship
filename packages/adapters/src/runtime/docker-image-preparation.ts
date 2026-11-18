@@ -71,7 +71,11 @@ export async function prepareDockerImage(
   }
   checkCancellation();
   if (!image && (options.requirePresent || /^sha256:[a-f0-9]{64}$/.test(ref))) {
-    throw new Error(`Retained image ${ref} is unavailable. Redeploy to rebuild it.`);
+    throw new AppError(
+      `Retained image ${ref} is unavailable. Redeploy to rebuild it.`,
+      409,
+      "RETAINED_IMAGE_UNAVAILABLE",
+    );
   }
   const mutable = isMutableImageRef(ref);
   const force = options.force === true && mutable;

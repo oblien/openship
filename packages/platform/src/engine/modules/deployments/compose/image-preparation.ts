@@ -1,5 +1,5 @@
-import { BuildLogger, DockerRuntime, withDeploymentProgress } from "@repo/adapters";
-import { mapConcurrent } from "@repo/core";
+import { type BuildLogger, type DockerRuntime, withDeploymentProgress } from "@repo/adapters";
+import { AppError, mapConcurrent } from "@repo/core";
 import type { Deployment } from "@repo/db";
 import { deploymentImagePullPolicy } from "../image-pull-policy";
 import { throwIfDeploymentCancelled } from "../deployment-cancellation";
@@ -9,7 +9,6 @@ type ImageIntent = { retained: boolean; refresh: boolean };
 type ImagePreparation = {
   startedAt: Date;
   promise: Promise<PreparedImage>;
-  result?: PreparedImage;
 };
 
 /** One deployment's image receipts, shared by background pulls and cutover.
@@ -29,8 +28,8 @@ export class ComposeImagePreparation {
     return `${intent.retained ? "retained" : intent.refresh ? "registry" : "existing"}\0${image}`;
   }
 
-  prepared(image: string, intent: ImageIntent): PreparedImage | undefined {
-    return this.images.get(this.key(image, intent))?.result;
+  receipt(image: string, intent: ImageIntent): Promise<PreparedImage> | undefined {
+    return this.images.get(this.key(image, intent))?.promise;
   }
 
   prepare(image: string, intent: ImageIntent, signal = this.signal): ImagePreparation {
@@ -54,7 +53,6 @@ export class ComposeImagePreparation {
           }),
         );
         throwIfDeploymentCancelled(signal);
-        entry.result = prepared;
         this.logger.log(
           `Image ${image} is ready (${Math.floor((Date.now() - entry.startedAt.getTime()) / 1000)}s).\n`,
         );
@@ -81,7 +79,21 @@ export class ComposeImagePreparation {
       await mapConcurrent(
         [...new Set(images)],
         4,
-        (image) => this.prepare(image, { retained, refresh: !retained }, signal).promise,
+        async (image) => {
+          try {
+            await this.prepare(image, { retained, refresh: !retained }, signal).promise;
+          } catch (error) {
+            if (
+              !retained ||
+              !(error instanceof AppError) ||
+              error.code !== "RETAINED_IMAGE_UNAVAILABLE"
+            ) {
+              throw error;
+            }
+            // A speculative lookup may miss an unused image. Keep the rejected
+            // receipt so a required pin cannot later adopt a refreshed tag.
+          }
+        },
       );
     }
   }

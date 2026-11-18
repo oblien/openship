@@ -1,6 +1,7 @@
-import { BuildLogger, DEFAULT_RESOURCE_CONFIG } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, DEFAULT_RESOURCE_CONFIG } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { ServiceCutoverRecoveryError } from "@repo/platform/engine/modules/deployments/compose/cutover-recovery";
+import { ComposeImagePreparation } from "@repo/platform/engine/modules/deployments/compose/image-preparation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The pipeline is only wired here, not exercised: every collaborator is a side
@@ -23,7 +24,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: vi.fn(async () => ({ id: "p1", activeDeploymentId: "d1" })) },
-    deployment: { findById: vi.fn(async () => ({ id: "dep-live", projectId: "p1", organizationId: "org1", status: "ready" })) },
+    deployment: {
+      findById: vi.fn(async () => ({ id: "dep-live", projectId: "p1", organizationId: "org1", status: "ready" })),
+      recordCompletedBuildArtifacts: vi.fn(async () => true),
+    },
     service: {
       listByProject: vi.fn(async () => [
         { id: "svc-api", name: "api", enabled: true, advanced: null },
@@ -100,7 +104,7 @@ const REACHED_DEPLOY = new Error("reached the deploy step");
 async function run(
   composeBuild: Record<string, unknown>,
   snapshot = SNAPSHOT,
-  options: { runtimeName?: string; activeDeploymentId?: string; onBuildFinished?: () => Promise<void>; signal?: AbortSignal } = {},
+  options: { runtime?: DockerRuntime; runtimeName?: string; activeDeploymentId?: string; onBuildFinished?: () => Promise<void>; signal?: AbortSignal } = {},
 ) {
   mocks.buildComposeImages.mockResolvedValue(composeBuild);
   // Deploying for real would drag in every collaborator past this point (and pin
@@ -118,10 +122,10 @@ async function run(
       activeDeploymentId: options.activeDeploymentId ?? null,
     } as never,
     dep: { id: "d1", branch: "main", commitSha: null, trigger: "deploy", meta: null } as never,
-    runtime: {
+    runtime: options.runtime ?? ({
       name: options.runtimeName ?? "docker",
       supports: () => false,
-    } as never,
+    } as never),
     routing: {} as never,
     ssl: {} as never,
     system: null,
@@ -340,6 +344,33 @@ describe("executeComposePipeline — cancellation", () => {
     const prompt = { promptId: "edge_conflict" };
     await expect(deployOpts.promptUser(prompt)).resolves.toBe("migrate");
     expect(mocks.promptUser).toHaveBeenCalledWith("d1", prompt);
+  });
+
+  it("does not record a mutable tag for retry after its preparation failed", async () => {
+    const ref = "registry.example.test/api:latest";
+    const prepareDeploymentImage = vi.fn<DockerRuntime["prepareDeploymentImage"]>()
+      .mockRejectedValueOnce(new Error("registry unavailable"))
+      .mockResolvedValue({ imageId: `sha256:${"a".repeat(64)}`, deploymentRef: ref });
+    const runtime = Object.assign(Object.create(DockerRuntime.prototype), {
+      name: "docker", supports: () => false, prepareDeploymentImage,
+    }) as DockerRuntime;
+    const imagePreparation = new ComposeImagePreparation(
+      runtime, { trigger: "manual" } as never, new BuildLogger(() => {}),
+    );
+    await expect(imagePreparation.prepare(ref, { retained: false, refresh: true }).promise)
+      .rejects.toThrow("registry unavailable");
+
+    await expect(run({
+      cancelled: false,
+      buildFailures: new Map(),
+      imageRefs: new Map([["svc-api", ref]]),
+      builtImageRefs: new Map(),
+      durationMs: 5,
+      imagePreparation,
+    }, SNAPSHOT, { runtime })).rejects.toBe(REACHED_DEPLOY);
+
+    expect(prepareDeploymentImage).toHaveBeenCalledOnce();
+    expect(repos.deployment.recordCompletedBuildArtifacts).not.toHaveBeenCalled();
   });
 
   it("cleans definitely-unused built artifacts when deployment throws", async () => {

@@ -705,9 +705,8 @@ export async function buildComposeImages(opts: {
             .filter((ref): ref is string => typeof ref === "string" && ref.length > 0 && !ref.startsWith("/"));
           await preparation.prefetch(registryServices.map(service => imageRefs.get(service.id)!), retained, signal);
         } catch (error) {
-          // Cutover revalidates the live cohort and reads these same receipts,
-          // including a failed pull. A missing optional carried artifact must not
-          // fail a build before the deployer decides whether it needs replacement.
+          // Cutover revalidates the live cohort and reads the same receipts,
+          // including failed pulls. A failed speculative lookup may be outside it.
           observeCaughtError(error, "platform/engine/modules/deployments/compose/build.service");
         }
       };

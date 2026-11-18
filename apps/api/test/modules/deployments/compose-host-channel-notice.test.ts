@@ -538,23 +538,52 @@ describe("Compose pulls alongside source builds", () => {
       repoUrl: "https://example.test/source.git", branch: "main", framework: "docker",
       handoverImages: { db: f.apiRef },
     } as Parameters<typeof buildComposeImages>[0]["snapshot"] });
-    expect(result.imagePreparation?.prepared(f.apiRef, { retained: true, refresh: true })?.imageId)
-      .toBe(f.apiId);
+    await expect(result.imagePreparation?.receipt(f.apiRef, { retained: true, refresh: true }))
+      .resolves.toMatchObject({ imageId: f.apiId });
     await f.deploy(result);
     expect(f.pull).toHaveBeenCalledTimes(1);
     expect(Object.fromEntries(f.activate.mock.calls.map(call => [call[1].serviceName, call[1].image])))
       .toEqual({ db: `ghcr.io/acme/api@${f.apiId}`, api: `ghcr.io/acme/api@${f.nextId}`, worker: f.builtId });
   });
 
-  it("only prefetches selected services during a partial deployment", async () => {
+  it("prefetches selected services even when an untargeted service's tag is missing", async () => {
     const f = await mixedImageFixture();
     const targetServiceIds = new Set(["svc-api", "svc-worker"]);
-    f.buildGate.release();
-    const result = await f.build({ targetServiceIds });
-    await f.deploy(result, { targetServiceIds });
-    expect(f.pull).toHaveBeenCalledTimes(1);
-    expect(f.pull.mock.calls[0]![0]).toBe(f.apiRef);
-    expect(new Set(f.activate.mock.calls.map(call => call[1].serviceName))).toEqual(new Set(["api", "worker"]));
+    f.images.delete(f.dbRef);
+    const pending = f.build({ targetServiceIds });
+    try {
+      await expect.poll(() => f.pull.mock.calls.map(([ref]) => ref)).toEqual([f.apiRef]);
+      f.buildGate.release();
+      await f.deploy(await pending, { targetServiceIds });
+      expect(f.pull).toHaveBeenCalledTimes(1);
+      expect(new Set(f.activate.mock.calls.map(call => call[1].serviceName))).toEqual(new Set(["api", "worker"]));
+    } finally {
+      f.buildGate.release();
+      await pending;
+    }
+  });
+
+  it("rejects a missing required pin even if prefetch later fills its tag", async () => {
+    const f = await mixedImageFixture();
+    f.images.delete(f.apiRef);
+    f.pull.mockImplementation(async ref => { f.images.set(ref, f.metadata(ref, f.nextId)); });
+    const pending = f.build({ snapshot: {
+      repoUrl: "https://example.test/source.git", branch: "main", framework: "docker",
+      handoverImages: { db: f.apiRef },
+    } as Parameters<typeof buildComposeImages>[0]["snapshot"] });
+    try {
+      await expect.poll(() => f.pull.mock.calls.map(([ref]) => ref)).toEqual([f.apiRef]);
+      f.buildGate.release();
+      const result = await pending;
+      await expect(result.imagePreparation?.receipt(f.apiRef, { retained: true, refresh: true }))
+        .rejects.toMatchObject({ code: "RETAINED_IMAGE_UNAVAILABLE" });
+      await expect(f.deploy(result)).rejects.toThrow("Retained image");
+      expect(f.activate).not.toHaveBeenCalled();
+      expect(f.runtime.destroy).not.toHaveBeenCalled();
+    } finally {
+      f.buildGate.release();
+      await pending;
+    }
   });
 
   it("retains a failed pull and refuses cutover after the source build finishes", async () => {

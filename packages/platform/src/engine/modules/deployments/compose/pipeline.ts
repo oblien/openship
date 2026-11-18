@@ -396,18 +396,23 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   if (composeBuild.buildFailures.size === 0) {
     try {
       const services = await getCurrentServices();
-      const images = [...composeBuild.imageRefs]
-        .filter(([serviceId]) => !targetServiceIds || targetServiceIds.has(serviceId))
-        .map(([serviceId, imageRef]) => ({
-          serviceId,
-          serviceName: services.find(service => service.id === serviceId)?.name ?? "",
-          // A background refresh may have moved a tag shared with a retained
-          // service. Persist the frozen image, not whatever that tag names now.
-          imageRef: composeBuild.imagePreparation?.prepared(imageRef, {
-            retained: composeBuild.preparedLocalImages?.get(serviceId) === imageRef,
-            refresh: true,
-          })?.imageId ?? imageRef,
-        }));
+      const images = await Promise.all(
+        [...composeBuild.imageRefs]
+          .filter(([serviceId]) => !targetServiceIds || targetServiceIds.has(serviceId))
+          .map(async ([serviceId, imageRef]) => {
+            // A failed preparation has no retry artifact. Inspect the original
+            // ref only when no background preparation ran for this image.
+            const prepared = await composeBuild.imagePreparation?.receipt(imageRef, {
+              retained: composeBuild.preparedLocalImages?.get(serviceId) === imageRef,
+              refresh: true,
+            });
+            return {
+              serviceId,
+              serviceName: services.find(service => service.id === serviceId)?.name ?? "",
+              imageRef: prepared?.imageId ?? imageRef,
+            };
+          }),
+      );
       if (images.every(image => image.serviceName)) await recordDeploymentArtifacts(dep, runtime, images);
     } catch (error) {
       observeCaughtError(error, "platform/engine/modules/deployments/compose/pipeline");
