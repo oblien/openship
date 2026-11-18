@@ -61,13 +61,7 @@ beforeEach(async () => {
   owner = await seedOwner();
   serverId = await seedServer(owner.orgId);
   await db.update(schema.servers).set({ isLocal: true }).where(eq(schema.servers.id, serverId));
-  await repos.serverGithubAuth.upsert({
-    serverId,
-    organizationId: owner.orgId,
-    mode: "token",
-    tokenEncrypted: encrypt(pat),
-    tokenSource: "pat",
-  });
+  await setServerPat(serverId);
   requests = [];
   rejectAccount = false;
   providerStatus = 200;
@@ -182,19 +176,29 @@ const source = {
   branch: "main",
 };
 
+async function setServerPat(id: string, token = pat) {
+  await repos.serverGithubAuth.upsert({
+    serverId: id,
+    organizationId: owner.orgId,
+    mode: "token",
+    tokenEncrypted: encrypt(token),
+    tokenSource: "pat",
+  });
+}
+
+async function addConnectedServerWithPat() {
+  const id = await seedServer(owner.orgId, "connected-deploy");
+  await setServerPat(id);
+  return id;
+}
+
 async function addOtherServerToken() {
   const id = await seedServer(owner.orgId, "other-repository");
   await db
     .update(schema.servers)
     .set({ createdAt: new Date("2000-01-01T00:00:00Z") })
     .where(eq(schema.servers.id, id));
-  await repos.serverGithubAuth.upsert({
-    serverId: id,
-    organizationId: owner.orgId,
-    mode: "token",
-    tokenEncrypted: encrypt("unrelated-repository-pat"),
-    tokenSource: "pat",
-  });
+  await setServerPat(id, "unrelated-repository-pat");
   return id;
 }
 
@@ -373,6 +377,89 @@ describe("server PAT-only preparation through the real authenticated HTTP/SDK fl
       expect.arrayContaining(["apps/web", "apps/api"]),
     );
     expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+  });
+  it("falls back to the connected server when the local row holds no usable GitHub credential (#1814)", async () => {
+    // A self-hosted boot registers the "This Server" row whether or not GitHub
+    // was ever connected on it; the org's PAT lives on the connected server.
+    await repos.serverGithubAuth.deleteByServer(serverId);
+    const connectedId = await addConnectedServerWithPat();
+    // Naming the credential-holding server explicitly resolves it the same way.
+    expect(
+      (await client().deployments.prepare({ ...source, serverId: connectedId })).projectType,
+    ).toBe("monorepo");
+    expect(requests.every((req) => req.token === `Bearer ${pat}`)).toBe(true);
+    requests = [];
+    const scan = await client().deployments.prepare(source);
+    expect(scan.projectType).toBe("monorepo");
+    expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+  });
+  it("reads through the connected server when the local row's only credential is SSH (#1814)", async () => {
+    // Repository REST reads are token-only; a local row holding just SSH
+    // material can clone for deploys but cannot answer an api.github.com read.
+    await repos.serverGithubAuth.upsert({
+      serverId,
+      organizationId: owner.orgId,
+      mode: "ssh-server-key",
+      serverKeyPrivateEncrypted: encrypt("ssh-private-key-material"),
+      serverKeyPublic: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAtest",
+    });
+    await addConnectedServerWithPat();
+    expect((await client().deployments.prepare(source)).projectType).toBe("monorepo");
+    expect(requests.some((req) => req.token === `Bearer ${pat}`)).toBe(true);
+    expect(requests.every((req) => req.token !== "ssh-private-key-material")).toBe(true);
+  });
+  it("requires a selection when a credential-less local row hides several eligible servers (#1814)", async () => {
+    await repos.serverGithubAuth.deleteByServer(serverId);
+    await addOtherServerToken();
+    await addConnectedServerWithPat();
+    await expect(client().deployments.prepare(source)).rejects.toMatchObject({
+      status: 409,
+      body: { code: "GITHUB_SERVER_SELECTION_REQUIRED" },
+    });
+    expect(requests.every((request) => request.token === null)).toBe(true);
+  });
+  it("still reports GITHUB_TOKEN_REQUIRED when the credential-less local row is the only server (#1814)", async () => {
+    await repos.serverGithubAuth.deleteByServer(serverId);
+    await expect(client().deployments.prepare(source)).rejects.toMatchObject({
+      status: 403,
+      body: { code: "GITHUB_TOKEN_REQUIRED" },
+    });
+    expect(requests.every((req) => req.token !== `Bearer ${pat}`)).toBe(true);
+  });
+  it("uses the sole writable connected server when the local PAT is out of scope", async () => {
+    await setServerPat(serverId, "local-server-pat");
+    const connectedId = await addConnectedServerWithPat();
+    const member = await repos.member.find(owner.orgId, owner.userId);
+    await db
+      .update(schema.member)
+      .set({ role: "restricted" })
+      .where(eq(schema.member.id, member!.id));
+    await db.insert(schema.resourceGrant).values(
+      [
+        {
+          resourceType: "github_repository",
+          resourceId: "acme/private-workspace",
+          permissionsJson: '["read"]',
+        },
+        { resourceType: "server", resourceId: connectedId, permissionsJson: '["write"]' },
+        { resourceType: "deployment", resourceId: "*", permissionsJson: '["read", "write"]' },
+      ].map((grant) => ({
+        ...grant,
+        id: crypto.randomUUID(),
+        organizationId: owner.orgId,
+        userId: owner.userId,
+      })),
+    );
+
+    await expect(client().deployments.prepare({ ...source, serverId })).rejects.toMatchObject({
+      status: 403,
+      body: { code: "GITHUB_TOKEN_REQUIRED" },
+    });
+    expect(requests.every((request) => request.token === null)).toBe(true);
+    requests = [];
+    expect((await client().deployments.prepare(source)).projectType).toBe("monorepo");
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((request) => request.token === `Bearer ${pat}`)).toBe(true);
   });
   it("requires a selection before trying ambiguous server tokens, then scans with the selected server", async () => {
     await db.update(schema.servers).set({ isLocal: false }).where(eq(schema.servers.id, serverId));
