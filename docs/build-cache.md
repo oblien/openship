@@ -187,11 +187,12 @@ continues to remove expired managed images separately.
 
 ## Automatic rollback artifacts
 
-A project without an explicit rollback count uses **Automatic** retention. The
-instance default (initially five past releases) is a ceiling. On Docker hosts,
-existing retention reconciliation also reclaims eligible historical artifacts
-when Docker’s filesystem has less than 20% available space. This is shared free
-space on the actual host or Cloud space, not a separate allowance per project.
+A project without an explicit rollback count uses **Automatic** retention.
+OpenShip Cloud and new installations keep up to two past releases by default,
+in addition to the active release and any pinned releases. Self-hosted instances
+can set their own default. On Docker hosts, retention cleanup also reclaims
+eligible historical artifacts when Docker’s filesystem has less than 20%
+available space. This is shared free space on the actual host or Cloud space.
 
 The existing deployment-admission/retention lock covers selection and removal.
 Cleanup defers while deployments or role handovers are unsettled. It considers
