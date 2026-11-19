@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-  project: { id: "p1", organizationId: "org1", activeDeploymentId: "d1" as string | null },
+  project: { id: "p1", organizationId: "org1", workspaceId: "workspace-one", activeDeploymentId: "d1" as string | null },
   sources: [] as Array<{ kind: string; domain: string; serverId?: string }>,
   rows: [] as Array<{
     domain: string;
@@ -19,6 +19,10 @@ const h = vi.hoisted(() => ({
   query: vi.fn(),
   scrape: vi.fn(async () => {}),
   cloud: vi.fn(),
+  namespaceAnalytics: vi.fn(),
+  linked: vi.fn(),
+  cloudClient: vi.fn(),
+  env: { CLOUD_MODE: true },
 }));
 
 vi.mock("@repo/db", () => ({ repos: {
@@ -33,8 +37,10 @@ vi.mock("@repo/platform/engine/lib/edge-management", () => ({
   fetchMgmt: h.readLive,
 }));
 vi.mock("@repo/platform/engine/modules/system/analytics-scraper", () => ({ scrapeServerIfStale: h.scrape }));
-vi.mock("@repo/platform/engine/lib/oblien-user-client", () => ({ getAdminOblienClient: () => ({ analytics: { timeseries: h.cloud } }) }));
-vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: () => ({ analytics: { timeseries: h.cloud } }) }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: h.env }));
+vi.mock("@repo/platform/engine/modules/cloud/cloud-analytics.service", () => ({ getNamespaceAnalytics: h.namespaceAnalytics }));
+vi.mock("@repo/platform/engine/lib/cloud/server-link", () => ({ requireLinkedCloudServer: h.linked }));
+vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ cloudClient: h.cloudClient }));
 
 const { getAnalyticsOverview } = await import("@repo/platform/engine/modules/analytics/analytics.service");
 const ctx = { organizationId: "org1" } as never;
@@ -43,7 +49,7 @@ const minute = Math.floor(now / 60_000);
 const row = (offset: number, requests: number, domain = "web.example.com") => ({ domain, minute: minute + offset, requests });
 
 beforeEach(() => {
-  h.project = { id: "p1", organizationId: "org1", activeDeploymentId: "d1" };
+  h.project = { id: "p1", organizationId: "org1", workspaceId: "workspace-one", activeDeploymentId: "d1" };
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(now);
   h.sources = [
@@ -53,7 +59,11 @@ beforeEach(() => {
   h.rows = [];
   h.live = [];
   h.scrape.mockClear();
+  h.env.CLOUD_MODE = true;
   h.cloud.mockReset();
+  h.namespaceAnalytics.mockReset().mockResolvedValue({ timeseries: h.cloud });
+  h.linked.mockReset();
+  h.cloudClient.mockReset().mockReturnValue({ analytics: { timeseries: h.cloud } });
   h.query
     .mockReset()
     .mockImplementation(async ({ domain, fromMinute, toMinute }) =>
@@ -99,12 +109,14 @@ describe("project traffic snapshot", () => {
     const pending = await getAnalyticsOverview(ctx, "p1");
     expect(pending.summary.lastUpdated).toBeNull();
     expect(pending.periods).toEqual([]);
+    expect(h.namespaceAnalytics).not.toHaveBeenCalled();
     expect(h.cloud).not.toHaveBeenCalled();
     expect(h.query).not.toHaveBeenCalled();
 
     h.project.activeDeploymentId = "first-published";
     h.cloud.mockResolvedValue({ data: [] });
-    await getAnalyticsOverview(ctx, "p1");
+    const empty = await getAnalyticsOverview(ctx, "p1");
+    expect(empty.summary.uniqueVisitors).toBeNull();
     expect(h.cloud).toHaveBeenCalledOnce();
   });
 
@@ -141,6 +153,7 @@ describe("project traffic snapshot", () => {
     h.rows = [{ ...row(-90, 1), responseTimeSeconds: 1 }];
     h.live = [{ ...row(-1, 99, "api.example.com"), responseTimeSeconds: 9.9 }];
     const result = await getAnalyticsOverview(ctx, "p1");
+    expect(result.summary.uniqueVisitors).toBeNull();
     expect(result.summary.avgResponseTimeMs).toBeCloseTo(109);
     expect(
       result.periods
@@ -160,13 +173,33 @@ describe("project traffic snapshot", () => {
           response_time_sum: domain === "web.example.com" ? 1 : 9.9,
           bandwidth_in: 0,
           bandwidth_out: 0,
-          unique_visitors: 1,
         },
       ],
     }));
     const result = await getAnalyticsOverview(ctx, "p1");
+    expect(h.namespaceAnalytics).toHaveBeenCalledExactlyOnceWith("org1", "workspace-one");
+    expect(h.cloudClient).not.toHaveBeenCalled();
+    expect(result.summary.uniqueVisitors).toBeNull();
     expect(result.summary.avgResponseTimeMs).toBeCloseTo(109);
     expect(result.periods.at(-1)?.avgResponseTimeMs).toBeCloseTo(109);
+  });
+
+  it("reads linked Cloud counters using the project's verified remote server identity", async () => {
+    h.env.CLOUD_MODE = false;
+    h.sources = [{ kind: "cloud", domain: "linked.example.com" }];
+    const remote = { organizationId: "remote-org", userId: "owner", apiUrl: "https://cloud.example.com", serverId: "server-two" };
+    h.linked.mockResolvedValue({ remote });
+    h.cloud.mockResolvedValue({ data: { data: [] } });
+    await getAnalyticsOverview(ctx, "p1");
+    expect(h.linked).toHaveBeenCalledExactlyOnceWith("org1", "workspace-one");
+    expect(h.cloudClient).toHaveBeenCalledExactlyOnceWith({ organizationId: "org1" }, remote);
+    expect(h.cloud).toHaveBeenCalledExactlyOnceWith("linked.example.com", expect.objectContaining({ interval: "hour" }), "server-two");
+    expect(h.namespaceAnalytics).not.toHaveBeenCalled();
+
+    h.cloud.mockClear();
+    h.linked.mockRejectedValue(new Error("Identity changed"));
+    await expect(getAnalyticsOverview(ctx, "p1")).rejects.toMatchObject({ statusCode: 502 });
+    expect(h.cloud).not.toHaveBeenCalled();
   });
 
   it("includes retained history before the latest DB row and all project domains", async () => {

@@ -21,6 +21,7 @@ import {
   DnsRecordConflictError,
   OPENSHIP_RECORD_COMMENT,
   isOpenshipManaged,
+  selectDnsRecord,
 } from "../types";
 import { quotedDnsTxt } from "../../../lib/dns-txt";
 // The walk is most-specific-first so a Cloudflare subdomain zone wins over its parent.
@@ -182,16 +183,9 @@ export const cloudflareDnsProvider: DnsProvider = {
 
     const existing = await this.listRecords(credentials, zoneId, { name, type: input.type });
 
-    // More than one record at this name+type is a SET the operator maintains
-    // (round-robin origins, multiple MX). Rewriting one member leaves the
-    // hostname answering with a mix of their origin and ours — worse than not
-    // acting. Ours-if-present, otherwise refuse and say so.
-    const target =
-      existing.length > 1 ? existing.find(isOpenshipManaged) : existing[0];
-
-    if (existing.length > 1 && !target) {
-      throw new DnsRecordConflictError(name, input.type, existing.length);
-    }
+    const { target, conflict } = selectDnsRecord(existing, content, input.append === true);
+    if (conflict) throw new DnsRecordConflictError(name, input.type, existing.length);
+    if (target && input.append) return target;
 
     if (target) {
       // Preserve what we don't manage. Cloudflare proxying in particular is the

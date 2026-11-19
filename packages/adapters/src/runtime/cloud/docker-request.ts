@@ -54,7 +54,7 @@ export async function recoverCloudDockerRequest(runtime: Runtime, command: Manag
 export async function openCloudDockerStream(runtime: Runtime, workspaceId: string) {
   const tracking = currentManagedCommandTracking();
   if (!tracking)
-    return dockerWebSocketStream(runtime.proxy(CLOUD_DOCKER_BRIDGE_PORT).ws("/docker"));
+    return dockerWebSocketStream(await runtime.proxy(CLOUD_DOCKER_BRIDGE_PORT).ws("/docker"));
 
   const id = randomUUID();
   const command: ManagedCommandRef = { workspaceId, marker: `openship-exec-${id}:`, kind: "docker" };
@@ -71,7 +71,7 @@ export async function openCloudDockerStream(runtime: Runtime, workspaceId: strin
 
   try {
     const stream = await dockerWebSocketStream(
-      runtime.proxy(CLOUD_DOCKER_BRIDGE_PORT).ws(`/docker/${id}`),
+      await runtime.proxy(CLOUD_DOCKER_BRIDGE_PORT).ws(`/docker/${id}`),
       () => { void finish(true); },
     );
     stream.once("close", () => { void finish(false); });

@@ -113,6 +113,7 @@ export const MonitoringTab = () => {
   // module-level caches shared with OverviewTab, so both tabs make one request each.
   // Hooks always run — calling them conditionally would break the hook order. The
   // mock swaps their RESULTS, and passes `null` id so no request is made.
+  const detailedTraffic = Boolean(mock) || projectData.deployTarget !== "cloud";
   const liveId = mock ? null : id;
   const trafficId = projectData.id === id && projectData.activeDeploymentId ? liveId : null;
   const {
@@ -126,7 +127,7 @@ export const MonitoringTab = () => {
     isLoading: isLoadingGeo,
     error: geoError,
     isRefreshing: isRefreshingGeo,
-  } = useAnalyticsGeo(trafficId, domainScope);
+  } = useAnalyticsGeo(detailedTraffic ? trafficId : null, domainScope);
   const {
     usage: liveUsage,
     isConnected,
@@ -172,7 +173,7 @@ export const MonitoringTab = () => {
     // Never while a fixture is driving the page: the preview must not open a socket, and
     // real ripples over mock aggregates would be two different projects on one map. The
     // preview gets simulated hits instead — see below.
-    enabled: liveOn && !mock,
+    enabled: detailedTraffic && liveOn && !mock,
     onEntry: (e) => hits.push({ country: e.country, path: e.path, statusCode: e.statusCode }),
     onStatus: (st) =>
       setLiveStatus(st.state === "open" || st.state === "idle" ? null : st.state),
@@ -339,6 +340,7 @@ export const MonitoringTab = () => {
 
   return (
     <MonitoringView
+      detailedTraffic={detailedTraffic}
       analytics={analytics}
       isLoadingAnalytics={fixture ? false : isLoadingAnalytics}
       geo={geo}

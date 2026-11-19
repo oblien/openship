@@ -193,8 +193,12 @@ describe("billing through the same SDK and HTTP application operations", () => {
     // Exercise the actual SDK/validator before the shared application operation;
     // a mock entitlement alone missed the provider's newly included transfer.
     const billing = new OblienBillingApi({ clientId: "test-id", clientSecret: "test-secret",
-      fetch: (async url => Response.json(providerBillingFixture(new URL(String(url)).pathname === "/v1/billing/balance"
-        ? monthly.balance : monthly.entitlement))) as typeof fetch });
+      fetch: (async url => {
+        const { pathname } = new URL(String(url));
+        if (pathname === "/v2/billing/balance") return Response.json(providerBillingFixture(monthly.balance));
+        if (pathname === "/v2/billing/entitlement") return Response.json(providerBillingFixture(monthly.entitlement));
+        throw new Error(`Unexpected billing path ${pathname}`);
+      }) as typeof fetch });
     provider.subscriptions.set(selected.namespace!, monthly.subscription);
     provider.entitlement.mockImplementation(async namespace => namespace === selected.namespace
       ? billing.getEntitlement(namespace) : { success: true, namespace, tierId: null, status: "credit_exhausted",

@@ -21,11 +21,13 @@ import {
   DnsApiError,
   DnsProviderNotReadyError,
   isOpenshipManaged,
+  selectDnsRecord,
   type DnsProvider,
   type DnsProviderName,
   type DnsRecordInput,
   type DnsZone,
 } from "./types";
+import { normalizeName } from "./names";
 
 export interface SanitizedDnsCredential {
   id: string;
@@ -324,22 +326,20 @@ export interface DnsPlanResult {
 async function classifyRecord(
   provider: DnsProvider,
   credentials: { apiToken: string },
-  zoneId: string,
+  zone: DnsZone,
   desired: DnsRecordInput,
 ): Promise<{ action: RecordPlanAction; current?: string }> {
-  const existing = await provider.listRecords(credentials, zoneId, {
+  if (desired.append && !normalizeName(desired.name).endsWith(`.${normalizeName(zone.name)}`)) {
+    return { action: "conflict", current: "Outside the connected DNS zone" };
+  }
+  const existing = await provider.listRecords(credentials, zone.id, {
     name: desired.name,
     type: desired.type,
   });
-  // Mirrors the provider's upsert decision: >1 records none of which are ours is
-  // a set the operator maintains; a single foreign record is adopted (repointed);
-  // ours is updated in place.
-  const target = existing.length > 1 ? existing.find(isOpenshipManaged) : existing[0];
-  if (existing.length > 1 && !target) {
-    return { action: "conflict", current: `${existing.length} existing records` };
-  }
-  if (!target) return { action: "create" };
   const content = provider.formatContent?.(desired.type, desired.content) ?? desired.content;
+  const { target, conflict } = selectDnsRecord(existing, content, desired.append === true);
+  if (conflict) return { action: "conflict", current: `${existing.length} existing records` };
+  if (!target) return { action: "create" };
   if (target.content === content) return { action: "in-sync", current: target.content };
   return { action: isOpenshipManaged(target) ? "update" : "adopt", current: target.content };
 }
@@ -383,7 +383,7 @@ export async function planRecords(
   const records: DnsRecordPlan[] = [];
   for (const input of provisionable) {
     try {
-      const { action, current } = await classifyRecord(provider, credentials, zone.id, input);
+      const { action, current } = await classifyRecord(provider, credentials, zone, input);
       records.push({
         name: input.name,
         type: input.type,
@@ -455,7 +455,7 @@ export async function provisionRecords(
     }
 
     try {
-      const { action } = await classifyRecord(provider, credentials, zone.id, input);
+      const { action, current } = await classifyRecord(provider, credentials, zone, input);
       if (action === "in-sync") {
         records.push({ name: input.name, type: input.type, outcome: "skipped", action });
         continue;
@@ -466,8 +466,9 @@ export async function provisionRecords(
           type: input.type,
           outcome: "failed",
           action,
-          error:
-            "Existing records here are not managed by Openship — remove or consolidate them first.",
+          error: input.append
+            ? `Add this TXT record in the provider that hosts ${input.name}. ${current ?? ""}`.trim()
+            : "Existing records here are not managed by Openship — remove or consolidate them first.",
         });
         continue;
       }

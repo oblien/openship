@@ -6,6 +6,8 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { OverviewTab } from "./OverviewTab";
 
 const h = vi.hoisted(() => ({
+  domain: "",
+  loadingTraffic: false,
   project: {} as Record<string, unknown>,
   services: [] as Array<Record<string, unknown>>,
 }));
@@ -17,13 +19,13 @@ vi.mock("@/context/ProjectSettingsContext", () => ({
     setActiveTab: vi.fn(),
     servicesData: { isLoading: false, services: h.services },
     selectedDomain: "",
-    domain: "",
+    domain: h.domain,
     domainsData: { domains: [] },
   }),
 }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({
   useProjectInfo: () => ({ isLoading: false }),
-  useAnalyticsData: () => ({ data: null, isLoadingSummary: false, isLoadingPeriods: false }),
+  useAnalyticsData: () => ({ data: null, isLoadingSummary: h.loadingTraffic, isLoadingPeriods: h.loadingTraffic }),
 }));
 vi.mock("@/hooks/useLocalhostForward", () => ({
   useLocalhostForward: () => ({ canForward: false }),
@@ -72,6 +74,8 @@ beforeEach(() => {
     deployTarget: "server",
     serverId: "server-one",
   };
+  h.domain = "";
+  h.loadingTraffic = false;
   h.services = services(11);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -119,5 +123,21 @@ describe("overview mode label for Compose stacks", () => {
     await render();
     expect(container.textContent).toContain("Static Site");
     expect(container.textContent).not.toContain("Compose stack");
+  });
+});
+
+describe("overview traffic metrics", () => {
+  it.each([true, false])("shows only available Cloud metrics (loading=%s)", async (loading) => {
+    h.domain = "app.example.com";
+    h.project.activeDeploymentId = "deployment-one";
+    h.loadingTraffic = loading;
+    h.project.deployTarget = "cloud";
+    await render();
+    expect(container.textContent).toContain("Server Requests");
+    expect(container.textContent).not.toContain("Unique IPs");
+
+    h.project.deployTarget = "server";
+    await render();
+    expect(container.textContent).toContain("Unique IPs");
   });
 });

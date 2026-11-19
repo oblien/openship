@@ -12,7 +12,7 @@ import { trackBackgroundWork } from "../../lib/background-work";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { resolveProjectTrafficSources } from "../../lib/project-analytics";
 import { fetchMgmt } from "../../lib/edge-management";
-import { getAdminOblienClient } from "../../lib/oblien-user-client";
+import { env } from "../../config/env";
 import { sshManager } from "../../lib/ssh-manager";
 import { scrapeServerIfStale } from "../system/analytics-scraper";
 import { pushProjectAnalyticsConfig } from "./analytics-config.service";
@@ -27,7 +27,7 @@ async function analyticsRead(ctx: ExecutionContext) {
 }
 async function trafficRead(ctx: ExecutionContext, id: string) {
   await analyticsRead(ctx);
-  if (!getAdminOblienClient() && (await resolveProjectTrafficSources(id)).some(source => source.kind === "cloud"))
+  if (!env.CLOUD_MODE && (await resolveProjectTrafficSources(id)).some(source => source.kind === "cloud"))
     assertCloudProxyScope(ctx);
 }
 function minute(value: string | undefined, fallback: number): number {

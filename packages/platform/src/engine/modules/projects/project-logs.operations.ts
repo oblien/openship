@@ -1,4 +1,4 @@
-import { observedAllSettled, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { assertCloudProxyScope } from "../../lib/cloud/scope";
 import { repos } from "@repo/db";
 import { AppError, safeErrorMessage } from "@repo/core";
@@ -9,8 +9,6 @@ import type { ProjectDependencies } from "../../../projects";
 import type { ResourceServices } from "../../../resource-operations";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { env } from "../../config/index";
-import { getAdminOblienClient } from "../../lib/oblien-user-client";
-import { cloudClient } from "../../lib/cloud/client";
 import { getOpenRestyPaths } from "../../lib/openresty-paths";
 import { sshManager } from "../../lib/ssh-manager";
 import { resolveProjectTrafficSource, resolveProjectTrafficSources, type ProjectTrafficSource } from "../../lib/project-analytics";
@@ -34,42 +32,6 @@ async function assertTrafficAccess(ctx: ExecutionContext, sources: ProjectTraffi
   }
 }
 
-function extractCloudStreamToken(result: unknown): { stream_url: string; token: string } | null {
-  // The payload nesting DIFFERS by path:
-  //   • admin-direct (Oblien SDK):  { success, data: { stream_url, token, … } }  ← 1 level
-  //   • cloud-proxied (SaaS wraps the SDK response again): { data: { success, data: { stream_url, token } } }  ← 2 levels
-  // So walk down through nested `data`/`result` wrappers until we hit the object
-  // that actually carries stream_url + token, instead of assuming a fixed depth.
-  let node: unknown = result;
-  for (let depth = 0; depth < 4 && node && typeof node === "object"; depth++) {
-    const obj = node as Record<string, unknown>;
-    const streamUrl = obj.stream_url ?? obj.streamUrl ?? obj.url ?? obj.sse_url ?? obj.endpoint;
-    const token = obj.token ?? obj.stream_token ?? obj.streamToken ?? obj.access_token ?? obj.jwt;
-    if (typeof streamUrl === "string" && typeof token === "string") {
-      return { stream_url: streamUrl, token };
-    }
-    node = obj.data ?? obj.result;
-  }
-  return null;
-}
-
-function extractCloudRequestLogs(result: unknown): unknown[] {
-  // Same nesting problem as the stream token: the request array can sit at
-  // result.data (admin-direct) or result.data.data (cloud-proxied). Walk down
-  // nested `data`/`result` wrappers and return the first array found at a known
-  // key or as a bare `data` array.
-  let node: unknown = result;
-  for (let depth = 0; depth < 4 && node && typeof node === "object"; depth++) {
-    const obj = node as Record<string, unknown>;
-    for (const key of ["requests", "logs", "items", "rows"]) {
-      if (Array.isArray(obj[key])) return obj[key] as unknown[];
-    }
-    if (Array.isArray(obj.data)) return obj.data as unknown[];
-    node = obj.data ?? obj.result;
-  }
-  return Array.isArray(result) ? (result as unknown[]) : [];
-}
-
 async function serverLogStreamToken(ctx: ExecutionContext, id: string, input?: ServerLogsInput) {
   const { organizationId } = ctx;
   const project = await repos.project.findById(id);
@@ -82,40 +44,7 @@ async function serverLogStreamToken(ctx: ExecutionContext, id: string, input?: S
 
   await assertTrafficAccess(ctx, [source]);
 
-  if (source.kind === "cloud") {
-    const client = getAdminOblienClient();
-    let tokenResult: unknown = null;
-
-    try {
-      tokenResult = client
-        ? await client.analytics.streamToken(source.domain)
-        : await cloudClient({ organizationId }).analytics.streamToken(source.domain);
-    } catch (err) {
-      // Token mint failed. This is a CLOUD project — do NOT claim "self-hosted"
-      // (that sends the client to /server-logs/stream, which 400s for cloud).
-      // Report "unavailable" so the client shows recent logs without erroring.
-      errorDiagnostics.warn("platform/engine/modules/projects/project-logs.operations",
-        `[server-logs] cloud stream-token mint failed for ${source.domain}: ${safeErrorMessage(err)}`, err,
-      );
-      return { kind: "unavailable" as const };
-    }
-
-    const tokenData = extractCloudStreamToken(tokenResult);
-    if (!tokenData) {
-      // 200 but unparseable shape. Surface the KEYS (never the token value) so a
-      // SaaS response-shape change is diagnosable instead of silently degrading.
-      const rt = (tokenResult ?? {}) as Record<string, unknown>;
-      const inner = (rt.data ?? rt.result ?? rt) as Record<string, unknown> | null;
-      errorDiagnostics.warn("platform/engine/modules/projects/project-logs.operations",
-        `[server-logs] cloud stream-token unparseable for ${source.domain}; ` +
-          `top keys=[${Object.keys(rt).join(",")}] ` +
-          `inner keys=[${inner && typeof inner === "object" ? Object.keys(inner).join(",") : ""}]`,
-      );
-      return { kind: "unavailable" as const };
-    }
-    return { kind: "cloud" as const, url: tokenData.stream_url, token: tokenData.token };
-  }
-
+  if (source.kind === "cloud") return { kind: "unavailable" as const };
   return { kind: "self-hosted" as const };
 }
 
@@ -163,21 +92,6 @@ async function recentServerLogs(ctx: ExecutionContext, id: string, input?: Serve
   };
 
   const collected: unknown[][] = [];
-
-  const cloudSources = sources.filter((s) => s.kind === "cloud");
-  if (cloudSources.length) {
-    const client = getAdminOblienClient();
-    // Settle per-domain: one domain's upstream failure must not blank the others'.
-    const settled = await observedAllSettled(
-      cloudSources.map(async (s) => {
-        const result = client
-          ? await client.analytics.requests(s.domain, { limit })
-          : await cloudClient({ organizationId }).analytics.requests(s.domain, { limit });
-        return tagHost(extractCloudRequestLogs(result), s.domain);
-      }), "platform/engine/modules/projects/project-logs.operations",
-    );
-    for (const r of settled) if (r.status === "fulfilled") collected.push(r.value);
-  }
 
   const selfHostedSources = sources.filter((s) => s.kind === "self-hosted");
   if (selfHostedSources.length) {
@@ -229,7 +143,7 @@ export const openProjectServerLogs: NonNullable<ProjectDependencies["openServerL
   assertResourceInOrg(project, "Project", ctx.organizationId, id);
   const source = await resolveProjectTrafficSource(id, input);
   if (!source || source.kind !== "self-hosted")
-    throw new OperationError("Use stream-token endpoint for cloud projects", 400, "SERVER_LOG_STREAM_UNAVAILABLE");
+    throw new OperationError("HTTP request log streaming is unavailable for this traffic source", 400, "SERVER_LOG_STREAM_UNAVAILABLE");
   await assertTrafficAccess(ctx, [source]);
   const { domain, serverId } = source;
   const { signal } = options;

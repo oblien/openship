@@ -278,29 +278,16 @@ export function cloudClient(scope: CloudClientScope, expectedIdentity?: CloudIde
     },
 
     analytics: {
-      async timeseries<T>(domain: string, params?: Record<string, unknown>) {
+      async timeseries<T>(domain: string, params?: Record<string, unknown>, serverId?: string) {
         const res = await fetchScoped("/api/cloud/analytics", {
           method: "POST",
-          body: JSON.stringify({ operation: "timeseries", domain, params }),
+          body: JSON.stringify({ operation: "timeseries", domain, params, serverId }),
         });
-        if (!res?.ok) return null;
-        return readCloudJson<T>(res);
-      },
-      async requests<T>(domain: string, params?: Record<string, unknown>) {
-        const res = await fetchScoped("/api/cloud/analytics", {
-          method: "POST",
-          body: JSON.stringify({ operation: "requests", domain, params }),
-        });
-        if (!res?.ok) return null;
-        return readCloudJson<T>(res);
-      },
-      async streamToken<T>(domain: string, params?: Record<string, unknown>) {
-        const res = await fetchScoped("/api/cloud/analytics", {
-          method: "POST",
-          body: JSON.stringify({ operation: "streamToken", domain, params }),
-        });
-        if (!res?.ok) return null;
-        return readCloudJson<T>(res);
+        if (!res) throw new Error("Cloud connection unavailable");
+        if (!res.ok) throw await cloudRequestError(res, "Cloud traffic metrics");
+        const result = await readCloudJson<T>(res);
+        if (!result) throw new Error("Invalid Cloud traffic metrics response");
+        return result;
       },
     },
 

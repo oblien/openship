@@ -142,9 +142,10 @@ POST /api/cloud/analytics
 
 <TypeTable
   type={{
-    operation: { type: '"timeseries" | "requests" | "streamToken"', description: 'Which analytics read to perform.', required: true },
+    operation: { type: '"timeseries"', description: 'Read aggregate traffic counters for the requested time range.', required: true },
     domain: { type: 'string', description: 'The hostname to read analytics for (must be in the caller\'s namespace).', required: true },
-    params: { type: 'Record<string, unknown>', description: 'Operation-specific query parameters passed through to Oblien.' },
+    serverId: { type: 'string', description: 'Managed server linked to the project. Older clients can omit this when the hostname or a single server identifies the namespace.' },
+    params: { type: 'Record<string, unknown>', description: 'Optional from and to timestamps in milliseconds and a minute, hour, or day interval.' },
   }}
 />
 

@@ -15,10 +15,15 @@ const domainRepo = vi.hoisted(() => ({
 const infra = vi.hoisted(() => ({
   target: "local" as "local" | "cloud",
   verifyDomain: vi.fn(),
+  verifyManagedDomain: vi.fn(),
 }));
 
 const projectRepo = vi.hoisted(() => ({
   findById: vi.fn(),
+}));
+
+vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
+  getNamespaceClient: vi.fn(async () => ({ client: { domain: { verify: infra.verifyManagedDomain } } })),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -95,6 +100,13 @@ describe("addDomain retries", () => {
   beforeEach(() => {
     infra.target = "local";
     infra.verifyDomain.mockResolvedValue({ requiredRecords: { cname: { target: "edge.test" } } });
+    infra.verifyManagedDomain.mockImplementation(async ({ domain }: { domain: string }) => ({
+      verified: false, cname: false, ownership: false,
+      required_records: {
+        cname: { host: domain, target: "edge.test" },
+        txt: { host: "_opsh.example.com", value: "verify=workspace" },
+      },
+    }));
     domainRepo.create.mockReset();
     domainRepo.findByHostname.mockReset();
     domainRepo.setPrimary.mockReset();
@@ -120,7 +132,7 @@ describe("addDomain retries", () => {
     expect(result.records.records).toContainEqual(expect.objectContaining({ type: "CNAME", value: "edge.test" }));
   });
 
-  it("creates and reports a Cloud www sibling with its own verification records", async () => {
+  it("creates a Cloud www sibling and shows routing for both with a shared proof", async () => {
     infra.target = "cloud";
     projectRepo.findById.mockResolvedValue({ ...project, workspaceId: "cloud-server" });
     domainRepo.findByHostname.mockResolvedValue(null);
@@ -130,7 +142,9 @@ describe("addDomain retries", () => {
     expect(result.www).toEqual({ id: "dom_www.example.com", hostname: "www.example.com" });
     expect(domainRepo.create).toHaveBeenCalledWith(expect.objectContaining({ hostname: "www.example.com", redirectTo: "example.com", redirectStatus: 301, verified: false }));
     expect(result.records.mode).toBe("cloud");
-    expect(result.records.records.filter(record => record.type === "TXT").map(record => record.name)).toEqual(["_openship-challenge.example.com", "_openship-challenge.www.example.com"]);
+    expect(result.records.records.map(record => record.name)).toEqual([
+      "example.com", "_opsh.example.com", "www.example.com",
+    ]);
   });
 
   it.each([
