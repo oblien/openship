@@ -969,6 +969,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/projects/:id/cluster/databases/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/projects/:id/cluster/volumes/stream` | SSE transport for live volume status. Use the JSON list tool over MCP. |
 | `POST /api/projects/:id/deployment-session` | Browser deployment-session handoff. MCP starts deployments through /api/deployments/build/access. |
+| `POST /api/projects/:id/env-reveal` | Explicit dashboard secret reveal. MCP reads masked project environment and saves named merges without retrieving plaintext. |
 | `GET /api/projects/:id/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/projects/:id/resources` | Compatibility alias; use PATCH /api/projects/:id/resources. |
 | `POST /api/projects/:id/routing/ensure-edge/respond` | Response to the browser’s ensure-edge SSE session. Use routing/retry and the project pending-actions tool for routing repair; interactive edge setup and proxy takeover remain in the dashboard. |
