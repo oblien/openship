@@ -154,6 +154,40 @@ describe("managed ingress durable lifecycle", () => {
     });
     expect((await ingress.due()).some(({ host: h }) => h.id === host.id)).toBe(true);
   });
+  it("gives a retryable conflict while a detached Tunnel hostname is awaiting cleanup", async () => {
+    const input = { projectId: "project", hostname: "readd.example.test", domainType: "custom" } as const;
+    const original = await domains.create(input);
+    const host = (await ingress.forDomain(original.id))!;
+    await ingress.updateHost(host.id, {
+      status: "removing",
+      ownership: { dnsId: "old-dns", appId: "old-access" },
+      nextAttemptAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    await domains.remove(original.id);
+
+    await expect(domains.create(input)).rejects.toMatchObject({
+      statusCode: 409, message: expect.stringContaining("wait for cleanup"),
+    });
+    expect(await domains.findByHostname(input.hostname)).toBeUndefined();
+    expect(await ingress.host(host.id)).toMatchObject({
+      domainId: null, ownership: { dnsId: "old-dns", appId: "old-access" },
+    });
+    expect((await ingress.due()).some(({ host: queued }) => queued.id === host.id)).toBe(false);
+
+    expect(await ingress.requestConnectionRetry("other", "connection")).toBeUndefined();
+    const activeBefore = await ingress.hosts("connection");
+    await ingress.requestConnectionRetry("org", "connection");
+    expect((await ingress.due()).some(({ host: queued }) => queued.id === host.id)).toBe(true);
+    expect((await ingress.hosts("connection")).filter((row) => row.domainId)).toEqual(
+      activeBefore.filter((row) => row.domainId),
+    );
+
+    await ingress.removeHost(host.id); // Reconciler confirmed provider cleanup.
+    const replacement = await domains.create(input);
+    expect((await ingress.forDomain(replacement.id))?.accessPolicyId).toBe("policy");
+    await ingress.update("connection", { status: "ready" });
+  });
+
   it("keeps the credential and server while provider cleanup needs them", async () => {
     await expect(
       connection.db.delete(s.credential).where(eq(s.credential.id, "credential")),

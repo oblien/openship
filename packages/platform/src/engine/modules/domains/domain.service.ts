@@ -31,6 +31,8 @@ import {
   DOMAIN_VERIFY_GRACE_MS,
 } from "@repo/core";
 import { assertResourceInOrg } from "../../lib/resource-access";
+import { authorization } from "../../lib/authorization";
+import { requireOrganizationAdmin } from "../../lib/organization-authorization";
 import { platform } from "../../lib/platform-config";
 import { buildBackgroundContext } from "../../lib/background-context";
 import { trackBackgroundWork } from "../../lib/background-work";
@@ -46,7 +48,7 @@ import {
 import { getRoutingBaseDomain, resolveServiceRouteEndpoints } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
 import { checkCloudDomainDns } from "../../lib/cloud-domain-dns";
-import { cloudBillingOwner, workspaceForServer } from "../../lib/cloud-workspace-scope";
+import { cloudBillingOwner, requireCloudWorkspace, workspaceForServer } from "../../lib/cloud-workspace-scope";
 import { getNamespaceClient } from "../../lib/openship-cloud";
 import {
   resolveProjectServerHost,
@@ -602,6 +604,14 @@ export async function applyDomainDns(
   targetServerId?: string,
 ): Promise<DnsProvisionResult> {
   const { hostname, inputs } = await desiredDnsInputs(ctx, domainId, targetServerId);
+  if (inputs.some((record) => record.append)) {
+    // This proof can cover sibling hostnames. Use the same authority as
+    // management of the organization's connected DNS credentials.
+    await authorization.authorize({ ...ctx, scopeMode: "fixed" }, {
+      resourceType: "settings", resourceId: "*", action: "admin",
+    });
+    await requireOrganizationAdmin(ctx);
+  }
   return provisionRecords(ctx.organizationId, hostname, inputs);
 }
 
@@ -1092,8 +1102,9 @@ async function checkDomain(
 
   // ── Cloud (Oblien-managed): CNAME via Oblien + ownership TXT ───────────────
   const token = domain.verificationToken ?? generateToken(domain.hostname);
-  const cloudDns = !external && project.workspaceId
-    ? await checkCloudDomainDns((await getNamespaceClient(ctx.organizationId, project.workspaceId)).client, domain.hostname)
+  const workspaceId = external ? null : await managedDnsWorkspaceId(ctx.organizationId, project);
+  const cloudDns = workspaceId
+    ? await checkCloudDomainDns((await getNamespaceClient(ctx.organizationId, workspaceId)).client, domain.hostname)
     : undefined;
   const routeOk = external || (cloudDns?.cname ?? await verifyCname(domain.hostname));
   const txtOk = cloudDns ? cloudDns.ownership === true || cloudDns.verified : await verifyTxt(domain.hostname, token);
@@ -1720,11 +1731,32 @@ export function dnsRecordHosts(hostname: string): {
   };
 }
 
-/** The named server takes precedence for previews before a deployment. */
-async function managedDnsWorkspaceId(organizationId: string, project?: Project, serverId?: string) {
-  if (serverId) return (await workspaceForServer(organizationId, serverId)).workspace?.id;
-  if (project) return project.workspaceId;
-  return (await cloudBillingOwner(organizationId)).workspaceId;
+async function managedDnsWorkspaceId(organizationId: string, project?: Project, serverId?: string): Promise<string | null> {
+  if (serverId) {
+    const workspaceId = (await workspaceForServer(organizationId, serverId)).workspace?.id ?? null;
+    if (project?.workspaceId && workspaceId !== project.workspaceId)
+      throw new AppError("Choose the project's managed server to configure DNS.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+    return workspaceId;
+  }
+  if (project?.workspaceId) return project.workspaceId;
+  if (project?.serverId) return (await workspaceForServer(organizationId, project.serverId)).workspace?.id ?? null;
+
+  if (project) {
+    const release = await findActiveDeployment(project);
+    const target = release?.meta as { serverId?: string; managedWorkspaceId?: string; deployTarget?: string } | null;
+    if (target?.serverId) {
+      const workspaceId = (await workspaceForServer(organizationId, target.serverId)).workspace?.id;
+      if (target.managedWorkspaceId && target.managedWorkspaceId !== workspaceId)
+        throw new AppError("The active deployment's managed server changed. Select a server before configuring DNS.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+      if (workspaceId || target.deployTarget !== "cloud") return workspaceId ?? null;
+    } else if (target?.managedWorkspaceId) {
+      return (await requireCloudWorkspace(organizationId, target.managedWorkspaceId)).id;
+    }
+  } else {
+    const owner = await cloudBillingOwner(organizationId);
+    if (owner.workspaceId) return owner.workspaceId;
+  }
+  throw new AppError("Choose a managed server before setting up this domain's DNS.", 409, "CLOUD_DOMAIN_SERVER_REQUIRED");
 }
 
 async function managedDnsRecords(organizationId: string, workspaceId: string, hostnames: string[]) {
@@ -1773,7 +1805,7 @@ async function recordsAfterDomainSave(domain: Domain, project: Project, organiza
       includeWww,
     );
   } catch (error) {
-    if (platform().target !== "cloud" || !project.workspaceId) throw error;
+    if (platform().target !== "cloud") throw error;
     observeCaughtError(error, "platform/engine/modules/domains/domain.service");
     // The domain is already saved. A dedicated records read can be retried.
     return { mode: "cloud" as const, records: [] };

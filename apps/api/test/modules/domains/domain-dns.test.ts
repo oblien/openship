@@ -17,11 +17,24 @@ const serverTarget = vi.hoisted(() => ({
   resolveSelectedServerHost: vi.fn(),
 }));
 
-const cloud = vi.hoisted(() => ({ enabled: false, getClient: vi.fn(), verify: vi.fn() }));
+const cloud = vi.hoisted(() => ({
+  enabled: false, getClient: vi.fn(), verify: vi.fn(), workspaceForServer: vi.fn(),
+  findDeployment: vi.fn(), authorize: vi.fn(), requireAdmin: vi.fn(),
+}));
+vi.mock("@repo/platform/engine/lib/cloud-workspace-scope", () => ({
+  workspaceForServer: cloud.workspaceForServer,
+  requireCloudWorkspace: vi.fn(async (_org, id) => ({ id })),
+}));
+vi.mock("@repo/platform/engine/lib/authorization", () => ({
+  authorization: { authorize: cloud.authorize },
+}));
+vi.mock("@repo/platform/engine/lib/organization-authorization", () => ({
+  requireOrganizationAdmin: cloud.requireAdmin,
+}));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ getNamespaceClient: cloud.getClient }));
 
 vi.mock("@repo/db", () => ({
-  repos: { domain: domainRepo, project: projectRepo },
+  repos: { domain: domainRepo, project: projectRepo, deployment: { findById: cloud.findDeployment } },
 }));
 
 vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
@@ -155,6 +168,11 @@ describe("managed Cloud domain records", () => {
     cloud.enabled = true;
     cloud.getClient.mockReset().mockResolvedValue({ client: { domain: { verify: cloud.verify } } });
     cloud.verify.mockReset();
+    cloud.authorize.mockReset().mockResolvedValue(ctx);
+    cloud.requireAdmin.mockReset().mockResolvedValue(undefined);
+    cloud.workspaceForServer.mockReset();
+    cloud.findDeployment.mockReset();
+    domainRepo.listByProject.mockResolvedValue([]);
     domainRepo.findById.mockResolvedValue({ ...domain, hostname: "www.example.com" });
     projectRepo.findById.mockResolvedValue({ ...project, workspaceId: "workspace-1" });
     planRecords.mockClear();
@@ -177,6 +195,54 @@ describe("managed Cloud domain records", () => {
     expect(provisionRecords).toHaveBeenCalledWith(ctx.organizationId, "www.example.com", inputs);
     expect(cloud.getClient).toHaveBeenCalledWith(ctx.organizationId, "workspace-1");
     expect(cloud.verify).toHaveBeenCalledWith({ domain: "www.example.com" });
+    expect(cloud.authorize).toHaveBeenCalledWith(expect.objectContaining({ scopeMode: "fixed" }), {
+      resourceType: "settings", resourceId: "*", action: "admin",
+    });
+    expect(cloud.requireAdmin).toHaveBeenCalledWith(ctx);
+  });
+
+  it.each(["scope", "role"])("blocks a zone proof write if the DNS %s check fails", async (deniedBy) => {
+    cloud.verify.mockResolvedValue({
+      verified: false, cname: true, ownership: false,
+      required_records: { cname: route, txt: parentProof },
+    });
+    (deniedBy === "scope" ? cloud.authorize : cloud.requireAdmin)
+      .mockRejectedValueOnce(Object.assign(new Error("Requires DNS administration"), { statusCode: 403 }));
+    // DNS instructions are still available for manual setup.
+    expect((await getDomainRecords(ctx, domain.id)).records).toHaveLength(1);
+    await expect(applyDomainDns(ctx, domain.id)).rejects.toMatchObject({ statusCode: 403 });
+    expect(provisionRecords).not.toHaveBeenCalled();
+  });
+
+  it("resolves a legacy project's managed server before showing a proof", async () => {
+    projectRepo.findById.mockResolvedValue({ ...project, workspaceId: null, serverId: "legacy-server" });
+    cloud.workspaceForServer.mockResolvedValue({ workspace: { id: "legacy-workspace" } });
+    cloud.verify.mockResolvedValue({
+      verified: false, cname: true, ownership: false, required_records: { cname: route, txt: parentProof },
+    });
+    expect((await getDomainRecords(ctx, domain.id)).records).toMatchObject([{ name: parentProof.host }]);
+    expect(cloud.workspaceForServer).toHaveBeenCalledWith(ctx.organizationId, "legacy-server");
+    expect(cloud.getClient).toHaveBeenCalledWith(ctx.organizationId, "legacy-workspace");
+  });
+
+  it("uses an owned active release's managed server for older project records", async () => {
+    projectRepo.findById.mockResolvedValue({ ...project, workspaceId: null, activeDeploymentId: "dep-live" });
+    cloud.findDeployment.mockResolvedValue({
+      id: "dep-live", projectId: project.id, organizationId: ctx.organizationId,
+      meta: { deployTarget: "cloud", serverId: "legacy-server" },
+    });
+    cloud.workspaceForServer.mockResolvedValue({ workspace: { id: "legacy-workspace" } });
+    cloud.verify.mockResolvedValue({ verified: true, cname: true, ownership: true });
+    expect(await verifyDomain(ctx, domain.id, { deferSsl: true })).toMatchObject({ verified: true });
+    expect(cloud.getClient).toHaveBeenCalledWith(ctx.organizationId, "legacy-workspace");
+  });
+
+  it("asks for a managed server when the project has no authoritative target", async () => {
+    projectRepo.findById.mockResolvedValue({ ...project, workspaceId: null });
+    await expect(getDomainRecords(ctx, domain.id)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_SERVER_REQUIRED" });
+    await expect(applyDomainDns(ctx, domain.id)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_SERVER_REQUIRED" });
+    expect(cloud.getClient).not.toHaveBeenCalled();
+    expect(provisionRecords).not.toHaveBeenCalled();
   });
 
   it("omits the TXT prompt and still requires routing for a sibling", async () => {
@@ -186,6 +252,12 @@ describe("managed Cloud domain records", () => {
     });
     expect((await getDomainRecords(ctx, domain.id)).records).toEqual([
       { type: "CNAME", host: "www", name: "www.example.com", value: route.target },
+    ]);
+    await applyDomainDns(ctx, domain.id);
+    expect(cloud.authorize).not.toHaveBeenCalled();
+    expect(cloud.requireAdmin).not.toHaveBeenCalled();
+    expect(provisionRecords).toHaveBeenCalledWith(ctx.organizationId, "www.example.com", [
+      { type: "CNAME", name: "www.example.com", content: route.target },
     ]);
     domainRepo.recordVerifyFailure.mockResolvedValueOnce(1);
     expect(await verifyDomain(ctx, domain.id)).toMatchObject({

@@ -233,15 +233,10 @@ export async function update(ctx: ExecutionContext, input: IngressUpdateInput) {
 export async function retry(ctx: ExecutionContext, id: string) {
   assertNativeJobs();
   const row = await connection(ctx, id);
-  const updated = await createProvisionLock(`ingress-connection:${id}`).run(async () => {
-    const current = await repos.ingress.get(ctx.organizationId, id);
-    if (!current) throw new NotFoundError("Ingress connection", id);
-    return repos.ingress.update(id, {
-      status: current.status === "removing" ? "removing" : "pending",
-      error: null,
-      nextAttemptAt: new Date(),
-    });
-  });
+  const updated = await createProvisionLock(`ingress-connection:${id}`).run(
+    () => repos.ingress.requestConnectionRetry(ctx.organizationId, id),
+  );
+  if (!updated) throw new NotFoundError("Ingress connection", id);
   audit.recordAsync(operationAuditContext(ctx), {
     eventType: "ingress.retry_requested",
     resourceType: "ingress_connection",

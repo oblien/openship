@@ -63,6 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   platformTarget = "local";
   managed.workspace.mockResolvedValue({ workspaceId: null });
+  managed.selected.mockResolvedValue({ workspace: null });
   cloudVerifyDomain.mockResolvedValue({
     requiredRecords: { cname: { target: "edge.opsh.io" } },
   });
@@ -117,14 +118,14 @@ describe("previewRecords — self-hosted", () => {
 describe("previewRecords — cloud", () => {
   it("returns the apex CNAME + ownership TXT when www is off", async () => {
     platformTarget = "cloud";
-    const { mode, records } = await previewRecords("freshs.hekai.org", "org_1", false);
+    const { mode, records } = await previewRecords("freshs.hekai.org", "org_1", false, "ssh-server");
     expect(mode).toBe("cloud");
     expect(records.map((r) => r.type)).toEqual(["CNAME", "TXT"]);
   });
 
   it("adds a CNAME AND its own TXT for www (the shared edge verifies each name)", async () => {
     platformTarget = "cloud";
-    const { records } = await previewRecords("freshs.hekai.org", "org_1", true);
+    const { records } = await previewRecords("freshs.hekai.org", "org_1", true, "ssh-server");
     expect(records.map((r) => r.type)).toEqual(["CNAME", "TXT", "CNAME", "TXT"]);
     expect(records[2]).toMatchObject({ name: "www.freshs.hekai.org", value: "edge.opsh.io" });
     expect(records[3]).toMatchObject({
