@@ -1,5 +1,5 @@
 import { assertNoCloudBuildActivities } from "./cloud-build-activity.repo";
-import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, notExists, or, sql } from "drizzle-orm";
 import { AppError, generateId } from "@repo/core";
 import type { Database, DatabaseTransaction } from "../client";
 import {
@@ -74,6 +74,47 @@ async function updatedLinkedProjects(
     throw new AppError("A project identity is already controlled by another installation on this server", 409, "CLOUD_PROJECT_IDENTITY_CONFLICT");
   if (projects.length) links.push({ controllerId, projects });
   return links;
+}
+
+function checkoutDraftFilter(db: Database | DatabaseTransaction, before: Date) {
+  return and(
+    // A purchase intent gets a deterministic ID. The default project space
+    // and explicitly linked installations have a different lifecycle.
+    sql`${cloudWorkspace.id} ~ '^cws_[0-9a-f]{64}$'`,
+    lt(cloudWorkspace.updatedAt, before),
+    eq(cloudWorkspace.planTierId, "free"),
+    isNull(cloudWorkspace.currentPeriodStart),
+    isNull(cloudWorkspace.currentPeriodEnd),
+    isNull(cloudWorkspace.deletionInProgress),
+    isNull(cloudWorkspace.remote),
+    isNull(cloudWorkspace.operation),
+    isNull(cloudWorkspace.activity),
+    isNull(cloudWorkspace.subscriptionChange),
+    sql`${cloudWorkspace.linkedProjects} = '[]'::jsonb`,
+    notExists(db.select({ id: project.id }).from(project)
+      .where(eq(project.workspaceId, cloudWorkspace.id))),
+    notExists(db.select({ id: cloudDockerWorkspace.id }).from(cloudDockerWorkspace)
+      .where(eq(cloudDockerWorkspace.ownerWorkspaceId, cloudWorkspace.id))),
+    notExists(db.select({ id: dockerMigrationRun.id }).from(dockerMigrationRun)
+      .innerJoin(servers, or(eq(servers.id, dockerMigrationRun.sourceServerId), eq(servers.id, dockerMigrationRun.targetServerId)))
+      .where(and(eq(servers.workspaceId, cloudWorkspace.id), activeMigration))),
+  );
+}
+
+async function deleteWorkspaceRecords(tx: DatabaseTransaction, row: CloudWorkspace, operationId: string) {
+  await assertNoCloudBuildActivities(tx, row.id);
+  const [member] = await tx.select({ id: project.id }).from(project)
+    .where(eq(project.workspaceId, row.id)).limit(1);
+  if (member || row.linkedProjects.some(link => link.projects.length))
+    throw new Error("Cloud workspace still contains projects");
+  const owner = and(eq(servers.workspaceId, row.id), eq(servers.organizationId, row.organizationId));
+  const [server] = await tx.select({ id: servers.id }).from(servers).where(owner);
+  if (!server) throw new Error("Server deletion identity is missing");
+  await tx.insert(cloudServerDeletion).values({
+    serverId: server.id, workspaceId: row.id, organizationId: row.organizationId, operationId,
+  });
+  await tx.delete(servers).where(owner);
+  await tx.delete(cloudWorkspace).where(eq(cloudWorkspace.id, row.id));
 }
 
 export function createCloudWorkspaceRepo(db: Database) {
@@ -481,6 +522,27 @@ export function createCloudWorkspaceRepo(db: Database) {
         eq(cloudServerDeletion.organizationId, organizationId),
       ) });
     },
+    async listAbandonedCheckoutDrafts(before: Date, after?: string, limit = 25) {
+      return db.select({ id: cloudWorkspace.id, organizationId: cloudWorkspace.organizationId })
+        .from(cloudWorkspace)
+        .where(and(checkoutDraftFilter(db, before), after ? sql`${cloudWorkspace.id} > ${after}` : undefined))
+        .orderBy(asc(cloudWorkspace.id)).limit(limit);
+    },
+    /** Caller holds the billing lock and has verified payment/entitlement.
+     * The row lock serializes with placement and host reservation. The host FK
+     * independently prevents this metadata-only path from deleting a binding. */
+    async deleteAbandonedCheckoutDraft(id: string, organizationId: string, namespace: string | null, before: Date) {
+      return db.transaction(async tx => {
+        const [row] = await tx.select().from(cloudWorkspace).where(and(
+          eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId),
+          namespace ? eq(cloudWorkspace.namespace, namespace) : isNull(cloudWorkspace.namespace),
+          checkoutDraftFilter(tx, before),
+        )).for("update");
+        if (!row) return false;
+        await deleteWorkspaceRecords(tx, row, "abandoned-checkout");
+        return true;
+      });
+    },
     /** Only called after provider deletion is confirmed. Membership is blocked
      * by deletionInProgress and independently protected by its RESTRICT FK. */
     async finishDeletion(id: string, organizationId: string) {
@@ -490,24 +552,10 @@ export function createCloudWorkspaceRepo(db: Database) {
           .from(cloudWorkspace)
           .where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId)))
           .for("update");
-        if (!row?.deletionInProgress) throw new Error("Workspace deletion was not requested");
-        await assertNoCloudBuildActivities(tx, id);
-        const [member] = await tx
-          .select({ id: project.id })
-          .from(project)
-          .where(eq(project.workspaceId, id))
-          .limit(1);
-        if (member) throw new Error("Cloud workspace still contains projects");
-        if (row.linkedProjects.some(link => link.projects.length)) throw new Error("Cloud workspace still contains linked projects");
-        const [server] = await tx.select({ id: servers.id }).from(servers)
-          .where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
-        if (!server || row.operation?.kind !== "delete") throw new Error("Server deletion identity is missing");
-        await tx.insert(cloudServerDeletion).values({
-          serverId: server.id, workspaceId: id, organizationId, operationId: row.operation.id,
-        });
+        if (!row?.deletionInProgress || row.operation?.kind !== "delete")
+          throw new Error("Workspace deletion was not requested");
         await tx.delete(cloudDockerWorkspace).where(eq(cloudDockerWorkspace.ownerWorkspaceId, id));
-        await tx.delete(servers).where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
-        await tx.delete(cloudWorkspace).where(eq(cloudWorkspace.id, id));
+        await deleteWorkspaceRecords(tx, row, row.operation.id);
       });
     },
   };

@@ -840,6 +840,7 @@
     }
   },
   "hub": {
+    "unusedSpaces": "未使用的云空间（{count}）",
     "addPlan": "添加套餐",
     "addHint": "选择 Cloud 资源或管理您自己的服务器。",
     "viewPlan": "查看套餐",
