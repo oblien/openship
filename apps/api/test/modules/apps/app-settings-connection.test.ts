@@ -339,6 +339,33 @@ describe("published-port pairs", () => {
     expect(valueOf(outputs, "url")).toBe("");
   });
 
+  it("ignores an interface-scoped port with no host side — its host port is random too", async () => {
+    listByProject.mockResolvedValue([
+      { ...backend, ports: ["127.0.0.1::3210"], exposedPort: "3210" },
+    ]);
+
+    const { outputs } = await getAppConnectionView(ctx, "proj1");
+
+    expect(valueOf(outputs, "url")).toBe("");
+    expect(valueOf(outputs, "direct")).toBe("");
+  });
+
+  it.each(["127.0.0.1::3211", "3211"])(
+    "adopts a PROJECT-level row on a port published as %s, with no fixed host port",
+    async (spec) => {
+      // The edge routes this domain to the service whichever way the port is
+      // published, so the card has to report it the same way.
+      listByProject.mockResolvedValue([
+        { ...backend, ports: ["3210:3210", spec], exposedPort: "3210" },
+      ]);
+      listDomains.mockResolvedValue([domainRow({ serviceId: null, targetPort: 3211 })]);
+
+      const { outputs } = await getAppConnectionView(ctx, "proj1");
+
+      expect(valueOf(outputs, "site")).toBe("https://api.example.com");
+    },
+  );
+
   it("an unset exposedPort is not port 0", async () => {
     listByProject.mockResolvedValue([
       { ...backend, ports: ["3210:3210"], exposedPort: null },
