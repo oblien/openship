@@ -114,6 +114,16 @@ describe("Cloud customer checkout", () => {
     expect(h.checkout.mock.calls[0]![0]).toHaveProperty("affiliateBuyer.buyerKey", referralParticipantKey("buyer"));
     expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("affiliateCode");
   });
+  it("tracks a promotion checkout under the authenticated workspace and rejects combining discount types", async () => {
+    await expect(createCheckoutSession(ctx(), "starter", "monthly", "promo-conflict", undefined,
+      undefined, "AF-0123456789", true)).rejects.toMatchObject({ code: "BILLING_DISCOUNT_CONFLICT" });
+    expect(h.checkout).not.toHaveBeenCalled();
+    await createCheckoutSession(ctx(), "starter", "monthly", "promo-checkout", undefined, undefined, undefined, true);
+    expect(h.checkout).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      namespace: "ns-org-a", kind: "subscription", billingInterval: "monthly", checkoutMode: "oblien",
+    }));
+    expect(h.pending.get("org-a")).toHaveLength(1);
+  });
   it("does not create a paid checkout while a complimentary plan is active", async () => {
     h.sync.mockResolvedValueOnce({ grant: { id: "bpg-test" } });
     await expect(createCheckoutSession(ctx(), "pro", "monthly")).rejects.toMatchObject({ code: "BILLING_COMPLIMENTARY_PLAN" });

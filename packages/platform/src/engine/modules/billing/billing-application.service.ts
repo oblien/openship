@@ -91,6 +91,7 @@ export async function createSubscription(ctx: ExecutionContext, input: NonNullab
     input.workspaceId,
     input.custom,
     resolveReferralCode(input),
+    input.enterPromotionCode,
   );
 
   return { checkoutUrl };

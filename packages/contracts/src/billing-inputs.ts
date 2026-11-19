@@ -26,6 +26,7 @@ export const CreateSubscriptionBody = Type.Object(
   {
     ...BillingScopeSchema.properties,
     referralCode: Type.Optional(ReferralCodeSchema),
+    enterPromotionCode: Type.Optional(Type.Boolean()),
     /** @deprecated Use referralCode. */
     affiliateCode: Type.Optional(ReferralCodeSchema),
     planTierId: Type.Union(purchasableTiers.map((id) => Type.Literal(id))),

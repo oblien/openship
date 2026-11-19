@@ -95,6 +95,7 @@ function PlanPicker({
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const referral = useReferralCode(initialReferralCode ?? searchParams.get("ref") ?? undefined);
+  const [enterPromotionCode, setEnterPromotionCode] = useState(false);
   const purchase = useCloudPurchase();
   const billingWorkspaceId = useBillingWorkspace();
   const selectedWorkspaceId = workspaceId ?? billingWorkspaceId;
@@ -213,6 +214,7 @@ function PlanPicker({
   } = useCloudCheckout({
     enabled: canPurchase && !purchaseDisabled && !managing && referral.ready,
     referralCode: referral.verified,
+    enterPromotionCode: enterPromotionCode && !referral.code,
     preserveProject,
     onCheckoutStarted,
     workspaceId,
@@ -472,8 +474,20 @@ function PlanPicker({
             <PricingCards plans={contactPlans} ui={payload.ui} currentPlan={currentPlan} />
           )}
           {canPurchase && !managing && (
-            <div className="border-t border-border/50 pt-5">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-t border-border/50 pt-5">
               <ReferralCode referral={referral} disabled={busy} />
+              {!referral.code && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={enterPromotionCode ? "secondary" : "ghost"}
+                  aria-pressed={enterPromotionCode}
+                  disabled={busy}
+                  onClick={() => setEnterPromotionCode(value => !value)}
+                >
+                  {t.billing.plansRoute.promotionAtCheckout}
+                </Button>
+              )}
             </div>
           )}
           <SubscriptionChangeDialog actions={changes} workspaceId={selectedWorkspaceId} />

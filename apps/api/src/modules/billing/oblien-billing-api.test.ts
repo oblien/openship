@@ -279,7 +279,7 @@ describe("Oblien billing SDK and transport contract", () => {
     expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v2/billing/checkout", expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]!.body))).toEqual({ ...input, allowPromotionCodes: true });
   });
-  it("keeps the hosted payment page unversioned while sending checkout requests to /v1", async () => {
+  it("accepts existing unversioned hosted payment links", async () => {
     const checkoutId = "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee";
     const url = `https://api.oblien.com/billing/pay#${"a".repeat(43)}`;
     const { api, fetcher } = setup({ success: true, url, checkoutId });
@@ -288,12 +288,24 @@ describe("Oblien billing SDK and transport contract", () => {
       .resolves.toMatchObject({ url, checkoutId });
     expect(fetcher).toHaveBeenCalledWith("https://api.oblien.com/v2/billing/checkout", expect.objectContaining({ method: "POST" }));
   });
+  it("passes opt-in checkout to Oblien and accepts the versioned browser payment page", async () => {
+    const checkoutId = "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee";
+    const url = `https://api.oblien.com/v2/billing/pay#${"a".repeat(43)}`;
+    const { api, fetcher } = setup({ success: true, url, checkoutId });
+    await expect(api.createCheckout({ namespace: "os-one", kind: "subscription", billingInterval: "monthly",
+      offer, metadata, checkoutMode: "oblien", successUrl: "https://app.openship.io",
+      cancelUrl: "https://app.openship.io", idempotencyKey: "promotion-checkout" })).resolves.toMatchObject({ url, checkoutId });
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://api.oblien.com/v2/billing/checkout");
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+      checkoutMode: "oblien", allowPromotionCodes: true,
+    });
+  });
   it.each([
     "http://api.oblien.com/billing/pay", "https://api.oblien.com.evil.example/billing/pay",
     "https://api.oblien.com/billing/pay?return=https://evil.example", "https://api.oblien.com/v2/other",
     "https://api.oblien.com/billing/pay", "https://user@api.oblien.com/billing/pay",
     "https://api.oblien.com:8443/billing/pay", "https://api.oblien.com/billing/pay/",
-    "https://api.oblien.com/v2/billing/pay",
+    "https://api.oblien.com/v2/billing/pay/details",
   ])("rejects an invalid promotion checkout URL: %s", async (value) => {
     const url = value + (value === "https://api.oblien.com/billing/pay" ? "#short" : `#${"a".repeat(43)}`);
     await expect(setup({ success: true, url, checkoutId: "bco_24f15202-6a3d-4b27-b7c2-c3abbc401bee" }).api.createCheckout({

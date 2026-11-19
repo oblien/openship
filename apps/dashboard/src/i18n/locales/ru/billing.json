@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "Ввести промокод при оплате",
     "requestedPlanUnavailable": "Выбранный тариф больше недоступен. Выберите другой тариф ниже.",
     "loadError": "Не удалось загрузить тарифы",
     "genericError": "Что-то пошло не так",

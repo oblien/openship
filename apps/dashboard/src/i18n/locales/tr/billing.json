@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "Ödeme sırasında promosyon kodu gir",
     "requestedPlanUnavailable": "Seçilen plan artık mevcut değil. Aşağıdan başka bir plan seçin.",
     "loadError": "Planlar yüklenemedi",
     "genericError": "Bir sorun oluştu",

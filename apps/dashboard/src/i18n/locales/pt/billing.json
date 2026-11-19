@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "Inserir um código promocional no pagamento",
     "requestedPlanUnavailable": "O plano selecionado não está mais disponível. Escolha outro plano abaixo.",
     "loadError": "Falha ao carregar os planos",
     "genericError": "Algo deu errado",

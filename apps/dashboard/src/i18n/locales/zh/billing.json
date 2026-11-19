@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "结账时输入优惠码",
     "requestedPlanUnavailable": "所选套餐已不再提供。请在下方选择其他套餐。",
     "loadError": "加载套餐失败",
     "genericError": "出现错误",

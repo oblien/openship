@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "お支払い時にプロモーションコードを入力",
     "requestedPlanUnavailable": "選択したプランは現在利用できません。下から別のプランを選択してください。",
     "loadError": "プランの読み込みに失敗しました",
     "genericError": "問題が発生しました",

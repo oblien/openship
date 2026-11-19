@@ -44,7 +44,7 @@ export function useCloudPlans() {
 }
 
 /** Shared hosted checkout, including duplicate-click and uncertain-payment retries. */
-export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved, idempotencyKey, onCheckoutSettled, referralCode }: {
+export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved, idempotencyKey, onCheckoutSettled, referralCode, enterPromotionCode = false }: {
   enabled: boolean;
   workspaceId?: string;
   preserveProject?: boolean;
@@ -53,6 +53,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   onWorkspaceRemoved?: (workspaceId: string) => void;
   idempotencyKey?: string;
   referralCode?: string;
+  enterPromotionCode?: boolean;
   onCheckoutSettled?: () => void;
 }) {
   const { t } = useI18n();
@@ -99,13 +100,14 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
         return;
       }
       if (prepareWorkspace && !targetWorkspaceId) throw new Error(t.billing.plansRoute.checkoutError);
-      const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}:${referralCode ?? ""}`;
+      const discount = referralCode ?? (enterPromotionCode ? "promotion" : "");
+      const attempt = `${targetWorkspaceId ?? "initial"}:${custom?.quoteReference ?? planTierId}:${interval}:${discount}`;
       if (!attempts.current.has(attempt)) attempts.current.set(attempt,
-        idempotencyKey && !custom && !referralCode ? `${idempotencyKey}-${planTierId}-${interval}` : randomUUID());
+        idempotencyKey && !custom && !discount ? `${idempotencyKey}-${planTierId}-${interval}` : randomUUID());
       requestId = attempts.current.get(attempt)!;
       const res = await api.post<{ data: { checkoutUrl: string } }>(endpoints.billing.subscription, {
         planTierId, interval, workspaceId: targetWorkspaceId, custom, idempotencyKey: requestId,
-        ...(referralCode ? { referralCode } : {}),
+        ...(referralCode ? { referralCode } : enterPromotionCode ? { enterPromotionCode: true } : {}),
       });
       if (version !== generation.current) return;
       const url = navigateToCheckout(res.data.checkoutUrl, preserveProject);

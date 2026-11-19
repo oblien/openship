@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "Aktionscode beim Bezahlen eingeben",
     "requestedPlanUnavailable": "Der gewählte Tarif ist nicht mehr verfügbar. Wähle unten einen anderen Tarif.",
     "loadError": "Tarife konnten nicht geladen werden",
     "genericError": "Etwas ist schiefgelaufen",

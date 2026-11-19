@@ -200,6 +200,17 @@ describe("Manage purchase tab", () => {
   });
 });
 
+it("lets a customer explicitly open promo checkout for a new Cloud subscription", async () => {
+  await render(<ManagedServerPurchase requestedPlanId="starter" />);
+  expect(h.post).not.toHaveBeenCalled();
+  await click(baseDictionary.billing.plansRoute.promotionAtCheckout);
+  expect(h.post).not.toHaveBeenCalled();
+  await click("Choose Starter");
+  expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
+    workspaceId: server.id, planTierId: "starter", interval: "monthly", enterPromotionCode: true,
+  }));
+});
+
 describe("referral checkout handoff", () => {
   const code = "AF-0123456789";
   const referral = { code, name: "Community", productId: "workspace_vm", planId: null,

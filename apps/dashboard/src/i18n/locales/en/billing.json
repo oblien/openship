@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "promotionAtCheckout": "Enter a promo code at checkout",
     "requestedPlanUnavailable": "The selected plan is no longer available. Choose another plan below.",
     "loadError": "Failed to load plans",
     "genericError": "Something went wrong",

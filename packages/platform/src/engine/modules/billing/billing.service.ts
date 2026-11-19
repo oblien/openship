@@ -57,8 +57,12 @@ export async function createCheckoutSession(
   workspaceId?: CloudWorkspaceScope,
   custom?: CustomSubscriptionSelection,
   referralCode?: string,
+  enterPromotionCode?: boolean,
 ): Promise<{ checkoutUrl: string }> {
   assertBillingEnabled();
+  if (referralCode && enterPromotionCode) {
+    throw new AppError("Choose either a referral code or a promotion code.", 400, "BILLING_DISCOUNT_CONFLICT");
+  }
   const { offer, customLimits } = await resolveSubscriptionSelection(planTierId, interval, custom);
   await assertBillingOwnerAvailable(ctx.organizationId, workspaceId);
   const namespace = await ensureNamespace(ctx.organizationId, workspaceId);
@@ -90,6 +94,7 @@ export async function createCheckoutSession(
       offer, interval, referralCode });
     const result = await createTrackedWorkspaceCheckout(currentOwner.workspace, {
       ...referral,
+      ...(enterPromotionCode ? { checkoutMode: "oblien" as const } : {}),
       namespace,
       kind: "subscription",
       offer,

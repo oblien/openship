@@ -265,6 +265,7 @@ const checkoutInput = z.object({
 });
 export const oblienCheckoutInputSchema = z.discriminatedUnion("kind", [
   checkoutInput.extend({ kind: z.literal("subscription"), billingInterval: z.enum(["monthly", "yearly"]),
+    checkoutMode: z.literal("oblien").optional(),
     affiliateCode: z.string().regex(/^AF-[A-Z0-9][A-Z0-9-]{5,59}$/).optional(),
     affiliateBuyer: z.object({ namespace: z.string(), buyerKey: z.string().regex(/^[a-f0-9]{64}$/),
       relatedKeys: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(100) }).strict().optional(),
@@ -690,7 +691,7 @@ export class OblienBillingApi {
     const parsed = oblienCheckoutInputSchema.parse(input);
     const request = { ...parsed, allowPromotionCodes: parsed.offer?.unitAmount !== 0 };
     const offer = request.offer ? toOblienVmOffer(request.offer) : undefined;
-    const result = await this.validate((request.offer?.billingMode === "service" || (request.kind === "subscription" && !!request.affiliateBuyer))
+    const result = await this.validate((request.offer?.billingMode === "service" || (request.kind === "subscription" && (request.affiliateBuyer || request.checkoutMode)))
       ? this.request({ method: "POST", path: "/billing/checkout", body: { ...request, offer } })
       : this.billing.checkout({ ...request, offer: offer ? { ...offer, billingMode: request.offer?.billingMode === "monthly" ? "monthly" : request.offer?.billingMode === "payg" ? "payg" : undefined } : undefined }), checkoutSchema);
     this.validateCheckoutUrl(result.url);
@@ -701,8 +702,7 @@ export class OblienBillingApi {
     const url = new URL(value);
     if (url.hostname === "api.oblien.com") {
       this.validateHostedUrl(value, "api.oblien.com");
-      // This is the hosted browser page, not a versioned control-plane endpoint.
-      if (url.pathname === "/billing/pay" && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
+      if (["/billing/pay", "/v2/billing/pay"].includes(url.pathname) && !url.search && /^#[A-Za-z0-9_-]{43}$/.test(url.hash)) return;
       throw new AppError("Cloud billing returned an invalid hosted URL", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
     }
     this.validateHostedUrl(value, "checkout.stripe.com");
