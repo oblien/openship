@@ -54,7 +54,7 @@ The current API has **572 unique tools**. Permission tags below describe the rou
 | `get_analytics_dashboard`<br />`GET /api/analytics/dashboard` | Dashboard analytics rollup (headline metrics). | `analytics:read` |
 | `get_analytics_deployments`<br />`GET /api/analytics/deployments` | Deployment statistics (frequency, success rate, durations). | `analytics:read` |
 | `get_analytics_geo`<br />`GET /api/analytics/geo` | Visitor geography for a project: requests per country, distinct visitors, top paths. | `analytics:read` |
-| `get_analytics_overview`<br />`GET /api/analytics/overview` | Analytics overview (traffic, status codes, top paths). | `analytics:read` |
+| `get_analytics_overview`<br />`GET /api/analytics/overview` | Read project request counts, bytes transferred, and average response time by hour. | `analytics:read` |
 | `get_analytics_periods`<br />`GET /api/analytics/periods` | Available analytics time periods. | `analytics:read` |
 | `get_analytics_resources`<br />`GET /api/analytics/resources` | Project resource usage: overall totals plus a per-service breakdown with live status. | `analytics:read` |
 | `get_analytics_server_by_serverId`<br />`GET /api/analytics/server/:serverId` | Read saved edge request/traffic buckets for query.domain on this server, optionally within an ISO date range. These are HTTP traffic measurements, not k3s workload CPU metrics. | `server:read` |

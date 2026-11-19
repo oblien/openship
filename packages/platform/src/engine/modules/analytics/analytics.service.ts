@@ -26,7 +26,9 @@ import { resolveDeploymentRuntimeForRead, disposeRuntime } from "@repo/platform/
 import { livePrimaryContainerId } from "@repo/platform/engine/modules/services/service-container";
 import { resolveProjectTrafficSources } from "@repo/platform/engine/lib/project-analytics";
 import { fetchMgmt } from "@repo/platform/engine/lib/edge-management";
-import { getAdminOblienClient } from "@repo/platform/engine/lib/oblien-user-client";
+import { env } from "../../config/env";
+import { requireLinkedCloudServer } from "../../lib/cloud/server-link";
+import { getNamespaceAnalytics } from "../cloud/cloud-analytics.service";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
 import { scrapeServerIfStale } from "@repo/platform/engine/modules/system/analytics-scraper";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -40,11 +42,6 @@ interface CloudAnalyticsBucket {
   bandwidth_out: number;
   /** Total request duration in seconds, not a per-request average. */
   response_time_sum: number;
-}
-
-interface CloudTimeseriesResponse {
-  data: CloudAnalyticsBucket[];
-  meta?: { to?: number };
 }
 
 interface MgmtAnalyticsBucket {
@@ -294,7 +291,7 @@ const EMPTY_SUMMARY: AnalyticsSummary = {
 /**
  * The Oblien SDK returns `{ success, data: AnalyticsBucket[], meta }`; the cloud
  * PROXY wraps that again as `{ data: <sdkResponse> }`. So the bucket array sits
- * at `.data` (admin-direct) or `.data.data` (cloud-proxied). Reading a fixed
+ * at `.data` (SDK response) or `.data.data` (cloud-proxied). Reading a fixed
  * depth got the WRAPPER object on the proxied path — which flat-mapped into a
  * single bogus "bucket" whose numeric fields were undefined → NaN → null totals.
  * Walk down nested data/result wrappers to the actual array regardless of depth.
@@ -339,21 +336,14 @@ function assertCloudTimeseriesOk(raw: unknown): void {
   }
 }
 
-async function fetchCloudTimeseries(
-  organizationId: string,
-  domain: string,
-  params: { from: number; to: number; interval: "hour" },
-): Promise<CloudTimeseriesResponse | null> {
-  // Direct, no caching — always the live source of truth. (Request volume is
-  // controlled on the client; see ServerAnalytics fetch dedup.)
-  const client = getAdminOblienClient();
-  const raw = client
-    ? await client.analytics.timeseries(domain, params)
-    : await cloudClient({ organizationId }).analytics.timeseries(domain, params);
-  // Surface a failed fetch as an error (caller → 502) instead of masking it as
-  // an empty summary; only a genuine no-traffic success falls through to [].
-  assertCloudTimeseriesOk(raw);
-  return { data: extractCloudBuckets(raw) };
+async function projectCloudAnalytics(organizationId: string, workspaceId: string | null) {
+  if (env.CLOUD_MODE) return getNamespaceAnalytics(organizationId, workspaceId);
+  const linked = workspaceId ? await requireLinkedCloudServer(organizationId, workspaceId) : null;
+  const { analytics } = cloudClient({ organizationId }, linked?.remote);
+  return {
+    timeseries: (domain: string, params: { from: number; to: number; interval: "hour" }) =>
+      analytics.timeseries(domain, params, linked?.remote.serverId),
+  };
 }
 
 export interface AnalyticsSummary {
@@ -474,12 +464,16 @@ export async function getAnalyticsOverview(
     // upstream outage look identical to "no traffic" (zeros with a 200). Settle
     // per-domain: use whatever succeeded, but if EVERY cloud fetch failed,
     // surface a real upstream error so the client can tell "broken" from "idle".
+    const reader = projectCloudAnalytics(ctx.organizationId, project.workspaceId);
     const settled = await observedAllSettled(
-      sources.map((source) => fetchCloudTimeseries(ctx.organizationId, source.domain, params)), "platform/engine/modules/analytics/analytics.service",
+      sources.map(async ({ domain }) => {
+        const analytics = await reader;
+        const raw = await analytics.timeseries(domain, params);
+        assertCloudTimeseriesOk(raw);
+        return { data: extractCloudBuckets(raw) };
+      }), "platform/engine/modules/analytics/analytics.service",
     );
-    const ok = settled.filter(
-      (r): r is PromiseFulfilledResult<CloudTimeseriesResponse | null> => r.status === "fulfilled",
-    );
+    const ok = settled.filter((r) => r.status === "fulfilled");
     if (ok.length === 0) {
       const reason = settled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
       throw new AppError(
@@ -489,11 +483,11 @@ export async function getAnalyticsOverview(
       );
     }
     const firstHour = Math.floor(fromMs / 3_600_000) * 3600;
-    const buckets = ok.flatMap((r) => r.value?.data ?? []).filter((bucket) =>
+    const buckets = ok.flatMap((r) => r.value.data).filter((bucket) =>
       bucket.timestamp >= firstHour && bucket.timestamp * 1000 < toMs,
     );
     // Reached the cloud, but it reported no traffic → genuine empty (200).
-    if (buckets.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
+    if (buckets.length === 0) return { summary: { ...EMPTY_SUMMARY, uniqueVisitors: null }, periods: [] };
     return {
       summary: summariseCloudBuckets(buckets, new Date(toMs).toISOString()),
       periods: buildCloudHourlyPeriods(buckets, fromMs, toMs),

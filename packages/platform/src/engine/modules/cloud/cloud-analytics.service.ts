@@ -1,6 +1,11 @@
 import { repos } from "@repo/db";
 import { Oblien } from "@repo/adapters";
-import { issueNamespaceToken } from "@repo/platform/engine/lib/openship-cloud";
+import { AppError } from "@repo/core";
+import { env } from "../../config/env";
+import type { ExecutionContext } from "../../../context";
+import { authorization } from "../../lib/authorization";
+import { cloudBillingOwner, workspaceForServer, requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
+import { getOblienClient } from "../../lib/oblien-client";
 
 export type CloudAnalyticsOperation = "timeseries";
 
@@ -29,22 +34,46 @@ function isCrossTenantError(err: unknown): boolean {
   );
 }
 
+/** Reading counters must never create a namespace or depend on VM readiness. */
+export async function getNamespaceAnalytics(organizationId: string, workspaceId: string | null) {
+  const { namespace } = await cloudBillingOwner(organizationId, workspaceId);
+  return analyticsForNamespace(namespace);
+}
+
+async function analyticsForNamespace(namespace: string | null) {
+  if (!namespace) throw new AppError("This managed server has no Edge namespace", 404, "CLOUD_NAMESPACE_NOT_FOUND");
+
+  const credentials = await getOblienClient().tokens.create({ scope: "namespace", namespace, ttl: 60 });
+  if (!credentials.success || credentials.scope !== "namespace" || !credentials.token)
+    throw new AppError("Cloud traffic metrics are unavailable", 502, "ANALYTICS_UPSTREAM_UNAVAILABLE");
+  return new Oblien({ token: credentials.token, baseUrl: env.OBLIEN_API_URL }).analytics;
+}
+
 export async function proxyCloudAnalytics(
-  organizationId: string,
+  ctx: ExecutionContext,
   input: {
     operation: CloudAnalyticsOperation;
     domain: string;
     params?: Record<string, unknown>;
+    serverId?: string;
   },
 ): Promise<unknown> {
+  const { organizationId } = ctx;
   const domain = await repos.domain.findByHostname(input.domain.trim().toLowerCase());
   const project = domain?.projectId ? await repos.project.findByIdInOrganization(domain.projectId, organizationId) : null;
-  const { token } = await issueNamespaceToken(organizationId, project?.workspaceId ?? null);
-  const client = new Oblien({ token });
+  if (domain?.projectId && !project) throw new CloudAnalyticsForbiddenError(input.domain);
+
+  const selected = input.serverId ? await workspaceForServer(organizationId, input.serverId) : null;
+  const workspace = selected ? selected.workspace : (await cloudBillingOwner(organizationId, project?.workspaceId)).workspace;
+  if (!workspace || workspace.remote || workspace.deletionInProgress || (project?.workspaceId && project.workspaceId !== workspace.id))
+    throw new CloudAnalyticsForbiddenError(input.domain);
+  const server = selected?.server ?? await requireWorkspaceServer(organizationId, workspace.id);
+  await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "read" });
+  const analytics = await analyticsForNamespace(workspace.namespace);
 
   try {
     const { from, to, interval } = input.params ?? {};
-    return await client.analytics.timeseries(input.domain, {
+    return await analytics.timeseries(input.domain, {
       ...(typeof from === "number" && { from }),
       ...(typeof to === "number" && { to }),
       ...((interval === "minute" || interval === "hour" || interval === "day") && { interval }),

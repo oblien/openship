@@ -123,24 +123,27 @@ function oblienErrorResponse(c: Context, err: unknown, fallback: string) {
  * Local/desktop instances call this to read Oblien analytics for a
  * hostname they own on Openship Cloud. Forwarded via the caller's
  * namespace token — Oblien returns data only for hostnames in the
- * caller's namespace, so cross-tenant access is structurally
- * impossible. No SaaS-side ownership check needed.
+ * caller's namespace. A linked client can also select its authenticated server.
  */
 export async function analyticsProxy(c: Context) {
   const ctx = getRequestContext(c);
-  const { operation, domain, params } = await c.req.json<{
+  const { operation, domain, params, serverId } = await c.req.json<{
     operation: CloudAnalyticsOperation;
+    serverId?: string;
     domain: string;
     params?: Record<string, unknown>;
   }>();
-  if (!operation || !domain) {
+  if (!operation || typeof domain !== "string" || !domain.trim()) {
     return c.json({ error: "operation and domain are required" }, 400);
   }
   if (operation !== "timeseries") {
     return c.json({ error: "Unknown operation" }, 400);
   }
+  if (serverId !== undefined && (typeof serverId !== "string" || !serverId.trim())) {
+    return c.json({ error: "Invalid server ID" }, 400);
+  }
   try {
-    const result = await proxyCloudAnalytics(ctx.organizationId, { operation, domain, params });
+    const result = await proxyCloudAnalytics(ctx, { operation, domain, params, serverId });
     return c.json({ data: result });
   } catch (err) {
     observeCaughtError(err, "api/modules/cloud/cloud-saas.controller");

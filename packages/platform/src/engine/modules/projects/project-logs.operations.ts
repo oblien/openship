@@ -143,7 +143,7 @@ export const openProjectServerLogs: NonNullable<ProjectDependencies["openServerL
   assertResourceInOrg(project, "Project", ctx.organizationId, id);
   const source = await resolveProjectTrafficSource(id, input);
   if (!source || source.kind !== "self-hosted")
-    throw new OperationError("Use stream-token endpoint for cloud projects", 400, "SERVER_LOG_STREAM_UNAVAILABLE");
+    throw new OperationError("HTTP request log streaming is unavailable for this traffic source", 400, "SERVER_LOG_STREAM_UNAVAILABLE");
   await assertTrafficAccess(ctx, [source]);
   const { domain, serverId } = source;
   const { signal } = options;

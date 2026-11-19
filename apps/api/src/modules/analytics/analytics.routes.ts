@@ -35,7 +35,7 @@ const projectRangeQuery = Type.Object({ projectId: ResourceIdSchema, ...Analytic
 /* ─── Request analytics ────────────────────────────────────────────────── */
 r.get("/", { tag: "analytics:read", mcp: { description: "Read request and traffic totals for query.projectId, optionally filtered by domain. Requires a project ID; use dashboard for the workspace rollup." }, query: projectDomainQuery }, cloudProjectProxyByQuery, ctrl.summary);
 r.get("/periods", { tag: "analytics:read", mcp: { description: "Available analytics time periods." }, query: projectRangeQuery }, cloudProjectProxyByQuery, ctrl.periods);
-r.get("/overview", { tag: "analytics:read", mcp: { description: "Analytics overview (traffic, status codes, top paths)." }, query: projectRangeQuery }, cloudProjectProxyByQuery, ctrl.overview);
+r.get("/overview", { tag: "analytics:read", mcp: { description: "Read project request counts, bytes transferred, and average response time by hour." }, query: projectRangeQuery }, cloudProjectProxyByQuery, ctrl.overview);
 r.get("/geo", { tag: "analytics:read", mcp: { description: "Visitor geography for a project: requests per country, distinct visitors, top paths." }, query: projectRangeQuery }, cloudProjectProxyByQuery, ctrl.projectGeo);
 /* Per-path aggregation is the one opt-in analytics dimension — it costs ~57% of the
    edge's per-request counter work. project:write, not analytics:read: this changes what
