@@ -840,6 +840,7 @@
     }
   },
   "hub": {
+    "unusedSpaces": "Unused Cloud spaces ({count})",
     "addPlan": "Add plan",
     "addHint": "Choose Cloud capacity or manage your own servers.",
     "viewPlan": "View plan",
