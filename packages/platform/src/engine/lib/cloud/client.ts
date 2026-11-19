@@ -286,22 +286,6 @@ export function cloudClient(scope: CloudClientScope, expectedIdentity?: CloudIde
         if (!res?.ok) return null;
         return readCloudJson<T>(res);
       },
-      async requests<T>(domain: string, params?: Record<string, unknown>) {
-        const res = await fetchScoped("/api/cloud/analytics", {
-          method: "POST",
-          body: JSON.stringify({ operation: "requests", domain, params }),
-        });
-        if (!res?.ok) return null;
-        return readCloudJson<T>(res);
-      },
-      async streamToken<T>(domain: string, params?: Record<string, unknown>) {
-        const res = await fetchScoped("/api/cloud/analytics", {
-          method: "POST",
-          body: JSON.stringify({ operation: "streamToken", domain, params }),
-        });
-        if (!res?.ok) return null;
-        return readCloudJson<T>(res);
-      },
     },
 
     async preflight(input) {

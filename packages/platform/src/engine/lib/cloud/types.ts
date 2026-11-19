@@ -148,8 +148,6 @@ export interface CloudClient {
   };
   analytics: {
     timeseries<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;
-    requests<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;
-    streamToken<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;
   };
   preflight(input: {
     slug?: string;

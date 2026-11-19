@@ -141,6 +141,7 @@ describe("project traffic snapshot", () => {
     h.rows = [{ ...row(-90, 1), responseTimeSeconds: 1 }];
     h.live = [{ ...row(-1, 99, "api.example.com"), responseTimeSeconds: 9.9 }];
     const result = await getAnalyticsOverview(ctx, "p1");
+    expect(result.summary.uniqueVisitors).toBeNull();
     expect(result.summary.avgResponseTimeMs).toBeCloseTo(109);
     expect(
       result.periods
@@ -160,7 +161,6 @@ describe("project traffic snapshot", () => {
           response_time_sum: domain === "web.example.com" ? 1 : 9.9,
           bandwidth_in: 0,
           bandwidth_out: 0,
-          unique_visitors: 1,
         },
       ],
     }));

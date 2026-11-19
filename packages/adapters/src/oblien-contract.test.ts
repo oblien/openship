@@ -23,7 +23,7 @@ it("inherits the published SDK default for the adapter and official client", asy
   );
   await new Oblien({ token: "fixture" }).vms.list();
   await new OfficialOblien({ token: "fixture" }).vms.list();
-  expect(DEFAULT_API_BASE_URL).toBe("https://api.oblien.com/v1");
+  expect(DEFAULT_API_BASE_URL).toBe("https://api.oblien.com/v2");
   expect(oblienApiBaseUrl().href).toBe(DEFAULT_API_BASE_URL);
   expect(urls).toEqual([`${DEFAULT_API_BASE_URL}/vms`, `${DEFAULT_API_BASE_URL}/vms`]);
 });
@@ -38,13 +38,13 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
       res.writeHead(401).end();
       return;
     }
-    if (req.url === "/proxy/v1/vms/vm-a/stats/stream") {
+    if (req.url === "/proxy/v2/vms/vm-a/stats/stream") {
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       res.end('data: {"cpu":12}\n\n');
       return;
     }
     res.setHeader("Content-Type", "application/json");
-    if (req.url === "/proxy/v1/vms" && req.method === "POST") {
+    if (req.url === "/proxy/v2/vms" && req.method === "POST") {
       res.writeHead(422).end(
         JSON.stringify({
           success: false,
@@ -54,25 +54,25 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
       );
       return;
     }
-    if (req.url === "/proxy/v1/vms") {
+    if (req.url === "/proxy/v2/vms") {
       res.end(
         JSON.stringify({ success: true, vms: [{ id: "vm-a", namespace: "tenant-a" }], total: 1 }),
       );
       return;
     }
-    if (req.url === "/proxy/v1/vms/vm-a") {
+    if (req.url === "/proxy/v2/vms/vm-a") {
       res.end(JSON.stringify({ success: true, vm: { id: "vm-a", namespace: "tenant-a" } }));
       return;
     }
-    if (req.url === "/proxy/v1/vms/vm-a/workloads/process-a") {
+    if (req.url === "/proxy/v2/vms/vm-a/workloads/process-a") {
       res.end(JSON.stringify({ success: true, workload: { id: "process-a", status: "running" } }));
       return;
     }
-    if (req.url === "/proxy/v1/pages") {
+    if (req.url === "/proxy/v2/pages") {
       res.end(JSON.stringify({ success: true, page: { slug: "site", source_vm_id: "vm-a" } }));
       return;
     }
-    if (req.url === "/proxy/v1/domain/routes/site.example") {
+    if (req.url === "/proxy/v2/domain/routes/site.example") {
       res.end(JSON.stringify({ success: true }));
       return;
     }
@@ -85,7 +85,7 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
   try {
     const client = new Oblien({
       token: "fixture",
-      baseUrl: `http://127.0.0.1:${address.port}/proxy/v1`,
+      baseUrl: `http://127.0.0.1:${address.port}/proxy/v2`,
     });
     expect((await client.vms.list()).vms[0]?.id).toBe("vm-a");
     expect((await client.vm("vm-a").get()).namespace).toBe("tenant-a");
@@ -104,9 +104,9 @@ it("keeps version and proxy mounts in real SDK JSON, Page, route and SSE request
     const failure = await client.vms.create({ wait_ready: false }).catch((error) => error);
     expect(cloudWorkspaceCreationFailure(failure)).toMatchObject({ workspaceId: "vm-failed" });
     expect(
-      calls.filter((call) => call.path === "/proxy/v1/vms" && call.body.wait_ready === false),
+      calls.filter((call) => call.path === "/proxy/v2/vms" && call.body.wait_ready === false),
     ).toHaveLength(1);
-    expect(calls.every((call) => call.path.startsWith("/proxy/v1/"))).toBe(true);
+    expect(calls.every((call) => call.path.startsWith("/proxy/v2/"))).toBe(true);
     expect(calls.find((call) => call.path.endsWith("/pages"))?.body).toMatchObject({
       vm_id: "vm-a",
     });

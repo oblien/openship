@@ -90,8 +90,8 @@ describe("self-hosted daily rollup", () => {
 
     h.project!.activeDeploymentId = "first-published";
     h.cloudResult = { success: true, data: { total: 0, countries: [] } };
-    await getProjectGeo(ctx, "p1");
-    expect(h.cloudCalls).toHaveLength(1);
+    expect(await getProjectGeo(ctx, "p1")).toMatchObject({ source: "cloud", geoAvailable: false });
+    expect(h.cloudCalls).toEqual([]);
   });
 
   it("defaults to exactly seven UTC dates including today, not eight", async () => {
@@ -202,33 +202,12 @@ describe("self-hosted daily rollup", () => {
 });
 
 describe("cloud", () => {
-  beforeEach(() => {
+  it("reports geography unavailable without requesting individual traffic data", async () => {
     h.sources = [{ kind: "cloud", domain: "a.com", deployTarget: "cloud" }];
-  });
-
-  it("asks Oblien for geo with only the allowlisted window params", async () => {
-    h.cloudResult = { success: true, data: { total: 3, countries: [{ code: "FR", count: 3, pct: 100 }] } };
-    const r = await getProjectGeo(ctx, "p1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z");
-
-    expect(h.cloudCalls).toHaveLength(1);
-    expect(h.cloudCalls[0].operation).toBe("geo");
-    expect(Object.keys(h.cloudCalls[0].params as object).sort()).toEqual(["from", "to"]);
-    expect(r.source).toBe("cloud");
-    expect(r.countries).toEqual([{ code: "FR", count: 3, pct: 100 }]);
-  });
-
-  it("walks nested data wrappers — the cloud proxy re-wraps the SDK response", async () => {
-    // SDK gives { success, data: {...} }; the proxy wraps that again as { data: ... }.
-    h.cloudResult = {
-      data: { success: true, data: { total: 2, countries: [{ code: "JP", count: 2, pct: 100 }] } },
-    };
-    const r = await getProjectGeo(ctx, "p1");
-    expect(r.countries).toEqual([{ code: "JP", count: 2, pct: 100 }]);
-  });
-
-  it("never reaches out to a server for a cloud project", async () => {
-    h.cloudResult = { data: { total: 0, countries: [] } };
-    await getProjectGeo(ctx, "p1");
+    expect(await getProjectGeo(ctx, "p1")).toMatchObject({
+      source: "cloud", geoAvailable: false, countries: [], pathsEnabled: false,
+    });
+    expect(h.cloudCalls).toEqual([]);
     expect(h.scrape).not.toHaveBeenCalled();
   });
 });

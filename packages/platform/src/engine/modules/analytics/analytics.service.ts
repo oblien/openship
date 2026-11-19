@@ -40,7 +40,6 @@ interface CloudAnalyticsBucket {
   bandwidth_out: number;
   /** Total request duration in seconds, not a per-request average. */
   response_time_sum: number;
-  unique_visitors: number;
 }
 
 interface CloudTimeseriesResponse {
@@ -151,7 +150,6 @@ function summariseCloudBuckets(
   lastUpdated: string,
 ): AnalyticsSummary {
   const totalReqs = buckets.reduce((sum, bucket) => sum + bucket.requests, 0);
-  const totalUnique = buckets.reduce((sum, bucket) => sum + bucket.unique_visitors, 0);
   const totalIn = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_in, 0);
   const totalOut = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_out, 0);
   const totalResponseTimeSeconds = buckets.reduce(
@@ -161,10 +159,9 @@ function summariseCloudBuckets(
 
   return {
     totalRequests: totalReqs,
-    // Oblien exposes distinct visitors but not a non-static request count, so this
-    // is the closest honest mapping: page requests are unknown here.
+    // Cloud Edge reports aggregate requests with no visitor identity.
     pageRequests: 0,
-    uniqueVisitors: totalUnique,
+    uniqueVisitors: null,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
     avgResponseTimeMs: averageResponseTimeMs(totalResponseTimeSeconds, totalReqs),
@@ -253,7 +250,6 @@ function buildCloudHourlyPeriods(
     current.bandwidth_in += bucket.bandwidth_in;
     current.bandwidth_out += bucket.bandwidth_out;
     current.response_time_sum += bucket.response_time_sum;
-    current.unique_visitors += bucket.unique_visitors;
   }
 
   const periods: AnalyticsPeriod[] = [];
@@ -268,7 +264,7 @@ function buildCloudHourlyPeriods(
       from: new Date(Math.max(bucketStartMs, fromMs)).toISOString(),
       to: new Date(Math.min(bucketStartMs + 3_600_000, toMs)).toISOString(),
       requests: bucket?.requests ?? 0,
-      uniqueVisitors: bucket?.unique_visitors ?? 0,
+      uniqueVisitors: 0,
       bandwidthIn: bucket?.bandwidth_in ?? 0,
       bandwidthOut: bucket?.bandwidth_out ?? 0,
       avgResponseTimeMs: averageResponseTimeMs(
@@ -372,15 +368,7 @@ export interface AnalyticsSummary {
    * dashboard, which it never was. Named for what it is.
    */
   pageRequests: number;
-  /**
-   * Genuinely distinct visitors, or null when this source can't tell.
-   *
-   * Non-null only where the SOURCE does the dedup: Oblien reports
-   * `unique_visitors` per bucket. The self-hosted edge dedups per DAY (a salted
-   * hash set in shared memory), which doesn't decompose into the minute buckets
-   * this summary is built from — so it is null here and the real number comes from
-   * `GET /analytics/geo`. Null means "ask elsewhere", never "zero visitors".
-   */
+  /** Unavailable for aggregate-only cloud traffic. Self-hosted visitor counts live in the geo response. */
   uniqueVisitors: number | null;
   /** Bandwidth in bytes */
   bandwidthIn: number;

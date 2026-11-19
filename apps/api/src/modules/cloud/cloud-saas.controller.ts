@@ -136,7 +136,7 @@ export async function analyticsProxy(c: Context) {
   if (!operation || !domain) {
     return c.json({ error: "operation and domain are required" }, 400);
   }
-  if (operation !== "timeseries" && operation !== "requests" && operation !== "streamToken") {
+  if (operation !== "timeseries") {
     return c.json({ error: "Unknown operation" }, 400);
   }
   try {

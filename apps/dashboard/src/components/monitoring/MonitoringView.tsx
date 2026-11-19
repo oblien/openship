@@ -42,6 +42,7 @@ import type { ProjectUsage } from "@/hooks/useProjectUsageStream";
 import type { AnalyticsData, AnalyticsGeoResponse } from "@/hooks/useProjectEndpoints";
 
 export interface MonitoringViewProps {
+  detailedTraffic?: boolean;
   analytics: AnalyticsData | null;
   isLoadingAnalytics: boolean;
   geo: AnalyticsGeoResponse | null;
@@ -136,6 +137,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
   analytics,
   isLoadingAnalytics,
   geo,
+  detailedTraffic = true,
   isLoadingGeo,
   history,
   isLoadingHistory,
@@ -193,6 +195,15 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
 
   const hasAnalytics = !!analytics;
 
+  const domainSelector = domains.length > 1 && onDomainScopeChange ? (
+              <DomainSwitcher
+                domains={domains}
+                value={domainScope ?? ""}
+                onChange={(d) => onDomainScopeChange(d || null)}
+                allowAll
+              />
+            ) : null;
+
   return (
     <div className="space-y-5">
       {/* Unmissable while fixtures are driving the page — every number below is fake,
@@ -239,7 +250,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
         />
       )}
       {(!showAnalyticsError || hasAnalytics) && (
-        <div className="grid grid-cols-2 divide-border/50 overflow-hidden rounded-2xl bg-card sm:grid-cols-4 sm:divide-x">
+        <div className={`grid grid-cols-2 divide-border/50 overflow-hidden rounded-2xl bg-card sm:divide-x ${detailedTraffic ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           <StatTile
             icon={<UiIcon name="server" className="size-4" />}
             label={t.projects.stats.serverRequests}
@@ -253,7 +264,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
                 : undefined
             }
           />
-          <StatTile
+          {detailedTraffic && <StatTile
             icon={<UiIcon name="users" className="size-4" />}
             label={visitorsLabel}
             value={geoError && !geo ? "—" : visitors == null ? (isLoadingGeo ? "…" : "0") : formatCount(visitors)}
@@ -261,7 +272,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
               isCloudGeo ? t.projectDetail.general.traffic.last24Hours : m.dailyWindow,
               geo?.approximate ? m.approximate : null,
             ].filter(Boolean).join(" · ")}
-          />
+          />}
           <StatTile
             icon={<UiIcon name="gauge" className="size-4" />}
             label={t.projects.stats.avgResponse}
@@ -350,7 +361,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
       )}
 
       {/* ── Where it came from, before how much of it ─────────────────────── */}
-      {(!geoError || geo) && (
+      {detailedTraffic && (!geoError || geo) && (
         <VisitorMap
           data={geo}
           isLoading={isLoadingGeo}
@@ -361,16 +372,7 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
           // so it ignored the theme entirely and looked nothing like the toggle beside it.
           // This is also the same switcher the logs header and the Overview URL card use, so
           // a multi-domain project changes domain the same way everywhere in the app.
-          domainSelector={
-            domains.length > 1 && onDomainScopeChange ? (
-              <DomainSwitcher
-                domains={domains}
-                value={domainScope ?? ""}
-                onChange={(d) => onDomainScopeChange(d || null)}
-                allowAll
-              />
-            ) : null
-          }
+          domainSelector={domainSelector}
         />
       )}
 
@@ -382,12 +384,13 @@ export const MonitoringView: React.FC<MonitoringViewProps> = ({
           summary={trafficSummary}
           storageKey="openship.monitoring.trafficOpen"
         >
+          {!detailedTraffic && domainSelector}
           {trafficChart}
         </CollapsibleCard>
       )}
 
       {/* Two short lists, side by side rather than two more full-width screens. */}
-      {geo && (
+      {detailedTraffic && geo && (
         <div className="grid gap-5 lg:grid-cols-2">
           {topPaths}
           <ResponseMix statuses={geo.statuses} />
