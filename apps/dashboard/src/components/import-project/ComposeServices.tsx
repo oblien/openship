@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { isMaskedValue } from "@repo/core";
-import { useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
+import { useProjectEnvReveal, useServiceEnvReveal } from "@/hooks/use-service-env-reveal";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -1060,14 +1060,10 @@ const ComposeServices: React.FC = () => {
   const rootEnvVars = config.rootEnvVars || [];
   const isServiceDeployment = usesServiceDeployment(config);
   const [modeOptionsOpen, setModeOptionsOpen] = useState(false);
-  const revealService =
-    services.find((s) => s.serviceId && s.environmentDraft?.environment) ??
-    services.find((s) => s.serviceId);
-  const sharedReveal = useServiceEnvReveal(
-    config.projectId,
-    revealService?.serviceId,
-    revealService?.environmentDraft?.environment,
-  );
+  // Shared rows live in the project's own env store (the production scope the
+  // deploy merges into), not in any service's — they need the project-level
+  // reveal. Borrowing a service id here returned that service's map instead.
+  const sharedReveal = useProjectEnvReveal(config.projectId, "production");
 
   const updateService = useCallback(
     (index: number, updates: Partial<ComposeServiceInfo>) => {
