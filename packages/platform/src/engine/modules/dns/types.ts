@@ -41,6 +41,8 @@ export interface DnsRecordInput {
   name: string;
   /** Value / target (IPv4 address, target hostname, TXT string). */
   content: string;
+  /** Add this TXT value without replacing other values at the same name. */
+  append?: true;
   /** TTL in seconds; omit for provider-automatic. */
   ttl?: number;
   /** Provider-specific proxying (Cloudflare's orange cloud). */
@@ -164,6 +166,12 @@ export interface DnsProvider {
 /** True when this record carries our ownership marker, i.e. we wrote it. */
 export function isOpenshipManaged(record: DnsRecord): boolean {
   return record.comment?.trim() === OPENSHIP_RECORD_COMMENT;
+}
+
+export function selectDnsRecord(existing: DnsRecord[], content: string, append: boolean) {
+  if (append) return { target: existing.find((record) => record.content === content), conflict: false };
+  const target = existing.length > 1 ? existing.find(isOpenshipManaged) : existing[0];
+  return { target, conflict: existing.length > 1 && !target };
 }
 
 /* ────── Typed errors ───────────────────────────────────────────── */

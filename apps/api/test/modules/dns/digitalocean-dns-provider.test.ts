@@ -319,6 +319,19 @@ describe("digitaloceanDnsProvider", () => {
       ]);
     });
 
+    it("appends a namespace proof and keeps the other proof on retry", async () => {
+      const zone = fakeZone("example.com", [rec({ id: 101, type: "TXT", name: "_opsh", data: "verify=first" })]);
+      h.fetch = zone.fetchMock;
+      const input = { type: "TXT", name: "_opsh.example.com", content: "verify=second", append: true } as const;
+
+      await digitaloceanDnsProvider.upsertRecord(creds, "example.com", input);
+      await digitaloceanDnsProvider.upsertRecord(creds, "example.com", input);
+
+      expect(zone.records.filter(({ name }) => name === "_opsh").map(({ data }) => data)).toEqual([
+        "verify=first", "verify=second",
+      ]);
+    });
+
     it("takes the record back down when its marker cannot be written", async () => {
       const zone = fakeZone("example.com", []);
       zone.failMarkerCreate.value = true;
