@@ -152,6 +152,7 @@ export class CloudflareIngress {
   constructor(
     private readonly token: string,
     readonly accountId: string,
+    private readonly credentialName?: string,
   ) {}
   private path(suffix: string) {
     return `/accounts/${encodeURIComponent(this.accountId)}${suffix}`;
@@ -287,7 +288,7 @@ export class CloudflareIngress {
     );
     if (zone) return zone;
     throw new AppError(
-      "This credential cannot manage the hostname's DNS zone in the selected Cloudflare account. Check its Zone Read and DNS Edit permissions.",
+      `The ingress credential for this server${this.credentialName ? ` (${this.credentialName})` : ""} cannot manage the DNS zone for ${hostname}. Check that its token has Zone Read and DNS Edit on that zone.`,
       400,
       "INGRESS_ZONE_UNAVAILABLE",
     );

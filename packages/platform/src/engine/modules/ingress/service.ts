@@ -53,20 +53,24 @@ export const publicHostname = (h: IngressHostname): PublicHostname => ({
   error: h.error,
 });
 const lockKey = (c: IngressConnection) => `ingress:cloudflare:${c.accountId}:${c.tunnelId ?? c.id}`;
-async function token(organizationId: string, credentialId: string) {
-  const credential = (await listProviderCredentials(organizationId, "cloudflare")).find(
+async function credential(organizationId: string, credentialId: string) {
+  const found = (await listProviderCredentials(organizationId, "cloudflare")).find(
     (c) => c.id === credentialId,
   );
-  if (!credential?.readable || !credential.secrets.apiToken)
+  if (!found?.readable || !found.secrets.apiToken)
     throw new AppError(
       "Reconnect the saved Cloudflare credential, then retry.",
       409,
       "INGRESS_CREDENTIAL_REQUIRED",
     );
-  return credential.secrets.apiToken;
+  return { apiToken: found.secrets.apiToken, name: found.name };
+}
+async function token(organizationId: string, credentialId: string) {
+  return (await credential(organizationId, credentialId)).apiToken;
 }
 async function provider(c: IngressConnection) {
-  return new CloudflareIngress(await token(c.organizationId, c.credentialId), c.accountId);
+  const { apiToken, name } = await credential(c.organizationId, c.credentialId);
+  return new CloudflareIngress(apiToken, c.accountId, name);
 }
 async function authorizeServer(ctx: ExecutionContext, id: string) {
   await authorization.authorize(
