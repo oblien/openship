@@ -249,6 +249,28 @@ describe("cloudflareDnsProvider", () => {
       expect(posted).toMatchObject({ comment: OPENSHIP_RECORD_COMMENT, ttl: 1, proxied: false });
     });
 
+    it("appends a namespace proof beside another and reuses the exact value on retry", async () => {
+      const name = "_opsh.example.com";
+      const stored = [record({ id: "first", type: "TXT", name, content: '"verify=first"' })];
+      const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          const body = JSON.parse(init.body as string);
+          const next = record({ ...body, id: "second" });
+          stored.push(next);
+          return cfOk(next);
+        }
+        return cfOk(stored);
+      });
+      global.fetch = fetchMock;
+      const input = { type: "TXT", name, content: "verify=second", append: true } as const;
+
+      await cloudflareDnsProvider.upsertRecord({ apiToken: "t" }, "zone_123", input);
+      await cloudflareDnsProvider.upsertRecord({ apiToken: "t" }, "zone_123", input);
+
+      expect(stored.map(({ content }) => content)).toEqual(['"verify=first"', '"verify=second"']);
+      expect(fetchMock.mock.calls.map(([, init]) => init?.method).filter(method => method && method !== "GET")).toEqual(["POST"]);
+    });
+
     it("updates in place when one record already matches", async () => {
       let method = "";
       global.fetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {

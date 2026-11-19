@@ -37,6 +37,15 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   };
 });
 
+const managed = vi.hoisted(() => ({ workspace: vi.fn(), verify: vi.fn(), selected: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/cloud-workspace-scope", () => ({
+  cloudBillingOwner: managed.workspace,
+  workspaceForServer: managed.selected,
+}));
+vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
+  getNamespaceClient: vi.fn(async () => ({ client: { domain: { verify: managed.verify } } })),
+}));
+
 vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/platform/engine/lib/server-target")>();
   return {
@@ -53,6 +62,7 @@ const { previewRecords } = await import("@repo/platform/engine/modules/domains/d
 beforeEach(() => {
   vi.clearAllMocks();
   platformTarget = "local";
+  managed.workspace.mockResolvedValue({ workspaceId: null });
   cloudVerifyDomain.mockResolvedValue({
     requiredRecords: { cname: { target: "edge.opsh.io" } },
   });
@@ -123,6 +133,25 @@ describe("previewRecords — cloud", () => {
     });
     // Each hostname proves ownership with its OWN token.
     expect(records[3]!.value).not.toBe(records[1]!.value);
+  });
+
+  it("checks each hostname under the selected managed server and lists one shared proof", async () => {
+    platformTarget = "cloud";
+    managed.selected.mockResolvedValue({ workspace: { id: "ws-selected" } });
+    managed.verify.mockImplementation(async ({ domain }: { domain: string }) => ({
+      verified: false, cname: false, ownership: false,
+      required_records: {
+        cname: { host: domain, target: "edge.opsh.io" },
+        txt: { host: "_opsh.hekai.org", value: "verify=namespace" },
+      },
+    }));
+    const result = await previewRecords("hekai.org", "org_1", true, "server-selected");
+    expect(managed.selected).toHaveBeenCalledWith("org_1", "server-selected");
+    expect(managed.workspace).not.toHaveBeenCalled();
+    expect(managed.verify.mock.calls).toEqual([[{ domain: "hekai.org" }], [{ domain: "www.hekai.org" }]]);
+    expect(result.records.map(({ type, name }) => [type, name])).toEqual([
+      ["CNAME", "hekai.org"], ["TXT", "_opsh.hekai.org"], ["CNAME", "www.hekai.org"],
+    ]);
   });
 });
 

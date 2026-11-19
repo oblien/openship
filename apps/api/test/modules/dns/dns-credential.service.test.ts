@@ -300,6 +300,25 @@ describe("planRecords", () => {
       { type: "A", name: "app.example.com", content: "192.0.2.1", ...over },
     ]);
 
+  it("plans a second namespace proof without adopting another TXT value", async () => {
+    provider.listRecords.mockResolvedValue([rec({
+      type: "TXT", name: "_opsh.example.com", content: "verify=first",
+    })]);
+    const { records } = await planRecords("org_1", "app.example.com", [
+      { type: "TXT", name: "_opsh.example.com", content: "verify=second", append: true },
+    ]);
+    expect(records).toMatchObject([{ action: "create", desired: "verify=second" }]);
+  });
+
+  it("cannot write a parent proof through a delegated child DNS zone", async () => {
+    provider.findZone.mockResolvedValue({ id: "child", name: "app.example.com", status: "active" });
+    const input = [{ type: "TXT" as const, name: "_opsh.example.com", content: "verify=parent", append: true as const }];
+    const { records } = await planRecords("org_1", "app.example.com", input);
+    expect(records).toMatchObject([{ action: "conflict", current: "Outside the connected DNS zone" }]);
+    expect((await provisionRecords("org_1", "app.example.com", input)).provisioned).toBe(false);
+    expect(provider.upsertRecord).not.toHaveBeenCalled();
+  });
+
   it("classifies an empty zone as create — nothing is there yet", async () => {
     provider.listRecords.mockResolvedValue([]);
     const out = await plan1();

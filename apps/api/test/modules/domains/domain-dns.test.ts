@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const domainRepo = vi.hoisted(() => ({
   findById: vi.fn(),
+  recordVerifyFailure: vi.fn(),
+  listByProject: vi.fn(),
+  markVerifiedActive: vi.fn(),
 }));
 
 const projectRepo = vi.hoisted(() => ({
@@ -14,13 +17,16 @@ const serverTarget = vi.hoisted(() => ({
   resolveSelectedServerHost: vi.fn(),
 }));
 
+const cloud = vi.hoisted(() => ({ enabled: false, getClient: vi.fn(), verify: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({ getNamespaceClient: cloud.getClient }));
+
 vi.mock("@repo/db", () => ({
   repos: { domain: domainRepo, project: projectRepo },
 }));
 
 vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
-  return { ...actual, platform: () => ({ target: "local", runtime: {} }) };
+  return { ...actual, platform: () => ({ target: cloud.enabled ? "cloud" : "local", runtime: {} }) };
 });
 
 vi.mock("@repo/platform/engine/lib/server-target", async (importOriginal) => {
@@ -49,6 +55,7 @@ import {
   applyDomainDns,
   getDomainRecords,
   planDomainDns,
+  verifyDomain,
 } from "@repo/platform/engine/modules/domains/domain.service";
 
 const ctx = { organizationId: "org_123", userId: "user_123" } as any;
@@ -70,6 +77,7 @@ const domain = {
 
 describe("domain DNS plan/apply mapping", () => {
   beforeEach(() => {
+    cloud.enabled = false;
     domainRepo.findById.mockReset();
     domainRepo.findById.mockResolvedValue(domain);
     projectRepo.findById.mockReset();
@@ -139,13 +147,81 @@ describe("domain DNS plan/apply mapping", () => {
   });
 });
 
+describe("managed Cloud domain records", () => {
+  const parentProof = { host: "_opsh.example.com", value: "verify=workspace-proof" };
+  const route = { host: "www.example.com", target: "edge.example.com" };
+
+  beforeEach(() => {
+    cloud.enabled = true;
+    cloud.getClient.mockReset().mockResolvedValue({ client: { domain: { verify: cloud.verify } } });
+    cloud.verify.mockReset();
+    domainRepo.findById.mockResolvedValue({ ...domain, hostname: "www.example.com" });
+    projectRepo.findById.mockResolvedValue({ ...project, workspaceId: "workspace-1" });
+    planRecords.mockClear();
+    provisionRecords.mockClear();
+  });
+
+  it("shows and appends the exact parent TXT through the same plan and apply", async () => {
+    cloud.verify.mockResolvedValue({
+      verified: false, cname: true, ownership: false,
+      required_records: { cname: route, txt: parentProof },
+    });
+    const { records } = await getDomainRecords(ctx, domain.id);
+    expect(records).toEqual([expect.objectContaining({
+      type: "TXT", host: "_opsh", name: "_opsh.example.com", value: parentProof.value,
+    })]);
+    await planDomainDns(ctx, domain.id);
+    await applyDomainDns(ctx, domain.id);
+    const inputs = [{ type: "TXT", name: parentProof.host, content: parentProof.value, append: true }];
+    expect(planRecords).toHaveBeenCalledWith(ctx.organizationId, "www.example.com", inputs);
+    expect(provisionRecords).toHaveBeenCalledWith(ctx.organizationId, "www.example.com", inputs);
+    expect(cloud.getClient).toHaveBeenCalledWith(ctx.organizationId, "workspace-1");
+    expect(cloud.verify).toHaveBeenCalledWith({ domain: "www.example.com" });
+  });
+
+  it("omits the TXT prompt and still requires routing for a sibling", async () => {
+    cloud.verify.mockResolvedValue({
+      verified: false, cname: false, ownership: true,
+      required_records: { cname: route, txt: parentProof },
+    });
+    expect((await getDomainRecords(ctx, domain.id)).records).toEqual([
+      { type: "CNAME", host: "www", name: "www.example.com", value: route.target },
+    ]);
+    domainRepo.recordVerifyFailure.mockResolvedValueOnce(1);
+    expect(await verifyDomain(ctx, domain.id)).toMatchObject({
+      verified: false, cnameVerified: false, txtVerified: true,
+      message: "Add CNAME www.example.com → edge.example.com to verify www.example.com.",
+    });
+  });
+
+  it("verifies the managed hostname without asking for an OpenShip TXT", async () => {
+    domainRepo.listByProject.mockResolvedValue([]);
+    cloud.verify.mockResolvedValue({ verified: true, cname: true, ownership: true });
+    expect(await verifyDomain(ctx, domain.id, { deferSsl: true })).toMatchObject({
+      verified: true, cnameVerified: true, txtVerified: true,
+    });
+    expect(domainRepo.markVerifiedActive).toHaveBeenCalledWith(domain.id, {
+      sslStatus: "provisioning", promote: { projectId: project.id },
+    });
+  });
+
+  it("does not plan a TXT write for a name outside the requested domain ancestry", async () => {
+    cloud.verify.mockResolvedValue({
+      verified: false, cname: true, ownership: false,
+      required_records: { cname: route, txt: { ...parentProof, host: "_opsh.other.example.com" } },
+    });
+    await expect(planDomainDns(ctx, domain.id)).rejects.toMatchObject({ code: "CLOUD_DOMAIN_DNS_UNAVAILABLE" });
+    expect(planRecords).not.toHaveBeenCalled();
+  });
+});
+
 // The application seams moved with the shared engine.
 vi.mock("@repo/platform/engine/lib/platform-config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
-  return { ...actual, platform: () => ({ target: "local", runtime: {} }) };
+  return { ...actual, platform: () => ({ target: cloud.enabled ? "cloud" : "local", runtime: {} }) };
 });
 
 vi.mock("@repo/platform/engine/lib/resource-access", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/lib/controller-helpers")>();
-  return { ...actual, platform: () => ({ target: "local", runtime: {} }) };
+  return { ...actual, platform: () => ({ target: cloud.enabled ? "cloud" : "local", runtime: {} }) };
 });
