@@ -82,6 +82,14 @@ function CustomerSupport({
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
               <p className="mt-1 text-sm text-muted-foreground">{copy.subtitle}</p>
+              {!linked && (
+                <a
+                  href={BRAND_LINKS.cloudStatus}
+                  className="mt-1 inline-block text-sm text-muted-foreground underline-offset-4 hover:underline"
+                >
+                  {t.dashboard.home.systemStatus}
+                </a>
+              )}
               {linked && (
                 <p className="mt-1 break-all text-xs text-muted-foreground">
                   {interpolate(copy.linkedAs, { email })}

@@ -202,6 +202,9 @@ describe("private Cloud support center", () => {
     expect(host.textContent).toContain(copy.signIn);
     h.user = { id: "customer-b", name: "Other", email: "other@example.test" };
     await render();
+    expect(host.querySelector('a[href="https://status.oblien.com/openship"]')?.textContent).toBe(
+      "System status",
+    );
     const [url, init] = h.fetch.mock.calls[0]!;
     expect(url.pathname).toBe("/api/cloud/support/mine");
     expect(init.credentials).toBe("include");
@@ -432,6 +435,7 @@ describe("Support on a Cloud-connected self-hosted installation", () => {
     h.user = null;
     await render(false, "desktop");
     expect(host.textContent).toContain(ticket().subject);
+    expect(host.querySelector('a[href="https://status.oblien.com/openship"]')).toBeNull();
     expect(host.textContent).toContain("cloud-customer@example.test");
     expect(reads().some(([url]) => url.pathname === "/api/cloud/support/session")).toBe(true);
   });

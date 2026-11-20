@@ -1,3 +1,4 @@
+import { BRAND_LINKS } from "@repo/core";
 import { useCopy } from "@/i18n/use-copy";
 
 import { Link } from "@/i18n/Link";
@@ -26,6 +27,7 @@ const footerLinks = {
     { label: "About", href: "/about" },
     { label: "Contact", href: "/contact" },
     { label: "Support", href: "/support" },
+    { label: "System status", href: BRAND_LINKS.cloudStatus },
   ],
   Legal: [
     { label: "Privacy", href: "/privacy" },

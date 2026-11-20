@@ -60,6 +60,7 @@ export const BRAND_LINKS = {
   site: "https://openship.io",
   docs: "https://openship.io/docs",
   support: "https://openship.io/support",
+  cloudStatus: "https://status.oblien.com/openship",
   contact: "https://openship.io/contact",
   github: "https://github.com/oblien/openship",
   issues: "https://github.com/oblien/openship/issues/new",
