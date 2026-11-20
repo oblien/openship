@@ -129,12 +129,12 @@ describe("provider boundary", () => {
   const dashboardUrl = "https://app.openship.test";
 
   it.each(["createOffer", "revokeOffer"] as const)(
-    "normalizes the provider product and keeps private fields out of %s",
+    "accepts the v2 product and keeps private fields out of %s",
     async (operation) => {
       const billing = { referralRequest: vi.fn(async () => envelope(providerOffer)) };
       const result = await callReferralProvider(billing, scope, dashboardUrl, operation, { id });
       expect(result).toMatchObject({
-        productId: "workspace_vm",
+        productId: "vm_compute",
         url: "https://app.openship.test/r/AF-0123456789",
       });
       expect(result).not.toHaveProperty("user_id");
@@ -143,27 +143,26 @@ describe("provider boundary", () => {
     },
   );
 
-  it("lists offers from either provider version and rejects unrelated products", async () => {
+  it("lists v2 offers and rejects other product IDs", async () => {
     const billing = {
-      referralRequest: vi.fn(async () =>
-        envelope({ total: 2, items: [providerOffer, { ...providerOffer, productId: "workspace_vm" }] }),
-      ),
+      referralRequest: vi.fn(async () => envelope({ total: 1, items: [providerOffer] })),
     };
     const result = await callReferralProvider(billing, scope, dashboardUrl, "offers");
-    expect(result.items).toHaveLength(2);
-    for (const item of result.items) {
-      expect(item).toMatchObject({
-        productId: "workspace_vm",
-        url: "https://app.openship.test/r/AF-0123456789",
-      });
-      expect(item).not.toHaveProperty("wallet");
-    }
-    billing.referralRequest.mockResolvedValueOnce(
-      envelope({ total: 1, items: [{ ...providerOffer, productId: "unrelated_product" }] }),
-    );
-    await expect(callReferralProvider(billing, scope, dashboardUrl, "offers")).rejects.toMatchObject({
-      code: "AFFILIATE_PROVIDER_RESPONSE_INVALID",
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      productId: "vm_compute",
+      url: "https://app.openship.test/r/AF-0123456789",
     });
+    expect(result.items[0]).not.toHaveProperty("wallet");
+
+    for (const productId of ["workspace_vm", "unrelated_product"]) {
+      billing.referralRequest.mockResolvedValueOnce(
+        envelope({ total: 1, items: [{ ...providerOffer, productId }] }),
+      );
+      await expect(callReferralProvider(billing, scope, dashboardUrl, "offers")).rejects.toMatchObject({
+        code: "AFFILIATE_PROVIDER_RESPONSE_INVALID",
+      });
+    }
   });
 
   it("keeps referred customers visible after the provider product rename", async () => {
@@ -191,7 +190,7 @@ describe("provider boundary", () => {
         }),
     };
     const result = await callReferralProvider(billing, scope, dashboardUrl, "referrals");
-    expect(result.items).toMatchObject([{ productId: "workspace_vm", earned: 200 }]);
+    expect(result.items).toMatchObject([{ productId: "vm_compute", earned: 200 }]);
   });
 
   it("fails closed on incomplete monetary totals", async () => {

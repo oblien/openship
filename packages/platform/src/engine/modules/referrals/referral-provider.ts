@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
-import type { StaticDecode, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   ReferralOperationSchemas,
   AppError,
-  isRecord,
+  parseInput,
   type ReferralOperations,
   type ReferralOverview,
 } from "@repo/contracts";
@@ -45,22 +44,8 @@ const endpoints = {
   setPayoutDestination: "payout-destination",
   cancelPayout: "payouts",
 } as const;
-/** Validate and project provider responses through the shared referral schemas. */
-export function decodeReferralResponse<T extends TSchema>(
-  schema: T,
-  value: unknown,
-): StaticDecode<T> {
-  try {
-    // Drop provider-only fields before validating and decoding the response.
-    return Value.Decode(schema, Value.Clean(schema, structuredClone(value)));
-  } catch {
-    throw new AppError(
-      "Referral data could not be verified. Please retry.",
-      502,
-      "AFFILIATE_PROVIDER_RESPONSE_INVALID",
-    );
-  }
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
 
 /** Provider is the financial authority. Identity is bound before projecting any records. */
 export async function callReferralProvider<K extends keyof ReferralOperations>(
@@ -109,5 +94,16 @@ export async function callReferralProvider<K extends keyof ReferralOperations>(
     data = link(data) as Record<string, unknown>;
   if (operation === "offers" && Array.isArray(data.items))
     data = { ...data, items: data.items.map(link) };
-  return decodeReferralResponse(spec.output, data) as Awaited<ReturnType<ReferralOperations[K]>>;
+  try {
+    // Drop provider namespace, beneficiary, wallet and provider payment identifiers.
+    return parseInput(spec.output, Value.Clean(spec.output, structuredClone(data))) as Awaited<
+      ReturnType<ReferralOperations[K]>
+    >;
+  } catch {
+    throw new AppError(
+      "Referral data could not be verified. Please retry.",
+      502,
+      "AFFILIATE_PROVIDER_RESPONSE_INVALID",
+    );
+  }
 }

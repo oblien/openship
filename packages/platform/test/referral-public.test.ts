@@ -17,7 +17,7 @@ const code = "AF-0123456789";
 const offer = {
   code,
   name: "Community",
-  productId: "workspace_vm",
+  productId: "vm_compute",
   planId: null,
   discountBps: 500,
   durationMonths: 12,
@@ -63,25 +63,22 @@ it("keeps Cloud feature-off unavailable and does not recurse into its public end
   expect(h.provider).not.toHaveBeenCalled();
 });
 
-it.each(["workspace_vm", "vm_compute"])(
-  "verifies public Cloud referral terms with provider product %s",
-  async (productId) => {
-    h.env.CLOUD_MODE = true;
-    h.env.REFERRALS_ENABLED = true;
-    const scope = { namespace: h.env.REFERRAL_NAMESPACE };
-    h.provider.mockResolvedValue({ success: true, scope, offer: { ...offer, productId } });
-    await expect(readReferralOffer(code)).resolves.toEqual(offer);
-    expect(h.provider).toHaveBeenCalledExactlyOnceWith(
-      "GET",
-      `/billing/affiliates/reseller/codes/${code}`,
-      scope,
-    );
-    h.provider.mockResolvedValueOnce({ success: true, scope: { namespace: "other" }, offer });
-    await expect(readReferralOffer(code)).rejects.toMatchObject({
-      code: "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
-    });
-  },
-);
+it("verifies v2 public terms and requires the configured provider namespace", async () => {
+  h.env.CLOUD_MODE = true;
+  h.env.REFERRALS_ENABLED = true;
+  const scope = { namespace: h.env.REFERRAL_NAMESPACE };
+  h.provider.mockResolvedValue({ success: true, scope, offer });
+  await expect(readReferralOffer(code)).resolves.toEqual(offer);
+  expect(h.provider).toHaveBeenCalledExactlyOnceWith(
+    "GET",
+    `/billing/affiliates/reseller/codes/${code}`,
+    scope,
+  );
+  h.provider.mockResolvedValueOnce({ success: true, scope: { namespace: "other" }, offer });
+  await expect(readReferralOffer(code)).rejects.toMatchObject({
+    code: "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
+  });
+});
 
 it("preserves existing participant ownership across the Referral rename", () => {
   expect(referralParticipantKey("alice")).toBe("9128fa57b97e7d6776411ffefba433b4e312abb60f221daedf2afec80a92d240");
