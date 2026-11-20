@@ -262,7 +262,11 @@ export async function deleteHook(projectId: string, id: string): Promise<boolean
 
 export type TriggerResult =
   | { ok: true; action: IncomingWebhookActionType; ref?: string }
-  | { error: "not_found" | "unauthorized" | "disabled" | "action_failed" };
+  | {
+      error: "not_found" | "unauthorized" | "disabled" | "action_failed";
+      code?: string;
+      message?: string;
+    };
 
 /**
  * Authenticate an inbound call against the hook's own auth mode, then dispatch
@@ -368,11 +372,17 @@ export async function dispatchIncomingWebhook(
       });
       ref = result?.deployment?.id;
     } else if (hook.actionType === "job") {
-      if (!cfg.jobKey) return { error: "action_failed" };
+      if (!cfg.jobKey) {
+        const error = "A job is required for a job webhook";
+        recordIncomingDelivery(hook, opts, "failed", { error });
+        return { error: "action_failed", code: "JOB_REQUIRED", message: error };
+      }
       const result = await runJobNow(cfg.jobKey);
       ref = result?.runId;
     } else {
-      return { error: "action_failed" };
+      const error = "Unknown action type";
+      recordIncomingDelivery(hook, opts, "failed", { error });
+      return { error: "action_failed", code: "UNKNOWN_ACTION", message: error };
     }
 
     await repos.incomingWebhook.markFired(hook.id);
@@ -390,11 +400,17 @@ export async function dispatchIncomingWebhook(
       err instanceof OperationError && err.code === "COMPOSE_REVIEW_REQUIRED"
         ? err.details?.composeChanges
         : undefined;
+    const errorMessage = (err as Error)?.message ?? String(err);
+    const code = (err as { code?: string })?.code;
     recordIncomingDelivery(hook, opts, "failed", {
-      error: (err as Error)?.message ?? String(err),
+      error: errorMessage,
       ...(composeChanges !== undefined ? { composeChanges } : {}),
     });
-    return { error: "action_failed" };
+    return {
+      error: "action_failed",
+      ...(code ? { code } : {}),
+      message: errorMessage,
+    };
   }
 }
 

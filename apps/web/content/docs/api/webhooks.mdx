@@ -82,6 +82,10 @@ update external senders to use the new secret.
 `listDeliveries()` lists events visible across the selected organization. Pagination filters access
 before selecting the page.
 
+Failed deliveries record the underlying failure reason in the delivery feed. In the dashboard, recent deliveries appear on the project's **Webhooks** tab, where failed rows can be expanded to view the recorded error text (as well as any changed Compose services for refused deployments). Deliveries can also be inspected via the CLI (`openship webhook deliveries --project <id>`) or via `GET /api/projects/:id/webhook-deliveries`.
+
+When an incoming webhook dispatch fails inside the action, the HTTP response returns status `502` with a machine-readable error code in the response body (for example `{"error":"Action failed","code":"COMPOSE_REVIEW_REQUIRED"}`). Authentication and missing hook failures return an opaque `404 {"error":"Not found"}` so valid hook IDs cannot be probed.
+
 ## Dispatch a provider webhook
 
 ```
