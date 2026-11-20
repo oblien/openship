@@ -395,15 +395,24 @@
             "prepareCommand": { "type": "string" }
           }
         },
+        "exclude": {
+          "type": "array",
+          "description": "List of rootDirectory paths to exclude from detected workspace apps.",
+          "items": { "type": "string" }
+        },
         "apps": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "rootDirectory"],
+            "required": ["rootDirectory"],
             "properties": {
               "name": { "type": "string" },
               "rootDirectory": { "type": "string" },
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether this detected workspace app is deployable. Set to false to exclude it."
+              },
               "framework": {
                 "enum": [
                   "nextjs",

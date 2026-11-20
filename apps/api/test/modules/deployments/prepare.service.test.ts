@@ -1163,6 +1163,71 @@ describe("resolveProjectInfo", () => {
       ]);
     });
 
+    it("excludes workspace sub-apps declared in monorepo.exclude (#1758)", async () => {
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          monorepo: {
+            exclude: ["apps/admin", "apps/missing"],
+          },
+        }),
+      );
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({ name: "workspace", workspaces: ["apps/*"] }),
+      );
+      for (const app of ["web", "admin"]) {
+        await mkdir(join(tempDir, "apps", app), { recursive: true });
+        await writeFile(
+          join(tempDir, "apps", app, "package.json"),
+          JSON.stringify({
+            name: app,
+            dependencies: { next: "^15.0.0" },
+            scripts: { build: "next build", start: "next start" },
+          }),
+        );
+        await writeFile(join(tempDir, "apps", app, "package-lock.json"), "{}");
+      }
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info.projectType).toBe("monorepo");
+      expect(info.monorepoApps).toHaveLength(1);
+      expect(info.monorepoApps?.[0]?.rootDirectory).toBe("apps/web");
+      expect(info.configDiagnostics?.warnings).toEqual([
+        expect.stringMatching(/^monorepo\.exclude\[1\]:.*did not match/),
+      ]);
+    });
+
+    it("excludes workspace sub-apps with enabled: false in monorepo.apps (#1758)", async () => {
+      const tempDir = await repoWithConfig(
+        JSON.stringify({
+          monorepo: {
+            apps: [
+              { rootDirectory: "apps/admin", enabled: false },
+            ],
+          },
+        }),
+      );
+      await writeFile(
+        join(tempDir, "package.json"),
+        JSON.stringify({ name: "workspace", workspaces: ["apps/*"] }),
+      );
+      for (const app of ["web", "admin"]) {
+        await mkdir(join(tempDir, "apps", app), { recursive: true });
+        await writeFile(
+          join(tempDir, "apps", app, "package.json"),
+          JSON.stringify({
+            name: app,
+            dependencies: { next: "^15.0.0" },
+            scripts: { build: "next build", start: "next start" },
+          }),
+        );
+        await writeFile(join(tempDir, "apps", app, "package-lock.json"), "{}");
+      }
+      const info = await resolveProjectInfo({ source: "local", path: tempDir });
+      expect(info.projectType).toBe("monorepo");
+      expect(info.monorepoApps).toHaveLength(1);
+      expect(info.monorepoApps?.[0]?.rootDirectory).toBe("apps/web");
+    });
+
     it("reports an unrecognized top-level key as a warning, not an error", async () => {
       // The issue's headline case. `buildComand` produces ZERO errors — it lands
       // entirely in the warnings channel, so an errors-only fix would not report

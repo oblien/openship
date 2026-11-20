@@ -305,6 +305,61 @@ describe("parseOpenshipConfig", () => {
     });
   });
 
+  describe("monorepo exclusion (#1758)", () => {
+    it("parses monorepo.exclude as a list of paths", () => {
+      const { config, errors } = parseOpenshipConfig({
+        monorepo: {
+          exclude: ["apps/mobile", "packages/internal-tool"],
+        },
+      });
+      expect(errors).toEqual([]);
+      expect(config?.monorepo?.exclude).toEqual(["apps/mobile", "packages/internal-tool"]);
+    });
+
+    it("rejects non-array or non-string monorepo.exclude", () => {
+      expect(parseOpenshipConfig({ monorepo: { exclude: "apps/mobile" } }).errors).toEqual([
+        "monorepo.exclude: must be an array of paths",
+      ]);
+      expect(parseOpenshipConfig({ monorepo: { exclude: [123] } }).errors).toEqual([
+        "monorepo.exclude[0]: must be a string",
+      ]);
+    });
+
+    it("parses enabled: false on monorepo.apps and allows omitting name when disabled", () => {
+      const { config, errors } = parseOpenshipConfig({
+        monorepo: {
+          apps: [
+            { rootDirectory: "apps/mobile", enabled: false },
+            { name: "web", rootDirectory: "apps/web", enabled: true },
+          ],
+        },
+      });
+      expect(errors).toEqual([]);
+      expect(config?.monorepo?.apps).toEqual([
+        { rootDirectory: "apps/mobile", enabled: false },
+        { name: "web", rootDirectory: "apps/web", enabled: true },
+      ]);
+    });
+
+    it("still requires name when enabled is not false", () => {
+      const { errors } = parseOpenshipConfig({
+        monorepo: {
+          apps: [{ rootDirectory: "apps/web" }],
+        },
+      });
+      expect(errors).toEqual(["monorepo.apps[0]: requires `name` and `rootDirectory`"]);
+    });
+
+    it("rejects non-boolean enabled", () => {
+      const { errors } = parseOpenshipConfig({
+        monorepo: {
+          apps: [{ name: "web", rootDirectory: "apps/web", enabled: "false" }],
+        },
+      });
+      expect(errors).toEqual(["monorepo.apps[0].enabled: must be a boolean"]);
+    });
+  });
+
   describe("composePath", () => {
     it("round-trips a file path and a directory path", () => {
       for (const composePath of [

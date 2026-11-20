@@ -637,6 +637,12 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
   if (v.sharedPaths !== undefined) {
     ctx.warnings.push(`${path}.sharedPaths is not applied yet (ignored)`);
   }
+  if (v.exclude !== undefined) {
+    if (!Array.isArray(v.exclude)) ctx.err(`${path}.exclude`, "must be an array of paths");
+    else {
+      mono.exclude = ctx.strArray(v.exclude, `${path}.exclude`);
+    }
+  }
   if (v.apps !== undefined) {
     if (!Array.isArray(v.apps)) ctx.err(`${path}.apps`, "must be an array");
     else {
@@ -650,7 +656,8 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
         }
         const name = ctx.str(a.name, `${p}.name`);
         const rootDirectory = ctx.str(a.rootDirectory, `${p}.rootDirectory`);
-        if (!name || !rootDirectory) {
+        const enabled = ctx.bool(a.enabled, `${p}.enabled`);
+        if (!rootDirectory || (!name && enabled !== false)) {
           ctx.err(p, "requires `name` and `rootDirectory`");
           return;
         }
@@ -664,8 +671,9 @@ function parseMonorepo(ctx: Ctx, v: unknown, path: string): OpenshipMonorepo | u
         }
         roots.set(root, i);
         apps.push({
-          name,
+          ...(name ? { name } : {}),
           rootDirectory,
+          ...(enabled !== undefined ? { enabled } : {}),
           framework: ctx.enumOf(a.framework, `${p}.framework`, STACK_IDS),
           packageManager: parsePackageManager(ctx, a.packageManager, `${p}.packageManager`),
           installCommand: ctx.str(a.installCommand, `${p}.installCommand`),
