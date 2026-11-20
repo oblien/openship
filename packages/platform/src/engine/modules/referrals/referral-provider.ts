@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
+import type { StaticDecode, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   ReferralOperationSchemas,
-  ReferralOfferSchema,
   AppError,
   isRecord,
-  parseInput,
   type ReferralOperations,
   type ReferralOverview,
 } from "@repo/contracts";
@@ -46,11 +45,21 @@ const endpoints = {
   setPayoutDestination: "payout-destination",
   cancelPayout: "payouts",
 } as const;
-// Oblien renamed its VM product. Keep the OpenShip product ID stable for clients.
-export function normalizeOblienReferralProduct(value: unknown) {
-  return isRecord(value) && value.productId === "vm_compute"
-    ? { ...value, productId: ReferralOfferSchema.properties.productId.const }
-    : value;
+/** Validate and project provider responses through the shared referral schemas. */
+export function decodeReferralResponse<T extends TSchema>(
+  schema: T,
+  value: unknown,
+): StaticDecode<T> {
+  try {
+    // Drop provider-only fields before validating and decoding the response.
+    return Value.Decode(schema, Value.Clean(schema, structuredClone(value)));
+  } catch {
+    throw new AppError(
+      "Referral data could not be verified. Please retry.",
+      502,
+      "AFFILIATE_PROVIDER_RESPONSE_INVALID",
+    );
+  }
 }
 
 /** Provider is the financial authority. Identity is bound before projecting any records. */
@@ -93,29 +102,12 @@ export async function callReferralProvider<K extends keyof ReferralOperations>(
   let data = response.data;
   const link = (offer: unknown) => {
     if (!isRecord(offer) || typeof offer.code !== "string") return offer;
-    return normalizeOblienReferralProduct({
-      ...offer,
-      url: new URL(`/r/${encodeURIComponent(offer.code)}`, dashboardUrl).href,
-    });
+    return { ...offer, url: new URL(`/r/${encodeURIComponent(offer.code)}`, dashboardUrl).href };
   };
   if (operation === "overview" || operation === "enroll") data = { ...data, available: true };
   if (operation === "createOffer" || operation === "revokeOffer")
     data = link(data) as Record<string, unknown>;
-  if ((operation === "offers" || operation === "referrals") && Array.isArray(data.items))
-    data = {
-      ...data,
-      items: data.items.map(operation === "offers" ? link : normalizeOblienReferralProduct),
-    };
-  try {
-    // Drop provider namespace, beneficiary, wallet and provider payment identifiers.
-    return parseInput(spec.output, Value.Clean(spec.output, structuredClone(data))) as Awaited<
-      ReturnType<ReferralOperations[K]>
-    >;
-  } catch {
-    throw new AppError(
-      "Referral data could not be verified. Please retry.",
-      502,
-      "AFFILIATE_PROVIDER_RESPONSE_INVALID",
-    );
-  }
+  if (operation === "offers" && Array.isArray(data.items))
+    data = { ...data, items: data.items.map(link) };
+  return decodeReferralResponse(spec.output, data) as Awaited<ReturnType<ReferralOperations[K]>>;
 }

@@ -3,6 +3,13 @@ import type { ResourceOperationSchema, ScopedOperations } from "./resource-opera
 
 const cents = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const nullableString = Type.Union([Type.String(), Type.Null()]);
+// SDK v4 calls this product vm_compute. Older OpenShip clients still read workspace_vm.
+const openShipReferralProduct = Type.Literal("workspace_vm");
+const referralProduct = Type.Transform(
+  Type.Union([Type.Literal("vm_compute"), openShipReferralProduct]),
+)
+  .Decode(() => openShipReferralProduct.const)
+  .Encode((productId) => productId);
 const id = Type.String({
   pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
 });
@@ -130,7 +137,7 @@ export const ReferralOfferSchema = Type.Object({
   code: ReferralCodeSchema,
   url: Type.String(),
   name: Type.String(),
-  productId: Type.Literal("workspace_vm"),
+  productId: referralProduct,
   planId: nullableString,
   commissionBps: Type.Integer({ minimum: 1, maximum: 10000 }),
   discountBps: Type.Integer({ minimum: 0, maximum: 10000 }),
@@ -150,7 +157,7 @@ export const ReferralCustomerSchema = Type.Object({
   id,
   offerId: id,
   customer: nullableString,
-  productId: Type.Literal("workspace_vm"),
+  productId: referralProduct,
   planId: nullableString,
   status: Type.Union([
     Type.Literal("pending"),
@@ -315,7 +322,7 @@ export const ReferralPublicOfferSchema = Type.Object(
   {
     code: ReferralCodeSchema,
     name: Type.String(),
-    productId: Type.Literal("workspace_vm"),
+    productId: referralProduct,
     planId: nullableString,
     discountBps: Type.Integer({ minimum: 0, maximum: 10000 }),
     eligiblePlans: Type.Optional(eligiblePlans),

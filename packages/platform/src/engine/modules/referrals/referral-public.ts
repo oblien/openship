@@ -8,7 +8,18 @@ import {
 import { cloudRuntimeTarget, env } from "../../config/env";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { getOblienBillingApi } from "../../lib/oblien-client";
-import { normalizeOblienReferralProduct } from "./referral-provider";
+import { decodeReferralResponse } from "./referral-provider";
+
+function verifyPublicOffer(code: string, value: unknown) {
+  const offer = decodeReferralResponse(ReferralPublicOfferSchema, value);
+  if (offer.code !== code)
+    throw new AppError(
+      "This referral offer could not be verified",
+      502,
+      "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
+    );
+  return offer;
+}
 
 export async function readReferralOffer(code: string) {
   parseInput(ReferralCodeSchema, code);
@@ -28,17 +39,7 @@ export async function readReferralOffer(code: string) {
           "AFFILIATE_UNAVAILABLE",
         );
       const result = await response.json();
-      const offer = parseInput(
-        ReferralPublicOfferSchema,
-        isRecord(result) ? result.data : undefined,
-      );
-      if (offer.code !== code)
-        throw new AppError(
-          "This referral offer could not be verified",
-          502,
-          "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
-        );
-      return offer;
+      return verifyPublicOffer(code, isRecord(result) ? result.data : undefined);
     } catch (error) {
       reportCaughtError(error, "platform/referrals/public-offer");
       if (error instanceof AppError) throw error;
@@ -67,15 +68,5 @@ export async function readReferralOffer(code: string) {
       502,
       "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
     );
-  const offer = parseInput(
-    ReferralPublicOfferSchema,
-    normalizeOblienReferralProduct(result.offer),
-  );
-  if (offer.code !== code)
-    throw new AppError(
-      "This referral offer could not be verified",
-      502,
-      "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
-    );
-  return offer;
+  return verifyPublicOffer(code, result.offer);
 }
