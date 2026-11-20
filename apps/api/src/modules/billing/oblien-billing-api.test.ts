@@ -426,6 +426,27 @@ describe("Oblien billing SDK and transport contract", () => {
     expect(JSON.stringify(error)).not.toContain("ER_CANT_AGGREGATE_NCOLLATIONS");
     expect(fetcher).toHaveBeenCalledOnce();
   });
+  it("explains self-referral restrictions when a referral is rejected at checkout", async () => {
+    const { api, fetcher } = setup({ success: false, code: "affiliate_unavailable", message: "private provider detail" }, 400);
+    const error = await api.createCheckout({
+      namespace: "os-one", kind: "subscription", offer, metadata, billingInterval: "monthly",
+      affiliateCode: "AF-0123456789",
+      successUrl: "https://app.openship.io", cancelUrl: "https://app.openship.io", idempotencyKey: "attempt",
+    }).catch(error => error);
+    expect(error).toMatchObject({
+      statusCode: 400,
+      details: { providerCode: "affiliate_unavailable" },
+    });
+    expect(error.message).toContain("You can’t use your own code or a workspace member’s code.");
+    expect(error.message).toContain("remove it before starting a new purchase.");
+    expect(error.message).not.toContain("private provider detail");
+    expect(fetcher).toHaveBeenCalledOnce();
+
+    await expect(api.referralRequest("GET", "/billing/affiliates/reseller/codes/AF-0123456789", {
+      namespace: "openship",
+    })).rejects.toThrow("This referral code is no longer available");
+  });
+
   it("retains actionable plan validation failures instead of treating them as checkout outages", async () => {
     const { api } = setup({ success: false, code: "invalid_plan", message: "private provider detail" }, 400);
     await expect(
