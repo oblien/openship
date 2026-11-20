@@ -8,6 +8,7 @@ import {
 import { cloudRuntimeTarget, env } from "../../config/env";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { getOblienBillingApi } from "../../lib/oblien-client";
+import { normalizeOblienReferralProduct } from "./referral-provider";
 
 export async function readReferralOffer(code: string) {
   parseInput(ReferralCodeSchema, code);
@@ -66,7 +67,10 @@ export async function readReferralOffer(code: string) {
       502,
       "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
     );
-  const offer = parseInput(ReferralPublicOfferSchema, result.offer);
+  const offer = parseInput(
+    ReferralPublicOfferSchema,
+    normalizeOblienReferralProduct(result.offer),
+  );
   if (offer.code !== code)
     throw new AppError(
       "This referral offer could not be verified",

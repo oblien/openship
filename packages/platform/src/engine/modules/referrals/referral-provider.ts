@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { Value } from "@sinclair/typebox/value";
 import {
   ReferralOperationSchemas,
+  ReferralOfferSchema,
   AppError,
+  isRecord,
   parseInput,
   type ReferralOperations,
   type ReferralOverview,
@@ -44,8 +46,12 @@ const endpoints = {
   setPayoutDestination: "payout-destination",
   cancelPayout: "payouts",
 } as const;
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === "object" && !Array.isArray(value);
+// Oblien renamed its VM product. Keep the OpenShip product ID stable for clients.
+export function normalizeOblienReferralProduct(value: unknown) {
+  return isRecord(value) && value.productId === "vm_compute"
+    ? { ...value, productId: ReferralOfferSchema.properties.productId.const }
+    : value;
+}
 
 /** Provider is the financial authority. Identity is bound before projecting any records. */
 export async function callReferralProvider<K extends keyof ReferralOperations>(
@@ -87,13 +93,19 @@ export async function callReferralProvider<K extends keyof ReferralOperations>(
   let data = response.data;
   const link = (offer: unknown) => {
     if (!isRecord(offer) || typeof offer.code !== "string") return offer;
-    return { ...offer, url: new URL(`/r/${encodeURIComponent(offer.code)}`, dashboardUrl).href };
+    return normalizeOblienReferralProduct({
+      ...offer,
+      url: new URL(`/r/${encodeURIComponent(offer.code)}`, dashboardUrl).href,
+    });
   };
   if (operation === "overview" || operation === "enroll") data = { ...data, available: true };
   if (operation === "createOffer" || operation === "revokeOffer")
     data = link(data) as Record<string, unknown>;
-  if (operation === "offers" && Array.isArray(data.items))
-    data = { ...data, items: data.items.map(link) };
+  if ((operation === "offers" || operation === "referrals") && Array.isArray(data.items))
+    data = {
+      ...data,
+      items: data.items.map(operation === "offers" ? link : normalizeOblienReferralProduct),
+    };
   try {
     // Drop provider namespace, beneficiary, wallet and provider payment identifiers.
     return parseInput(spec.output, Value.Clean(spec.output, structuredClone(data))) as Awaited<
