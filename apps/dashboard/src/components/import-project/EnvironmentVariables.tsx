@@ -65,6 +65,143 @@ interface EnvironmentVariablesPropsOptional {
   onReveal?: (keys: string[]) => Promise<Record<string, string>>;
 }
 
+function tokenizeEnvValue(value: string): Array<
+  { type: "text"; text: string } | { type: "quote"; text: string } | { type: "ref"; name: string }
+> {
+  const out: Array<
+    { type: "text"; text: string } | { type: "quote"; text: string } | { type: "ref"; name: string }
+  > = [];
+  let body = value;
+  let quotePair: string | undefined;
+  const quote = value[0];
+  if (value.length >= 2 && (quote === '"' || quote === "'") && value[value.length - 1] === quote) {
+    quotePair = quote;
+    out.push({ type: "quote", text: quote });
+    body = value.slice(1, -1);
+  }
+  let cursor = 0;
+  let text = "";
+  while (cursor < body.length) {
+    const dollar = body.indexOf("$", cursor);
+    if (dollar < 0) {
+      text += body.slice(cursor);
+      break;
+    }
+    text += body.slice(cursor, dollar);
+    if (body[dollar + 1] === "$") {
+      text += "$$";
+      cursor = dollar + 2;
+      continue;
+    }
+    let name: string | undefined;
+    let end = dollar + 1;
+    if (body[dollar + 1] === "{") {
+      const braced = body.slice(dollar + 2).match(/^([A-Za-z_][A-Za-z0-9_]*)\}/);
+      if (braced) {
+        name = braced[1]!;
+        end = dollar + 2 + braced[0].length;
+      }
+    } else {
+      const bare = body.slice(dollar + 1).match(/^([A-Za-z_][A-Za-z0-9_]*)/);
+      if (bare) {
+        name = bare[1]!;
+        end = dollar + 1 + bare[1]!.length;
+      }
+    }
+    if (name) {
+      if (text) out.push({ type: "text", text });
+      text = "";
+      out.push({ type: "ref", name });
+      cursor = end;
+    } else {
+      text += "$";
+      cursor = dollar + 1;
+    }
+  }
+  if (text) out.push({ type: "text", text });
+  if (quotePair) out.push({ type: "quote", text: quotePair });
+  if (out.length === 0) out.push({ type: "text", text: "" });
+  return out;
+}
+
+function extractEnvValueChipText(node: Node): string {
+  let out = "";
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) out += child.textContent ?? "";
+    else if (child instanceof HTMLElement) {
+      if (child.dataset.var) out += `\${${child.dataset.var}}`;
+      else if (child.dataset.quote) out += child.dataset.quote;
+      else out += extractEnvValueChipText(child);
+    }
+  });
+  return out;
+}
+
+function EnvValueChipInput({
+  value,
+  onChange,
+  onBlur,
+  readOnly,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  readOnly?: boolean;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!ref.current || focused.current) return;
+    ref.current.innerHTML = "";
+    for (const tok of tokenizeEnvValue(value)) {
+      if (tok.type === "text" || tok.type === "quote") {
+        const span = document.createElement("span");
+        if (tok.type === "quote") {
+          span.dataset.quote = tok.text;
+          span.className = "text-muted-foreground/50";
+          span.title = "Quote — a .env delimiter, not part of the value";
+        }
+        span.textContent = tok.text;
+        ref.current.appendChild(span);
+      } else {
+        const span = document.createElement("span");
+        span.contentEditable = "false";
+        span.dataset.var = tok.name;
+        span.className =
+          "mx-0.5 inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary align-middle";
+        span.textContent = `\${${tok.name}}`;
+        span.title = "Reference — resolved at deploy time";
+        ref.current.appendChild(span);
+      }
+    }
+    if (!ref.current.firstChild) ref.current.appendChild(document.createTextNode(""));
+  }, [value]);
+  return (
+    <div
+      ref={ref}
+      contentEditable={!readOnly}
+      suppressContentEditableWarning
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onBlur={() => {
+        focused.current = false;
+        if (!readOnly && ref.current) {
+          const next = extractEnvValueChipText(ref.current);
+          if (next !== value) onChange(next);
+        }
+        onBlur?.();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.preventDefault();
+      }}
+      className={`min-h-9 w-full rounded-lg border border-border/60 bg-muted/30 px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-primary/40 ${className ?? ""}`}
+    />
+  );
+}
+
 const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   mode = "deploy",
   showEditControls = true,
@@ -962,38 +1099,49 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       !isEditingMode ? "cursor-default" : ""
                     } ${inputStateClass}`}
                   />
-                  <div dir="ltr" className="relative min-w-0 flex-1">
-                    <Input
-                      dir="ltr"
-                      variant="filled"
-                      type={showAsText ? "text" : "password"}
-                      value={displayValue}
-                      onChange={(e) => handleValueChange(index, e.target.value)}
-                      placeholder={env.preserveValue ? ENV_MASK : ev.valuePlaceholder}
-                      readOnly={!isEditingMode}
-                      className={`pe-9 font-mono ${
-                        !isEditingMode ? "cursor-default" : ""
-                      } ${inputStateClass} ${demoMode ? "blur-[5px] select-none" : ""}`}
-                    />
-                    {canToggleValue && (
-                      <button
-                        onClick={() => void toggleEnvVisibility(index)}
-                        disabled={revealingKeys.has(env.key)}
-                        aria-busy={revealingKeys.has(env.key)}
-                        aria-label={showAsText ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
-                        className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
-                        type="button"
-                      >
-                        {revealingKeys.has(env.key) ? (
-                          <UiIcon name="spinner" className="size-3.5 animate-spin" />
-                        ) : showAsText ? (
-                          <UiIcon name="eye-off" className="size-3.5" />
-                        ) : (
-                          <UiIcon name="eye" className="size-3.5" />
-                        )}
-                      </button>
-                    )}
-                  </div>
+                  {masked ? (
+                    <div dir="ltr" className="relative min-w-0 flex-1">
+                      <Input
+                        dir="ltr"
+                        variant="filled"
+                        type={showAsText ? "text" : "password"}
+                        value={displayValue}
+                        onChange={(e) => handleValueChange(index, e.target.value)}
+                        placeholder={env.preserveValue ? ENV_MASK : ev.valuePlaceholder}
+                        readOnly={!isEditingMode}
+                        className={`pe-9 font-mono ${
+                          !isEditingMode ? "cursor-default" : ""
+                        } ${inputStateClass} ${demoMode ? "blur-[5px] select-none" : ""}`}
+                      />
+                      {canToggleValue && (
+                        <button
+                          onClick={() => void toggleEnvVisibility(index)}
+                          disabled={revealingKeys.has(env.key)}
+                          aria-busy={revealingKeys.has(env.key)}
+                          aria-label={showAsText ? t.projectSettings.envVars.hideValue : t.projectSettings.envVars.showValue}
+                          className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors disabled:opacity-40"
+                          type="button"
+                        >
+                          {revealingKeys.has(env.key) ? (
+                            <UiIcon name="spinner" className="size-3.5 animate-spin" />
+                          ) : showAsText ? (
+                            <UiIcon name="eye-off" className="size-3.5" />
+                          ) : (
+                            <UiIcon name="eye" className="size-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div dir="ltr" className="min-w-0 flex-1">
+                      <EnvValueChipInput
+                        value={displayValue}
+                        onChange={(v) => handleValueChange(index, v)}
+                        readOnly={!isEditingMode}
+                        className={`${inputStateClass} ${demoMode ? "blur-[5px] select-none" : ""}`}
+                      />
+                    </div>
+                  )}
 
                   {showSecretToggle && (
                     <button

@@ -77,17 +77,30 @@ async function open() {
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }
-function field(key: string) {
+function field(key: string): HTMLElement {
   const name = [...host.querySelectorAll<HTMLInputElement>("input")].find(
     (input) => input.value === key,
   );
   expect(name).toBeDefined();
-  return name!.closest("[data-env-index]")!.querySelectorAll<HTMLInputElement>("input")[1]!;
+  const row = name!.closest("[data-env-index]")!;
+  return (
+    row.querySelectorAll<HTMLInputElement>("input")[1] ??
+    row.querySelector<HTMLElement>("[contenteditable]")!
+  );
 }
-async function enter(input: HTMLInputElement, value: string) {
+function fieldValue(el: HTMLElement): string {
+  return el instanceof HTMLInputElement ? el.value : (el.textContent ?? "");
+}
+async function enter(input: HTMLElement, value: string) {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    if (input instanceof HTMLInputElement) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
+      input.innerHTML = "";
+      input.appendChild(document.createTextNode(value));
+      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    }
   });
 }
 beforeEach(async () => {
@@ -132,9 +145,9 @@ describe("saved service environment in the wizard", () => {
     expect(h.get).not.toHaveBeenCalled();
     await open();
     expect(h.get).toHaveBeenCalledExactlyOnceWith("project-1", "svc-console");
-    expect(field("BASE_URL").value).toBe("https://console.example.com");
-    expect(field("POSTGRES_DB").value).toBe("customer-database");
-    expect(field("PORT").value).toBe("8787");
+    expect(fieldValue(field("BASE_URL"))).toBe("https://console.example.com");
+    expect(fieldValue(field("POSTGRES_DB"))).toBe("customer-database");
+    expect(fieldValue(field("PORT"))).toBe("8787");
     await enter(field("POSTGRES_DB"), "edited-database");
     const service = h.config.services[0]!;
     expect(service.environment.POSTGRES_DB).toBe("${POSTGRES_DB:-application}");
@@ -173,7 +186,7 @@ describe("saved service environment in the wizard", () => {
         node.textContent === baseDictionary.projectDetail.services.detail.environmentState.reload,
     )!;
     await act(async () => retry.click());
-    expect(field("POSTGRES_DB").value).toBe("customer-database");
+    expect(fieldValue(field("POSTGRES_DB"))).toBe("customer-database");
     expect(h.get).toHaveBeenCalledTimes(2);
   });
 

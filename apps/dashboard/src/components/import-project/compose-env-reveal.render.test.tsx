@@ -133,7 +133,7 @@ describe("shared Compose environment editor", () => {
     if (source === "local") h.config.localPath = "/work/app";
     if (source === "upload") h.config.uploadSessionId = "upload-session";
     const { html, editor } = render();
-    expect(html.match(/aria-label="Hide value"/g)).toHaveLength(2);
+    expect(html).not.toContain('aria-label="Hide value"');
     expect(editor.envVars).toContainEqual({ key: "POSTGRES_PASSWORD", value: "source-password", visible: true });
     expect(editor.onReveal).toBeUndefined();
     expect(html).not.toContain("blur-[5px]");

@@ -100,8 +100,7 @@ export function parseEnvFile(content: string, options: { strict?: boolean } = {}
   return entries;
 }
 
-const ENCODE_ESCAPES: Readonly<Record<string, string>> = Object.fromEntries(
-  Object.entries(DOUBLE_QUOTE_ESCAPES).map(([escape, value]) => [value, `\\${escape}`]),
+const ENCODE_ESCAPES: Readonly<Record<string, string>> = Object.fromEntries(  Object.entries(DOUBLE_QUOTE_ESCAPES).map(([escape, value]) => [value, `\\${escape}`]),
 );
 
 /** Export literal environment values. Simple assignments stay readable; quoted
@@ -127,4 +126,13 @@ export function serializeEnvFile(rows: ReadonlyArray<{ key: string; value: strin
     return `${key}=${encoded}`;
   });
   return lines.length ? `${lines.join("\n")}\n` : "";
+}
+
+/** A saved value as `.env` syntax reads it: a wholly quoted value is unwrapped
+ * (escapes included); a stray or half-typed quote is left for the operator. */
+export function unquoteEnvValue(value: string): string {
+  const quote = value[0];
+  if (value.length < 2 || value.includes("\n")) return value;
+  if ((quote !== '"' && quote !== "'") || value[value.length - 1] !== quote) return value;
+  return parseEnvFile(`KEY=${value}`)[0]?.value ?? value;
 }

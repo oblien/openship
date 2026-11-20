@@ -141,4 +141,35 @@ describe("shared .env text editor", () => {
     expect(document.querySelector("textarea")).toBeNull();
     expect(host.querySelector<HTMLInputElement>('[data-env-index="0"] input')?.value).toBe("PORT");
   });
+
+  it("renders quote delimiters and reference chips inside the plaintext value field", async () => {
+    const secret = {
+      key: "TOKEN",
+      value: "",
+      originalKey: "TOKEN",
+      preserveValue: true,
+      isSecret: true,
+      visible: true,
+    };
+    await act(async () =>
+      root.render(
+        <Harness
+          initial={[
+            secret,
+            { key: "APP_NAME", value: "Acme", visible: true },
+            { key: "MAIL_FROM_ADDRESS", value: '"hello@${APP_NAME}.com"', visible: true },
+          ]}
+        />,
+      ),
+    );
+    const field = host.querySelector<HTMLElement>(
+      '[data-env-index="2"] [contenteditable]',
+    );
+    expect(field).not.toBeNull();
+    expect(field!.querySelectorAll("[data-quote]")).toHaveLength(2);
+    expect(field!.querySelector("[data-quote]")?.getAttribute("title")).toContain(
+      "delimiter",
+    );
+    expect(field!.querySelector("[data-var]")?.textContent).toBe("${APP_NAME}");
+  });
 });

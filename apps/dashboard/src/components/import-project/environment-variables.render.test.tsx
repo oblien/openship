@@ -95,22 +95,19 @@ describe("EnvironmentVariables reveal affordance", () => {
     expect(eyeCount(html)).toBe(0);
   });
 
-  it("gives a plaintext row an eye with or without a source", () => {
-    // This asymmetry is what the operator saw as "some rows have no show button": an
-    // empty or typed value isn't masked, so it kept its eye while masked neighbours in
-    // the SAME list had none.
-    expect(eyeCount(render({ envVars: ROWS }))).toBe(1);
+  it("shows plaintext values directly, so they need no eye", () => {
+    expect(eyeCount(render({ envVars: ROWS }))).toBe(0);
     expect(
       eyeCount(render({ envVars: [{ key: "POSTGRES_PASSWORD", value: "", visible: false }] })),
-    ).toBe(1);
+    ).toBe(0);
   });
 
-  it("gives every row in a mixed list an eye once a source is wired", () => {
+  it("gives only the masked row in a mixed list an eye once a source is wired", () => {
     const html = render({
       envVars: [...MASKED, { key: "POSTGRES_PASSWORD", value: "", visible: false }],
       onReveal: async () => ({}),
     });
-    expect(eyeCount(html)).toBe(2);
+    expect(eyeCount(html)).toBe(1);
   });
 });
 

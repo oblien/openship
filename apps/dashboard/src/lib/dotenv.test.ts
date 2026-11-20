@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDotenv, serializeDotenv } from "./dotenv";
+import { normalizeDotenvValue, parseDotenv, serializeDotenv } from "./dotenv";
 
 describe("parseDotenv", () => {
   it("skips blank lines and # comment lines", () => {
@@ -89,5 +89,15 @@ describe(".env export", () => {
         { key: " PORT ", value: "4000" },
       ]),
     ).toThrow();
+  });
+});
+
+describe("normalizeDotenvValue", () => {
+  it("unwraps wholly quoted values and leaves anything else alone", () => {
+    expect(normalizeDotenvValue('"hello@example.com"')).toBe("hello@example.com");
+    expect(normalizeDotenvValue("'hello world'")).toBe("hello world");
+    expect(normalizeDotenvValue("plain")).toBe("plain");
+    expect(normalizeDotenvValue('"unfinished')).toBe('"unfinished');
+    expect(normalizeDotenvValue("both 'a' and \"b\"")).toBe("both 'a' and \"b\"");
   });
 });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseEnvFile, serializeEnvFile } from "./env-file";
+import { parseEnvFile, serializeEnvFile, unquoteEnvValue } from "./env-file";
 
 const values = [
   ["empty", ""],
@@ -221,5 +221,16 @@ describe.skipIf(!hasCompose)("environment export through Docker Compose", () => 
     expect(result.stdout.slice(line + 1)).toBe(
       rows.map(({ key, value }) => `${key}=${value}\n`).join(""),
     );
+  });
+});
+
+describe("unquoteEnvValue", () => {
+  it("unwraps a wholly quoted value and leaves anything else alone", () => {
+    expect(unquoteEnvValue('"hello@example.com"')).toBe("hello@example.com");
+    expect(unquoteEnvValue("'hello world'")).toBe("hello world");
+    expect(unquoteEnvValue('"a\\tb"')).toBe("a\tb");
+    expect(unquoteEnvValue("plain")).toBe("plain");
+    expect(unquoteEnvValue('"unfinished')).toBe('"unfinished');
+    expect(unquoteEnvValue("both 'a' and \"b\"")).toBe("both 'a' and \"b\"");
   });
 });
