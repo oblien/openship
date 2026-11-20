@@ -804,7 +804,7 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   dns: "dns is not modeled — the container uses the Docker network's resolver.",
   dns_search: "dns_search is not modeled.",
   dns_opt: "dns_opt is not modeled.",
-  extra_hosts: "extra_hosts is not modeled — services resolve each other by service name.",
+  // `extra_hosts` is modeled — see parseAdvanced (advanced.extraHosts).
   links: "links is legacy and not modeled — services already resolve by service name.",
   external_links: "external_links is not modeled — link the app as a service connection instead.",
   // ── Compose model ──
