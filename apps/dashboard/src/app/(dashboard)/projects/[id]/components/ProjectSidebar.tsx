@@ -138,7 +138,7 @@ export const ProjectSidebar = () => {
 
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-sm text-muted-foreground">
+            <span className="shrink-0 text-sm text-muted-foreground">
               {isLocal ? t.projects.sidebar.local : t.projects.sidebar.production}
             </span>
             {canOpen ? (
@@ -153,7 +153,7 @@ export const ProjectSidebar = () => {
                   <span className="truncate text-sm font-medium text-foreground">{displayUrl}</span>
                 )}
                 {domainPending && (
-                  <span className="text-xs text-warning">{t.projectSettings.domains.status.pending}</span>
+                  <span className="shrink-0 text-xs text-warning">{t.projectSettings.domains.status.pending}</span>
                 )}
                 <a
                   href={siteHref}
