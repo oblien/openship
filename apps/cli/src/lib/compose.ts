@@ -3188,8 +3188,9 @@ function writeEnvFile(rendered: string, before: string): void {
 }
 
 /** `.env` keys whose VALUE must never be printed. Suffix-matched so a key added
- *  to renderEnv later is masked by default rather than leaked by omission. */
-const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/;
+ *  to renderEnv later is masked by default rather than leaked by omission. Case-blind
+ *  because operator keys carried through (#485) can be lowercase, like `registry_password`. */
+const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/i;
 
 /**
  * `materialize` WITHOUT the writes — everything a `--dry-run` needs to describe
