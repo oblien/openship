@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
-  env: { CLOUD_MODE: false, REFERRALS_ENABLED: false },
+  env: { CLOUD_MODE: false, REFERRALS_ENABLED: false, REFERRAL_NAMESPACE: "openship" },
   provider: vi.fn(),
 }));
 vi.mock("../src/engine/config/env", () => ({
@@ -17,7 +17,7 @@ const code = "AF-0123456789";
 const offer = {
   code,
   name: "Community",
-  productId: "workspace_vm",
+  productId: "vm_compute",
   planId: null,
   discountBps: 500,
   durationMonths: 12,
@@ -61,6 +61,23 @@ it("keeps Cloud feature-off unavailable and does not recurse into its public end
   await expect(readReferralOffer(code)).rejects.toMatchObject({ code: "AFFILIATE_UNAVAILABLE" });
   expect(fetcher).not.toHaveBeenCalled();
   expect(h.provider).not.toHaveBeenCalled();
+});
+
+it("verifies v2 public terms and requires the configured provider namespace", async () => {
+  h.env.CLOUD_MODE = true;
+  h.env.REFERRALS_ENABLED = true;
+  const scope = { namespace: h.env.REFERRAL_NAMESPACE };
+  h.provider.mockResolvedValue({ success: true, scope, offer });
+  await expect(readReferralOffer(code)).resolves.toEqual(offer);
+  expect(h.provider).toHaveBeenCalledExactlyOnceWith(
+    "GET",
+    `/billing/affiliates/reseller/codes/${code}`,
+    scope,
+  );
+  h.provider.mockResolvedValueOnce({ success: true, scope: { namespace: "other" }, offer });
+  await expect(readReferralOffer(code)).rejects.toMatchObject({
+    code: "AFFILIATE_PROVIDER_SCOPE_MISMATCH",
+  });
 });
 
 it("preserves existing participant ownership across the Referral rename", () => {
