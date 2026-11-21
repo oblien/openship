@@ -4,7 +4,13 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { ValidationError, SYSTEM } from "@repo/core";
+import {
+  ConflictError,
+  ValidationError,
+  SYSTEM,
+  isValidEnvKey,
+  looksLikeSecretKey,
+} from "@repo/core";
 import { encrypt, decrypt, decryptEnvMap } from "../../lib/encryption";
 import { ENV_MASK } from "../../lib/secret-env";
 import { assertResourceInOrg } from "../../lib/resource-access";
@@ -75,11 +81,14 @@ export async function mergeEnvVars(
     throw new ValidationError(`Maximum ${SYSTEM.ENV_VARS.MAX_PER_PROJECT} variables per project`);
   }
 
-  const encrypted = data.upserts.map((v) => ({
-    key: v.key,
-    value: encrypt(v.value),
-    isSecret: v.isSecret,
-  }));
+  for (const key of [...upsertKeys, ...data.deletes]) {
+    if (!isValidEnvKey(key)) {
+      throw new ValidationError(`Invalid environment variable name "${key}"`);
+    }
+  }
+  if (data.upserts.some((v) => v.value.includes("\0"))) {
+    throw new ValidationError("Environment variable values cannot contain NUL bytes");
+  }
 
   // Read diagnostics before committing: a failed diagnostic read must not make
   // a successful write look failed to a caller retrying a credential rotation.
@@ -88,10 +97,33 @@ export async function mergeEnvVars(
     repos.service.listByProject(projectId),
     repos.project.listEnvVars(projectId, data.environment),
   ]);
-  const projectValues = decryptEnvMap(
-    Object.fromEntries(stored.filter((row) => !row.serviceId).map((row) => [row.key, row.value])),
+  const priorRows = new Map(
+    stored.filter((row) => !row.serviceId).map((row) => [row.key, row] as const),
   );
-  for (const row of data.upserts) projectValues[row.key] = row.value;
+
+  // Same rules as service env writes: a value sent back as the list mask keeps
+  // the stored value, and an upsert that omits isSecret keeps the stored flag,
+  // so a round trip through listEnvVars never exposes or overwrites a secret.
+  const encrypted = data.upserts.map((v) => {
+    const prior = priorRows.get(v.key);
+    if (v.value === ENV_MASK && !prior) {
+      throw new ValidationError(
+        `No saved value exists for "${v.key}". Enter its value before saving.`,
+      );
+    }
+    return {
+      key: v.key,
+      value: v.value === ENV_MASK ? prior!.value : encrypt(v.value),
+      isSecret: v.isSecret ?? prior?.isSecret ?? looksLikeSecretKey(v.key),
+    };
+  });
+
+  const projectValues = decryptEnvMap(
+    Object.fromEntries([...priorRows].map(([key, row]) => [key, row.value])),
+  );
+  for (const row of data.upserts) {
+    if (row.value !== ENV_MASK) projectValues[row.key] = row.value;
+  }
   // Include deleted keys in the comparison: deleting the project copy does not
   // remove a service's pinned copy. No value is returned in the diagnostic.
   for (const key of data.deletes) projectValues[key] ??= "";
@@ -120,6 +152,27 @@ export async function mergeEnvVars(
       );
     }
   }
-  await repos.project.mergeEnvVars(projectId, data.environment, encrypted, data.deletes);
+  await repos.project.mergeEnvVarScopes(
+    projectId,
+    data.environment,
+    [{ upserts: encrypted, deletes: data.deletes }],
+    ({ vars }) => {
+      // Resolve preservation against the same configuration lock as the write.
+      // A masked form must never restore a secret rotated after the earlier read.
+      const current = new Map(vars.filter((row) => !row.serviceId).map((row) => [row.key, row]));
+      for (const row of data.upserts) {
+        const prior = priorRows.get(row.key);
+        const latest = current.get(row.key);
+        if (
+          (row.value === ENV_MASK && prior?.value !== latest?.value) ||
+          (row.isSecret === undefined && prior?.isSecret !== latest?.isSecret)
+        ) {
+          throw new ConflictError(
+            "Environment variables changed while saving. Reload and try again.",
+          );
+        }
+      }
+    },
+  );
   return { upserted: data.upserts.length, deleted: data.deletes.length, warnings };
 }
