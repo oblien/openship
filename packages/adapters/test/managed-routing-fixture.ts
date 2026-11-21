@@ -13,7 +13,7 @@ export function managedRoutingFixture(): {
   pages: Record<"list" | "get" | "create" | "deploy" | "enable" | "disable" | "delete" | "connectDomain" | "getDomain" | "renewSSL", Mock>;
   executor: Record<"exec" | "writeFile" | "rm", Mock>;
   scope: CloudProjectRoutingScope;
-  workspace: { network: Record<"get" | "getFirewall" | "update", Mock> };
+  workspace: { network: Record<"get" | "update", Mock> };
   routes: { set: Mock }; domain: { routes: Mock };
   client: Oblien; infra: CloudInfraProvider;
 } {
@@ -45,11 +45,7 @@ export function managedRoutingFixture(): {
     resolveTarget: vi.fn(async (_id, port) => { if (port !== 3000) throw new Error("unowned port"); return port; }),
     resolveUrl: vi.fn(async url => { if (url !== "http://127.0.0.1:3000") throw new Error("unowned or invalid upstream"); return 3000; }),
   };
-  const workspace = { network: {
-    get: vi.fn(async () => ({ ingress_ports: [443] })),
-    getFirewall: vi.fn(async () => ({ private_ports: [443] })),
-    update: vi.fn(async () => ({ success: true })),
-  } };
+  const workspace = { network: { get: vi.fn(async () => ({ ingress_ports: [443] })), update: vi.fn(async () => ({ success: true })) } };
   const routes = { set: vi.fn(async () => ({ success: true })) };
   const domain = { routes: vi.fn(async () => ({ data: [...records.values()].flatMap(page => [
     { hostname: `${page.slug}.${page.domain}`, namespace: page.namespace, owner_type: "page", owner_id: page.id, is_custom: false },

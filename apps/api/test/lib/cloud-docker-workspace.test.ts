@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://staging.oblien.test", OBLIEN_DOCKER_PRESET: undefined as string | undefined },
   permanent: vi.fn(), resize: vi.fn(), wait: vi.fn(), credentials: [] as unknown[],
   runtimeStatus: vi.fn(), runtimeInfo: vi.fn(), ownerVm: vi.fn(), enableRuntime: vi.fn(),
+  networkStatus: vi.fn(), ownerNetworkUpdate: vi.fn(),
   inFlight: vi.fn(), discard: vi.fn(), list: vi.fn(), exec: vi.fn(), invalidate: vi.fn(), dispose: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
@@ -36,6 +37,7 @@ vi.mock("@repo/adapters", async (original) => ({
     vm = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
       lifecycle: { makePermanent: h.permanent }, resources: { update: h.resize },
       apiAccess: { status: h.runtimeStatus },
+      network: { get: h.networkStatus },
       runtime: async () => ({ exec: { run: h.exec }, info: h.runtimeInfo }), invalidateRuntime: h.invalidate });
   },
   waitForCloudDockerWorkspace: h.wait,
@@ -47,6 +49,7 @@ vi.mock("@repo/adapters", async (original) => ({
 }));
 
 import { cloudDockerWorkspaceForCleanup, ensureCloudDockerWorkspace, ensureCloudWorkspaceHost } from "@repo/platform/engine/lib/cloud-docker-workspace";
+import { OblienError } from "@repo/adapters";
 
 const project = { id: "project-a", organizationId: "org-a", activeDeploymentId: null, workspaceId: "owner-a", serverId: "server-a" } as Project;
 const resources = { cpuCores: 2, memoryMb: 4096, diskMb: 32768 };
@@ -80,7 +83,12 @@ beforeEach(() => {
   h.wait.mockImplementation(async () => h.get());
   h.runtimeStatus.mockResolvedValue({ enabled: true });
   h.runtimeInfo.mockResolvedValue({ os: "linux" });
-  h.ownerVm.mockReturnValue({ apiAccess: { enable: h.enableRuntime } });
+  h.networkStatus.mockResolvedValue({ public_access: true });
+  h.ownerNetworkUpdate.mockResolvedValue({ success: true });
+  h.ownerVm.mockReturnValue({
+    apiAccess: { enable: h.enableRuntime },
+    network: { update: h.ownerNetworkUpdate },
+  });
   h.exec.mockResolvedValue("");
   h.resize.mockImplementation(async (resources) => {
     const workspace = await h.get();
@@ -116,7 +124,15 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     });
     expect(await ensureCloudDockerWorkspace(input)).toEqual({ projectId: "project-a", workspaceId: "workspace-a", ownerWorkspaceId: "owner-a" });
     expect(h.credentials).toEqual([{ token: "short-lived-tenant-token", baseUrl: "https://staging.oblien.test" }]);
-    expect(h.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: "namespace-a", image: "oblien/docker:29", wait_ready: false, idempotency_key: "stable-key" }));
+    expect(h.create).toHaveBeenCalledWith(expect.objectContaining({
+      namespace: "namespace-a",
+      image: "oblien/docker:29",
+      wait_ready: false,
+      idempotency_key: "stable-key",
+      config: expect.objectContaining({
+        network_config: { allow_internet: true, public_ingress: true },
+      }),
+    }));
     expect(binding?.state).toBe("ready");
     expect(h.permanent).toHaveBeenCalledOnce();
     expect(h.ownerVm).not.toHaveBeenCalled();
@@ -159,6 +175,23 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     await ensureCloudDockerWorkspace(input);
     expect(h.create.mock.calls[1]![0]).toEqual(h.create.mock.calls[0]![0]);
     expect(h.resize).not.toHaveBeenCalled();
+  });
+  it("recovers a VM created with the old network settings and enables Edge ingress before readiness", async () => {
+    binding = { ...ownerRef, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockRejectedValue(new OblienError("different creation options", 409, "IDEMPOTENCY_CONFLICT"));
+    h.list.mockResolvedValue({ vms: [await h.get()], total: 1, limit: 100, page: 1 });
+    h.networkStatus.mockResolvedValue({ public_access: false });
+    h.ownerNetworkUpdate.mockResolvedValueOnce({ success: false });
+
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toMatchObject({ code: "CLOUD_EDGE_INGRESS_UNAVAILABLE" });
+    expect(binding).toMatchObject({ workspaceId: "workspace-a", state: "provisioning" });
+    await ensureCloudDockerWorkspace(input);
+    expect(binding.state).toBe("ready");
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.ownerNetworkUpdate).toHaveBeenLastCalledWith({ public_access: true });
+
+    await ensureCloudDockerWorkspace(input);
+    expect(h.ownerNetworkUpdate).toHaveBeenCalledTimes(2);
   });
   it("retains the binding on readiness failure and reconnects without creating another disk", async () => {
     h.wait.mockRejectedValueOnce(new Error("still starting"));

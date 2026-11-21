@@ -159,6 +159,8 @@ beforeEach(async () => {
       }
       if (url.pathname.endsWith("/lifecycle/permanent") && method === "POST")
         return Response.json({ success: true });
+      if (url.pathname.endsWith("/network") && method === "GET")
+        return Response.json({ public_access: true });
       if (url.pathname.endsWith("/runtime-api-access") && method === "GET")
         return Response.json({ enabled: true });
       if (url.pathname.endsWith("/runtime-api-access/token") && method === "GET")

@@ -265,6 +265,7 @@ beforeEach(async () => {
       get: () => h.client.vms.get(id),
       lifecycle: { makePermanent: async () => {} },
       apiAccess: { status: async () => ({ enabled: true }) },
+      network: { get: async () => ({ public_access: true }) },
       resources: { update: (input: any) => h.client.resize(id, input) },
       delete: () => h.client.delete(id),
       workloads: { list: async () => [] },
