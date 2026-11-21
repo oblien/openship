@@ -11,6 +11,7 @@ import { invalidateEnvironment } from "../system/environment";
 import { checkTool, installTool } from "../toolchain";
 import { sq } from "../system/local-shell";
 import { K3S_HOST } from "./k3s-host";
+import addons from "./database-addons.json";
 
 export interface K3sHostContext {
   id: string;
@@ -123,9 +124,13 @@ export const k3sTools = {
         `The K3s release service returned HTTP ${response.status}. Retry when it is reachable.`,
       );
     const body = (await response.json()) as { data?: { id?: string; latest?: string }[] };
-    const version = body.data?.find((channel) => channel.id === "stable")?.latest;
-    if (!version || !/^v1\.\d+\.\d+\+k3s\d+$/.test(version))
-      throw failure("The K3s release service did not return a valid stable release.");
+    // The operator's supported minors are listed oldest to newest beside its pinned manifest.
+    const channel = `v${addons.postgres.supportedKubernetesMinors.at(-1)}`;
+    const version = body.data?.find((entry) => entry.id === channel)?.latest;
+    if (typeof version !== "string" || /^(v\d+\.\d+)\.\d+\+k3s\d+$/.exec(version)?.[1] !== channel)
+      throw failure(
+        `The K3s release service did not return a valid release for channel ${channel}.`,
+      );
     return version;
   },
   async prepare(executor: CommandExecutor, onLog: (entry: LogEntry) => void, signal?: AbortSignal) {

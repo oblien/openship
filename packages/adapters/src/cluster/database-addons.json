@@ -10,6 +10,7 @@
     "bytes": 207054
   },
   "postgres": {
+    "supportedKubernetesMinors": ["1.34", "1.35", "1.36"],
     "url": "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml",
     "sha256": "f8bede43fe4ee0d478c2355b204a36876b2ae4faac60f2a9452280b293da3b88",
     "bytes": 1262410
