@@ -28,6 +28,9 @@ const BRAND_LOGO: Record<
   ollama: { src: "https://github.com/ollama.png?size=80" },
   vllm: { src: "https://github.com/vllm-project.png?size=80" },
   "open-webui": { src: "https://github.com/open-webui.png?size=80" },
+  // simpleicons carries no Miniflux mark (cdn.simpleicons.org/miniflux 404s) —
+  // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
+  miniflux: { src: "https://github.com/miniflux.png?size=80" },
   // simpleicons carries no pgAdmin mark (cdn.simpleicons.org/pgadmin4 404s) —
   // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
   pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
