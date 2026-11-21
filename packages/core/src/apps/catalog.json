@@ -11056,6 +11056,149 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "qbittorrent",
+      "name": "qBittorrent",
+      "description": "qBittorrent-nox with the web UI: a self-hosted BitTorrent client you control from the browser.",
+      "kind": "template",
+      "logo": "qbittorrent",
+      "category": "other",
+      "repository": "https://github.com/qbittorrent/qBittorrent",
+      "tags": [
+        "torrent",
+        "downloads",
+        "bittorrent"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "qbittorrent",
+          "image": "qbittorrentofficial/qbittorrent-nox:5.2.4-1",
+          "exposed": true,
+          "ports": [
+            "8227:8080"
+          ],
+          "exposedPort": 8080,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "restart": "unless-stopped",
+          "volumes": [
+            "qbt_config:/config",
+            "qbt_downloads:/downloads"
+          ],
+          "entrypointArgv": [
+            "/sbin/tini",
+            "-g",
+            "--",
+            "/bin/sh",
+            "/etc/openship/qbt-entrypoint.sh"
+          ],
+          "environment": {
+            "TZ": "UTC",
+            "QBT_WEBUI_PORT": "8080",
+            "QBT_LEGAL_NOTICE": "confirm",
+            "QBT_TORRENTING_PORT": "6881",
+            "ADMIN_USERNAME": "admin"
+          },
+          "secretEnv": [
+            "ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"
+            ],
+            "interval": "30s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "30s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "ADMIN_USERNAME",
+          "service": "qbittorrent",
+          "label": "Admin username",
+          "default": "admin"
+        },
+        {
+          "key": "ADMIN_PASSWORD",
+          "service": "qbittorrent",
+          "label": "Admin password",
+          "help": "Auto-generated. The image ships with no fixed login: on first boot it either prints a random temporary password to the container log, or falls back to admin/adminadmin on older builds. This value is pre-seeded into the WebUI's config before qBittorrent starts, so you get a real password here instead.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "qbittorrent",
+          "port": 8080,
+          "label": "Web UI",
+          "kind": "http",
+          "defaultMode": "domain"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to qBittorrent",
+        "description": "Sign in with the username and generated password below. qBittorrent never had to invent its own temporary password — this one was set before the app's first start.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Web UI",
+            "source": "publicUrl:qbittorrent",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:qbittorrent:ADMIN_USERNAME",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:qbittorrent:ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. These are the initial credentials."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Browser-controlled downloads",
+            "description": "Add, manage, and monitor torrents from a web UI, no desktop client needed."
+          },
+          {
+            "title": "Persistent storage",
+            "description": "Config and downloaded files stay on project-scoped volumes across deployments."
+          }
+        ]
+      },
+      "files": [
+        {
+          "service": "qbittorrent",
+          "path": "/etc/openship/qbt-entrypoint.sh",
+          "content": "#!/bin/sh\nset -e\nconfigFile=\"/config/qBittorrent/config/qBittorrent.conf\"\nif [ ! -f \"$configFile\" ]; then\n  hash=$(python3 -c \"\nimport os, base64, hashlib, secrets\npw = os.environ['ADMIN_PASSWORD'].encode()\nsalt = secrets.token_bytes(16)\ndk = hashlib.pbkdf2_hmac('sha512', pw, salt, 100000, dklen=64)\nprint('@ByteArray(' + base64.b64encode(salt).decode() + ':' + base64.b64encode(dk).decode() + ')')\n\")\n  mkdir -p \"$(dirname \"$configFile\")\"\n  cat <<CONF > \"$configFile\"\n[BitTorrent]\nSession\\DefaultSavePath=/downloads\nSession\\Port=6881\nSession\\TempPath=/downloads/temp\nSession\\TempPathEnabled=true\n[Meta]\nMigrationVersion=9999\n[Preferences]\nWebUI\\Port=8080\nWebUI\\HostHeaderValidation=false\nWebUI\\Username=$ADMIN_USERNAME\nWebUI\\Password_PBKDF2=$hash\nCONF\nfi\nexec /entrypoint.sh\n"
+        }
+      ]
     }
   ]
 }
