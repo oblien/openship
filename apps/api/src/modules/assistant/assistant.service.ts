@@ -60,7 +60,7 @@ import {
   assistantFailure,
   assistantMessages,
 } from "@repo/platform/engine/modules/assistant/presentation";
-import { app } from "../../app";
+import { inProcessRequest } from "../../lib/in-process-request";
 import type { RequestContext } from "../../lib/request-context";
 import {
   assistantAvailable,
@@ -992,7 +992,7 @@ export function createAssistantRuntime(
               forward: async (body) => {
                 const credential = await assistantExecutionCredential(ctx, row);
                 state.controller.signal.throwIfAborted();
-                return app.fetch(
+                return inProcessRequest(
                   new Request(`${new URL(credential.connection.origin).origin}/api/mcp`, {
                     method: "POST",
                     headers: {
