@@ -304,11 +304,14 @@ function persistedServiceRouteUrls(
     if (row.serviceId === service.id) add(row);
   }
 
+  // The same rule `containerPorts` applies in project-service-upstream.ts: the edge
+  // routes a project-level row to the service listening on its port, whether or not
+  // that port has a fixed host side.
   const containerPorts = new Set(
-    servicePortPairs(service.ports as string[] | null).map((p) => p.container),
+    [service.exposedPort, ...((service.ports as string[] | null) ?? [])]
+      .map((spec) => parseServicePort(spec))
+      .filter((port): port is number => port !== null),
   );
-  const exposedPort = parseServicePort(service.exposedPort) ?? undefined;
-  if (exposedPort !== undefined) containerPorts.add(exposedPort);
   for (const row of ordered) {
     if (row.serviceId) continue;
     const port = rowTargetPort(row);
