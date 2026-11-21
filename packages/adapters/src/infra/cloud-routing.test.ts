@@ -67,6 +67,27 @@ describe("project routes on a managed server", () => {
     await h.infra.registerRoute(route);
     expect(h.workspace.network.update).toHaveBeenCalledWith({ ingress_ports: [22, 443, 8080, 3000] });
   });
+  it("reports a blocked edge on a combined firewall even when the port is listed", async () => {
+    h.workspace.network.get.mockResolvedValue({
+      ingress_ports: [443, 3000], public_access: false, ingress: ["block"],
+    });
+    h.workspace.network.getFirewall.mockResolvedValue({ private_ports: [443, 3000] });
+    await expect(h.infra.registerRoute(route)).rejects.toMatchObject({
+      code: "CLOUD_EDGE_INGRESS_UNAVAILABLE",
+    });
+    expect(h.workspace.network.update).not.toHaveBeenCalled();
+    expect(h.pages.create).not.toHaveBeenCalled();
+    expect(h.routes.set).not.toHaveBeenCalled();
+  });
+  it("publishes through a separate Edge rule while leaving private ingress alone", async () => {
+    h.workspace.network.get.mockResolvedValue({
+      ingress_ports: [443], public_access: false, ingress: ["block"],
+    });
+    h.workspace.network.getFirewall.mockResolvedValue({ edge_port_ranges: [{ start: 3000, end: 3000 }] });
+    await h.infra.registerRoute(route);
+    expect(h.workspace.network.update).not.toHaveBeenCalled();
+    expect(h.routes.set).toHaveBeenCalledOnce();
+  });
 });
 
 

@@ -383,6 +383,14 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         throw new Error("Cloud hostname is not owned by this project's route");
     };
     if (page) assertPage();
+    const ports = (routes.routes ?? []).flatMap((rule) =>
+      rule.action.kind === "proxy" &&
+      rule.action.vm === this.workspaceId &&
+      rule.action.port
+        ? [rule.action.port]
+        : [],
+    );
+    await this.ensureIngressPorts(ports);
     const hadPage = Boolean(page);
     let staged: { next: string; previous: string } | undefined;
     let published = false;
@@ -441,14 +449,6 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         if (page.custom_domain !== hostname)
           await this.pages.connectDomain(slug, { domain: hostname });
       }
-      const ports = (routes.routes ?? []).flatMap((rule) =>
-        rule.action.kind === "proxy" &&
-        rule.action.vm === this.workspaceId &&
-        rule.action.port
-          ? [rule.action.port]
-          : [],
-      );
-      await this.ensureIngressPorts(ports);
       if (!(await this.pages.enable(slug)).success)
         throw new Error("Could not enable the managed route");
       await this.writeRoutes(hostname, routes);
@@ -573,6 +573,24 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     if (!add.length) return;
     const workspace = this.client.vm(this.scope.workspaceId);
     const network = await workspace.network.get();
+    // The legacy port list does not grant trusted Edge access when the ingress
+    // source gate is closed. A separate Edge policy can admit just these ports.
+    if (
+      network.public_access === false &&
+      Array.isArray(network.ingress) &&
+      network.ingress.includes("block")
+    ) {
+      const { edge_port_ranges } = await workspace.network.getFirewall();
+      if (add.some((port) =>
+        !edge_port_ranges?.some((range) => range.start <= port && port <= range.end)
+      ))
+        throw new AppError(
+          "Oblien's VM firewall does not admit the managed edge to this application port. Contact OpenShip Support to restore edge access.",
+          503,
+          "CLOUD_EDGE_INGRESS_UNAVAILABLE",
+        );
+      return;
+    }
     const current = Array.isArray(network.ingress_ports) ? (network.ingress_ports as number[]) : [];
     const next = [...new Set([...current, ...add])];
     if (next.length !== current.length || next.some((port) => !current.includes(port))) {
