@@ -352,6 +352,17 @@ describe("prebuilt registry images (#878)", () => {
 });
 
 describe.each([false, true])("monorepo runtime selection (cloud=%s)", (cloud) => {
+  it.each([[".", "app-service"], ["frontend.v2", "app-frontend.v2"]])(
+    "generates a Docker image repository for the service %s",
+    async (name, slug) => {
+      const { captured } = await run([repoService({
+        name, kind: "monorepo", build: null, dockerfile: null, framework: "node",
+        buildCommand: "npm run build", startCommand: "node server.js",
+      })], undefined, undefined, {}, undefined, {}, { cloud });
+      expect(captured[0].config.slug).toBe(slug);
+    },
+  );
+
   it.each(["node", null])("builds a runnable Node image with framework %s", async (framework) => {
     const { captured } = await run([{
       ...repoService({
