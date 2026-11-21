@@ -28,6 +28,10 @@ const BRAND_LOGO: Record<
   ollama: { src: "https://github.com/ollama.png?size=80" },
   vllm: { src: "https://github.com/vllm-project.png?size=80" },
   "open-webui": { src: "https://github.com/open-webui.png?size=80" },
+  // simpleicons carries no SerpBear mark, and the repo lives under a personal
+  // account whose avatar is not the logo — resolve the docs site favicon (the
+  // bear mark), like convex above.
+  serpbear: { src: "https://www.google.com/s2/favicons?domain=docs.serpbear.com&sz=128" },
   // simpleicons carries no pgAdmin mark (cdn.simpleicons.org/pgadmin4 404s) —
   // use the project's GitHub org avatar instead, same as Ollama/vLLM above.
   pgadmin4: { src: "https://github.com/pgadmin-org.png?size=80" },
