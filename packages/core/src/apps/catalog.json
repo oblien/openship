@@ -11056,6 +11056,300 @@
         ],
         "article": "## Calendars and contacts for your mailboxes\n\nRadicale adds CalDAV calendars and CardDAV address books alongside OpenShip Mail. It is an optional app: install it on the mail server or another server, then manage its deployments, settings, and storage under Apps.\n\nIt uses Radicale's built-in IMAP authentication. Users sign in with their **full mailbox email address and mailbox password**, including mailboxes on additional domains hosted by that IMAP server. There is no second account database or administrator password to synchronize. Each mailbox can access only its own collections.\n\n## Install\n\n1. Set up Mail and create your mailboxes first. Copy the hostname from **Mail → Overview**, for example `mail.example.com`.\n2. Install Radicale and enter that hostname as **IMAP hostname**. The app must be able to reach it on port **993**, and the mail server must present a valid, trusted TLS certificate for that hostname. Authentication fails if the certificate is invalid or the server is unreachable.\n3. Give Radicale its own HTTPS hostname, such as `dav.example.com`, using the standard app domain settings. Wait for the domain and certificate to be ready before connecting clients. Keep the existing mail, MX, and webmail DNS records unchanged.\n4. Open the HTTPS address and sign in with a mailbox account. Use Radicale's collection manager to create a calendar and an address book, or import existing `.ics` and `.vcf` files.\n\nThe app can also use an existing external IMAPS server. That server must allow password authentication; OAuth-only mail providers are not supported by this template. When hosting the app in Cloud, the IMAPS hostname must be reachable from Cloud.\n\n## Connect native clients\n\nAdd a **CalDAV account** for calendars and a **CardDAV account** for contacts. Enter the Radicale server hostname, enable SSL/TLS, use port **443**, and supply your full mailbox email address and password. In DAVx⁵, use “Login with URL and user name” and enter the full HTTPS URL. For clients that require a collection URL, copy it from Radicale's collection manager.\n\nRadicale serves `/.well-known/caldav` and `/.well-known/carddav` on its own hostname. OpenShip's standard HTTPS routing passes these requests and DAV methods to the app. Entering the DAV hostname lets compatible clients discover the collections without a custom path.\n\nFor clients that discover a server from the **email domain alone**, publish these optional DNS records for each mailbox domain (replace the target with your DAV hostname):\n\n```text\n_caldavs._tcp.example.com.  SRV  0 1 443 dav.example.com.\n_carddavs._tcp.example.com. SRV  0 1 443 dav.example.com.\n_caldavs._tcp.example.com.  TXT  \"path=/\"\n_carddavs._tcp.example.com. TXT  \"path=/\"\n```\n\nDNS discovery support varies by client. The explicit HTTPS server address works without these records. If a client instead checks the mailbox domain's website for well-known URLs, configure redirects for those two paths on that website to the DAV HTTPS address; installing this app does not change another site's routes.\n\n## Passwords and stored data\n\nSuccessful logins are not cached. Changing a mailbox password or disabling its IMAP access applies to the next DAV request. Update the password in your calendar and contacts clients when it changes in Mail.\n\nCollections live in the app's persistent `radicale_data` volume under `/var/lib/radicale/collections`, and survive deployments and container replacement. Include that volume in your backup plan. Removing a mailbox does not erase its stored collections; deleting and recreating the same mailbox address gives it access to those collections again. Renaming an address does not move its collections. Export or remove the old collections before reassigning an address.\n\nThe included web page manages collections and imports/exports. Calendar and contacts views inside OpenShip Webmail are a separate feature; this app does not add JMAP or change email delivery.\n\nSee the [Radicale documentation](https://radicale.org/v3.html) for client setup and collection management."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.2",
+      "id": "invoiceninja",
+      "name": "Invoice Ninja",
+      "description": "Invoicing, quotes, payments and expenses for your business, with a private MySQL database, Redis queue, and a preconfigured administrator.",
+      "kind": "template",
+      "logo": "invoiceninja",
+      "category": "other",
+      "repository": "https://github.com/invoiceninja/invoiceninja",
+      "tags": [
+        "invoicing",
+        "billing",
+        "accounting",
+        "payments"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "invoiceninja-db",
+          "image": "mysql:8.4.13",
+          "restart": "unless-stopped",
+          "environment": {
+            "MYSQL_DATABASE": "ninja",
+            "MYSQL_USER": "ninja"
+          },
+          "secretEnv": [
+            "MYSQL_PASSWORD",
+            "MYSQL_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "invoiceninja_db_data:/var/lib/mysql"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "mysqladmin ping -h localhost -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          }
+        },
+        {
+          "name": "invoiceninja-redis",
+          "image": "redis:8.10.3-alpine",
+          "restart": "unless-stopped",
+          "volumes": [
+            "invoiceninja_redis_data:/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "redis-cli",
+              "ping"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          }
+        },
+        {
+          "name": "invoiceninja",
+          "image": "invoiceninja/invoiceninja-debian:5.13.50",
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "invoiceninja-db",
+            "invoiceninja-redis"
+          ],
+          "entrypointArgv": [
+            "sh",
+            "-c",
+            "export APP_KEY=\"base64:$(php -r \"echo base64_encode(hex2bin(getenv('APP_KEY_SEED')));\")\"; exec /usr/local/bin/init.sh supervisord -c /etc/supervisor/supervisord.conf"
+          ],
+          "volumes": [
+            "invoiceninja_public:/var/www/html/public",
+            "invoiceninja_storage:/var/www/html/storage"
+          ],
+          "environment": {
+            "APP_URL": "{{publicUrl:invoiceninja-web}}",
+            "APP_ENV": "production",
+            "APP_DEBUG": "false",
+            "REQUIRE_HTTPS": "false",
+            "TRUSTED_PROXIES": "*",
+            "CACHE_DRIVER": "redis",
+            "QUEUE_CONNECTION": "redis",
+            "SESSION_DRIVER": "redis",
+            "REDIS_HOST": "invoiceninja-redis",
+            "REDIS_PORT": "6379",
+            "REDIS_PASSWORD": "null",
+            "FILESYSTEM_DISK": "debian_docker",
+            "DB_CONNECTION": "mysql",
+            "DB_HOST": "invoiceninja-db",
+            "DB_PORT": "3306",
+            "DB_DATABASE": "ninja",
+            "DB_USERNAME": "ninja",
+            "IS_DOCKER": "true",
+            "SCOUT_DRIVER": "null",
+            "PDF_GENERATOR": "snappdf",
+            "PHANTOMJS_PDF_GENERATION": "false",
+            "MAIL_MAILER": "log"
+          },
+          "secretEnv": [
+            "DB_PASSWORD",
+            "APP_KEY_SEED",
+            "IN_PASSWORD"
+          ]
+        },
+        {
+          "name": "invoiceninja-web",
+          "image": "nginx:1.31.8-alpine",
+          "exposed": true,
+          "ports": [
+            "8224:80"
+          ],
+          "exposedPort": 80,
+          "routes": [
+            {
+              "port": 80
+            }
+          ],
+          "restart": "unless-stopped",
+          "dependsOn": [
+            "invoiceninja"
+          ],
+          "volumes": [
+            "invoiceninja_public:/var/www/html/public:ro",
+            "invoiceninja_storage:/var/www/html/storage:ro"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1/health || exit 1"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "120s"
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MYSQL_ROOT_PASSWORD",
+          "service": "invoiceninja-db",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "MYSQL_PASSWORD",
+          "service": "invoiceninja-db",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "invoiceninja-db"
+        },
+        {
+          "key": "DB_PASSWORD",
+          "service": "invoiceninja",
+          "label": "Database password (app side)",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "invoiceninja-db"
+        },
+        {
+          "key": "APP_KEY_SEED",
+          "service": "invoiceninja",
+          "label": "Application key",
+          "help": "Auto-generated. Encrypts stored credentials and sessions; losing it makes them unreadable. Converted to Laravel's base64 APP_KEY on start.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "IN_PASSWORD",
+          "service": "invoiceninja",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "settings": [
+        {
+          "id": "setup",
+          "label": "Initial account",
+          "columns": 2,
+          "fields": [
+            {
+              "key": "IN_USER_EMAIL",
+              "service": "invoiceninja",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "required": true,
+              "installStep": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app."
+            }
+          ]
+        }
+      ],
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "endpoints": [
+        {
+          "service": "invoiceninja-web",
+          "port": 80,
+          "label": "Invoice Ninja",
+          "kind": "http",
+          "defaultMode": "domain"
+        },
+        {
+          "service": "invoiceninja-db",
+          "port": 3306,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "files": [
+        {
+          "service": "invoiceninja-web",
+          "path": "/etc/nginx/conf.d/laravel.conf",
+          "content": "server {\n    listen 80 default_server;\n    server_name _;\n    root /var/www/html/public;\n\n    add_header X-Frame-Options \"SAMEORIGIN\";\n    add_header X-Content-Type-Options \"nosniff\";\n\n    index index.php;\n    charset utf-8;\n\n    location / {\n        try_files $uri $uri/ /index.php?$query_string;\n    }\n\n    location = /favicon.ico { access_log off; log_not_found off; }\n    location = /robots.txt  { access_log off; log_not_found off; }\n\n    error_page 404 /index.php;\n\n    location ~ \\.php$ {\n        fastcgi_pass invoiceninja:9000;\n        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;\n        include fastcgi_params;\n    }\n\n    location ~ /\\.(?!well-known).* {\n        deny all;\n    }\n}\n"
+        },
+        {
+          "service": "invoiceninja-web",
+          "path": "/etc/nginx/conf.d/invoiceninja.conf",
+          "content": "client_max_body_size 10M;\nclient_body_buffer_size 10M;\nserver_tokens off;\nfastcgi_buffers 32 16K;\ngzip on;\ngzip_comp_level 2;\ngzip_min_length 1M;\ngzip_proxied any;\ngzip_types *;\n"
+        }
+      ],
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 2048
+      },
+      "connection": {
+        "title": "Sign in to Invoice Ninja",
+        "description": "Sign in with the email and generated password below. The account is created on first start.",
+        "guide": {
+          "defaultMode": "public"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Invoice Ninja",
+            "source": "publicUrl:invoiceninja-web",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "source": "env:invoiceninja:IN_USER_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:invoiceninja:IN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "firstLogin": {
+          "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. Outgoing email is set to log only; add your SMTP server in the app under Settings > Email Settings to send invoices. The image is large (about 4 GB) and the first start runs database migrations, so allow a couple of minutes."
+        }
+      },
+      "marketplace": {
+        "features": [
+          {
+            "title": "Invoices and quotes",
+            "description": "Create, send, and track invoices, quotes, and payments."
+          },
+          {
+            "title": "Private database",
+            "description": "Your data lives in a dedicated, project-scoped MySQL instance, with Redis for the queue."
+          },
+          {
+            "title": "Background jobs included",
+            "description": "Queue workers and the scheduler run alongside the app."
+          }
+        ]
+      }
     }
   ]
 }
