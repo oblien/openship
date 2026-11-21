@@ -2,6 +2,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { repos } from "@repo/db";
 import { normalizeRollbackWindow } from "@repo/core";
 import type { RollbackCapacity } from "@repo/contracts";
+import { env } from "../../config/env";
 
 /** The retention-relevant slice of a project row. Fields are optional so
  *  callers (and test fixtures) can pass a narrow literal; a full `Project`
@@ -31,7 +32,7 @@ export interface ResolvedRollbackWindow {
  * to reclaim reproducible artifacts under confirmed Docker storage pressure.
  *
  *   explicit          the operator typed a number (`project.rollbackWindow`).
- *   instance-default  no override → instance_settings.default_rollback_window (5).
+ *   instance-default  Cloud default or self-hosted instance setting.
  *
  * Deliberately I/O-free apart from the instance-settings read: the disk probe and
  * the snapshot measurement are informational. A previous automatic window must
@@ -52,7 +53,8 @@ export async function resolveRollbackWindowDetail(
     };
   }
 
-  const settings = await repos.instanceSettings.get();
+  // Instance settings are only operator-configurable on self-hosted installs.
+  const settings = env.CLOUD_MODE ? undefined : await repos.instanceSettings.get();
   return {
     window: normalizeRollbackWindow(settings?.defaultRollbackWindow),
     source: "instance-default",

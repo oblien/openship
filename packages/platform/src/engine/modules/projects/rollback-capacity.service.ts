@@ -1,7 +1,7 @@
 /**
  * What the rollback/retention UI needs to render a truthful label:
  *
- *   "Rollback: keeps 5 past releases"
+ *   "Rollback: keeps 2 past releases"
  *
  * All of it comes from values measured at the last deploy plus a cached disk
  * probe, so opening the deploy wizard's target panel or Advanced settings
