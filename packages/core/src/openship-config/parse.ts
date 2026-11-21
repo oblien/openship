@@ -376,10 +376,13 @@ function parseHealthcheck(ctx: Ctx, v: unknown, path: string): OpenshipHealthche
           : undefined;
   return {
     test,
-    interval: ctx.str(v.interval, `${path}.interval`),
-    timeout: ctx.str(v.timeout, `${path}.timeout`),
+    // Validated like stopGracePeriod: the runtime treats a duration it can't
+    // read as unset, so "30 seconds" would otherwise fall back to Docker's
+    // default without a word.
+    interval: parseDuration(ctx, v.interval, `${path}.interval`),
+    timeout: parseDuration(ctx, v.timeout, `${path}.timeout`),
     retries: ctx.int(v.retries, `${path}.retries`, 0, 100),
-    startPeriod: ctx.str(v.startPeriod, `${path}.startPeriod`),
+    startPeriod: parseDuration(ctx, v.startPeriod, `${path}.startPeriod`),
     disable: ctx.bool(v.disable, `${path}.disable`),
   };
 }
@@ -550,7 +553,7 @@ function parseRoles(ctx: Ctx, v: unknown, path: string): StackRole[] | undefined
       return;
     }
     const stopSignal = parseStopSignal(ctx, item.stopSignal, `${p}.stopSignal`);
-    const stopGracePeriod = parseStopGracePeriod(ctx, item.stopGracePeriod, `${p}.stopGracePeriod`);
+    const stopGracePeriod = parseDuration(ctx, item.stopGracePeriod, `${p}.stopGracePeriod`);
     // Preset gating only (see StackRole): a declared role always runs. Say so,
     // or a role copied from a preset silently loses the condition it relied on.
     const gateKeys = (["when", "unless"] as const).filter((key) => item[key] !== undefined);
@@ -594,7 +597,7 @@ function parseStopSignal(ctx: Ctx, v: unknown, path: string): string | undefined
 // The shared grammar in `../duration`, which the runtime and the compose parser
 // read too, so a value accepted here is one the runtime applies as written.
 
-function parseStopGracePeriod(ctx: Ctx, v: unknown, path: string): string | undefined {
+function parseDuration(ctx: Ctx, v: unknown, path: string): string | undefined {
   const dur = ctx.str(v, path);
   if (dur === undefined) return undefined;
   if (!isComposeDuration(dur)) {
