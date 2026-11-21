@@ -13,7 +13,6 @@ export type EmailData = {
   subject: string;
   message: string;
   attachments: File[];
-  fromEmail?: string;
   scheduleAt?: string;
 };
 
