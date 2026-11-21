@@ -119,8 +119,11 @@ services:
     ports:
       # Loopback by default — the host-net edge reaches it over loopback.
       # OPENSHIP_BIND_ADDR opts into a public/LAN interface (see header note).
-      # API_PORT overrides the port (host + container move together).
+      # API_PORT overrides the API port (host + container move together).
       - "${OPENSHIP_BIND_ADDR:-127.0.0.1}:${API_PORT:-4000}:${API_PORT:-4000}"
+      # Certbot's HTTP-01 alternate listener is reached by the host-networked
+      # edge. Keep it host-local; never expose the challenge listener publicly.
+      - "127.0.0.1:49180:49180"
     # Host Docker socket → the API (dockerode) builds + runs deployed apps on the
     # host daemon. dockerode's local transport targets the CONTAINER path, which is
     # why only the host side is a variable: a rootless daemon runs as the invoking
