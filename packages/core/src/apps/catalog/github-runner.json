@@ -1,0 +1,122 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "github-runner",
+  "name": "GitHub Actions Runner",
+  "description": "Self-hosted GitHub Actions runner. Registers your server with a repository or organization so workflow jobs run on your own hardware instead of metered GitHub-hosted minutes.",
+  "kind": "template",
+  "logo": "github-runner",
+  "category": "automation",
+  "repository": "https://github.com/myoung34/docker-github-actions-runner",
+  "tags": ["ci", "github", "actions", "runner", "automation"],
+  "framework": "docker-compose",
+  "management": {
+    "kind": "schema"
+  },
+  "settings": [
+    {
+      "id": "registration",
+      "label": "GitHub registration",
+      "columns": 1,
+      "description": "Where the runner registers. Use a repository runner for a single repo, or an organization runner to serve every repo in the organization. Use private repositories only: a pull request on a public repo can run arbitrary code on this server.",
+      "fields": [
+        {
+          "key": "ACCESS_TOKEN",
+          "service": "runner",
+          "label": "GitHub access token",
+          "type": "password",
+          "secret": true,
+          "required": true,
+          "installStep": true,
+          "help": "A personal access token. Classic PAT: repo scope for a repository runner, admin:org for an organization runner. The runner uses it to fetch short-lived registration tokens."
+        },
+        {
+          "key": "RUNNER_SCOPE",
+          "service": "runner",
+          "label": "Runner scope",
+          "type": "select",
+          "default": "repo",
+          "installStep": true,
+          "options": [
+            { "value": "repo", "label": "Repository" },
+            { "value": "org", "label": "Organization" }
+          ]
+        },
+        {
+          "key": "REPO_URL",
+          "service": "runner",
+          "label": "Repository URL",
+          "type": "text",
+          "installStep": true,
+          "help": "Used for a repository runner, e.g. https://github.com/owner/repo. Leave empty for an organization runner."
+        },
+        {
+          "key": "ORG_NAME",
+          "service": "runner",
+          "label": "Organization name",
+          "type": "text",
+          "installStep": true,
+          "help": "Used for an organization runner. Leave empty for a repository runner."
+        },
+        {
+          "key": "LABELS",
+          "service": "runner",
+          "label": "Runner labels",
+          "type": "text",
+          "default": "self-hosted,openship",
+          "installStep": true,
+          "help": "Comma-separated extra labels, e.g. self-hosted,openship. Set before the first deploy: labels are fixed when the runner registers. If left empty the runner only has the default labels (self-hosted, Linux, X64)."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 1
+  },
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 2048
+  },
+  "services": [
+    {
+      "name": "runner",
+      "image": "myoung34/github-runner:2.338.2",
+      "restart": "unless-stopped",
+      "environment": {
+        "RUNNER_SCOPE": "{{config:RUNNER_SCOPE}}",
+        "REPO_URL": "{{config:REPO_URL}}",
+        "ORG_NAME": "{{config:ORG_NAME}}",
+        "LABELS": "{{config:LABELS}}",
+        "ACCESS_TOKEN": "{{config:ACCESS_TOKEN}}",
+        "RUNNER_NAME_PREFIX": "openship",
+        "RUNNER_WORKDIR": "/tmp/runner/work",
+        "CONFIGURED_ACTIONS_RUNNER_FILES_DIR": "/runner-state",
+        "DISABLE_AUTOMATIC_DEREGISTRATION": "true"
+      },
+      "secretEnv": ["ACCESS_TOKEN"],
+      "volumes": ["runner_state:/runner-state", "runner_work:/tmp/runner"]
+    }
+  ],
+  "configFields": [],
+  "connection": {
+    "title": "GitHub Actions Runner",
+    "description": "This app has no web interface. Once it is running, the runner appears under Settings > Actions > Runners in your repository or organization on GitHub.",
+    "guide": {
+      "defaultMode": "internal"
+    },
+    "outputs": [
+      {
+        "id": "labels",
+        "label": "Runner labels",
+        "source": "env:runner:LABELS",
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Target this runner in a workflow with runs-on: [self-hosted, Linux, X64], or with your own label if you set one before the first deploy (labels are fixed at registration). Use private repositories only: on a public repository a pull request can run code on this server, and environment variables are not safe from exfiltration. This template does not mount the host Docker socket, so jobs cannot build Docker images; mounting the socket gives every job root-level control of the server, so only do that on a dedicated machine. Registration state is kept in a volume so restarts do not re-register the runner. The image ships an old system Node (v10), so add actions/setup-node before actions such as pnpm/action-setup."
+    }
+  }
+}
