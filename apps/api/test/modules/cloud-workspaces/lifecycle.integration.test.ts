@@ -264,14 +264,11 @@ beforeEach(async () => {
       id,
       get: () => h.client.vms.get(id),
       lifecycle: { makePermanent: async () => {} },
-      apiAccess: {
-        status: async () => ({ enabled: true }),
-        getToken: async () => ({ token: "scoped-runtime-token" }),
-      },
+      apiAccess: { status: async () => ({ enabled: true }) },
       resources: { update: (input: any) => h.client.resize(id, input) },
       delete: () => h.client.delete(id),
       workloads: { list: async () => [] },
-      runtime: async () => ({}),
+      runtime: async () => ({ info: async () => ({ os: "linux" }) }),
       invalidateRuntime() {},
     }),
   };

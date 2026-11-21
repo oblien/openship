@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   token: vi.fn(), spend: vi.fn(), create: vi.fn(), retry: vi.fn(), get: vi.fn(), start: vi.fn(), resume: vi.fn(),
   env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://staging.oblien.test", OBLIEN_DOCKER_PRESET: undefined as string | undefined },
   permanent: vi.fn(), resize: vi.fn(), wait: vi.fn(), credentials: [] as unknown[],
-  runtimeStatus: vi.fn(), runtimeToken: vi.fn(), ownerVm: vi.fn(), enableRuntime: vi.fn(),
+  runtimeStatus: vi.fn(), runtimeInfo: vi.fn(), ownerVm: vi.fn(), enableRuntime: vi.fn(),
   inFlight: vi.fn(), discard: vi.fn(), list: vi.fn(), exec: vi.fn(), invalidate: vi.fn(), dispose: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
@@ -35,8 +35,8 @@ vi.mock("@repo/adapters", async (original) => ({
     vms = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
     vm = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
       lifecycle: { makePermanent: h.permanent }, resources: { update: h.resize },
-      apiAccess: { status: h.runtimeStatus, getToken: h.runtimeToken },
-      runtime: async () => ({ exec: { run: h.exec } }), invalidateRuntime: h.invalidate });
+      apiAccess: { status: h.runtimeStatus },
+      runtime: async () => ({ exec: { run: h.exec }, info: h.runtimeInfo }), invalidateRuntime: h.invalidate });
   },
   waitForCloudDockerWorkspace: h.wait,
   CloudWorkspaceExecutor: class {
@@ -79,7 +79,7 @@ beforeEach(() => {
   });
   h.wait.mockImplementation(async () => h.get());
   h.runtimeStatus.mockResolvedValue({ enabled: true });
-  h.runtimeToken.mockResolvedValue({ token: "scoped-runtime-token" });
+  h.runtimeInfo.mockResolvedValue({ os: "linux" });
   h.ownerVm.mockReturnValue({ apiAccess: { enable: h.enableRuntime } });
   h.exec.mockResolvedValue("");
   h.resize.mockImplementation(async (resources) => {
@@ -125,9 +125,12 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     let runtimeEnabled = false;
     h.runtimeStatus.mockImplementation(async () => ({ enabled: runtimeEnabled }));
     h.enableRuntime.mockImplementation(async () => { runtimeEnabled = true; });
-    h.runtimeToken
+    h.runtimeInfo
       .mockRejectedValueOnce(new Error("gateway unavailable"))
-      .mockImplementation(async () => ({ token: runtimeEnabled ? "scoped-runtime-token" : "" }));
+      .mockImplementation(async () => {
+        if (!runtimeEnabled) throw new Error("runtime disabled");
+        return { os: "linux" };
+      });
 
     await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("gateway unavailable");
     expect(binding).toMatchObject({ state: "provisioning", workspaceId: "workspace-a" });

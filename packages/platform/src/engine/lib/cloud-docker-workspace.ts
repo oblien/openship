@@ -410,15 +410,10 @@ async function ensureDockerHost(
     if (binding.state === "provisioning") {
       input.signal?.throwIfAborted();
       // Oblien reserves runtime initialization for the account owner.
-      // Verify the scoped credential can reach the runtime before marking this host ready.
       if (!(await ws.apiAccess.status()).enabled)
         await getOblienClient().vm(ready.id).apiAccess.enable();
-      if (!(await ws.apiAccess.getToken()).token)
-        throw new AppError(
-          "Cloud server runtime access is not ready",
-          503,
-          "CLOUD_RUNTIME_UNAVAILABLE",
-        );
+      // Check the actual gateway with the same credential that will run deployments.
+      await (await ws.runtime()).info();
     }
     await repos.cloudDockerWorkspace.markReady(owner, input.organizationId, workspaceId);
     return workspaceId;
