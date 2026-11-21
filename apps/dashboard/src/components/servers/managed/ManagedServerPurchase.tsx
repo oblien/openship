@@ -120,7 +120,12 @@ function Purchase({
     let server: CloudWorkspaceSummary;
     try { server = await create(key); }
     catch (error) {
-      if (checkoutIntent || getApiErrorCode(error) !== "CLOUD_WORKSPACE_PURCHASE_REMOVED") throw error;
+      if (getApiErrorCode(error) !== "CLOUD_WORKSPACE_PURCHASE_REMOVED") throw error;
+      if (checkoutIntent) {
+        // A stale pricing return must wait for a new click before opening payment.
+        onIntentRemoved?.();
+        throw error;
+      }
       key = randomUUID();
       try { sessionStorage.setItem(storageKey, key); }
       catch (error) { reportCaughtError(error, "dashboard/components/servers/managed/ManagedServerPurchase"); }

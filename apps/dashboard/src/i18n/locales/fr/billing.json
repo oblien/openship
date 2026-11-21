@@ -840,6 +840,7 @@
     }
   },
   "hub": {
+    "unusedSpaces": "Espaces Cloud inutilisés ({count})",
     "addPlan": "Ajouter une offre",
     "addHint": "Choisissez de la capacité Cloud ou gérez vos propres serveurs.",
     "viewPlan": "Voir l’offre",

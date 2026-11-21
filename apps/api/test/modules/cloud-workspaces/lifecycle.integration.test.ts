@@ -86,6 +86,7 @@ import {
   createTrackedWorkspaceCheckout,
   assertWorkspaceCheckoutsSettled,
 } from "@repo/platform/engine/modules/billing/workspace-checkout";
+import { runCheckoutDraftCleanup } from "@repo/platform/engine/modules/billing/checkout-draft-cleanup";
 import { getCheckoutStatus } from "@repo/platform/engine/modules/billing/billing.service";
 import { reconcileWorkspaceSubscriptionChange } from "@repo/platform/engine/modules/billing/billing-plan-change";
 import { customSubscriptionOffer } from "@repo/platform/engine/modules/billing/billing-custom-offer";
@@ -999,6 +1000,75 @@ describe("workspace payment and deletion races", () => {
         return { success: true, namespace, pendingCheckout: null };
       });
     });
+    async function draftWithPayment() {
+      const input = { name: "Purchase draft", idempotencyKey: randomUUID() };
+      const created = await request("POST", "", input);
+      expect(created.status).toBe(201);
+      const id = created.body.data?.id ?? created.body.id;
+      await ensureNamespace(owner.orgId, id);
+      workspace = (await repos.cloudWorkspace.findById(id))!;
+      return { input, payment: await purchase() };
+    }
+    const ageDraft = () => db.update(schema.cloudWorkspace)
+      .set({ updatedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where(eq(schema.cloudWorkspace.id, workspace.id));
+
+    it("removes an expired purchase draft after the retry window without touching a provider VM", async () => {
+      const { input, payment } = await draftWithPayment();
+      payments.get(payment.checkoutId)!.status = "expired";
+      reservations.delete(workspace.namespace!);
+
+      expect((await runCheckoutDraftCleanup()).removed).toBe(0);
+      await ageDraft();
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 1, errors: 0 });
+      expect(await repos.cloudWorkspace.findById(workspace.id)).toBeUndefined();
+      expect(await repos.server.findByWorkspace(workspace.id, owner.orgId)).toBeUndefined();
+      expect(h.client.delete).not.toHaveBeenCalled();
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      expect((await request("POST", "", input)).body.code).toBe("CLOUD_WORKSPACE_PURCHASE_REMOVED");
+    });
+
+    it("keeps payable and uncertain checkouts, and preserves spaces with projects", async () => {
+      const { payment } = await draftWithPayment();
+      await ageDraft();
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 0, errors: 0 });
+      expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toHaveLength(1);
+      payments.get(payment.checkoutId)!.status = "expired";
+      reservations.delete(workspace.namespace!);
+      const [intent] = (await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts;
+      await repos.cloudWorkspace.setPendingCheckouts(workspace.id, owner.orgId, [{ request: intent!.request }]);
+      await ageDraft();
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 0, errors: 0 });
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      await repos.cloudWorkspace.setPendingCheckouts(workspace.id, owner.orgId, []);
+      await addProject("saved-draft");
+      await ageDraft();
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 0, errors: 0 });
+      expect(await repos.cloudWorkspace.findById(workspace.id)).toBeDefined();
+    });
+
+    it("cleans a settled cancellation but keeps a space with confirmed paid coverage", async () => {
+      await draftWithPayment();
+      await remote().cancelCheckout(await action());
+      expect((await repos.cloudWorkspace.findById(workspace.id))?.pendingCheckouts).toEqual([]);
+      await ageDraft();
+      subscribe();
+
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 0, errors: 0 });
+      expect(await repos.cloudWorkspace.findById(workspace.id)).toBeDefined();
+      await syncOblienEntitlement(owner.orgId, { workspaceId: workspace.id, syncResourceLimits: false });
+      subscriptions.delete(workspace.namespace!);
+      // The previously subscribed space still has paid history in the mirror.
+      await ageDraft();
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 0, errors: 0 });
+
+      await draftWithPayment();
+      await remote().cancelCheckout(await action());
+      await ageDraft();
+      expect(await runCheckoutDraftCleanup()).toMatchObject({ removed: 1, errors: 0 });
+      expect(await repos.cloudWorkspace.findById(workspace.id)).toBeUndefined();
+    });
+
     it("cancels a legacy retail payment without a capacity quote when the provider supports checkout cancellation", async () => {
       await purchase();
       h.billing.getCatalog.mockResolvedValue({ reseller: { checkoutCancellation: true } });

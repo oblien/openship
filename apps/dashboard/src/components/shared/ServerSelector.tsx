@@ -17,6 +17,7 @@ import { DESKTOP_LOCAL_DEPLOY_ENABLED } from "@/hooks/useLocalDeployGate";
 import { dockerMigrationApi } from "@/lib/api/server-migration";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { matchesServer } from "@/lib/server-reference";
+import { isCloudSpaceDraft } from "@/lib/cloud-spaces";
 import { sortForGpu } from "@/lib/server-gpu";
 import type { DeployDestination } from "@repo/core";
 
@@ -173,7 +174,12 @@ export function useServerSelection({
     return () => { active = false; };
   }, [enabled, readOnly, shouldUseSavedDefault, contextKey]);
 
-  const rows = sortForGpu(data?.servers ?? [], needsGpu).filter((server) => {
+  // Keep the space explicitly selected by an in-progress purchase available
+  // to its wizard. Other checkout drafts belong in billing.
+  const availableServers = (data?.servers ?? []).filter(server =>
+    !forDeployment || server.id === selectedId || !isCloudSpaceDraft(server.managed),
+  );
+  const rows = sortForGpu(availableServers, needsGpu).filter((server) => {
     if (destinationKind === "cloud" && !server.managed) return false;
     if (destinationKind === "server" && server.managed) return false;
     if (selfHostedOnly && server.managed) return false;
@@ -189,7 +195,7 @@ export function useServerSelection({
   const ids = rows.map((row) => row.id).join(",");
   const automaticCloud =
     destinationKind !== "server" && !selfHostedOnly && !selfHosted && forDeployment &&
-    (destinationKind === "cloud" ? rows.length === 0 : data?.servers.length === 0) && !selectedId;
+    (destinationKind === "cloud" ? rows.length === 0 : data !== null && availableServers.length === 0) && !selectedId;
   useEffect(() => {
     if (
       !enabled || disabled || readOnly || loading || error || requiresExplicitChoice ||
@@ -204,8 +210,7 @@ export function useServerSelection({
     } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
       autoSelected.current = true;
       const remembered = shouldUseSavedDefault ? serverPreference(contextKey).read() : null;
-      // A checkout can leave a Cloud space in the inventory before it can host
-      // projects. Keep it available for manual selection and first-plan setup.
+      // Prefer a usable destination to saved spaces that need billing attention.
       const hasDeploymentServer = !selfHosted && forDeployment && rows.some(({ connection, managed }) =>
         connection === "ssh" || (managed && !managed.connectionIssue && ["ready", "running", "active"].includes(managed.state)),
       );

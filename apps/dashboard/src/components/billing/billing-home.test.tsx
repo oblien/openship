@@ -16,13 +16,14 @@ const h = vi.hoisted(() => ({
   management: vi.fn(),
   checkouts: vi.fn(),
   replace: vi.fn(),
+  remove: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: h.replace }) }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: h.user }, session: { activeOrganizationId: h.org } } }),
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.cloud }));
-vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.list } }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.list, removeManagedServer: h.remove } }));
 vi.mock("@/lib/api/billing", () => ({ billingApi: { listCheckouts: h.checkouts } }));
 vi.mock("@/lib/api/management", () => ({ managementApi: { get: h.management } }));
 
@@ -141,7 +142,7 @@ it("does not invent a separate purchased subscription for included Basic managem
   expect(h.replace).not.toHaveBeenCalled();
 });
 
-it("replaces the empty billing overview with the plans route, including when only unpaid drafts exist", async () => {
+it("opens the plans route when the remaining unpaid space still has projects", async () => {
   h.list.mockResolvedValue({ servers: [space("draft", "Unpaid draft", "free")] });
   await render();
   expect(h.replace).toHaveBeenCalledExactlyOnceWith(
@@ -231,6 +232,34 @@ const pendingPayment = (
   canResume: true,
   canCancel: true,
 });
+it("offers confirmed removal for empty spaces with no pending payment", async () => {
+  const empty = space("expired", "Production", "free");
+  empty.projectCount = empty.managed!.projectCount = 0;
+  const paying = space("paying", "Production", "free");
+  paying.projectCount = paying.managed!.projectCount = 0;
+  h.list.mockResolvedValueOnce({ servers: [empty, paying] }).mockResolvedValue({ servers: [paying] });
+  h.checkouts.mockResolvedValue({ items: [pendingPayment(paying)] });
+  h.remove.mockResolvedValue({ ...empty.managed, state: "deleting" });
+
+  await render();
+  const disclosure = host.querySelector("details")!;
+  expect(disclosure.textContent).toContain("Unused Cloud spaces (1)");
+  expect(disclosure.querySelectorAll("li")).toHaveLength(1);
+  expect(host.querySelector('a[href="/resources?pool=paying&tab=payment"]')).not.toBeNull();
+  expect(h.replace).not.toHaveBeenCalled();
+
+  await act(async () => disclosure.querySelector("button")!.click());
+  expect(h.remove).not.toHaveBeenCalled();
+  const confirm = [...disclosure.querySelectorAll("button")].find(
+    button => button.textContent === baseDictionary.billing.workspaces.confirmDelete,
+  )!;
+  await act(async () => confirm.click());
+  expect(h.remove).toHaveBeenCalledExactlyOnceWith("expired", {
+    confirmDelete: true, idempotencyKey: expect.any(String),
+  });
+  expect(host.querySelector("details")).toBeNull();
+});
+
 it("shows unpaid drafts as pending plan cards instead of redirecting to purchases", async () => {
   const pending = pendingPayment();
   h.checkouts.mockResolvedValue({ items: [pending] });

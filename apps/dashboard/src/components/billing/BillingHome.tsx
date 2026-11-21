@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
-import type { BillingPendingCheckout, ManagementState, ServerDetail } from "@repo/contracts";
+import type { BillingPendingCheckout, CloudWorkspaceSummary, ManagementState, ServerDetail } from "@repo/contracts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Button } from "@/components/ui/button";
 import { CapacitySummary } from "@/components/shared/CapacitySummary";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
+import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
+import { useManagedServerActions } from "@/components/servers/managed/useManagedServerActions";
 import { useServerDestinations } from "@/hooks/useServerDestinations";
-import { cloudSpaceHref, cloudSpacePlanLabel } from "@/lib/cloud-spaces";
+import { cloudSpaceHref, cloudSpacePlanLabel, isCloudSpaceDraft } from "@/lib/cloud-spaces";
 import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
 import { subscriptionNeedsPayment } from "@/lib/billing-presentation";
 import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
@@ -38,6 +40,14 @@ function BillingHomeContent() {
     inventory.data?.servers.filter(
       ({ managed }) => managed && (managed.planTierId !== "free" || managed.resources),
     ) ?? [];
+  const drafts = pending.loading || pending.error
+    ? []
+    : (inventory.data?.servers ?? []).flatMap(({ managed, cloudReference, source }) =>
+        source !== "cloud" && managed && isCloudSpaceDraft(managed) &&
+        !pending.items.some(item => item.server.id === (cloudReference?.workspaceId ?? managed.id))
+          ? [managed]
+          : [],
+      );
   const subscription = management.data?.subscription;
   const hasPlans =
     spaces.length > 0 ||
@@ -46,7 +56,7 @@ function BillingHomeContent() {
     Boolean(management.data?.pendingCheckout);
   const loading = inventory.loading || management.loading || pending.loading;
   const error = inventory.error || management.error || pending.error;
-  const openingPlans = !loading && !error && !hasPlans;
+  const openingPlans = !loading && !error && !hasPlans && drafts.length === 0;
   const plansHref = newServerBillingHref(inventory.organizationId);
   useEffect(() => {
     if (openingPlans) router.replace(plansHref);
@@ -90,7 +100,55 @@ function BillingHomeContent() {
           showAddPlan={!error}
         />
       )}
+      {drafts.length > 0 && (
+        <details key={inventory.resourceKey} className="rounded-2xl bg-card px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            {interpolate(t.billing.hub.unusedSpaces, { count: String(drafts.length) })}
+          </summary>
+          <ul className="mt-3 space-y-2">
+            {drafts.map(space => (
+              <UnusedCloudSpace key={space.id} server={space} onUpdated={inventory.refresh} />
+            ))}
+          </ul>
+        </details>
+      )}
     </PageContainer>
+  );
+}
+
+function UnusedCloudSpace({ server, onUpdated }: { server: CloudWorkspaceSummary; onUpdated: () => void }) {
+  const { t, locale } = useI18n();
+  const [deleting, setDeleting] = useState(false);
+  const actions = useManagedServerActions(server.serverId, () => {
+    setDeleting(false);
+    onUpdated();
+  });
+  return (
+    <li className="rounded-xl bg-muted/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{server.name}</p>
+          <time dateTime={server.createdAt} className="text-xs text-muted-foreground">
+            {new Date(server.createdAt).toLocaleString(locale)}
+          </time>
+        </div>
+        {!deleting && (
+          <Button variant="secondary" size="sm" onClick={() => setDeleting(true)}>
+            {t.billing.workspaces.delete}
+          </Button>
+        )}
+      </div>
+      {deleting && (
+        <div className="mt-3">
+          <ManagedServerActionFeedback
+            server={server}
+            actions={actions}
+            deleting
+            onCancelDelete={() => setDeleting(false)}
+          />
+        </div>
+      )}
+    </li>
   );
 }
 

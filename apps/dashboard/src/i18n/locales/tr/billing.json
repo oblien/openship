@@ -840,6 +840,7 @@
     }
   },
   "hub": {
+    "unusedSpaces": "Kullanılmayan bulut alanları ({count})",
     "addPlan": "Plan ekle",
     "addHint": "Cloud kapasitesi seçin veya kendi sunucularınızı yönetin.",
     "viewPlan": "Planı görüntüle",

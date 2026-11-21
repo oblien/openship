@@ -1,4 +1,11 @@
+import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { PLAN_IDS, resolvePlan, toPricingLocale } from "@repo/core";
+
+/** Checkout can persist a space before it has a paid plan or any workloads. */
+export function isCloudSpaceDraft(space: CloudWorkspaceSummary | null | undefined): boolean {
+  return !!space && space.state === "needs_plan" && space.planTierId === "free" &&
+    !space.connectionIssue && !space.resources && space.projectCount === 0;
+}
 
 export type CloudPlanTab = "overview" | "usage" | "payment" | "activity" | "topups";
 

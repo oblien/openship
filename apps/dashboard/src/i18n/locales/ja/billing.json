@@ -840,6 +840,7 @@
     }
   },
   "hub": {
+    "unusedSpaces": "未使用のクラウドスペース（{count}）",
     "addPlan": "プランを追加",
     "addHint": "Cloud容量を選択するか、ご自身のサーバーを管理します。",
     "viewPlan": "プランを表示",

@@ -840,6 +840,7 @@
     }
   },
   "hub": {
+    "unusedSpaces": "Ungenutzte Cloud-Bereiche ({count})",
     "addPlan": "Tarif hinzufügen",
     "addHint": "Cloud-Kapazität wählen oder eigene Server verwalten.",
     "viewPlan": "Tarif ansehen",
