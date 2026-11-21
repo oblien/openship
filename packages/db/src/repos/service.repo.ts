@@ -69,6 +69,7 @@ export function toComposeSpec(s: {
   command?: string | null;
   commandArgv?: string[] | null;
   restart?: string | null;
+  replicas?: number | null;
   advanced?: ComposeAdvanced | null;
 }): ComposeServiceSpec {
   const advanced: ComposeAdvanced = { ...(s.advanced ?? {}) };
@@ -96,6 +97,7 @@ export function toComposeSpec(s: {
     // canonicalize identically instead of flagging a phantom string↔argv change.
     commandArgv: s.commandArgv ?? commandToArgv(s.command ?? null),
     restart: s.restart ?? "unless-stopped",
+    replicas: s.replicas ?? null,
     advanced,
   };
 }
@@ -437,6 +439,7 @@ export function composeWritePatch(
  * right way, through `reconcileFromCompose` applying `theirs` wholesale.
  */
 const COMPOSE_OWNED_ADVANCED_KEYS = [
+  "expose",
   "dependsOnConditions",
   "networkMode",
   "pidMode",
@@ -477,6 +480,7 @@ export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSp
     "command",
     "commandArgv",
     "restart",
+    "replicas",
     "advanced",
   ];
   // Compare each field key-order-insensitively (matching canonicalSpec/
@@ -514,6 +518,7 @@ export type ParsedComposeService = {
   command?: string;
   commandArgv?: string[] | null;
   restart?: string;
+  replicas?: number | null;
   advanced?: ComposeAdvanced;
   exposed?: boolean;
   exposedPort?: string;

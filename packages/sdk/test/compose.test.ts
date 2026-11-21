@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
 import { normalizeComposeServices } from "../src/compose";
 
+it("preserves replica counts and private ports through normalized Compose sync", () => {
+  const [service] = normalizeComposeServices({ services: { api: { image: "app:stable", scale: 3, deploy: { replicas: 3 }, expose: [8080] } } }, "/tmp");
+  expect(service?.replicas).toBe(3);
+  expect(service?.advanced?.expose).toEqual(["8080/tcp"]);
+  expect(service?.ports ?? []).toEqual([]);
+  expect(() => normalizeComposeServices({ services: { api: { image: "app:stable", scale: 2, deploy: { replicas: 3 } } } }, "/tmp")).toThrow(/agree/);
+});
+
 it("preserves private shared memory for CLI and SDK Compose sync", () => {
   const [service] = normalizeComposeServices({ services: { vllm: { image: "vllm:test", shm_size: "2g", gpus: "all" } } }, "/tmp");
   expect(service?.advanced?.shmSize).toBe(2147483648);

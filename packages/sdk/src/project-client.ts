@@ -183,6 +183,8 @@ export function createRemoteProjectOperations(
       mergeEnvVars: { method: "PATCH", path: (id) => path(id) + "/env" },
       getResources: { method: "GET", path: (id) => path(id) + "/resources", envelope: "data" },
       getClusterWorkload: { method: "GET", path: (id) => path(id) + "/cluster", envelope: "data" },
+      getWorkloadScaling: { method: "GET", path: (id) => path(id) + "/scaling", envelope: "data" },
+      scaleWorkload: { method: "POST", path: (id) => path(id) + "/scaling", envelope: "data" },
       listClusterDatabases: {
         method: "GET",
         path: (id) => path(id) + "/cluster/databases",

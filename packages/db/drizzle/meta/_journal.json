@@ -1632,6 +1632,13 @@
       "when": 1794373203000,
       "tag": "0232_project_icon_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1794910000000,
+      "tag": "0233_workload_replicas",
+      "breakpoints": true
     }
   ]
 }

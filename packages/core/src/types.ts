@@ -263,6 +263,8 @@ export type ComposeAdvancedPatch = {
 };
 
 export type ComposeAdvanced = {
+  /** Container-only ports from Compose expose. Never publishes a host port. */
+  expose?: string[];
   /** Long-form Compose startup conditions; short-form dependencies only require
    * container startup. Kept with the imported service snapshot. */
   dependsOnConditions?: Record<string, "service_started" | "service_healthy" | "service_completed_successfully">;

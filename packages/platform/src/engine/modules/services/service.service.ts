@@ -702,6 +702,7 @@ export async function createService(
           incomingCommand: data.command,
         }) ?? null,
       restart: data.restart ?? "unless-stopped",
+      replicas: data.replicas ?? null,
       advanced,
       ...routing,
       enabled: data.enabled ?? true,

@@ -8,6 +8,7 @@ import {
 } from "./service-inputs";
 import { AgentExecBody } from "./exec";
 import { EnvironmentScopeSchema } from "./environment-scope";
+import { WorkloadReplicaCountSchema } from "./workload-scaling";
 import { EnvRevealKeysSchema } from "./env-reveal";
 import { EnvironmentVariableSchema } from "./project-controls";
 import {
@@ -51,6 +52,7 @@ export const ServiceSchema = Type.Object({
   command: nullableString,
   commandArgv: nullableStrings,
   restart: nullableString,
+  replicas: Type.Optional(Type.Union([WorkloadReplicaCountSchema, Type.Null()])),
   advanced: Type.Union([
     Type.Unsafe<ComposeAdvanced>(Type.Object({}, { additionalProperties: true })),
     Type.Null(),

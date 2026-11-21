@@ -515,6 +515,13 @@ IDs.
 | Save a ready self-hosted cluster target, application configuration and optional shared-file mounts. Requires fleet administration and the current project timestamp. | `projects.setClusterTarget(id, input)` | `PATCH /api/projects/:id/cluster`<br />`project:write` · Self-hosted |
 | Apply a replica count through a deployment using the active immutable image. Requires active deployment and project timestamp preconditions. | `projects.scaleClusterWorkload(id, input)` | `POST /api/projects/:id/cluster/scale`<br />`project:write` · Self-hosted |
 
+### Application scaling
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Read the desired, deployed and observed instance counts for a single-server Docker application or selected service. | `projects.getWorkloadScaling(id, input)` | `GET /api/projects/:id/scaling`<br />`project:read` |
+| Deploy the current image with a reviewed instance count. Requires active deployment and configuration revision preconditions; serviceId limits the change to that service. | `projects.scaleWorkload(id, input)` | `POST /api/projects/:id/scaling`<br />`project:write` |
+
 ### Cluster databases
 
 | Operation | SDK | REST API |

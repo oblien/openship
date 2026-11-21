@@ -47,7 +47,7 @@ export interface ReadinessProbeVerdict {
  * Never throws: a probe is a diagnostic, and every way it can fail to reach a verdict
  * comes back as `skipped` rather than as an exception or a false failure.
  */
-export async function probeDeployedReadiness(args: {
+interface ReadinessProbeArgs {
   runtime: RuntimeAdapter;
   containerId: string;
   /** The workload's own port — what a wrong-port failure should name. */
@@ -58,16 +58,61 @@ export async function probeDeployedReadiness(args: {
   log: (message: string, level?: "info" | "warn") => void;
   /** "the app", or a service name — whatever the message should call this workload. */
   subject?: string;
-}): Promise<ReadinessProbeVerdict> {
+  strict?: boolean;
+}
+
+export async function probeDeployedReadiness(
+  args: ReadinessProbeArgs,
+): Promise<ReadinessProbeVerdict> {
+  let targets: string[];
+  try {
+    targets = (await args.runtime.readinessTargets?.(args.containerId)) ?? [args.containerId];
+  } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/deployments/readiness-probe");
+    return { failure: `Application instances could not be verified: ${safeErrorMessage(error)}` };
+  }
+  if (targets.length === 1 && targets[0] === args.containerId) return probeOne(args);
+  for (let offset = 0; offset < targets.length; offset += 4) {
+    const verdicts = await Promise.all(
+      targets
+        .slice(offset, offset + 4)
+        .map((containerId, index) =>
+          probeOne({
+            ...args,
+            strict: true,
+            containerId,
+            subject: `${args.subject ?? "the app"} instance ${offset + index + 1}`,
+          }),
+        ),
+    );
+    const failed = verdicts.find((verdict) => verdict.failure || verdict.skipped);
+    if (failed)
+      return {
+        ...failed,
+        failure: failed.failure ?? failed.skipped ?? "An instance could not be verified.",
+      };
+  }
+  return { failure: targets.length ? null : "No application instances were found." };
+}
+
+async function probeOne(args: ReadinessProbeArgs): Promise<ReadinessProbeVerdict> {
   const { runtime, containerId, primaryPort, probe, targetExecutor, log } = args;
   const subject = args.subject ?? "the app";
 
-  const { host, port } = await resolveReadinessTarget({
-    runtime,
-    containerId,
-    primaryPort,
-    probePort: probe.port,
-  });
+  let address: { host: string; port: number };
+  try {
+    address = await resolveReadinessTarget({
+      runtime,
+      containerId,
+      primaryPort,
+      probePort: probe.port,
+      strict: args.strict,
+    });
+  } catch (error) {
+    // diagnostics-ignore: the target resolver reports provider errors; the pipeline records this failure verdict.
+    return { failure: `${subject}: ${safeErrorMessage(error)}` };
+  }
+  const { host, port } = address;
   // Name the address actually dialed. Reporting `primaryPort` here sent operators to look
   // at the app's own port (3000) when the probe had really been talking to the published
   // host port, so a wrong-port or unreachable-address failure read as "my app is broken".
@@ -86,11 +131,13 @@ export async function probeDeployedReadiness(args: {
 
   let result: Awaited<ReturnType<typeof waitForReadyFromExecutor>>;
   try {
-    result = await withDeploymentProgress({ log }, `${subject} to answer at ${target}`, async () => targetExecutor
-      ? await waitForReadyFromExecutor(targetExecutor, host, port, opts)
-      : await sshManager.withHostExecutor((executor) =>
-          waitForReadyFromExecutor(executor, host, port, opts),
-        ));
+    result = await withDeploymentProgress({ log }, `${subject} to answer at ${target}`, async () =>
+      targetExecutor
+        ? await waitForReadyFromExecutor(targetExecutor, host, port, opts)
+        : await sshManager.withHostExecutor((executor) =>
+            waitForReadyFromExecutor(executor, host, port, opts),
+          ),
+    );
   } catch (error) {
     observeCaughtError(error, "platform/engine/modules/deployments/readiness-probe");
     // Reaching the machine that should dial is itself a "couldn't ask", not a verdict on
@@ -115,10 +162,7 @@ export async function probeDeployedReadiness(args: {
   }
 
   // Name the execution point for transports that probe on the host.
-  const viaNote =
-    result.via === "exec"
-      ? " (probed with `curl` on the deployment host)"
-      : "";
+  const viaNote = result.via === "exec" ? " (probed with `curl` on the deployment host)" : "";
 
   if (!result.ready) {
     return {

@@ -8,7 +8,9 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { project } from "./project";
 import { deployment } from "./deployment";
 import type { ComposeAdvanced, RedirectStatus } from "@repo/core";
@@ -24,6 +26,7 @@ export type ComposeServiceSpec = {
   build?: string | null;
   dockerfile?: string | null;
   buildArgs?: Record<string, string | null>;
+  replicas?: number | null;
   ports?: string[];
   dependsOn?: string[];
   environment?: Record<string, string>;
@@ -137,6 +140,7 @@ export const service = pgTable(
     commandArgv: jsonb("command_argv").$type<string[]>(),
     /** Restart policy: no | always | on-failure | unless-stopped */
     restart: text("restart").default("unless-stopped"),
+    replicas: integer("replicas"),
     /**
      * Extended compose fields (healthcheck now; labels/entrypoint/caps/… later)
      * that don't warrant their own columns. See ComposeAdvanced. Honored by the
@@ -215,6 +219,7 @@ export const service = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    check("service_replicas_bounds", sql`${t.replicas} BETWEEN 1 AND 100`),
     // Build pipeline + deployment setup iterate services per project.
     index("idx_service_project_id").on(t.projectId),
   ],

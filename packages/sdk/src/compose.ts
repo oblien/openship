@@ -28,6 +28,7 @@ import {
   parseContainerHosts,
   readComposeGpuConfig,
   readComposeShmConfig,
+  readComposeReplicas, readComposeExposedPorts,
   type ComposeAdvanced,
 } from "@repo/core";
 /** Rewrite an absolute build context (as docker resolves it) back to a repo-relative path. */
@@ -150,7 +151,8 @@ export function mapComposeService(
   errors: string[],
 ): Record<string, unknown> {
   const d = (def ?? {}) as Record<string, unknown>;
-  const svc: Record<string, unknown> = { name };
+  const replicas = readComposeReplicas(d);
+  const svc: Record<string, unknown> = { name, ...(replicas !== undefined ? { replicas } : {}) };
 
   if (typeof d.image === "string") svc.image = d.image;
 
@@ -197,6 +199,8 @@ export function mapComposeService(
   // object; this mapper simply never filled it, so a synced stack lost its shared
   // namespaces the same way it lost read-only mounts.
   const { advanced, errors: namespaceErrors } = mapNamespaces(name, d);
+  const exposedPorts = readComposeExposedPorts(d.expose);
+  if (exposedPorts.length) advanced.expose = exposedPorts;
   errors.push(...namespaceErrors);
   const gpu = readComposeGpuConfig(d);
   Object.assign(advanced, gpu.config);

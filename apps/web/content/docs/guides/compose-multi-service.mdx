@@ -49,9 +49,46 @@ If your repo has a compose file, Openship reads it and turns **each service in t
 its image (or a build context and Dockerfile), ports, volumes, environment, command, restart policy,
 `depends_on` links, and healthcheck. From then on those rows are what Openship deploys.
 
-Openship tracks the compose fields it models: `image`, `build`, `dockerfile`, `ports`, `depends_on`,
-`environment`, `volumes`, `command`, `restart`, and `healthcheck`. Everything else in your file — `networks`,
-build args, labels, `profiles`, comments — is left untouched: Openship neither reads it nor rewrites it.
+Openship tracks supported Compose fields, including `image`, `build`, build arguments, `dockerfile`,
+`ports`, `expose`, `depends_on`, `environment`, `volumes`, `command`, `restart`, `healthcheck`, and
+`scale` / `deploy.replicas`. The import review reports unsupported settings. Dashboard changes never
+rewrite your Compose file.
+
+### Run multiple instances on one server
+
+Select an application or service in the project topology, open **Scale**, and choose **1–100 instances**.
+Review the count and resource limits, then apply. OpenShip creates a deployment using the current image;
+logs, environment changes, restart, rollback and deletion use the same workload controls.
+A single application follows this flow too.
+
+For a Compose service, the source file can also set the count:
+
+```yaml
+services:
+  api:
+    image: ghcr.io/your-team/api:stable
+    expose:
+      - "8080"
+    deploy:
+      replicas: 3
+```
+
+`scale: 3` is equivalent. If both fields are present, they must agree. Remove `container_name`
+before using more than one instance. Internal `expose` ports remain private; a published service
+port is bound once. A private gateway balances connections between the instances while existing
+domains and Edge policies continue to apply. One instance uses the ordinary container path.
+
+Instances share the server's CPU, memory and availability. Resource limits apply **per instance**.
+Use stateless applications or workers that support concurrent processing; OpenShip refuses database
+copies, writable persistent mounts, shared network/process namespaces and GPU allocations through
+this control. Read-only mounts are supported. Hosted Cloud runtimes and bare processes do not offer
+these single-server controls.
+
+Changing the count replaces the workload and can briefly interrupt traffic. Enable readiness checks
+to verify every instance before completing deployment. Docker applies the configured restart policy
+to exited containers; a Docker healthcheck alone does not restart an unhealthy process. Redeploy to
+restore a manually removed instance. A server failure affects every instance: use a
+[cluster](/docs/guides/mcp-clusters-and-scaling) when you need placement across servers.
 
 #### Compose file in a subfolder
 
@@ -76,8 +113,7 @@ Two consequences worth knowing:
 
 - A service whose `build:` directory has no Dockerfile fails with a clear error. It does not fall back
   to a Dockerfile elsewhere in the repo — that would build a different image under this service's name.
-- Compose `build.args` and `build.target` are not modelled. Build arguments come from the service's
-  environment variables instead (each is passed as a `--build-arg`).
+- Compose `build.args` are preserved for each service. `build.target` is not supported.
 
 #### BuildKit
 

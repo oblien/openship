@@ -5,6 +5,7 @@ import type { ProjectControlOperations } from "./project-controls";
 import type { ProjectLocalOperations } from "./project-local";
 import type { ProjectLogStreams } from "./project-logs";
 import type { ProjectRoutingStreams } from "./project-routing";
+import { WorkloadReplicaCountSchema } from "./workload-scaling";
 
 const nullableString = () => Type.Union([Type.String(), Type.Null()]);
 /** Public project fields. Provider-specific diagnostics may accompany these fields. */
@@ -32,6 +33,7 @@ export const ProjectSchema = Type.Object({
   serverId: Type.Optional(nullableString()),
   workspaceId: Type.Optional(nullableString()),
   clusterId: Type.Optional(nullableString()),
+  replicas: Type.Optional(WorkloadReplicaCountSchema),
   activeDeploymentId: Type.Optional(nullableString()),
   /** Current open workload incident on the active release; not a live health probe. */
   runtimeUnhealthy: Type.Optional(Type.Boolean()),

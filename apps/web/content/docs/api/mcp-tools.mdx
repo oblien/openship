@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **572 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **574 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -485,6 +485,7 @@ The current API has **572 unique tools**. Permission tags below describe the rou
 | `get_projects_by_id_route_protection`<br />`GET /api/projects/:id/route-protection` | List saved hostname password protection and whether the self-hosted edge acknowledged it. Never returns passwords or signing keys. | `project:read`<br />Self-hosted |
 | `get_projects_by_id_route_rules`<br />`GET /api/projects/:id/route-rules` | List project edge rules for rate limits, access restrictions and traffic filtering. | `project:read` |
 | `get_projects_by_id_routing_edge_status`<br />`GET /api/projects/:id/routing/edge-status` | Check whether the project's server edge (OpenResty on 80/443) is already set up. | `project:read` |
+| `get_projects_by_id_scaling`<br />`GET /api/projects/:id/scaling` | Read desired and observed instance counts for a Docker application or a selected Compose service. serviceId is optional for the primary application. | `project:read` |
 | `get_projects_by_id_server_logs_recent`<br />`GET /api/projects/:id/server-logs/recent` | Fetch recent HTTP request logs for the project. | `project:read` |
 | `get_projects_by_id_storage`<br />`GET /api/projects/:id/storage` | Read this project's object-storage binding (S3 bucket wired into its filesystem config) and what could be bound. | `project:read` |
 | `get_projects_by_id_webhook_deliveries`<br />`GET /api/projects/:id/webhook-deliveries` | List a project's webhook delivery feed — GitHub pushes + custom hooks (paginated). | `project:read` |
@@ -530,6 +531,7 @@ The current API has **572 unique tools**. Permission tags below describe the rou
 | `post_projects_by_id_roles_configuration`<br />`POST /api/projects/:id/roles/configuration` | Apply runtime role settings using the active image without rebuilding or restarting web. Expected release and project revision prevent stale edits. | `project:write` |
 | `post_projects_by_id_route_rules`<br />`POST /api/projects/:id/route-rules` | Create an edge traffic rule for this project, optionally scoped to a domain or path. A rule can block live traffic; read the existing rules before changing access. | `project:write` |
 | `post_projects_by_id_routing_retry`<br />`POST /api/projects/:id/routing/retry` | Repair project routes and verify pending domains and HTTPS without rebuilding; clears the routing warning only when all checks succeed. | `project:write` |
+| `post_projects_by_id_scaling`<br />`POST /api/projects/:id/scaling` | Change a single-server Docker workload to 1–100 instances through a configuration deployment. Requires expectedDeploymentId and expectedUpdatedAt from the scaling read. Rejects databases, writable storage, unsupported runtimes and stale releases. | `project:write` |
 | `post_projects_by_id_sleep_mode`<br />`POST /api/projects/:id/sleep-mode` | Set the project's sleep mode (auto_sleep / always_on). | `project:write` |
 | `post_projects_by_id_storage`<br />`POST /api/projects/:id/storage` | Bind an S3 bucket to this project — either an installed MinIO app or an external provider. Verifies the bucket, then injects the framework's storage env vars. | `project:write` |
 | `post_projects_by_id_transfer_to_cloud`<br />`POST /api/projects/:id/transfer/to-cloud` | Transfer this project’s control-plane records to the connected Openship Cloud. Inspect the returned deployment guidance: record transfer is not workload or volume migration. k3s projects cannot use this Docker/Cloud transfer path. | `project:admin`<br />Self-hosted |

@@ -102,6 +102,14 @@ describe("runPreflightChecks", () => {
     });
   });
 
+  it("rejects multiple instances of a static sub-app before contacting the deployment target", async () => {
+    await expect(runPreflightChecks({ deployTarget: "server", runtimeMode: "docker" } as any, {
+      multiService: true,
+      composeServices: [{ name: "site", kind: "monorepo", framework: "vite", replicas: 2 }] as any,
+    })).rejects.toMatchObject({ code: "WORKLOAD_REPLICAS_UNSUPPORTED" });
+    expect(runCloudPreflight).not.toHaveBeenCalled();
+  });
+
   it.each(["services", "single"] as const)("uses shared Docker volume support for %s managed-server projects", async mode => {
     const result = await runPreflightChecks({ deployTarget: "cloud", organizationId: "org-1", serviceDeploymentMode: mode,
       buildStrategy: "server", framework: "docker", buildImage: "node:22", hasServer: true, port: 8080 } as any,

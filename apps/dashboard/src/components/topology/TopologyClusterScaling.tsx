@@ -22,7 +22,7 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/ui/Modal";
+import { ReplicaCountInput, ReplicaScaleReview } from "./ReplicaControls";
 import { useResourceScope } from "@/hooks/use-scoped-resource";
 import { TopologyScalingSetup } from "./TopologyScalingSetup";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -439,24 +439,11 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
           )}
           {!!clusterId && ready && !databaseNeedsOperator && (
             <>
-              <label className="block space-y-1.5 text-xs text-muted-foreground">
-                <span>Instances</span>
-                <input
-                  className="topology-input"
-                  type="number"
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={instances}
-                  disabled={busy || disabled || loading}
-                  onChange={(event) => setInstances(event.target.value)}
-                />
-              </label>
-              {!validCount && (
-                <p role="alert" className="text-xs text-danger">
-                  Choose between 1 and 100 instances.
-                </p>
-              )}
+              <ReplicaCountInput
+                value={instances}
+                onChange={setInstances}
+                disabled={busy || disabled || loading}
+              />
               {validCount && (
                 <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
                   {onlyInstancesChanged && !needsInstanceRelease && (
@@ -468,13 +455,22 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                     </p>
                   )}
                   <p>Instances are placed automatically on available servers.</p>
-                  <p>The count stays fixed until you change it. Failed instances are replaced automatically.</p>
-                  {selected?.serverIds.length === 1 && <p>
-                    All instances share one server. To keep serving during a server outage, use multiple servers.
-                  </p>}
-                  {selected?.scaling?.provider === "swarm" && <p>
-                    This count applies to each stateless service. Services with local volumes keep one instance on their data server.
-                  </p>}
+                  <p>
+                    The count stays fixed until you change it. Failed instances are replaced
+                    automatically.
+                  </p>
+                  {selected?.serverIds.length === 1 && (
+                    <p>
+                      All instances share one server. To keep serving during a server outage, use
+                      multiple servers.
+                    </p>
+                  )}
+                  {selected?.scaling?.provider === "swarm" && (
+                    <p>
+                      This count applies to each stateless service. Services with local volumes keep
+                      one instance on their data server.
+                    </p>
+                  )}
                   {resources && resources.cpuCores > 0 && resources.memoryMb > 0 && (
                     <p>
                       Per instance: {formatCpuCores(resources.cpuCores)} ·{" "}
@@ -577,7 +573,9 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
           )}
           {(view.activeClusterId || view.internalHost) && (
             <details className="text-xs">
-              <DisclosureSummary className="cursor-pointer text-muted-foreground">Technical details</DisclosureSummary>
+              <DisclosureSummary className="cursor-pointer text-muted-foreground">
+                Technical details
+              </DisclosureSummary>
               <div className="mt-3 space-y-3 text-muted-foreground">
                 <p>
                   {selected?.scaling?.provider === "swarm" ? "Docker Swarm" : "Kubernetes (K3s)"}{" "}
@@ -629,64 +627,21 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
         />
       )}
       {review && (
-        <Modal
-          isOpen
-          onClose={() => {
-            if (!busy) setReview(null);
-          }}
-          width="480px"
-          maxWidth="96vw"
-          showCloseButton={false}
-          closable={!busy}
-        >
-          <div role="dialog" aria-modal="true" aria-label={text.review} className="space-y-5 p-6">
-            <h2 className="text-lg font-medium">{text.review}</h2>
-            <div className="rounded-xl bg-muted/40 p-4 text-sm">
-              <p className="font-medium">{project.name || "Application"}</p>
-              <p className="mt-2">
-                {review.from} → {review.to} {text.instances.toLowerCase()}
-              </p>
-              <p className="mt-1 text-muted-foreground">
-                {selected?.name ?? text.currentCluster} · {text.currentRelease}
-              </p>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {review.to > review.from ? text.appScaleUp : text.appScaleDown}
-            </p>
-            {resources && resources.cpuCores > 0 && resources.memoryMb > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Per instance: {formatCpuCores(resources.cpuCores)} ·{" "}
-                {formatMemoryMb(resources.memoryMb)}. Total limits:{" "}
-                {formatCpuCores(resources.cpuCores * review.to)} ·{" "}
-                {formatMemoryMb(resources.memoryMb * review.to)}.
-              </p>
-            )}
-            {(review.to !== count ||
-              review.updatedAt !== view?.updatedAt ||
-              review.deploymentId !== view?.activeDeploymentId) && (
-              <p role="alert" className="text-sm text-warning">
-                {text.settingsChanged}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" disabled={busy} onClick={() => setReview(null)}>
-                {t.settings.common.back}
-              </Button>
-              <Button
-                disabled={
-                  blocked ||
-                  review.to !== count ||
-                  review.updatedAt !== view?.updatedAt ||
-                  review.deploymentId !== view?.activeDeploymentId
-                }
-                onClick={() => void apply()}
-              >
-                {busy && <UiIcon name="spinner" className="size-4 animate-spin" />}
-                {text.apply}
-              </Button>
-            </div>
-          </div>
-        </Modal>
+        <ReplicaScaleReview
+          review={review}
+          name={project.name || "Application"}
+          destination={selected?.name ?? text.currentCluster}
+          resources={resources}
+          busy={busy}
+          disabled={blocked}
+          stale={
+            review.to !== count ||
+            review.updatedAt !== view?.updatedAt ||
+            review.deploymentId !== view?.activeDeploymentId
+          }
+          onClose={() => setReview(null)}
+          onApply={() => void apply()}
+        />
       )}
       {!clusters.length && view && !catalogError && !loading && (
         <Link

@@ -85,6 +85,11 @@ import { resolveDockerBuildArgs } from "./docker-build-args";
 import { imageStartCommand, nodeOutputOptions } from "./node-output";
 import { dockerContainerStatus, dockerPublishedPortInfo, stabilitySampleFromDockerInspect } from "./docker-container-info";
 import { applyDockerEnvironment, type DockerEnvironmentOptions } from "./docker-environment";
+import {
+  DockerReplicas, isDockerReplicaRef, dockerReplicaRef, replicaGroupIdentity,
+  replicaInventoryStatus, replicaMembersByGroup, replicaContainerName, REPLICA_IMAGE_LABEL,
+  replicaLabels, REPLICA_GROUP_LABEL, REPLICA_INDEX_LABEL,
+} from "./docker-replicas";
 import { DEFAULT_CONTAINER_LOG_CONFIG } from "../container-logging";
 import { demuxDockerStream } from "./docker-demux";
 import { releaseCommandDeadline } from "./release-command-deadline";
@@ -1176,11 +1181,37 @@ function deploymentContainerEnv(config: DeployConfig): { env: string[]; dropped:
 }
 
 export class DockerRuntime implements RuntimeAdapter {
+  private readonly replicas = new DockerReplicas(this);
+
+  setOperationSignal(signal: AbortSignal): void { this.replicas.setOperationSignal(signal); }
+
+  async prepareDeployment(config: DeployConfig): Promise<void> {
+    await this.replicas.prepare(config);
+  }
+
+  async prepareServiceWorkload(config: MultiServiceDeployConfig): Promise<void> {
+    await this.replicas.prepare(config);
+  }
+
+  async readinessTargets(ref: string): Promise<string[]> {
+    if (!isDockerReplicaRef(ref)) return [ref];
+    return (await this.replicas.members(ref)).members.map(member => member.Id);
+  }
+
+  async status(ref: string): Promise<import("@repo/core").ClusterWorkloadStatus> {
+    if (isDockerReplicaRef(ref)) return this.replicas.status(ref);
+    const sample = await this.sampleStability(ref);
+    const ready = sample.state === "running" && !sample.oomKilled && sample.health !== "unhealthy" && sample.health !== "starting";
+    return { desired: 1, ready: Number(ready), available: Number(ready), updated: 1, generation: 1, observedGeneration: 1, message: null,
+      pods: [{ name: "Instance 1", nodeName: null, ready, phase: sample.state, restarts: sample.restartCount }] };
+  }
   /** Stable creation identity, also recorded before a role handover mutates Docker. */
   static deploymentContainerName(
-    config: Pick<DeployConfig, "runtimeName" | "projectId" | "deploymentId">,
+    config: Pick<DeployConfig, "runtimeName" | "projectId" | "deploymentId" | "replicas" | "networkAlias" | "slug">,
     role?: { name: string; replica: number },
   ): string {
+    if (!role && (config.replicas ?? 1) > 1)
+      return replicaContainerName(replicaGroupIdentity(config.projectId, config.deploymentId, config.networkAlias ?? config.slug ?? config.projectId), 0);
     const web = `openship-${config.runtimeName || config.projectId}-${config.deploymentId}`;
     return role ? `${web}-${role.name}-${role.replica}` : web;
   }
@@ -1206,6 +1237,11 @@ export class DockerRuntime implements RuntimeAdapter {
       throw new Error(
         "The recorded deployment container belongs to a different workload; recovery was refused",
       );
+    }
+    if (labels[REPLICA_GROUP_LABEL] && labels[REPLICA_INDEX_LABEL] === "0") {
+      const ref = dockerReplicaRef(labels[REPLICA_GROUP_LABEL]);
+      await this.replicas.members(ref, true);
+      return ref;
     }
     return info.Id;
   }
@@ -1241,6 +1277,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // through it cannot reach the host. Bare deliberately does NOT declare this.
     "isolatedExec",
     "dockerHost",
+    "replicas",
     "releaseCommand",
     "roles",
   ];
@@ -4147,6 +4184,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     };
     // Managed ingress publishes fixed workspace ports inside its provisioning
     // lock. It keeps that existing replacement path; never nest that lock here.
+    if ((config.replicas ?? 1) > 1 || (config.previousContainerId && isDockerReplicaRef(config.previousContainerId))) return null;
     if (this.transport.kind === "cloud") return fallback("managed ingress uses fixed host ports");
     const previousContainerId = config.previousContainerId;
     if (!previousContainerId) return null;
@@ -4288,7 +4326,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       projectId: config.projectId,
       workload: "app",
       ...(config.previousContainerId ? {
-        previous: { containerId: config.previousContainerId },
+        previous: { containerId: isDockerReplicaRef(config.previousContainerId) && Object.keys(image.Config?.Volumes ?? {}).length ? await this.replicas.primary(config.previousContainerId, true) : config.previousContainerId },
       } : {}),
     });
   }
@@ -4304,7 +4342,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         projectId: config.projectId,
         workload: config.serviceName,
         previous: {
-          containerId: config.previousContainerId ?? `openship-${config.slug}-${config.serviceName}`,
+          containerId: config.previousContainerId && isDockerReplicaRef(config.previousContainerId) && Object.keys(image.Config?.Volumes ?? {}).length
+            ? await this.replicas.primary(config.previousContainerId, true)
+            : config.previousContainerId ?? `openship-${config.slug}-${config.serviceName}`,
           serviceName: config.serviceName,
           required: Boolean(config.previousContainerId),
         },
@@ -4343,6 +4383,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   }
 
   async deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult> {
+    await this.replicas.prepare(config);
+    if ((config.replicas ?? 1) > 1) {
+      return this.replicas.deploy(config, await this.deploymentPorts(config), onLog);
+    }
     const log = onLog ?? (() => {});
     const imageRef = config.imageRef;
     if (!imageRef) {
@@ -4350,7 +4394,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     }
     await this.assertSwapSupported(config.resources);
 
-    const containerName = DockerRuntime.deploymentContainerName(config);
+    const containerName = config.replica ? replicaContainerName(config.replica.group, config.replica.index) : DockerRuntime.deploymentContainerName(config);
 
     // Environment variables — shared with runReleaseCommand, see deploymentContainerEnv.
     const { env, dropped } = deploymentContainerEnv(config);
@@ -4437,14 +4481,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       ...(networkId ? { Hostname: config.networkAlias } : {}),
       Cmd: cmd,
       Env: env,
-      Labels: this.labels({
+      Labels: { ...this.labels({
         deploymentId: config.deploymentId,
         projectId: config.projectId,
         // Marks this single-app container as a network member so the label-scoped
         // reconcileNetworkMembership re-attaches it after an out-of-band network
         // rebuild, exactly like a compose service.
         ...(networkId ? { service: config.networkAlias } : {}),
-      }),
+      }), ...(config.replica ? { ...replicaLabels(config.replica), "openship.service": config.replica.serviceName } : {}) },
       // A worker exposes and publishes no port (#538-B); everything else exposes
       // its app port for the loopback publish below.
       ...(ports.length ? { ExposedPorts: Object.fromEntries(ports.map(({ port }) => [`${port}/tcp`, {}])) } : {}),
@@ -4469,7 +4513,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         // iptables bypass ufw). A pinned `config.hostPort` (loopback-port route
         // strategy) is stable across redeploys; otherwise a random loopback port.
         // A worker (config.portless) binds no host port at all (#538-B).
-        ...(!ports.length
+        ...(!ports.length || config.replica
           ? {}
           : {
               PortBindings: Object.fromEntries(ports.map(({ port, hostIp, hostPort }) => [
@@ -4790,18 +4834,21 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   }
 
   async stop(containerId: string): Promise<void> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.stop(containerId);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     await gracefulStopBeforeRemoval(container);
   }
 
   async start(containerId: string): Promise<void> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.start(containerId);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     await container.start();
   }
 
   async restart(containerId: string): Promise<void> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.restart(containerId);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     await container.restart();
@@ -4813,6 +4860,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     environment: Record<string, string>,
     options: DockerEnvironmentOptions,
   ) {
+    if (isDockerReplicaRef(containerId)) return this.replicas.applyEnvironment(containerId, environment, options);
     await this.assertContainerAccess(containerId);
     const filtered = splitRuntimeEnv(environment);
     const result = await applyDockerEnvironment(this.docker, containerId, Object.fromEntries(filtered.entries), options);
@@ -4848,6 +4896,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   }
 
   async destroy(containerId: string): Promise<void> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.destroy(containerId);
     await this.assertContainerAccess(containerId);
     // An absolute-path id is a static build/release DIRECTORY on the host that
     // this runtime produced via buildStaticToHost — not a container.
@@ -5035,9 +5084,12 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       all: true,
       filters: { label: [`openship.deployment=${deploymentId}`] },
     });
-    return containers.map((c) => ({
-      containerId: c.Id,
-      status: dockerContainerStatus(c.State ?? "", { statusLine: c.Status }),
+    const groups = replicaMembersByGroup(containers);
+    return containers.filter(c => !c.Labels?.[REPLICA_INDEX_LABEL] || c.Labels[REPLICA_INDEX_LABEL] === "0").map((c) => ({
+      containerId: c.Labels?.[REPLICA_INDEX_LABEL] === "0" ? dockerReplicaRef(c.Labels[REPLICA_GROUP_LABEL]!) : c.Id,
+      status: c.Labels?.[REPLICA_INDEX_LABEL] === "0"
+        ? replicaInventoryStatus(c, groups.get(c.Labels[REPLICA_GROUP_LABEL]!) ?? [])
+        : dockerContainerStatus(c.State ?? "", { statusLine: c.Status }),
       serviceName: c.Labels?.[OPENSHIP_LABEL.service],
     }));
   }
@@ -5111,8 +5163,13 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * never destroys the last copy of its mount inventory.
    */
   async inspectNamedVolumes(containerId: string): Promise<string[]> {
-    await this.assertContainerAccess(containerId);
     try {
+      if (isDockerReplicaRef(containerId)) {
+        const { members } = await this.replicas.members(containerId, true);
+        const volumes = await mapConcurrent(members, 4, member => this.inspectNamedVolumes(member.Id));
+        return [...new Set(volumes.flat())];
+      }
+      await this.assertContainerAccess(containerId);
       const container = this.docker.getContainer(containerId);
       const data = await container.inspect();
       const mounts = (data.Mounts ?? []) as Array<{ Type?: string; Name?: string }>;
@@ -5150,17 +5207,20 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       all: true,
       ...(labels.length ? { filters: { label: labels } } : {}),
     });
-    return containers.map((c) => {
+    const groups = replicaMembersByGroup(containers);
+    return containers.filter(c => !c.Labels?.[REPLICA_INDEX_LABEL] || c.Labels[REPLICA_INDEX_LABEL] === "0").map((c) => {
       const labels = c.Labels ?? {};
+      const members = labels[REPLICA_INDEX_LABEL] === "0" ? groups.get(labels[REPLICA_GROUP_LABEL]!) ?? [] : undefined;
+      const app = members?.[0] ?? c;
       // The list view already carries the network map, so the live-state read
       // gets each container's internal IP without an inspect round-trip.
       const ip = firstNetworkIp(c.NetworkSettings?.Networks);
       return {
-        id: c.Id,
+        id: labels[REPLICA_INDEX_LABEL] === "0" ? dockerReplicaRef(labels[REPLICA_GROUP_LABEL]!) : c.Id,
         names: (c.Names ?? []).map((n) => n.replace(/^\//, "")),
-        image: c.Image,
-        imageId: c.ImageID,
-        state: (c.State ?? "").toLowerCase().trim(),
+        image: members ? labels[REPLICA_IMAGE_LABEL] ?? app.Image : app.Image,
+        imageId: app.ImageID,
+        state: members ? replicaInventoryStatus(c, members) : (c.State ?? "").toLowerCase().trim(),
         status: c.Status,
         labels,
         ports: (c.Ports ?? []).map((p) => ({
@@ -5169,7 +5229,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           type: (p.Type as string) ?? "tcp",
           ...(p.IP ? { ip: p.IP } : {}),
         })),
-        mounts: (c.Mounts ?? []).map(normalizeDockerMount),
+        mounts: (app.Mounts ?? []).map(normalizeDockerMount),
         ...(ip ? { ip } : {}),
         composeProject: labels["com.docker.compose.project"] || undefined,
         composeService: labels["com.docker.compose.service"] || undefined,
@@ -5179,6 +5239,20 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
   /** Full inspect of one container, normalized. Null if the container is gone. */
   async inspectContainer(id: string): Promise<DockerContainerDetail | null> {
+    if (isDockerReplicaRef(id)) {
+      const { anchor, members } = await this.replicas.members(id);
+      const [detail, ingress] = await Promise.all([
+        this.inspectContainer(members[0]!.Id),
+        this.inspectContainer(anchor.Id),
+      ]);
+      return detail && ingress ? {
+        ...detail, id,
+        image: anchor.Config.Labels?.[REPLICA_IMAGE_LABEL] ?? detail.image,
+        ports: ingress.ports,
+        networks: ingress.networks,
+        networkAddresses: ingress.networkAddresses,
+      } : null;
+    }
     await this.assertContainerAccess(id);
     let data: Dockerode.ContainerInspectInfo;
     try {
@@ -5584,6 +5658,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   // ── Observability ──────────────────────────────────────────────────────
 
   async getContainerInfo(containerId: string): Promise<ContainerInfo> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.info(containerId);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     let data: Dockerode.ContainerInspectInfo;
@@ -5640,6 +5715,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * `missing` sample (not a throw): that is a verdict, not a transport error.
    */
   async sampleStability(containerId: string): Promise<ContainerStabilitySample> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.stability(containerId);
     await this.assertContainerAccess(containerId);
     let data: Dockerode.ContainerInspectInfo;
     try {
@@ -5767,6 +5843,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   }
 
   async getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.logs(containerId, tail);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     const buffer = await container.logs({
@@ -5792,6 +5869,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     onLog: LogCallback,
     opts?: RuntimeLogStreamOptions,
   ): Promise<() => void> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.stream(containerId, onLog, opts);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     // Framing is a container property, not something to guess from log contents.
@@ -5873,6 +5951,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   }
 
   async getUsage(containerId: string): Promise<ResourceUsage> {
+    if (isDockerReplicaRef(containerId)) return this.replicas.usage(containerId);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     const stats = await container.stats({ stream: false });
@@ -5914,6 +5993,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   // ── Network ────────────────────────────────────────────────────────────
 
   async getContainerIp(containerId: string): Promise<string | null> {
+    if (isDockerReplicaRef(containerId)) return (await this.replicas.info(containerId)).ip ?? null;
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     const data = await container.inspect();
@@ -5939,6 +6019,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    * across Docker + Cloud + SSH callers.
    */
   async openServiceShell(containerId: string, opts?: ShellOptions): Promise<ShellSession> {
+    if (isDockerReplicaRef(containerId)) containerId = await this.replicas.primary(containerId);
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
     const cols = clampShellWindow(opts?.cols, 80, 1, 1000);
@@ -6168,6 +6249,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
    *  app prepare steps). Throws on a non-zero exit with the command's own output
    *  as the message. */
   async inContainerExecutor(containerId: string): Promise<PortProbeExecutor> {
+    if (isDockerReplicaRef(containerId)) containerId = await this.replicas.primary(containerId);
     await this.assertContainerAccess(containerId);
     return {
       exec: async (command: string, opts?: { timeout?: number }) => {
@@ -6255,7 +6337,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     if (members.length === 0) return;
     const networkId = await this.ensureNetwork(slug);
     const network = this.docker.getNetwork(networkId);
-    for (const m of members) {
+    const expanded = [];
+    for (const member of members) {
+      if (!isDockerReplicaRef(member.containerId)) { expanded.push(member); continue; }
+      const group = await this.replicas.members(member.containerId);
+      expanded.push({ containerId: group.anchor.Id, aliases: member.aliases });
+      for (const row of group.members) expanded.push({ containerId: row.Id, aliases: [replicaContainerName(row.Labels[REPLICA_GROUP_LABEL]!, Number(row.Labels[REPLICA_INDEX_LABEL]))] });
+    }
+    for (const m of expanded) {
       if (!m.containerId) continue;
       const aliases = m.aliases.filter(Boolean);
       try {
@@ -6284,7 +6373,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       if ((error as { statusCode?: number }).statusCode === 404) return;
       throw error;
     }
-    for (const containerId of new Set(containerIds)) {
+    for (const containerId of new Set(await this.expandReplicaContainers(containerIds))) {
       if (!info.Containers?.[containerId]) continue;
       try { await network.disconnect({ Container: containerId, Force: true }); }
       catch (error) {
@@ -6385,6 +6474,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     return !!mode && (mode.startsWith("container:") || mode === "none" || mode === "host");
   }
 
+  private async expandReplicaContainers(ids: string[]): Promise<string[]> {
+    const result: string[] = [];
+    for (const id of ids) {
+      if (!isDockerReplicaRef(id)) { result.push(id); continue; }
+      const { anchor, members } = await this.replicas.members(id, true);
+      result.push(anchor.Id, ...members.map(member => member.Id));
+    }
+    return result;
+  }
+
   private async reconcileNetworkMembership(networkId: string, projectId: string): Promise<void> {
     let containers: Awaited<ReturnType<typeof this.docker.listContainers>>;
     try {
@@ -6404,7 +6503,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       );
       if (onNetwork) continue;
       if (this.cannotJoinNetworks(c)) continue;
-      const service = c.Labels?.[OPENSHIP_LABEL.service];
+      const service = c.Labels?.[REPLICA_INDEX_LABEL] && c.Labels[REPLICA_INDEX_LABEL] !== "0"
+        ? replicaContainerName(c.Labels[REPLICA_GROUP_LABEL]!, Number(c.Labels[REPLICA_INDEX_LABEL]))
+        : c.Labels?.[OPENSHIP_LABEL.service];
       try {
         await network.connect({
           Container: c.Id,
@@ -6460,7 +6561,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
      * So the caller may name containers explicitly — the same identity chain the READ paths
      * use (stored container id, not label) — and they are unioned in, de-duped by id.
      */
-    const includedContainerIds = options?.onlyContainerIds ?? extraContainerIds;
+    const includedContainerIds = await this.expandReplicaContainers(options?.onlyContainerIds ?? extraContainerIds);
     if (includedContainerIds.length > 0) {
       const seen = new Set(containers.map((c) => c.Id));
       for (const id of includedContainerIds) {
@@ -6544,8 +6645,12 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     onLog?: LogCallback,
   ): Promise<MultiServiceDeployResult> {
     const log = onLog ?? (() => {});
+    await this.replicas.prepare(config);
+    if ((config.replicas ?? 1) > 1) {
+      return this.replicas.deployService(group, config, onLog);
+    }
     const staged = this.stagedServices.has(config);
-    const containerName = staged ? newcomerName(config) : `openship-${config.slug}-${config.serviceName}`;
+    const containerName = config.replica ? replicaContainerName(config.replica.group, config.replica.index) : staged ? newcomerName(config) : `openship-${config.slug}-${config.serviceName}`;
 
     // Validate the swap setting against the daemon BEFORE pulling the image or
     // removing the currently-serving container.
@@ -6633,7 +6738,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     // Flush the existing service before removing it, using Docker's normal
     // shutdown semantics even without an explicit Compose grace period.
-    if (!staged) {
+    if (!staged && !config.replica) {
       await removeDockerContainer(this.docker, containerName, {
         assertAccess: (id) => this.assertContainerAccess(id),
       });
@@ -6696,13 +6801,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       Env: env,
       // Docker rejects an explicit hostname when the network namespace is another
       // container's — that container owns the UTS identity too.
-      ...(sharesNetns ? {} : { Hostname: staged ? containerName : config.serviceName }),
+      ...(sharesNetns ? {} : { Hostname: staged || config.replica ? containerName : config.serviceName }),
       Labels: {
         ...this.labels({
           deploymentId: config.deploymentId,
           projectId: config.projectId,
         }),
         [OPENSHIP_LABEL.service]: config.serviceName,
+        ...(config.replica ? replicaLabels(config.replica) : {}),
       },
       ...(healthcheck && { Healthcheck: healthcheck }),
       ...stopConfig,
@@ -6717,7 +6823,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         ...(deviceRequests ? { DeviceRequests: deviceRequests } : {}),
         ...(config.advanced?.runtime ? { Runtime: config.advanced.runtime } : {}),
         ...(shmSize !== undefined ? { ShmSize: shmSize } : {}),
-        ...(ownsProjectEndpoint ? { PortBindings: portBindings } : {}),
+        ...(ownsProjectEndpoint && !config.replica ? { PortBindings: portBindings } : {}),
         Binds: binds,
         // The project network is the default; a compose `network_mode` replaces it.
         NetworkMode: sharedNetwork ?? group.id,
@@ -6734,7 +6840,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
                 [group.id]: {
                   // Default service name plus any operator-chosen aliases; both
                   // resolve to this container on the project network.
-                  Aliases: staged ? [] : buildNetworkAliases(config.serviceName, config.extraAliases),
+                  Aliases: config.replica ? [containerName] : staged ? [] : buildNetworkAliases(config.serviceName, config.extraAliases),
                 },
               },
             },

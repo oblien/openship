@@ -65,6 +65,25 @@ beforeEach(() => {
 });
 
 describe("probeDeployedReadiness", () => {
+  it("checks every replica directly instead of accepting one healthy gateway response", async () => {
+    const forwarded = vi.fn(async (_host: string, port: number) => response(port === 20002 ? 503 : 200));
+    const runtime = { ...runtimeWith(20001), readinessTargets: async () => ["one", "two"],
+      getContainerInfo: async (id: string) => ({ status: "running", hostPort: id === "one" ? 20001 : 20002 }) } as unknown as RuntimeAdapter;
+    const verdict = await probeDeployedReadiness({ runtime, containerId: "replicas:group", primaryPort: 8080, probe: PROBE,
+      targetExecutor: { forwardPort: forwarded } as unknown as CommandExecutor, log: () => {} });
+    expect(forwarded.mock.calls.some(call => call[1] === 20001)).toBe(true);
+    expect(forwarded.mock.calls.some(call => call[1] === 20002)).toBe(true);
+    expect(verdict.failure).toBeTruthy();
+  });
+  it("never substitutes an unrelated host listener for an unobservable replica", async () => {
+    const forwardPort = vi.fn(async () => response(200));
+    const runtime = { ...runtimeWith(undefined), readinessTargets: async () => ["member"],
+      getContainerInfo: async () => { throw new Error("unreachable"); } } as unknown as RuntimeAdapter;
+    const verdict = await probeDeployedReadiness({ runtime, containerId: "replicas:group", primaryPort: 8080, probe: PROBE,
+      targetExecutor: { forwardPort } as unknown as CommandExecutor, log: () => {} });
+    expect(verdict.failure).toBeTruthy();
+    expect(forwardPort).not.toHaveBeenCalled();
+  });
   it("dials the PUBLISHED host port and names it in the log, not the app's own port", async () => {
     const lines: string[] = [];
     const verdict = await probeDeployedReadiness({

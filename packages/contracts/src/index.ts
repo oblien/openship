@@ -99,6 +99,7 @@ export * from "./infrastructure-resources";
 export * from "./cluster-runtime";
 export * from "./cluster-storage";
 export * from "./project-cluster";
+export * from "./workload-scaling";
 export * from "./cluster-database";
 export * from "./mail-inputs";
 export * from "./mail-security";

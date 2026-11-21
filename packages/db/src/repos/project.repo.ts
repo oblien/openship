@@ -578,6 +578,29 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       });
     },
 
+    /** Commit a reviewed count under the same configuration lock used by all editors. */
+    async updateWorkloadReplicas(id: string, input: {
+      replicas: number;
+      serviceId?: string;
+      expectedProjectUpdatedAt: Date;
+      expectedServiceUpdatedAt?: Date;
+      expectedActiveDeploymentId: string | null;
+    }): Promise<boolean> {
+      return withProjectConfigurationWrite(db, eq(project.id, id), async tx => {
+        const owner = await tx.query.project.findFirst({ where: eq(project.id, id) });
+        if (!owner || owner.updatedAt.getTime() !== input.expectedProjectUpdatedAt.getTime() ||
+            owner.activeDeploymentId !== input.expectedActiveDeploymentId) return false;
+        if (input.serviceId) {
+          const row = await tx.query.service.findFirst({ where: and(eq(service.id, input.serviceId), eq(service.projectId, id)) });
+          if (!row?.enabled || row.updatedAt.getTime() !== input.expectedServiceUpdatedAt?.getTime()) return false;
+          await tx.update(service).set({ replicas: input.replicas, updatedAt: new Date() }).where(eq(service.id, row.id));
+        } else {
+          await tx.update(project).set({ replicas: input.replicas, updatedAt: new Date() }).where(eq(project.id, id));
+        }
+        return true;
+      });
+    },
+
     /**
      * Atomically consume the one-shot `forceDeployNext` flag.
      *

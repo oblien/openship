@@ -309,7 +309,17 @@ export interface DeployPublicEndpoint {
   domainType?: "free" | "custom";
 }
 
+/** Server-generated identity for one member of an application workload. */
+export interface WorkloadReplicaIdentity {
+  group: string;
+  index: number;
+  serviceName: string;
+}
+
 export interface DeployConfig {
+  replicas?: number;
+  /** Internal identity for a member of a Docker replica workload. */
+  replica?: WorkloadReplicaIdentity;
   /** Unique deployment id */
   deploymentId: string;
   /** Project identifier */

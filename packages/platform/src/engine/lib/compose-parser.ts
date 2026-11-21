@@ -25,6 +25,7 @@ import {
   createComposeInterpolationDiagnostics,
   readComposeGpuConfig,
   readComposeShmConfig,
+  readComposeReplicas, readComposeExposedPorts,
 } from "@repo/core";
 import type {
   ComposeAdvanced,
@@ -49,6 +50,7 @@ import type {
  */
 export interface ComposeService {
   name: string;
+  replicas?: number;
   image?: string;
   build?: string;
   dockerfile?: string;
@@ -236,6 +238,7 @@ export function parseComposeFile(
         }
       : undefined;
     const parsedAdvanced = parseAdvanced(svc, interpolationEnv, name, unsupported);
+    const exposePorts = readComposeExposedPorts(svc.expose, value => interpolateComposeString(value, interpolationEnv));
     // An empty marker is meaningful: it says this BUILD declaration came from a
     // provenance-aware parser. Stamp it even when the current `build:` block has
     // no `args` key, so removing that key clears previously stored args through
@@ -245,12 +248,14 @@ export function parseComposeFile(
     const hasBuildDeclaration = Object.hasOwn(svc, "build");
     const advanced: ComposeAdvanced | undefined =
       parsedAdvanced ||
+      exposePorts.length > 0 ||
       imageTemplate ||
       commandTemplate ||
       hasEnvironmentDeclaration ||
       hasBuildDeclaration
         ? {
             ...(parsedAdvanced ?? {}),
+            ...(exposePorts.length > 0 && { expose: exposePorts }),
             ...(imageTemplate && { imageTemplate }),
             ...(commandTemplate && { commandTemplate }),
             ...(hasEnvironmentDeclaration && {
@@ -263,10 +268,11 @@ export function parseComposeFile(
         : undefined;
     collectUnsupported(name, svc, unsupported, interpolationEnv);
 
-    const exposePorts = parseExpose(svc.expose, interpolationEnv);
 
+    const replicas = readComposeReplicas(svc, value => interpolateComposeString(value, interpolationEnv));
     services.push({
       name,
+      ...(replicas !== undefined ? { replicas } : {}),
       image: image?.value,
       build: build.context,
       dockerfile: build.dockerfile,
@@ -431,23 +437,6 @@ function parsePorts(ports: unknown, env: Record<string, string>): string[] {
     }
     return String(p);
   });
-}
-
-/**
- * `expose:` names the container ports a service offers to the other services on
- * the same network. Compose's short form is a port or "port/proto"; the values
- * are kept verbatim (like `ports:`) so the wizard can show exactly what the
- * file declared. Nothing is published to the host by them.
- */
-function parseExpose(expose: unknown, env: Record<string, string>): string[] {
-  if (!Array.isArray(expose)) return [];
-  return expose
-    .map((value) => {
-      if (typeof value === "number") return String(value);
-      if (typeof value === "string") return interpolateComposeString(value, env);
-      return String(value);
-    })
-    .filter((value) => value.length > 0);
 }
 
 function parseDependsOn(deps: unknown): string[] {
@@ -858,15 +847,14 @@ function collectUnsupported(
   // file that just sets a memory cap doesn't get told `deploy` was dropped.
   const deploy = svc.deploy as Record<string, unknown> | undefined;
   if (deploy && typeof deploy === "object") {
-    const modeled = new Set(["resources"]);
+    const modeled = new Set(["resources", "replicas"]);
     const rest = Object.keys(deploy).filter((k) => !modeled.has(k));
     if (rest.length > 0) {
       unsupported.push({
         service: serviceName,
         field: "deploy",
         reason:
-          `deploy.${rest.join("/")} is not modeled — Openship runs one container per ` +
-          `service (only deploy.resources.limits and the GPU in deploy.resources.reservations.devices are honored).`,
+          `deploy.${rest.join("/")} is not modeled. Replicas and resource limits are supported; other deployment policies require a compatible cluster runtime.`,
       });
     }
   }

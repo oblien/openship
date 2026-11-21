@@ -28,6 +28,7 @@ import {
   SourceScanOptionsSchema,
   UpdateCloneTokenSchema,
   ProjectClusterSchemas,
+  WorkloadScalingSchemas,
   ProjectDatabaseSchemas,
   ProjectVolumeSchemas,
   CreateProjectBody,
@@ -1048,6 +1049,18 @@ r.post(
     },
   },
   ctrl.clusterDatabaseCommand("connectClusterDatabase"),
+);
+r.get(
+  "/:id/scaling",
+  { tag: "project:read", query: WorkloadScalingSchemas.getWorkloadScaling.input,
+    mcp: { description: "Read desired and observed instance counts for a Docker application or a selected Compose service. serviceId is optional for the primary application." } },
+  ctrl.getWorkloadScaling,
+);
+r.post(
+  "/:id/scaling",
+  { tag: "project:write", auditHandledByOperation: true, body: WorkloadScalingSchemas.scaleWorkload.input,
+    mcp: { description: "Change a single-server Docker workload to 1–100 instances through a configuration deployment. Requires expectedDeploymentId and expectedUpdatedAt from the scaling read. Rejects databases, writable storage, unsupported runtimes and stale releases." } },
+  ctrl.scaleWorkload,
 );
 r.patch(
   "/:id/cluster",

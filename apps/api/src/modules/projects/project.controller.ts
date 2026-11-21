@@ -272,6 +272,17 @@ export async function updateResources(c: Context) {
   return c.json({ success: true, data: result.data });
 }
 
+export async function getWorkloadScaling(c: Context) {
+  const result = await getPlatformKernel().projects.getWorkloadScaling(operationContext(c), param(c, "id"), { serviceId: c.req.query("serviceId") });
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+export async function scaleWorkload(c: Context) {
+  const result = await getPlatformKernel().projects.scaleWorkload(operationContext(c), param(c, "id"), await c.req.json());
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+
 export async function getClusterWorkload(c: Context) {
   const result = await getPlatformKernel().projects.getClusterWorkload(
     operationContext(c),
