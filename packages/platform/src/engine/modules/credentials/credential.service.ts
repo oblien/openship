@@ -423,6 +423,7 @@ export async function resolveCredentialSecrets(opts: {
  */
 export interface ProviderCredential {
   id: string;
+  name: string;
   createdAt: Date;
   publicFields: Record<string, string>;
   /** Empty when `readable` is false. */
@@ -440,6 +441,7 @@ export async function listProviderCredentials(
     const readable = Object.keys(secrets).length > 0;
     return {
       id: row.id,
+      name: row.name,
       createdAt: row.createdAt,
       publicFields: row.publicFields ?? {},
       secrets,
