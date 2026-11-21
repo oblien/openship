@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   token: vi.fn(), spend: vi.fn(), create: vi.fn(), retry: vi.fn(), get: vi.fn(), start: vi.fn(), resume: vi.fn(),
   env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://staging.oblien.test", OBLIEN_DOCKER_PRESET: undefined as string | undefined },
   permanent: vi.fn(), resize: vi.fn(), wait: vi.fn(), credentials: [] as unknown[],
+  runtimeStatus: vi.fn(), runtimeToken: vi.fn(), ownerVm: vi.fn(), enableRuntime: vi.fn(),
   inFlight: vi.fn(), discard: vi.fn(), list: vi.fn(), exec: vi.fn(), invalidate: vi.fn(), dispose: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
@@ -25,6 +26,7 @@ vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
   },
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ getOrgCloudToken: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: () => ({ vm: h.ownerVm }) }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ assertCloudCanSpend: h.spend, syncOblienEntitlement: h.entitlement }));
 vi.mock("@repo/adapters", async (original) => ({
   ...await original<typeof import("@repo/adapters")>(),
@@ -33,6 +35,7 @@ vi.mock("@repo/adapters", async (original) => ({
     vms = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
     vm = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
       lifecycle: { makePermanent: h.permanent }, resources: { update: h.resize },
+      apiAccess: { status: h.runtimeStatus, getToken: h.runtimeToken },
       runtime: async () => ({ exec: { run: h.exec } }), invalidateRuntime: h.invalidate });
   },
   waitForCloudDockerWorkspace: h.wait,
@@ -75,6 +78,9 @@ beforeEach(() => {
     resources: { cpus: 2, memory_mb: 4096, disk_size_mb: 32768 },
   });
   h.wait.mockImplementation(async () => h.get());
+  h.runtimeStatus.mockResolvedValue({ enabled: true });
+  h.runtimeToken.mockResolvedValue({ token: "scoped-runtime-token" });
+  h.ownerVm.mockReturnValue({ apiAccess: { enable: h.enableRuntime } });
   h.exec.mockResolvedValue("");
   h.resize.mockImplementation(async (resources) => {
     const workspace = await h.get();
@@ -113,6 +119,29 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     expect(h.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: "namespace-a", image: "oblien/docker:29", wait_ready: false, idempotency_key: "stable-key" }));
     expect(binding?.state).toBe("ready");
     expect(h.permanent).toHaveBeenCalledOnce();
+    expect(h.ownerVm).not.toHaveBeenCalled();
+  });
+  it("initializes a disabled runtime and waits for scoped access before marking the paid server ready", async () => {
+    let runtimeEnabled = false;
+    h.runtimeStatus.mockImplementation(async () => ({ enabled: runtimeEnabled }));
+    h.enableRuntime.mockImplementation(async () => { runtimeEnabled = true; });
+    h.runtimeToken
+      .mockRejectedValueOnce(new Error("gateway unavailable"))
+      .mockImplementation(async () => ({ token: runtimeEnabled ? "scoped-runtime-token" : "" }));
+
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("gateway unavailable");
+    expect(binding).toMatchObject({ state: "provisioning", workspaceId: "workspace-a" });
+    expect(h.ownerVm).toHaveBeenCalledWith("workspace-a");
+
+    await ensureCloudDockerWorkspace(input);
+    expect(binding?.state).toBe("ready");
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.enableRuntime).toHaveBeenCalledOnce();
+
+    h.runtimeStatus.mockResolvedValue({ enabled: false });
+    await ensureCloudDockerWorkspace(input);
+    expect(h.runtimeStatus).toHaveBeenCalledTimes(2);
+    expect(h.enableRuntime).toHaveBeenCalledOnce();
   });
   it("deduplicates simultaneous deployments through the subscribed server lock", async () => {
     const result = await Promise.all([ensureCloudDockerWorkspace(input), ensureCloudDockerWorkspace(input)]);

@@ -157,6 +157,10 @@ beforeEach(async () => {
       }
       if (url.pathname.endsWith("/lifecycle/permanent") && method === "POST")
         return Response.json({ success: true });
+      if (url.pathname.endsWith("/runtime-api-access") && method === "GET")
+        return Response.json({ enabled: true });
+      if (url.pathname.endsWith("/runtime-api-access/token") && method === "GET")
+        return Response.json({ success: true, token: "scoped-runtime-token" });
       if (workspaceId && method === "GET") {
         // Async deletion is only complete once a subsequent read confirms absent.
         if (deleting.has(workspaceId)) workspaces.delete(workspaceId);

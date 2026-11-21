@@ -21,6 +21,7 @@ import { AppError, deploymentBelongsToProject } from "@repo/core";
 import { cloudWorkspaceResourcesFromLimits } from "./resources";
 import { env } from "../config/env";
 import { getNamespaceClient } from "./openship-cloud";
+import { getOblienClient } from "./oblien-client";
 import { ensureLinkedCloudServer } from "./cloud/server-connection";
 import { createProvisionLock } from "./provision-lock";
 import {
@@ -406,6 +407,19 @@ async function ensureDockerHost(
       signal: input.signal,
     });
     await ws.lifecycle.makePermanent();
+    if (binding.state === "provisioning") {
+      input.signal?.throwIfAborted();
+      // Oblien reserves runtime initialization for the account owner.
+      // Verify the scoped credential can reach the runtime before marking this host ready.
+      if (!(await ws.apiAccess.status()).enabled)
+        await getOblienClient().vm(ready.id).apiAccess.enable();
+      if (!(await ws.apiAccess.getToken()).token)
+        throw new AppError(
+          "Cloud server runtime access is not ready",
+          503,
+          "CLOUD_RUNTIME_UNAVAILABLE",
+        );
+    }
     await repos.cloudDockerWorkspace.markReady(owner, input.organizationId, workspaceId);
     return workspaceId;
   }, input.signal);
