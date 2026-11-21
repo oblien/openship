@@ -28,6 +28,8 @@ describe("parseComposeFile", () => {
   it("preserves host-gateway aliases with one interpolation pass", () => {
     const parsed = parseComposeFile('services:\n  webmail:\n    image: webmail:test\n    extra_hosts:\n      - "mail.example.com=${ADDRESS}"\n', { envFileContent: 'ADDRESS=host-gateway\n' });
     expect(parsed.services[0]?.advanced?.extraHosts).toEqual({ "mail.example.com": "host-gateway" });
+    // Honoured on deploy, so it must not also be reported as dropped.
+    expect(parsed.unsupported.map((field) => field.field)).not.toContain("extra_hosts");
     expect(() => parseComposeFile('services:\n  app:\n    image: app:test\n    extra_hosts:\n      mail: "invalid"\n')).toThrow(/addresses/);
   });
   it("resolves Docker Compose environment interpolation from .env content", () => {
