@@ -587,6 +587,20 @@ r.patch(
   },
   ctrl.mergeEnvVars,
 );
+r.post(
+  // GH-1836: real env for the SHARED (project-level) store, named keys only —
+  // the project-level counterpart of services/:serviceId/env-reveal. Same
+  // write-gated bar as PATCH /:id/env; POST keeps key names out of URLs.
+  // No mcp block: revealing secrets stays a dashboard action, off automation.
+  "/:id/env-reveal",
+  {
+    tag: "project:write",
+    auditHandledByOperation: true,
+    mcpExcluded:
+      "Explicit dashboard secret reveal. MCP reads masked project environment and saves named merges without retrieving plaintext.",
+  },
+  ctrl.revealEnv,
+);
 
 /* ─── Per-project clone token (git credential override) ────────────────── */
 r.get(
