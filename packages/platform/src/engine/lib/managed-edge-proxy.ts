@@ -224,13 +224,24 @@ export async function releaseManagedHostnames(
   return deregisterManagedEdgeRoutes(slugs, opts);
 }
 
+const edgeWarningPrefix = "Deployed, but the free domain routing didn't sync for ";
+const edgeWarningRecovery =
+  "The app is live on the server; the free .opsh.io URL won't resolve until the edge route is created. " +
+  "Check that the server is reachable from Openship Cloud on port 80, then ";
+
 /** The user-facing "free routing didn't sync" message. `retryHint` is the
  *  closing call-to-action ("redeploy to retry" from a deploy, "retry" from the
  *  standalone retry action). */
 export function edgeUnsyncedWarning(failures: string[], retryHint: string): string {
+  return `${edgeWarningPrefix}${failures.join(", ")}. ${edgeWarningRecovery}${retryHint}.`;
+}
+
+/** Recognize the persisted managed-edge warning without accepting a hostname
+ * mentioned in a different warning or clearing a combined routing/TLS warning. */
+export function isManagedEdgeWarningForHostname(warning: string, hostname: string): boolean {
   return (
-    `Deployed, but the free domain routing didn't sync for ${failures.join(", ")}. ` +
-    `The app is live on the server; the free .opsh.io URL won't resolve until the edge route is created. ` +
-    `Check that the server is reachable from Openship Cloud on port 80, then ${retryHint}.`
+    warning.startsWith(`${edgeWarningPrefix}${hostname} (`) &&
+    !warning.includes(" · ") &&
+    ["retry", "redeploy to retry"].some((hint) => warning.endsWith(`${edgeWarningRecovery}${hint}.`))
   );
 }
