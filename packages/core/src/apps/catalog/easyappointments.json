@@ -1,0 +1,232 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "easyappointments",
+  "name": "Easy!Appointments",
+  "description": "Open-source appointment scheduler: customers book services with your providers on a public page, and you manage calendars, services, customers and working hours from an admin panel, with a private MySQL database and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "easyappointments",
+  "category": "other",
+  "repository": "https://github.com/alextselegidis/easyappointments",
+  "tags": [
+    "scheduling",
+    "appointments",
+    "booking",
+    "calendar"
+  ],
+  "framework": "docker-compose",
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "EA_ADMIN_EMAIL",
+          "service": "easyappointments",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the account and as the company contact address. Change both later in Settings."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "endpoints": [
+    {
+      "service": "easyappointments",
+      "port": 80,
+      "label": "Easy!Appointments",
+      "kind": "http",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "easyappointments-db",
+      "port": 3306,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ],
+  "prepare": [
+    {
+      "service": "easyappointments",
+      "title": "Install and create the administrator",
+      "description": "Runs Easy!Appointments' own installer: creates the database tables and the administrator account. Skipped when the app is already installed.",
+      "command": "set -eu\nbase=http://127.0.0.1\njar=$(mktemp)\ncode=$(curl -s -o /dev/null -w '%{http_code}' -c \"$jar\" \"$base/index.php/installation\")\nif [ \"$code\" != 200 ]; then echo \"easyappointments is already installed\"; exit 0; fi\ntoken=$(curl -s -b \"$jar\" -c \"$jar\" \"$base/index.php/installation\" | grep -o '\"csrf_token\":\"[a-f0-9]*\"' | head -1 | cut -d'\"' -f4)\nif [ -z \"$token\" ]; then echo \"ERR: no csrf token on the installer page\"; exit 1; fi\nout=$(curl -s -m 120 -b \"$jar\" -c \"$jar\" -X POST \"$base/index.php/installation/perform\" \\\n  --data-urlencode \"csrf_token=$token\" \\\n  --data-urlencode \"admin[first_name]=Admin\" \\\n  --data-urlencode \"admin[last_name]=User\" \\\n  --data-urlencode \"admin[email]=$EA_ADMIN_EMAIL\" \\\n  --data-urlencode \"admin[phone_number]=\" \\\n  --data-urlencode \"admin[username]=admin\" \\\n  --data-urlencode \"admin[password]=$EA_ADMIN_PASSWORD\" \\\n  --data-urlencode \"company[company_name]=My Company\" \\\n  --data-urlencode \"company[company_email]=$EA_ADMIN_EMAIL\" \\\n  --data-urlencode \"company[company_link]=$BASE_URL\")\ncase \"$out\" in\n  *'\"success\":true'*) echo \"easyappointments administrator ready\" ;;\n  *) echo \"ERR: installation failed: $(echo \"$out\" | cut -c1-160)\"; exit 1 ;;\nesac",
+      "capture": "easyappointments_install",
+      "once": true,
+      "mustSucceed": true,
+      "phase": "post-ready",
+      "readiness": {
+        "test": "curl -fsS -o /dev/null http://127.0.0.1/index.php/installation",
+        "interval": 3000,
+        "retries": 100
+      }
+    }
+  ],
+  "minResources": {
+    "cpuCores": 1,
+    "memoryMb": 1024
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Online booking page",
+        "description": "Customers pick a service, provider and time slot from a public page, no account needed."
+      },
+      {
+        "title": "Providers, services and working plans",
+        "description": "Manage who offers what, their working hours, breaks and appointment durations."
+      },
+      {
+        "title": "Private database",
+        "description": "Appointments and customers live in a dedicated, project-scoped MySQL instance on your server."
+      }
+    ]
+  },
+  "services": [
+    {
+      "name": "easyappointments-db",
+      "image": "mysql:8.4.13",
+      "restart": "unless-stopped",
+      "environment": {
+        "MYSQL_DATABASE": "easyappointments",
+        "MYSQL_USER": "ea",
+        "MYSQL_PASSWORD": "{{config:EA_DB_PASSWORD}}",
+        "MYSQL_ROOT_PASSWORD": "{{config:EA_DB_ROOT_PASSWORD}}"
+      },
+      "secretEnv": [
+        "MYSQL_PASSWORD",
+        "MYSQL_ROOT_PASSWORD"
+      ],
+      "volumes": [
+        "ea_db_data:/var/lib/mysql"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p\"$MYSQL_ROOT_PASSWORD\" --silent"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 20,
+        "startPeriod": "30s"
+      }
+    },
+    {
+      "name": "easyappointments",
+      "image": "alextselegidis/easyappointments:1.6.1",
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "easyappointments-db"
+      ],
+      "ports": [
+        "8237:80"
+      ],
+      "exposed": true,
+      "exposedPort": 80,
+      "routes": [
+        {
+          "port": 80
+        }
+      ],
+      "volumes": [
+        "ea_storage:/var/www/html/storage"
+      ],
+      "environment": {
+        "BASE_URL": "{{publicUrl:easyappointments}}",
+        "LANGUAGE": "english",
+        "DEBUG_MODE": "FALSE",
+        "DB_HOST": "easyappointments-db",
+        "DB_NAME": "easyappointments",
+        "DB_USERNAME": "ea",
+        "DB_PASSWORD": "{{config:EA_DB_PASSWORD}}"
+      },
+      "secretEnv": [
+        "DB_PASSWORD",
+        "EA_ADMIN_PASSWORD"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -o /dev/null http://127.0.0.1/index.php/installation || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "10s",
+        "retries": 20,
+        "startPeriod": "60s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "EA_DB_PASSWORD",
+      "service": "easyappointments-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "EA_DB_ROOT_PASSWORD",
+      "service": "easyappointments-db",
+      "label": "Database root password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "EA_ADMIN_PASSWORD",
+      "service": "easyappointments",
+      "label": "Administrator password",
+      "help": "Auto-generated. Shown on the Connection card.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "connection": {
+    "title": "Sign in to Easy!Appointments",
+    "description": "Sign in to the admin panel with the username and generated password below. The administrator is created on first start. Customers book from the main page; staff sign in at /index.php/login.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Easy!Appointments",
+        "source": "publicUrl:easyappointments",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "template:admin",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:easyappointments:EA_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "The administrator's login name is admin, and you sign in at /index.php/login on the app's address (the main page is the customer booking page). Account changes made in the app are preserved on redeployment. Outgoing email is not configured; add SMTP in the app under Settings > General or through the MAIL_* variables on the easyappointments service. The company name starts as My Company, so change it under Settings."
+    }
+  }
+}
