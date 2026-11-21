@@ -95,9 +95,9 @@ function PlanCard({
         </div>
         <p className="pp-plan-billing">{copy(billingNote)}</p>
       </div>
-      <a href={href} className={`pp-plan-cta${popular ? " pp-plan-cta--filled" : ""}`}>
+      <Link href={href} className={`pp-plan-cta${popular ? " pp-plan-cta--filled" : ""}`}>
         {copy(cta)} <ArrowRight className="size-4" aria-hidden="true" />
-      </a>
+      </Link>
       <div className="pp-plan-details">{children}</div>
       <ul className="pp-plan-support">
         {[...benefits, support].map((benefit) => (
@@ -346,7 +346,7 @@ function ManagementPlans({ pricing }: { pricing: CloudPricing }) {
   );
 }
 
-function InfrastructurePlans({ pricing }: { pricing: CloudPricing }) {
+function InfrastructurePlans() {
   const copy = useCopy();
 
   return (
@@ -373,11 +373,7 @@ function InfrastructurePlans({ pricing }: { pricing: CloudPricing }) {
         description={copy("Dedicated hardware for your capacity and support needs.")}
         amount="Custom"
         billingNote="Quoted for your requirements"
-        href={
-          pricing.management
-            ? `mailto:${pricing.management.dedicatedContact}?subject=Dedicated%20Openship%20hosting`
-            : "/support"
-        }
+        href="/contact"
         cta="Request a quote"
         support="Support agreed in your quote"
       >
@@ -484,7 +480,7 @@ export default async function PricingPage() {
                 <p>{copy("Run the platform yourself, or arrange dedicated infrastructure.")}</p>
               </div>
             </header>
-            <InfrastructurePlans pricing={pricing} />
+            <InfrastructurePlans />
           </div>
         </section>
         <section className="pp-faq-section">
