@@ -16,6 +16,7 @@ import {
 } from "./public-url";
 import { canSendMail, requireEmailVerificationStrict } from "./mail";
 import { sendAuthMail } from "./auth-mail";
+import { authEmailLimit, reserveAuthEmail } from "./auth-mail-limit";
 import {
   resetPasswordOtpEmail,
   verifyOtpEmailTemplate,
@@ -95,6 +96,12 @@ const githubOAuth = socialProviderCredentials("github");
 const googleOAuth = socialProviderCredentials("google");
 const oidcOAuth = oidcProviderConfig();
 
+// Use the public OTP operation for automatic verification too, so Better Auth
+// runs the same before hook for signup, manual resends and internal calls.
+async function sendVerificationCode(email: string): Promise<void> {
+  await auth.api.sendVerificationOTP({ body: { email, type: "email-verification" } });
+}
+
 export const auth = betterAuth({
   basePath: "/api/auth",
   hooks: { before: mcpOAuthPolicy },
@@ -145,6 +152,10 @@ export const auth = betterAuth({
     },
   }),
 
+  emailVerification: {
+    sendVerificationEmail: ({ user }) => sendVerificationCode(user.email),
+  },
+
   /* ---------- Email + Password ---------- */
   emailAndPassword: {
     enabled: true,
@@ -176,11 +187,10 @@ export const auth = betterAuth({
     // password on an account whose ownership has not been proved.
     onExistingUserSignUp: async ({ user }): Promise<void> => {
       if (!user.emailVerified) {
-        await auth.api.sendVerificationOTP({
-          body: { email: user.email, type: "email-verification" },
-        });
+        await sendVerificationCode(user.email);
         return;
       }
+      if (!(await reserveAuthEmail(user.email))) return;
       const email = existingAccountEmail(user, resolveDashboardPublicUrl());
       await sendAuthMail(
         { to: user.email, ...email },
@@ -446,15 +456,7 @@ export const auth = betterAuth({
      */
     bearer(),
 
-    /**
-     * Email verification via a short numeric CODE (OTP), not a magic link.
-     * `overrideDefaultEmailVerification` reroutes the standard verification
-     * flow (triggered by emailAndPassword.requireEmailVerification) to send an
-     * OTP instead of a link — codes are far more deliverable (no clickable URL
-     * for spam filters to flag). Single send: it REPLACES the link callback, so
-     * there's no double email. The gate itself is unchanged — an account still
-     * can't sign in until verified; it just verifies by typing a code.
-     */
+    authEmailLimit,
     emailOTP({
       otpLength: 6,
       expiresIn: 60 * 10, // 10 minutes
@@ -465,7 +467,6 @@ export const auth = betterAuth({
       // Throttle how often a new code can be requested (anti-spam + mail cost).
       // Exceeding it returns a rate-limit error; the UI asks them to wait.
       rateLimit: { window: 60, max: 5 },
-      overrideDefaultEmailVerification: true,
       async sendVerificationOTP({ email, otp, type }) {
         // Two flows, both link-free by design. `sign-in` and `change-email` OTP
         // types are not enabled, so they fall through and send nothing.

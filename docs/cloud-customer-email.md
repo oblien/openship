@@ -54,6 +54,11 @@ a current nonzero sending allowance, and a verified `openship.io` sender domain.
 Welcome and cancellation replies go to `support@openship.io` through Reply-To.
 See the [Oblien mail API contract](https://oblien.com/openapi/mail-v2.json).
 
+Cloud signup notices, verification codes and password resets share a limit per
+recipient of one attempt per minute, five per rolling hour and ten per rolling
+24 hours. Repeated requests inside a limit keep the usual public response and
+any unexpired code already sent. Better Auth also applies its per-IP OTP limit.
+
 Rows in `cloud_customer_email` retain delivery status, attempt count, lease and
 timestamps. A worker claims one message at a time with a five-minute SQL lease.
 Abandoned leases are recoverable after restart. Failures retry with exponential

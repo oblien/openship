@@ -1,4 +1,4 @@
-import { afterAll, expect, it, vi } from "vitest";
+import { afterEach, afterAll, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import type { SendMailOptions } from "@repo/platform/engine/lib/mail";
@@ -17,6 +17,7 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
   };
 });
 vi.mock("@repo/platform/engine/lib/mail", () => ({
+  CLOUD_MAIL_UNAVAILABLE: "Cloud email is temporarily unavailable. Please try again later.",
   sendMail: h.send,
   canSendMail: async () => true,
   requireEmailVerificationStrict: true,
@@ -26,6 +27,7 @@ import { db, schema, closeDb, eq, repos } from "@repo/db";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { CustomerEmailService } from "@repo/platform/engine/modules/customer-email/service";
 
+afterEach(() => vi.restoreAllMocks());
 afterAll(() => closeDb());
 const request = (path: string, body: unknown) =>
   auth.handler(
@@ -192,6 +194,7 @@ it("keeps one OAuth account on repeat signup and privately explains how to sign 
   expect(h.send).toHaveBeenCalledWith(
     expect.objectContaining({ to: email, subject: "Sign in to your OpenShip account" }),
   );
+  expect(h.send).toHaveBeenCalledOnce();
   const notice = h.send.mock.calls.at(-1)![0] as { text: string };
   expect(notice.text).toContain("already have");
   expect(notice.text).toContain("Google");
@@ -203,6 +206,7 @@ it("keeps one OAuth account on repeat signup and privately explains how to sign 
   // A provider-only customer can add a password only after proving mailbox
   // ownership through the existing recovery flow, never from duplicate signup.
   h.send.mockClear();
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   const reset = await request("/email-otp/request-password-reset", { email });
   expect(reset.status, await reset.clone().text()).toBe(200);
   const resetMail = h.send.mock.calls.at(-1)![0] as { subject: string };
@@ -222,6 +226,7 @@ it("resends verification on an unverified signup retry without replacing its pas
   const first = await request("/sign-up/email", { email, name: "Signup customer", password });
   expect(first.status).toBe(200);
   h.send.mockClear();
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   const retry = await request("/sign-up/email", {
     email,
     name: "Second attempt",
@@ -249,6 +254,7 @@ it("recovers an initial delivery failure by retrying signup with the same accoun
   // Better Auth logs background delivery failures while keeping its generic response.
   expect(first.status).toBe(200);
   h.send.mockClear();
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   const retry = await request("/sign-up/email", {
     email,
     name: "SMTP retry",
