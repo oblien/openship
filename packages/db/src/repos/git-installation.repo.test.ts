@@ -93,7 +93,7 @@ describe("gitInstallation workspace boundary", () => {
       gitOwner: "ACME",
       gitRepo: "site",
       installationId: 40,
-      webhookId: 77,
+      webhookId: "77",
       webhookSecret: "encrypted-old-secret",
     });
 
@@ -197,7 +197,7 @@ describe("gitInstallation workspace boundary", () => {
       gitOwner: "ACME",
       gitRepo: "site",
       installationId: 501,
-      webhookId: 77,
+      webhookId: "77",
       webhookSecret: "old-project-hook",
     });
     await db.insert(schema.resourceGrant).values({

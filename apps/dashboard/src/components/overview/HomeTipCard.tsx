@@ -5,7 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { useGitHub } from "@/context/GitHubContext";
+import { useGit } from "@/context/GitContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { PRODUCT_TIPS } from "./home-tips";
@@ -22,15 +22,15 @@ interface HomeTip {
 }
 
 export default function HomeTipCard({ projectCount, loading }: HomeTipCardProps) {
-  const gitHub = useGitHub();
+  const { connections } = useGit();
   const { selfHosted } = usePlatform();
   const { t } = useI18n();
   const c = t.overview.homeTip;
 
   // A contextual onboarding nudge always wins over the random product tip:
   // connect GitHub if disconnected, else create the first project.
-  const busy = loading || gitHub.loading;
-  const contextual: HomeTip | null = !gitHub.connected
+  const busy = loading || connections.some(connection => connection.loading);
+  const contextual: HomeTip | null = !connections.some(connection => connection.connected)
     ? { text: c.connectText, href: "/settings", label: c.connectLabel }
     : !busy && projectCount === 0
       ? { text: c.createText, href: "/library", label: c.createLabel }

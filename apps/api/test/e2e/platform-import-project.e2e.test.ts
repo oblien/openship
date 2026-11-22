@@ -40,6 +40,7 @@ const h = vi.hoisted(() => ({
   openSource: vi.fn(),
   runtime: vi.fn(),
   deploy: vi.fn(),
+  getFileContent: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/modules/credentials/connection-authorization", () => ({
   getProviderAccess: async () => ({ provider: "railway", publicFields: {}, secrets: {} }),
@@ -68,8 +69,9 @@ vi.mock("@repo/platform/engine/modules/services/service-container", async (origi
 vi.mock("@repo/platform/engine/modules/deployments/build.service", () => ({
   triggerDeployment: h.deploy,
 }));
-vi.mock("@repo/platform/engine/modules/deployments/project-reader", () => ({
-  createGitHubReader: () => ({ readText: async () => "FROM redis:7-alpine\n" }),
+vi.mock("@repo/platform/engine/modules/github/github.service", async (original) => ({
+  ...(await original<object>()),
+  getFileContent: h.getFileContent,
 }));
 import {
   discoverPlatform,
@@ -416,6 +418,7 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
           warnings: [],
         };
         h.discover.mockImplementation(async () => structuredClone(inventory));
+        h.getFileContent.mockResolvedValue({ content: "FROM redis:7-alpine\n" });
         const discovery = await discoverPlatform(ctx, inventory.source);
         const review = await reviewPlatform(ctx, {
           draftId: discovery.draftId,
@@ -423,6 +426,12 @@ describeDockerE2E("Railway projects retain native service boundaries", () => {
           services: discovery.services.map((s) => ({ id: s.id, name: s.name, data: "copy" })),
         });
         expect(review.ready, JSON.stringify(review)).toBe(true);
+        for (const source of services.filter((service) => service.repository)) {
+          expect(h.getFileContent).toHaveBeenCalledWith(
+            expect.anything(), "fixture", source.name, source.dockerfile,
+            expect.objectContaining({ branch: source.commit, serverId }),
+          );
+        }
         const plan = await loadReviewedImport(ctx, review.planId);
         const runId = `${marker}-run`;
         await repos.dockerMigrationRun.create({

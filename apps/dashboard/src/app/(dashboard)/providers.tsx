@@ -1,6 +1,7 @@
 "use client";
 
 import { LocalePreferenceSync } from "@/components/locale-preference-sync";
+import { GitConnectionsProvider } from "@/context/GitContext";
 import { GitHubProvider } from "@/context/GitHubContext";
 import { CloudProvider } from "@/context/CloudContext";
 import { PlatformProvider } from "@/context/PlatformContext";
@@ -70,12 +71,14 @@ export function DashboardProviders({
       >
         <GitHubProvider initialData={initialGithubData}>
           <CloudProvider>
+            <GitConnectionsProvider>
             {/* Mounted only in mail view: it fetches the mail-server registry on
                 every page, and that call SSH-scans when the registry is empty
                 (backfill from pre-table installs) — not something a platform-mode
                 dashboard should pay for. Consumers get an unloaded shape when
                 it's absent, so nothing breaks. */}
             {productView === "mail" ? <MailScopeProvider>{content}</MailScopeProvider> : content}
+          </GitConnectionsProvider>
           </CloudProvider>
         </GitHubProvider>
       </PlatformProvider>

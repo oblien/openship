@@ -1,3 +1,4 @@
+import { isLocalUrl } from "../../lib/public-url";
 /**
  * GitHub service - business logic for repositories, branches, files, and webhooks.
  *
@@ -18,6 +19,7 @@ import { resolveOrgOwner } from "../../lib/org-actor";
 import { assertGitHubRepoAccess, canUseGitHubRepo } from "./github-access";
 import { AppError, isFullCommitSha, safeErrorMessage } from "@repo/core";
 import { repos as dbRepos } from "@repo/db";
+import { legacyWebhookSecret } from "../git/webhook-keys";
 import { encrypt, decrypt } from "../../lib/encryption";
 import type {
   GitHubRepository,
@@ -35,7 +37,8 @@ import { resolveApiPublicUrl, sharedWebhookUrl, domainWebhookUrl } from "../../l
 import { hasActiveGitHubSource } from "./github-source.service";
 
 /** Repository read identity. Credentials remain inside the shared dispatcher. */
-export interface GitHubReadOptions { serverId?: string }
+import type { GitReadOptions as GitHubReadOptions, GitComparison as CompareCommitsResult } from "../git/types";
+export type { GitReadOptions as GitHubReadOptions, GitComparison as CompareCommitsResult } from "../git/types";
 
 export const GITHUB_DEPLOY_WEBHOOK_EVENTS = ["push", "pull_request"] as const;
 const MAX_FALLBACK_TREE_ENTRIES = 5000;
@@ -43,11 +46,6 @@ const MAX_COMPARE_FILES_PER_RESPONSE = 300;
 const COMPARE_CACHE_TTL_SECONDS = 6 * 60 * 60;
 const compareInFlight = new Map<string, Promise<CompareCommitsResult | null>>();
 
-export interface CompareCommitsResult {
-  files: string[];
-  /** GitHub capped the response, so absence from `files` is not proof of no change. */
-  truncated: boolean;
-}
 
 /**
  * Length in bytes of a per-project webhook signing secret. 32 raw bytes
@@ -872,65 +870,7 @@ export async function getAvailableStrategies(
   return { current, available };
 }
 
-/**
- * True when the URL points to a host that is NOT reachable from the
- * public internet — so GitHub's webhook delivery would fail.
- *
- * Used to decide between webhook strategies in resolveWebhookStrategy:
- *   - reachable → "repo" (per-repo webhook directly to this URL)
- *   - unreachable → "none" (caller falls back to polling or domain
- *     delivery via the project's webhookDomain)
- *
- * Conservative on parse failure (returns true). A typo'd URL is safer
- * to assume unreachable than to register a webhook GitHub will never
- * be able to deliver to.
- *
- * Covers the full set of non-routable host shapes:
- *   - DNS sentinels: localhost, *.local (mDNS)
- *   - IPv4 loopback: 127.0.0.0/8 (ALL of 127, not just .0.1)
- *   - IPv4 unspecified: 0.0.0.0
- *   - IPv4 RFC1918 private: 10/8, 172.16/12, 192.168/16
- *   - IPv4 link-local / APIPA: 169.254.0.0/16
- *   - IPv6 loopback: ::1 (with optional [::1] bracket form)
- *   - IPv6 link-local: fe80::/10
- *   - IPv6 ULA: fc00::/7 (fc/fd prefix)
- */
-function isLocalUrl(url: string): boolean {
-  try {
-    const { hostname } = new URL(url);
-    if (!hostname) return true;
 
-    // DNS sentinel cases. `.local` is mDNS (Bonjour) — reachable only on
-    // the local link, never from the public internet.
-    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.endsWith(".local")) {
-      return true;
-    }
-
-    // IPv6 (URL parses bracketed form; strip the brackets for matching).
-    // Same hostname can also arrive un-bracketed if the caller passed a
-    // bare IP. fe80::/10 → fe80..febf (first byte top 10 bits); fc00::/7
-    // → fc00..fdff (first byte top 7 bits, fc or fd).
-    const v6 =
-      hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
-    if (v6 === "::1") return true;
-    if (/^fe[89ab][0-9a-f]?:/i.test(v6)) return true; // link-local
-    if (/^f[cd][0-9a-f]{2}:/i.test(v6)) return true; // ULA
-
-    // IPv4: full 127/8 + 0/8-sentinel handled above + RFC1918 + link-local.
-    // (Not collapsed into a single regex — readability beats brevity here,
-    // and each /8|/12|/16 has a different intent that benefits from being
-    // named in the source.)
-    if (/^127\./.test(hostname)) return true; // loopback /8
-    if (/^10\./.test(hostname)) return true; // RFC1918 /8
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true; // RFC1918 /12
-    if (/^192\.168\./.test(hostname)) return true; // RFC1918 /16
-    if (/^169\.254\./.test(hostname)) return true; // link-local /16
-
-    return false;
-  } catch {
-    return true;
-  }
-}
 
 // ─── Webhook registration ────────────────────────────────────────────────────
 
@@ -970,7 +910,7 @@ export function resolveProjectWebhookSecret(
 ): string | null {
   if (project?.webhookSecret) {
     try {
-      return decrypt(project.webhookSecret);
+      return legacyWebhookSecret(decrypt(project.webhookSecret));
     } catch {
       // Encryption key rotation / corrupted row — fall through to env
       // rather than silently rejecting every webhook for this project.
@@ -995,7 +935,8 @@ async function ensureProjectWebhookSecret(projectId: string): Promise<string> {
   const proj = await dbRepos.project.findById(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return null; });
   if (proj?.webhookSecret) {
     try {
-      return decrypt(proj.webhookSecret);
+      const existing = legacyWebhookSecret(decrypt(proj.webhookSecret));
+      if (existing) return existing;
     } catch {
       // Corrupted row / key rotation — mint a fresh one below and overwrite.
       errorDiagnostics.warn("platform/engine/modules/github/github.service",
@@ -1089,7 +1030,7 @@ export async function registerWebhook(
  */
 export async function backfillWebhookSecrets(): Promise<void> {
   if (env.CLOUD_MODE) return;
-  const projects = await dbRepos.project.listNeedingWebhookBackfill().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return []; });
+  const projects = await dbRepos.project.listNeedingWebhookBackfill("github").catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return []; });
   for (const p of projects) {
     if (!p.gitOwner || !p.gitRepo) continue;
     try {
@@ -1143,13 +1084,13 @@ export async function rotateProjectWebhookSecret(
   const webhookUrl = project.webhookDomain
     ? domainWebhookUrl(project.webhookDomain)
     : sharedWebhookUrl();
-  await updateWebhook(ctx, project.gitOwner, project.gitRepo, project.webhookId, {
+  await updateWebhook(ctx, project.gitOwner, project.gitRepo, Number(project.webhookId), {
     active: true,
     events: [...GITHUB_DEPLOY_WEBHOOK_EVENTS],
     config: { url: webhookUrl, content_type: "json", secret: fresh },
   });
   await persistProjectWebhookSecret(projectId, fresh);
-  return { rotated: true, hookId: project.webhookId };
+  return { rotated: true, hookId: Number(project.webhookId) };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

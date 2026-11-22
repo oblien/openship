@@ -1,7 +1,7 @@
 /**
  * Shared repo-webhook reconciliation for push auto-deploy.
  *
- * A GitHub webhook lives on a `(owner, repo)` — so ALL projects in an org that
+ * A repository webhook lives on a `(owner, repo)` — so ALL projects in an org that
  * point at that repo must share ONE `webhookId`. This is the single home for the
  * register → deactivate-stale → fan-out-webhookId logic, used by BOTH the git
  * linker (`linkProjectRepo`) and the auto-deploy toggle (`setAutoDeploy`) so the
@@ -9,38 +9,26 @@
  * a repo can be shared by projects across groups.
  */
 
+import { matchesProjectRepository } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos, type Project } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import { registerWebhook, updateWebhook } from "../github/github.service";
-
-/** Projects in this org pointing at (owner, repo), case-insensitive. */
-export async function listOrgRepoProjects(organizationId: string, owner: string, repo: string) {
-  const ownerKey = owner.toLowerCase();
-  const repoKey = repo.toLowerCase();
-  const projects = await repos.project.findByGitRepo(owner, repo);
-  return projects.filter(
-    (p) =>
-      p.organizationId === organizationId &&
-      p.gitOwner?.toLowerCase() === ownerKey &&
-      p.gitRepo?.toLowerCase() === repoKey,
-  );
-}
+import type { GitRepositoryRef } from "../git/types";
+import { repositoryWebhooks } from "../git/provider";
 
 /** An existing webhookId already shared across this org's projects on the repo. */
-export async function findSharedWebhookId(organizationId: string, owner: string, repo: string) {
-  const projects = await listOrgRepoProjects(organizationId, owner, repo);
-  return projects.find((p) => typeof p.webhookId === "number")?.webhookId ?? null;
+export async function findSharedWebhookId(organizationId: string, ref: GitRepositoryRef) {
+  const projects = await repos.project.findByGitRepo(ref, [organizationId]);
+  return projects.find((p) => p.webhookId != null)?.webhookId ?? null;
 }
 
 /** Fan a webhookId onto every org project on (owner, repo) that lacks it. */
 export async function syncSharedWebhookId(
   organizationId: string,
-  owner: string,
-  repo: string,
-  webhookId: number,
+  ref: GitRepositoryRef,
+  webhookId: string,
 ) {
-  const projects = await listOrgRepoProjects(organizationId, owner, repo);
+  const projects = await repos.project.findByGitRepo(ref, [organizationId]);
   await Promise.all(
     projects
       .filter((p) => p.webhookId !== webhookId)
@@ -57,20 +45,22 @@ export async function syncSharedWebhookId(
 export async function ensureSharedWebhook(
   ctx: RequestContext,
   project: Project,
-  owner: string,
-  repo: string,
+  ref: GitRepositoryRef,
   webhookUrl?: string,
-): Promise<number | null> {
+): Promise<string | null> {
+  const hooks = repositoryWebhooks(ctx, ref);
   const existingHookId =
-    project.webhookId ?? (await findSharedWebhookId(project.organizationId, owner, repo));
-  const result = await registerWebhook(ctx, owner, repo, webhookUrl, { projectId: project.id });
-  if (!result.hookId) return null;
+    (matchesProjectRepository(project, ref) ? project.webhookId : null) ??
+    (await findSharedWebhookId(project.organizationId, ref));
+  const result = await hooks.register({ url: webhookUrl, projectId: project.id });
+  if (!result.id) return null;
+  const hookId = result.id;
 
   // A new hook superseded a stale one on the same repo — turn the old one off so
-  // stale GitHub hooks don't pile up (the gap the old link path never closed).
-  if (existingHookId && existingHookId !== result.hookId) {
-    await updateWebhook(ctx, owner, repo, existingHookId, { active: false }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-git-webhook"); return undefined; });
+  // stale hooks don't pile up (the gap the old link path never closed).
+  if (existingHookId && existingHookId !== hookId) {
+    await hooks.setActive(String(existingHookId), false).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-git-webhook"); return undefined; });
   }
-  await syncSharedWebhookId(project.organizationId, owner, repo, result.hookId);
-  return result.hookId;
+  await syncSharedWebhookId(project.organizationId, ref, hookId);
+  return hookId;
 }

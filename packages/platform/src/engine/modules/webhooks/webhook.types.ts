@@ -1,20 +1,22 @@
 /**
  * Webhook types - shared across all webhook providers.
  *
- * Every provider (GitHub, Stripe) implements the WebhookProvider interface
+ * Every registered Git provider implements the WebhookProvider interface
  * so the central dispatcher can handle verification and routing uniformly.
  */
 
+import type { RegisteredGitProvider } from "@repo/core";
+
 /** Supported webhook providers */
 // Stripe is handled by its own billing route (SDK-verified), not this generic
-// provider registry — so the only provider name here is GitHub.
-export type WebhookProviderName = "github";
+// provider registry.
+export type WebhookProviderName = RegisteredGitProvider["id"];
 
 /** Result of verifying a webhook signature */
 export interface WebhookVerifyResult {
   valid: boolean;
-  /** Verification provenance, set internally after checking the App signature. */
-  githubApp?: boolean;
+  /** Organization-bound signatures can authorize only their signers' workspaces. */
+  organizationIds?: readonly string[];
   error?: string;
 }
 
@@ -36,11 +38,11 @@ export interface WebhookHandlerResult {
  *
  * `handle()` parses the event and dispatches to the correct business-logic handler.
  */
-export interface WebhookProvider {
+export interface WebhookProvider<Verification extends WebhookVerifyResult = WebhookVerifyResult> {
   readonly name: WebhookProviderName;
   verify(
     payload: string | Buffer,
     headers: Record<string, string>,
-  ): WebhookVerifyResult | Promise<WebhookVerifyResult>;
-  handle(payload: unknown, headers: Record<string, string>, verification?: WebhookVerifyResult): Promise<WebhookHandlerResult>;
+  ): Verification | Promise<Verification>;
+  handle(payload: unknown, headers: Record<string, string>, verification?: Verification): Promise<WebhookHandlerResult>;
 }

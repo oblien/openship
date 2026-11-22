@@ -14,6 +14,12 @@ function manifest(display: unknown = { name: "My app", logo: "public/logo.svg" }
 }
 
 describe("public repository branding", () => {
+  test("never falls back to GitHub for an unsupported provider", async () => {
+    let called = false;
+    const load = createRepositoryBrandingLoader({ fetchFile: async () => { called = true; return manifest(); } });
+    expect(await load({ ...repository(), provider: "unregistered" })).toEqual({ display: null, maxAge: 300 });
+    expect(called).toBe(false);
+  });
   test("fetches one public file on the requested branch and projects only validated display fields", async () => {
     const requests: Array<{ url: string; init: RequestInit }> = [];
     const load = createRepositoryBrandingLoader({

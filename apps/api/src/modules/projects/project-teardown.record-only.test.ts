@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { repos } from "@repo/db";
+import { repos, type Project } from "@repo/db";
 
 /**
  * Record-only ("Remove from Openship only") delete contract.
@@ -98,6 +98,7 @@ vi.mock("@repo/db", () => ({
     clusterDatabase: { list: vi.fn(async () => []) },
     project: {
       findById: vi.fn(async () => h.project),
+      findByGitRepo: vi.fn(async () => []),
       claimDeletion: h.claimDeletion,
       beginDeletionCleanup: h.beginDeletionCleanup,
       deleteHard: h.deleteHard,
@@ -218,8 +219,22 @@ describe("teardownProject — dependency inspection", () => {
   });
 });
 
-describe("teardownProject — the GitHub webhook step vs. repo write access", () => {
-  const linkedToRepo = { webhookId: 99, gitOwner: "acme", gitRepo: "production-api" };
+describe("teardownProject — repository webhooks", () => {
+  const linkedToRepo = { webhookId: "99", gitOwner: "acme", gitRepo: "production-api" };
+
+  it.each(["github", "gitlab"])("preserves a %s hook shared with another environment", async (gitProvider) => {
+    h.project = projectFixture({ ...linkedToRepo, gitProvider });
+    vi.mocked(repos.project.findByGitRepo).mockResolvedValueOnce([
+      { ...h.project, id: "staging" } as Project,
+    ]);
+    const result = await teardownProject(ctx, "p1", { force: true });
+    expect(repos.project.findByGitRepo).toHaveBeenCalledWith({
+      provider: gitProvider, namespace: "acme", name: "production-api",
+    });
+    expect(stepOf(result.steps, "github_webhook")?.details).toMatch(/shared/);
+    expect(h.deleteGitHubWebhook).not.toHaveBeenCalled();
+    expect(result.rowDeleted).toBe(true);
+  });
 
   it("a denial from the GitHub access gate is a SKIP, not a failed teardown", async () => {
     // Deleting the PROJECT is `project:admin`, which a member holds; deleting the

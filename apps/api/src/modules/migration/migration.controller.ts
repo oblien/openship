@@ -183,7 +183,8 @@ async function assertServersWritable(
  */
 export async function repoCompose(c: Context) {
   const ctx = getRequestContext(c);
-  const { owner, repo, branch } = await c.req.json<{
+  const { owner, repo, branch, provider } = await c.req.json<{
+    provider?: string;
     owner?: string;
     repo?: string;
     branch?: string;
@@ -197,6 +198,7 @@ export async function repoCompose(c: Context) {
       owner.trim(),
       repo.trim(),
       branch?.trim() || undefined,
+      provider,
     );
     // Template expressions stay server-side; they may contain secret defaults.
     const display = services.map(({ environmentTemplates: _templates, ...service }) => service);

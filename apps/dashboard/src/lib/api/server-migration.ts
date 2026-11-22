@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { api, getApiBaseUrl } from "./client";
 import { endpoints } from "./endpoints";
@@ -223,12 +224,12 @@ export const dockerMigrationApi = {
       { timeout: 120_000 },
     ),
 
-  /** Parse a linked repo's docker-compose (GitHub API, no clone) → its services,
+  /** Parse a linked repo's docker-compose (provider API, no clone) → its services,
    *  for the map step. Empty list when the repo has no compose file. */
-  parseRepoCompose: (owner: string, repo: string, branch?: string) =>
+  parseRepoCompose: (owner: string, repo: string, branch?: string, provider = DEFAULT_GIT_PROVIDER) =>
     api.post<{ success: boolean; services: ComposeRepoService[] }>(
       endpoints.dockerMigration.repoCompose,
-      { owner, repo, branch },
+      { owner, repo, branch, provider },
     ),
 
   /** Start a full migration. Returns the run id + the cutover confirmation token. */
@@ -248,7 +249,7 @@ export const dockerMigrationApi = {
     transferCompression?: "auto" | "zstd" | "gzip" | "none";
     /** Optional project-level git repo to link (records source + push auto-deploy;
      *  the running image is still reused — no rebuild during migrate). */
-    gitSource?: { provider: "github"; owner: string; repo: string; branch?: string };
+    gitSource?: { provider: string; owner: string; repo: string; branch?: string };
     /** serviceName → build subpath (rootDirectory) inside the linked repo. */
     serviceSubpaths?: Record<string, string>;
     /** discovered serviceName → repo compose service name to adopt the row AS,

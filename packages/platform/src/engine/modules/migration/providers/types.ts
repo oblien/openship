@@ -8,6 +8,7 @@ import type { ProviderAccess, MigrationProvider } from "../../credentials/provid
 
 export interface ProviderService extends PlatformImportService {
   /** Server-only configuration. Public discovery uses an explicit allowlist. */
+  gitProvider?: string;
   env: Record<string, string>;
   rawEnv: Record<string, string>;
   instanceId?: string;

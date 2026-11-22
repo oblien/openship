@@ -1,4 +1,5 @@
-import { CREDENTIAL_PROVIDERS } from "@repo/core";
+import { canLinkGlab, connectGlab } from "../gitlab/cli";
+import { CREDENTIAL_PROVIDERS, supportsConnectionOAuth } from "@repo/core";
 import type { CredentialDependencies } from "../../../credentials";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { requireOrganizationAdmin } from "../../lib/organization-authorization";
@@ -15,12 +16,26 @@ import {
 export const credentialDependencies: CredentialDependencies = {
   requireAdmin: requireOrganizationAdmin,
   collection: {
-    listProviders: async () => CREDENTIAL_PROVIDERS.filter((provider ) => hasVerifier(provider.id)).map((provider) => ({
+    async listProviders(ctx) {
+      const hostCli = await canLinkGlab(ctx);
+      return CREDENTIAL_PROVIDERS.filter((provider) => hasVerifier(provider.id)).map((provider) => ({
         ...provider,
-        ...(provider.capability === "migration"
-          ? { authorization: { available: connectionAuthorizationAvailable(provider.id) } }
-          : {}),
-      })),
+        ...(supportsConnectionOAuth(provider.id) && {
+          authorization: {
+            available: connectionAuthorizationAvailable(provider.id),
+            ...(provider.id === "gitlab" && hostCli && { hostCli: true }),
+          },
+        }),
+      }));
+    },
+    async connectCli(ctx, { name }) {
+      const credential = await connectGlab(ctx, name);
+      audit.recordAsync(operationAuditContext(ctx), {
+        eventType: "credential.created", resourceType: "credential", resourceId: credential.id,
+        after: { provider: credential.provider, name: credential.name, authorization: "host-cli" },
+      });
+      return credential;
+    },
     list: (ctx ) => service.listCredentials(ctx.organizationId),
     authorize: beginConnectionAuthorization,
     async completeAuthorization(ctx, input) {

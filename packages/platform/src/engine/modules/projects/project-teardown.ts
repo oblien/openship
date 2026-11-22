@@ -42,7 +42,7 @@ import {
 import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sync";
 import { cancelBuildSession } from "../deployments/build.service";
 import { restoreOrchestrator } from "../backups/restore.orchestrator";
-import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
+import { projectRepositoryRef, repositoryWebhooks } from "../git/provider";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { env } from "../../config/index";
 import { cleanupWebmailInstall } from "../mail/webmail/webmail-install.service";
@@ -833,7 +833,13 @@ async function stepDeleteWebhook(
     return;
   }
   try {
-    await deleteGitHubWebhook(ctx, project.gitOwner, project.gitRepo, project.webhookId);
+    const ref = projectRepositoryRef(project);
+    const linked = await repos.project.findByGitRepo(ref);
+    if (linked.some((other) => other.id !== project.id && other.webhookId === project.webhookId)) {
+      push({ step: "github_webhook", status: "skipped", details: "hook shared with another project" });
+      return;
+    }
+    await repositoryWebhooks(ctx, ref).delete(String(project.webhookId));
     push({ step: "github_webhook", status: "ok", details: `hook ${project.webhookId}` });
   } catch (err) {
     observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
@@ -849,7 +855,8 @@ async function stepDeleteWebhook(
     // credential to do it anyway is the escalation GHSA-hp2g-hw7g-f3vm reported.
     // Not touching their repo is the correct outcome, so report it as a skip with
     // the reason rather than failing the teardown into a 207.
-    if ((err as { code?: unknown } | null)?.code === "GITHUB_ACCESS_DENIED") {
+    const code = (err as { code?: unknown } | null)?.code;
+    if (code === "GITHUB_ACCESS_DENIED" || code === "GIT_ACCESS_DENIED") {
       push({
         step: "github_webhook",
         status: "skipped",

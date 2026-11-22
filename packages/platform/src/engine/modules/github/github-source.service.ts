@@ -767,8 +767,7 @@ export async function listGitHubSourcesForWebhook(input: {
 }): Promise<GitSource[]> {
   if (input.installationId) {
     const installations = await repos.gitInstallation
-      .findByInstallationIdForProvider(input.installationId)
-      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github-source.service"); return []; });
+      .findByInstallationIdForProvider(input.installationId);
     const sources = await Promise.all(
       installations
         .filter((installation) => installation.sourceId)
@@ -793,17 +792,17 @@ export async function collectGitHubSourceWebhookSecrets(input: {
   installationId?: number;
   appId?: number;
   allowAllFallback?: boolean;
-}): Promise<string[]> {
+}): Promise<Array<{ secret: string | null; organizationId: string; sourceId: string }>> {
   const sources = await listGitHubSourcesForWebhook(input);
-  const secrets = new Set<string>();
+  const secrets = [];
   for (const source of sources) {
     try {
-      secrets.add(readGitHubSourceSecrets(source).webhookSecret);
+      secrets.push({ secret: readGitHubSourceSecrets(source).webhookSecret, organizationId: source.organizationId, sourceId: source.id });
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github-source.service");
-      // An unreadable source is unusable and contributes no candidate. Never
-      // treat ciphertext as a secret or log it.
+      // Its presence still identifies a custom App and excludes the shared fallback.
+      secrets.push({ secret: null, organizationId: source.organizationId, sourceId: source.id });
     }
   }
-  return [...secrets];
+  return secrets;
 }

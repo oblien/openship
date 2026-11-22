@@ -10,9 +10,10 @@ import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n } from "@/components/i18n-provider";
-import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
+import { CreateGitTokenLink } from "@/components/git/CreateGitTokenLink";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { Button } from "@/components/ui/button";
+import type { GitHubCapabilities } from "@repo/contracts";
 
 /**
  * User-global GitHub PAT for browsing and cloning private repositories.
@@ -22,7 +23,26 @@ import { Button } from "@/components/ui/button";
  * install the GitHub App. Stored encrypted server-side; the server never
  * echoes the token back so the UI only sees `{ hasToken, setAt, asDefault }`.
  */
-export function CloneCredentials() {
+export function CloneCredentials({ open, onOpenChange }: {
+  open?: boolean;
+  onOpenChange?(open: boolean): void;
+} = {}) {
+  const { t } = useI18n();
+  return (
+    <SettingsSection
+      icon="key"
+      title={t.settings.cloneCredentials.title}
+      description={t.settings.cloneCredentials.description}
+      collapsible={open !== undefined}
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <CloneCredentialEditor />
+    </SettingsSection>
+  );
+}
+
+function CloneCredentialEditor() {
   const { showToast } = useToast();
   const { t } = useI18n();
   const copy = t.settings.cloneCredentials;
@@ -51,10 +71,11 @@ export function CloneCredentials() {
       setForwardGit(res.forwardGitToServer);
       // Same source of truth the GitHub card uses, so the two can't disagree.
       void githubApi
-        .getStatusDeduped<any>()
+        .getStatusDeduped<{ capabilities?: GitHubCapabilities | null }>()
         .then((gh) => {
-          const m = gh?.capabilities?.methods?.find((x: any) => x.kind === "forwarding");
-          if (m) setForwardingAvailable(Boolean(m.available));
+          if (gh?.capabilities) {
+            setForwardingAvailable(gh.capabilities.methods.some((m) => m.kind === "forwarding" && m.available));
+          }
         })
         .catch((diagnosticFailure) => {
           observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/CloneCredentials");
@@ -137,11 +158,7 @@ export function CloneCredentials() {
   };
 
   return (
-    <SettingsSection
-      icon="key"
-      title={copy.title}
-      description={copy.description}
-    >
+    <>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
           <UiIcon name="spinner" className="size-4 animate-spin" />
@@ -162,7 +179,7 @@ export function CloneCredentials() {
                 <label htmlFor={tokenInputId} className="text-sm font-medium text-foreground">
                   {copy.tokenLabel}
                 </label>
-                <CreateGitHubTokenLink label={t.settings.github.tokenCreate} />
+                <CreateGitTokenLink provider="github" label={t.settings.github.tokenCreate} />
               </div>
               <div className="relative">
                 <input
@@ -292,6 +309,6 @@ export function CloneCredentials() {
           </details>
         </div>
       )}
-    </SettingsSection>
+    </>
   );
 }

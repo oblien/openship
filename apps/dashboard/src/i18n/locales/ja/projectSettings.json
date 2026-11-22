@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "先に GitHub を接続してください",
-      "description": "GitHub アカウントを連携して、リポジトリをこのプロジェクトに接続します。",
+      "title": "先に {provider} を接続してください",
+      "description": "{provider} アカウントを連携して、リポジトリをこのプロジェクトに接続します。",
       "connecting": "接続中…",
-      "connect": "GitHub を接続"
+      "connect": "{provider} を接続"
     },
     "link": {
       "title": "リポジトリをリンク",
-      "description": "GitHub リポジトリを接続して、webhook でトリガーされるデプロイを有効にします。",
+      "description": "{provider} リポジトリを接続して、webhook でトリガーされるデプロイを有効にします。",
       "select": "リポジトリを選択"
     },
     "picker": {

@@ -54,6 +54,13 @@ vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: "org" } } }),
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => "local" }));
+vi.mock("@/context/GitContext", () => ({
+  useGit: () => ({
+    definition: { name: "GitHub" },
+    icon: "github",
+    renderManageConnection: () => null,
+  }),
+}));
 vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: true, cloudAuthUrl: "https://app.openship.io" }),
 }));

@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Conecta primero GitHub",
-      "description": "Vincula tu cuenta de GitHub para conectar un repositorio a este proyecto.",
+      "title": "Conecta primero {provider}",
+      "description": "Vincula tu cuenta de {provider} para conectar un repositorio a este proyecto.",
       "connecting": "Conectando…",
-      "connect": "Conectar GitHub"
+      "connect": "Conectar {provider}"
     },
     "link": {
       "title": "Vincular un repositorio",
-      "description": "Conecta un repositorio de GitHub para habilitar despliegues activados por webhook.",
+      "description": "Conecta un repositorio de {provider} para habilitar despliegues activados por webhook.",
       "select": "Seleccionar repositorio"
     },
     "picker": {

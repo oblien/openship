@@ -1,14 +1,16 @@
 "use client";
+import { gitApi } from "@/lib/api/git";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@repo/ui/icons";
-import { githubApi, type RepoTreeEntry } from "@/lib/api/github";
+import { type RepoTreeEntry } from "@/lib/api/github";
 import { getApiErrorMessage, getApiRequestScopeVersion } from "@/lib/api/client";
 import { buildTree } from "@/components/permissions/path-tree";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 
 export interface RepositorySource {
+  provider?: string;
   owner: string;
   repo: string;
   branch?: string;
@@ -37,7 +39,7 @@ export function RepositoryPathBrowser({
     kind === "directory" ? value : value.split("/").slice(0, -1).join("/") || ".",
   );
   const scope = useRef(getApiRequestScopeVersion());
-  const key = JSON.stringify([source.owner, source.repo, source.branch, source.serverId]);
+  const key = JSON.stringify([source.provider, source.owner, source.repo, source.branch, source.serverId]);
   const [loadedKey, setLoadedKey] = useState("");
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export function RepositoryPathBrowser({
     setEntries(null);
     setError("");
     setLoadedKey(key);
-    githubApi
+    gitApi(source.provider)
       .getRepoTree(source.owner, source.repo, source.branch, source.serverId)
       .then((result) => {
         if (!cancelled && scope.current === getApiRequestScopeVersion()) setEntries(result.data);
@@ -58,7 +60,7 @@ export function RepositoryPathBrowser({
     return () => {
       cancelled = true;
     };
-  }, [key, source.owner, source.repo, source.branch, source.serverId, retry, treeCopy.treeError]);
+  }, [key, source.provider, source.owner, source.repo, source.branch, source.serverId, retry, treeCopy.treeError]);
 
   // Manual path edits and source changes move the browser too. File navigation
   // itself never selects a directory as the Dockerfile.

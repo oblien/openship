@@ -18,7 +18,7 @@ import { assertProjectEdgePagesTarget } from "../projects/project-routing-capabi
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
-import { assertRuntimeVersionTarget, getRuntimeVersionPolicy, resolveRuntimeImages } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, assertRuntimeVersionTarget, getRuntimeVersionPolicy, resolveRuntimeImages } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { assertNotControlPlane } from "@repo/platform/engine/lib/resource-access";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -70,8 +70,7 @@ import { resolveDeploymentEnvironment } from "./deployment-environment";
 import type { TBuildAccessBody } from "@repo/contracts";
 import { platform } from "../../lib/platform-config";
 import { decryptEnvMap, encrypt } from "../../lib/encryption";
-import { getCommitByRef, getLatestCommit, getRepository } from "../github/github.service";
-import { assertGitHubRepoAccess } from "../github/github-access";
+import { projectRepository, hasProjectRepository, assertProjectRepositoryAccess } from "../git/provider";
 import { resolveSmartRoute } from "./smart-route";
 import type { SecurityUpdateApproval } from "../updates/security-refresh-guard";
 import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts, strictRefreshImages } from "./pinned-artifacts";
@@ -193,6 +192,7 @@ export async function runDeploymentPreflight(
     /** Git owner of the source repo. Cloud preflight uses it to verify the
      *  GitHub App is installed for this owner before the build pipeline
      *  spends resources cloning a repo it can't access. */
+    gitProvider?: string | null;
     gitOwner?: string | null;
     /** Project id — passed to the remote-clone-token preflight check so
      *  project-scoped clone tokens are considered. */
@@ -212,6 +212,7 @@ export async function runDeploymentPreflight(
     publicEndpoints: routeState.publicEndpoints,
     ...(opts.composeServices ? { composeServices: opts.composeServices } : {}),
     ...(opts.multiService !== undefined ? { multiService: opts.multiService } : {}),
+    ...(opts.gitProvider !== undefined ? { gitProvider: opts.gitProvider } : {}),
     ...(opts.gitOwner !== undefined ? { gitOwner: opts.gitOwner } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     ...(opts.appTemplateId !== undefined ? { appTemplateId: opts.appTemplateId } : {}),
@@ -224,6 +225,10 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  /** Frozen source identity for history and provider-specific links. */
+  gitProvider?: string;
+  gitOwner?: string;
+  gitRepo?: string;
   /** Consent and expected state for an automatic trigger; never environment overrides. */
   securityApproval?: SecurityUpdateApproval;
   /** Worker-authored completed-image receipt and one-shot retry provenance. */
@@ -505,6 +510,9 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     // source, where every snapshot consumer can rely on it.
     organizationId: project.organizationId,
     repoUrl: project.gitUrl ?? "",
+    ...(hasProjectRepository(project) ? {
+      gitProvider: project.gitProvider ?? DEFAULT_GIT_PROVIDER, gitOwner: project.gitOwner!, gitRepo: project.gitRepo!,
+    } : {}),
     branch: branch || project.gitBranch || (project.localPath ? "main" : ""),
     framework: project.framework!,
     buildImage: project.buildImage!,
@@ -640,11 +648,11 @@ export async function applyReleaseSourceToSnapshot(
 }
 
 async function resolveLatestCommitInfo(ctx: RequestContext, project: Project, branch: string) {
-  if (!project.gitOwner || !project.gitRepo) {
+  if (!hasProjectRepository(project)) {
     return {};
   }
 
-  const head = await getLatestCommit(ctx, project.gitOwner, project.gitRepo, branch);
+  const head = await projectRepository(ctx, project).latestCommit(branch);
   if (head?.sha && branch === projectBranch(project)) {
     try {
       await repos.updateStatus.upsert({
@@ -691,8 +699,8 @@ async function canonicalizeCommitRef(
   const trimmed = ref?.trim();
   if (!trimmed) return trimmed;
   if (isFullCommitSha(trimmed)) return trimmed.toLowerCase();
-  if (!project.gitOwner || !project.gitRepo) return trimmed;
-  const found = await getCommitByRef(ctx, project.gitOwner, project.gitRepo, trimmed).catch(
+  if (!hasProjectRepository(project)) return trimmed;
+  const found = await projectRepository(ctx, project).commit(trimmed).catch(
     (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build.service"); return null; },
   );
   return found?.sha ?? trimmed;
@@ -702,8 +710,8 @@ async function resolveProjectBranch(ctx: RequestContext, project: Project, branc
   const configuredBranch = branch?.trim() || project.gitBranch?.trim();
   if (configuredBranch) return configuredBranch;
 
-  if (project.gitOwner && project.gitRepo) {
-    const repository = await getRepository(ctx, project.gitOwner, project.gitRepo);
+  if (hasProjectRepository(project)) {
+    const repository = await projectRepository(ctx, project).info();
     return repository.default_branch;
   }
 
@@ -973,7 +981,8 @@ async function reconcileComposeSource(
           ...expectCompose,
         })
       : await resolveProjectInfo({
-          source: "github",
+          source: "git",
+          provider: project.gitProvider ?? DEFAULT_GIT_PROVIDER,
           serverId: project.serverId ?? undefined,
           owner: project.gitOwner!,
           repo: project.gitRepo!,
@@ -1067,7 +1076,8 @@ async function resolveLifecycleSourceEnv(
         )
       : await resolveProjectSourceEnv(
           {
-            source: "github",
+            source: "git",
+            provider: project.gitProvider ?? DEFAULT_GIT_PROVIDER,
             serverId: project.serverId ?? undefined,
             owner: project.gitOwner!,
             repo: project.gitRepo!,
@@ -1755,10 +1765,7 @@ export async function requestBuildAccess(
   // a member can deploy a GitHub-backed project only when granted this
   // repo. Hard-stop here so they can't fall through to their personal
   // token on a local build (owner-control bypass) or fail mid-build.
-  await assertGitHubRepoAccess(ctx, {
-    owner: project.gitOwner,
-    repo: project.gitRepo,
-  });
+  await assertProjectRepositoryAccess(ctx, project);
 
   await checkNoActiveBuild(project.id);
 
@@ -2264,6 +2271,7 @@ export async function requestBuildAccess(
     ctx,
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
+    gitProvider: project.gitProvider,
     gitOwner: project.gitOwner,
     projectId: project.id,
     // Catalog apps receive an advisory host-capacity check.
@@ -2507,10 +2515,7 @@ export async function redeployBuildSession(
   }
   // GitHub access gate (default-deny): a member can redeploy a
   // GitHub-backed project only when granted this repo.
-  await assertGitHubRepoAccess(ctx, {
-    owner: project.gitOwner,
-    repo: project.gitRepo,
-  });
+  await assertProjectRepositoryAccess(ctx, project);
   const resolvedBranch = await resolveProjectBranch(ctx, project, oldDep.branch ?? undefined);
 
   // Prefer the old deployment's snapshot; fall back to a fresh one from the project
@@ -2854,7 +2859,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
       !project.autoDeploy
     )
       throw error;
-    const { queueBlockedPush } = await import("../github/queued-pushes");
+    const { queueBlockedPush } = await import("../git/queued-pushes");
     const branch = await resolveProjectBranch(ctx, project, data.branch);
     const commitSha = await canonicalizeCommitRef(ctx, project, data.commitSha);
     const request = await queueBlockedPush(
@@ -2940,10 +2945,7 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
   const needsGitRepositoryAccess =
     !data.reuseSnapshot || snapshotNeedsGitSource(data.reuseSnapshot.meta);
   if (needsGitRepositoryAccess) {
-    await assertGitHubRepoAccess(ctx, {
-      owner: project.gitOwner,
-      repo: project.gitRepo,
-    });
+    await assertProjectRepositoryAccess(ctx, project);
   }
 
   const branch = await resolveProjectBranch(ctx, project, data.branch);
@@ -3154,6 +3156,7 @@ async function triggerDeploymentNow(ctx: RequestContext, data: DeploymentTrigger
     ctx,
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
+    gitProvider: project.gitProvider,
     gitOwner: project.gitOwner,
     projectId: project.id,
     // Catalog apps receive an advisory host-capacity check.

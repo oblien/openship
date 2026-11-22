@@ -1628,6 +1628,15 @@
     "namePlaceholder": "örn. GHCR salt okunur",
     "secretKeptPlaceholder": "•••••••• (kayıtlı — korumak için boş bırakın)",
     "selectPlaceholder": "Seçin…",
+    "gitlab": {
+      "continue": "GitLab ile devam et",
+      "useToken": "Erişim belirteci kullan",
+      "useCli": "GitLab CLI kullan",
+      "createToken": "GitLab’da belirteç oluştur",
+      "oauthHelp": "OpenShip’e GitLab hesabınızla depolarınızı okuma ve dağıtım webhook’larını yönetme izni verin.",
+      "cliHelp": "OpenShip’in çalıştığı makinede oturum açın. Bağlantı kurulduğunda bu çalışma alanı, depolara erişmek ve bu makinede derleme yapmak için CLI hesabını kullanabilir.",
+      "connectionName": "Bağlantı adı (isteğe bağlı)"
+    },
     "verifyNote": "OpenShip, kaydetmeden önce kimlik bilgisini sağlayıcıyla denetler.",
     "confirmDelete": "\"{name}\" silinsin mi? Buna dayanan her şey çalışmayı bırakır.",
     "toast": {
@@ -1641,6 +1650,14 @@
       "verifyFailed": "Sağlayıcı kimlik bilgisini reddetti"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Erişim jetonu",
+            "help": "Depolara göz atmak ve depoları klonlamak için read_api ve read_repository kullanın. Her push işleminde dağıtım yapmak için api kapsamını da seçin ve proje webhook’larını yönetebilen bir hesap kullanın."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Konteyner kayıt defteri",
         "summary": "Dağıtımlar sırasında kayıt defterinden özel görüntüleri çekin.",

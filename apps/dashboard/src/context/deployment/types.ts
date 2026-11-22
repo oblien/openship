@@ -390,6 +390,7 @@ export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
+  gitProvider?: string;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
   localPath?: string;
   /**
@@ -977,6 +978,7 @@ export interface DeploymentContextType {
     repo: string,
     force?: string,
     context?: {
+      provider?: string;
       branch?: string;
       serverId?: string;
       projectId?: string;

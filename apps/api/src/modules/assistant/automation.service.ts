@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AppError } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, AppError } from "@repo/core";
 import { repos, type AssistantAutomationRow, type AssistantAutomationRunRow } from "@repo/db";
 import type {
   AssistantAutomationConfig,
@@ -355,6 +355,7 @@ export function createAssistantAutomations(
     const saved = run.proposal
       ? (JSON.parse(decrypt(run.proposal)) as {
           proposal: AutomationProposal;
+          provider?: string;
           owner: string | null;
           repo: string | null;
         })
@@ -378,7 +379,8 @@ export function createAssistantAutomations(
       throw fail("Only the currently active deployment can be restarted.");
     if (
       repositoryAction(action) &&
-      (project.gitOwner !== saved?.owner || project.gitRepo !== saved?.repo)
+      ((project.gitProvider ?? DEFAULT_GIT_PROVIDER) !== (saved?.provider ?? DEFAULT_GIT_PROVIDER) ||
+        project.gitOwner !== saved?.owner || project.gitRepo !== saved?.repo)
     )
       throw fail("This app’s repository changed. Review a new investigation.");
     const actionLease = `action:${randomUUID()}`;
@@ -393,13 +395,14 @@ export function createAssistantAutomations(
         return finish(claimed, "skipped", "The app changed before the action started.");
       if (proposal && "patch" in proposal) {
         const tool = getMcpTools().find(
-          (t) => t.method === "POST" && t.path === "/api/github/repos/:owner/:repo/changes",
+          (t) => t.method === "POST" && t.path === "/api/git/:provider/repos/:owner/:repo/changes",
         );
         if (!tool) throw fail("The repository change operation is unavailable.");
         const result = await dispatch(
           tool,
           {
             organizationId: run.organizationId,
+            provider: project.gitProvider ?? DEFAULT_GIT_PROVIDER,
             owner: project.gitOwner,
             repo: project.gitRepo,
             body: {
@@ -418,13 +421,13 @@ export function createAssistantAutomations(
         );
         if (!result.ok)
           throw fail(
-            "The repository change was not confirmed. Review GitHub before retrying; a branch may already exist.",
+            "The repository change was not confirmed. Review the repository before retrying; a branch may already exist.",
           );
         const response = result.data as { data?: { url: string; pullRequestUrl: string | null } };
         const change = response?.data;
         const resultUrl = change?.pullRequestUrl ?? change?.url;
         if (!resultUrl || !/^https:\/\//.test(resultUrl))
-          throw fail("The repository result could not be verified. Review GitHub.");
+          throw fail("The repository result could not be verified. Review the repository.");
         await store.update(run, run.id, { resultUrl }, ["applying"]);
         return finish(
           claimed,
@@ -574,7 +577,7 @@ export function createAssistantAutomations(
         message: `${AUTOMATION_ACTIONS.find((a) => a.id === recommended)?.label} recommended. Review the findings and proposed changes before approving.`,
         proposedAction: recommended,
         proposal: encrypt(
-          JSON.stringify({ proposal, owner: project.gitOwner, repo: project.gitRepo }),
+          JSON.stringify({ proposal, provider: project.gitProvider ?? DEFAULT_GIT_PROVIDER, owner: project.gitOwner, repo: project.gitRepo }),
         ),
         expiresAt: new Date(Date.now() + 60 * 60000),
         notifiedAt: null,
@@ -608,7 +611,7 @@ export function createAssistantAutomations(
                   ? "An assistant investigation is ready for your approval."
                   : run.state === "succeeded"
                     ? repositoryAction(run.proposedAction ?? "")
-                      ? "Your assistant published a code fix for review. Check its changes and CI results in GitHub."
+                      ? "Your assistant published a code fix for review. Check its changes and CI results in the repository."
                       : "Your assistant completed an action and verified app health."
                     : run.state === "failed"
                       ? "An assistant automation needs your attention. Review the run before retrying."

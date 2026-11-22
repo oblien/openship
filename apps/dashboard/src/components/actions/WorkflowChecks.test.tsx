@@ -28,6 +28,15 @@ vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: h.user }, session: { activeOrganizationId: "org" } } }),
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.scope }));
+vi.mock("@/context/GitContext", () => ({
+  useGit: (provider: string) => ({
+    definition: { name: provider === "github" ? "GitHub" : "Fixture Git" },
+    icon: "git-branch",
+    renderManageConnection: ({ onClose }: { onClose(): void }) => (
+      <button onClick={onClose}>Return from provider setup</button>
+    ),
+  }),
+}));
 
 const channel = {
   id: "new-channel",
@@ -46,16 +55,19 @@ function Harness({
   repository = "acme/app",
   github = true,
   independent = false,
+  gitProvider = "github",
 }: {
   repository?: string | null;
   github?: boolean;
   independent?: boolean;
+  gitProvider?: string;
 }) {
   const [value, setValue] = useState<ActionWorkflowNotifications | null>(null);
   return (
     <I18nProvider>
       <WorkflowChecks
         repository={repository}
+        gitProvider={gitProvider}
         github={github}
         independent={independent}
         value={value}
@@ -119,6 +131,27 @@ afterEach(async () => {
 });
 
 describe("workflow Checks setup", () => {
+  it("uses the selected provider's setup and refreshes its checks on return", async () => {
+    h.checks.mockResolvedValue({ status: "access_required", account: null });
+    await render({
+      repository: "group/team/app",
+      gitProvider: "fixture",
+      github: false,
+      independent: true,
+    });
+    expect(h.checks).toHaveBeenCalledWith({
+      gitProvider: "fixture",
+      owner: "group/team",
+      repo: "app",
+      controller: "openship",
+    });
+    await click("Review access");
+    expect(button("Return from provider setup")).toBeTruthy();
+    const calls = h.checks.mock.calls.length;
+    await click("Return from provider setup");
+    expect(host.textContent).not.toContain("Return from provider setup");
+    expect(h.checks).toHaveBeenCalledTimes(calls + 1);
+  });
   it("shows the verified repository identity and keeps independent reporting separate", async () => {
     await render({ independent: true });
     expect(host.textContent).toContain("octocat");

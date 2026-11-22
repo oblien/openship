@@ -117,7 +117,7 @@ export function Tabs<K extends string>({
   return (
     <div
       ref={stripRef}
-      role={localPanels ? "tablist" : undefined}
+      role={localPanels ? "tablist" : ariaLabel ? "group" : undefined}
       aria-label={ariaLabel}
       aria-orientation={localPanels ? grid ? "horizontal" : orientation : undefined}
       className={cn(
@@ -191,6 +191,7 @@ export function Tabs<K extends string>({
             role={localPanels ? "tab" : undefined}
             id={localPanels ? `${idPrefix}-tab-${key}` : undefined}
             aria-selected={localPanels ? active : undefined}
+            aria-pressed={!localPanels && filled ? active : undefined}
             aria-controls={localPanels ? `${idPrefix}-panel-${key}` : undefined}
             tabIndex={localPanels ? (active ? 0 : -1) : undefined}
             onKeyDown={localPanels ? (event) => navigate(event, key) : undefined}

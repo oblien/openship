@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
 import { DEFAULT_CONFIG, INITIAL_STATE, createPublicEndpoint, normalizeComposeService, type DeploymentContextType } from "@/context/deployment/types";
-import { encodeLocalSlug } from "@/utils/repoSlug";
+import { decodeSlug, encodeLocalSlug } from "@/utils/repoSlug";
 import { DeploymentActions, DeploymentConfigurationAction } from "./DeploymentActions";
 import { DeploymentHeader } from "./DeploymentHeader";
 import { getDeploymentSites } from "./deployment-sites";
@@ -64,6 +64,16 @@ function compose() {
 }
 
 describe("deployment destinations", () => {
+  it.each(["fixture", "release"])("preserves a %s source when reopening configuration", async (provider) => {
+    Object.assign(deployment.config, { gitProvider: provider, owner: "group/team", repo: "app" });
+    await act(async () => root.render(<DeploymentConfigurationAction />));
+    const url = new URL(host.querySelector("a")!.href, "http://localhost");
+    expect(decodeSlug(url.pathname.slice("/deploy/".length))).toEqual(
+      provider === "release"
+        ? { kind: "project", projectId: "project" }
+        : { kind: "repo", provider, owner: "group/team", repo: "app" },
+    );
+  });
   it("shows Live · Verifying with published links and Stop, without allowing a competing redeploy", async () => {
     deployment.deploymentStatus = "verifying";
     deployment.state.deploymentSuccess = false;

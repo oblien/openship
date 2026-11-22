@@ -63,6 +63,7 @@ import { mcpRoutes } from "../../../src/modules/mcp/mcp.routes";
 import { permissionsRoutes } from "../../../src/modules/permissions/permissions.routes";
 import { deploymentRoutes } from "../../../src/modules/deployments/deployment.routes";
 import { dispatchTool } from "../../../src/modules/mcp/mcp-dispatch";
+import { gitRoutes } from "../../../src/modules/git/git.routes";
 import { githubRoutes } from "../../../src/modules/github/github.routes";
 import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { parseAssistantAutomationReport } from "@repo/contracts";
@@ -85,6 +86,7 @@ const app = new Hono()
   .route("/api/mcp", mcpRoutes)
   .route("/api/permissions", permissionsRoutes)
   .route("/api/github", githubRoutes)
+  .route("/api/git", gitRoutes)
   .route("/api/projects", projectRoutes)
   .route("/api/deployments", deploymentRoutes);
 
