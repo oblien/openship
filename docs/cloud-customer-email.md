@@ -46,16 +46,19 @@ Actions funding remains on its independent payment-reconciliation path.
 ## Operations
 
 The SaaS worker runs at startup and every minute as `cloud-customer-email:deliver`.
-It uses the existing SMTP transport and defaults to its configured `SMTP_FROM`
-address for all messages. A working no-reply SMTP account is sufficient;
-separate Support credentials are not required. Welcome and cancellation replies go to
-`support@openship.io` through `Reply-To`.
+Cloud system mail, including password reset and verification codes, uses the
+Oblien SDK when the API has both `OBLIEN_MAIL_NAMESPACE` and `OBLIEN_MAIL_KEY`.
+Use an Openship-owned namespace with an active mail tenant, sending allowance,
+funded credits, and a verified sending domain. Store a send-only key in the
+Cloud API secrets. The namespace is fixed for platform mail across all customer
+organizations. See the [Oblien mail guide](https://oblien.com/docs/api/mail).
 
-To use distinct senders, set `SMTP_SUPPORT_FROM` and/or `SMTP_BILLING_FROM` only
-after the existing SMTP account has permission to send as those aliases. Creating
-a Support mailbox alone does not authorize another SMTP account to send from it.
-Blank aliases use `SMTP_FROM`. These aliases apply only to Cloud customer emails;
-ordinary system mail and self-hosted transport selection remain unchanged.
+`SMTP_FROM` supplies the default sender for both transports. Set
+`SMTP_SUPPORT_FROM` or `SMTP_BILLING_FROM` for customer mail if desired.
+Authorize all configured addresses on the sending key. The SDK sends their bare
+email addresses. Welcome and cancellation replies go to `support@openship.io`.
+With both Oblien mail settings unset, existing deployments use SMTP.
+An Oblien submission failure stays on the SDK path for retry.
 
 Rows in `cloud_customer_email` retain delivery status, attempt count, lease and
 timestamps. A worker claims one message at a time with a five-minute SQL lease.
@@ -64,9 +67,9 @@ backoff, capped at six hours, and stop after twelve attempts with status `failed
 Errors are normalized; SMTP secrets and customer data are not copied into failures.
 System job summaries expose sent, failed and canceled counts.
 
-SMTP is an at-least-once transport: a process crash after server acceptance but
-before the database acknowledgement can cause a retry. Every retry retains the
-same Message-ID; event deduplication and leases prevent ordinary duplicate sends.
+Outbox retries derive the same Oblien idempotency key from the saved delivery
+identity, including after a lost response. With SMTP, a process crash after
+acceptance can cause a duplicate even though the retry reuses the Message-ID.
 Operators should inspect failed deliveries before requeuing them.
 
 Cancellation verification failures use the same bounded retry policy as SMTP

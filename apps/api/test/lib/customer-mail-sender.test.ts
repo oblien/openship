@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   send: vi.fn(),
   cloud: true,
+  oblienConfigured: false,
   relay: vi.fn(),
   supportFrom: undefined as string | undefined,
   billingFrom: undefined as string | undefined,
@@ -15,6 +16,12 @@ vi.mock("@repo/platform/engine/config/env", () => ({
   env: {
     get CLOUD_MODE() {
       return h.cloud;
+    },
+    get OBLIEN_MAIL_NAMESPACE() {
+      return h.oblienConfigured ? "openship-system" : undefined;
+    },
+    get OBLIEN_MAIL_KEY() {
+      return h.oblienConfigured ? "fixture-send-only-key" : undefined;
     },
     SMTP_HOST: "smtp.example.test",
     SMTP_PORT: 587,
@@ -35,6 +42,7 @@ import { sendMail } from "@repo/platform/engine/lib/mail";
 
 beforeEach(() => {
   h.cloud = true;
+  h.oblienConfigured = false;
   h.supportFrom = undefined;
   h.billingFrom = undefined;
   h.send.mockReset().mockResolvedValue({ messageId: "accepted" });
@@ -99,6 +107,26 @@ describe("Cloud customer mail sender identities", () => {
         ...mail,
         from: "Configured Sender <sender@example.test>",
       });
+    }
+  });
+  it("keeps Cloud on Oblien after a lost response and self-hosted on SMTP", async () => {
+    h.oblienConfigured = true;
+    const submit = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("lost response"));
+    try {
+      vi.resetModules();
+      const cloud = await import("@repo/platform/engine/lib/mail");
+      await expect(cloud.sendMail(mail)).rejects.toThrow();
+      expect(submit).toHaveBeenCalledOnce();
+      expect(h.send).not.toHaveBeenCalled();
+
+      h.cloud = false;
+      vi.resetModules();
+      const local = await import("@repo/platform/engine/lib/mail");
+      await expect(local.sendMail(mail)).resolves.toBe(true);
+      expect(h.send).toHaveBeenCalledOnce();
+      expect(submit).toHaveBeenCalledOnce();
+    } finally {
+      submit.mockRestore();
     }
   });
   it("never lets a connected installation select a Cloud customer sender", async () => {

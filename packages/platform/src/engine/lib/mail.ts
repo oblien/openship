@@ -1,6 +1,8 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import nodemailer, { type Transporter } from "nodemailer";
+import addressparser from "nodemailer/lib/addressparser";
 import { env } from "../config/env";
 import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
@@ -9,7 +11,8 @@ import { decrypt } from "./encryption";
 import { isSmtpAuthFailure } from "../modules/mail/smtp-auth-error";
 
 /**
- * Email sender with three transport sources, tried in this order for "auto":
+ * Configured Cloud deployments send system mail through the Oblien SDK.
+ * SMTP deployments try these sources in order for "auto":
  *
  *   1. Operator-configured instance SMTP (`instance_settings.smtp*`, set in
  *      Settings → Email). The deliberate, instance-wide transport for ALL
@@ -48,7 +51,7 @@ export type SendMailOptions = {
    * SMTP. "platform" forces platform (returns silently if unavailable).
    * "cloud" routes via the SaaS invitation-relay endpoint on a local
    * instance (requires `organizationId`), and uses the SaaS's own
-   * env/platform transport when run on the SaaS itself.
+   * configured system transport when run on the SaaS itself.
    */
   preferSource?: SendMailSource;
   /**
@@ -81,7 +84,10 @@ const envTransport: Transporter | null = envSmtpConfigured
     })
   : null;
 
-const envFrom = env.SMTP_FROM;
+const cloudMail =
+  env.CLOUD_MODE && env.OBLIEN_MAIL_NAMESPACE && env.OBLIEN_MAIL_KEY
+    ? { namespace: env.OBLIEN_MAIL_NAMESPACE, token: env.OBLIEN_MAIL_KEY }
+    : null;
 
 // ─── Platform transport (cached briefly per serverId) ────────────────────────
 
@@ -157,7 +163,7 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
   transport: Transporter;
   from: string;
 } | null> {
-  // Hosted Cloud uses its configured SMTP sender. Local mail-server records
+  // Hosted Cloud uses its configured system sender. Local mail-server records
   // must never bring the self-hosted SSH/provisioning path into this process.
   if (env.CLOUD_MODE) return null;
   const generation = platformTransportGeneration;
@@ -388,11 +394,11 @@ export const smtpEnabled = true; // callbacks wired; runtime decides delivery
  * the lockout case where the platform mailbox temporarily fails and a
  * signup can't complete because no verification email got out.
  */
-export const requireEmailVerificationStrict = envSmtpConfigured;
+export const requireEmailVerificationStrict = !!cloudMail || envSmtpConfigured;
 
 /** Runtime check — true if any source could currently deliver. */
 export async function canSendMail(): Promise<boolean> {
-  if (envSmtpConfigured) return true;
+  if (cloudMail || envSmtpConfigured) return true;
   if (await getInstanceTransport()) return true;
   const platform = await getPlatformTransport();
   return platform !== null;
@@ -432,7 +438,7 @@ async function getTransportChain(
   if (platform)
     chain.push({ transport: platform.transport, from: platform.from, source: "platform" });
   if (preferSource !== "platform" && envTransport) {
-    chain.push({ transport: envTransport, from: envFrom, source: "env" });
+    chain.push({ transport: envTransport, from: env.SMTP_FROM, source: "env" });
   }
   // Last resort for the "platform" preference: env is normally dropped so a branded
   // invite can't quietly go out from a generic sender — but that only holds while a
@@ -441,7 +447,7 @@ async function getTransportChain(
   // entirely (sendMail's empty-chain path is a silent no-op). An invite delivered from
   // the generic sender beats an invite that never arrives.
   if (chain.length === 0 && envTransport) {
-    chain.push({ transport: envTransport, from: envFrom, source: "env" });
+    chain.push({ transport: envTransport, from: env.SMTP_FROM, source: "env" });
   }
   return chain;
 }
@@ -496,6 +502,43 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     return true;
   }
 
+  const customerFrom = opts.customerSender
+    ? { support: env.SMTP_SUPPORT_FROM, billing: env.SMTP_BILLING_FROM }[opts.customerSender]
+    : undefined;
+  const from = customerFrom?.trim() || env.SMTP_FROM;
+
+  if (cloudMail) {
+    const [sender, ...others] = addressparser(from);
+    if (!sender?.address || others.length) throw new Error("Cloud email requires one From address");
+
+    const { Oblien } = await import("@repo/adapters");
+    const client = new Oblien({ token: cloudMail.token, baseUrl: env.OBLIEN_API_URL });
+    // A lost response can follow acceptance. Outbox retries must use the same
+    // provider key and must never fall through to another transport.
+    const idempotencyKey = opts.messageId
+      ? createHash("sha256").update(opts.messageId).digest("hex")
+      : randomUUID();
+    const receipt = await client.mail.messages.send(
+      cloudMail.namespace,
+      {
+        from: sender.address,
+        to: [opts.to],
+        subject: opts.subject,
+        ...(opts.html ? { html: opts.html } : {}),
+        ...(opts.text ? { text: opts.text } : {}),
+        ...(opts.replyTo ? { replyTo: [opts.replyTo] } : {}),
+      },
+      { idempotencyKey },
+    );
+    if (
+      !receipt?.id ||
+      !["queued", "dispatching", "accepted", "delayed", "delivered"].includes(receipt.state)
+    ) {
+      throw new Error("Cloud email submission could not be confirmed");
+    }
+    return true;
+  }
+
   const chain = await getTransportChain(preferSource);
   if (chain.length === 0) {
     errorDiagnostics.warn("platform/engine/lib/mail",
@@ -508,13 +551,6 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
   // Try each transport in priority order; fail over to the next on a send
   // error so one broken source (e.g. wrong instance-SMTP creds) doesn't block
   // delivery when another can carry it. Throw only when every source fails.
-  // A mailbox address alone does not grant SMTP send-as permission. Use an
-  // explicitly configured alias or retain the sender authorized for this source.
-  const customerFrom = opts.customerSender
-    ? { support: env.SMTP_SUPPORT_FROM, billing: env.SMTP_BILLING_FROM }[
-        opts.customerSender
-      ]?.trim() || undefined
-    : undefined;
   const message = {
     to: opts.to,
     subject: opts.subject,
@@ -528,7 +564,7 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     const active = chain[i];
     try {
       await active.transport.sendMail({
-        from: active.source === "env" ? customerFrom ?? active.from : active.from,
+        from: active.source === "env" ? from : active.from,
         ...message,
       });
       return true;

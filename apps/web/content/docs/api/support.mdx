@@ -77,21 +77,12 @@ updating connected installations so the session and customer endpoints are avail
 
 ## Delivery and mailbox configuration
 
-Provision `support@openship.io` to receive mail. Configure the Cloud API's existing
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` with a working
-sender. For example, after that mailbox is provisioned:
-
-```dotenv
-SMTP_HOST=mail.oblien.com
-SMTP_PORT=587
-SMTP_USER=support@openship.io
-SMTP_PASS=<mailbox-password>
-SMTP_FROM=Openship Support <support@openship.io>
-```
-
-Use credentials appropriate to the actual mail server; keep them in deployment
-secrets. This is an operator configuration example, not a credential requirement
-for the website. Creating a ticket does not depend on SMTP being available.
+Provision `support@openship.io` to receive mail. For outbound support mail,
+configure the Cloud API with `OBLIEN_MAIL_NAMESPACE`, a send-only
+`OBLIEN_MAIL_KEY`, and an authorized `SMTP_FROM` sender. Store the key in the API
+deployment secrets. Cloud deployments using SMTP can continue to configure
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`.
+Ticket creation succeeds independently of outbound delivery.
 
 Each submission atomically saves a `cloud_support_ticket` and two
 `cloud_support_message` deliveries: a receipt for the customer, and a notification
@@ -111,9 +102,9 @@ Delivery begins after the database commit. The existing system scheduler runs
 SQL leases prevent concurrent workers from sending the same claimed message.
 Failures back off from one minute to one hour and stop after ten attempts. The
 ticket and error state remain available, and an operator can retry delivery.
-Accepted mail is not resent during ordinary retries. Like other SMTP outboxes,
-delivery is at least once across a crash after SMTP acceptance but before the DB
-acknowledgement; a stable Message-ID is reused in that case.
+The Oblien SDK reuses the same idempotency key for each retry of a delivery.
+SMTP retries reuse the Message-ID and can duplicate mail after a crash between
+acceptance and database acknowledgement.
 
 ## Operator API
 

@@ -296,6 +296,10 @@ async function sendEmail(
     subject: `[Openship] ${title}`,
     text: body,
     html: renderEmailHtml(delivery),
+    // The one-off channel test uses a synthetic ID shared by all test sends.
+    ...(env.CLOUD_MODE && delivery.id !== "test"
+      ? { messageId: `<notification-${delivery.id}@openship.io>` }
+      : {}),
     organizationId: delivery.organizationId,
   });
   // THROW when nothing could carry it. `sendMail` only warns on an empty transport
