@@ -16,7 +16,7 @@ import {
   runResolution,
   type SystemIssue,
 } from "@/lib/api/issues";
-import { useI18n } from "@/components/i18n-provider";
+import { interpolate, useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/components/toast";
 import { useInfraFix } from "@/hooks/useInfraFix";
 import type { SystemPreparePresenter } from "@/hooks/useSystemPrepareModal";
@@ -27,6 +27,16 @@ interface PendingResolution {
   organizationId: string | null;
   deploymentId?: string;
   notified?: boolean;
+}
+
+function updateCompletionMessage(
+  actions: readonly PendingResolution[],
+  copy: { resolved: string; updateResolved: string; updatesResolved: string },
+): string {
+  if (!actions.every(({ issue }) => issue.kind === "update_available")) return copy.resolved;
+  const names = actions.map(({ issue }) => issue.target.name);
+  if (names.length === 1) return interpolate(copy.updateResolved, { name: names[0]! });
+  return interpolate(copy.updatesResolved, { count: names.length, names: names.join(", ") });
 }
 
 /** One resolution flow for Home and Monitoring; queued deployments finish asynchronously. */
@@ -112,6 +122,8 @@ export function useIssueActions(
       }
       reading = true;
       let failed = false;
+      const completedSuccesses: PendingResolution[] = [];
+      const completedFailures: string[] = [];
       try {
         await Promise.all(
           ids.map(async (id) => {
@@ -144,15 +156,14 @@ export function useIssueActions(
                 !action.notified
               ) {
                 action.notified = true;
-                const { toast, c } = latest.current;
                 const success = ["ready", "no_changes"].includes(status.deploymentStatus);
-                toast(
-                  success ? "success" : "error",
-                  success
-                    ? c.resolved
-                    : status.errorMessage || status.warningMessage || c.resolveFailed,
-                  c.title,
-                );
+                if (success) {
+                  completedSuccesses.push(action);
+                } else {
+                  completedFailures.push(
+                    status.errorMessage || status.warningMessage || latest.current.c.resolveFailed,
+                  );
+                }
               }
             } catch (diagnosticFailure) {
               observeCaughtError(diagnosticFailure, "dashboard/components/issues/useIssueActions");
@@ -161,6 +172,11 @@ export function useIssueActions(
             }
           }),
         );
+        const { toast, c } = latest.current;
+        if (completedSuccesses.length) {
+          toast("success", updateCompletionMessage(completedSuccesses, c), c.title);
+        }
+        for (const message of completedFailures) toast("error", message, c.title);
         if (current() && completed.size) {
           await latest.current.reload({ silent: true });
           if (current()) {

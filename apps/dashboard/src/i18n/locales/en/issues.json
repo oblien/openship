@@ -98,6 +98,8 @@
     "rescanPartial": "Re-scan finished, {n} check(s) have incomplete coverage",
     "rescanFailed": "Re-scan failed",
     "resolved": "Done",
+    "updateResolved": "Update finished: {name}",
+    "updatesResolved": "Updates finished ({count}): {names}",
     "resolveFailed": "Couldn't apply that fix",
     "confirmDestructive": "This has a side effect that can't be undone. Continue?"
   },
