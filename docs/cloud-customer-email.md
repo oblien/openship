@@ -54,10 +54,12 @@ a current nonzero sending allowance, and a verified `openship.io` sender domain.
 Welcome and cancellation replies go to `support@openship.io` through Reply-To.
 See the [Oblien mail API contract](https://oblien.com/openapi/mail-v2.json).
 
-Cloud signup notices, verification codes and password resets share a limit per
-recipient of one attempt per minute, five per rolling hour and ten per rolling
-24 hours. Repeated requests inside a limit keep the usual public response and
-any unexpired code already sent. Better Auth also applies its per-IP OTP limit.
+Cloud signup notices and verification codes share a limit per recipient of one
+attempt per minute, five per rolling hour, and ten per rolling 24 hours.
+Password resets have an independent one-minute recipient cooldown. Requests
+suppressed by a recipient limit keep the usual public response and any
+unexpired code already sent. Cloud OTP email endpoints share an additional
+limit of 30 requests per hour per client IP alongside the existing auth limits.
 
 Rows in `cloud_customer_email` retain delivery status, attempt count, lease and
 timestamps. A worker claims one message at a time with a five-minute SQL lease.

@@ -206,7 +206,6 @@ it("keeps one OAuth account on repeat signup and privately explains how to sign 
   // A provider-only customer can add a password only after proving mailbox
   // ownership through the existing recovery flow, never from duplicate signup.
   h.send.mockClear();
-  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   const reset = await request("/email-otp/request-password-reset", { email });
   expect(reset.status, await reset.clone().text()).toBe(200);
   const resetMail = h.send.mock.calls.at(-1)![0] as { subject: string };

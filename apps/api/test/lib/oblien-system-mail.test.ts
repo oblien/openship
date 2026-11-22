@@ -41,13 +41,18 @@ function provider() {
   });
 }
 
-function authRequest(path: string, body: object, ip = "192.0.2.1") {
+function authRequest(
+  path: string,
+  body: object,
+  ip = "192.0.2.1",
+  origin = "http://localhost:3001",
+) {
   return auth.handler(
     new Request(`http://localhost:4000/api/auth${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Origin: "http://localhost:3001",
+        Origin: origin,
         "x-real-ip": ip,
       },
       body: JSON.stringify(body),
@@ -65,7 +70,6 @@ it("resets a Cloud password with the code submitted through the SDK without SMTP
     password: "first-password-1234!",
   });
   expect(signup.status).toBe(200);
-  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   const reset = await authRequest("/email-otp/request-password-reset", { email });
   expect(reset.status).toBe(200);
   expect(send).toHaveBeenCalledTimes(2);
@@ -99,7 +103,6 @@ it("keeps reset responses private when the SDK rejects a password reset", async 
     password: "first-password-1234!",
   });
   expect(signup.status).toBe(200);
-  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   send.mockResolvedValueOnce(
     Response.json({ success: false, error: "provider unavailable" }, { status: 503 }),
   );
@@ -113,7 +116,7 @@ it("keeps reset responses private when the SDK rejects a password reset", async 
   expect(send).toHaveBeenCalledTimes(2);
 }, 30_000);
 
-it("shares one inbox limit across signup, verification and all reset requests while keeping issued codes valid", async () => {
+it("shares cooldowns within signup and recovery while keeping their budgets and codes independent", async () => {
   const send = provider();
   const email = "limited@example.test";
   const signup = { email, name: "Limited", password: "first-password-1234!" };
@@ -141,7 +144,6 @@ it("shares one inbox limit across signup, verification and all reset requests wh
     200,
   );
 
-  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
   const resets = await Promise.all([
     authRequest("/email-otp/request-password-reset", { email }, "192.0.2.3"),
     authRequest(
@@ -168,6 +170,45 @@ it("shares one inbox limit across signup, verification and all reset requests wh
   ).toBe(200);
 }, 30_000);
 
+it("rejects an untrusted OTP request before looking up the account or reserving email", async () => {
+  const send = provider();
+  const email = "origin-check@example.test";
+  expect(
+    (
+      await authRequest("/sign-up/email", {
+        email,
+        name: "Origin",
+        password: "first-password-1234!",
+      })
+    ).status,
+  ).toBe(200);
+  const ctx = await auth.$context;
+  const originalOriginCheck = ctx.skipOriginCheck;
+  ctx.skipOriginCheck = false;
+  const lookup = vi.spyOn(ctx.internalAdapter, "findUserByEmail");
+  const path = "/email-otp/send-verification-otp";
+  const reset = { email, type: "forget-password" };
+  try {
+    const known = await authRequest(path, reset, "192.0.2.6", "https://untrusted.example.test");
+    const unknown = await authRequest(
+      path,
+      { ...reset, email: "unknown@example.test" },
+      "192.0.2.6",
+      "https://untrusted.example.test",
+    );
+    expect(known.status).toBe(403);
+    expect(unknown.status).toBe(known.status);
+    expect(await unknown.json()).toEqual(await known.json());
+    expect(lookup).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledOnce();
+
+    expect((await authRequest(path, reset)).status).toBe(200);
+    expect(send).toHaveBeenCalledTimes(2);
+  } finally {
+    ctx.skipOriginCheck = originalOriginCheck;
+  }
+}, 30_000);
+
 it("uses Better Auth's per-IP OTP limit across different recipient addresses", async () => {
   const { rateLimit } = await auth.$context;
   const previous = rateLimit.enabled;
@@ -189,28 +230,30 @@ it("uses Better Auth's per-IP OTP limit across different recipient addresses", a
   }
 });
 
-it("enforces rolling minute, hour and day limits independently per address", async () => {
+it("enforces rolling signup limits per address without consuming the recovery slot", async () => {
   const start = Date.now();
   const clock = vi.spyOn(Date, "now");
   const email = "windows@example.test";
   const minute = 60_000;
   for (const offset of [0, 1, 2, 3, 4]) {
     clock.mockReturnValue(start + offset * minute);
-    expect(await reserveAuthEmail(email)).toBe(true);
+    expect(await reserveAuthEmail(email, "signup")).toBe(true);
   }
   clock.mockReturnValue(start + 60 * minute - 1);
-  expect(await reserveAuthEmail(email)).toBe(false);
-  expect(await reserveAuthEmail("another@example.test")).toBe(true);
+  expect(await reserveAuthEmail(email, "signup")).toBe(false);
+  expect(await reserveAuthEmail("another@example.test", "signup")).toBe(true);
   for (const offset of [60, 61, 62, 63, 64]) {
     clock.mockReturnValue(start + offset * minute);
-    expect(await reserveAuthEmail(email)).toBe(true);
+    expect(await reserveAuthEmail(email, "signup")).toBe(true);
   }
   clock.mockReturnValue(start + 24 * 60 * minute - 1);
-  expect(await reserveAuthEmail(email)).toBe(false);
+  expect(await reserveAuthEmail(email, "signup")).toBe(false);
+  expect(await reserveAuthEmail(email, "recovery")).toBe(true);
+  expect(await reserveAuthEmail(email.toUpperCase(), "recovery")).toBe(false);
   clock.mockReturnValue(start + 24 * 60 * minute);
   const concurrent = await Promise.all([
-    reserveAuthEmail(email),
-    reserveAuthEmail(email.toUpperCase()),
+    reserveAuthEmail(email, "signup"),
+    reserveAuthEmail(email.toUpperCase(), "signup"),
   ]);
   expect(concurrent.sort()).toEqual([false, true]);
 });
