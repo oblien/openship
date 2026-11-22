@@ -98,6 +98,8 @@
     "rescanPartial": "重新扫描完成，{n} 项检查的覆盖范围不完整",
     "rescanFailed": "重新扫描失败",
     "resolved": "完成",
+    "updateResolved": "更新完成：{name}",
+    "updatesResolved": "更新完成（{count}）：{names}",
     "resolveFailed": "无法应用该修复",
     "confirmDestructive": "此操作会产生无法撤销的副作用。要继续吗？"
   },

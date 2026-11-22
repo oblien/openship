@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitHubProvider, type GitHubConnectionState } from "@/context/GitHubContext";
 import { GitHubConnection } from "./GitHubConnection";
-import { LibrarySidebar } from "../../library/components/LibrarySidebar";
+import { GitHubConnectionStatus } from "@/components/github/GitHubConnectionStatus";
 
 const api = vi.hoisted(() => ({
   connect: vi.fn(),
@@ -94,15 +94,32 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(initialState = disconnected) {
+async function render(initialState = disconnected, embedded = false) {
   await act(async () => {
     root.render(
       <GitHubProvider initialData={{ state: initialState }}>
-        <GitHubConnection />
+        <GitHubConnection embedded={embedded} />
       </GitHubProvider>,
     );
   });
 }
+
+it("opens only the connection methods advertised for this instance in Git settings", async () => {
+  const state: GitHubConnectionState = {
+    primary: null, sources: { openshipApp: { connected: false }, ghCli: { available: false } },
+  };
+  api.getStatusDeduped.mockResolvedValue({
+    state, capabilities: { ...capabilities, primary: "token", methods: [{ kind: "token", available: true }] },
+  });
+  await render(state, true);
+  expect(container.textContent).toContain("Not connected");
+  expect(container.textContent).not.toContain("Access token");
+  await click("Connect GitHub");
+  expect(container.textContent).toContain("Access token");
+  expect(container.querySelector("details")).toBeNull();
+  expect(container.textContent).not.toContain("GitHub App");
+  expect(api.connect).not.toHaveBeenCalled();
+});
 
 async function click(label: string) {
   const button = [...container.querySelectorAll("button")].find((el) =>
@@ -120,7 +137,7 @@ function expectDeviceInstructions() {
 const appWithRejectedToken: GitHubConnectionState = {
   primary: "openship-app",
   sources: {
-    openshipApp: { connected: true, login: "app-user", hasInstallations: true },
+    openshipApp: { connected: true, login: "app-user", avatarUrl: "https://avatars.example/app-user", hasInstallations: true },
     ghCli: { available: false, method: "token", problem: "rejected" },
   },
 };
@@ -240,22 +257,26 @@ describe("selecting a detected host CLI identity", () => {
 });
 
 describe("Library connection status after App fallback (#944)", () => {
-  it("shows the App first and reuses the fallback status without another cloud request", async () => {
+  it("shows the App first and reuses the fallback status without another cloud request", async ({ onTestFinished }) => {
+    const pendingImage = vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+    onTestFinished(() => pendingImage.mockRestore());
     await act(async () => root.render(
-      <LibrarySidebar state={appWithRejectedToken} repos={[]} selectedOwner="acme" selfHosted cloudConnected />,
+      <GitHubConnectionStatus state={appWithRejectedToken} selectedOwner="acme" selfHosted />,
     ));
     const text = container.textContent!;
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(appWithRejectedToken.sources.openshipApp.avatarUrl);
+    expect(text.indexOf("@app-user")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("@app-user")).toBeLessThan(text.indexOf("GitHub App"));
     expect(text.indexOf("GitHub App")).toBeLessThan(text.indexOf("GitHub token"));
     expect(text).not.toContain("@undefined");
     expect(text).not.toContain("Local library via gh CLI");
-    expect(container.querySelector('a[href="/settings?tab=git"]')).not.toBeNull();
     expect(api.getStatusDeduped).not.toHaveBeenCalled();
   });
 
   it("does not invent a username when the token source has no login", async () => {
     const state: GitHubConnectionState = { ...connected, sources: { ...connected.sources, ghCli: { available: true, method: "token" } } };
     await act(async () => root.render(
-      <LibrarySidebar state={state} repos={[]} selectedOwner="acme" selfHosted cloudConnected />,
+      <GitHubConnectionStatus state={state} selectedOwner="acme" selfHosted />,
     ));
     expect(container.textContent).not.toContain("@undefined");
     expect(container.textContent).toContain("GitHub token");

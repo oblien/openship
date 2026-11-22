@@ -13,6 +13,7 @@ export type IllustratedLinkProps = {
   note?: ReactNode;
   heading?: "h2" | "h3";
   id?: string;
+  tabIndex?: number;
 };
 
 /** One open illustrated row, shared by features, guides and help links. */
@@ -24,11 +25,12 @@ export function IllustratedLink({
   note,
   heading: Heading = "h3",
   id,
+  tabIndex,
 }: IllustratedLinkProps) {
   const copy = useCopy();
 
   return (
-    <Link id={id} href={href} className="marketing-link">
+    <Link id={id} href={href} className="marketing-link" tabIndex={tabIndex}>
       <FeatureIllustration name={illustration} className="marketing-illustration" />
       <div className="marketing-link-copy">
         <Heading>{copy(title)}</Heading>

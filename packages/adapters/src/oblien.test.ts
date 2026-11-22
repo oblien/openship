@@ -30,7 +30,7 @@ describe("Oblien SDK transport", () => {
     vi.stubGlobal("fetch", fetcher);
     const choices = await new Oblien({ token: "fixture-token" }).listOutboundIps();
     expect(choices).toEqual([{ ip: "8.8.4.4", countryCode: "US" }, { ip: "1.1.1.1", countryCode: null }]);
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://api.oblien.com/v1/zone/mine");
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://api.oblien.com/v2/zone/mine");
     expect(JSON.stringify(choices)).not.toMatch(/pool-user|pool-password|private-id/);
   });
   it("rejects an unreadable pool instead of presenting a successful empty picker", async () => {
@@ -66,7 +66,7 @@ describe("Oblien SDK transport", () => {
     const client = new Oblien({ clientId: "test-owner", clientSecret: "test-secret" });
     await client.vms.create({ namespace: "tenant-a", cpus: 2, wait_ready: false });
     const [url, init] = fetcher.mock.calls[0]! as unknown as [URL, RequestInit];
-    expect(url.pathname).toBe("/v1/vms"); expect(init.redirect).toBe("error"); expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(url.pathname).toBe("/v2/vms"); expect(init.redirect).toBe("error"); expect(init.signal).toBeInstanceOf(AbortSignal);
     expect(JSON.parse(init.body as string)).toMatchObject({ namespace: "tenant-a", config: { cpus: 2 } });
   });
   it("tracks token refresh and authentication restore without mixing scopes", async () => {

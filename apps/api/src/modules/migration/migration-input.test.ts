@@ -62,8 +62,10 @@ describe("sanitizeGitSource", () => {
     });
   });
 
-  it("rejects non-GitHub providers (v1 GitHub only)", () => {
-    expect(sanitizeGitSource({ provider: "gitlab", owner: "acme", repo: "web" })).toBeUndefined();
+  it("preserves GitLab subgroups and rejects unregistered providers", () => {
+    const source = { provider: "gitlab", owner: "acme/platform", repo: "web" };
+    expect(sanitizeGitSource(source)).toEqual(source);
+    expect(sanitizeGitSource({ ...source, provider: "unsupported" })).toBeUndefined();
   });
 
   it("rejects missing owner or repo", () => {

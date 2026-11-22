@@ -2,20 +2,17 @@
 
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { migrationHref, parseMigrationSource, type MigrationSourceKind } from "@repo/core";
-import { useGitHub } from "@/context/GitHubContext";
+import { LibrarySidebar } from "./components/LibrarySidebar";
+import { useGit } from "@/context/GitContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { useCloud } from "@/context/CloudContext";
-import { ConnectPrompt } from "./components/ConnectPrompt";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { RepositoryList } from "./components/RepositoryList";
 import { useLibraryRepos } from "./useLibraryRepos";
-import { GhCliConsent } from "./components/GhCliConsent";
 import { LocalProjects } from "./components/LocalProjects";
 import { FolderUpload } from "./components/FolderUpload";
-import { LibrarySidebar } from "./components/LibrarySidebar";
 import { UrlImport } from "./components/UrlImport";
 import { RepositoryAccounts } from "./components/RepositoryAccounts";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -27,7 +24,6 @@ import { AppCatalog } from "@/components/apps/AppCatalog";
 type Tab = "folder" | "repositories" | "url" | "server" | "apps";
 
 /** One-time gh-CLI repo-read consent flag (per browser — desktop is single-user). */
-const GH_CLI_CONSENT_KEY = "openship.gh-cli-consent";
 
 interface TabItem {
   key: Tab;
@@ -42,29 +38,14 @@ export function LibraryContent() {
   const searchParams = useSearchParams();
   const migrating = pathname === migrationHref();
   const requestedSource = parseMigrationSource(searchParams.get("from"));
-  const {
-    state,
-    connected,
-    connecting,
-    loading,
-    capabilities,
-    connect,
-    cliAction,
-    accounts,
-    selectedOwner,
-    setSelectedOwner,
-    refresh,
-    installUrl,
-  } = useGitHub();
-  // Server-paginated repo list for the Library (own hook so the shared
-  // GitHubContext.repos — used by the GitSettings + migration pickers — stays a
-  // full-set, client-side list). Fetches a page at a time + authoritative counts.
-  const libRepos = useLibraryRepos(selectedOwner, connected);
+  const connection = useGit();
+  const { connected, connecting, loading, accounts, selectedOwner, setSelectedOwner, installUrl } = connection;
+  const provider = connection.definition.id;
+  const libRepos = useLibraryRepos(selectedOwner, connected, provider, connection.catalog);
   const { selfHosted, deployMode } = usePlatform();
   // Only the desktop app can read the user's folder off disk (native picker +
   // co-located API). A remote self-hosted browser uploads it instead.
   const isDesktop = deployMode === "desktop";
-  const { connected: cloudConnected } = useCloud();
 
   // Cloud has a dedicated URL tab. Self-hosted instances keep its shortcut in
   // the account row; both use the same selection and public import flow.
@@ -91,16 +72,12 @@ export function LibraryContent() {
   };
   const addAccount = () => {
     setActiveTab("repositories");
-    const app = capabilities?.methods.find((method) => method.kind === "app");
-    const available = app
-      ? app.available && (!app.requiresCloud || cloudConnected)
-      : !selfHosted || !!installUrl;
-    if (available) void connect("oauth");
-    else router.push("/settings?tab=git");
+    connection.connectMore();
   };
   const sourceHeader = (
     <div className="px-5 pt-4">
       <RepositoryAccounts
+        provider={provider}
         accounts={accounts}
         selectedOwner={selectedOwner}
         onSelectOwner={selectOwner}
@@ -112,30 +89,10 @@ export function LibraryContent() {
     </div>
   );
 
-  // First-run consent before the gh-CLI source lists repos. The gh path runs
-  // entirely on this machine (nothing to the cloud), but we ask once so the
-  // Library doesn't silently enumerate the user's repos on first open.
-  const [ghCliConsent, setGhCliConsent] = useState(true); // optimistic until localStorage reads
-  useEffect(() => {
-    setGhCliConsent(localStorage.getItem(GH_CLI_CONSENT_KEY) === "1");
-  }, []);
-  const allowGhCli = useCallback(() => {
-    localStorage.setItem(GH_CLI_CONSENT_KEY, "1");
-    setGhCliConsent(true);
-  }, []);
-  // Gate ONLY a credential we found on the host by ourselves. A device sign-in or
-  // a pasted token was handed over by the operator inside Openship — asking them
-  // to consent again to the thing they just did is a dead end that made a fresh
-  // token look broken until the prompt was noticed and accepted.
-  const needsGhCliConsent =
-    state.primary === "gh-cli" &&
-    (state.sources.ghCli.method ?? "host-cli") === "host-cli" &&
-    !ghCliConsent;
-
   // Folder import is available on self-hosted instances. Cloud offers a Git URL tab.
   const tabs: TabItem[] = [
     { key: "apps", label: t.dashboard.pages.apps.title, icon: "grid" },
-    { key: "repositories", label: t.library.page.tabs.github, icon: "github" },
+    { key: "repositories", label: connection.connections.length > 1 ? t.library.page.tabs.repositories : connection.definition.name, icon: connection.connections.length > 1 ? "git-branch" : connection.icon },
     ...(selfHosted
       ? [{ key: "folder" as const, label: t.library.page.tabs.folder, icon: "folder-out" as const }]
       : [{ key: "url" as const, label: t.library.page.tabs.gitUrl, icon: "link" as const }]),
@@ -202,6 +159,13 @@ export function LibraryContent() {
             : "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6"
         }
       >
+        {/* ── RIGHT COLUMN ───────────────────────────────────────── */}
+        <LibrarySidebar
+          connection={connection}
+          counts={libRepos.meta}
+          showProviderSelect={activeTab === "repositories" || activeTab === "apps"}
+        />
+
         {/* ── LEFT COLUMN ────────────────────────────────────────── */}
         <div className="space-y-6 min-w-0">
           {activeTab === "apps" ? (
@@ -218,26 +182,15 @@ export function LibraryContent() {
           ) : loading ? (
             <LoadingSkeleton header={sourceHeader} />
           ) : !connected ? (
-            <ConnectPrompt
-              header={sourceHeader}
-              connecting={connecting}
-              onConnect={connect}
-              cliAction={cliAction}
-              onRefresh={refresh}
-              onBrowseApps={() => {
-                setActiveTab("apps");
-                appsTabRef.current?.focus();
-              }}
-              selfHosted={selfHosted}
-            />
-          ) : needsGhCliConsent ? (
-            <GhCliConsent
-              header={sourceHeader}
-              login={state.sources.ghCli.login}
-              onAllow={allowGhCli}
-            />
+            connection.renderConnect({
+              header: sourceHeader,
+              onBrowseApps: () => { setActiveTab("apps"); appsTabRef.current?.focus(); },
+            })
+          ) : connection.consentRequired ? (
+            connection.renderConsent(sourceHeader)
           ) : (
             <RepositoryList
+              provider={provider}
               repos={libRepos.repos}
               accounts={accounts}
               selectedOwner={selectedOwner}
@@ -263,20 +216,6 @@ export function LibraryContent() {
             />
           )}
         </div>
-
-        {/* ── RIGHT COLUMN ───────────────────────────────────────── */}
-        <LibrarySidebar
-          selectedOwner={selectedOwner}
-          repos={libRepos.repos}
-          selfHosted={selfHosted}
-          state={state}
-          cloudConnected={cloudConnected}
-          counts={{
-            total: libRepos.meta.total,
-            publicCount: libRepos.meta.publicCount,
-            privateCount: libRepos.meta.privateCount,
-          }}
-        />
       </div>
 
       {(migrating || showMigrate) && (

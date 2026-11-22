@@ -1,7 +1,7 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { createPlatform, oblienApiBaseUrl, type CloudInfraProvider } from "@repo/adapters";
-import { ensureNamespace, getOblienClient, issueNamespaceToken } from "./openship-cloud";
-import { env } from "../config/env";
+import type { Oblien } from "@repo/adapters";
+import { ensureNamespace, getNamespaceClient, getOblienClient } from "./openship-cloud";
+import { checkCloudDomainDns } from "./cloud-domain-dns";
 import { assertCloudCanSpend } from "../modules/billing/billing-oblien-quota";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { safeErrorMessage } from "@repo/core";
@@ -74,10 +74,8 @@ export interface CloudPreflightData {
  *                               proxy). Hitting Oblien directly with
  *                               the master client makes this check
  *                               actually authoritative.
- *   - `customDomain`          → MASTER client. Oblien's standalone
- *                               DNS verification endpoint requires admin
- *                               scope, just like slug availability. Tenant
- *                               entitlement still gates the check below.
+ *   - `customDomain`          → selected namespace. Oblien evaluates ownership
+ *                               and DNS routing for each hostname.
  *
  * Errors are NO LONGER silently treated as "available". If the check
  * truly fails (network blip, Oblien outage), we surface
@@ -92,16 +90,12 @@ export async function runCloudPreflight(
   const baseDomain = getRoutingBaseDomain();
 
   // ── Namespace-scoped entitlement / runtime checks ──
-  let cloud: CloudInfraProvider | null = null;
+  let client: Oblien | null = null;
   let runtimeError: string | null = null;
   try {
-    const token = await issueNamespaceToken(organizationId, opts.workspaceId);
+    const scoped = await getNamespaceClient(organizationId, opts.workspaceId);
     await assertCloudCanSpend(organizationId, opts.workspaceId);
-    const cloudPlatform = await createPlatform({
-      target: "cloud", cloudToken: token.token, cloudNamespace: token.namespace,
-      cloudApiUrl: oblienApiBaseUrl(env.OBLIEN_API_URL).toString(),
-    });
-    cloud = cloudPlatform.routing as CloudInfraProvider;
+    client = scoped.client;
   } catch (err) {
     observeCaughtError(err, "platform/engine/lib/cloud-preflight");
     runtimeError = safeErrorMessage(err);
@@ -140,44 +134,10 @@ export async function runCloudPreflight(
     }
   }
 
-  // ── Custom domain DNS — server-side admin scope, after tenant checks ──
-  if (opts.customDomain && cloud) {
+  if (opts.customDomain && client) {
     try {
-      const verified = await getOblienClient().domain.verify({ domain: opts.customDomain });
-      if (verified.verified) {
-        result.customDomain = {
-          verified: true,
-          cname: verified.cname ?? undefined,
-          ownership: verified.ownership ?? undefined,
-        };
-      } else {
-        // Build an actionable message from Oblien's errors AND surface
-        // BOTH cname + txt required-records. Previously only cname was
-        // mentioned — users hit "DNS not verifying" with no idea the
-        // TXT ownership record was also missing.
-        const cnameMissing = verified.cname === false;
-        const ownershipMissing = verified.ownership === false;
-        const missing: string[] = [];
-        if (cnameMissing && verified.required_records.cname) {
-          missing.push(`CNAME ${verified.required_records.cname.host} → ${verified.required_records.cname.target}`);
-        }
-        if (ownershipMissing && verified.required_records.txt) {
-          missing.push(`TXT ${verified.required_records.txt.host} = ${verified.required_records.txt.value}`);
-        }
-        const baseMessage = verified.errors.length > 0
-          ? verified.errors.join("; ")
-          : `DNS not configured for ${opts.customDomain}.`;
-        const message = missing.length > 0
-          ? `${baseMessage} Add: ${missing.join("  AND  ")}`
-          : baseMessage;
-        result.customDomain = {
-          verified: false,
-          cname: verified.cname ?? undefined,
-          ownership: verified.ownership ?? undefined,
-          message,
-          requiredRecords: verified.required_records,
-        };
-      }
+      const check = await checkCloudDomainDns(client, opts.customDomain);
+      result.customDomain = { ...check, ownership: check.ownership ?? undefined };
     } catch (err) {
       const message = safeErrorMessage(err);
       errorDiagnostics.error("platform/engine/lib/cloud-preflight", "[CLOUD] Preflight custom domain check failed", { domain: opts.customDomain, error: message }, err);
@@ -186,7 +146,7 @@ export async function runCloudPreflight(
         message: `Couldn't verify ${opts.customDomain} right now. Please retry.`,
       };
     }
-  } else if (opts.customDomain && !cloud) {
+  } else if (opts.customDomain && !client) {
     result.customDomain = {
       verified: false,
       message: "Cloud runtime unreachable — couldn't verify DNS.",

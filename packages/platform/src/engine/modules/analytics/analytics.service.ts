@@ -26,7 +26,9 @@ import { resolveDeploymentRuntimeForRead, disposeRuntime } from "@repo/platform/
 import { livePrimaryContainerId } from "@repo/platform/engine/modules/services/service-container";
 import { resolveProjectTrafficSources } from "@repo/platform/engine/lib/project-analytics";
 import { fetchMgmt } from "@repo/platform/engine/lib/edge-management";
-import { getAdminOblienClient } from "@repo/platform/engine/lib/oblien-user-client";
+import { env } from "../../config/env";
+import { requireLinkedCloudServer } from "../../lib/cloud/server-link";
+import { getNamespaceAnalytics } from "../cloud/cloud-analytics.service";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
 import { scrapeServerIfStale } from "@repo/platform/engine/modules/system/analytics-scraper";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -40,12 +42,6 @@ interface CloudAnalyticsBucket {
   bandwidth_out: number;
   /** Total request duration in seconds, not a per-request average. */
   response_time_sum: number;
-  unique_visitors: number;
-}
-
-interface CloudTimeseriesResponse {
-  data: CloudAnalyticsBucket[];
-  meta?: { to?: number };
 }
 
 interface MgmtAnalyticsBucket {
@@ -151,7 +147,6 @@ function summariseCloudBuckets(
   lastUpdated: string,
 ): AnalyticsSummary {
   const totalReqs = buckets.reduce((sum, bucket) => sum + bucket.requests, 0);
-  const totalUnique = buckets.reduce((sum, bucket) => sum + bucket.unique_visitors, 0);
   const totalIn = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_in, 0);
   const totalOut = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_out, 0);
   const totalResponseTimeSeconds = buckets.reduce(
@@ -161,10 +156,9 @@ function summariseCloudBuckets(
 
   return {
     totalRequests: totalReqs,
-    // Oblien exposes distinct visitors but not a non-static request count, so this
-    // is the closest honest mapping: page requests are unknown here.
+    // Cloud Edge reports aggregate requests with no visitor identity.
     pageRequests: 0,
-    uniqueVisitors: totalUnique,
+    uniqueVisitors: null,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
     avgResponseTimeMs: averageResponseTimeMs(totalResponseTimeSeconds, totalReqs),
@@ -253,7 +247,6 @@ function buildCloudHourlyPeriods(
     current.bandwidth_in += bucket.bandwidth_in;
     current.bandwidth_out += bucket.bandwidth_out;
     current.response_time_sum += bucket.response_time_sum;
-    current.unique_visitors += bucket.unique_visitors;
   }
 
   const periods: AnalyticsPeriod[] = [];
@@ -268,7 +261,7 @@ function buildCloudHourlyPeriods(
       from: new Date(Math.max(bucketStartMs, fromMs)).toISOString(),
       to: new Date(Math.min(bucketStartMs + 3_600_000, toMs)).toISOString(),
       requests: bucket?.requests ?? 0,
-      uniqueVisitors: bucket?.unique_visitors ?? 0,
+      uniqueVisitors: 0,
       bandwidthIn: bucket?.bandwidth_in ?? 0,
       bandwidthOut: bucket?.bandwidth_out ?? 0,
       avgResponseTimeMs: averageResponseTimeMs(
@@ -298,7 +291,7 @@ const EMPTY_SUMMARY: AnalyticsSummary = {
 /**
  * The Oblien SDK returns `{ success, data: AnalyticsBucket[], meta }`; the cloud
  * PROXY wraps that again as `{ data: <sdkResponse> }`. So the bucket array sits
- * at `.data` (admin-direct) or `.data.data` (cloud-proxied). Reading a fixed
+ * at `.data` (SDK response) or `.data.data` (cloud-proxied). Reading a fixed
  * depth got the WRAPPER object on the proxied path — which flat-mapped into a
  * single bogus "bucket" whose numeric fields were undefined → NaN → null totals.
  * Walk down nested data/result wrappers to the actual array regardless of depth.
@@ -343,21 +336,14 @@ function assertCloudTimeseriesOk(raw: unknown): void {
   }
 }
 
-async function fetchCloudTimeseries(
-  organizationId: string,
-  domain: string,
-  params: { from: number; to: number; interval: "hour" },
-): Promise<CloudTimeseriesResponse | null> {
-  // Direct, no caching — always the live source of truth. (Request volume is
-  // controlled on the client; see ServerAnalytics fetch dedup.)
-  const client = getAdminOblienClient();
-  const raw = client
-    ? await client.analytics.timeseries(domain, params)
-    : await cloudClient({ organizationId }).analytics.timeseries(domain, params);
-  // Surface a failed fetch as an error (caller → 502) instead of masking it as
-  // an empty summary; only a genuine no-traffic success falls through to [].
-  assertCloudTimeseriesOk(raw);
-  return { data: extractCloudBuckets(raw) };
+async function projectCloudAnalytics(organizationId: string, workspaceId: string | null) {
+  if (env.CLOUD_MODE) return getNamespaceAnalytics(organizationId, workspaceId);
+  const linked = workspaceId ? await requireLinkedCloudServer(organizationId, workspaceId) : null;
+  const { analytics } = cloudClient({ organizationId }, linked?.remote);
+  return {
+    timeseries: (domain: string, params: { from: number; to: number; interval: "hour" }) =>
+      analytics.timeseries(domain, params, linked?.remote.serverId),
+  };
 }
 
 export interface AnalyticsSummary {
@@ -372,15 +358,7 @@ export interface AnalyticsSummary {
    * dashboard, which it never was. Named for what it is.
    */
   pageRequests: number;
-  /**
-   * Genuinely distinct visitors, or null when this source can't tell.
-   *
-   * Non-null only where the SOURCE does the dedup: Oblien reports
-   * `unique_visitors` per bucket. The self-hosted edge dedups per DAY (a salted
-   * hash set in shared memory), which doesn't decompose into the minute buckets
-   * this summary is built from — so it is null here and the real number comes from
-   * `GET /analytics/geo`. Null means "ask elsewhere", never "zero visitors".
-   */
+  /** Unavailable for aggregate-only cloud traffic. Self-hosted visitor counts live in the geo response. */
   uniqueVisitors: number | null;
   /** Bandwidth in bytes */
   bandwidthIn: number;
@@ -486,12 +464,16 @@ export async function getAnalyticsOverview(
     // upstream outage look identical to "no traffic" (zeros with a 200). Settle
     // per-domain: use whatever succeeded, but if EVERY cloud fetch failed,
     // surface a real upstream error so the client can tell "broken" from "idle".
+    const reader = projectCloudAnalytics(ctx.organizationId, project.workspaceId);
     const settled = await observedAllSettled(
-      sources.map((source) => fetchCloudTimeseries(ctx.organizationId, source.domain, params)), "platform/engine/modules/analytics/analytics.service",
+      sources.map(async ({ domain }) => {
+        const analytics = await reader;
+        const raw = await analytics.timeseries(domain, params);
+        assertCloudTimeseriesOk(raw);
+        return { data: extractCloudBuckets(raw) };
+      }), "platform/engine/modules/analytics/analytics.service",
     );
-    const ok = settled.filter(
-      (r): r is PromiseFulfilledResult<CloudTimeseriesResponse | null> => r.status === "fulfilled",
-    );
+    const ok = settled.filter((r) => r.status === "fulfilled");
     if (ok.length === 0) {
       const reason = settled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
       throw new AppError(
@@ -501,11 +483,11 @@ export async function getAnalyticsOverview(
       );
     }
     const firstHour = Math.floor(fromMs / 3_600_000) * 3600;
-    const buckets = ok.flatMap((r) => r.value?.data ?? []).filter((bucket) =>
+    const buckets = ok.flatMap((r) => r.value.data).filter((bucket) =>
       bucket.timestamp >= firstHour && bucket.timestamp * 1000 < toMs,
     );
     // Reached the cloud, but it reported no traffic → genuine empty (200).
-    if (buckets.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
+    if (buckets.length === 0) return { summary: { ...EMPTY_SUMMARY, uniqueVisitors: null }, periods: [] };
     return {
       summary: summariseCloudBuckets(buckets, new Date(toMs).toISOString()),
       periods: buildCloudHourlyPeriods(buckets, fromMs, toMs),

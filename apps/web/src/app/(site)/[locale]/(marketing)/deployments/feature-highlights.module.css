@@ -1,0 +1,46 @@
+.section {
+  --marquee-card-width: min(90cqw, clamp(20rem, 25cqw, 26rem));
+  --marquee-duration: 78s;
+  padding-block: clamp(1.5rem, 3vw, 3.5rem) clamp(4rem, 7vw, 8rem);
+}
+.actions, .explore, .motion { display: flex; align-items: center; }
+.actions { gap: .5rem; }
+.explore, .motion {
+  justify-content: center;
+  min-height: 2.75rem;
+  border-radius: 999px;
+  color: var(--th-text-title);
+  background: var(--th-sf-04);
+}
+.explore { gap: .65rem; padding: .65rem 1.15rem; font-size: .9rem; font-weight: 500; }
+.explore:dir(rtl) span { transform: scaleX(-1); }
+.motion { width: 2.75rem; cursor: pointer; }
+.explore:hover, .motion:hover { background: var(--th-sf-08); }
+.explore:focus-visible, .motion:has(:focus-visible) { outline: 2px solid currentColor; outline-offset: 3px; }
+.motion span { width: 10px; height: 12px; border-inline: 3px solid currentColor; }
+.motion:has(:checked) span { width: 0; border: solid transparent; border-width: 6px 0 6px 10px; border-left-color: currentColor; }
+.section:has(.motion :checked, :global(.marketing-link):focus-visible) { --marquee-state: paused; }
+@media (prefers-reduced-motion: reduce) { .motion { display: none; } }
+
+.section :global(.marketing-link) {
+  display: flex;
+  align-items: center;
+  gap: clamp(.625rem, 1vw, 1rem);
+  padding: 1rem clamp(.875rem, 1.25vw, 1.25rem);
+  border-radius: 1rem;
+  background: var(--th-sf-04);
+}
+.section :global(.marketing-link:hover) { background: var(--th-sf-06); }
+.section :global(.marketing-illustration) {
+  width: clamp(2.75rem, 3.8vw, 3.5rem);
+  height: auto;
+  color: var(--th-text-title);
+  --illustration-accent: #edb875;
+  --illustration-cutout: var(--th-bg-page);
+}
+.section :global(.marketing-link:nth-child(3n + 2) .marketing-illustration) { --illustration-accent: #b7a6e4; }
+.section :global(.marketing-link:nth-child(3n) .marketing-illustration) { --illustration-accent: #95c9b2; }
+.section :global(.marketing-link-arrow) { flex: none; margin: 0; }
+.section :global(.marketing-link-copy) { flex: 1; padding: 0; overflow-wrap: anywhere; }
+.section :global(.marketing-link h3) { font-size: 1.125rem; letter-spacing: -.025em; line-height: 1.25; }
+.section :global(.marketing-link p) { margin-top: .25rem; color: var(--th-text-strong); line-height: 1.45; }

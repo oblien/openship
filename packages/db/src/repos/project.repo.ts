@@ -1,5 +1,5 @@
 import { eq, and, or, isNull, isNotNull, inArray, desc, sql, type SQL } from "drizzle-orm";
-import { generateId, ForbiddenError, UnauthorizedError, ConflictError, ValidationError, inspectCommandEnvironment, manualBuildCaches } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, type GitRepositoryRef, generateId, ForbiddenError, UnauthorizedError, ConflictError, ValidationError, inspectCommandEnvironment, manualBuildCaches } from "@repo/core";
 import type { Database, DatabaseTransaction } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
 import { project, projectGroup, envVar, deployment, service, domain } from "../schema";
@@ -58,6 +58,11 @@ function envVarScope(projectId: string, environment?: string, serviceId?: string
  */
 const boundServerId = sql<string>`coalesce(${project.serverId}, ${deployment.meta} ->> 'serverId')`;
 
+/** Older project and group rows predate the provider column. */
+function storedGitProviderIs(column: typeof project.gitProvider | typeof projectGroup.gitProvider, provider: string) {
+  return sql`coalesce(${column}, ${DEFAULT_GIT_PROVIDER}) = ${provider}`;
+}
+
 /**
  * Transaction-compatible primitive for moving every existing GitHub source row
  * in one workspace to the installation currently claimed for its owner.
@@ -73,11 +78,11 @@ export async function rebindGitHubInstallationRows(
   const ownerKey = owner.toLowerCase();
   const updatedAt = new Date();
   const projectPredicate = and(
-    eq(project.organizationId, organizationId), eq(project.gitProvider, "github"),
+    eq(project.organizationId, organizationId), storedGitProviderIs(project.gitProvider, "github"),
     sql`lower(${project.gitOwner}) = ${ownerKey}`, isNull(project.deletedAt),
   )!;
   const groupPredicate = and(
-    eq(projectGroup.organizationId, organizationId), eq(projectGroup.gitProvider, "github"),
+    eq(projectGroup.organizationId, organizationId), storedGitProviderIs(projectGroup.gitProvider, "github"),
     sql`lower(${projectGroup.gitOwner}) = ${ownerKey}`, isNull(projectGroup.deletedAt),
   )!;
   await assertProjectConfigurationWritable(db, or(projectPredicate,
@@ -244,13 +249,13 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
     },
 
     /** Find all projects linked to a given git owner/repo (for webhook dispatch) */
-    async findByGitRepo(owner: string, repo: string) {
-      const ownerKey = owner.toLowerCase();
-      const repoKey = repo.toLowerCase();
+    async findByGitRepo(ref: GitRepositoryRef, organizationIds?: readonly string[]) {
       return db.query.project.findMany({
         where: and(
-          sql`lower(${project.gitOwner}) = ${ownerKey}`,
-          sql`lower(${project.gitRepo}) = ${repoKey}`,
+          storedGitProviderIs(project.gitProvider, ref.provider),
+          sql`lower(${project.gitOwner}) = ${ref.namespace.toLowerCase()}`,
+          sql`lower(${project.gitRepo}) = ${ref.name.toLowerCase()}`,
+          organizationIds && inArray(project.organizationId, [...organizationIds]),
           isNull(project.deletedAt),
         ),
       });
@@ -261,9 +266,10 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
      * per-project signing secret yet — the self-hosted webhook-secret backfill
      * sweep re-registers these to mint + persist a per-project secret.
      */
-    async listNeedingWebhookBackfill() {
+    async listNeedingWebhookBackfill(provider: string) {
       return db.query.project.findMany({
         where: and(
+          storedGitProviderIs(project.gitProvider, provider),
           eq(project.autoDeploy, true),
           isNotNull(project.webhookId),
           isNull(project.webhookSecret),

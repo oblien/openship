@@ -28,8 +28,8 @@ import {
 } from "./mcp-access-templates";
 import type { PickerGrant } from "@/lib/api";
 
-const CTX = { githubAccounts: ["acme", "hydra"] };
-const NO_GH = { githubAccounts: [] };
+const CTX = { gitAccounts: ["acme", "hydra"].map(namespace => ({ provider: "github", namespace })) };
+const NO_GH = { gitAccounts: [] };
 
 const project = (id: string, ...permissions: PickerGrant["permissions"]): PickerGrant => ({
   resourceType: "project",

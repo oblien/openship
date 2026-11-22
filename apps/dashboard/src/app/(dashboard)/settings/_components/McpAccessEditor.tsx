@@ -108,7 +108,7 @@ export function McpAccessEditor({
   // here because we are EDITING a stored selection, not building a preset from
   // scratch. A user who picks "Coding agent" gets the create capability and whatever
   // GitHub grants they then choose explicitly.
-  const ctx = useMemo<TemplateContext>(() => ({ githubAccounts: [] }), []);
+  const ctx = useMemo<TemplateContext>(() => ({ gitAccounts: [] }), []);
   const [selection, dispatch] = useReducer(
     (state: AccessSelection, action: ScopeAction) => reduceSelection(state, action, ctx),
     detail,

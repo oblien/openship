@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { useCallback, useState } from "react";
 import { Icon } from "@repo/ui/icons";
 import { actionsApi } from "@/lib/api/actions";
@@ -24,18 +25,19 @@ export function DeployActions() {
     useCallback(async () => {
       if (!repository) return { files: [], workflows: [], policy: null };
       const [files, workflows, policy] = await Promise.all([
-        actionsApi.discover(config.owner, config.repo, config.branch),
+        actionsApi.discover(config.owner, config.repo, config.branch, config.gitProvider),
         actionsApi.list(),
         config.projectId ? actionsApi.projectPolicy(config.projectId) : Promise.resolve(null),
       ]);
       return { files, workflows, policy };
-    }, [repository, config.owner, config.repo, config.branch, config.projectId]),
+    }, [repository, config.owner, config.repo, config.branch, config.gitProvider, config.projectId]),
   );
   if (!repository) return null;
   const value = config.actions ?? workflows.data?.policy ?? undefined;
   const available =
     workflows.data?.workflows.filter(
       (w) =>
+        (w.gitProvider ?? DEFAULT_GIT_PROVIDER) === (config.gitProvider ?? DEFAULT_GIT_PROVIDER) &&
         w.owner?.toLowerCase() === config.owner.toLowerCase() &&
         w.repo?.toLowerCase() === config.repo.toLowerCase(),
     ) ?? [];
@@ -98,6 +100,7 @@ export function DeployActions() {
         <WorkflowSetupDialog
           projectScoped
           initial={{
+            gitProvider: config.gitProvider,
             owner: config.owner,
             repo: config.repo,
             ref: config.branch,

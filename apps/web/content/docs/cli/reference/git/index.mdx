@@ -1,0 +1,155 @@
+---
+title: git
+description: Commands, arguments, and options for openship git.
+cliGroup: openship git
+---
+
+See the [workflow guide](/docs/cli/access) for examples. Global flags such as `--json` go before the command; see [global options](/docs/cli/reference#global-options).
+
+## openship git
+
+Browse and update sources through a connected Git provider
+
+```text
+openship git [options] [command]
+```
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`repos [options] [file]`](/docs/cli/reference/git#openship-git-repos) | List accessible repositories, with provider, namespace and pagination |
+| [`repo [options] [file]`](/docs/cli/reference/git#openship-git-repo) | Inspect repository metadata |
+| [`branches [options] [file]`](/docs/cli/reference/git#openship-git-branches) | List repository branches |
+| [`files [options] [file]`](/docs/cli/reference/git#openship-git-files) | List files within permitted source paths |
+| [`tree [options] [file]`](/docs/cli/reference/git#openship-git-tree) | Read the permitted repository tree |
+| [`file [options] [file]`](/docs/cli/reference/git#openship-git-file) | Read one permitted source file |
+| [`detect [options] [file]`](/docs/cli/reference/git#openship-git-detect) | Detect build configuration without exposing source contents |
+| [`publish [options] [file]`](/docs/cli/reference/git#openship-git-publish) | Publish a reviewed source patch |
+
+## openship git branches
+
+List repository branches
+
+```text
+openship git branches [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship git detect
+
+Detect build configuration without exposing source contents
+
+```text
+openship git detect [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship git file
+
+Read one permitted source file
+
+```text
+openship git file [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship git files
+
+List files within permitted source paths
+
+```text
+openship git files [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship git publish
+
+Publish a reviewed source patch
+
+```text
+openship git publish [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+| `-y, --yes` | Confirm this operation |
+
+## openship git repo
+
+Inspect repository metadata
+
+```text
+openship git repo [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship git repos
+
+List accessible repositories, with provider, namespace and pagination
+
+```text
+openship git repos [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |
+
+## openship git tree
+
+Read the permitted repository tree
+
+```text
+openship git tree [options] [file]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `file` | JSON input file, or - for stdin |
+
+| Option | Meaning |
+| --- | --- |
+| `--schema` | Print the accepted JSON schema without making a request |

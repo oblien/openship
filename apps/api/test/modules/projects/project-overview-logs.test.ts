@@ -82,31 +82,29 @@ describe("shared project home", () => {
 });
 
 describe("shared project traffic logs", () => {
-  it("merges domains, preserves existing host labels and sorts ISO/second/millisecond timestamps together", async () => {
+  it("merges self-hosted domains, preserves host labels, sorts timestamps, and skips aggregate-only Cloud sources", async () => {
     h.env.CLOUD_MODE = true;
     h.sources.mockResolvedValue([
       { kind: "self-hosted", domain: "local.example.com", serverId: "server-a" },
       { kind: "cloud", domain: "cloud.example.com" },
-      { kind: "cloud", domain: "unavailable.example.com" },
+      { kind: "self-hosted", domain: "second.example.com", serverId: "server-a" },
     ]);
-    h.fetchMgmt.mockResolvedValue([{ ts: 1_800_000_000, path: "/old" }, { ts: 1_800_000_002_000, path: "/middle", host: "original" }]);
-    h.requests.mockImplementation(async domain => {
-      if (domain === "unavailable.example.com") throw new Error("offline");
-      return { data: { result: { requests: [{ timestamp: new Date(1_800_000_003_000).toISOString(), path: "/latest" }] } } };
-    });
+    h.fetchMgmt.mockImplementation(async (_server, url: string) => url.includes("second.example.com")
+      ? [{ timestamp: new Date(1_800_000_003_000).toISOString(), path: "/latest" }]
+      : [{ ts: 1_800_000_000, path: "/old" }, { ts: 1_800_000_002_000, path: "/middle", host: "original" }]);
     const result = await projectLogOperations.recentServerLogs(context, "project-a", { limit: 2 });
     expect(result).toEqual({ logs: [
-      { timestamp: new Date(1_800_000_003_000).toISOString(), path: "/latest", host: "cloud.example.com" },
+      { timestamp: new Date(1_800_000_003_000).toISOString(), path: "/latest", host: "second.example.com" },
       { ts: 1_800_000_002_000, path: "/middle", host: "original" },
     ] });
+    expect(h.requests).not.toHaveBeenCalled();
   });
-  it("does not turn cloud token failures into a self-hosted stream", async () => {
+  it("marks cloud streaming unavailable without requesting a provider token", async () => {
     h.env.CLOUD_MODE = true;
     h.source.mockResolvedValue({ kind: "cloud", domain: "cloud.example.com" });
-    h.streamToken.mockRejectedValueOnce(new Error("offline"));
     expect(await projectLogOperations.getServerLogStreamToken(context, "project-a")).toEqual({ kind: "unavailable" });
-    h.streamToken.mockResolvedValueOnce({ data: { result: { stream_url: "https://edge.test/stream", token: "provider-token" } } });
-    expect(await projectLogOperations.getServerLogStreamToken(context, "project-a")).toEqual({ kind: "cloud", url: "https://edge.test/stream", token: "provider-token" });
+    expect(h.streamToken).not.toHaveBeenCalled();
+    expect(h.fetchMgmt).not.toHaveBeenCalled();
   });
   it("refuses unmapped cloud scopes and foreign server snapshots before upstream requests", async () => {
     h.source.mockResolvedValue({ kind: "cloud", domain: "cloud.example.com" });

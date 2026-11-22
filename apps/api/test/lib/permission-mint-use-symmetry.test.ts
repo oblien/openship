@@ -1,3 +1,4 @@
+import { gitProviderForGrant } from "@repo/core";
 import { describe, it, expect, vi } from "vitest";
 import type { Context } from "hono";
 import type { RequestContext } from "../../src/lib/request-context";
@@ -81,17 +82,15 @@ const minterCtx = () =>
 function grantFor(type: string): G {
   const resourceId = ORG_SINGLETON_RESOURCES.has(type)
     ? "*"
-    : type === "github_repository"
-      ? "hydralerne/charts"
-      : type === "github_installation"
-        ? "hydralerne"
-        : "R1";
+    : "R1";
   return { resourceType: type, resourceId, permissions: ["read"] };
 }
 
 describe("anything the mint accepts, the token can use", () => {
   it("holds for every type on the grantable surface", async () => {
     for (const type of GRANTABLE_RESOURCE_TYPES) {
+      // Git family grants use the provider gate, exercised by permission-grant-satisfiability.
+      if (gitProviderForGrant(type)) continue;
       const g = grantFor(type);
 
       // Mint-time: would an owner be allowed to hand out this grant?
@@ -100,12 +99,6 @@ describe("anything the mint accepts, the token can use", () => {
         resourceId: g.resourceId,
         action: "read",
       });
-
-      // Use-time: can the scoped token holding exactly that grant read it?
-      // github_* are authorized by canUseGitHubRepo, not checkPermission — they
-      // are covered by permission-grant-satisfiability.test.ts's door 2, so the
-      // symmetry claim here is limited to the types checkPermission owns.
-      if (type === "github_installation" || type === "github_repository") continue;
 
       const usableAtRuntime = await checkPermission(
         "u1",

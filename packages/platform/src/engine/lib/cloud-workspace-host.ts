@@ -63,11 +63,25 @@ export async function readCloudWorkspaceConnection(organizationId: string, id: s
 
 async function runningConnection(organizationId: string, id: string) {
   const connection = await readCloudWorkspaceConnection(organizationId, id);
+  if (env.CLOUD_MODE && connection.binding.state === "provisioning")
+    throw new AppError(
+      "Your Cloud space is still being set up. Try again when setup finishes.",
+      409,
+      "CLOUD_WORKSPACE_NOT_READY",
+    );
   if (!["running", "active"].includes(cloudWorkspaceStatus(connection.provider.workspace)))
     throw new AppError(
       "Your Cloud space is stopped. Resume it to view resource usage.",
       409,
       "CLOUD_WORKSPACE_NOT_RUNNING",
+    );
+  // The SDK attempts owner-only initialization when opening a disabled runtime.
+  // Detect that state before build admission or worker recovery requests access.
+  if (env.CLOUD_MODE && !(await connection.client.vm(connection.binding.workspaceId!).apiAccess.status()).enabled)
+    throw new AppError(
+      "Owner initialization required. Contact OpenShip Support to finish setting up this Cloud server.",
+      409,
+      "CLOUD_RUNTIME_OWNER_INITIALIZATION_REQUIRED",
     );
   return connection;
 }

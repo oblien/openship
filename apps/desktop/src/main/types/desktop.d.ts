@@ -4,9 +4,11 @@
 
 // The key allowlist lives with the code that enforces it, so this can't drift.
 import type { RendererConfigKey } from "../security";
+import type { DesktopConnectionCallback } from "@repo/core";
 
 export interface DesktopBridge {
   isDesktop: true;
+  onConnectionCallback: (cb: (result: DesktopConnectionCallback) => void) => () => void;
   instanceLinks: {
     pending: () => Promise<import("@repo/core").DesktopInstanceLinkRequest | null>;
     acknowledge: (id: number) => Promise<boolean>;

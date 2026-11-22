@@ -1,3 +1,5 @@
+import { DEFAULT_GIT_PROVIDER, GIT_PROVIDERS } from "./git-providers";
+
 /**
  * Project source model — the discriminator for WHERE a project's code/dist
  * comes from. Shared by the db schema, API request validation, and deploy
@@ -6,15 +8,46 @@
  */
 
 /** Values stored in `project.gitProvider` (free-text column). */
+export const REPOSITORY_SOURCE_PROVIDERS = [
+  ...GIT_PROVIDERS.map(provider => provider.id),
+  "bitbucket" as const,
+];
+
+/** Includes repository IDs in historical exports even when their adapters are unavailable. */
 export const SOURCE_PROVIDERS = [
-  "github",
-  "gitlab",
-  "bitbucket",
+  ...REPOSITORY_SOURCE_PROVIDERS,
   "local",
   "upload",
   "release",
 ] as const;
 export type SourceProvider = (typeof SOURCE_PROVIDERS)[number];
+
+export interface ProjectGitSource {
+  gitProvider?: string | null;
+  gitOwner?: string | null;
+  gitRepo?: string | null;
+}
+
+/** Compare a current project with the repository recorded by a delivery, check or workflow. */
+export function matchesProjectRepository(
+  project: { gitProvider?: unknown; gitOwner?: unknown; gitRepo?: unknown },
+  ref: { provider?: string | null; namespace: string | null; name: string | null },
+): boolean {
+  return (project.gitProvider ?? DEFAULT_GIT_PROVIDER) === (ref.provider ?? DEFAULT_GIT_PROVIDER)
+    && typeof project.gitOwner === "string" && !!ref.namespace
+    && project.gitOwner.toLowerCase() === ref.namespace.toLowerCase()
+    && typeof project.gitRepo === "string" && !!ref.name
+    && project.gitRepo.toLowerCase() === ref.name.toLowerCase();
+}
+
+/** Non-Git sources can retain repository metadata after a source transition. */
+export function hasProjectRepository(project: ProjectGitSource): boolean {
+  return (
+    !!project.gitOwner &&
+    !!project.gitRepo &&
+    !["local", "upload", "release"].includes(project.gitProvider ?? "")
+  );
+}
 
 /** True for a release source (no clone/build — deploy an archive or container image). */
 export function isReleaseProvider(gitProvider: string | null | undefined): boolean {

@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Zuerst GitHub verbinden",
-      "description": "Verknüpfen Sie Ihr GitHub-Konto, um ein Repository mit diesem Projekt zu verbinden.",
+      "title": "Zuerst {provider} verbinden",
+      "description": "Verknüpfen Sie Ihr {provider}-Konto, um ein Repository mit diesem Projekt zu verbinden.",
       "connecting": "Wird verbunden…",
-      "connect": "GitHub verbinden"
+      "connect": "{provider} verbinden"
     },
     "link": {
       "title": "Repository verknüpfen",
-      "description": "Verbinden Sie ein GitHub-Repository, um durch Webhooks ausgelöste Deployments zu ermöglichen.",
+      "description": "Verbinden Sie ein {provider}-Repository, um durch Webhooks ausgelöste Deployments zu ermöglichen.",
       "select": "Repository auswählen"
     },
     "picker": {

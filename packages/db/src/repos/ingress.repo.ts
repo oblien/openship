@@ -77,6 +77,26 @@ export function createIngressRepo(db: Database) {
           .limit(1)
       )[0]?.connection;
     },
+    async requestConnectionRetry(organizationId: string, id: string) {
+      return db.transaction(async (tx) => {
+        const [current] = await tx.select().from(ingressConnection)
+          .where(and(eq(ingressConnection.organizationId, organizationId), eq(ingressConnection.id, id)))
+          .for("update");
+        if (!current) return undefined;
+        const now = new Date();
+        const [updated] = await tx.update(ingressConnection).set({
+          status: current.status === "removing" ? "removing" : "pending",
+          error: null,
+          nextAttemptAt: now,
+          updatedAt: now,
+        }).where(eq(ingressConnection.id, id)).returning();
+        // Requeue detached records so a corrected credential can finish cleanup
+        // right away. The worker still verifies ownership before deleting at Cloudflare.
+        await tx.update(ingressHostname).set({ nextAttemptAt: now })
+          .where(and(eq(ingressHostname.connectionId, id), isNull(ingressHostname.domainId)));
+        return updated;
+      });
+    },
     async bindDomain(domainId: string, connectionId: string, accessPolicyId: string | null) {
       return db.transaction(async (tx) => {
         const [d] = await tx.select().from(domain).where(eq(domain.id, domainId));

@@ -2,15 +2,23 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { normalizeCredentialSelector, type CredentialProvider } from "@repo/core";
+import {
+  normalizeCredentialSelector,
+  supportsConnectionOAuth,
+  type CredentialProvider,
+} from "@repo/core";
 import { Icon } from "@repo/ui/icons";
 import { credentialsApi, type Credential } from "@/lib/api/credentials";
+import { authorizeConnection } from "@/lib/authorize-connection";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useToast } from "@/context/ToastContext";
+import { CreateGitTokenLink } from "@/components/git/CreateGitTokenLink";
+import CopyCommand from "@/components/shared/CopyCommand";
 
 /** One schema-driven form for Settings and in-context connections. Stored
  * secrets never reach an input; a blank secret on edit means keep it, but only
@@ -40,8 +48,10 @@ export function CredentialForm({
   const copy = t.settings.credentials;
   const { showToast } = useToast();
   const id = useId();
-  const busy = useRef(false);
-  const [name, setName] = useState(existing?.name ?? initialName);
+  const submission = useRef<AbortController | null>(null);
+  const gitLabSetup = provider.id === "gitlab" && !existing;
+  const [nameInput, setName] = useState(existing?.name ?? initialName);
+  const name = gitLabSetup ? nameInput.trim() || provider.label : nameInput;
   const [selector, setSelector] = useState(existing?.selector ?? "");
   const [values, setValues] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {};
@@ -52,112 +62,44 @@ export function CredentialForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [method, setMethod] = useState<"oauth" | "token">(
+  const linkedMethod = existing?.publicFields.authorization;
+  const linked = linkedMethod === "oauth" || linkedMethod === "host-cli";
+  const methods: { id: "oauth" | "token" | "host-cli"; label: string }[] = [];
+  const oauthLabel = gitLabSetup ? copy.gitlab.continue : `Connect ${provider.label}`;
+  if (provider.authorization?.available) methods.push({ id: "oauth", label: oauthLabel });
+  methods.push({
+    id: "token",
+    label: gitLabSetup ? copy.gitlab.useToken : "API token",
+  });
+  if (provider.authorization?.hostCli) methods.push({ id: "host-cli", label: copy.gitlab.useCli });
+  const [method, setMethod] = useState<"oauth" | "token" | "host-cli">(
     provider.authorization?.available && !existing ? "oauth" : "token",
   );
-  const authorization = useRef<{ state: string; popup: Window; name: string } | null>(null);
-  const mounted = useRef(true);
-  const saved = useRef(onSaved);
-  saved.current = onSaved;
+  const formRef = useRef<HTMLFormElement>(null);
+  const previousMethod = useRef(method);
+  useEffect(() => {
+    if (gitLabSetup && method !== previousMethod.current) {
+      // Switching removes the focused alternative from the footer.
+      const form = formRef.current;
+      const target =
+        method === "token"
+          ? form?.querySelector<HTMLInputElement>('input[type="password"]')
+          : form?.querySelector<HTMLButtonElement>('button[type="submit"]:not([disabled])');
+      (target ?? form)?.focus();
+    }
+    previousMethod.current = method;
+  }, [gitLabSetup, method]);
   const busyChange = useRef(onBusyChange);
   busyChange.current = onBusyChange;
-  useEffect(() => {
-    mounted.current = true;
-    let active = true;
-    const finish = async (pending: NonNullable<typeof authorization.current>, message?: string) => {
-      authorization.current = null;
-      pending.popup.close();
-      try {
-        if (message) {
-          if (active) setError(message);
-          return;
-        }
-        // postMessage contains no trusted credential or token. The same lookup
-        // also handles providers that detach the opener through COOP headers.
-        const result = await credentialsApi.list();
-        if (!active) return;
-        const row = result.data.find(
-          (row) => row.provider === provider.id && row.name === pending.name,
-        );
-        if (row) await saved.current(row);
-        else setError("The connection window closed. Check Connections or try again.");
-      } catch (error) {
-        if (active) setError(getApiErrorMessage(error, copy.toast.saveFailed));
-      } finally {
-        busy.current = false;
-        if (active) {
-          setSaving(false);
-          busyChange.current?.(false);
-        }
-      }
-    };
-    const completed = (event: MessageEvent) => {
-      const pending = authorization.current;
-      if (
-        !pending ||
-        event.origin !== window.location.origin ||
-        event.source !== pending.popup ||
-        event.data?.type !== "openship:connection" ||
-        event.data?.state !== pending.state
-      )
-        return;
-      void finish(pending, event.data.error ? String(event.data.error) : undefined);
-    };
-    window.addEventListener("message", completed);
-    const timer = window.setInterval(() => {
-      const pending = authorization.current;
-      if (pending?.state && pending.popup.closed) void finish(pending);
-    }, 1000);
-    return () => {
-      active = false;
-      mounted.current = false;
-      window.removeEventListener("message", completed);
-      window.clearInterval(timer);
-      authorization.current?.popup.close();
-      authorization.current = null;
-      // Saving can replace the form with the next step before its promise settles.
-      busy.current = false;
+  useEffect(
+    () => () => {
+      submission.current?.abort();
+      submission.current = null;
       busyChange.current?.(false);
-    };
-  }, [provider.id, copy.toast.saveFailed]);
+    },
+    [provider.id, existing?.id],
+  );
 
-  async function authorize() {
-    if (busy.current || !name.trim() || (provider.id !== "railway" && provider.id !== "vercel"))
-      return;
-    const popup = window.open("about:blank", "_blank", "popup,width=720,height=780");
-    if (!popup) {
-      setError("Allow a popup to connect this platform.");
-      return;
-    }
-    busy.current = true;
-    authorization.current = { state: "", popup, name: name.trim() };
-    setSaving(true);
-    onBusyChange?.(true);
-    setError(null);
-    try {
-      const grant = await credentialsApi.authorize({ provider: provider.id, name: name.trim() });
-      if (!mounted.current || popup.closed) {
-        popup.close();
-        busy.current = false;
-        if (mounted.current) {
-          setSaving(false);
-          onBusyChange?.(false);
-        }
-        return;
-      }
-      authorization.current = { state: grant.state, popup, name: name.trim() };
-      popup.location.replace(grant.url);
-    } catch (error) {
-      popup.close();
-      authorization.current = null;
-      busy.current = false;
-      if (mounted.current) {
-        setSaving(false);
-        onBusyChange?.(false);
-        setError(getApiErrorMessage(error, copy.toast.saveFailed));
-      }
-    }
-  }
   const selectorChanged = Boolean(
     existing &&
     provider.selector &&
@@ -167,60 +109,86 @@ export function CredentialForm({
   const selectorLabel = pLoc?.selector?.label ?? provider.selector?.label;
   const selectorHelp = pLoc?.selector?.help ?? provider.selector?.help;
 
-  async function submit() {
-    if (busy.current) return;
-    busy.current = true;
+  async function saveCredential(selectedMethod: typeof method, signal: AbortSignal) {
+    if (!existing && selectedMethod === "oauth" && supportsConnectionOAuth(provider.id))
+      return authorizeConnection(provider.id, name.trim(), signal, t.auth.security.expired);
+    if (!existing && selectedMethod === "host-cli" && provider.id === "gitlab")
+      return (await credentialsApi.connectCli({ provider: provider.id, name })).data;
+
+    const fields = {
+      name,
+      selector: provider.selector ? selector : null,
+      values: Object.fromEntries(Object.entries(values).filter(([, value]) => value !== "")),
+    };
+    if (existing)
+      return (await credentialsApi.update(existing.id, linked ? { name } : fields)).data;
+    return (await credentialsApi.create({ ...fields, provider: provider.id })).data;
+  }
+
+  async function submit(selectedMethod = method) {
+    if (submission.current) return;
+    const controller = new AbortController();
+    submission.current = controller;
     setSaving(true);
-    onBusyChange?.(true);
+    busyChange.current?.(true);
     setError(null);
     try {
-      const payload: Record<string, string> = {};
-      for (const [key, value] of Object.entries(values)) {
-        if (value !== "") payload[key] = value;
-      }
-      const input =
-        existing?.publicFields.authorization === "oauth"
-          ? { name }
-          : { name, selector: provider.selector ? selector : null, values: payload };
-      const saved = existing
-        ? await credentialsApi.update(existing.id, input)
-        : await credentialsApi.create({
-            provider: provider.id,
-            name,
-            selector: provider.selector ? selector : null,
-            values: payload,
-          });
+      const credential = await saveCredential(selectedMethod, controller.signal);
+      if (controller.signal.aborted) return;
       showToast(existing ? copy.toast.updated : copy.toast.created, "success");
-      await onSaved(saved.data);
-    } catch (err) {
-      // Provider failures are redacted by the API. Keep the actionable reason
-      // next to the form instead of losing it behind the enclosing dialog.
-      setError(getApiErrorMessage(err, copy.toast.saveFailed));
+      await onSaved(credential);
+    } catch (error) {
+      if (!controller.signal.aborted) setError(getApiErrorMessage(error, copy.toast.saveFailed));
     } finally {
-      busy.current = false;
-      setSaving(false);
-      onBusyChange?.(false);
+      if (submission.current === controller) {
+        submission.current = null;
+        setSaving(false);
+        busyChange.current?.(false);
+      }
     }
   }
 
   const cancelButton = (
-    <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
+    <Button
+      type="button"
+      variant="ghost"
+      disabled={saving && method !== "oauth"}
+      onClick={onCancel}
+    >
       {t.settings.common.cancel}
     </Button>
   );
+  const nameField = (
+    <Input
+      id={`${id}-name`}
+      variant="filled"
+      value={nameInput}
+      required={!gitLabSetup}
+      disabled={saving}
+      onChange={(event) => setName(event.target.value)}
+      placeholder={gitLabSetup ? provider.label : copy.namePlaceholder}
+      aria-label={gitLabSetup ? copy.gitlab.connectionName : undefined}
+    />
+  );
   const submitButton = (
-    <Button type="submit" form={id} disabled={saving}>
+    <Button
+      type="submit"
+      form={id}
+      disabled={saving || (gitLabSetup && method === "token" && !values.apiToken?.trim())}
+    >
       {saving && <Icon name="spinner" className="size-4 animate-spin" />}
+      {!saving && gitLabSetup && method === "oauth" && <Icon name="gitlab" aria-hidden="true" />}
       {method === "oauth"
-        ? `Connect ${provider.label}`
-        : (submitLabel ?? (existing ? copy.save : copy.connect))}
+        ? oauthLabel
+        : (submitLabel ??
+          (existing ? copy.save : gitLabSetup ? t.library.connect.token.connect : copy.connect))}
     </Button>
   );
   const actions = (
     <div
       className={
         actionsContainer === undefined
-          ? "flex flex-wrap items-center justify-end gap-2"
+          ? "ms-auto flex flex-wrap items-center justify-end gap-2"
           : "grid gap-2"
       }
     >
@@ -237,20 +205,26 @@ export function CredentialForm({
       )}
     </div>
   );
+  const renderedActions =
+    actionsContainer === undefined
+      ? actions
+      : actionsContainer && createPortal(actions, actionsContainer);
 
   return (
     <form
+      ref={formRef}
       id={id}
+      tabIndex={gitLabSetup ? -1 : undefined}
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
-        void (method === "oauth" ? authorize() : submit());
+        void submit();
       }}
       aria-busy={saving}
     >
-      {!existing && provider.authorization?.available && (
+      {!existing && !gitLabSetup && methods.length > 1 && (
         <div className="flex gap-1 rounded-xl bg-muted/40 p-1">
-          {(["oauth", "token"] as const).map((value) => (
+          {methods.map(({ id: value, label }) => (
             <button
               type="button"
               key={value}
@@ -259,25 +233,22 @@ export function CredentialForm({
               className={`rounded-lg px-3 py-2 text-sm ${method === value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted"}`}
               onClick={() => setMethod(value)}
             >
-              {value === "oauth" ? `Connect ${provider.label}` : "API token"}
+              {label}
             </button>
           ))}
         </div>
       )}
-      <div>
-        <label htmlFor={`${id}-name`} className="mb-1.5 block text-sm font-medium text-foreground">
-          {copy.fieldName}
-        </label>
-        <Input
-          id={`${id}-name`}
-          variant="filled"
-          value={name}
-          required
-          disabled={saving}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={copy.namePlaceholder}
-        />
-      </div>
+      {!gitLabSetup && (
+        <div>
+          <label
+            htmlFor={`${id}-name`}
+            className="mb-1.5 block text-sm font-medium text-foreground"
+          >
+            {copy.fieldName}
+          </label>
+          {nameField}
+        </div>
+      )}
 
       {provider.selector && (
         <div>
@@ -306,27 +277,33 @@ export function CredentialForm({
         </div>
       )}
 
-      {existing?.publicFields.authorization === "oauth" && (
+      {linked && (
         <p className="text-sm text-muted-foreground">
-          Connected through {provider.label} authorization. To change accounts or permissions,
-          remove this connection and connect again.
+          Connected through {linkedMethod === "host-cli" ? "glab CLI" : provider.label}. To change
+          accounts or permissions, remove this connection and connect again.
         </p>
       )}
       {method === "token" &&
-        existing?.publicFields.authorization !== "oauth" &&
+        !linked &&
         provider.fields.map((field) => {
           const fieldLoc = pLoc?.fields?.[field.key];
           const fieldLabel = fieldLoc?.label ?? field.label;
+          const gitLabToken = provider.id === "gitlab" && field.key === "apiToken";
           const fieldHelp = fieldLoc?.help ?? field.help;
           const inputType = field.inputType ?? (field.type === "secret" ? "password" : "text");
           return (
             <div key={field.key}>
-              <label
-                htmlFor={`${id}-${field.key}`}
-                className="mb-1.5 block text-sm font-medium text-foreground"
-              >
-                {fieldLabel}
-              </label>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <label
+                  htmlFor={`${id}-${field.key}`}
+                  className="text-sm font-medium text-foreground"
+                >
+                  {fieldLabel}
+                </label>
+                {gitLabToken && (
+                  <CreateGitTokenLink provider="gitlab" label={copy.gitlab.createToken} />
+                )}
+              </div>
               {field.type === "select" ? (
                 <CustomSelect
                   id={`${id}-${field.key}`}
@@ -360,7 +337,7 @@ export function CredentialForm({
                   autoCapitalize={field.type === "secret" ? "none" : undefined}
                   autoCorrect={field.type === "secret" ? "off" : undefined}
                   spellCheck={field.type === "secret" ? false : undefined}
-                  aria-describedby={field.help ? `${id}-${field.key}-help` : undefined}
+                  aria-describedby={fieldHelp ? `${id}-${field.key}-help` : undefined}
                   className={field.type === "secret" ? "font-mono" : undefined}
                 />
               )}
@@ -373,19 +350,73 @@ export function CredentialForm({
           );
         })}
 
+      {gitLabSetup ? (
+        <>
+          {method === "oauth" && (
+            <p className="text-sm text-muted-foreground">{copy.gitlab.oauthHelp}</p>
+          )}
+          {method === "host-cli" && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">{copy.gitlab.cliHelp}</p>
+              <CopyCommand command="glab auth login --hostname gitlab.com" />
+            </div>
+          )}
+          <details className="text-sm text-muted-foreground open:space-y-2">
+            <DisclosureSummary>{copy.gitlab.connectionName}</DisclosureSummary>
+            {nameField}
+          </details>
+        </>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {method === "oauth"
+            ? "Choose the account and projects OpenShip can access in the provider's authorization window."
+            : copy.verifyNote}
+        </p>
+      )}
       {error && (
         <p role="alert" className="rounded-xl bg-danger-bg p-3 text-sm text-danger break-words">
           {error}
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        {method === "oauth"
-          ? "Choose the account and projects OpenShip can access in the provider's authorization window."
-          : copy.verifyNote}
-      </p>
-      {actionsContainer === undefined
-        ? actions
-        : actionsContainer && createPortal(actions, actionsContainer)}
+      {gitLabSetup ? (
+        <footer className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/40 pt-4">
+          {methods.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {methods
+                .filter((option) => option.id !== method)
+                .map((option) => (
+                  <Button
+                    key={option.id}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => {
+                      setError(null);
+                      setMethod(option.id);
+                      if (option.id === "oauth") void submit(option.id);
+                    }}
+                  >
+                    <Icon
+                      name={
+                        option.id === "oauth"
+                          ? "gitlab"
+                          : option.id === "token"
+                            ? "key"
+                            : "terminal"
+                      }
+                      aria-hidden="true"
+                    />
+                    {option.label}
+                  </Button>
+                ))}
+            </div>
+          )}
+          {renderedActions}
+        </footer>
+      ) : (
+        renderedActions
+      )}
     </form>
   );
 }

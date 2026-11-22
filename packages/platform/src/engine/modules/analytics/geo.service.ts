@@ -1,4 +1,4 @@
-import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { trackBackgroundWork } from "../../lib/background-work";
 /**
  * Visitor geography + daily rollups for a project — the data behind the country
@@ -12,7 +12,7 @@ import { trackBackgroundWork } from "../../lib/background-work";
  *
  *   self-hosted → server_analytics_geo (scraped archive) + a live tail read
  *                 straight off the edge's mgmt API for TODAY
- *   cloud       → Oblien analytics.geo, read through, never persisted here
+ *   cloud       → aggregate traffic only; geographic data is unavailable
  *
  * ── On today's row and double counting ──────────────────────────────────────
  *
@@ -28,7 +28,6 @@ import { repos } from "@repo/db";
 import { NotFoundError } from "@repo/core";
 import { resolveProjectTrafficSources, type ProjectTrafficSource } from "@repo/platform/engine/lib/project-analytics";
 import { fetchMgmt } from "@repo/platform/engine/lib/edge-management";
-import { proxyCloudAnalytics } from "@repo/platform/engine/modules/cloud/cloud-analytics.service";
 import { scrapeServerIfStale } from "@repo/platform/engine/modules/system/analytics-scraper";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 
@@ -285,79 +284,6 @@ async function collectSelfHosted(
 // ─── Cloud ───────────────────────────────────────────────────────────────────
 
 /**
- * Oblien returns `{ success, data: { total, countries: [{code,count,pct}] } }`, and
- * the cloud proxy wraps that again. Walk down nested data/result wrappers rather
- * than reading a fixed depth — the same wrapper-depth trap `extractCloudBuckets`
- * in analytics.service.ts documents, where reading one level short yielded a
- * single bogus entry whose numeric fields were all undefined.
- */
-function extractCloudGeo(result: unknown): { total: number; countries: GeoCountry[] } {
-  let node: unknown = result;
-  for (let depth = 0; depth < 5 && node && typeof node === "object"; depth++) {
-    const obj = node as Record<string, unknown>;
-    if (Array.isArray(obj.countries)) {
-      const countries = (obj.countries as Array<Record<string, unknown>>)
-        .map((c) => ({
-          code: String(c.code ?? "").toUpperCase(),
-          count: Number(c.count ?? 0),
-          pct: Number(c.pct ?? 0),
-        }))
-        .filter((c) => /^[A-Z]{2}$/.test(c.code) && Number.isFinite(c.count));
-      const total =
-        typeof obj.total === "number"
-          ? obj.total
-          : countries.reduce((a, c) => a + c.count, 0);
-      return { total, countries: countries.sort((a, b) => b.count - a.count) };
-    }
-    node = obj.data ?? obj.result;
-  }
-  return { total: 0, countries: [] };
-}
-
-async function collectCloud(
-  organizationId: string,
-  sources: Extract<ProjectTrafficSource, { kind: "cloud" }>[],
-  fromMs: number,
-  toMs: number,
-): Promise<ProjectGeoResult> {
-  const settled = await observedAllSettled(
-    sources.map((s) =>
-      proxyCloudAnalytics(organizationId, {
-        operation: "geo",
-        domain: s.domain,
-        params: { from: fromMs, to: toMs },
-      }),
-    ), "platform/engine/modules/analytics/geo.service",
-  );
-
-  const counts: Record<string, number> = {};
-  for (const r of settled) {
-    if (r.status !== "fulfilled") continue;
-    for (const c of extractCloudGeo(r.value).countries) {
-      counts[c.code] = (counts[c.code] ?? 0) + c.count;
-    }
-  }
-
-  const { countries, total } = toCountries(counts);
-  return {
-    ...EMPTY,
-    total,
-    countries,
-    // Oblien's geo endpoint returns countries only. Visitors come from the
-    // timeseries buckets (unique_visitors) on the overview path, and paths aren't
-    // exposed by the SDK at all — left at EMPTY's zeros here rather than faked, and
-    // the UI falls through to the overview's own visitor count for cloud projects.
-    geoAvailable: true,
-    // Nothing to opt into on cloud: Oblien's edge aggregates paths regardless, so the
-    // dashboard must not offer an Enable button that would have nothing to switch.
-    pathsEnabled: true,
-    source: "cloud",
-  };
-}
-
-// ─── Entry point ─────────────────────────────────────────────────────────────
-
-/**
  * Country + daily rollups, defaulting to seven UTC dates including today.
  *
  * An unroutable project (no tracked domain, no server) is a legitimate empty, not
@@ -387,13 +313,9 @@ export async function getProjectGeo(
   const sources = await resolveProjectTrafficSources(projectId, { domain });
   if (sources.length === 0) return EMPTY;
 
-  const cloud = sources.filter((s): s is Extract<ProjectTrafficSource, { kind: "cloud" }> => s.kind === "cloud");
-  if (cloud.length === sources.length) {
-    return collectCloud(ctx.organizationId, cloud, fromMs, toMs);
-  }
-
   const selfHosted = sources.filter(
     (s): s is Extract<ProjectTrafficSource, { kind: "self-hosted" }> => s.kind === "self-hosted",
   );
+  if (!selfHosted.length) return { ...EMPTY, source: "cloud", geoAvailable: false };
   return collectSelfHosted(selfHosted, fromMs, toMs, project.collectPaths === true);
 }

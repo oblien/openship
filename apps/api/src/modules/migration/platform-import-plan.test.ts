@@ -43,7 +43,7 @@ vi.mock("@repo/platform/engine/modules/deployments/prepare.service", () => ({
   resolveProjectInfo: h.info,
 }));
 vi.mock("@repo/platform/engine/modules/deployments/project-reader", () => ({
-  createGitHubReader: () => ({ readText: h.readText }),
+  createGitReader: () => ({ readText: h.readText }),
 }));
 vi.mock("@repo/platform/engine/modules/migration/providers/railway", () => ({
   railwayMigrationProvider: { discover: h.discover },

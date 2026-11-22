@@ -1,75 +1,55 @@
-"use client";
-import { useCopy } from "@/i18n/use-copy";
+import { Link } from '@/i18n/Link';
+import { useCopy } from '@/i18n/use-copy';
+import { Discord, GitHub, Twitter } from '../icons';
 
-import { motion } from "motion/react";
-import { Button } from "../ui/button";
-import { Link } from "@/i18n/Link";
-import { useRef } from "react";
-import { Footer as OpenshipFooter } from "@/components/landing";
+const social = [
+  { name: 'GitHub', href: 'https://github.com/oblien/openship', Icon: GitHub },
+  { name: 'X', href: 'https://x.com/openshipio', Icon: Twitter },
+  { name: 'Discord', href: 'https://discord.gg/Q9eWNCeXjg', Icon: Discord },
+];
 
 export default function MailFooter() {
   const copy = useCopy();
-
-  const ref = useRef(null);
-
   return (
-    <div className="bg-panelDark mx-1 mb-3 md:mx-4 md:mb-3 flex-col items-center justify-center rounded-xl flex">
-      <div>
-        <div>
-          <img
-            src="/gradient.svg"
-            alt="logo"
-            width={1000}
-            height={100}
-            className="w-screen rounded-t-2xl"
-          />
+    <footer className="mail-footer">
+      <img src="/gradient.svg" alt="" loading="lazy" width={1408} height={587} className="block h-auto w-full" />
+      <div className="mail-footer-invite">
+        <h2 className="mail-footer-title">{copy("Experience the Future of")}<br />{copy("Email Today")}</h2>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-5">
+          <Link href="/docs/guides/email-webmail" className="mail-primary-link">{copy("Use my server")}</Link>
+          <a href="#mail-pricing" className="mail-inline-link text-sm">{copy("View email plans")}</a>
         </div>
-        <div className="relative bottom-20 inline-flex w-full justify-center lg:bottom-60">
-          <div
-            ref={ref}
-            className="relative inline-flex w-full flex-col items-center justify-center gap-20 rounded-full"
-          >
-            <div className="flex flex-col items-center justify-center px-2">
-              <div className="flex flex-col items-center py-5">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="lg:to-panelDark inline-block text-center text-2xl font-bold text-white sm:text-4xl md:text-5xl lg:bg-linear-to-b lg:from-[#84878D] lg:via-[#84878D] lg:bg-clip-text lg:text-8xl lg:text-transparent"
-                >
-                  <span>{copy("Experience the Future of ")}</span> <br />
-                  {copy("Email Today")}
-                </motion.div>
-              </div>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="hidden flex-col items-center justify-start md:flex"
-              >
-                <div className="justify-start text-center text-lg font-normal leading-7 text-white lg:text-2xl">
-                  {copy("Self-host OpenShip and run your own mail server in minutes.")}
-                </div>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 }}
-                className="flex w-fit flex-col items-center justify-center md:pt-4"
-              >
-                <Link href="/docs/getting-started/quickstart">
-                  <Button className="h-8 bg-white text-black cursor-pointer">
-                    {copy("Install OpenShip")}
-                  </Button>
-                </Link>
-              </motion.div>
-            </div>
+      </div>
+      <div className="mail-footer-links">
+        <div>
+          <Link href="/mail" className="inline-flex items-center gap-3 text-xl font-medium">
+            <span aria-hidden="true" className="mail-footer-mark size-8 rounded-full border-[3px]" />{copy("OpenShip Mail")}
+          </Link>
+          <div className="mt-4 flex gap-2">
+            {social.map(({ name, href, Icon }) => (
+              <a key={name} href={href} aria-label={name} className="grid size-9 place-items-center rounded-full bg-white/10 hover:bg-white/20">
+                <Icon className="size-4 fill-current" />
+              </a>
+            ))}
           </div>
         </div>
+        <div>
+          <h3>{copy("Resources")}</h3>
+          <a href="#setup-guides">{copy("Setup guides")}</a>
+          <Link href="/docs/api/mail">{copy("Mail API")}</Link>
+          <Link href="/support">{copy("Support")}</Link>
+        </div>
+        <div>
+          <h3>{copy("OpenShip")}</h3>
+          <Link href="/about">{copy("About")}</Link>
+          <Link href="/changelog">{copy("Changelog")}</Link>
+          <Link href="/contact">{copy("Contact")}</Link>
+        </div>
+        <div className="mail-footer-legal">
+          <span>{copy("© {year} Oblien LLC. All rights reserved.", { year: new Date().getUTCFullYear() })}</span>
+          <Link href="/terms">{copy("Terms")}</Link><Link href="/privacy">{copy("Privacy")}</Link>
+        </div>
       </div>
-      <div className="w-full self-stretch">
-        <OpenshipFooter />
-      </div>
-    </div>
+    </footer>
   );
 }

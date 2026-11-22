@@ -3,17 +3,24 @@
 import { Icon } from "@repo/ui/icons";
 import { cn } from "@/lib/utils";
 
-/** One token-creation destination for Library and GitHub credential forms. */
-export function CreateGitHubTokenLink({
+// Both providers support prefilling the token name and requested scopes.
+const tokenUrls = {
+  github: "https://github.com/settings/tokens/new?scopes=repo,read:org&description=OpenShip",
+  gitlab:
+    "https://gitlab.com/-/user_settings/personal_access_tokens?name=OpenShip&scopes=read_api,read_repository",
+};
+export function CreateGitTokenLink({
+  provider,
   label,
   className,
 }: {
+  provider: keyof typeof tokenUrls;
   label: string;
   className?: string;
 }) {
   return (
     <a
-      href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=OpenShip"
+      href={tokenUrls[provider]}
       target="_blank"
       rel="noopener noreferrer"
       className={cn(

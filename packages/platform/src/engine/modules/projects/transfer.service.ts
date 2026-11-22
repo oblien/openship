@@ -39,7 +39,7 @@ import {
   type SubgraphScope,
 } from "@repo/db";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
-import { AppError, type RoutingConfig } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, AppError, type RoutingConfig } from "@repo/core";
 import { randomUUID } from "node:crypto";
 import { teardownProject, getActiveProjectState } from "@repo/platform/engine/modules/projects/project-teardown";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -329,6 +329,7 @@ async function promoteProjectToCloudLocked(ctx: RequestContext, projectId: strin
         await repos.cloudWebhookBinding.upsert({
           organizationId: ctx.organizationId,
           cloudProjectId: projectId,
+          gitProvider: local.gitProvider ?? DEFAULT_GIT_PROVIDER,
           gitOwner: local.gitOwner,
           gitRepo: local.gitRepo,
           gitBranch: local.gitBranch ?? "",

@@ -29,6 +29,7 @@ export type PolicyId =
   | "default-authed"
   | "auth-tight"
   | "auth-loose"
+  | "auth-otp-mail"
   | "transfer-chunk"
   | "mcp"
   | "read-authed"
@@ -116,6 +117,14 @@ export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
     windowMs: MINUTE_MS,
     subject: "ip",
     description: "Login/signup/reset endpoints — per-IP, brute-force gate.",
+  },
+
+  "auth-otp-mail": {
+    id: "auth-otp-mail",
+    limit: 30,
+    windowMs: 60 * MINUTE_MS,
+    subject: "ip",
+    description: "Cloud verification and password-reset email requests per trusted client IP.",
   },
 
   /** Authed auth operations (logout, switch org, session refresh).

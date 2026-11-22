@@ -5,9 +5,9 @@ import { inheritSocialImages } from "@/lib/social-metadata";
 import { Navbar } from "@/components/landing";
 import HomeContent from "./_components/home/HomeContent";
 
-const TITLE = "Mail — Your email control panel";
+const TITLE = "OpenShip Mail";
 const DESCRIPTION =
-  "Manage domains, mailboxes, aliases, delivery, and backups on your own mail server with OpenShip. Connect existing mailboxes through webmail on Cloud.";
+  "Keep your team’s mail on your server and let OpenShip handle delivery. For a fully hosted inbox, choose OpenShip Cloud.";
 
 const metadata: Metadata = {
   title: "Mail",

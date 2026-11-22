@@ -146,13 +146,17 @@ function policyIds(app: AccessApp) {
   return (app.policies ?? []).map((p) => (typeof p === "string" ? p : p.id)).sort();
 }
 
+export function ingressZoneUnavailableMessage(hostname: string, credentialName?: string): string {
+  const credential = credentialName ? ` (${credentialName})` : "";
+  return `The ingress credential for this server${credential} cannot manage the DNS zone for ${hostname}. Check that its token has Zone Read and DNS Edit on that zone.`;
+}
+
 /** Provider operations accept persisted ownership and checkpoint BEFORE writes.
  * They never adopt resources by hostname alone. No API token leaves this module. */
 export class CloudflareIngress {
   constructor(
     private readonly token: string,
     readonly accountId: string,
-    private readonly credentialName?: string,
   ) {}
   private path(suffix: string) {
     return `/accounts/${encodeURIComponent(this.accountId)}${suffix}`;
@@ -288,7 +292,7 @@ export class CloudflareIngress {
     );
     if (zone) return zone;
     throw new AppError(
-      `The ingress credential for this server${this.credentialName ? ` (${this.credentialName})` : ""} cannot manage the DNS zone for ${hostname}. Check that its token has Zone Read and DNS Edit on that zone.`,
+      ingressZoneUnavailableMessage(hostname),
       400,
       "INGRESS_ZONE_UNAVAILABLE",
     );

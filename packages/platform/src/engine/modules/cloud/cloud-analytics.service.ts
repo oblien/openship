@@ -1,50 +1,13 @@
-/**
- * Cloud analytics service — proxies Oblien analytics calls.
- *
- * Auth model: **namespace token is the authorization**.
- *
- *   1. Mint a namespace-scoped Oblien token for the caller's org.
- *   2. Pass it straight to Oblien's analytics endpoints.
- *   3. Oblien enforces namespace ownership server-side — a request for
- *      a domain outside the caller's namespace gets rejected at Oblien,
- *      not by us.
- *
- * The namespace IS the security boundary; Oblien IS the source of truth
- * for "which namespace owns which hostname." No SaaS-side ownership
- * ledger. No two-step verify. No cache. One call, one credential.
- *
- * ─── Required Oblien behavior (track upstream) ──────────────────────────
- *
- *   This service depends on Oblien correctly gating analytics endpoints
- *   by namespace when called with a namespace token. If any of the
- *   following are broken in the Oblien backend, the symptoms surface
- *   here as silent empty 200s, 403 admin-required, or wrong-tenant data
- *   leakage. Fix them upstream rather than working around here:
- *
- *   1. `analytics.timeseries(domain)` with namespace token MUST:
- *      - return the timeseries when the domain belongs to the namespace
- *      - return 403/404 when the domain belongs to a different namespace
- *      - NOT return an empty 200 (silently zero-out data) for either case
- *
- *   2. `analytics.requests(domain)`, `analytics.streamToken(domain)`,
- *      `analytics.geo(domain)`, `analytics.get(domain)` — same contract
- *      as (1).
- *
- *   3. The namespace ownership check must run BEFORE any access-scope
- *      check. Right now namespace tokens get rejected with
- *      "scope: namespace, required: admin" on some endpoints
- *      (`pages.delete/disable/enable`, `edgeProxy.list`) — that's
- *      backwards. Namespace tokens should be allowed on namespace-scoped
- *      resources; admin scope should only be required for cross-
- *      namespace ops or namespace lifecycle (create/delete the
- *      namespace itself, set quotas, etc.).
- */
-
 import { repos } from "@repo/db";
 import { Oblien } from "@repo/adapters";
-import { issueNamespaceToken } from "@repo/platform/engine/lib/openship-cloud";
+import { AppError } from "@repo/core";
+import { env } from "../../config/env";
+import type { ExecutionContext } from "../../../context";
+import { authorization } from "../../lib/authorization";
+import { cloudBillingOwner, workspaceForServer, requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
+import { getOblienClient } from "../../lib/oblien-client";
 
-export type CloudAnalyticsOperation = "timeseries" | "requests" | "streamToken" | "geo";
+export type CloudAnalyticsOperation = "timeseries";
 
 export class CloudAnalyticsForbiddenError extends Error {
   readonly status = 403 as const;
@@ -71,78 +34,50 @@ function isCrossTenantError(err: unknown): boolean {
   );
 }
 
-/**
- * Per-operation allowlist for analytics params.
- *
- * The Oblien SDK ignores unknown keys today, but the `as any` cast that
- * previously sat at the call site let arbitrary caller-supplied fields
- * flow straight through. If Oblien ever adds a sensitive override key
- * (e.g. `namespace`), that pattern grows teeth. Filter at the service
- * boundary so the SDK can only see keys it legitimately accepts.
- *
- * Shapes mirror the SDK's `AnalyticsTimeseriesParams` /
- * `AnalyticsRequestsParams` interfaces in `oblien/dist/types/analytics.d.ts`.
- */
-function pickAnalyticsParams(
-  op: CloudAnalyticsOperation,
-  params: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  if (!params) return undefined;
-  const picked: Record<string, unknown> = {};
-  switch (op) {
-    case "timeseries":
-      if (params.from !== undefined) picked.from = params.from;
-      if (params.to !== undefined) picked.to = params.to;
-      if (params.interval !== undefined) picked.interval = params.interval;
-      break;
-    case "requests":
-      if (params.limit !== undefined) picked.limit = params.limit;
-      break;
-    case "geo":
-      // AnalyticsGeoParams is {from?, to?} epoch ms — no interval, no limit.
-      if (params.from !== undefined) picked.from = params.from;
-      if (params.to !== undefined) picked.to = params.to;
-      break;
-    case "streamToken":
-      // SDK signature takes no params; allowlist is empty by design.
-      break;
-  }
-  return picked;
+/** Reading counters must never create a namespace or depend on VM readiness. */
+export async function getNamespaceAnalytics(organizationId: string, workspaceId: string | null) {
+  const { namespace } = await cloudBillingOwner(organizationId, workspaceId);
+  return analyticsForNamespace(namespace);
+}
+
+async function analyticsForNamespace(namespace: string | null) {
+  if (!namespace) throw new AppError("This managed server has no Edge namespace", 404, "CLOUD_NAMESPACE_NOT_FOUND");
+
+  const credentials = await getOblienClient().tokens.create({ scope: "namespace", namespace, ttl: 60 });
+  if (!credentials.success || credentials.scope !== "namespace" || !credentials.token)
+    throw new AppError("Cloud traffic metrics are unavailable", 502, "ANALYTICS_UPSTREAM_UNAVAILABLE");
+  return new Oblien({ token: credentials.token, baseUrl: env.OBLIEN_API_URL }).analytics;
 }
 
 export async function proxyCloudAnalytics(
-  organizationId: string,
+  ctx: ExecutionContext,
   input: {
     operation: CloudAnalyticsOperation;
     domain: string;
     params?: Record<string, unknown>;
+    serverId?: string;
   },
 ): Promise<unknown> {
+  const { organizationId } = ctx;
   const domain = await repos.domain.findByHostname(input.domain.trim().toLowerCase());
   const project = domain?.projectId ? await repos.project.findByIdInOrganization(domain.projectId, organizationId) : null;
-  const { token } = await issueNamespaceToken(organizationId, project?.workspaceId ?? null);
-  const client = new Oblien({ token });
+  if (domain?.projectId && !project) throw new CloudAnalyticsForbiddenError(input.domain);
+
+  const selected = input.serverId ? await workspaceForServer(organizationId, input.serverId) : null;
+  const workspace = selected ? selected.workspace : (await cloudBillingOwner(organizationId, project?.workspaceId)).workspace;
+  if (!workspace || workspace.remote || workspace.deletionInProgress || (project?.workspaceId && project.workspaceId !== workspace.id))
+    throw new CloudAnalyticsForbiddenError(input.domain);
+  const server = selected?.server ?? await requireWorkspaceServer(organizationId, workspace.id);
+  await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "read" });
+  const analytics = await analyticsForNamespace(workspace.namespace);
 
   try {
-    switch (input.operation) {
-      case "timeseries":
-        return await client.analytics.timeseries(
-          input.domain,
-          pickAnalyticsParams("timeseries", input.params),
-        );
-      case "requests":
-        return await client.analytics.requests(
-          input.domain,
-          pickAnalyticsParams("requests", input.params),
-        );
-      case "geo":
-        return await client.analytics.geo(
-          input.domain,
-          pickAnalyticsParams("geo", input.params),
-        );
-      case "streamToken":
-        return await client.analytics.streamToken(input.domain);
-    }
+    const { from, to, interval } = input.params ?? {};
+    return await analytics.timeseries(input.domain, {
+      ...(typeof from === "number" && { from }),
+      ...(typeof to === "number" && { to }),
+      ...((interval === "minute" || interval === "hour" || interval === "day") && { interval }),
+    });
   } catch (err) {
     if (isCrossTenantError(err)) {
       throw new CloudAnalyticsForbiddenError(input.domain);

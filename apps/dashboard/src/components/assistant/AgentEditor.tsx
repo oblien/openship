@@ -92,7 +92,7 @@ function Editor({
   const [connectionSelection, setConnectionSelection] = useState<AssistantConnectionSelection>(
     initial?.provider ?? "codex",
   );
-  const ctx = useMemo<TemplateContext>(() => ({ githubAccounts: [] }), []);
+  const ctx = useMemo<TemplateContext>(() => ({ gitAccounts: [] }), []);
   const [selection, dispatch] = useReducer(
     (s: AccessSelection, a: ScopeAction) => reduceSelection(s, a, ctx),
     {

@@ -1,7 +1,7 @@
 import type { RoleContainerRef, DeploymentVerification } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { ilike, type SQL, eq, and, asc, desc, gt, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
-import { generateId, AppError, redactUrlCredentials, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, generateId, AppError, redactUrlCredentials, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
 import { isDeepStrictEqual } from "node:util";
 import type { Database, DatabaseTransaction } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
@@ -118,6 +118,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         id: actionWorkflow.id,
         version: actionWorkflow.updatedAt,
         enabled: actionWorkflow.enabled,
+        gitProvider: actionWorkflow.gitProvider,
         owner: actionWorkflow.owner,
         repo: actionWorkflow.repo,
       })
@@ -134,12 +135,14 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     const plainPush = request.intent.kind === "push";
     if (
       (plainPush &&
-        request.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase()) ||
+        ((request.intent.gitProvider ?? DEFAULT_GIT_PROVIDER) !== (target.gitProvider ?? DEFAULT_GIT_PROVIDER) ||
+          request.intent.repository !== `${target.gitOwner}/${target.gitRepo}`.toLowerCase())) ||
       (!plainPush && !requirements.length) ||
       requirements.length !== Object.keys(request.requirements).length ||
       requirements.some(
         (row) =>
           !row.enabled ||
+          (row.gitProvider ?? DEFAULT_GIT_PROVIDER) !== (target.gitProvider ?? DEFAULT_GIT_PROVIDER) ||
           row.version.toISOString() !== request.requirements[row.id] ||
           row.owner !== target.gitOwner?.toLowerCase() ||
           row.repo !== target.gitRepo?.toLowerCase(),
@@ -1116,6 +1119,24 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
         .returning();
       return rows.length > 0;
+    },
+
+    /** Clear only routing metadata. A domain delete can condition this on the
+     * exact warning it observed so it cannot clear a concurrent failure. */
+    async clearRoutingWarning(id: string, expectedWarning?: string): Promise<void> {
+      await db.update(deployment)
+        .set({
+          meta: sql`${deployment.meta} - 'edgeUnsynced' - 'deployWarning'`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(deployment.id, id),
+          ne(deployment.status, "cancelled"),
+          expectedWarning === undefined
+            ? sql`${deployment.meta} ?| array['edgeUnsynced', 'deployWarning']`
+            : sql`${deployment.meta}->'edgeUnsynced' = 'true'::jsonb
+                and ${deployment.meta}->>'deployWarning' = ${expectedWarning}`,
+        ));
     },
 
     /** Append a dismissal without replacing concurrent metadata or deployment status. */

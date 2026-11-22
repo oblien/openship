@@ -906,6 +906,83 @@ describe("composeUp — operator-set variables survive a re-run (#485)", () => {
   });
 });
 
+/**
+ * The `.env` is read the way Docker Compose reads it, because Compose is what the stack
+ * actually runs with. Compose accepts CRLF line endings (a file saved by a Windows editor)
+ * and lowercase keys (`http_proxy`, `no_proxy`, the spelling most tools look for), so a
+ * reader that skipped either one treated a working install as half-configured: `up`
+ * deleted the lowercase keys on the next regenerate, and a CRLF file read as empty.
+ */
+describe("the .env is read like Docker Compose reads it", () => {
+  /** Seed the exact bytes of `.env`, line endings included. */
+  const seedRawEnv = (text: string) => {
+    h.written.set(composePaths.env, text);
+    h.existing.add(composePaths.env);
+    h.existing.add(composePaths.file);
+  };
+  const crlf = (env: Record<string, string>) =>
+    Object.entries(env)
+      .map(([k, v]) => `${k}=${v}\r\n`)
+      .join("");
+
+  it("keeps lowercase operator keys across a re-run (#485)", async () => {
+    seedEnv({
+      ...CONFIGURED,
+      http_proxy: "http://proxy.internal:3128",
+      no_proxy: "localhost,127.0.0.1",
+    });
+    expect((await composeUp({})).ok).toBe(true);
+
+    // Raw text, not writtenEnv(): that helper only parses uppercase keys.
+    const lines = (h.written.get(composePaths.env) ?? "").split("\n");
+    expect(lines).toContain("http_proxy=http://proxy.internal:3128");
+    expect(lines).toContain("no_proxy=localhost,127.0.0.1");
+  });
+
+  it("reads the configured ports from a CRLF .env", async () => {
+    seedRawEnv(crlf(CONFIGURED));
+    expect(composeEnvPorts()).toEqual({ api: 4100, dashboard: 3100 });
+  });
+
+  it("keeps the secrets of a CRLF .env instead of refusing to rotate them", async () => {
+    seedRawEnv(crlf(CONFIGURED));
+    h.dbVolumes.add("openship_postgres_data");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await composeUp({});
+    err.mockRestore();
+
+    expect(res.ok).toBe(true);
+    const env = writtenEnv();
+    expect(env.POSTGRES_PASSWORD).toBe("pg-secret");
+    expect(env.BETTER_AUTH_SECRET).toBe("auth-secret");
+    expect(env.INTERNAL_TOKEN).toBe("internal-secret");
+    expect(env.API_PORT).toBe("4100");
+    // No stray carriage return carried into a value.
+    expect(h.written.get(composePaths.env)).not.toContain("\r");
+  });
+
+  it("lists preserved operator settings without exposing their values in the dry-run plan", () => {
+    seedEnv({
+      ...CONFIGURED,
+      http_proxy: "http://fixture-user:fixture-password@proxy.internal:3128",
+      registry_password: "fixture-registry-password",
+      aws_secret_access_key: "fixture-access-key",
+      CUSTOM_OPTION: "fixture-operator-value",
+    });
+    const plan = composePlan({});
+    expect(plan.settings).toEqual(
+      expect.arrayContaining([
+        { key: "http_proxy", value: "<preserved>" },
+        { key: "registry_password", value: "<preserved>" },
+        { key: "aws_secret_access_key", value: "<preserved>" },
+        { key: "CUSTOM_OPTION", value: "<preserved>" },
+        { key: "API_PORT", value: "4100" },
+      ]),
+    );
+    expect(plan.newSecrets).toEqual([]);
+  });
+});
+
 describe("composeUpdate", () => {
   it("repins the version, regenerates both files, and keeps the config", async () => {
     seedEnv(CONFIGURED);

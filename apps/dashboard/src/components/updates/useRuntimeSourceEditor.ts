@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER, gitProviderDefinition } from "@repo/core";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { isServicesFramework, normalizeRepoPath } from "@repo/core";
 import type {
@@ -102,11 +103,11 @@ export function useRuntimeSourceEditor({ projectId, serviceId }: EditorTarget) {
             return;
           }
           const { gitProvider, gitOwner, gitRepo, gitBranch } = project;
-          if (gitProvider !== "github" || !gitOwner || !gitRepo || !gitBranch) {
+          if (!gitProviderDefinition(gitProvider)?.capabilities.sourceChanges || !gitOwner || !gitRepo || !gitBranch) {
             setError({ message: copy.noRepository });
             return;
           }
-          setRepo({ owner: gitOwner, repo: gitRepo, branch: gitBranch });
+          setRepo({ provider: gitProvider ?? DEFAULT_GIT_PROVIDER, owner: gitOwner, repo: gitRepo, branch: gitBranch });
           selection = deploymentSourceFile(project);
           chooseFile(selection);
         } else {
@@ -121,7 +122,7 @@ export function useRuntimeSourceEditor({ projectId, serviceId }: EditorTarget) {
           ...(serviceId && { serviceId }),
         });
         if (!isCurrent()) return;
-        setRepo({ owner: data.owner, repo: data.repo, branch: data.branch });
+        setRepo({ provider: data.provider, owner: data.owner, repo: data.repo, branch: data.branch });
         setFile({ ...selection, path: data.path });
         setSource(data);
         const retained =

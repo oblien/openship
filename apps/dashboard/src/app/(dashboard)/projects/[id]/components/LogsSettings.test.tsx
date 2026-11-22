@@ -261,7 +261,16 @@ describe("project log source controls", () => {
     );
     expect(state.roles.refresh).toHaveBeenCalledOnce();
   });
+  it("omits the Edge request log view for cloud runtimes", async () => {
+    state.project = { ...state.project, hasServer: true, workloadType: "web" };
+    await act(async () => root.render(<LogsSettings />));
+    expect(host.querySelector('[role="tab"]')).toBeNull();
+    expect(host.querySelector('[role="region"]:not([hidden])')?.getAttribute("aria-label"))
+      .toBe(baseDictionary.projectSettings.logs.terminal);
+  });
+
   it("shows static request logs without a redundant tab or dangling panel label", async () => {
+    state.project = { ...state.project, deployTarget: "server", domains: [{ domain: "self.example" }] };
     await act(async () => root.render(<LogsSettings />));
     expect(host.querySelector('[role="tablist"]')).toBeNull();
     expect(host.querySelector('[role="tabpanel"]')).toBeNull();
@@ -275,7 +284,7 @@ describe("project log source controls", () => {
   });
 
   it("keeps keyboard selection, panel labels and actions tied to the active runtime source", async () => {
-    state.project = { ...state.project, hasServer: true, workloadType: "web" };
+    state.project = { ...state.project, deployTarget: "server", domains: [{ domain: "self.example" }], hasServer: true, workloadType: "web" };
     await act(async () => root.render(<LogsSettings />));
     const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     expect(tabs.map((tab) => tab.textContent)).toEqual([

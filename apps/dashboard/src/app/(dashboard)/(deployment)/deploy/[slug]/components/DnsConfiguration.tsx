@@ -60,25 +60,17 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
           <DnsRecordCard key={`${record.type}-${record.host}-${i}`} record={record} />
         ))}
 
-        <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
-          {mode === "selfhosted" && domain.startsWith("*.") ? (
-            t.projectSettings.domains.wildcard.notice
-          ) : mode === "selfhosted" ? (
-            <>
-              {d.selfInfoPre}
-              <span className="font-medium text-foreground">{d.recordA}</span>
-              {d.selfInfoMid}
-            </>
-          ) : (
-            <>
-              {d.cloudInfoPre}
-              <span className="font-medium text-foreground">{d.recordCname}</span>
-              {d.cloudInfoMid}
-              <span className="font-medium text-foreground">{d.recordTxt}</span>
-              {d.verifySuffix}
-            </>
-          )}
-        </p>
+        {mode === "selfhosted" && (
+          <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
+            {domain.startsWith("*.") ? t.projectSettings.domains.wildcard.notice : (
+              <>
+                {d.selfInfoPre}
+                <span className="font-medium text-foreground">{d.recordA}</span>
+                {d.selfInfoMid}
+              </>
+            )}
+          </p>
+        )}
       </div>
     </details>
   );
