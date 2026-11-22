@@ -138,7 +138,7 @@ export class CustomerEmailService {
           result.canceled++;
           continue;
         }
-        if (!(await this.options.send(mail))) throw new Error("SMTP is unavailable");
+        if (!(await this.options.send(mail))) throw new Error("Cloud email is unavailable");
         await this.options.repo.finish(row.id, leaseId, "sent", this.now());
         result.sent++;
       } catch {

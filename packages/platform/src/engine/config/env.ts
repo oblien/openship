@@ -318,20 +318,15 @@ const envSchema = z.object({
 
   /* ---------- System email ---------- */
   OBLIEN_MAIL_NAMESPACE: z.string().trim().optional(),
-  OBLIEN_MAIL_KEY: z.string().trim().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Openship <noreply@openship.io>"),
-  /** Optional Cloud customer aliases authorized for the configured sending transport.
-   * Unset/blank aliases use the transport's configured sender. */
-  SMTP_SUPPORT_FROM: z.string().trim().optional(),
   /** Public contact intake fails closed until a production Turnstile widget is configured. */
   CONTACT_TURNSTILE_SECRET: z.string().trim().optional(),
   CONTACT_TURNSTILE_HOSTNAMES: z.string().default("openship.io,www.openship.io"),
   CONTACT_EMAIL: z.string().email().default("contact@openship.io"),
-  SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */
   /**
@@ -494,13 +489,6 @@ const envSchema = z.object({
     .max(8 * 1024 * 1024)
     .default(512 * 1024),
 }).superRefine((cfg, ctx) => {
-  if (cfg.CLOUD_MODE && !!cfg.OBLIEN_MAIL_KEY !== !!cfg.OBLIEN_MAIL_NAMESPACE) {
-    ctx.addIssue({
-      code: "custom",
-      path: [cfg.OBLIEN_MAIL_KEY ? "OBLIEN_MAIL_NAMESPACE" : "OBLIEN_MAIL_KEY"],
-      message: "Set OBLIEN_MAIL_NAMESPACE and OBLIEN_MAIL_KEY together for Cloud email",
-    });
-  }
   // Fail ACME misconfiguration HERE, at boot, with the variable named — not at
   // the first deploy, where NginxProvider's constructor re-checks the same rules
   // (that check stays: the adapter also serves non-env callers). Empty/whitespace

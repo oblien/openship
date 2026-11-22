@@ -4,10 +4,10 @@ OpenShip Cloud sends four independent transactional messages:
 
 | Trigger                                                        | Message                                                                                                 | Sender                                                                            |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| A new signup verifies its email                                | Welcome, workspace link, optional Cloud plans link, and an invitation to ask for help                   | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
-| A server subscription or managed-service purchase is confirmed | Purchase welcome, setup link, and support guidance                                                      | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
-| A payment or renewal is confirmed                              | Separate invoice/receipt notice with the amount, payment reference, and scoped billing link             | `SMTP_BILLING_FROM` when configured, otherwise `SMTP_FROM`                        |
-| Subscription cancellation is confirmed                         | Cancellation confirmation, scheduled end date when applicable, and an invitation to reply with feedback | `SMTP_SUPPORT_FROM` when configured, otherwise `SMTP_FROM`; replies go to Support |
+| A new signup verifies its email                                | Welcome, workspace link, optional Cloud plans link, and an invitation to ask for help                   | `noreply@openship.io` (replies go to Support) |
+| A server subscription or managed-service purchase is confirmed | Purchase welcome, setup link, and support guidance                                                      | `noreply@openship.io` (replies go to Support) |
+| A payment or renewal is confirmed                              | Separate invoice/receipt notice with the amount, payment reference, and scoped billing link             | `noreply@openship.io`                        |
+| Subscription cancellation is confirmed                         | Cancellation confirmation, scheduled end date when applicable, and an invitation to reply with feedback | `noreply@openship.io` (replies go to Support) |
 
 The billing provider remains the invoice issuer. OpenShip does not create a second
 tax invoice or invent invoice numbers. The email links to Payments & invoices,
@@ -46,33 +46,27 @@ Actions funding remains on its independent payment-reconciliation path.
 ## Operations
 
 The SaaS worker runs at startup and every minute as `cloud-customer-email:deliver`.
-Cloud system mail, including password reset and verification codes, uses the
-Oblien SDK when the API has both `OBLIEN_MAIL_NAMESPACE` and `OBLIEN_MAIL_KEY`.
-Use an Openship-owned namespace with an active mail tenant, sending allowance,
-funded credits, and a verified sending domain. Store a send-only key in the
-Cloud API secrets. The namespace is fixed for platform mail across all customer
-organizations. See the [Oblien mail guide](https://oblien.com/docs/api/mail).
-
-`SMTP_FROM` supplies the default sender for both transports. Set
-`SMTP_SUPPORT_FROM` or `SMTP_BILLING_FROM` for customer mail if desired.
-Authorize all configured addresses on the sending key. The SDK sends their bare
-email addresses. Welcome and cancellation replies go to `support@openship.io`.
-With both Oblien mail settings unset, existing deployments use SMTP.
-An Oblien submission failure stays on the SDK path for retry.
+Cloud sends password resets, verification codes, invitations, and customer mail
+from `noreply@openship.io` using the Cloud API's existing Oblien owner client
+(`OBLIEN_CLIENT_ID` and `OBLIEN_CLIENT_SECRET`). All system messages use the
+`openship` mail namespace by default. If `openship.io` is already verified in
+a different platform-owned mail namespace, set `OBLIEN_MAIL_NAMESPACE` to its
+slug. The tenant needs an active sending allowance. Welcome and cancellation
+replies go to `support@openship.io` through Reply-To.
+See the [Oblien mail API contract](https://oblien.com/openapi/mail-v2.json).
 
 Rows in `cloud_customer_email` retain delivery status, attempt count, lease and
 timestamps. A worker claims one message at a time with a five-minute SQL lease.
 Abandoned leases are recoverable after restart. Failures retry with exponential
 backoff, capped at six hours, and stop after twelve attempts with status `failed`.
-Errors are normalized; SMTP secrets and customer data are not copied into failures.
+Errors are normalized before storage.
 System job summaries expose sent, failed and canceled counts.
 
 Outbox retries derive the same Oblien idempotency key from the saved delivery
-identity, including after a lost response. With SMTP, a process crash after
-acceptance can cause a duplicate even though the retry reuses the Message-ID.
+identity, including after a lost response.
 Operators should inspect failed deliveries before requeuing them.
 
-Cancellation verification failures use the same bounded retry policy as SMTP
+Cancellation verification failures use the same bounded retry policy as submission
 failures; they do not send an unverified goodbye. The migration only adds the
 payload column and allowed message kind. It preserves existing delivery records
 and does not send retrospective cancellation emails in bulk.

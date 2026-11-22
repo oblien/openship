@@ -515,10 +515,11 @@ export async function deliverOrganizationInvitation(data: Parameters<NonNullable
         // place that can tell. Throwing surfaces it on the invite request itself.
         if (!delivered) {
           throw new APIError("SERVICE_UNAVAILABLE", {
-            message:
-              `Could not email the invitation to ${data.email} — this instance has ` +
-              `no working email transport. Configure SMTP in Settings → Email and ` +
-              `invite again.`,
+            message: isSaasDeployment
+              ? "Cloud email is temporarily unavailable. Please try again later."
+              : `Could not email the invitation to ${data.email} — this instance has ` +
+                `no working email transport. Configure SMTP in Settings → Email and ` +
+                `invite again.`,
           });
         }
 }

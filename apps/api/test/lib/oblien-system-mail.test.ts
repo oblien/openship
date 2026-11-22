@@ -13,11 +13,11 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
       SMTP_HOST: undefined,
       SMTP_USER: undefined,
       SMTP_PASS: undefined,
-      SMTP_FROM: "Openship <noreply@example.test>",
-      SMTP_SUPPORT_FROM: "Support <help@example.test>",
+      SMTP_FROM: "Ignored SMTP sender <local@example.test>",
       OBLIEN_API_URL: "https://mail.example.test/v2",
-      OBLIEN_MAIL_NAMESPACE: "openship-system",
-      OBLIEN_MAIL_KEY: "fixture-send-only-key",
+      OBLIEN_MAIL_NAMESPACE: undefined,
+      OBLIEN_CLIENT_ID: "fixture-owner",
+      OBLIEN_CLIENT_SECRET: "fixture-secret",
     },
   };
 });
@@ -27,11 +27,12 @@ afterAll(() => closeDb());
 
 function provider() {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
-    expect(String(url)).toBe("https://mail.example.test/v2/mail/openship-system/messages");
+    expect(String(url)).toBe("https://mail.example.test/v2/mail/openship/messages");
     expect(options?.method).toBe("POST");
     const headers = new Headers(options?.headers);
-    expect(headers.get("Authorization")).toBe("Bearer fixture-send-only-key");
-    expect(headers.has("X-Client-Secret")).toBe(false);
+    expect(headers.get("X-Client-ID")).toBe("fixture-owner");
+    expect(headers.get("X-Client-Secret")).toBe("fixture-secret");
+    expect(headers.has("Authorization")).toBe(false);
     return Response.json(
       { success: true, data: { id: "receipt", state: "queued" } },
       { status: 202 },
@@ -70,7 +71,7 @@ it("resets a Cloud password with the code submitted through the SDK without SMTP
   const code = mail.subject.match(/\b\d{6}\b/)?.[0];
   expect(code).toBeTruthy();
   expect(mail).toMatchObject({
-    from: "noreply@example.test",
+    from: "noreply@openship.io",
     to: [email],
     text: expect.stringContaining(code),
     html: expect.stringContaining(code),
@@ -83,7 +84,7 @@ it("resets a Cloud password with the code submitted through the SDK without SMTP
   expect(changed.status).toBe(200);
 }, 30_000);
 
-it("keeps the outbox identity and payload on retry, including the sender alias and reply address", async () => {
+it("keeps the outbox identity and payload on retry, including the no-reply sender and reply address", async () => {
   const send = provider().mockRejectedValueOnce(new TypeError("Connection closed"));
   const mail = {
     to: "customer@example.net",
@@ -102,7 +103,7 @@ it("keeps the outbox identity and payload on retry, including the sender alias a
   expect(new Headers(retry!.headers).get("Idempotency-Key")).toBe(key);
   expect(retry!.body).toBe(first!.body);
   expect(JSON.parse(String(retry!.body))).toEqual({
-    from: "help@example.test",
+    from: "noreply@openship.io",
     replyTo: [mail.replyTo],
     to: [mail.to],
     subject: mail.subject,

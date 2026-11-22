@@ -313,8 +313,10 @@ async function sendEmail(
   // endpoint's catch now refuses to verify the channel.
   if (!delivered) {
     throw new NotificationDeliveryError(
-      "No email transport is configured on this instance, so the message could not be " +
-        "sent. Configure SMTP in Settings → Email.",
+      env.CLOUD_MODE
+        ? "Cloud email is temporarily unavailable. Please try again later."
+        : "No email transport is configured on this instance, so the message could not be " +
+          "sent. Configure SMTP in Settings → Email.",
     );
   }
 }

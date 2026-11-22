@@ -77,11 +77,8 @@ updating connected installations so the session and customer endpoints are avail
 
 ## Delivery and mailbox configuration
 
-Provision `support@openship.io` to receive mail. For outbound support mail,
-configure the Cloud API with `OBLIEN_MAIL_NAMESPACE`, a send-only
-`OBLIEN_MAIL_KEY`, and an authorized `SMTP_FROM` sender. Store the key in the API
-deployment secrets. Cloud deployments using SMTP can continue to configure
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`.
+Provision `support@openship.io` to receive replies. The Cloud API sends support
+messages from `noreply@openship.io` through its existing Oblien owner client.
 Ticket creation succeeds independently of outbound delivery.
 
 Each submission atomically saves a `cloud_support_ticket` and two
@@ -102,9 +99,7 @@ Delivery begins after the database commit. The existing system scheduler runs
 SQL leases prevent concurrent workers from sending the same claimed message.
 Failures back off from one minute to one hour and stop after ten attempts. The
 ticket and error state remain available, and an operator can retry delivery.
-The Oblien SDK reuses the same idempotency key for each retry of a delivery.
-SMTP retries reuse the Message-ID and can duplicate mail after a crash between
-acceptance and database acknowledgement.
+Each retry uses the same Oblien idempotency key, including after a worker restart.
 
 ## Operator API
 

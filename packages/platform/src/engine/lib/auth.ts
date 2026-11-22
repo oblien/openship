@@ -204,9 +204,10 @@ export const auth = betterAuth({
           // used. Fail the request instead of creating one.
           if (!delivered) {
             throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "Could not send the verification email — this instance has no working " +
-                "email transport. Configure SMTP in Settings → Email.",
+              message: isSaasDeployment
+                ? "Cloud email is temporarily unavailable. Please try again later."
+                : "Could not send the verification email — this instance has no working " +
+                  "email transport. Configure SMTP in Settings → Email.",
             });
           }
         }
@@ -525,9 +526,10 @@ export const auth = betterAuth({
 
           if (!delivered) {
             throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "Could not send the verification code — this instance has no working " +
-                "email transport. Configure SMTP in Settings → Email.",
+              message: isSaasDeployment
+                ? "Cloud email is temporarily unavailable. Please try again later."
+                : "Could not send the verification code — this instance has no working " +
+                  "email transport. Configure SMTP in Settings → Email.",
             });
           }
           return;
@@ -548,10 +550,11 @@ export const auth = betterAuth({
           // `canSendMail()` is the only honest check.
           if (!(await canSendMail())) {
             throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "This instance has no email transport configured, so a reset code " +
-                "cannot be sent. Configure SMTP in Settings → Email, or reset the " +
-                "password from the server with `openship reset-admin`.",
+              message: isSaasDeployment
+                ? "Cloud email is temporarily unavailable. Please try again later."
+                : "This instance has no email transport configured, so a reset code " +
+                  "cannot be sent. Configure SMTP in Settings → Email, or reset the " +
+                  "password from the server with `openship reset-admin`.",
             });
           }
           const tmpl = resetPasswordOtpEmail(otp, { expiresMinutes: 10 });
@@ -561,10 +564,11 @@ export const auth = betterAuth({
           // locked out is the worst place to be optimistic.
           if (!(await sendMail({ to: email, ...tmpl }))) {
             throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "Could not send the reset code — this instance has no working email " +
-                "transport. Configure SMTP in Settings → Email, or reset the password " +
-                "from the server with `openship reset-admin`.",
+              message: isSaasDeployment
+                ? "Cloud email is temporarily unavailable. Please try again later."
+                : "Could not send the reset code — this instance has no working email " +
+                  "transport. Configure SMTP in Settings → Email, or reset the password " +
+                  "from the server with `openship reset-admin`.",
             });
           }
         }

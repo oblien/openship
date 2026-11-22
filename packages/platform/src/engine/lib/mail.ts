@@ -2,7 +2,6 @@ import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostic
 import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import nodemailer, { type Transporter } from "nodemailer";
-import addressparser from "nodemailer/lib/addressparser";
 import { env } from "../config/env";
 import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
@@ -42,8 +41,7 @@ export type SendMailOptions = {
   replyTo?: string;
   /** Stable identity for durable deliveries retried after a process restart. */
   messageId?: string;
-  /** Cloud customer alias, falling back to the transport's configured sender.
-   * Never forwarded through the Cloud mail relay. */
+  /** Marks Cloud-only support and billing outbox messages. */
   customerSender?: "support" | "billing";
   /**
    * Preferred transport source. Default "auto" — uses the platform
@@ -66,7 +64,7 @@ export type SendMailOptions = {
 // ─── Env-based transport (singleton) ─────────────────────────────────────────
 
 /** True when env SMTP credentials are all present. */
-const envSmtpConfigured = !!(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+const envSmtpConfigured = !env.CLOUD_MODE && !!(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
 
 const envTransport: Transporter | null = envSmtpConfigured
   ? nodemailer.createTransport({
@@ -84,10 +82,7 @@ const envTransport: Transporter | null = envSmtpConfigured
     })
   : null;
 
-const cloudMail =
-  env.CLOUD_MODE && env.OBLIEN_MAIL_NAMESPACE && env.OBLIEN_MAIL_KEY
-    ? { namespace: env.OBLIEN_MAIL_NAMESPACE, token: env.OBLIEN_MAIL_KEY }
-    : null;
+const cloudMailConfigured = !!(env.CLOUD_MODE && env.OBLIEN_CLIENT_ID && env.OBLIEN_CLIENT_SECRET);
 
 // ─── Platform transport (cached briefly per serverId) ────────────────────────
 
@@ -394,11 +389,12 @@ export const smtpEnabled = true; // callbacks wired; runtime decides delivery
  * the lockout case where the platform mailbox temporarily fails and a
  * signup can't complete because no verification email got out.
  */
-export const requireEmailVerificationStrict = !!cloudMail || envSmtpConfigured;
+export const requireEmailVerificationStrict = cloudMailConfigured || envSmtpConfigured;
 
 /** Runtime check — true if any source could currently deliver. */
 export async function canSendMail(): Promise<boolean> {
-  if (cloudMail || envSmtpConfigured) return true;
+  if (env.CLOUD_MODE) return cloudMailConfigured;
+  if (envSmtpConfigured) return true;
   if (await getInstanceTransport()) return true;
   const platform = await getPlatformTransport();
   return platform !== null;
@@ -502,26 +498,21 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     return true;
   }
 
-  const customerFrom = opts.customerSender
-    ? { support: env.SMTP_SUPPORT_FROM, billing: env.SMTP_BILLING_FROM }[opts.customerSender]
-    : undefined;
-  const from = customerFrom?.trim() || env.SMTP_FROM;
-
-  if (cloudMail) {
-    const [sender, ...others] = addressparser(from);
-    if (!sender?.address || others.length) throw new Error("Cloud email requires one From address");
-
-    const { Oblien } = await import("@repo/adapters");
-    const client = new Oblien({ token: cloudMail.token, baseUrl: env.OBLIEN_API_URL });
+  if (env.CLOUD_MODE) {
+    if (!cloudMailConfigured) {
+      errorDiagnostics.warn("platform/engine/lib/mail", "[mail] Cloud email requires Oblien API credentials");
+      return false;
+    }
+    const { getOblienClient } = await import("./oblien-client");
     // A lost response can follow acceptance. Outbox retries must use the same
     // provider key and must never fall through to another transport.
     const idempotencyKey = opts.messageId
       ? createHash("sha256").update(opts.messageId).digest("hex")
       : randomUUID();
-    const receipt = await client.mail.messages.send(
-      cloudMail.namespace,
+    const receipt = await getOblienClient().mail.messages.send(
+      env.OBLIEN_MAIL_NAMESPACE || "openship",
       {
-        from: sender.address,
+        from: "noreply@openship.io",
         to: [opts.to],
         subject: opts.subject,
         ...(opts.html ? { html: opts.html } : {}),
@@ -564,7 +555,7 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
     const active = chain[i];
     try {
       await active.transport.sendMail({
-        from: active.source === "env" ? from : active.from,
+        from: active.from,
         ...message,
       });
       return true;
