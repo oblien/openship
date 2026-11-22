@@ -17,6 +17,7 @@ declare global {
 
   interface DesktopBridge {
     isDesktop?: boolean;
+    onConnectionCallback?: (cb: (result: import("@repo/core").DesktopConnectionCallback) => void) => () => void;
     instanceLinks?: {
       pending: () => Promise<import("@repo/core").DesktopInstanceLinkRequest | null>;
       acknowledge: (id: number) => Promise<boolean>;

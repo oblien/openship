@@ -18,9 +18,11 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 export interface AuthWindowHandle {
   /** True when the browser refused to create the popup. */
   readonly blocked: boolean;
+  /** The reserved window, when authentication runs in a browser popup. */
+  readonly popup?: Window;
   /** Redirect / open the auth URL. In browser, redirects the popup.
    *  In Electron, opens system browser. */
-  navigate: (url: string) => void;
+  navigate: (url: string) => void | Promise<void>;
   /** Register a callback for when auth is considered complete.
    *  Browser: fires when popup closes.
    *  Electron: fires when the app window regains focus. */
@@ -88,6 +90,7 @@ function createBrowserHandle(initialUrl = "about:blank"): AuthWindowHandle {
 
   return {
     blocked: popup === null,
+    popup: popup ?? undefined,
     navigate(url: string) {
       if (popup && !popup.closed) {
         popup.location.href = url;
@@ -145,7 +148,7 @@ function createElectronHandle(initialUrl?: string): AuthWindowHandle {
   return {
     blocked: false,
     navigate(url: string) {
-      desktop.onboarding.openExternal(url);
+      return desktop.onboarding.openExternal(url);
     },
 
     onClose(cb: () => void) {

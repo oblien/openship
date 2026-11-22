@@ -7,7 +7,8 @@
 
 import { assertRuntimeVersionTarget, normalizeRuntimeImageOverride, runtimeProjectUpdate, resolveRuntimeImages, ValidationError } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import * as githubService from "../github/github.service";
+import { gitRepository } from "../git/provider";
+import type { GitReadOptions, GitRepositoryRef } from "../git/types";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
 import {
@@ -59,7 +60,7 @@ import {
   collectDependencies,
 } from "@repo/core";
 import { env } from "../../config/index";
-import { createGitHubReader, type ProjectReader } from "./project-reader";
+import { createGitReader, type ProjectReader } from "./project-reader";
 import { ComposeConfigurationError } from "./compose-configuration-error";
 
 const PREPARE_FILE_CONTENTS = [
@@ -80,16 +81,15 @@ const COMPOSE_FILES = [
 ] as const;
 
 export type Source =
-  | {
-      source: "github";
+  | (({ source: "github" } | { source: "git"; provider: string }) & {
       serverId?: string;
       owner: string;
       repo: string;
       branch?: string;
-      /** Request-scoped context — required when source === "github" so
+      /** Request-scoped context — required for remote sources so
        *  getRepository can resolve org-scoped install + cache keys.
        *  Optional in the type for back-compat with old callers; the
-       *  github resolver throws when it's missing. */
+       *  provider resolver throws when it's missing. */
       ctx?: RequestContext;
       /** See {@link ResolveOptions.composePath}. */
       composePath?: string;
@@ -99,7 +99,7 @@ export type Source =
       env?: Record<string, string>;
       /** See {@link ResolveOptions.expectCompose}. */
       expectCompose?: boolean;
-    }
+    })
   | {
       source: "local";
       path: string;
@@ -111,7 +111,7 @@ export type Source =
       expectCompose?: boolean;
     };
 
-export interface ResolveOptions extends githubService.GitHubReadOptions {
+export interface ResolveOptions extends GitReadOptions {
   /**
    * Where the compose file lives when it is NOT at the auto-detected project
    * root — either the file itself (`"deploy/stack.yml"`, which also covers
@@ -969,11 +969,11 @@ async function readComposeText(
  * Both paths converge on detectStack and return the same ProjectInfo shape.
  */
 export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
-  if (input.source === "github") {
+  if (input.source !== "local") {
     if (!input.ctx) {
       throw new Error("resolveProjectInfo(github): ctx is required");
     }
-    return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
+    return resolveFromGit(input.ctx, sourceRepositoryRef(input), input.branch, {
       serverId: input.serverId,
       composePath: input.composePath,
       rootDirectory: input.rootDirectory,
@@ -1005,17 +1005,13 @@ export async function resolveProjectSourceEnv(
   input: Source,
   rootDirectory = "",
 ): Promise<ProjectSourceEnv> {
-  if (input.source === "github") {
+  if (input.source !== "local") {
     if (!input.ctx) {
       throw new Error("resolveProjectSourceEnv(github): ctx is required");
     }
-    const branch =
-      input.branch?.trim() ||
-      (await githubService.getRepository(input.ctx, input.owner, input.repo, { serverId: input.serverId })).default_branch;
-    return resolveSourceEnvFromReader(
-      createGitHubReader(input.ctx, input.owner, input.repo, branch, { serverId: input.serverId }),
-      rootDirectory,
-    );
+    const repository = gitRepository(input.ctx, sourceRepositoryRef(input), { serverId: input.serverId });
+    const branch = input.branch?.trim() || (await repository.info()).default_branch;
+    return resolveSourceEnvFromReader(createGitReader(repository, branch), rootDirectory);
   }
 
   if (env.CLOUD_MODE) {
@@ -1208,33 +1204,26 @@ export async function resolveFromReader(
   return overlaid;
 }
 
-async function resolveFromGitHub(
+function sourceRepositoryRef(input: Exclude<Source, { source: "local" }>): GitRepositoryRef {
+  return { provider: input.source === "github" ? "github" : input.provider, namespace: input.owner, name: input.repo };
+}
+
+async function resolveFromGit(
   ctx: RequestContext,
-  owner: string,
-  repo: string,
+  ref: GitRepositoryRef,
   branch?: string,
   opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
-  const repository = await githubService.getRepository(ctx, owner, repo, {
-    serverId: opts.serverId,
-    withBranches: true,
-  });
+  const repository = gitRepository(ctx, ref, { serverId: opts.serverId });
+  const info = await repository.info({ withBranches: true });
   const requestedBranch = branch?.trim();
-  const selectedBranch = requestedBranch || repository.default_branch;
+  const selectedBranch = requestedBranch || info.default_branch;
 
-  if (requestedBranch) {
-    const head = await githubService.getLatestCommit(ctx, owner, repo, selectedBranch, opts);
-    if (!head) {
-      throw new Error(`Branch "${selectedBranch}" was not found for ${owner}/${repo}`);
-    }
+  if (requestedBranch && !await repository.latestCommit(selectedBranch)) {
+    throw new Error(`Branch "${selectedBranch}" was not found for ${ref.namespace}/${ref.name}`);
   }
 
-  return resolveFromReader(
-    createGitHubReader(ctx, owner, repo, selectedBranch, opts),
-    repository,
-    selectedBranch,
-    opts,
-  );
+  return resolveFromReader(createGitReader(repository, selectedBranch), info, selectedBranch, opts);
 }
 
 function toProjectInfo(

@@ -17,6 +17,7 @@
  * to `runtimeTarget.api` / `runtimeTarget.dashboard`, preserving today's behavior.
  */
 
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { env, runtimeTarget, localDashboardUrl } from "../config/env";
 import { repos } from "@repo/db";
@@ -217,12 +218,12 @@ export function requestApiPublicUrl(req: Request): string {
 }
 
 /**
- * The shared/repo-strategy GitHub webhook callback URL — where GitHub POSTs
+ * The shared repository webhook callback URL where providers POST
  * push/release deliveries. Public URL when configured, so a `--public-url` VPS
  * registers a reachable hook instead of a dead `localhost:4000` one.
  */
-export function sharedWebhookUrl(): string {
-  return `${resolveApiPublicUrl()}/api/webhooks/github`;
+export function sharedWebhookUrl(provider = DEFAULT_GIT_PROVIDER): string {
+  return `${resolveApiPublicUrl()}/api/webhooks/${encodeURIComponent(provider)}`;
 }
 
 /**
@@ -239,8 +240,8 @@ export function incomingWebhookUrl(id: string): string {
  * own verified domain via the `/_openship/hooks/` OpenResty location (proxied to
  * the loopback API). Used when a project sets an explicit `webhookDomain`.
  */
-export function domainWebhookUrl(hostname: string, scheme: "http" | "https" = "https"): string {
-  return `${scheme}://${hostname}/_openship/hooks/github`;
+export function domainWebhookUrl(hostname: string, scheme: "http" | "https" = "https", provider = DEFAULT_GIT_PROVIDER): string {
+  return `${scheme}://${hostname}/_openship/hooks/${encodeURIComponent(provider)}`;
 }
 
 /**
@@ -307,5 +308,65 @@ export function requestPublicOrigin(req: Request): string {
     return new URL(req.url).origin;
   } catch {
     return runtimeTarget.api;
+  }
+}
+
+/**
+ * True when the URL points to a host that is NOT reachable from the
+ * public internet — so GitHub's webhook delivery would fail.
+ *
+ * Used to decide between webhook strategies in resolveWebhookStrategy:
+ *   - reachable → "repo" (per-repo webhook directly to this URL)
+ *   - unreachable → "none" (caller falls back to polling or domain
+ *     delivery via the project's webhookDomain)
+ *
+ * Conservative on parse failure (returns true). A typo'd URL is safer
+ * to assume unreachable than to register a webhook GitHub will never
+ * be able to deliver to.
+ *
+ * Covers the full set of non-routable host shapes:
+ *   - DNS sentinels: localhost, *.local (mDNS)
+ *   - IPv4 loopback: 127.0.0.0/8 (ALL of 127, not just .0.1)
+ *   - IPv4 unspecified: 0.0.0.0
+ *   - IPv4 RFC1918 private: 10/8, 172.16/12, 192.168/16
+ *   - IPv4 link-local / APIPA: 169.254.0.0/16
+ *   - IPv6 loopback: ::1 (with optional [::1] bracket form)
+ *   - IPv6 link-local: fe80::/10
+ *   - IPv6 ULA: fc00::/7 (fc/fd prefix)
+ */
+export function isLocalUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    if (!hostname) return true;
+
+    // DNS sentinel cases. `.local` is mDNS (Bonjour) — reachable only on
+    // the local link, never from the public internet.
+    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.endsWith(".local")) {
+      return true;
+    }
+
+    // IPv6 (URL parses bracketed form; strip the brackets for matching).
+    // Same hostname can also arrive un-bracketed if the caller passed a
+    // bare IP. fe80::/10 → fe80..febf (first byte top 10 bits); fc00::/7
+    // → fc00..fdff (first byte top 7 bits, fc or fd).
+    const v6 =
+      hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+    if (v6 === "::1") return true;
+    if (/^fe[89ab][0-9a-f]?:/i.test(v6)) return true; // link-local
+    if (/^f[cd][0-9a-f]{2}:/i.test(v6)) return true; // ULA
+
+    // IPv4: full 127/8 + 0/8-sentinel handled above + RFC1918 + link-local.
+    // (Not collapsed into a single regex — readability beats brevity here,
+    // and each /8|/12|/16 has a different intent that benefits from being
+    // named in the source.)
+    if (/^127\./.test(hostname)) return true; // loopback /8
+    if (/^10\./.test(hostname)) return true; // RFC1918 /8
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true; // RFC1918 /12
+    if (/^192\.168\./.test(hostname)) return true; // RFC1918 /16
+    if (/^169\.254\./.test(hostname)) return true; // link-local /16
+
+    return false;
+  } catch {
+    return true;
   }
 }

@@ -1,3 +1,4 @@
+import { resolveProjectInfo } from "@repo/platform/engine/modules/deployments/prepare.service";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import { Hono } from "hono";
@@ -224,6 +225,23 @@ async function addCustomApp(apiBaseUrl = "https://api.github.com") {
 }
 
 describe("server PAT-only preparation through the real authenticated HTTP/SDK flow (#1500)", () => {
+  it("prepares the same private repository through the provider boundary and the legacy entry point", async () => {
+    const ctx = buildBackgroundContext({ userId: owner.userId, organizationId: owner.orgId, label: "test:provider-prepare" });
+    const legacy = await resolveProjectInfo({ ...source, ctx, serverId });
+    const generic = await resolveProjectInfo({ ...source, source: "git", provider: "github", ctx, serverId });
+    expect(generic).toEqual(legacy);
+    expect(generic.projectType).toBe("monorepo");
+    expect(JSON.stringify(generic)).not.toContain(pat);
+    expect(requests.some(request => request.token === `Bearer ${pat}` || request.token === pat)).toBe(true);
+  });
+
+  it("rejects an unregistered provider before using any GitHub or server credential", async () => {
+    const ctx = buildBackgroundContext({ userId: owner.userId, organizationId: owner.orgId, label: "test:provider-prepare" });
+    await expect(resolveProjectInfo({ ...source, source: "git", provider: "unregistered", ctx, serverId }))
+      .rejects.toMatchObject({ code: "GIT_PROVIDER_UNSUPPORTED" });
+    expect(requests).toEqual([]);
+  });
+
   it.each([
     { explicit: false, mintStatus: 403 },
     { explicit: true, mintStatus: 403 },

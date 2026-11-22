@@ -60,7 +60,7 @@ export function createPullRequestPreviewRepo(db: Database, encryption: Configura
       input: Pick<
         PullRequestPreview,
         "organizationId" | "sourceProjectId" | "owner" | "repo" | "number"
-      >,
+      > & { provider?: string },
     ) {
       await db
         .insert(previews)
@@ -72,7 +72,7 @@ export function createPullRequestPreviewRepo(db: Database, encryption: Configura
           nextAttemptAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [previews.sourceProjectId, previews.owner, previews.repo, previews.number],
+          target: [previews.sourceProjectId, previews.provider, previews.owner, previews.repo, previews.number],
           set: { nextAttemptAt: new Date(), updatedAt: new Date() },
         });
     },

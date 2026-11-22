@@ -18,6 +18,8 @@ const {
   findById,
   listEnvVars,
   listByProject,
+  findDeploymentById,
+  listByDeployment,
   listDomains,
   getTemplateForOrg,
   resolveProjectServerHost,
@@ -25,6 +27,8 @@ const {
   findById: vi.fn(),
   listEnvVars: vi.fn(),
   listByProject: vi.fn(),
+  findDeploymentById: vi.fn(),
+  listByDeployment: vi.fn(),
   listDomains: vi.fn(),
   getTemplateForOrg: vi.fn(),
   resolveProjectServerHost: vi.fn(),
@@ -33,7 +37,8 @@ const {
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById, listEnvVars },
-    service: { listByProject },
+    deployment: { findById: findDeploymentById },
+    service: { listByProject, listByDeployment },
     domain: { listByProject: listDomains },
     clusterDatabase: { list: async () => [] },
   },
@@ -129,6 +134,8 @@ beforeEach(() => {
   getTemplateForOrg.mockResolvedValue(convexTemplate);
   listByProject.mockResolvedValue([backend]);
   listEnvVars.mockResolvedValue([{ serviceId: "svc-backend", key: "CONVEX_ADMIN_KEY", value: "enc:admin-secret" }]);
+  findDeploymentById.mockResolvedValue(undefined);
+  listByDeployment.mockResolvedValue([]);
   listDomains.mockResolvedValue([]);
   resolveProjectServerHost.mockResolvedValue("203.0.113.5");
 });
@@ -205,6 +212,52 @@ describe("persisted route rows are read verbatim", () => {
     expect(valueOf(outputs, "site")).toBe("https://api.example.com");
     expect(valueOf(outputs, "url")).toBe("http://203.0.113.5:3210");
   });
+
+  it.each([
+    { scenario: "before deployment", activeDeploymentId: null, targetPort: 3211 },
+    { scenario: "on a live container port", activeDeploymentId: "dep1", targetPort: 3211 },
+    { scenario: "on a recorded host port", activeDeploymentId: "dep1", targetPort: 4421 },
+  ])(
+    "attributes a project route to a single service $scenario",
+    async ({ activeDeploymentId, targetPort }) => {
+      const sibling = { id: "svc-worker", name: "worker", exposed: true, ports: ["3211"] };
+      const app = {
+        ...backend,
+        exposed: !activeDeploymentId,
+        ports: ["3210:3210", "127.0.0.1::3211"],
+      };
+      listByProject.mockResolvedValue([app, sibling]);
+      getTemplateForOrg.mockResolvedValue({
+        ...convexTemplate,
+        connection: {
+          outputs: [
+            ...convexTemplate.connection.outputs,
+            { id: "worker", label: "Worker URL", source: "publicUrl:worker:3211" },
+          ],
+        },
+      });
+      findById.mockResolvedValue({
+        id: "proj1",
+        organizationId: "org1",
+        appTemplateId: "convex",
+        activeDeploymentId,
+      });
+      findDeploymentById.mockResolvedValue({
+        id: "dep1",
+        organizationId: "org1",
+        projectId: "proj1",
+      });
+      listByDeployment.mockResolvedValue([
+        { serviceId: app.id, containerId: "container-backend", hostPorts: { 3211: 4421 } },
+      ]);
+
+      listDomains.mockResolvedValue([domainRow({ targetPort })]);
+      const { outputs } = await getAppConnectionView(ctx, "proj1");
+      expect(valueOf(outputs, "site")).toBe("https://api.example.com");
+      expect(valueOf(outputs, "worker")).toBe("");
+      expect(listByDeployment.mock.calls).toEqual(activeDeploymentId ? [[activeDeploymentId]] : []);
+    },
+  );
 
   it("ignores a project-level row on a port no service publishes", async () => {
     listDomains.mockResolvedValue([domainRow({ serviceId: null, targetPort: 9999 })]);

@@ -41,6 +41,8 @@ import { repos, type Project, type Service } from "@repo/db";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { encrypt, decrypt } from "../../lib/encryption";
+import { listActiveServiceDeployments } from "../../lib/active-deployment";
+import { pickProjectPortOwner } from "../../lib/project-service-upstream";
 import { comparePublicRouteRows, type ProjectDomainRow } from "../../lib/public-endpoints";
 import { isLoopbackHost, resolveProjectServerHost } from "../../lib/server-target";
 
@@ -268,57 +270,42 @@ function rowTargetPort(row: ProjectDomainRow): number | undefined {
     : undefined;
 }
 
-/**
- * A service's PERSISTED route URLs, keyed by container port. Read from the
- * project's domain rows — a route exists because a human chose it and it was
- * written — never derived from the service's stored routing config, which would
- * mint a `<label>.<cloudDomain>` hostname for a project that has no route at all.
- *
- * The row's `hostname` is used VERBATIM. Re-deriving it (free row → slug →
- * `slug + <current routing base>`) silently dropped every persisted free row whose
- * hostname no longer carries the instance's current routing-base suffix — a box
- * whose routing base changed, or a `.opsh.io` row on a self-hosted base — and the
- * app then reported "no URL" for a hostname that is live on the edge right now.
- *
- * Both scopes count: a service-scoped row is the app's own route, and a
- * project-level row whose target port is one this service publishes is the same
- * route added through the Domains tab (an app is a project wrapper, one pipeline).
- * Redirecting hosts are skipped — they send the visitor elsewhere instead of
- * serving the app, so they're not where it answers.
- */
-function persistedServiceRouteUrls(
-  service: Service,
+/** Build URLs from persisted hostnames, with service-scoped routes taking precedence. */
+async function persistedAppRouteUrls(
+  project: Project,
+  services: Service[],
   domains: ProjectDomainRow[],
-): Map<number, string> {
-  const urls = new Map<number, string>();
-  const add = (row: ProjectDomainRow) => {
-    if (row.redirectTo) return;
-    const port = rowTargetPort(row);
-    const hostname = row.hostname?.trim().toLowerCase();
-    if (port === undefined || !hostname || isWildcardHostname(hostname) || urls.has(port)) return;
-    urls.set(port, `https://${hostname}`);
+): Promise<Map<string, Map<number, string>>> {
+  const urlsByService = new Map<string, Map<number, string>>();
+  const add = (serviceId: string, port: number, hostname: string) => {
+    const urls = urlsByService.get(serviceId) ?? new Map<number, string>();
+    if (!urls.has(port)) urls.set(port, `https://${hostname}`);
+    urlsByService.set(serviceId, urls);
   };
 
-  const ordered = [...domains].sort(comparePublicRouteRows);
-  for (const row of ordered) {
-    if (row.serviceId === service.id) add(row);
-  }
-
-  // The same rule `containerPorts` applies in project-service-upstream.ts: the edge
-  // routes a project-level row to the service listening on its port, whether or not
-  // that port has a fixed host side.
-  const containerPorts = new Set(
-    [service.exposedPort, ...((service.ports as string[] | null) ?? [])]
-      .map((spec) => parseServicePort(spec))
-      .filter((port): port is number => port !== null),
-  );
-  for (const row of ordered) {
-    if (row.serviceId) continue;
+  const projectRoutes: Array<{ port: number; hostname: string }> = [];
+  for (const row of [...domains].sort(comparePublicRouteRows)) {
     const port = rowTargetPort(row);
-    if (port !== undefined && containerPorts.has(port)) add(row);
+    const hostname = row.hostname?.trim().toLowerCase();
+    if (row.redirectTo || port === undefined || !hostname || isWildcardHostname(hostname)) continue;
+    if (row.serviceId) add(row.serviceId, port, hostname);
+    else projectRoutes.push({ port, hostname });
   }
+  if (projectRoutes.length === 0) return urlsByService;
 
-  return urls;
+  const rows = await listActiveServiceDeployments(project);
+  const rowByService = new Map(rows.map((row) => [row.serviceId, row]));
+  for (const { port, hostname } of projectRoutes) {
+    const owner = pickProjectPortOwner({
+      port,
+      services,
+      rowByService,
+      domainRows: domains,
+      includeUnstarted: !project.activeDeploymentId,
+    });
+    if (owner) add(owner.serviceId, owner.containerPort, hostname);
+  }
+  return urlsByService;
 }
 
 /**
@@ -382,10 +369,11 @@ export async function getAppConnectionView(
     const domains: ProjectDomainRow[] = await repos.domain
       .listByProject(projectId)
       .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/apps/app-settings.service"); return []; });
+    const routedUrls = await persistedAppRouteUrls(project, services, domains);
     publicUrls = buildPublicUrlLookup(
       services.map((svc) => ({
         name: svc.name,
-        routedUrls: persistedServiceRouteUrls(svc, domains),
+        routedUrls: routedUrls.get(svc.id),
         portPairs: servicePortPairs(svc.ports as string[] | null),
         primaryPort: parseServicePort(svc.exposedPort) ?? undefined,
       })),

@@ -19,7 +19,7 @@ const sha = "a".repeat(40);
 const source = { owner: "acme", repo: "app" };
 const project = { id: "project", organizationId: "org", gitProvider: "github", gitOwner: "acme", gitRepo: "app", gitBranch: "main" };
 const check = { deploymentId: "dep", kind: "rollup", source };
-const payload = () => ({ action: "rerequested", check_run: { id: 123, head_sha: sha }, repository: { owner: { login: "acme" }, name: "app" } }) as GitHubCheckRunPayload;
+const payload = () => ({ action: "rerequested", check_run: { id: 123, head_sha: sha }, repository: { owner: { login: "acme" }, name: "app", full_name: "acme/app" } }) as GitHubCheckRunPayload;
 
 beforeEach(() => {
   vi.resetAllMocks();

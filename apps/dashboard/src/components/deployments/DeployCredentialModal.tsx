@@ -1,4 +1,7 @@
 "use client";
+import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
+import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
@@ -416,4 +419,30 @@ export function DeployCredentialModal({
       </div>
     </div>
   );
+}
+
+
+/** GitHub adapter recovery; the shared deployment hook only supplies callbacks. */
+export function GithubDeployCredentialRecovery(props: import("@/context/GitContext").GitCredentialRecoveryProps) {
+  const { installUrl, state } = useGitHub();
+  const { selfHosted } = usePlatform();
+  const openConnect = useServerGitHubConnectModal();
+  const { showToast } = useToast();
+  return <DeployCredentialModal
+    {...props}
+    projectId={props.projectId ?? null}
+    deployTarget={props.deployTarget}
+    buildStrategy={props.buildStrategy}
+    installUrl={installUrl ?? null}
+    selfHosted={selfHosted}
+    ghCliAvailable={!!state.sources.ghCli.available}
+    onChoice={choice => {
+      props.onDismiss();
+      if (choice.kind === "build-local") { props.onBuildLocal(); props.onResolved?.(); }
+      else if (choice.kind === "install-app") props.onResolved?.();
+      else if (choice.kind === "connect-server-github" && props.serverId) openConnect(props.serverId, {
+        onConnected: props.onResolved ?? (() => showToast("GitHub connected — deploy again to continue.", "success", "GitHub")),
+      });
+    }}
+  />;
 }

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { AppError } from "@repo/core";
 import { repos } from "@repo/db";
-import { app } from "../../app";
+import { inProcessRequest } from "../../lib/in-process-request";
 import type { RequestContext } from "../../lib/request-context";
 import { resolveDashboardPublicUrl } from "@repo/platform/engine/lib/public-url";
 import { createProvisionLock } from "@repo/platform/engine/lib/provision-lock";
@@ -13,7 +13,7 @@ export async function mcpOAuthRequest(
   body: object | URLSearchParams,
 ) {
   const form = body instanceof URLSearchParams;
-  const response = await app.fetch(
+  const response = await inProcessRequest(
     new Request(`${new URL(origin).origin}/api/auth/${path}`, {
       method: "POST",
       headers: { "content-type": form ? "application/x-www-form-urlencoded" : "application/json" },
@@ -60,7 +60,7 @@ export async function prepareMcpConsent(
   const headers = new Headers(),
     cookie = ctx.hono?.req.header("cookie");
   if (cookie) headers.set("cookie", cookie);
-  const response = await app.fetch(
+  const response = await inProcessRequest(
     new Request(`${new URL(input.origin).origin}/api/auth/oauth2/authorize?${params}`, { headers }),
   );
   const location = response.headers.get("location"),

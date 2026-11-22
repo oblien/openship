@@ -78,8 +78,10 @@ export function DomainSwitcher({
     <DropdownMenu
       actions={actions}
       align="right"
-      className={className}
-      triggerClassName="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+      // min-w-0 lets the wrapper shrink inside a flex row so a long hostname
+      // truncates instead of pushing the trigger past the card edge.
+      className={`min-w-0 ${className}`}
+      triggerClassName="inline-flex w-full max-w-full items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
       trigger={
         <>
           <span className="truncate">

@@ -6,7 +6,7 @@ import { GitHubProvider, useGitHub, type GitHubConnectionState } from "./GitHubC
 import { CloneCredentials } from "@/app/(dashboard)/settings/_components/CloneCredentials";
 import { GitHubConnection } from "@/app/(dashboard)/settings/_components/GitHubConnection";
 import { ConnectPrompt } from "@/app/(dashboard)/library/components/ConnectPrompt";
-import { LibrarySidebar } from "@/app/(dashboard)/library/components/LibrarySidebar";
+import { GitHubConnectionStatus } from "@/components/github/GitHubConnectionStatus";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
 import { useLibraryRepos } from "@/app/(dashboard)/library/useLibraryRepos";
 import { githubApi, GITHUB_SOURCES_CHANGED_EVENT } from "@/lib/api/github";
@@ -126,12 +126,10 @@ function Flow() {
       )}
       <GitHubConnection />
       <CloneCredentials />
-      <LibrarySidebar
+      <GitHubConnectionStatus
         selectedOwner={ctx.selectedOwner}
-        repos={library.repos}
         state={ctx.state}
         selfHosted={false}
-        cloudConnected
       />
     </>
   );
@@ -150,7 +148,7 @@ beforeEach(() => {
     if (url === endpoints.settings.get)
       return { cloneToken: { ...credential }, forwardGitToServer: false };
     if (url === endpoints.github.status || url === endpoints.github.userHome) return home();
-    if (url === endpoints.github.userRepos) {
+    if (url === endpoints.github.userRepos || url === "/git/github/repos") {
       const data = home().repos.filter((repo) => repo.owner === options?.params?.owner);
       return { data, total: data.length, count: data.length, totalPages: 1 };
     }

@@ -1589,6 +1589,15 @@
     "namePlaceholder": "例如：GHCR 只读",
     "secretKeptPlaceholder": "••••••••（已保存——留空即保持不变）",
     "selectPlaceholder": "请选择…",
+    "gitlab": {
+      "continue": "使用 GitLab 继续",
+      "useToken": "使用访问令牌",
+      "useCli": "使用 GitLab CLI",
+      "createToken": "在 GitLab 上创建令牌",
+      "oauthHelp": "授权 OpenShip 使用你的 GitLab 账户读取仓库并管理部署 Webhook。",
+      "cliHelp": "请在运行 OpenShip 的机器上登录。连接后，此工作区可以使用该 CLI 账户访问仓库，并在这台机器上执行构建。",
+      "connectionName": "连接名称（可选）"
+    },
     "verifyNote": "保存前，OpenShip 会向提供方校验该凭据。",
     "confirmDelete": "删除“{name}”？依赖它的功能将停止工作。",
     "toast": {
@@ -1602,6 +1611,14 @@
       "verifyFailed": "提供方拒绝了该凭据"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "访问令牌",
+            "help": "浏览和克隆仓库需要 read_api 和 read_repository。如需在推送时部署，请同时选择 api 权限，并使用可以管理项目 Webhook 的账户。"
+          }
+        }
+      },
       "docker-registry": {
         "label": "容器镜像仓库",
         "summary": "在部署期间从镜像仓库拉取私有镜像。",

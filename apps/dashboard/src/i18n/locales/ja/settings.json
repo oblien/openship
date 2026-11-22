@@ -1589,6 +1589,15 @@
     "namePlaceholder": "例: GHCR 読み取り専用",
     "secretKeptPlaceholder": "••••••••（保存済み — 空のままで維持）",
     "selectPlaceholder": "選択…",
+    "gitlab": {
+      "continue": "GitLab で続行",
+      "useToken": "アクセストークンを使う",
+      "useCli": "GitLab CLI を使う",
+      "createToken": "GitLab でトークンを作成",
+      "oauthHelp": "GitLab アカウントでリポジトリを読み取り、デプロイ用の Webhook を管理することを OpenShip に許可します。",
+      "cliHelp": "OpenShip が動作するマシンでサインインしてください。接続すると、このワークスペースは CLI アカウントを使ってリポジトリにアクセスし、そのマシンでビルドできます。",
+      "connectionName": "接続名（任意）"
+    },
     "verifyNote": "保存する前に、OpenShip がプロバイダーへ認証情報を確認します。",
     "confirmDelete": "「{name}」を削除しますか？これに依存しているものは動作しなくなります。",
     "toast": {
@@ -1602,6 +1611,14 @@
       "verifyFailed": "プロバイダーが認証情報を拒否しました"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "アクセストークン",
+            "help": "リポジトリの閲覧とクローンには read_api と read_repository を使用します。プッシュ時にデプロイするには、api も選択し、プロジェクトの Webhook を管理できるアカウントを使ってください。"
+          }
+        }
+      },
       "docker-registry": {
         "label": "コンテナレジストリ",
         "summary": "デプロイ時にレジストリからプライベートイメージを取得します。",

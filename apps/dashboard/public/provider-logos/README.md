@@ -37,3 +37,7 @@ the capabilities catalog.
 
 The marks belong to their respective brands. Network profiles for Hetzner
 Dedicated and Hetzner Cloud share the Hetzner mark.
+
+## Git providers
+
+GitHub uses the black Invertocat SVG from the [GitHub Brand Toolkit](https://brand.github.com/foundations/logo), rendered white on dark and dim surfaces. The GitLab connection mark is rasterized from the [Devicon GitLab artwork](https://github.com/devicons/devicon/blob/master/icons/gitlab/gitlab-original.svg), covered by the bundled Devicon license.

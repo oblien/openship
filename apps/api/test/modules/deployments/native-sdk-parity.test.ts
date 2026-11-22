@@ -176,11 +176,12 @@ vi.mock("@repo/db", () => ({
     auditEvent: { create: h.audit },
   },
 }));
-vi.mock("@repo/platform/engine/config/env", () => ({
+vi.mock("@repo/platform/engine/config/env", async () => ({
   env: h.env,
   get selfHostedOidcAllowed() { return !h.env.CLOUD_MODE; },
   trustedOrigins: [],
   runtimeTargetId: "local",
+  runtimeTarget: (await import("@repo/core")).DASHBOARD_RUNTIME_TARGETS.local,
   cloudRuntimeTarget: { dashboard: "https://openship.test", api: "https://api.openship.test" },
 }));
 vi.mock("@repo/platform/engine/lib/instance-authorization", async () => {
@@ -491,8 +492,8 @@ describe("deployment preparation HTTP/native parity", () => {
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
       expect(source).toEqual({
-        source: "github", owner: "acme", repo: "app", serverId: "server-a", branch: "preview",
-        composePath: "deploy/compose.yaml", env: { API_TOKEN: secret }, ctx: expect.any(Object),
+        source: "git", provider: "github", owner: "acme", repo: "app", serverId: "server-a", branch: "preview",
+        composePath: "deploy/compose.yaml", rootDirectory: undefined, env: { API_TOKEN: secret }, ctx: expect.any(Object),
       });
       expect(source.ctx).toMatchObject({ userId: "alice", organizationId: "org-a", membershipId: "member-a", role });
       expect(source.ctx).not.toHaveProperty("hono");
@@ -543,7 +544,7 @@ describe("deployment preparation HTTP/native parity", () => {
     }
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
-      expect(source).toEqual({ source: "github", owner: "acme", repo: "app", branch: undefined, composePath: undefined, env: undefined, ctx: expect.any(Object) });
+      expect(source).toEqual({ source: "git", provider: "github", owner: "acme", repo: "app", branch: undefined, composePath: undefined, rootDirectory: undefined, serverId: undefined, env: undefined, ctx: expect.any(Object) });
     }
   });
 
@@ -609,7 +610,7 @@ describe("deployment preparation HTTP/native parity", () => {
     }
     expect(h.localInfo).toHaveBeenCalledTimes(2);
     for (const [source] of h.localInfo.mock.calls) {
-      expect(source).toMatchObject({ source: "github", owner: "acme", repo: "app", branch: "preview", composePath: "deploy/compose.yaml", env: { OVERRIDE: "typed-value" } });
+      expect(source).toMatchObject({ source: "git", provider: "github", owner: "acme", repo: "app", branch: "preview", composePath: "deploy/compose.yaml", env: { OVERRIDE: "typed-value" } });
       expect(source.ctx).toMatchObject({ userId: "alice", organizationId: "org-a" });
     }
     expect(h.sourceContent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ owner: "acme", repo: "app" }), "content-whole", "");
@@ -2025,6 +2026,14 @@ describe("project routing HTTP/native parity", () => {
 
 describe("provider credential HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
+  it("offers GitLab connections without controller CLI access in Cloud over both transports", async () => {
+    h.env.CLOUD_MODE = true;
+    for (const credentials of [(await native()).credentials, remote().credentials]) {
+      const provider = (await credentials.listProviders()).find(row => row.id === "gitlab");
+      expect(provider?.authorization).toBeDefined();
+      expect(provider?.authorization?.hostCli).toBeUndefined();
+    }
+  });
   it("exposes DigitalOcean through Connections with tenant scoping and secret-free audit", async () => {
     h.env.CLOUD_MODE = true;
     const credential = { ...credentialFixture(), provider: "digitalocean", providerLabel: "DigitalOcean", selector: null, publicFields: {}, secretsMasked: { apiToken: credentialFixture().secretsMasked.secret! } };

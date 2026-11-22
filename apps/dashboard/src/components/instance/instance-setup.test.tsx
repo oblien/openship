@@ -78,7 +78,7 @@ vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: h.selfHosted, deployMode: "desktop" }),
 }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast }) }));
-vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ connected: true }) }));
+vi.mock("@/context/GitContext", () => ({ useGit: () => ({ connected: true, definition: { id: "github", name: "GitHub", capabilities: { checks: true, webhooks: true, pullRequests: true } } }) }));
 vi.mock("@/context/ProjectSettingsContext", () => ({
   useProjectSettings: () => ({
     id: "project",

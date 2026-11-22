@@ -22,6 +22,8 @@ export function resolveGitHubDeploymentChecks(
 
 /** Captured at admission; editing a project's source never redirects an old report. */
 export interface DeploymentCheckSource {
+  /** Missing only on legacy GitHub delivery intents. */
+  provider?: string;
   owner: string;
   repo: string;
   name: string;

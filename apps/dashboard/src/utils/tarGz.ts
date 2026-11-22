@@ -51,9 +51,10 @@ function header(name: string, size: number, typeflag: "0" | "x", mtime: number):
 /** A PAX record: "<len> key=value\n", where <len> is the record's own byte length. */
 function paxRecord(key: string, value: string): string {
   const rest = ` ${key}=${value}\n`;
-  let len = rest.length;
-  while (String(len).length + rest.length !== len) {
-    len = String(len).length + rest.length;
+  const restBytes = enc.encode(rest).length;
+  let len = restBytes;
+  while (String(len).length + restBytes !== len) {
+    len = String(len).length + restBytes;
   }
   return String(len) + rest;
 }

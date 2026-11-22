@@ -1,19 +1,21 @@
 import { createHash, randomUUID } from "node:crypto";
-import { isServiceFailureStatus, isServiceSuccessStatus, safeErrorMessage } from "@repo/core";
+import { matchesProjectRepository, isServiceFailureStatus, isServiceSuccessStatus, safeErrorMessage } from "@repo/core";
 import { diagnostics } from "@repo/core/diagnostics";
 import { repos, type Deployment, type DeploymentCheck, type ServiceDeployment } from "@repo/db";
 import { buildBackgroundContext } from "../../lib/background-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { runtimeTarget } from "../../config/index";
 import { nativeJobsEnabled } from "../../native/execution-policy";
-import { checkFailureSummary, syncGitHubCheck, type GitHubCheckUpdate } from "../github/check-runs";
+import { checkFailureSummary } from "../git/checks";
+import { projectRepository } from "../git/provider";
+import type { GitCheckUpdate } from "../git/types";
 import { rollupDeploymentStatus } from "./service-checks";
 
 const TERMINAL = new Set(["ready", "failed", "partial_failure", "cancelled", "no_changes", "rejected", "action_required"]);
 const RETRY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Pure projection of persisted lifecycle state, shared by every deployment target. */
-type CheckOutcome = Pick<GitHubCheckUpdate, "status" | "conclusion"> & { title: string };
+type CheckOutcome = Pick<GitCheckUpdate, "status" | "conclusion"> & { title: string };
 export function deploymentCheckOutcome(dep: Pick<Deployment, "status">, workerActive: boolean): CheckOutcome {
   if (dep.status === "queued") return { status: "queued" as const, title: "Deployment queued" };
   if (workerActive && (dep.status === "cancelled" || dep.status === "rejected"))
@@ -58,9 +60,10 @@ async function deliver(root: DeploymentCheck, lease: string): Promise<{ done: bo
   const dep = await repos.deployment.findById(root.deploymentId);
   if (!dep) return { done: true };
   const project = await repos.project.findByIdInOrganization(dep.projectId, dep.organizationId);
-  if (!project || project.deletedAt || project.gitProvider !== "github" ||
-    project.gitOwner?.toLowerCase() !== source.owner.toLowerCase() || project.gitRepo?.toLowerCase() !== source.repo.toLowerCase())
-    return { done: true, error: "The project source changed; GitHub reporting for this deployment stopped." };
+  if (!project || project.deletedAt || !matchesProjectRepository(project, {
+    provider: source.provider, namespace: source.owner, name: source.repo,
+  }))
+    return { done: true, error: "The project source changed; Repository reporting for this deployment stopped." };
   const rows = await repos.serviceDeployment.listByDeployment(dep.id);
   let parent = deploymentCheckOutcome(dep, await repos.deployment.hasLiveBuildExecution(dep.id, dep.projectId));
   if (parent.conclusion === "success" && rollupDeploymentStatus(rows) !== "ready")
@@ -68,8 +71,10 @@ async function deliver(root: DeploymentCheck, lease: string): Promise<{ done: bo
   if (!dep.commitSha || !/^[a-f\d]{40}$/i.test(dep.commitSha))
     return { done: parent.status === "completed", ...(parent.status === "completed" && { error: "No exact Git commit was captured for this deployment. No Check was published." }) };
   const owner = await resolveOrgOwner(dep.organizationId);
-  if (!owner) return { done: false, error: "GitHub reporting needs an active organization owner.", unavailable: true };
+  if (!owner) return { done: false, error: "Repository reporting needs an active organization owner.", unavailable: true };
   const ctx = buildBackgroundContext({ userId: owner.userId, organizationId: dep.organizationId, label: "deployment:github-checks" });
+  const checks = projectRepository(ctx, project).checks;
+  if (!checks) return { done: true, error: "The Git provider does not support deployment reporting." };
   const base = runtimeTarget.dashboard.replace(/\/$/, "");
   const detailsUrl = `${base}/build/${encodeURIComponent(dep.id)}`;
   const secrets = Object.values(dep.envVars ?? {});
@@ -110,8 +115,8 @@ async function deliver(root: DeploymentCheck, lease: string): Promise<{ done: bo
   // never creates another one. Preferences otherwise apply at the next admission.
   const disabled = project.githubChecks?.enabled === false;
   for (const target of targets) {
-    const outcome = disabled ? { status: "completed" as const, conclusion: "neutral" as const, title: "GitHub deployment reporting disabled" } : target.outcome;
-    const update: GitHubCheckUpdate = {
+    const outcome = disabled ? { status: "completed" as const, conclusion: "neutral" as const, title: "Repository deployment reporting disabled" } : target.outcome;
+    const update: GitCheckUpdate = {
       name: target.check.name, externalId: `openship-deployment:${dep.id}:${target.check.id}`, headSha: dep.commitSha,
       status: outcome.status, ...(outcome.status === "completed" && { conclusion: outcome.conclusion }),
       detailsUrl, startedAt: dep.createdAt.toISOString(),
@@ -121,16 +126,16 @@ async function deliver(root: DeploymentCheck, lease: string): Promise<{ done: bo
     const digest = createHash("sha256").update(JSON.stringify(update)).digest("hex");
     if (digest === target.check.publishedDigest) continue;
     if (!nativeJobsEnabled() || !await repos.deploymentCheck.renew(root.id, lease)) return { done: false };
-    const result = await syncGitHubCheck(ctx, source.owner, source.repo, target.check.checkRunId?.toString() ?? null, update, {
+    const result = await checks.sync(target.check.checkRunId?.toString() ?? null, update, {
       canSend: async () => nativeJobsEnabled() && await repos.deploymentCheck.renew(root.id, lease),
       // Recover a Check accepted before a lost response, even if the user has
       // since disabled reporting. Close it without creating a new Check.
       createIfMissing: !disabled,
     });
     if (result.skipped) continue;
-    if (result.error || !result.id) return { done: false, error: result.error ?? "GitHub did not confirm the Check.", unavailable: result.unavailable };
+    if (result.error || !result.id) return { done: false, error: result.error ?? "The provider did not confirm the Check.", unavailable: result.unavailable };
     if (!await repos.deploymentCheck.published(root.id, lease, target.check.id, {
-      checkRunId: Number(result.id), status: update.status, conclusion: update.conclusion ?? null, publishedDigest: digest,
+      checkRunId: result.id, status: update.status, conclusion: update.conclusion ?? null, publishedDigest: digest,
       ...(target.serviceDeploymentId && { serviceDeploymentId: target.serviceDeploymentId }),
     })) return { done: false };
   }

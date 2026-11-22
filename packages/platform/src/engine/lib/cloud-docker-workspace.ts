@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   CLOUD_DOCKER_IMAGE,
   CloudWorkspaceExecutor,
+  OblienError,
   type Oblien,
   cloudCpus,
   cloudWorkspaceCreationFailure,
@@ -21,6 +22,7 @@ import { AppError, deploymentBelongsToProject } from "@repo/core";
 import { cloudWorkspaceResourcesFromLimits } from "./resources";
 import { env } from "../config/env";
 import { getNamespaceClient } from "./openship-cloud";
+import { getOblienClient } from "./oblien-client";
 import { ensureLinkedCloudServer } from "./cloud/server-connection";
 import { createProvisionLock } from "./provision-lock";
 import {
@@ -349,11 +351,14 @@ async function ensureDockerHost(
             ttl: "1h",
             ttl_action: "remove",
             remove_on_exit: false,
-            network_config: { allow_internet: true, public_ingress: false },
+            // Oblien's host ingress gate admits the managed Edge to configured ports.
+            network_config: { allow_internet: true, public_ingress: true },
           },
         })
         .catch(async (error) => {
           const failure = cloudWorkspaceCreationFailure(error);
+          const replayConflict = error instanceof OblienError && error.status === 409 &&
+            error.code?.toLowerCase() === "idempotency_conflict";
           if (failure.workspaceId) {
             const created = await client.vms.get(failure.workspaceId);
             if (
@@ -369,7 +374,7 @@ async function ensureDockerHost(
               namespace,
               failure.workspaceId,
             );
-          } else if (failure.capacityRejected && existing) {
+          } else if (existing && (failure.capacityRejected || replayConflict)) {
             const recovered = await findOwnedDockerWorkspace(client, ownerId, namespace);
             if (recovered) return recovered;
           } else if (failure.rejected && !existing) {
@@ -406,6 +411,20 @@ async function ensureDockerHost(
       signal: input.signal,
     });
     await ws.lifecycle.makePermanent();
+    if (binding.state === "provisioning") {
+      input.signal?.throwIfAborted();
+      // A VM created before a retried provisioning request may have the old ingress default.
+      const needsEdgeIngress = existing && (await ws.network.get()).public_access === false;
+      const { enabled } = await ws.apiAccess.status();
+      if (needsEdgeIngress || !enabled) {
+        const ownerVm = getOblienClient().vm(ready.id);
+        if (needsEdgeIngress && !(await ownerVm.network.update({ public_access: true })).success)
+          throw new AppError("Could not enable Cloud Edge ingress", 503, "CLOUD_EDGE_INGRESS_UNAVAILABLE");
+        if (!enabled) await ownerVm.apiAccess.enable();
+      }
+      // Check the actual gateway with the same credential that will run deployments.
+      await (await ws.runtime()).info();
+    }
     await repos.cloudDockerWorkspace.markReady(owner, input.organizationId, workspaceId);
     return workspaceId;
   }, input.signal);

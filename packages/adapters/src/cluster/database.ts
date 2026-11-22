@@ -11,6 +11,7 @@ import {
 } from "@repo/core";
 import { KubernetesApiError, type KubernetesApi, type KubernetesObject } from "./kubernetes-api";
 import { clusterObject, installDatabaseAddon, waitForClusterResource } from "./database-addons";
+import addons from "./database-addons.json";
 import {
   listNamespaceResources,
   kubernetesProjectNamespace,
@@ -225,15 +226,20 @@ export class ClusterDatabaseAdapter {
 
   async preflight() {
     validateClusterDatabase(this.target.config);
-    const version = await this.api.request<any>("GET", "/version", undefined, this.signal);
-    const minor = Number(String(version.minor).replace(/\D/g, ""));
-    if (
-      this.target.config.engine === "postgres" &&
-      (Number(version.major) !== 1 || minor < 34 || minor > 36)
-    )
-      throw new Error(
-        "This PostgreSQL template supports Kubernetes 1.34–1.36. Update the server cluster before installing it.",
+    if (this.target.config.engine === "postgres") {
+      const version = await this.api.request<{ major: string; minor: string }>(
+        "GET",
+        "/version",
+        undefined,
+        this.signal,
       );
+      const minor = `${version.major}.${String(version.minor).replace(/\+$/, "")}`;
+      const supported = addons.postgres.supportedKubernetesMinors;
+      if (!supported.includes(minor))
+        throw new Error(
+          `This cluster runs Kubernetes ${minor}. For PostgreSQL, choose a cluster running a supported Kubernetes version (${supported.join(", ")}).`,
+        );
+    }
     const nodes = await this.api.request<{ items: KubernetesObject[] }>(
       "GET",
       `/api/v1/nodes?labelSelector=${encodeURIComponent(`openship.io/runtime=${this.target.runtimeId}`)}`,

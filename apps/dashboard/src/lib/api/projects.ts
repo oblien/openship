@@ -626,7 +626,7 @@ export const projectsApi = {
   /** Link a GitHub repo to an existing project + register webhook */
   linkRepo: (
     id: string | number,
-    body: { owner: string; repo: string; branch?: string; installationId?: number },
+    body: { provider?: string; owner: string; repo: string; branch?: string; installationId?: number },
   ) => api.post<any>(endpoints.projects.gitLink(id), body),
 
   /** Atomically transition a single-app project to a tracked prebuilt image. */

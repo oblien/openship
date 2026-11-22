@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "اربط GitHub أولًا",
-      "description": "اربط حساب GitHub الخاص بك لربط مستودع بهذا المشروع.",
+      "title": "اربط {provider} أولًا",
+      "description": "اربط حساب {provider} الخاص بك لربط مستودع بهذا المشروع.",
       "connecting": "جارٍ الربط…",
-      "connect": "ربط GitHub"
+      "connect": "ربط {provider}"
     },
     "link": {
       "title": "ربط مستودع",
-      "description": "اربط مستودع GitHub لتفعيل عمليات النشر المُشغّلة عبر webhook.",
+      "description": "اربط مستودع {provider} لتفعيل عمليات النشر المُشغّلة عبر webhook.",
       "select": "اختيار مستودع"
     },
     "picker": {

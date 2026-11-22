@@ -43,6 +43,7 @@ describe("repository service build fields", () => {
         rootDirectory: "deploy",
       }),
     ).toEqual({
+      provider: "github",
       owner: "example",
       repo: "repo",
       branch: "feature/api",

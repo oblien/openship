@@ -1,7 +1,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { join } from "node:path";
 import { assertCloudProxyScope } from "../../lib/cloud/scope";
-import { AppError, NotFoundError, ValidationError, CLOUD_UNREACHABLE_CODE } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, AppError, NotFoundError, ValidationError, CLOUD_UNREACHABLE_CODE } from "@repo/core";
 import { isAcceptedDeploymentResult, type PrepareDeploymentInput } from "@repo/contracts";
 import type { BuildDependencies } from "../../../builds";
 import type { ExecutionContext } from "../../../context";
@@ -17,6 +17,7 @@ import { mergeServiceEnv, publicScanService } from "../../lib/secret-env";
 import { composeSourceChanges, composeSourceRevision } from "./compose-review";
 import { projectServicesToDeployableServices } from "./compose/project-services";
 import { audit } from "../../lib/audit-emitter";
+import { getGitProvider } from "../git/provider";
 import { assertLocalSourceContentAccess } from "../../lib/local-source-authority";
 
 /** Validate the source and permission to include editable values in its scan. */
@@ -24,17 +25,17 @@ async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentI
   const source = body.source ?? (body.owner && body.repo ? "github" : undefined);
   const composePath = body.composePath?.trim() || undefined;
   const envVars = body.env && Object.keys(body.env).length ? body.env : undefined;
-  if (source === "github") {
+  if (source === "github" || source === "git") {
     if (!body.owner || !body.repo) throw new ValidationError("owner and repo are required");
     if (body.includeEnv) {
       // Values can combine Compose, .env and openship.json. A deployment or
       // metadata grant alone must not expose the contents of those files.
-      const { checkSourceTier } = await import("../github/github-access");
-      const { ok } = await checkSourceTier(ctx, { owner: body.owner, repo: body.repo }, "content-whole", "");
-      if (!ok) throw new NotFoundError("github", `${body.owner}/${body.repo}`);
+      const { ok } = await getGitProvider(body.provider ?? DEFAULT_GIT_PROVIDER).access.checkSource(ctx, { owner: body.owner, repo: body.repo }, "content-whole", "");
+      if (!ok) throw new NotFoundError("repository", `${body.owner}/${body.repo}`);
     }
     return {
-      source,
+      source: "git",
+      provider: body.provider ?? DEFAULT_GIT_PROVIDER,
       serverId: body.serverId,
       owner: body.owner,
       repo: body.repo,
@@ -57,7 +58,7 @@ async function preparationSource(ctx: ExecutionContext, body: PrepareDeploymentI
     if (native && body.rootDirectory) await assertNativeSourcePath(join(path, body.rootDirectory));
     return { source, path, composePath, rootDirectory: body.rootDirectory, env: envVars };
   }
-  throw new ValidationError("source must be 'github' or 'local'");
+  throw new ValidationError("source must be 'git' or 'local'");
 }
 
 export const buildDependencies: BuildDependencies = {

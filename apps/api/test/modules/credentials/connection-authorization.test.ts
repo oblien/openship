@@ -90,11 +90,13 @@ beforeEach(() => {
 });
 
 describe("organization platform authorization", () => {
-  it("uses a one-use session/workspace state and PKCE without exposing credentials", async () => {
+  it.each([false, true])("uses a one-use session/workspace state and PKCE (desktop %s)", async (desktop) => {
     const started = await beginConnectionAuthorization(ctx, {
       provider: "railway",
       name: "Railway",
+      desktop,
     });
+    expect(started.state.startsWith("desktop.")).toBe(desktop);
     const url = new URL(started.url);
     expect(url.origin).toBe("https://backboard.railway.com");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");

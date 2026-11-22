@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({ repos: { settings: {
   findByUser: async (userId: string) => ({ cloudSessionToken: h.sessions.get(userId) }),
   findOrgOwnerCloudLink: async (org: string) => org === "local-org" ? { userId: "local-owner" } : null,
+  listCloudLinkedOrgIds: async () => ["local-org"],
   setCloudSession: async (userId: string, sealed: string) => { h.sessions.set(userId, sealed); },
   clearCloudSession: h.clear,
 } } }));
@@ -19,7 +20,9 @@ vi.mock("@repo/platform/engine/config/env", () => ({
 vi.mock("@repo/platform/engine/lib/cache-store/index", () => ({ cacheStore: async () => ({
   get: async (key: string) => h.tokens.get(key), set: h.set, invalidateByPrefix: h.invalidate,
 }) }));
-vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({ invalidateUserGitHubCache: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/github/github.auth", () => ({
+  invalidateUserGitHubCache: vi.fn(), invalidateOrgGitHubCache: vi.fn(),
+}));
 import { encrypt, decrypt } from "@repo/platform/engine/lib/encryption";
 import { cloudFetch, cloudFetchAsOrgOwner, readCloudSession } from "@repo/platform/engine/lib/cloud/transport";
 import { storeCloudSession, isCloudConnected, clearCloudSession } from "@repo/platform/engine/lib/cloud/session";
@@ -36,7 +39,9 @@ beforeEach(() => {
   vi.stubGlobal("fetch", h.fetch);
   h.fetch.mockResolvedValue(account());
   h.clear.mockImplementation(async (id: string, expected: string) => {
-    if (h.sessions.get(id) === expected) h.sessions.delete(id);
+    if (h.sessions.get(id) !== expected) return;
+    h.sessions.delete(id);
+    return ["local-org"];
   });
   h.set.mockImplementation(async (key: string, entry: TokenCache) => { h.tokens.set(key, entry); });
   h.invalidate.mockImplementation(async (prefix: string) => {
@@ -132,7 +137,7 @@ describe("pinned Cloud identity", () => {
   it("uses compare-and-swap when clearing the stored credential", async () => {
     const sealed = h.sessions.get("local-owner");
     await clearCloudSession("local-owner", first);
-    expect(h.clear).toHaveBeenCalledWith("local-owner", sealed);
+    expect(h.clear).toHaveBeenCalledWith("local-owner", sealed, expect.any(Function));
     expect(await readCloudSession("local-owner")).toBeNull();
   });
 });

@@ -1,9 +1,9 @@
-import { AppError } from "@repo/core";
+import { AppError, type ConnectionOAuthProvider } from "@repo/core";
 import { safeFetch } from "../../lib/safe-fetch";
 
 export type MigrationProvider = "railway" | "vercel";
-export interface ProviderAccess {
-  provider: MigrationProvider;
+export interface ProviderAccess<P extends ConnectionOAuthProvider = MigrationProvider> {
+  provider: P;
   publicFields: Record<string, string>;
   secrets: Record<string, string>;
 }
@@ -18,7 +18,10 @@ export async function providerJson<T>(
     body?: string;
   } = {},
 ): Promise<T> {
-  if (!["https://api.vercel.com", "https://backboard.railway.com"].includes(url.origin))
+  if (
+    !["https://api.vercel.com", "https://backboard.railway.com"].includes(url.origin) &&
+    url.href !== "https://gitlab.com/oauth/token"
+  )
     throw new AppError("Unsupported connection endpoint", 400, "CONNECTION_ENDPOINT_INVALID");
   let response;
   try {
@@ -35,6 +38,20 @@ export async function providerJson<T>(
     );
   }
   if (!response.ok) {
+    // OAuth token endpoints use HTTP 400 for expired/revoked refresh grants.
+    // Only inspect the standard error identifier; upstream descriptions can contain secrets.
+    if (response.status === 400 && url.pathname.endsWith("/token")) {
+      const body = await response.json().catch(() => {
+        // diagnostics-ignore: a non-JSON error body receives the redacted HTTP failure below.
+        return null;
+      });
+      if (typeof body === "object" && body && "error" in body && body.error === "invalid_grant")
+        throw new AppError(
+          "The authorization expired. Reconnect this account.",
+          409,
+          "CONNECTION_RECONNECT_REQUIRED",
+        );
+    }
     const auth = response.status === 401 || response.status === 403;
     throw new AppError(
       auth
@@ -96,6 +113,7 @@ export function vercelRequest<T>(
   if (!access.secrets.apiToken)
     throw new AppError("Reconnect Vercel before importing", 409, "CONNECTION_RECONNECT_REQUIRED");
   const url = new URL(path, "https://api.vercel.com");
+  if (url.origin !== "https://api.vercel.com") throw new Error("Expected a Vercel API path");
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   if (access.publicFields.teamId) url.searchParams.set("teamId", access.publicFields.teamId);
   return providerJson<T>(url, { headers: { Authorization: `Bearer ${access.secrets.apiToken}` } });
