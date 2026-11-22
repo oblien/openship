@@ -13,7 +13,6 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { AppError, safeErrorMessage } from "@repo/core";
 import type { Context } from "hono";
-import { repos } from "@repo/db";
 import { getRequestContext } from "../../lib/request-context";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { cloudClient } from "@repo/platform/engine/lib/cloud/client";
@@ -27,11 +26,6 @@ export async function disconnect(c: Context) {
   // owner's). The route is owner-gated (requireRole("owner")), so the
   // caller is the owner — org scope resolves and clears the owner link.
   await cloudClient({ organizationId: ctx.organizationId }).disconnect();
-  // Disconnecting cloud removes the org's GitHub App identity entirely,
-  // so every member-level GitHub grant is now moot — prune them.
-  await repos.resourceGrant
-    .deleteAllGitHubGrants(ctx.organizationId)
-    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/cloud/cloud-local.controller"); return 0; });
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "cloud.disconnect",
     resourceType: "cloud",

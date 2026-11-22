@@ -1,4 +1,4 @@
-import { actionFinished, actionRunnerLabels, type ActionWorkflowPlan } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, actionFinished, actionRunnerLabels, type ActionWorkflowPlan } from "@repo/core";
 import type { ActionJob, ActionRun, ActionRunner, ActionWorkflow } from "@repo/db";
 import { record } from "./workflow";
 import { actionJobName } from "./job-name";
@@ -64,6 +64,7 @@ export function actionWorkflowView(workflow: ActionWorkflow) {
     updatedAt,
   } = workflow;
   return {
+    gitProvider: workflow.gitProvider ?? DEFAULT_GIT_PROVIDER,
     id,
     controller: workflow.controller ?? "openship",
     githubWorkflowId: workflow.githubWorkflowId ?? null,
@@ -122,6 +123,7 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
       run.admission.state !== "allowed"
         ? ("waiting" as const)
         : run.status,
+    gitProvider: run.configuration.gitProvider ?? DEFAULT_GIT_PROVIDER,
     owner: run.configuration.owner,
     repo: run.configuration.repo,
     revision: run.revision,

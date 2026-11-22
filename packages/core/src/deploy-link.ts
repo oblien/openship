@@ -1,42 +1,16 @@
+import { DEFAULT_GIT_PROVIDER, GITHUB_PROVIDER, parseGitRepositoryUrl, gitProviderDefinition } from "./git-providers";
 /** Public deployment links contain a source reference, never credentials or executable config. */
 export type DeploySource =
   | { kind: "app"; appId: string }
-  | { kind: "repo"; url: string; owner: string; repo: string; branch?: string };
+  | { kind: "repo"; provider?: string; url: string; owner: string; repo: string; branch?: string };
 
 export type DeployDestination = "cloud" | "server";
 
-function parseGitHubRepository(repo: string) {
-  if (repo.length > 300)
-    throw new Error("Use a GitHub repository URL, such as https://github.com/owner/repo.");
-  let parsed: URL;
-  try {
-    parsed = new URL(repo.trim());
-  } catch {
-    throw new Error("Use a GitHub repository URL, such as https://github.com/owner/repo.");
-  }
-  const parts = parsed.pathname.replace(/\/+$/, "").slice(1).split("/");
-  const [owner, rawName] = parts;
-  const name = rawName?.replace(/\.git$/, "");
-  if (
-    !["https:", "http:"].includes(parsed.protocol) ||
-    !["github.com", "www.github.com"].includes(parsed.hostname) ||
-    parsed.username ||
-    parsed.password ||
-    parsed.port ||
-    parsed.search ||
-    parsed.hash ||
-    parts.length !== 2 ||
-    !owner ||
-    !name ||
-    name === "." ||
-    name === ".." ||
-    !/^[a-zA-Z0-9-]+$/.test(owner) ||
-    !/^[a-zA-Z0-9_.-]+$/.test(name)
-  )
-    throw new Error(
-      "Use the repository URL, without credentials, query parameters or a file path.",
-    );
-  return { owner, repo: name, url: `https://github.com/${owner}/${name}` };
+function parseRepository(repo: string) {
+  const parsed = parseGitRepositoryUrl(repo);
+  if (!parsed) throw new Error("Use the repository URL, without credentials, query parameters or a file path.");
+  const { provider, ...source } = parsed;
+  return { ...source, ...(provider !== GITHUB_PROVIDER.id ? { provider } : {}) };
 }
 
 /** Decode only canonical owner/repo slugs, never the dashboard's local/project payloads. */
@@ -44,9 +18,16 @@ function decodeRepositorySlug(slug: string) {
   if (!/^[A-Za-z0-9_-]{1,400}$/.test(slug)) return null;
   try {
     const decoded = atob(slug.replace(/-/g, "+").replace(/_/g, "/"));
-    const source = parseGitHubRepository(`https://github.com/${decoded}`);
+    if (decoded.startsWith("repo:v2:")) {
+      const value = JSON.parse(decoded.slice("repo:v2:".length));
+      const definition = gitProviderDefinition(value.provider);
+      if (!definition || typeof value.owner !== "string" || typeof value.repo !== "string") return null;
+      const source = parseRepository(`${definition.webBaseUrl}/${value.owner}/${value.repo}`);
+      return encodeRepoSlug(source.owner, source.repo, source.provider) === slug ? source : null;
+    }
+    const source = parseRepository(`${GITHUB_PROVIDER.webBaseUrl}/${decoded}`);
     return `${source.owner}/${source.repo}` === decoded &&
-      encodeRepoSlug(source.owner, source.repo) === slug
+      encodeRepoSlug(source.owner, source.repo, source.provider) === slug
       ? source
       : null;
   } catch {
@@ -63,7 +44,7 @@ export function parseDeploySource(input: {
 }): DeploySource {
   const { app, repo, branch } = input;
   if ((app !== undefined) === (repo !== undefined))
-    throw new Error("Choose one app or GitHub repository to deploy.");
+    throw new Error("Choose one app or Git repository to deploy.");
   if (app !== undefined) {
     if (
       typeof app !== "string" ||
@@ -75,12 +56,12 @@ export function parseDeploySource(input: {
     return { kind: "app", appId: app };
   }
   if (typeof repo !== "string")
-    throw new Error("Use a GitHub repository URL or a valid deployment link.");
+    throw new Error("Use a Git repository URL or a valid deployment link.");
   const source = /^https?:\/\//i.test(repo.trim())
-    ? parseGitHubRepository(repo)
+    ? parseRepository(repo)
     : decodeRepositorySlug(repo);
   if (!source)
-    throw new Error("Invalid repository reference. Paste the GitHub repository URL to continue.");
+    throw new Error("Invalid repository reference. Paste the Git repository URL to continue.");
   // A conservative Git branch subset is sufficient for shareable buttons. In
   // particular, no shell syntax, control characters, rev expressions or options.
   if (
@@ -108,7 +89,7 @@ export function deploySourceParams(source: DeploySource): URLSearchParams {
     source.kind === "app"
       ? { app: source.appId }
       : {
-          repo: encodeRepoSlug(source.owner, source.repo),
+          repo: encodeRepoSlug(source.owner, source.repo, source.provider),
           ...(source.branch ? { branch: source.branch } : {}),
         },
   );
@@ -123,8 +104,11 @@ export function deployLinkHref(source: DeploySource, destination?: DeployDestina
 }
 
 /** Existing dashboard repo slug format, shared by normal imports and deploy buttons. */
-export function encodeRepoSlug(owner: string, repo: string): string {
-  const bytes = new TextEncoder().encode(`${owner}/${repo}`);
+export function encodeRepoSlug(owner: string, repo: string, provider = DEFAULT_GIT_PROVIDER): string {
+  const payload = provider === "github" && !owner.includes("/")
+    ? `${owner}/${repo}`
+    : `repo:v2:${JSON.stringify({ provider, owner, repo })}`;
+  const bytes = new TextEncoder().encode(payload);
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -146,7 +130,7 @@ export function deploySetupHref(source: DeploySource, destination?: DeployDestin
   const path =
     source.kind === "app"
       ? `/apps/new/${source.appId}`
-      : `/deploy/${encodeRepoSlug(source.owner, source.repo)}`;
+      : `/deploy/${encodeRepoSlug(source.owner, source.repo, source.provider)}`;
   return `${path}${params.size ? `?${params}` : ""}`;
 }
 

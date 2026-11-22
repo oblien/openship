@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import { and, eq, inArray } from "drizzle-orm";
+import { type GitRepositoryRef, generateId } from "@repo/core";
 import type { Database } from "../client";
 import { cloudWebhookBinding } from "../schema";
 
@@ -17,14 +17,13 @@ export function createCloudWebhookBindingRepo(db: Database) {
      * repo can have several environment branches bound. Caller picks the row
      * whose `gitBranch` is "" (default) or matches the pushed branch.
      */
-    async findByRepo(owner: string, repo: string, branch?: string) {
+    async findByRepo(ref: GitRepositoryRef, organizationIds?: readonly string[]) {
       const conditions = [
-        eq(cloudWebhookBinding.gitOwner, owner.toLowerCase()),
-        eq(cloudWebhookBinding.gitRepo, repo.toLowerCase()),
+        eq(cloudWebhookBinding.gitProvider, ref.provider),
+        eq(cloudWebhookBinding.gitOwner, ref.namespace.toLowerCase()),
+        eq(cloudWebhookBinding.gitRepo, ref.name.toLowerCase()),
       ];
-      if (branch !== undefined) {
-        conditions.push(eq(cloudWebhookBinding.gitBranch, branch));
-      }
+      if (organizationIds) conditions.push(inArray(cloudWebhookBinding.organizationId, [...organizationIds]));
       return db.query.cloudWebhookBinding.findMany({
         where: and(...conditions),
       });
@@ -46,6 +45,8 @@ export function createCloudWebhookBindingRepo(db: Database) {
         })
         .onConflictDoUpdate({
           target: [
+            cloudWebhookBinding.organizationId,
+            cloudWebhookBinding.gitProvider,
             cloudWebhookBinding.gitOwner,
             cloudWebhookBinding.gitRepo,
             cloudWebhookBinding.gitBranch,

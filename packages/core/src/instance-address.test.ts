@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   desktopInstanceLink,
+  desktopConnectionCallbackLink,
+  parseDesktopConnectionCallback,
   parseDesktopInstanceLink,
   parseInstanceAddress,
 } from "./instance-address";
@@ -52,5 +54,24 @@ describe("Desktop invitation links", () => {
       desktopInstanceLink("https://ops.example.test?returnTo=https://other.test"),
     ).toThrow();
     expect(parseInstanceAddress("https://ops.example.test/" + "x".repeat(2048))).toBeNull();
+  });
+});
+
+describe("Desktop provider callbacks", () => {
+  const state = "desktop." + "a".repeat(43);
+  it("only carries the one-time code and state back to Desktop", () => {
+    const input = new URLSearchParams({ state, code: "abc+123/=", next: "unrelated" });
+    const link = desktopConnectionCallbackLink(input)!;
+    expect(parseDesktopConnectionCallback(link)).toEqual({ state, code: "abc+123/=" });
+    expect(parseDesktopInstanceLink(link)).toBeNull();
+    expect(parseDesktopConnectionCallback(link + "&next=unrelated")).toBeNull();
+    expect(
+      desktopConnectionCallbackLink(new URLSearchParams({ state: "a".repeat(43) })),
+    ).toBeNull();
+    input.set("error", "access_denied");
+    expect(parseDesktopConnectionCallback(desktopConnectionCallbackLink(input)!)).toEqual({
+      state,
+      code: null,
+    });
   });
 });

@@ -12,6 +12,7 @@
     "title": "Nouveau projet",
     "subtitle": "Déployez une application ou importez votre projet.",
     "tabs": {
+      "repositories": "Dépôts",
       "folder": "Dossier",
       "github": "GitHub",
       "templates": "Modèles",
@@ -36,7 +37,7 @@
       "copyCode": "Cliquer pour copier"
     },
     "default": {
-      "title": "Connectez GitHub pour déployer",
+      "title": "Connectez {provider} pour déployer",
       "descSelfHosted": "Choisissez comment OpenShip accède à vos dépôts.",
       "descSaas": "Liez votre compte GitHub pour parcourir vos dépôts et déployer à chaque push.",
       "recommended": "Recommandé",
@@ -144,7 +145,7 @@
       "name": "Nom",
       "stars": "Étoiles"
     },
-    "addAccount": "Ajouter un compte GitHub",
+    "addAccount": "Ajouter un compte {provider}",
     "installTitle": "Installer l'application GitHub",
     "installDesc": "Installez l'application GitHub sur votre compte ou votre organisation pour accorder l'accès à vos dépôts.",
     "installButton": "Installer l'application GitHub",
@@ -174,8 +175,6 @@
     "total": "Total",
     "public": "Public",
     "private": "Privé",
-    "quickTip": "Astuce rapide",
-    "quickTipDesc": "Sélectionnez n'importe quel dépôt pour le déployer instantanément. Configurez des déploiements automatiques à chaque push.",
     "connection": "Connexion",
     "openshipGithubApp": "Application GitHub OpenShip",
     "connected": "Connecté",
@@ -187,14 +186,13 @@
     "notConnectedManage": "Non connecté — gérer dans les paramètres",
     "optional": "Facultatif",
     "footnote": "Gérez les connexions GitHub utilisées pour parcourir et déployer les dépôts.",
-    "manageGithubSettings": "gérer GitHub dans les paramètres",
     "methodToken": "Jeton GitHub",
     "methodDevice": "Connexion GitHub"
   },
   "urlImport": {
-    "invalidUrl": "Saisissez une URL de dépôt GitHub valide",
+    "invalidUrl": "Saisissez une URL de dépôt {providers} valide",
     "title": "Importer depuis une URL Git",
-    "description": "Collez l'URL d'un dépôt public à importer. Aucune connexion GitHub requise.",
+    "description": "Collez l'URL d'un dépôt public à importer. Aucune connexion {providers} requise.",
     "importButton": "Importer le dépôt"
   },
   "customAppModal": {

@@ -4,6 +4,7 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { GITHUB_PROVIDER } from "@repo/core";
 import { repos } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 import {
@@ -53,8 +54,11 @@ function rowsInScope<T extends { sourceId?: string | null }>(
 
 export async function handleInstallation(
   payload: GitHubInstallationPayload,
+  verifiedSourceIds?: readonly string[],
 ): Promise<WebhookHandlerResult> {
-  const scope = await resolveInstallationScope(payload);
+  const scope = verifiedSourceIds
+    ? { sourceIds: new Set(verifiedSourceIds), includeLegacy: false }
+    : await resolveInstallationScope(payload);
   // SaaS-only contract: the GitHub App is owned by openship.io, so
   // installation events ONLY have authoritative meaning on the SaaS
   // (env.CLOUD_MODE=true). On a self-hosted instance the App's webhook
@@ -197,7 +201,7 @@ async function handleInstallationDeleted(
         .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return undefined; });
       if (!replacement) {
         await repos.resourceGrant
-          .deleteGitHubGrantsForOwner(organizationId, accountLogin)
+          .deleteForGitNamespace(organizationId, GITHUB_PROVIDER, accountLogin)
           .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-installation"); return 0; });
       }
     }),

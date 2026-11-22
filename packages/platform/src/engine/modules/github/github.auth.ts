@@ -1262,6 +1262,11 @@ export type GitHubAuthMode = "app" | "oauth" | "cli" | "token" | "cloud-app";
  * cloud, which is the canonical self-hosted path.
  */
 export function getGitHubAuthMode(): GitHubAuthMode {
+  return configuredGitHubAuthMode() ?? "cli";
+}
+
+/** A fixed local authority takes precedence over any linked Cloud identity. */
+export function configuredGitHubAuthMode(): GitHubAuthMode | undefined {
   // SaaS owns one canonical GitHub integration. No environment override may
   // route a multi-tenant cloud process into OAuth-only, CLI, or PAT behavior.
   if (env.CLOUD_MODE) return "app";
@@ -1270,7 +1275,7 @@ export function getGitHubAuthMode(): GitHubAuthMode {
   if (explicit !== "auto") return explicit as GitHubAuthMode;
 
   if (localGitHubAppConfiguration.configured) return "app";
-  return "cli";
+  return undefined;
 }
 
 /**
@@ -1306,11 +1311,8 @@ export async function resolveGitHubAuthMode(ctx: RequestContext): Promise<GitHub
 
 /** Resolve the pre-custom-source mode for an owner not backed by a custom App. */
 async function resolveGitHubFallbackAuthMode(ctx: RequestContext): Promise<GitHubAuthMode> {
-  if (env.CLOUD_MODE) return "app";
-
-  const explicit = env.GITHUB_AUTH_MODE;
-  if (explicit !== "auto") return explicit as GitHubAuthMode;
-  if (localGitHubAppConfiguration.configured) return "app";
+  const configured = configuredGitHubAuthMode();
+  if (configured) return configured;
 
   // Cloud connection is OWNED BY THE ORG OWNER, not the asking user. A
   // member never carries the org's cloud identity — so "cloud-app" must
@@ -1343,12 +1345,8 @@ async function resolveGitHubFallbackAuthMode(ctx: RequestContext): Promise<GitHu
  * `resolveGitHubAuthMode`.
  */
 async function resolveAuthModeForUserId(userId: string): Promise<GitHubAuthMode> {
-  if (env.CLOUD_MODE) return "app";
-
-  const explicit = env.GITHUB_AUTH_MODE;
-  if (explicit !== "auto") return explicit as GitHubAuthMode;
-
-  if (localGitHubAppConfiguration.configured) return "app";
+  const configured = configuredGitHubAuthMode();
+  if (configured) return configured;
 
   try {
     const { isCloudConnected } = await import("../../lib/cloud/session");

@@ -17,7 +17,7 @@ export interface ActionWorkflowNotifications {
 
 /** Account IDs, rather than mutable names, own execution permissions. */
 export interface ActionActorIdentity {
-  provider: "github" | "openship";
+  provider: string;
   id: string;
   login: string;
 }
@@ -296,6 +296,7 @@ export interface ActionCallFrame {
 }
 
 export interface ActionWorkflowSnapshot {
+  gitProvider?: string;
   modified?: boolean;
   owner: string | null;
   repo: string | null;

@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "请先连接 GitHub",
-      "description": "关联你的 GitHub 账户，以便将仓库连接到此项目。",
+      "title": "请先连接 {provider}",
+      "description": "关联你的 {provider} 账户，以便将仓库连接到此项目。",
       "connecting": "连接中…",
-      "connect": "连接 GitHub"
+      "connect": "连接 {provider}"
     },
     "link": {
       "title": "关联仓库",
-      "description": "连接一个 GitHub 仓库，以启用由 webhook 触发的部署。",
+      "description": "连接一个 {provider} 仓库，以启用由 webhook 触发的部署。",
       "select": "选择仓库"
     },
     "picker": {

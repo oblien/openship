@@ -32,28 +32,8 @@ export interface GitHubAccount {
   source?: MappedAccount["source"];
 }
 
-export interface GitHubRepo {
-  id: number;
-  full_name: string;
-  name: string;
-  description: string;
-  private: boolean;
-  stars: number;
-  stargazers_count?: number;
-  forks: number;
-  forks_count?: number;
-  language: string;
-  updated_at: string;
-  default_branch: string;
-  owner: { login: string; avatar_url: string } | string;
-  html_url?: string;
-  /**
-   * Which credential source listed this repository (App, CLI, both, or personal
-   * token). This is provenance, not a deployment restriction: preflight resolves
-   * access for the chosen target, including server credentials and desktop relay.
-   */
-  source?: MappedRepository["source"];
-}
+export type { RepositorySummary as GitHubRepo } from "@/lib/git-types";
+import type { RepositorySummary as GitHubRepo } from "@/lib/git-types";
 
 interface GitHubContextValue {
   /** Canonical GitHub connection state. Read this for anything connection-related. */

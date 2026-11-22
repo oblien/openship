@@ -49,6 +49,7 @@ import { tokensDependencies } from "../modules/tokens/token.operations";
 
 import { permissionsDependencies } from "../modules/permissions/permissions.operations";
 
+import { gitDependencies } from "../modules/git/git.operations";
 import { githubDependencies } from "../modules/github/github.operations";
 
 import { noticesDependencies } from "../modules/notices/notice.operations";
@@ -76,6 +77,7 @@ export function getPlatformKernel(): PlatformKernel {
     referralProgram: referralDependencies,
     notices: noticesDependencies,
     github: githubDependencies,
+    git: gitDependencies,
     permissions: permissionsDependencies,
     tokens: tokensDependencies,
     webhooks: webhooksDependencies,

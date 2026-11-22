@@ -17,14 +17,14 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, restoreSubgraph, PkCollisionError, type Service } from "@repo/db";
-import { slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey, ValidationError } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, slugify, safeErrorMessage, mergeAdvanced, looksLikeSecretKey, ValidationError } from "@repo/core";
 import { buildNetworkAliases, type ContainerInfo, type ContainerStatus } from "@repo/adapters";
 import { serviceAliasExtras } from "../../lib/deployable-service";
 import { COMPOSE_SENTINEL } from "../../lib/container-ref";
 import { isControlPlaneProject } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { ensureProject, createServicesProjectWithId } from "../projects/project-crud.service";
-import { getFileContent } from "../github/github.service";
+import { gitRepository } from "../git/provider";
 import {
   blockingComposeFields,
   describeBlockingComposeFields,
@@ -73,15 +73,16 @@ export type RepoComposeService = Omit<ComposeService, "environmentMeta">;
  * Parse a LINKED repo's docker-compose into its services, so the migrate wizard
  * can map each discovered running container to a compose service (the matched
  * service's build context becomes that service's source subpath). Reads the file
- * over the GitHub REST API — no clone. Returns [] when the repo has no compose
+ * through the source provider — no clone. Returns [] when the repo has no compose
  * file (or invalid YAML): the repo still links at project level, the map is just
- * empty. GitHub only (v1).
+ * empty.
  */
 export async function parseRepoCompose(
   ctx: RequestContext,
   owner: string,
   repo: string,
   branch?: string,
+  provider = DEFAULT_GIT_PROVIDER,
 ): Promise<RepoComposeService[]> {
   // NB: we deliberately do NOT read the repo's `.env` for `${VAR}` interpolation.
   // Secrets live in Openship's ENCRYPTED env store — captured from the running
@@ -89,10 +90,11 @@ export async function parseRepoCompose(
   // never a committed repo file. Pulling a `.env` here would pin those values
   // as service overrides, hiding later rotations in the project store. A bare
   // `${VAR}` without an inline default resolves to "" and defers to that store.
+  const repository = gitRepository(ctx, { provider, namespace: owner, name: repo });
   for (const file of REPO_COMPOSE_FILES) {
     let content: string | null = null;
     try {
-      const res = await getFileContent(ctx, owner, repo, file, { branch });
+      const res = await repository.file(file, branch);
       content = res?.content ?? null;
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/migration/migrate.service");

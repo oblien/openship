@@ -660,14 +660,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Connect GitHub first",
-      "description": "Link your GitHub account to connect a repository to this project.",
+      "title": "Connect {provider} first",
+      "description": "Link your {provider} account to connect a repository to this project.",
       "connecting": "Connecting…",
-      "connect": "Connect GitHub"
+      "connect": "Connect {provider}"
     },
     "link": {
       "title": "Link a Repository",
-      "description": "Connect a GitHub repository to enable webhook-triggered deployments.",
+      "description": "Connect a {provider} repository to enable webhook-triggered deployments.",
       "select": "Select Repository"
     },
     "picker": {

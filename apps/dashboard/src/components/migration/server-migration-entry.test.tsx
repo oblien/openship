@@ -60,7 +60,7 @@ vi.mock("@/lib/api/server-migration", () => ({
   },
   isScanStreamStalled: () => false,
 }));
-vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ connected: false }) }));
+vi.mock("@/context/GitContext", () => ({ useGit: () => ({ connected: false, connections: [], definition: { id: "github", name: "GitHub" } }) }));
 
 let root: Root;
 let container: HTMLDivElement;

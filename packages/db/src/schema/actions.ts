@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -75,6 +76,7 @@ export const actionRunner = pgTable(
 );
 
 export interface ActionRunConfiguration {
+  gitProvider?: string;
   owner: string | null;
   repo: string | null;
   path: string;
@@ -113,6 +115,7 @@ export const actionWorkflow = pgTable(
     syncAfter: timestamp("sync_after").notNull().defaultNow(),
     syncLeaseOwner: text("sync_lease_owner"),
     syncLeaseUntil: timestamp("sync_lease_until"),
+    gitProvider: text("git_provider").notNull().default(DEFAULT_GIT_PROVIDER),
     owner: text("owner"),
     repo: text("repo"),
     path: text("path").notNull(),
@@ -195,6 +198,7 @@ export const actionDeployment = pgTable(
         /** Plain pushes share the durable admission controller with required-check deployments. */
         kind?: "push";
         repository?: string;
+        gitProvider?: string;
         serverId?: string;
         environment?: string;
         commitMessage?: string;

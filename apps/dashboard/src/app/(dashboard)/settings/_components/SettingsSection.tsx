@@ -14,10 +14,12 @@ export function SettingsSection({
   iconColor = "text-primary",
   collapsible = false,
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   icon: IconName;
   title: string;
-  description: string;
+  description?: string;
   children: React.ReactNode;
   /**
    * Right-aligned control in the header — for the section's one primary action,
@@ -32,8 +34,11 @@ export function SettingsSection({
   collapsible?: boolean;
   /** Initial open state when collapsible. Ignored for non-collapsible sections. */
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [localOpen, setOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? localOpen;
   const expanded = collapsible ? open : true;
 
   const header = (
@@ -43,7 +48,7 @@ export function SettingsSection({
       </div>
       <div className="min-w-0 flex-1">
         <h2 className="font-semibold text-foreground text-[15px]">{title}</h2>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
       {collapsible && (
         <UiIcon name="chevron-down"
@@ -55,24 +60,22 @@ export function SettingsSection({
 
   return (
     <div className="bg-card rounded-2xl border border-border/50">
-      {/* The rule belongs to the header ROW, so the trigger can stay flex-1 and the
-          action sit beside it without either owning the section's divider. */}
-      <div className={`flex items-center ${expanded ? "border-b border-border/50" : ""}`}>
+      <div className="flex flex-wrap items-center">
         {collapsible ? (
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => (onOpenChange ?? setOpen)(!open)}
             aria-expanded={open}
             className="flex min-w-0 flex-1 items-center gap-3 px-5 py-4 text-start"
           >
             {header}
           </button>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-3 px-5 py-4">{header}</div>
+          <div className="flex min-w-0 flex-auto items-center gap-3 px-5 py-4">{header}</div>
         )}
-        {action && <div className="shrink-0 ps-3 pe-5">{action}</div>}
+        {action && <div className="ms-auto px-5 py-2">{action}</div>}
       </div>
-      {expanded && <div className="p-5">{children}</div>}
+      {expanded && <div className="border-t border-border/50 p-5">{children}</div>}
     </div>
   );
 }

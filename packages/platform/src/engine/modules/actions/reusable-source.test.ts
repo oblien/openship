@@ -1,9 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ExecutionContext } from "../../../context";
+import { gitRepository } from "../git/provider";
 import { reusableSourceReader } from "./reusable-source";
 
 const h = vi.hoisted(() => ({ authorize: vi.fn(), fetch: vi.fn(), file: vi.fn() }));
-vi.mock("./access", () => ({ authorizeActionRepository: h.authorize }));
+vi.mock("./access", () => ({ authorizeActionRepository: h.authorize, actionRepository: (ctx: ExecutionContext, source: typeof caller & { gitProvider?: string }) => gitRepository(ctx, { provider: source.gitProvider ?? "github", namespace: source.owner, name: source.repo }) }));
 vi.mock("../github/github.auth", () => ({ githubFetch: h.fetch }));
 vi.mock("../github/github.service", () => ({ getFileContent: h.file }));
 const caller = {

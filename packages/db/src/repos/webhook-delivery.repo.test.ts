@@ -11,7 +11,7 @@ const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../d
 
 /**
  * Real (in-memory PGlite) test for the webhook_delivery repo — the correctness-
- * critical part is `claimGithub`, which REPLACES the old github_webhook_event
+ * critical part is `claimProviderDelivery`, which REPLACES the old github_webhook_event
  * dedup that stops double-deploys. FK enforcement is disabled so we can insert
  * rows without the org/project chain.
  */
@@ -42,14 +42,16 @@ describe("webhookDelivery repo — GitHub idempotency (claim) + feed", () => {
   });
 
   it("claims a delivery once; a redelivery of the same id is dropped", async () => {
-    const first = await repo.claimGithub({ deliveryId: "d1", event: "push", outcome: "received" });
+    const first = await repo.claimProviderDelivery("github", { deliveryId: "d1", event: "push", outcome: "received" });
     expect(first.claimed).toBe(true);
     expect(first.id).toBeTruthy();
 
-    const dup = await repo.claimGithub({ deliveryId: "d1", event: "push", outcome: "received" });
+    const dup = await repo.claimProviderDelivery("github", { deliveryId: "d1", event: "push", outcome: "received" });
+    const secondProvider = await repo.claimProviderDelivery("fixture", { deliveryId: "d1", event: "push", outcome: "received" });
+    expect(secondProvider.claimed).toBe(true);
     expect(dup.claimed).toBe(false); // partial-unique conflict → dropped (no double-deploy)
 
-    const other = await repo.claimGithub({ deliveryId: "d2", event: "push", outcome: "received" });
+    const other = await repo.claimProviderDelivery("github", { deliveryId: "d2", event: "push", outcome: "received" });
     expect(other.claimed).toBe(true); // a different delivery still claims
   });
 
@@ -63,25 +65,25 @@ describe("webhookDelivery repo — GitHub idempotency (claim) + feed", () => {
 
   it("lets one redelivery reclaim a finished failure and deduplicates it after success (#847)", async () => {
     const input = { deliveryId: "retry", event: "push", outcome: "received" };
-    const first = await repo.claimGithub(input);
+    const first = await repo.claimProviderDelivery("github", input);
     await repo.markProcessed(first.id, { outcome: "failed", statusCode: 500, error: "deployment busy" });
-    const claims = await Promise.all([repo.claimGithub(input), repo.claimGithub(input)]);
+    const claims = await Promise.all([repo.claimProviderDelivery("github", input), repo.claimProviderDelivery("github", input)]);
     expect(claims.filter((claim) => claim.claimed)).toEqual([
       { claimed: true, id: first.id, handledProjectIds: [] },
     ]);
     await repo.markProcessed(first.id, { outcome: "received", statusCode: 200 });
-    expect(await repo.claimGithub(input)).toEqual({ claimed: false, id: "" });
+    expect(await repo.claimProviderDelivery("github", input)).toEqual({ claimed: false, id: "" });
   });
 
   it("preserves completed project receipts for the one caller that reclaims a partial failure", async () => {
     const input = { deliveryId: "partial-retry", event: "push", outcome: "received" };
-    const first = await repo.claimGithub(input);
+    const first = await repo.claimProviderDelivery("github", input);
     await repo.markProcessed(first.id, {
       outcome: "failed",
       statusCode: 500,
       summary: { handledProjectIds: ["project-already-handled"] },
     });
-    const claims = await Promise.all([repo.claimGithub(input), repo.claimGithub(input)]);
+    const claims = await Promise.all([repo.claimProviderDelivery("github", input), repo.claimProviderDelivery("github", input)]);
     expect(claims.filter((claim) => claim.claimed)).toEqual([
       { claimed: true, id: first.id, handledProjectIds: ["project-already-handled"] },
     ]);
@@ -105,7 +107,7 @@ describe("webhookDelivery repo — GitHub idempotency (claim) + feed", () => {
   });
 
   it("markProcessed updates outcome + actionRef on the claimed anchor", async () => {
-    const claim = await repo.claimGithub({ deliveryId: "d3", event: "push", outcome: "received" });
+    const claim = await repo.claimProviderDelivery("github", { deliveryId: "d3", event: "push", outcome: "received" });
     await repo.markProcessed(claim.id, { outcome: "dispatched", actionRef: "dep_1" });
     const page = await repo.listByHook(""); // no hook filter → none; use org path instead
     expect(page.rows.length).toBe(0); // anchor has null org/hook — invisible in scoped feeds (by design)

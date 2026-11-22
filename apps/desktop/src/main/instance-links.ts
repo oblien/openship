@@ -1,5 +1,5 @@
 import type { App } from "electron";
-import { parseDesktopInstanceLink, type DesktopInstanceLinkRequest } from "@repo/core";
+import { DESKTOP_INSTANCE_SCHEME, parseDesktopInstanceLink, type DesktopInstanceLinkRequest } from "@repo/core";
 
 /** Keep links in memory until confirmation or dismissal. A renderer reload
  * cannot lose an invitation, and a second link cannot replace a connection
@@ -45,7 +45,7 @@ export function registerInstanceLinks(
   }
   const receiveArgs = (args: string[]) => {
     for (const value of args) {
-      if (parseDesktopInstanceLink(value)) receive(value);
+      if (value.startsWith(`${DESKTOP_INSTANCE_SCHEME}://`)) receive(value);
     }
   };
   app.on("open-url", (event, url) => {

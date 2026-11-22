@@ -12,6 +12,7 @@
     "title": "Новый проект",
     "subtitle": "Разверните приложение или импортируйте свой проект.",
     "tabs": {
+      "repositories": "Репозитории",
       "folder": "Папка",
       "github": "GitHub",
       "templates": "Шаблоны",
@@ -36,7 +37,7 @@
       "copyCode": "Нажмите, чтобы скопировать"
     },
     "default": {
-      "title": "Подключите GitHub для деплоя",
+      "title": "Подключите {provider} для деплоя",
       "descSelfHosted": "Выберите способ доступа OpenShip к вашим репозиториям.",
       "descSaas": "Привяжите аккаунт GitHub для просмотра репозиториев и деплоя при каждом пуше.",
       "recommended": "Рекомендуется",
@@ -144,7 +145,7 @@
       "name": "Имя",
       "stars": "Звезды"
     },
-    "addAccount": "Добавить аккаунт GitHub",
+    "addAccount": "Добавить аккаунт {provider}",
     "installTitle": "Установить GitHub App",
     "installDesc": "Установите GitHub App в свой аккаунт или организацию, чтобы предоставить доступ к репозиториям.",
     "installButton": "Установить GitHub App",
@@ -174,8 +175,6 @@
     "total": "Всего",
     "public": "Публичные",
     "private": "Приватные",
-    "quickTip": "Совет",
-    "quickTipDesc": "Выберите любой репозиторий для мгновенного деплоя. Настройте автоматический деплой при каждом пуше.",
     "connection": "Подключение",
     "openshipGithubApp": "Приложение OpenShip GitHub",
     "connected": "Подключено",
@@ -187,14 +186,13 @@
     "notConnectedManage": "Не подключено — настройте в Настройках",
     "optional": "Необязательно",
     "footnote": "Управление подключениями GitHub для просмотра и деплоя репозиториев.",
-    "manageGithubSettings": "управление GitHub в Настройках",
     "methodToken": "Токен GitHub",
     "methodDevice": "Вход через GitHub"
   },
   "urlImport": {
-    "invalidUrl": "Введите корректный URL репозитория GitHub",
+    "invalidUrl": "Введите корректный URL репозитория {providers}",
     "title": "Импорт по Git URL",
-    "description": "Вставьте URL публичного репозитория для импорта. Подключение к GitHub не требуется.",
+    "description": "Вставьте URL публичного репозитория для импорта. Подключение к {providers} не требуется.",
     "importButton": "Импортировать репозиторий"
   },
   "customAppModal": {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  DEFAULT_GIT_PROVIDER,
   AppError,
   ValidationError,
   actionRunnerAdmissionKey,
@@ -10,30 +11,22 @@ import {
 import type { CreateActionWorkflow } from "@repo/contracts";
 import { repos, type ActionRun, type ActionWorkflow } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
-import { getUserStatus } from "../github/github.auth";
-import { GitHubActionsApi } from "./github-api";
-
-export function githubActionActor(
-  value: { id?: number; login: string } | null | undefined,
-): ActionActorIdentity | null {
-  return value && Number.isSafeInteger(value.id) && value.id! > 0 && value.login
-    ? { provider: "github", id: String(value.id), login: value.login }
-    : null;
-}
+import { getGitProvider, requireGitCapability } from "../git/provider";
+import { actionRepository } from "./repository";
+export { githubActionActor } from "../github/workflow-source";
 
 export async function actionCallerIdentity(
   ctx: ExecutionContext,
   repository: boolean,
+  provider = DEFAULT_GIT_PROVIDER,
 ): Promise<ActionActorIdentity> {
   if (!repository)
     return { provider: "openship", id: ctx.userId, login: ctx.user.name || ctx.userId };
-  const status = await getUserStatus(ctx.userId, ctx);
-  const identity = status.connected
-    ? githubActionActor({ id: Number(status.id), login: status.login })
-    : null;
+  const selected = getGitProvider(provider);
+  const identity = await requireGitCapability(selected.currentUser, "personal account identity")(ctx);
   if (!identity)
     throw new AppError(
-      "Connect your personal GitHub account to use Only my account, or select specific GitHub users.",
+      `Connect your personal ${selected.name} account to use Only my account, or select specific users.`,
       409,
       "ACTIONS_GITHUB_IDENTITY_REQUIRED",
     );
@@ -46,6 +39,7 @@ export async function prepareActionAccessPolicy(
   existing?: ActionWorkflow,
 ): Promise<ActionAccessPolicy> {
   const sameRepository =
+    (existing?.gitProvider ?? DEFAULT_GIT_PROVIDER) === (input.gitProvider ?? DEFAULT_GIT_PROVIDER) &&
     existing?.owner === (input.owner?.toLowerCase() ?? null) &&
     existing?.repo === (input.repo?.toLowerCase() ?? null);
   if (!input.accessPolicy && existing?.accessPolicy && sameRepository) return existing.accessPolicy;
@@ -56,25 +50,25 @@ export async function prepareActionAccessPolicy(
     forks: "deny",
   };
   if (requested.audience === "selected" && (!input.owner || !requested.users.length))
-    throw new ValidationError("Choose at least one GitHub user for selected-user access");
+    throw new ValidationError("Choose at least one repository user for selected-user access");
   const owner =
     sameRepository && existing?.accessPolicy
       ? existing.accessPolicy.owner
       : requested.audience === "owner"
-        ? await actionCallerIdentity(ctx, !!input.owner)
+        ? await actionCallerIdentity(ctx, !!input.owner, input.gitProvider)
         : { provider: "openship" as const, id: ctx.userId, login: ctx.user.name || ctx.userId };
   // Switching an older collaborators policy to Only my account resolves the
   // editor's personal identity, never an installation or organization name.
   const principal =
-    requested.audience === "owner" && !!input.owner && owner.provider !== "github"
-      ? await actionCallerIdentity(ctx, true)
+    requested.audience === "owner" && !!input.owner && owner.provider !== (input.gitProvider ?? DEFAULT_GIT_PROVIDER)
+      ? await actionCallerIdentity(ctx, true, input.gitProvider)
       : owner;
   const users: ActionActorIdentity[] = [];
   if (requested.audience === "selected") {
-    const api = new GitHubActionsApi(ctx, input.owner!, input.repo!);
+    const source = requireGitCapability(actionRepository(ctx, input).workflows, "workflow identities");
     for (const name of [...new Set(requested.users.map((name) => name.toLowerCase()))]) {
-      const identity = githubActionActor(await api.user(name));
-      if (!identity) throw new ValidationError(`GitHub account ${name} could not be verified`);
+      const identity = await source.actor(name);
+      if (!identity) throw new ValidationError(`Repository account ${name} could not be verified`);
       if (!users.some((user) => user.id === identity.id)) users.push(identity);
     }
   }
@@ -141,6 +135,7 @@ export async function evaluateActionRunAdmission(
     .update(
       JSON.stringify([
         workflow.id,
+        workflow.gitProvider ?? DEFAULT_GIT_PROVIDER,
         workflow.owner,
         workflow.repo,
         workflow.path,
@@ -190,20 +185,16 @@ export async function evaluateActionRunAdmission(
   else if (!workflow.owner)
     allowed = identities.every((value) => value.provider === "openship"); // Existing workspace/destination authorization still applies.
   else {
-    const api = new GitHubActionsApi(ctx, workflow.owner, workflow.repo!);
+    const source = requireGitCapability(actionRepository(ctx, workflow).workflows, "workflow identities");
     allowed = true;
     for (const value of identities.filter(
       (value, index) => identities.findIndex((other) => same(other, value)) === index,
     )) {
-      if (value.provider !== "github") {
+      if (value.provider !== (workflow.gitProvider ?? DEFAULT_GIT_PROVIDER)) {
         allowed = false;
         break;
       }
-      const permission = await api.collaborator(value.login);
-      if (
-        String(permission.user.id) !== value.id ||
-        !["admin", "write", "maintain"].includes(permission.permission)
-      ) {
+      if (!await source.canWrite(value)) {
         allowed = false;
         break;
       }

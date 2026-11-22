@@ -1,5 +1,6 @@
 "use client";
 
+import { authorizedGitNamespaces } from "@/lib/api/git";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { PermissionReviewSkeleton } from "./PermissionReviewSkeleton";
@@ -8,7 +9,6 @@ import { authClient, submitMcpConsent, useSession } from "@/lib/auth-client";
 import { interpolate } from "@/components/i18n-provider";
 import {
   tokensApi,
-  githubApi,
   resourceTypeLabel,
   type CatalogEntry,
   type ResourceType,
@@ -117,13 +117,13 @@ function AuthorizationForm({
   const selfHosted = useDeploymentInfo()?.selfHosted ?? true;
   const availableTypes = useMemo(() => grantableTypes(selfHosted), [selfHosted]);
 
-  // ── GitHub accounts for the default template ──────────────────────────────
+  // ── Provider namespaces for the default template ──────────────────────────────
   // From /api/github/home, NOT the permissions catalog: `home` runs
   // filterAllowedAccounts so it returns exactly what THIS user may re-grant,
   // whereas the permissions catalog is fetched as the org owner and is
   // unfiltered — seeding from it 403s at mint for a non-owner admin.
-  const [githubAccounts, setGithubAccounts] = useState<string[]>([]);
-  const ctx = useMemo<TemplateContext>(() => ({ githubAccounts }), [githubAccounts]);
+  const [gitAccounts, setGitAccounts] = useState<TemplateContext["gitAccounts"]>([]);
+  const ctx = useMemo<TemplateContext>(() => ({ gitAccounts }), [gitAccounts]);
 
   // ── The scope ─────────────────────────────────────────────────────────────
   // Seeded with the safe default. It re-seeds once the GitHub accounts arrive
@@ -141,7 +141,7 @@ function AuthorizationForm({
     (): AccessSelection => ({
       template: presentation === "chat" ? "readOnly" : "agent",
       grants: templateGrants(presentation === "chat" ? "readOnly" : "agent", {
-        githubAccounts: [],
+        gitAccounts: [],
       }),
       readOnly: presentation === "chat",
     }),
@@ -201,24 +201,19 @@ function AuthorizationForm({
     };
   }, [boundOrganizationId]);
 
-  // GitHub accounts are org-scoped, so this re-runs per org and re-seeds the
+  // Provider namespaces are org-scoped, so this re-runs per org and re-seeds the
   // template. A box with no GitHub connected resolves to [] and the default
   // degrades to create-only rather than failing.
   useEffect(() => {
     if (!orgId) return;
     let cancelled = false;
-    githubApi
-      .getUserHome()
-      .then((home: { accounts?: Array<{ login?: string }> } | null) => {
-        if (cancelled) return;
-        const logins = (home?.accounts ?? [])
-          .map((a) => a.login)
-          .filter((l): l is string => typeof l === "string" && l.length > 0);
-        setGithubAccounts(logins);
+    authorizedGitNamespaces()
+      .then(accounts => {
+        if (!cancelled) setGitAccounts(accounts);
       })
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/components/permissions/authorization");
-        if (!cancelled) setGithubAccounts([]);
+        if (!cancelled) setGitAccounts([]);
       });
     return () => {
       cancelled = true;
@@ -251,7 +246,7 @@ function AuthorizationForm({
         // scope resets to the default rather than carrying ids that would fail
         // validation — or, worse, name another org's resources. Labels go too.
         setLabels(new Map());
-        setGithubAccounts([]);
+        setGitAccounts([]);
         dispatch({ type: "pickTemplate", id: "agent" });
         setOrgId(next);
       } catch (diagnosticFailure) {

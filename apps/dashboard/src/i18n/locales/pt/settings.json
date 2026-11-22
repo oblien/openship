@@ -1589,6 +1589,15 @@
     "namePlaceholder": "ex.: GHCR só leitura",
     "secretKeptPlaceholder": "•••••••• (guardado — deixe vazio para manter)",
     "selectPlaceholder": "Escolher…",
+    "gitlab": {
+      "continue": "Continuar com o GitLab",
+      "useToken": "Usar um token de acesso",
+      "useCli": "Usar a CLI do GitLab",
+      "createToken": "Criar token no GitLab",
+      "oauthHelp": "Autorize o OpenShip a ler os seus repositórios e a gerir os webhooks de deploy com a sua conta do GitLab.",
+      "cliHelp": "Inicie sessão na máquina onde o OpenShip é executado. Ao ligar, esta área de trabalho poderá usar a conta da CLI para aceder aos repositórios e executar builds nessa máquina.",
+      "connectionName": "Nome da ligação (opcional)"
+    },
     "verifyNote": "O OpenShip verifica a credencial com o fornecedor antes de a guardar.",
     "confirmDelete": "Eliminar \"{name}\"? Tudo o que depende dela deixa de funcionar.",
     "toast": {
@@ -1602,6 +1611,14 @@
       "verifyFailed": "O fornecedor rejeitou a credencial"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Token de acesso",
+            "help": "Use read_api e read_repository para consultar e clonar repositórios. Para fazer deploy a cada push, selecione também api e use uma conta que possa gerir os webhooks do projeto."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Registro de contêineres",
         "summary": "Baixe imagens privadas de um registro durante os deploys.",

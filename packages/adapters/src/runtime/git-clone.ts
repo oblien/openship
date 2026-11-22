@@ -66,8 +66,9 @@ export function gitCredentialPair(
   hostname: string,
   token: string,
 ): { username: string; password: string } {
+  if (hostname === "gitlab.com") return { username: "oauth2", password: token };
   // Exact host, not a suffix match. Every other host — GitHub Enterprise on its
-  // own domain, GitLab, Gitea — takes the x-access-token form, which works
+  // own domain, Gitea — takes the x-access-token form, which works
   // wherever an arbitrary username is accepted. Narrowing this test can only
   // route a host to the general form, never strand one without a credential.
   if (hostname === "github.com" && !token.startsWith("ghs_")) {

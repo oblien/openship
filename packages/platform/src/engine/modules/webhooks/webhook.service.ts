@@ -10,18 +10,18 @@ import type { WebhookProvider, WebhookProviderName } from "@repo/platform/engine
 
 // ─── Provider registry ───────────────────────────────────────────────────────
 
-const providers = new Map<WebhookProviderName, WebhookProvider>();
+const providers = new Map<string, WebhookProvider>();
 
 export function registerWebhookProvider(provider: WebhookProvider) {
   providers.set(provider.name, provider);
 }
 
-export function getWebhookProvider(name: WebhookProviderName): WebhookProvider | undefined {
+export function getWebhookProvider(name: string): WebhookProvider | undefined {
   return providers.get(name);
 }
 
 export function listWebhookProviders(): WebhookProviderName[] {
-  return Array.from(providers.keys());
+  return Array.from(providers.values(), provider => provider.name);
 }
 
 // ─── Shared crypto helpers ───────────────────────────────────────────────────

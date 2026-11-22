@@ -54,9 +54,9 @@ describe("injectGitToken", () => {
       `https://${legacy}:x-oauth-basic@github.com/owner/repo.git`,
     );
   });
-  it("keeps x-access-token on non-GitHub hosts (arbitrary username accepted)", () => {
+  it("uses GitLab’s OAuth HTTPS username for GitLab.com tokens", () => {
     expect(injectGitToken("https://gitlab.com/owner/repo.git", "glpat-1")).toBe(
-      "https://x-access-token:glpat-1@gitlab.com/owner/repo.git",
+      "https://oauth2:glpat-1@gitlab.com/owner/repo.git",
     );
   });
   it("keeps x-access-token on GitHub Enterprise (own domain, not github.com)", () => {

@@ -19,6 +19,7 @@ export * from "./backups";
 export * from "./billing";
 export * from "./notices";
 export * from "./github";
+export * from "./git";
 export * from "./permissions";
 export * from "./tokens";
 export * from "./webhooks";
@@ -71,6 +72,7 @@ import { createTokenOperations, type PlatformTokenOperations, type TokenDependen
 
 import { createPermissionOperations, type PlatformPermissionOperations, type PermissionDependencies } from "./permissions";
 
+import { createGitOperations, type GitDependencies, type PlatformGitOperations } from "./git";
 import { createGitHubOperations, type PlatformGitHubOperations, type GitHubDependencies } from "./github";
 
 import { createNoticeOperations, type PlatformNoticeOperations, type NoticeDependencies } from "./notices";
@@ -96,6 +98,7 @@ export interface PlatformKernel {
   readonly referralProgram: PlatformReferralOperations;
   readonly notices: PlatformNoticeOperations;
   readonly github: PlatformGitHubOperations;
+  readonly git: PlatformGitOperations;
   readonly permissions: PlatformPermissionOperations;
   readonly tokens: PlatformTokenOperations;
   readonly webhooks: PlatformWebhookOperations;
@@ -110,7 +113,7 @@ export interface PlatformKernel {
 }
 
 /** Composition boundary. It acquires no resources and owns no implicit global state. */
-export function createPlatform(deps: DeploymentDependencies & { projects?: ProjectDependencies; sources?: SourceDependencies; services?: ServiceDependencies; domains?: DomainDependencies; dns?: DnsDependencies; credentials?: CredentialDependencies; servers?: ServerDependencies; system?: SystemDependencies; apps?: AppDependencies; backupDestinations?: BackupDestinationDependencies; backups?: BackupDependencies; billing?: BillingDependencies; referralProgram?: ReferralDependencies; notices?: NoticeDependencies; github?: GitHubDependencies; permissions?: PermissionDependencies; tokens?: TokenDependencies; webhooks?: WebhookDependencies; updates?: UpdateDependencies; audit?: AuditDependencies; settings?: UserSettingsDependencies; notifications?: NotificationDependencies; issues?: IssueDependencies; analytics?: AnalyticsDependencies; jobs?: JobDependencies; actions?: ActionDependencies }): PlatformKernel {
+export function createPlatform(deps: DeploymentDependencies & { projects?: ProjectDependencies; sources?: SourceDependencies; services?: ServiceDependencies; domains?: DomainDependencies; dns?: DnsDependencies; credentials?: CredentialDependencies; servers?: ServerDependencies; system?: SystemDependencies; apps?: AppDependencies; backupDestinations?: BackupDestinationDependencies; backups?: BackupDependencies; billing?: BillingDependencies; referralProgram?: ReferralDependencies; notices?: NoticeDependencies; github?: GitHubDependencies; git?: GitDependencies; permissions?: PermissionDependencies; tokens?: TokenDependencies; webhooks?: WebhookDependencies; updates?: UpdateDependencies; audit?: AuditDependencies; settings?: UserSettingsDependencies; notifications?: NotificationDependencies; issues?: IssueDependencies; analytics?: AnalyticsDependencies; jobs?: JobDependencies; actions?: ActionDependencies }): PlatformKernel {
   const kernel = {
     resolveScope: deps.authorization.resolveScope,
     deployments: createDeploymentOperations(deps),
@@ -129,6 +132,7 @@ export function createPlatform(deps: DeploymentDependencies & { projects?: Proje
     referralProgram: createReferralOperations(deps.authorization, deps.referralProgram),
     notices: createNoticeOperations(deps.authorization, deps.notices),
     github: createGitHubOperations(deps.authorization, deps.github),
+    git: createGitOperations(deps.authorization, deps.git),
     permissions: createPermissionOperations(deps.authorization, deps.permissions),
     tokens: createTokenOperations(deps.authorization, deps.tokens),
     webhooks: createWebhookOperations(deps.authorization, deps.webhooks),

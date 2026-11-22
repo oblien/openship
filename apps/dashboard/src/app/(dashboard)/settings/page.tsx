@@ -11,10 +11,11 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  * Tabs:
  *   - general        → appearance, build preferences, language, interface, preferences
  *   - security       → authenticator 2FA, recovery codes and passkeys
- *   - tokens         → clone credentials, API access tokens
+ *   - git            → repository provider connections and clone credentials
+ *   - tokens         → API access tokens
  *   - mcp             → MCP connection (endpoint + client config)
  *   - team           → organization members + invitations (moved from /members)
- *   - dns            → DNS provider credentials for automatic records, admin+ only
+ *   - connections    → registry, DNS and migration connections
  *   - audit          → audit log feed (moved from /audit), admin+ only
  *   - cloud          → cloud connection (self-hosted only)
  *   - infrastructure → edge/mail container versions + scan, untracked edge
@@ -24,7 +25,8 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { Suspense, useEffect } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { gitProviderDefinition, gitProviderSettingsHref } from "@repo/core";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useToast } from "@/context/ToastContext";
@@ -37,9 +39,7 @@ import { AppearanceEditor } from "@/components/appearance/AppearanceEditor";
 import { RoutePreferences } from "./_components/RoutePreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
 import { CloudConnection } from "./_components/CloudConnection";
-import { GitHubConnection } from "./_components/GitHubConnection";
-import { GitHubSources } from "./_components/GitHubSources";
-import { CloneCredentials } from "./_components/CloneCredentials";
+import { GitProviderSettings } from "./_components/GitProviderSettings";
 import { PersonalAccessTokens } from "./_components/PersonalAccessTokens";
 import { McpConnection } from "./_components/McpConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
@@ -87,6 +87,7 @@ function SettingsPageInner() {
   const { showToast } = useToast();
   const { t } = useI18n();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { activeTab } = useSettingsTabs();
   // Customization is a nested General view; retain the original preview URL too.
   const customizeAppearance = activeTab === "general" &&
@@ -103,6 +104,17 @@ function SettingsPageInner() {
    * mail-only box needs no stored git credential to deploy or update it.
    */
   const mailOnly = productView === "mail";
+
+  useEffect(() => {
+    if (activeTab !== "connections" || mailOnly) return;
+    const forwardGitBookmark = () => {
+      const provider = gitProviderDefinition(window.location.hash.slice(1));
+      if (provider) router.replace(gitProviderSettingsHref(provider.id), { scroll: false });
+    };
+    forwardGitBookmark();
+    window.addEventListener("hashchange", forwardGitBookmark);
+    return () => window.removeEventListener("hashchange", forwardGitBookmark);
+  }, [activeTab, mailOnly, router]);
 
   // Build preferences: only self-hosted — SaaS manages builds.
   const showBuildPreferences = selfHosted && !mailOnly;
@@ -178,8 +190,7 @@ function SettingsPageInner() {
             </>
           )}
 
-          {/* API tokens authenticate callers to Openship. Provider connections live
-              in Connections; clone credentials stay with Git sources. */}
+          {/* API tokens authenticate callers to Openship. */}
           {activeTab === "tokens" && <PersonalAccessTokens />}
 
           {activeTab === "mcp" && <McpConnection />}
@@ -197,17 +208,7 @@ function SettingsPageInner() {
 
           {activeTab === "email" && selfHosted && <EmailSettings />}
 
-          {/* Git sources — the App installation (per-org, mints tokens on demand) and the
-              clone PAT (per-USER). Neither fits an org-scoped credential row, which is why
-              they keep their own storage; they get their own TAB because they are one
-              subject with several shapes, and further providers land beside them. */}
-          {activeTab === "git" && !mailOnly && (
-            <>
-              {selfHosted && <GitHubSources />}
-              <GitHubConnection />
-              <CloneCredentials />
-            </>
-          )}
+          {activeTab === "git" && !mailOnly && <GitProviderSettings />}
 
           {activeTab === "connections" && <Connections />}
 

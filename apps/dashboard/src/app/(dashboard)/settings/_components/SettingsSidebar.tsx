@@ -72,7 +72,6 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const allowedTabs: SettingsTabId[] = ["general", "security", "git", "tokens", "mcp", "assistant", "chat-apps", "team", "notifications", "email", "credentials", "connections",
     "dns", "cloud", "infrastructure", "instance"];
   const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
-  // Connections owns both provider tokens and organization OAuth grants.
   const activeTab: SettingsTabId = requested === "dns" || requested === "credentials"
       ? "connections"
     : requested === "security" && authMode !== "local" ? "general" : requested;
@@ -80,10 +79,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const tabs: SettingsTab[] = [
     { id: "general", label: t.settings.sidebar.tabs.general, icon: "settings", visible: true },
     { id: "security", label: t.settings.sidebar.tabs.security, icon: "shield-check", visible: authMode === "local" },
-    // Git sources, as their own domain rather than a card on General: the App install, the
-    // clone PAT and per-server auth are one subject with several shapes, and more providers
-    // (GitLab, Bitbucket) land here rather than widening anything else. Hidden in the
-    // mail-only shell, which deploys nothing from source.
+    // Mail-only workspaces deploy from images.
     { id: "git", label: t.settings.sidebar.tabs.git, icon: "git-branch", visible: productView !== "mail" },
     { id: "connections", label: t.settings.sidebar.tabs.credentials, icon: "key", visible: true, requiresRole: "admin" },
     { id: "tokens", label: t.settings.sidebar.tabs.tokens, icon: "terminal", visible: true },

@@ -162,7 +162,7 @@ export const actionDependencies: ActionDependencies = withCloudActions({
       );
     },
     discover: (ctx, input) =>
-      service.discoverActionWorkflows(ctx, input.owner, input.repo, input.ref),
+      service.discoverActionWorkflows(ctx, input.owner, input.repo, input.ref, input.gitProvider),
     repositoryChecks: actionRepositoryChecks,
     repositorySource: readActionRepositorySource,
     async updateRepositorySource(ctx, input) {

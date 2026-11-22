@@ -1,3 +1,5 @@
+import { githubRepositoryKey as repoKey } from "./sources/mappers";
+import { getGitProvider } from "../git/provider";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { cloudGitHubConnection, isHostedGitHubAttempt } from "./github-cloud-connection";
 import { instanceAuthorization } from "../../lib/instance-authorization";
@@ -25,15 +27,6 @@ import { filterAllowedRepos, filterAllowedAccounts, filterTreeEntries } from "@r
 import { resolveProjectInfo, projectInfoToScanResponse } from "@repo/platform/engine/modules/deployments/prepare.service";
 import { paginateRepoList, type RepoListParams } from "@repo/platform/engine/modules/github/repo-list";
 import { hasConfiguredGitHubSource } from "@repo/platform/engine/modules/github/github-source.service";
-
-/** Map a MappedRepository to the owner/repo key the access filter needs.
- *  `full_name` is canonically "owner/repo"; fall back to the discrete
- *  fields when it's absent. `||` (not `??`) so an empty split segment
- *  ("" from a missing full_name) falls through instead of sticking. */
-function repoKey(r: { full_name?: string; owner?: string; name?: string }) {
-  const [owner, repo] = (r.full_name ?? "").split("/");
-  return { owner: owner || r.owner || "", repo: repo || r.name || "" };
-}
 
 // ─── Status / Connection ─────────────────────────────────────────────────────
 
@@ -652,20 +645,18 @@ export async function disconnect(ctx: ExecutionContext, input: NonNullable<Param
  *  listOrgRepos can't drift. null = no usable GitHub source → 400. */
 export async function listRepos(ctx: ExecutionContext, input: NonNullable<Parameters<GitHubOperations["listRepos"]>[0]>) {
   const owner = input.owner;
-  const repos = await (await createGitHubSource(ctx)).listReposForOwner(owner || undefined);
+  const repos = await getGitProvider("github").listRepositories(ctx, owner || undefined);
   if (repos === null) throw responseError({ error: "Not connected to GitHub" }, 400);
-  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
-  return paginateRepoList(allowed, input);
+  return paginateRepoList(repos, input);
 }
 
 /** GET /github/orgs/:org/repos - List repos for an organisation.
  *  Same GitHubSource adapter as listRepos. */
 export async function listOrgRepos(ctx: ExecutionContext, input: NonNullable<Parameters<GitHubOperations["listOrgRepos"]>[0]>) {
   const org = input.org;
-  const repos = await (await createGitHubSource(ctx)).listReposForOwner(org);
+  const repos = await getGitProvider("github").listRepositories(ctx, org);
   if (repos === null) throw responseError({ error: "Not connected to GitHub" }, 400);
-  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
-  return paginateRepoList(allowed, input);
+  return paginateRepoList(repos, input);
 }
 
 /** GET /github/repos/:owner/:repo - Get a single repository */

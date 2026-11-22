@@ -1,6 +1,6 @@
 import { and, eq, getTableColumns, isNotNull, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
-import type { Database } from "../client";
+import type { Database, DatabaseTransaction } from "../client";
 import { userSettings, member } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -10,6 +10,20 @@ export type UserSettings = Omit<StoredUserSettings, "appearance">;
 // Font assets can be large. Ordinary credential/preferences reads must not load them.
 const { appearance: _appearance, ...settingsColumns } = getTableColumns(userSettings);
 export type NewUserSettings = typeof userSettings.$inferInsert;
+
+/** Resolve the same linked owner for requests and teardown, including workspaces with multiple owners. */
+function cloudOwners(db: Database, organizationId?: string) {
+  return db.selectDistinctOn([member.organizationId], { organizationId: member.organizationId, userId: member.userId })
+    .from(member)
+    .innerJoin(userSettings, eq(userSettings.userId, member.userId))
+    .where(and(
+      organizationId === undefined ? undefined : eq(member.organizationId, organizationId),
+      eq(member.role, "owner"), isNotNull(userSettings.cloudSessionToken),
+      sql`length(${userSettings.cloudSessionToken}) > 0`,
+    ))
+    .orderBy(member.organizationId, member.createdAt, member.id)
+    .as("cloud_owners");
+}
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
@@ -91,11 +105,19 @@ export function createSettingsRepo(db: Database) {
     },
 
     /** An expired in-flight request must not erase a newly connected session. */
-    async clearCloudSession(userId: string, encrypted: string): Promise<void> {
-      await db
-        .update(userSettings)
-        .set({ cloudSessionToken: null, updatedAt: new Date() })
-        .where(and(eq(userSettings.userId, userId), eq(userSettings.cloudSessionToken, encrypted)));
+    async clearCloudSession(
+      userId: string, encrypted: string,
+      revokeGrants: (tx: DatabaseTransaction, organizationId: string) => Promise<void>,
+    ): Promise<string[] | undefined> {
+      return db.transaction(async tx => {
+        const affected = await createSettingsRepo(tx).listCloudLinkedOrgIds(userId);
+        const update = await tx.update(userSettings)
+          .set({ cloudSessionToken: null, updatedAt: new Date() })
+          .where(and(eq(userSettings.userId, userId), eq(userSettings.cloudSessionToken, encrypted)));
+        if (!("rowCount" in update ? update.rowCount : update.affectedRows)) return;
+        for (const orgId of affected) await revokeGrants(tx, orgId);
+        return affected;
+      });
     },
 
     /** Create or update (upsert) settings for a user */
@@ -143,19 +165,11 @@ export function createSettingsRepo(db: Database) {
      * yet, or if the org has no owner.
      */
     async findOrgOwnerCloudLink(organizationId: string): Promise<UserSettings | undefined> {
+      const owners = cloudOwners(db, organizationId);
       const rows = await db
         .select({ settings: settingsColumns })
         .from(userSettings)
-        .innerJoin(member, eq(member.userId, userSettings.userId))
-        .where(
-          and(
-            eq(member.organizationId, organizationId),
-            eq(member.role, "owner"),
-            isNotNull(userSettings.cloudSessionToken),
-            sql`length(${userSettings.cloudSessionToken}) > 0`,
-          ),
-        )
-        .limit(1);
+        .innerJoin(owners, eq(owners.userId, userSettings.userId));
       return rows[0]?.settings;
     },
 
@@ -164,19 +178,10 @@ export function createSettingsRepo(db: Database) {
      * findOrgOwnerCloudLink, minus the org scope — used to route an org-less
      * inbound webhook to the cloud-linked org that owns the pushed repo.
      */
-    async listCloudLinkedOrgIds(): Promise<string[]> {
-      const rows = await db
-        .select({ organizationId: member.organizationId })
-        .from(userSettings)
-        .innerJoin(member, eq(member.userId, userSettings.userId))
-        .where(
-          and(
-            eq(member.role, "owner"),
-            isNotNull(userSettings.cloudSessionToken),
-            sql`length(${userSettings.cloudSessionToken}) > 0`,
-          ),
-        )
-        .groupBy(member.organizationId);
+    async listCloudLinkedOrgIds(userId?: string): Promise<string[]> {
+      const owners = cloudOwners(db);
+      const rows = await db.select({ organizationId: owners.organizationId }).from(owners)
+        .where(userId === undefined ? undefined : eq(owners.userId, userId));
       return rows.map((r) => r.organizationId);
     },
   };
