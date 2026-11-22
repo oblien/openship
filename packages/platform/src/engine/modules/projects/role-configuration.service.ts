@@ -19,7 +19,7 @@ import {
   withDeploymentRuntime,
 } from "../../lib/deployment-runtime";
 import { platform } from "../../lib/platform-config";
-import { assertGitHubRepoAccess } from "../github/github-access";
+import { assertProjectRepositoryAccess } from "../git/provider";
 import {
   checkNoActiveBuild,
   createQueuedDeployment,
@@ -100,7 +100,7 @@ export async function configureRuntimeRoles(
   const project = await repos.project.findById(id);
   assertResourceInOrg(project, "Project", ctx.organizationId, id);
   assertNotControlPlane(project);
-  await assertGitHubRepoAccess(ctx, { owner: project.gitOwner, repo: project.gitRepo });
+  await assertProjectRepositoryAccess(ctx, project);
   const parsed = parseOpenshipConfig({ roles: input.roles });
   if (parsed.errors.length) throw new ValidationError(parsed.errors.join("; "));
   const roles = JSON.parse(JSON.stringify(parsed.config?.roles ?? [])) as StackRole[];

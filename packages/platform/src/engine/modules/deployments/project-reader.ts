@@ -1,10 +1,11 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import * as githubService from "../github/github.service";
+import { gitRepository } from "../git/provider";
+import type { GitReadOptions, GitRepository } from "../git/types";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import type { RepoFile } from "../../lib/stack-detector";
 import type { RepoTreeEntry } from "../../lib/project-root-detector";
 
-// GitHub reader behind the ProjectReader interface. Its local-filesystem
+// Provider-backed reader behind the ProjectReader interface. Its local-filesystem
 // counterpart lives in local-source.ts (self-hosted only) so node:fs never
 // enters the cloud module graph.
 export interface ProjectReader {
@@ -19,13 +20,17 @@ export function createGitHubReader(
   owner: string,
   repo: string,
   branch: string,
-  opts: githubService.GitHubReadOptions = {},
+  opts: GitReadOptions = {},
 ): ProjectReader {
+  return createGitReader(gitRepository(ctx, { provider: "github", namespace: owner, name: repo }, opts), branch);
+}
+
+export function createGitReader(repository: GitRepository, branch: string): ProjectReader {
   let treePromise: Promise<RepoTreeEntry[]> | null = null;
 
   const readText = async (path: string) => {
     try {
-      const file = await githubService.getFileContent(ctx, owner, repo, path, { ...opts, branch });
+      const file = await repository.file(path, branch);
       return file?.content;
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/project-reader");
@@ -36,18 +41,7 @@ export function createGitHubReader(
   return {
     listDirectory: async (path: string) => {
       try {
-        const contents = await githubService.listFiles(ctx, owner, repo, {
-          ...opts,
-          branch,
-          ...(path ? { path } : {}),
-        });
-
-        return Array.isArray(contents)
-          ? contents.map((file) => ({
-              name: file.name,
-              type: file.type === "dir" ? "dir" : "file",
-            }))
-          : [];
+        return await repository.files(path, branch);
       } catch (diagnosticFailure) {
         observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/project-reader");
         return [];
@@ -65,7 +59,7 @@ export function createGitHubReader(
     },
     listTree: async () => {
       if (!treePromise) {
-        treePromise = githubService.listRepositoryTree(ctx, owner, repo, { ...opts, branch });
+        treePromise = repository.tree(branch);
       }
       return treePromise;
     },

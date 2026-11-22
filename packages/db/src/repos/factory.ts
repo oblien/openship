@@ -24,6 +24,7 @@ export {
 } from "./actions.repo";
 import { createCloudSupportRepo } from "./cloud-support.repo";
 import { createCloudCustomerEmailRepo } from "./cloud-customer-email.repo";
+import { createRateLimitRepo } from "./rate-limit.repo";
 export { createCloudCustomerEmailRepo, type CloudCustomerEmailRepo, type CustomerEmail, type CustomerEmailInput, type CustomerPaymentEmail, type CustomerCancellationEmail } from "./cloud-customer-email.repo";
 import { createCloudWorkspaceRepo } from "./cloud-workspace.repo";
 export { createCloudWorkspaceRepo, type CloudWorkspace } from "./cloud-workspace.repo";
@@ -507,6 +508,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     billingPlanGrant: createBillingPlanGrantRepo(db),
     cloudSupport: createCloudSupportRepo(db),
     cloudCustomerEmail: createCloudCustomerEmailRepo(db),
+    rateLimit: createRateLimitRepo(db),
   } as const;
 }
 

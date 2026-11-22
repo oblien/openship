@@ -4,8 +4,9 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PullRequestPreviews } from "@/components/project-settings/DeploymentAutomation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { useGitHub } from "@/context/GitHubContext";
-import type { GitHubRepo } from "@/context/GitHubContext";
+import { useGit } from "@/context/GitContext";
+import { DEFAULT_GIT_PROVIDER, gitProviderDefinition, hasProjectRepository } from "@repo/core";
+import type { RepositorySummary } from "@/lib/git-types";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { formatDate } from "@/utils/date";
@@ -17,6 +18,7 @@ import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { GitHubChecksSettings } from "@/components/project-settings/GitHubChecksSettings";
 import { InstanceMoveLink } from "@/components/instance/InstanceMoveLink";
 import { usePlatform } from "@/context/PlatformContext";
+import { GitProviderSelect } from "@/components/git/GitProviderSelect";
 import { RepositoryList } from "../../../library/components/RepositoryList";
 import { AppSource } from "./AppSource";
 import { GitSettingsSkeleton } from "./GitSettingsSkeleton";
@@ -114,7 +116,7 @@ function GitProjectSettings({
 
 const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () => void }) => {
   const { gitData, refreshGit, id, projectData, updateProjectData, servicesData } = useProjectSettings();
-  const github = useGitHub();
+  const git = useGit(hasProjectRepository(projectData) ? projectData.gitProvider ?? DEFAULT_GIT_PROVIDER : undefined);
   const { showToast } = useToast();
   const { t } = useI18n();
   const { selfHosted } = usePlatform();
@@ -185,7 +187,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
   const [savingCloneToken, setSavingCloneToken] = useState(false);
 
   const refreshCloneToken = useCallback(async () => {
-    if (!id) return;
+    if (!id || !git.cloneCommand) return;
     setCloneTokenLoading(true);
     try {
       const res = await projectsApi.getCloneToken(id);
@@ -196,7 +198,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
     } finally {
       setCloneTokenLoading(false);
     }
-  }, [id]);
+  }, [id, !!git.cloneCommand]);
 
   useEffect(() => {
     void refreshCloneToken();
@@ -272,10 +274,10 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
   }
 
   if (!gitData.repository) {
-    const handleLinkRepo = async (ownerLogin: string, repo: GitHubRepo) => {
+    const handleLinkRepo = async (ownerLogin: string, repo: RepositorySummary) => {
       setIsLinking(true);
       try {
-        const result = await projectsApi.linkRepo(id, { owner: ownerLogin, repo: repo.name });
+        const result = await projectsApi.linkRepo(id, { provider: git.definition.id, owner: ownerLogin, repo: repo.name });
         if (result.success) {
           showToast(
             interpolate(t.projectSettings.git.toast.linked, { repo: `${ownerLogin}/${repo.name}` }),
@@ -300,32 +302,33 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
       }
     };
 
-    // Not connected to GitHub at all
-    if (!github.connected && !github.loading) {
+    // Connect the selected provider before linking a repository.
+    if (!git.connected && !git.loading) {
       return (
         <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
+          <GitProviderSelect />
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted/40">
-            <UiIcon name="github" className="size-6 text-muted-foreground/50" />
+            <UiIcon name={git.icon} className="size-6 text-muted-foreground/50" />
           </div>
           <h3 className="mt-4 text-base font-semibold text-foreground">
-            {t.projectSettings.git.connectFirst.title}
+            {interpolate(t.projectSettings.git.connectFirst.title, { provider: git.definition.name })}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t.projectSettings.git.connectFirst.description}
+            {interpolate(t.projectSettings.git.connectFirst.description, { provider: git.definition.name })}
           </p>
           <button
-            onClick={() => void github.connect()}
-            disabled={github.connecting}
+            onClick={() => void git.connect()}
+            disabled={git.connecting}
             className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
           >
-            {github.connecting ? (
+            {git.connecting ? (
               <UiIcon name="spinner" className="size-4 animate-spin" />
             ) : (
-              <UiIcon name="github" className="size-4" />
+              <UiIcon name={git.icon} className="size-4" />
             )}
-            {github.connecting
+            {git.connecting
               ? t.projectSettings.git.connectFirst.connecting
-              : t.projectSettings.git.connectFirst.connect}
+              : interpolate(t.projectSettings.git.connectFirst.connect, { provider: git.definition.name })}
           </button>
           {onUseReleaseImage && <ReleaseImageEntryButton onClick={onUseReleaseImage} />}
         </div>
@@ -336,20 +339,21 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
     return (
       <>
         <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
+          <GitProviderSelect />
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <UiIcon name="github" className="size-6 text-primary" />
+            <UiIcon name={git.icon} className="size-6 text-primary" />
           </div>
           <h3 className="mt-4 text-base font-semibold text-foreground">
             {t.projectSettings.git.link.title}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t.projectSettings.git.link.description}
+            {interpolate(t.projectSettings.git.link.description, { provider: git.definition.name })}
           </p>
           <button
             onClick={() => setShowPicker(true)}
             className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
           >
-            <UiIcon name="github" className="size-4" />
+            <UiIcon name={git.icon} className="size-4" />
             {t.projectSettings.git.link.select}
           </button>
           {onUseReleaseImage && <ReleaseImageEntryButton onClick={onUseReleaseImage} />}
@@ -380,16 +384,17 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
           )}
           <div className="overflow-y-auto" style={{ maxHeight: "calc(80vh - 120px)" }}>
             <RepositoryList
-              repos={github.repos}
-              accounts={github.accounts}
-              selectedOwner={github.selectedOwner}
-              setSelectedOwner={github.setSelectedOwner}
+              provider={git.definition.id}
+              repos={git.repos}
+              accounts={git.accounts}
+              selectedOwner={git.selectedOwner}
+              setSelectedOwner={git.setSelectedOwner}
               loading={false}
-              loadingRepos={github.loadingRepos}
+              loadingRepos={git.loadingRepos}
               onSelect={handleLinkRepo}
-              installUrl={github.installUrl}
-              onInstall={() => void github.connect("oauth")}
-              installing={github.connecting}
+              installUrl={git.installUrl}
+              onInstall={git.connectMore}
+              installing={git.connecting}
             />
           </div>
         </Modal>
@@ -400,7 +405,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
   return (
     <div className="space-y-5">
       {/* Install GitHub App banner - cloud-deployed projects that lack the app */}
-      {projectData.deployTarget === "cloud" && !gitData.installationInstalled && (
+      {gitData.webhookStrategy === "app" && gitData.installUrl && !gitData.installationInstalled && (
         <div className="flex items-start gap-3 rounded-2xl border border-warning-border bg-warning-bg px-5 py-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning-bg">
             <UiIcon name="warning" className="size-4 text-warning" />
@@ -429,7 +434,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
         <SectionCard
           title={t.projectSettings.git.source.title}
           description={t.projectSettings.git.source.description}
-          icon={"github"}
+          icon={git.icon}
           iconTone="primary"
           actions={
             onUseReleaseImage ? (
@@ -539,13 +544,13 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
           </div>
         </SectionCard>
 
-        <GitHubChecksSettings
+        {git.definition.capabilities.checks && <GitHubChecksSettings
           value={projectData.githubChecks ?? gitData.githubChecks}
           onChange={value => void saveChecks(value)}
           disabled={savingChecks}
           services={servicesData.services.map(service => service.name)}
           deliveryError={gitData.githubChecksDelivery?.error}
-        />
+        />}
 
         <SectionCard
           title={t.projectSettings.git.commits.title}
@@ -608,7 +613,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                 ))}
               </div>
               <a
-                href={`${gitData.repository.url}/commits/${gitData.branch || "main"}`}
+                href={`${gitData.repository.url}/${git.definition.commitsPath}/${encodeURIComponent(gitData.branch || "main")}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
@@ -620,7 +625,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
           )}
         </SectionCard>
 
-        <SectionCard
+        {git.cloneCommand && <SectionCard
           title={t.projectSettings.git.cloneToken.title}
           description={t.projectSettings.git.cloneToken.description}
           icon={"key"}
@@ -641,7 +646,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                   type={showCloneToken ? "text" : "password"}
                   value={cloneTokenInput}
                   onChange={(e) => setCloneTokenInput(e.target.value)}
-                  placeholder="ghp_… or github_pat_…"
+                  placeholder="Access token"
                   spellCheck={false}
                   autoComplete="off"
                   className="h-10 w-full rounded-xl border border-border/50 bg-muted/20 px-3 pe-10 text-sm font-mono text-foreground outline-none transition-colors focus:border-primary/40"
@@ -722,7 +727,7 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
               </div>
             </div>
           )}
-        </SectionCard>
+        </SectionCard>}
       </div>
     </div>
   );
@@ -790,5 +795,5 @@ function ReleaseImageEntryButton({ onClick }: { onClick: () => void }) {
 
 function ProjectPreviewSettings() {
   const { id, projectData } = useProjectSettings();
-  return projectData.environmentType !== "preview" && projectData.gitOwner && projectData.gitRepo ? <PullRequestPreviews key={id} projectId={id} /> : null;
+  return gitProviderDefinition(projectData.gitProvider)?.capabilities.pullRequests && projectData.environmentType !== "preview" && projectData.gitOwner && projectData.gitRepo ? <PullRequestPreviews key={id} projectId={id} /> : null;
 }

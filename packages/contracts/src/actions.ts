@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { ACTIONS_MAX_WORKFLOW_BYTES } from "@repo/core";
+import { GitProviderId, GitNamespace, GitRepositoryName } from "./git-inputs";
 import type {
   ResourceOperationSchema,
   ResourceOperations,
@@ -9,8 +10,9 @@ import type {
 const nullable = (schema: ReturnType<typeof Type.String>) => Type.Union([schema, Type.Null()]);
 const date = nullable(Type.String());
 const id = Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" });
-const owner = Type.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" });
-const repo = Type.String({ minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_.-]+$" });
+const owner = GitNamespace;
+const gitProvider = Type.Optional(GitProviderId);
+const repo = GitRepositoryName;
 const path = Type.String({
   maxLength: 200,
   pattern: "^\\.(github|openship)/workflows/[A-Za-z0-9_.-]+\\.ya?ml$",
@@ -111,7 +113,7 @@ const ActionAccessAudience = Type.Union([
 const ActionAccessApproval = Type.Union([Type.Literal("required"), Type.Literal("automatic")]);
 const ActionAccessForks = Type.Union([Type.Literal("deny"), Type.Literal("review")]);
 const ActionActorIdentitySchema = Type.Object({
-  provider: Type.Union([Type.Literal("github"), Type.Literal("openship")]),
+  provider: Type.String({ minLength: 1, maxLength: 64 }),
   id: Type.String(),
   login: Type.String(),
 });
@@ -142,6 +144,7 @@ export const ActionWorkflowInput = Type.Object(
     repositoryRunnerConsent: Type.Optional(Type.Boolean()),
     accessPolicy: Type.Optional(ActionAccessPolicyInput),
     name: Type.String({ minLength: 1, maxLength: 100 }),
+    gitProvider,
     owner: nullable(owner),
     repo: nullable(repo),
     path,
@@ -198,6 +201,7 @@ export const ActionWorkflowSchema = Type.Object(
     controller: ActionControllerSchema,
     githubWorkflowId: nullable(Type.String()),
     name: Type.String(),
+    gitProvider,
     owner: nullable(owner),
     repo: nullable(repo),
     path,
@@ -269,6 +273,7 @@ export const ActionRunSchema = Type.Object(
     number: Type.Number(),
     attempt: Type.Number(),
     status: ActionStatusSchema,
+    gitProvider,
     owner: nullable(owner),
     repo: nullable(repo),
     revision: Type.String(),
@@ -331,6 +336,7 @@ const event = Type.Object({
 });
 export const ActionProjectSchema = Type.Object({
   id,
+  gitProvider,
   name: Type.String(),
   owner: nullable(owner),
   repo: nullable(repo),
@@ -415,12 +421,12 @@ export const ActionCollectionSchemas = {
   },
   discover: {
     action: "read",
-    input: Type.Object({ owner, repo, ref }),
+    input: Type.Object({ gitProvider, owner, repo, ref }),
     output: Type.Array(Type.Object({ path: Type.String(), name: Type.String() })),
   },
   repositoryChecks: {
     action: "read",
-    input: Type.Object({ owner, repo, controller: ActionControllerSchema }),
+    input: Type.Object({ gitProvider, owner, repo, controller: ActionControllerSchema }),
     output: ActionRepositoryChecksSchema,
   },
   importWorkflows: {
@@ -436,6 +442,7 @@ export const ActionCollectionSchemas = {
   repositorySource: {
     action: "read",
     input: Type.Object({
+      gitProvider,
       owner,
       repo,
       ref,
@@ -452,6 +459,7 @@ export const ActionCollectionSchemas = {
   updateRepositorySource: {
     action: "write",
     input: Type.Object({
+      gitProvider,
       owner,
       repo,
       ref,

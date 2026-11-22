@@ -459,7 +459,14 @@ only selects the source; connection, destination, review and import confirmation
 remain in the existing flow.
 
 Settings uses one navigation card without a separate account/Settings identity card.
-Connections is the provider workspace; legacy Credentials and DNS URLs still open it.
+Settings → Git and New Project → Repositories share the Git provider switch. The repository
+picker opens settings for its selected provider. Connections groups registry, DNS and migration
+providers. Legacy Credentials and DNS URLs still open Connections, and GitLab bookmarks open Git.
+In Git settings, place the provider switch above the account list and Add connection in the
+list header when multiple saved credentials are supported. Keep the verification result beside
+the account name and show errors inline. Keep the title and description of clone credentials
+and self-hosted GitHub Apps visible when their editors are collapsed or expanded.
+Only offer methods available on this instance.
 Show provider logos, a short description and Add in compact rows, with the shared
 credential editor expanding inline. Omit repeated "none added" messages and outlined
 cards around each provider. Saved accounts retain their status and management actions.
@@ -739,7 +746,12 @@ check retryable before starting the move.
   Center popular shortcuts in a wider group with equal-height cards, including Explore all apps.
   Use three columns in wide page containers, two at medium widths and one on mobile.
   Keep Home's project list and the sidebar counts separate too.
-- Cloud's New Project choices are Apps, GitHub, Git URL and Import existing project.
+- Cloud's New Project choices are Apps, Repositories, Git URL and Import existing project.
+  The Connection sidebar shows registered providers as labeled logo buttons beside one another,
+  with a settings shortcut for the selected provider. Lead the connection row with the account
+  avatar and handle, place the sign-in method underneath, and show a checked Connected label
+  when the connection is confirmed.
+  On narrow screens, show the connection above the repository list and counts below it.
   Folder import and the Browse Templates shortcut are available only on self-hosted instances.
   If a self-hosted repository scan requires an explicit GitHub server identity, reuse the
   shared server picker and retry the same source with that server. Do not auto-select or

@@ -20,8 +20,11 @@ vi.mock("@repo/platform/engine/lib/managed-edge-proxy", async (original) => ({
 
 describe("removing a domain with an active routing warning", () => {
   const hostname = "failed.opsh.io";
-  const managedWarning = (host: string) =>
-    edgeUnsyncedWarning([`${host} (Could not select a Cloud workspace)`], "redeploy to retry");
+  const managedWarning = (...hosts: string[]) =>
+    edgeUnsyncedWarning(
+      hosts.map((host) => `${host} (Could not select a Cloud workspace)`),
+      "redeploy to retry",
+    );
   let ctx: ExecutionContext;
   let project: Awaited<ReturnType<typeof seedProject>>;
 
@@ -113,6 +116,18 @@ describe("removing a domain with an active routing warning", () => {
     await removeDomain(ctx, failed.id);
     expect(await repos.domain.findById(remaining.id)).toBeDefined();
     expect((await repos.deployment.findById(dep.id))?.meta).toHaveProperty("deployWarning");
+  });
+
+  it("clears a shared warning when the last removed route was listed second", async () => {
+    const first = await addDomain(hostname);
+    const second = await addDomain("second.opsh.io");
+    await activate(managedWarning(first.hostname, second.hostname));
+
+    await removeDomain(ctx, first.id);
+    expect(await pendingRouting()).toBe(true);
+
+    await removeDomain(ctx, second.id);
+    expect(await pendingRouting()).toBe(false);
   });
 
   it("preserves changes to deployment status and unrelated metadata during deletion", async () => {

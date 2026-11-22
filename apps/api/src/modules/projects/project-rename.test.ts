@@ -47,7 +47,7 @@ const h = vi.hoisted(() => ({
     runtimeMode: null as string | null,
     startCommand: "npm start" as string | null,
     composePath: "compose.yml" as string | null,
-    webhookId: 77 as number | null,
+    webhookId: "77" as string | null,
     webhookDomain: "hooks.example.com" as string | null,
     autoDeploy: true,
     deletionInProgress: false,
@@ -67,7 +67,7 @@ const h = vi.hoisted(() => ({
     projectFields: Record<string, unknown>;
     groupFields: Record<string, unknown>;
   }>,
-  ensureSharedWebhook: vi.fn(async () => null as number | null),
+  ensureSharedWebhook: vi.fn(async () => null as string | null),
   webhookStrategy: "none" as "none" | "app",
   authInstallationId: undefined as number | undefined,
   resolveInstallUrl: vi.fn(async () => ({
@@ -78,6 +78,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    member: { find: async () => ({ role: "owner" }) },
+    gitInstallation: { findByOrgAndOwner: async () => null },
     project: {
       findById: async () => ({ ...h.project }),
       update: async (_id: string, patch: Record<string, unknown>) => {
@@ -141,7 +143,7 @@ vi.mock("../../lib/controller-helpers", () => ({
   platform: () => ({ runtime: { name: "docker" } }),
 }));
 vi.mock("@repo/platform/engine/modules/github/github.service", () => ({
-  resolveDefaultBranch: async () => "main",
+  getRepository: async (_ctx: unknown, owner: string, repo: string) => ({ default_branch: "main", clone_url: `https://github.com/${owner}/${repo}.git` }),
   listBranches: async () => [],
   getLatestCommit: async () => null,
   resolveWebhookStrategy: async () => h.webhookStrategy,
@@ -485,6 +487,15 @@ describe("project source transitions", () => {
     expect(fields).not.toHaveProperty("hasBuild");
     expect(fields).not.toHaveProperty("runtimeMode");
     expect(fields).not.toHaveProperty("startCommand");
+  });
+
+  it("does not persist a caller-supplied installation when linking a repository", async () => {
+    const { linkProjectRepo } = await load();
+    await linkProjectRepo({ userId: "user_1", organizationId: "org_1" } as never, "proj_1", {
+      owner: "acme", repo: "new-source", branch: "main", installationId: 999,
+    });
+    expect(h.sourceUpdates[0]?.projectFields.installationId).toBeNull();
+    expect(h.sourceUpdates[0]?.groupFields.installationId).toBeNull();
   });
 
   it("does not register a webhook or repoint source after deletion claims the project", async () => {

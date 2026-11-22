@@ -18,7 +18,7 @@ vi.mock("../github/github-access", () => ({ filterAllowedAccounts: h.filter }));
 vi.mock("./access", () => ({ authorizeActionRepository: h.authorize }));
 import { GitHubApiError } from "../github/github.error";
 import { GitHubAppApiError } from "../github/github.app-client";
-import { actionRepositoryChecks } from "./repository-checks";
+import { githubActionRepositoryChecks as actionRepositoryChecks } from "./repository-checks";
 
 const ctx = { userId: "operator", organizationId: "team" } as ExecutionContext;
 const input = { owner: "acme", repo: "app", controller: "github" as const };

@@ -1,13 +1,14 @@
 import { app } from "electron";
 import { spawn } from "node:child_process";
 import { strict as assert } from "node:assert";
-import { desktopInstanceLink } from "@repo/core";
+import { desktopInstanceLink, desktopConnectionCallbackLink, parseDesktopConnectionCallback, type DesktopConnectionCallback } from "@repo/core";
 import { InstanceLinkInbox, registerInstanceLinks } from "../../src/main/instance-links";
 
 const directory = process.argv.find((value) => value.startsWith("--fixture-dir="))?.slice(14);
 assert.ok(directory);
 app.setPath("userData", directory);
 const inbox = new InstanceLinkInbox();
+const callbacks: DesktopConnectionCallback[] = [];
 let activated!: () => void;
 const secondLaunch = new Promise<void>((resolve) => {
   activated = resolve;
@@ -15,7 +16,9 @@ const secondLaunch = new Promise<void>((resolve) => {
 const owner = registerInstanceLinks(
   app,
   (url) => {
-    inbox.receive(url);
+    const callback = parseDesktopConnectionCallback(url);
+    if (callback) callbacks.push(callback);
+    else inbox.receive(url);
   },
   activated,
   process.argv,
@@ -43,6 +46,8 @@ if (owner) {
       assert.ok(prevented);
       // The fixture is bundled as CommonJS; argv[1] may be an Electron switch.
       const entry = __filename;
+      const grant = { state: "desktop." + "a".repeat(43), code: "one-time+code" };
+      const callback = desktopConnectionCallbackLink(new URLSearchParams(grant))!;
       const child = spawn(
         process.execPath,
         [
@@ -50,6 +55,7 @@ if (owner) {
           entry,
           `--fixture-dir=${directory}`,
           desktopInstanceLink(warm),
+          callback,
         ],
         { env: process.env, stdio: "ignore" },
       );
@@ -71,6 +77,7 @@ if (owner) {
           addresses.push(pending.address);
           inbox.acknowledge(pending.id);
         }
+        assert.deepEqual(callbacks, [grant]);
         assert.deepEqual(addresses, [cold, "https://mac.example.test/accept-invite/inv_mac", warm]);
         console.log(
           "Electron instance links passed: cold launch, macOS event, second process, confirmation queue",

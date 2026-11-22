@@ -1,7 +1,7 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import {
   pgTable,
   text,
-  integer,
   timestamp,
   uniqueIndex,
   index,
@@ -28,13 +28,14 @@ export const cloudWebhookBinding = pgTable(
     /** SaaS project id (== the original local proj_ id). */
     cloudProjectId: text("cloud_project_id").notNull(),
     /** Stored lowercased to match project.repo.findByGitRepo's lower() compare. */
+    gitProvider: text("git_provider").notNull().default(DEFAULT_GIT_PROVIDER),
     gitOwner: text("git_owner").notNull(),
     gitRepo: text("git_repo").notNull(),
     /** "" means "the repo's default branch". NOT NULL so the unique index below
      *  actually dedups (Postgres treats NULL as distinct → duplicate upserts). */
     gitBranch: text("git_branch").notNull().default(""),
     /** GitHub webhook id (null for enumeration-healed, routing-only bindings). */
-    webhookId: integer("webhook_id"),
+    webhookId: text("webhook_id"),
     /** Opaque ciphertext, same scheme as project.webhookSecret (copied verbatim).
      *  Null for routing-only bindings (secret lost / self-healed). */
     webhookSecret: text("webhook_secret"),
@@ -43,6 +44,8 @@ export const cloudWebhookBinding = pgTable(
   },
   (t) => [
     uniqueIndex("uq_cloud_webhook_binding_repo_branch").on(
+      t.organizationId,
+      t.gitProvider,
       t.gitOwner,
       t.gitRepo,
       t.gitBranch,

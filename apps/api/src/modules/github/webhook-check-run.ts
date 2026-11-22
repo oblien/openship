@@ -2,9 +2,11 @@
  * GitHub webhook check_run events.
  */
 
+import { webhookRepository } from "@repo/platform/engine/modules/github/webhook-repository";
+import { matchesProjectRepository } from "@repo/core";
 import { repos } from "@repo/db";
 import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
-import { webhookActorCtx } from "./webhook-shared";
+import { webhookActorCtx } from "../git/webhook-shared";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
 import type { WebhookHandlerResult } from "@repo/platform/engine/modules/webhooks/webhook.types";
 import type { GitHubCheckRunPayload } from "@repo/contracts";
@@ -16,6 +18,7 @@ import type { GitHubCheckRunPayload } from "@repo/contracts";
  * webhook secret for another repository never authorizes a cross-project run. */
 export async function handleCheckRun(
   payload: GitHubCheckRunPayload,
+  organizationIds?: readonly string[],
 ): Promise<WebhookHandlerResult> {
   if (payload.action !== "rerequested") {
     return {
@@ -30,7 +33,9 @@ export async function handleCheckRun(
     return { success: true, event: "check_run", message: "Missing check_run.id" };
   }
 
-  const check = await repos.deploymentCheck.findByCheckRunId(checkRunId);
+  const ref = webhookRepository(payload);
+  if (!ref) return { success: true, event: "check_run", message: "Missing repository info in payload" };
+  const check = await repos.deploymentCheck.findByCheckRunId(checkRunId, ref.provider);
   // Existing service checks keep their re-run action; new reports all use the
   // shared mirror. Both resolve into the same deployment admission below.
   const sd = check?.serviceDeploymentId
@@ -44,13 +49,13 @@ export async function handleCheckRun(
     ? (await repos.deploymentCheck.list(dep.id)).find(row => row.kind === "rollup")?.source
     : null);
   const project = await repos.project.findById(dep.projectId);
-  const repoMatches = (owner: string | null, repo: string | null) =>
-    owner?.toLowerCase() === payload.repository?.owner?.login?.toLowerCase() &&
-    repo?.toLowerCase() === payload.repository?.name?.toLowerCase();
-  if (!project || project.organizationId !== dep.organizationId || project.gitProvider !== "github" || project.deletedAt || project.deletionInProgress ||
-      project.githubChecks?.enabled === false || !repoMatches(project.gitOwner, project.gitRepo) ||
-      !dep.commitSha || dep.commitSha !== payload.check_run.head_sha ||
-      (check && (!origin || !repoMatches(origin.owner, origin.repo))))
+  if (!project || project.organizationId !== dep.organizationId ||
+      (organizationIds && !organizationIds.includes(project.organizationId)) ||
+      project.deletedAt || project.deletionInProgress || project.githubChecks?.enabled === false ||
+      !matchesProjectRepository(project, ref) || !dep.commitSha || dep.commitSha !== payload.check_run.head_sha ||
+      (check && (!origin || !matchesProjectRepository({
+        gitProvider: origin.provider, gitOwner: origin.owner, gitRepo: origin.repo,
+      }, ref))))
     return { success: true, event: "check_run", message: "Check does not match the active project source" };
   let serviceId = sd?.serviceId;
   if (check?.kind === "service" && !serviceId) {

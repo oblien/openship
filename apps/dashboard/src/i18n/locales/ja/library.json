@@ -12,6 +12,7 @@
     "title": "新規プロジェクト",
     "subtitle": "アプリをデプロイするか、自分のプロジェクトをインポートします。",
     "tabs": {
+      "repositories": "リポジトリ",
       "folder": "フォルダ",
       "github": "GitHub",
       "templates": "テンプレート",
@@ -36,7 +37,7 @@
       "copyCode": "クリックしてコピー"
     },
     "default": {
-      "title": "デプロイするには GitHub に接続",
+      "title": "デプロイするには {provider} に接続",
       "descSelfHosted": "OpenShip がリポジトリにアクセスする方法を選択してください。",
       "descSaas": "GitHub アカウントを連携すると、リポジトリを閲覧し、プッシュのたびにデプロイできます。",
       "recommended": "推奨",
@@ -144,7 +145,7 @@
       "name": "名前",
       "stars": "スター"
     },
-    "addAccount": "GitHub アカウントを追加",
+    "addAccount": "{provider} アカウントを追加",
     "installTitle": "GitHub App をインストール",
     "installDesc": "アカウントまたは組織に GitHub App をインストールして、リポジトリへのアクセスを許可してください。",
     "installButton": "GitHub App をインストール",
@@ -174,8 +175,6 @@
     "total": "合計",
     "public": "公開",
     "private": "非公開",
-    "quickTip": "クイックヒント",
-    "quickTipDesc": "任意のリポジトリを選択すると、すぐにデプロイできます。プッシュのたびに自動デプロイするよう設定しましょう。",
     "connection": "接続",
     "openshipGithubApp": "OpenShip GitHub App",
     "connected": "接続済み",
@@ -187,14 +186,13 @@
     "notConnectedManage": "未接続 — 設定で管理",
     "optional": "任意",
     "footnote": "リポジトリの閲覧とデプロイに使用するGitHub接続を管理します。",
-    "manageGithubSettings": "設定で GitHub を管理",
     "methodToken": "GitHub トークン",
     "methodDevice": "GitHub サインイン"
   },
   "urlImport": {
-    "invalidUrl": "有効な GitHub リポジトリ URL を入力してください",
+    "invalidUrl": "有効な {providers} リポジトリ URL を入力してください",
     "title": "Git URL からインポート",
-    "description": "インポートするには公開リポジトリの URL を貼り付けてください。GitHub 接続は不要です。",
+    "description": "インポートするには公開リポジトリの URL を貼り付けてください。{providers} 接続は不要です。",
     "importButton": "リポジトリをインポート"
   },
   "customAppModal": {

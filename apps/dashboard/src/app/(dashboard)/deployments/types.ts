@@ -51,6 +51,7 @@ export interface Deployment {
   createdAt: string;
   type: string;
   environment: string;
+  gitProvider?: string;
   owner?: string;
   repo?: string;
   branch?: string;

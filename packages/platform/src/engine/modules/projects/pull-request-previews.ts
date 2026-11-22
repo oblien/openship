@@ -1,5 +1,10 @@
+import { gitRepository, projectRepository, projectRepositoryRef, requireGitCapability } from "../git/provider";
+import type { GitPullRequest as PullRequest } from "../git/capabilities";
+import type { GitRepositoryRef } from "../git/types";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  DEFAULT_GIT_PROVIDER,
+  matchesProjectRepository,
   AppError,
   safeErrorMessage,
   normalizeCustomHostname,
@@ -22,7 +27,6 @@ import type { ExecutionContext } from "@repo/platform";
 import { buildBackgroundContext } from "../../lib/background-context";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { nativeJobsEnabled } from "../../native/execution-policy";
-import { githubFetch } from "../github/github.auth";
 import { ensureSharedWebhook } from "./project-git-webhook";
 import { withProjectCreationLock, assertProjectQuota } from "./project-crud.service";
 import { triggerDeployment } from "../deployments/build.service";
@@ -36,13 +40,6 @@ import {
   syncPreviewRouteProtection,
 } from "../../lib/route-protection";
 
-interface PullRequest {
-  state: "open" | "closed";
-  draft?: boolean;
-  number: number;
-  head: { sha: string; ref: string; repo: { full_name: string } | null };
-  base: { ref: string; repo: { full_name: string } };
-}
 
 export function previewEligible(
   pr: PullRequest,
@@ -253,11 +250,10 @@ export async function configurePreviews(
     await readPreviewRouteProtection(ctx, source, { ...settings, baseDomain });
     if (
       source.environmentType === "preview" ||
-      source.gitProvider !== "github" ||
       !source.gitOwner ||
       !source.gitRepo
     )
-      throw new AppError("Enable previews on a GitHub-backed source environment.", 400);
+      throw new AppError("Enable previews on a repository-backed source environment.", 400);
     if (source.clusterId)
       throw new AppError(
         "PR preview automation requires a Docker or direct server deployment target.",
@@ -269,20 +265,15 @@ export async function configurePreviews(
       1,
       source.gitBranch ?? "main",
     );
-    await ensureSharedWebhook(ctx, source, source.gitOwner, source.gitRepo);
-    // This also verifies that the chosen GitHub identity can read pull requests.
-    const open = await githubFetch<PullRequest[]>({
-      ctx,
-      owner: source.gitOwner,
-      repo: source.gitRepo,
-      url: `https://api.github.com/repos/${encodeURIComponent(source.gitOwner)}/${encodeURIComponent(source.gitRepo)}/pulls`,
-      params: { state: "open", base: source.gitBranch, per_page: 100 },
-    });
+    const previews = requireGitCapability(projectRepository(ctx, source).pullRequests, "pull request previews");
+    await ensureSharedWebhook(ctx, source, projectRepositoryRef(source));
+    const open = await previews.list({ base: source.gitBranch });
     await repos.project.update(source.id, { previewSettings: { ...settings, baseDomain } });
     for (const pr of open.filter((pr) => previewEligible(pr, source)))
       await repos.pullRequestPreview.enqueue({
         organizationId: source.organizationId,
         sourceProjectId: source.id,
+        provider: source.gitProvider ?? DEFAULT_GIT_PROVIDER,
         owner: source.gitOwner,
         repo: source.gitRepo,
         number: pr.number,
@@ -295,13 +286,11 @@ export async function configurePreviews(
   return { settings: { ...settings, baseDomain } };
 }
 
-export async function enqueuePullRequestPreviews(payload: unknown) {
-  const value = payload as { number?: number; repository?: { full_name?: string } };
-  if (!Number.isSafeInteger(value.number) || value.number! < 1 || !value.repository?.full_name)
-    return;
-  const [owner, repo] = value.repository.full_name.split("/");
+export async function enqueuePullRequestPreviews(ref: GitRepositoryRef, number: number, organizationIds?: readonly string[]) {
+  if (!Number.isSafeInteger(number) || number < 1) return;
+  const { provider, namespace: owner, name: repo } = ref;
   if (!owner || !repo) return;
-  for (const source of await repos.project.findByGitRepo(owner, repo)) {
+  for (const source of await repos.project.findByGitRepo(ref, organizationIds)) {
     if (
       !source.previewSettings?.enabled ||
       source.deletedAt ||
@@ -311,9 +300,10 @@ export async function enqueuePullRequestPreviews(payload: unknown) {
     await repos.pullRequestPreview.enqueue({
       organizationId: source.organizationId,
       sourceProjectId: source.id,
+      provider,
       owner,
       repo,
-      number: value.number!,
+      number,
     });
   }
 }
@@ -408,41 +398,25 @@ async function reconcile(row: PullRequestPreview, token: string) {
   const ctx = buildBackgroundContext({
     userId: actor.userId,
     organizationId: row.organizationId,
-    label: "github:pr-preview",
+    label: "git:pr-preview",
   });
   const source = await repos.project.findByIdInOrganization(
     row.sourceProjectId,
     row.organizationId,
   );
-  const root = `https://api.github.com/repos/${encodeURIComponent(row.owner)}/${encodeURIComponent(row.repo)}`;
-  const request = <T>(
-    url: string,
-    method: "GET" | "POST" | "PATCH" = "GET",
-    params?: Record<string, unknown>,
-  ) =>
-    githubFetch<T>({
-      ctx,
-      owner: row.owner,
-      repo: row.repo,
-      url,
-      method,
-      params,
-      authorizeAs: "read",
-    });
+  const ref = { provider: row.provider ?? DEFAULT_GIT_PROVIDER, namespace: row.owner, name: row.repo };
+  const previews = requireGitCapability(gitRepository(ctx, ref).pullRequests, "pull request previews");
   const assertLease = async () => {
     if (!nativeJobsEnabled() || !(await repos.pullRequestPreview.renew(row.id, token)))
       throw new Error("Preview reconciliation lease ended");
   };
   await assertLease();
-  const sameRepository =
-    source?.gitOwner?.toLowerCase() === row.owner.toLowerCase() &&
-    source?.gitRepo?.toLowerCase() === row.repo.toLowerCase();
   const pr =
     source?.previewSettings?.enabled &&
-    sameRepository &&
+    matchesProjectRepository(source, ref) &&
     !source.deletedAt &&
     !source.deletionInProgress
-      ? await request<PullRequest>(`${root}/pulls/${row.number}`)
+      ? await previews.get(row.number)
       : null;
   let child = row.projectId
     ? await repos.project.findByIdInOrganization(row.projectId, row.organizationId)
@@ -567,9 +541,7 @@ async function reconcile(row: PullRequestPreview, token: string) {
     if (!id) {
       // Recover an accepted POST whose response was lost; never add one comment per commit.
       for (let page = 1; ; page++) {
-        const comments = await request<Array<{ id: number; body: string }>>(
-          `${root}/issues/${row.number}/comments?per_page=100&page=${page}`,
-        );
+        const comments = await previews.comments(row.number, page);
         const found = comments.find((comment) => comment.body.startsWith(marker));
         if (found) {
           id = String(found.id);
@@ -579,12 +551,7 @@ async function reconcile(row: PullRequestPreview, token: string) {
       }
     }
     await assertLease();
-    if (id) await request(`${root}/issues/comments/${id}`, "PATCH", { body });
-    else
-      id = String(
-        (await request<{ id: number }>(`${root}/issues/${row.number}/comments`, "POST", { body }))
-          .id,
-      );
+    id = await previews.comment(row.number, body, id ?? undefined);
     await repos.pullRequestPreview.update(row.id, token, {
       commentId: id,
       publishedDigest: digest,
@@ -602,20 +569,16 @@ export async function runPullRequestPreviewsSweep() {
       const ctx = buildBackgroundContext({
         userId: actor.userId,
         organizationId: source.organizationId,
-        label: "github:preview-discovery",
+        label: "git:preview-discovery",
       });
       for (let page = 1; ; page++) {
-        const prs = await githubFetch<PullRequest[]>({
-          ctx,
-          owner: source.gitOwner,
-          repo: source.gitRepo,
-          url: `https://api.github.com/repos/${encodeURIComponent(source.gitOwner)}/${encodeURIComponent(source.gitRepo)}/pulls`,
-          params: { state: "open", base: source.gitBranch, per_page: 100, page },
-        });
+        const previews = requireGitCapability(projectRepository(ctx, source).pullRequests, "pull request previews");
+        const prs = await previews.list({ base: source.gitBranch, page });
         for (const pr of prs.filter((pr) => previewEligible(pr, source)))
           await repos.pullRequestPreview.enqueue({
             organizationId: source.organizationId,
             sourceProjectId: source.id,
+        provider: source.gitProvider ?? DEFAULT_GIT_PROVIDER,
             owner: source.gitOwner,
             repo: source.gitRepo,
             number: pr.number,

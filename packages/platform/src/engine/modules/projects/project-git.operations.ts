@@ -5,7 +5,7 @@ import type { ResourceServices } from "../../../resource-operations";
 import type { ProjectDependencies } from "../../../projects";
 
 import { repos, type Project } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { type GitRepositoryRef, DEFAULT_GIT_PROVIDER, safeErrorMessage } from "@repo/core";
 import { OperationError } from "@repo/contracts";
 import type { ExecutionContext as RequestContext } from "../../../context";
 import type { RuntimeAdapter } from "@repo/adapters";
@@ -13,18 +13,9 @@ import { presentProject } from "../../../projects";
 import { failOperation } from "../../lib/operation-errors";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import * as projectService from "./project.service";
-import {
-  updateWebhook,
-  getAvailableStrategies,
-  getRecentCommits,
-  resolveDefaultBranch,
-  resolveWebhookStrategy,
-  listBranches as listGitHubBranches,
-} from "../github/github.service";
-import { resolveInstallUrl } from "../github/github.auth";
+import { requireGitCapability, projectGitProvider, projectRepository, projectRepositoryRef, repositoryWebhooks } from "../git/provider";
 import { ensureSharedWebhook } from "./project-git-webhook";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
-import { domainWebhookUrl } from "../../lib/public-url";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { compileProjectRoutingFields } from "../../lib/project-routing-fields";
 import { isReservedLoopbackPort, pickPrimaryServiceId } from "../../lib/public-endpoints";
@@ -37,20 +28,19 @@ import {
 
 async function disableSharedWebhookIfUnused(
   ctx: RequestContext,
-  organizationId: string,
-  owner: string,
-  repo: string,
-  webhookId: number | null,
+  ref: GitRepositoryRef,
+  webhookId: string | null,
 ) {
-  const repoProjects = await repos.project.findByGitRepo(owner, repo);
-  if (repoProjects.some((p) => p.autoDeploy)) return;
-  const projects = repoProjects.filter((p) => p.organizationId === organizationId);
-  const hookId = webhookId ?? projects.find((p) => typeof p.webhookId === "number")?.webhookId;
-  if (hookId) {
-    await updateWebhook(ctx, owner, repo, hookId, {
-      active: false,
-    });
-  }
+  const repoProjects = await repos.project.findByGitRepo(ref);
+  const projects = repoProjects.filter((p) => p.organizationId === ctx.organizationId);
+  const hookId = webhookId ?? projects.find((p) => p.webhookId != null)?.webhookId;
+  if (!hookId) return;
+  // Older environments can share a hook without a persisted ID. Other
+  // workspaces on this repo may have a completely separate registration.
+  const used = repoProjects.some((p) => p.autoDeploy && (
+    p.webhookId === hookId || (p.webhookId == null && p.organizationId === ctx.organizationId)
+  ));
+  if (!used) await repositoryWebhooks(ctx, ref).setActive(String(hookId), false);
 }
 /**
  * Re-register a domain's nginx route with or without the webhook proxy location.
@@ -204,7 +194,7 @@ export function createProjectGitOperations(
       const { strategy, webhookActive, installationInstalled } =
         await projectService.resolveProjectWebhookState(organizationId, info);
       // Get available strategies for the UI
-      const strategies = await getAvailableStrategies(ctx, info);
+      const strategies = await projectGitProvider(info).connections.strategies(ctx, info);
       // Get project domains for webhook domain picker
       const domains = await repos.domain.listByProject(id);
       const verifiedDomains = domains
@@ -212,21 +202,21 @@ export function createProjectGitOperations(
         .map((d) => ({ hostname: d.hostname, ssl: d.sslStatus === "active" }));
       let branch = info.gitBranch ?? "";
       if (!branch && info.gitOwner && info.gitRepo) {
-        branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+        branch = (await projectRepository(ctx, info).info()).default_branch;
       }
       const commits = branch
-        ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
+        ? await projectRepository(ctx, info).commits(branch, 10)
         : [];
       const installUrl =
         strategy === "app" && !installationInstalled
-          ? (await resolveInstallUrl(ctx)).url
+          ? (await projectGitProvider(info).connections.installUrl(ctx)).url
           : undefined;
       return {
         success: true,
         owner: info.gitOwner,
         repo: info.gitRepo,
         branch,
-        provider: info.gitProvider ?? "github",
+        provider: info.gitProvider ?? DEFAULT_GIT_PROVIDER,
         commits: commits.map((c) => ({
           sha: c.sha,
           message: c.message,
@@ -259,19 +249,20 @@ export function createProjectGitOperations(
       if (!info.gitOwner || !info.gitRepo) {
         return failOperation({ success: false, error: "No repository connected" }, 400);
       }
-      const { branches, page, perPage, hasMore } = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo, { ...input, serverId: info.serverId ?? undefined });
+      const { branches, page, perPage, hasMore } = await projectRepository(ctx, info, { serverId: info.serverId ?? undefined }).branches(input?.page);
       return {
-        data: branches.map((branch) => ({ name: branch.name, sha: branch.commit.sha, protected: branch.protected })),
+        data: branches,
         pagination: { page, perPage, hasMore },
       };
     },
     async linkRepo(ctx, id, input) {
-      const { owner, repo, branch, installationId } = input;
+      const { owner, repo, branch, installationId, provider } = input;
       const result = await projectService.linkProjectRepo(ctx, id, {
         owner,
         repo,
         branch,
         installationId,
+        provider,
       });
       if (!result.ok) {
         if (result.code === "not_found") return failOperation({ error: "Project not found" }, 404);
@@ -279,7 +270,7 @@ export function createProjectGitOperations(
           return failOperation(
             {
               success: false,
-              error: "GitHub App is not installed for this account",
+              error: "The source provider app is not installed for this account",
               install_url: result.installUrl,
               owner: result.owner,
             },
@@ -323,9 +314,7 @@ export function createProjectGitOperations(
       if (before?.gitOwner && before.gitRepo && before.autoDeploy) {
         await disableSharedWebhookIfUnused(
           ctx,
-          ctx.organizationId,
-          before.gitOwner,
-          before.gitRepo,
+          projectRepositoryRef(before),
           before.webhookId,
         ).catch((diagnosticFailure) => {
           observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-git.operations");
@@ -364,7 +353,7 @@ export function createProjectGitOperations(
         if (!owner || !repo) {
           return failOperation({ success: false, error: "No repository linked" }, 400);
         }
-        const strategy = await resolveWebhookStrategy(project, organizationId);
+        const strategy = await projectGitProvider(project).connections.strategy(project, organizationId);
         // In "none" mode, auto-deploy can't work - suggest options
         if (strategy === "none" && enabled) {
           return failOperation(
@@ -385,8 +374,8 @@ export function createProjectGitOperations(
             // User has a verified domain - direct webhook delivery
             if (enabled) {
               // strategy === "domain" ⟹ webhookDomain is set (resolveWebhookStrategy).
-              const webhookUrl = domainWebhookUrl(project.webhookDomain!);
-              const webhookId = await ensureSharedWebhook(ctx, project, owner, repo, webhookUrl);
+              const webhookUrl = await requireGitCapability(projectGitProvider(project).connections.domainWebhookUrl, "domain webhooks")(project.webhookDomain!);
+              const webhookId = await ensureSharedWebhook(ctx, project, projectRepositoryRef(project), webhookUrl);
               if (!webhookId) {
                 return failOperation(
                   {
@@ -402,15 +391,13 @@ export function createProjectGitOperations(
               await repos.project.update(id, { autoDeploy: false });
               await disableSharedWebhookIfUnused(
                 ctx,
-                project.organizationId,
-                owner,
-                repo,
+                projectRepositoryRef(project),
                 project.webhookId,
               );
             }
           } else if (enabled) {
             // "repo" strategy - manage repo-level webhooks
-            const webhookId = await ensureSharedWebhook(ctx, project, owner, repo);
+            const webhookId = await ensureSharedWebhook(ctx, project, projectRepositoryRef(project));
             if (!webhookId) {
               return failOperation(
                 {
@@ -427,9 +414,7 @@ export function createProjectGitOperations(
             await repos.project.update(id, { autoDeploy: false });
             await disableSharedWebhookIfUnused(
               ctx,
-              project.organizationId,
-              owner,
-              repo,
+              projectRepositoryRef(project),
               project.webhookId,
             );
           }
@@ -437,37 +422,24 @@ export function createProjectGitOperations(
           if (err instanceof OperationError) throw err;
           const msg = safeErrorMessage(err);
           errorDiagnostics.error("platform/engine/modules/projects/project-git.operations", `[setAutoDeploy] strategy=${strategy} enabled=${enabled}:`, msg, err);
-          // Structured denial from the GitHub access gate. The branches below sniff
-          // `msg` for GitHub's own "GitHub API error (403): …" shape, which this error
-          // does not have — its status lives on the object, so without this it would
-          // fall through to a generic 500 and hide an actionable "ask an owner for
-          // access" message behind "something went wrong".
-          if (
-            (
-              err as {
-                code?: unknown;
-              } | null
-            )?.code === "GITHUB_ACCESS_DENIED"
-          ) {
-            return failOperation({ success: false, error: msg }, 403);
-          }
-          if (msg.includes("No GitHub access token")) {
+          const status = await projectGitProvider(project).errors.status(err);
+          if (status === 401) {
             return failOperation(
-              { success: false, error: "GitHub is not connected. Link your GitHub account first." },
+              { success: false, error: "The source provider is not connected. Connect your account first." },
               401,
             );
           }
-          if (msg.includes("404")) {
+          if (status === 404) {
             await repos.project.update(id, { webhookId: null, autoDeploy: false });
             return failOperation(
               {
                 success: false,
-                error: "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy.",
+                error: "The repository webhook was deleted. Try disabling and re-enabling auto-deploy.",
               },
               410,
             );
           }
-          if (msg.includes("403")) {
+          if (status === 403) {
             return failOperation(
               {
                 success: false,
@@ -476,7 +448,7 @@ export function createProjectGitOperations(
               403,
             );
           }
-          if (msg.includes("422")) {
+          if (status === 422) {
             return failOperation(
               {
                 success: false,
@@ -550,6 +522,8 @@ export function createProjectGitOperations(
             400,
           );
         }
+        const scheme = dom.sslStatus === "active" ? "https" : "http";
+        const webhookUrl = await requireGitCapability(projectGitProvider(project).connections.domainWebhookUrl, "domain webhooks")(hostname, scheme);
         // Remove webhook location from the old domain if changing
         if (project.webhookDomain && project.webhookDomain !== hostname) {
           await reRegisterDomainRoute(project, project.webhookDomain, false);
@@ -557,8 +531,6 @@ export function createProjectGitOperations(
         // Add webhook location to the new domain's nginx config
         await reRegisterDomainRoute(project, hostname, true);
         await repos.project.update(id, { webhookDomain: hostname });
-        const scheme = dom.sslStatus === "active" ? "https" : "http";
-        const webhookUrl = domainWebhookUrl(hostname, scheme);
         recordAudit(ctx, {
           eventType: "project.updated",
           resourceType: "project",

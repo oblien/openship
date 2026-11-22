@@ -33,33 +33,20 @@ export async function storeCloudSession(userId: string, token: string): Promise<
     userId: account.id, organizationId: account.organizationId,
   };
   await repos.settings.setCloudSession(userId, encrypt(JSON.stringify(session)));
-  await invalidateCloudCaches(userId);
+  await invalidateCloudCaches(userId, await repos.settings.listCloudLinkedOrgIds(userId));
 }
 
 // ─── Teardown ────────────────────────────────────────────────────────────────
 
-/**
- * Wipe every local cache derived from the cloud session: the namespace-token
- * credential (so a reconnect can't reuse the old session's minted token) plus
- * the user's GitHub caches (cloud-app mode is backed by the cloud session, so
- * losing the session must force GitHub mode to re-resolve). Connection STATE
- * itself is never cached — validateCloudSession always proxies live.
- *
- * The GitHub invalidation is a DYNAMIC import to keep the static graph acyclic
- * (github.auth already lazily imports from this layer, so a static edge back
- * would form a cycle).
- */
-export async function invalidateCloudCaches(userId: string): Promise<void> {
+/** Drop credentials derived from this Cloud identity on connect and disconnect. */
+async function invalidateCloudCaches(userId: string, organizationIds: readonly string[]): Promise<void> {
   const tokens = await cacheStore<TokenCache>("oblien-ns-tokens");
   await tokens.invalidateByPrefix(`${userId}:`);
   try {
-    const { invalidateUserGitHubCache } = await import(
-      "../../modules/github/github.auth"
-    );
-    await invalidateUserGitHubCache(userId);
+    const { invalidateCloudGitCaches } = await import("../../modules/git/provider");
+    await invalidateCloudGitCaches(userId, organizationIds);
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "platform/engine/lib/cloud/session");
-    /* best-effort — github cache will self-heal on its own TTL */
   }
 }
 
@@ -72,16 +59,16 @@ export async function invalidateCloudCaches(userId: string): Promise<void> {
  */
 export async function clearCloudSession(userId: string, expected?: StoredCloudSession): Promise<void> {
   const settings = await repos.settings.findByUser(userId);
-  if (settings?.cloudSessionToken) {
-    if (expected) {
-      try {
-        const current = JSON.parse(decrypt(settings.cloudSessionToken)) as StoredCloudSession;
-        if (!sameCloudIdentity(current, expected) || current.token !== expected.token) return;
-      } catch { return; }
-    }
-    await repos.settings.clearCloudSession(userId, settings.cloudSessionToken);
+  if (!settings?.cloudSessionToken) return;
+  if (expected) {
+    try {
+      const current = JSON.parse(decrypt(settings.cloudSessionToken)) as StoredCloudSession;
+      if (!sameCloudIdentity(current, expected) || current.token !== expected.token) return;
+    } catch { return; }
   }
-  await invalidateCloudCaches(userId);
+  const { revokeCloudGitGrants } = await import("../../modules/git/provider");
+  const affected = await repos.settings.clearCloudSession(userId, settings.cloudSessionToken, revokeCloudGitGrants);
+  if (affected) await invalidateCloudCaches(userId, affected);
 }
 
 // ─── Connection truth (live, single-flight) ──────────────────────────────────

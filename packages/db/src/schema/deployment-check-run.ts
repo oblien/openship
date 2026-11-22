@@ -2,7 +2,6 @@ import {
   pgTable,
   text,
   timestamp,
-  bigint,
   uniqueIndex,
   index,
   integer,
@@ -30,8 +29,8 @@ export const deploymentCheckRun = pgTable(
     deploymentId: text("deployment_id")
       .notNull()
       .references(() => deployment.id, { onDelete: "cascade" }),
-    /** GitHub `check_run.id` — bigint because the id space exceeds 32-bit. */
-    checkRunId: bigint("check_run_id", { mode: "number" }),
+    /** Provider-owned opaque check identifier; never interpreted by the delivery loop. */
+    checkRunId: text("check_run_id"),
     /** Stable project/environment name, with a service suffix for service Checks. */
     name: text("name").notNull(),
     /** Discriminator: `"rollup"` (project-level) | `"service"` (per-service mirror). */

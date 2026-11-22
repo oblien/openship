@@ -74,7 +74,7 @@ export function AccessEditorModal({
   const [saving, setSaving] = useState(false);
   const [labels, setLabels] = useState<ReadonlyMap<string, string>>(new Map());
 
-  const ctx = useMemo<TemplateContext>(() => ({ githubAccounts: [] }), []);
+  const ctx = useMemo<TemplateContext>(() => ({ gitAccounts: [] }), []);
   const [selection, dispatch] = useReducer(
     (state: AccessSelection, action: ScopeAction) => reduceSelection(state, action, ctx),
     initial,

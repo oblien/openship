@@ -345,3 +345,21 @@ describe("filterToolsForPrincipal", () => {
   });
 });
 
+
+
+describe("provider-neutral Git tools", () => {
+  const metadata = tool({ name: "git_metadata", method: "GET", perm: { root: "git", leaf: "git", action: "read", wildcard: false, grantRoot: "git" } });
+  const content = tool({ name: "git_file", method: "GET", perm: { ...metadata.perm, source: "content" } });
+  const write = tool({ name: "git_publish", method: "POST", perm: { ...metadata.perm, action: "write", source: "write" } });
+  const tools = [metadata, content, write];
+
+  it("uses existing provider grants without granting source content or writes", () => {
+    expect(names(filterToolsForPrincipal(tools, principal({ grantedRootTypes: new Set(["github_repository"]) })))).toEqual(["git_metadata"]);
+    expect(names(filterToolsForPrincipal(tools, principal({ grantedRootTypes: new Set(["project"]), sourceCapabilities: new Set(["content"]) })))).toEqual([]);
+  });
+  it("retains separate source capabilities and the read-only restriction", () => {
+    const grant = { grantedRootTypes: new Set(["github_repository"]), sourceCapabilities: new Set(["content", "write"] as const) };
+    expect(names(filterToolsForPrincipal(tools, principal(grant)))).toEqual(["git_file", "git_metadata", "git_publish"]);
+    expect(names(filterToolsForPrincipal(tools, principal({ ...grant, readOnly: true })))).toEqual(["git_file", "git_metadata"]);
+  });
+});

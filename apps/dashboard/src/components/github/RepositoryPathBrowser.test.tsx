@@ -7,6 +7,7 @@ import { RepositoryPathBrowser } from "./RepositoryPathBrowser";
 import { setApiResourceScope } from "@/lib/api/client";
 
 const tree = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/api/git", () => ({ gitApi: () => ({ getRepoTree: tree }), gitSourcesChangedEvent: (provider: string) => `openship:${provider}-sources-changed` }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { getRepoTree: tree } }));
 let host: HTMLDivElement;
 let root: Root;

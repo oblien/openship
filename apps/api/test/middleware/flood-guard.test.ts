@@ -6,8 +6,18 @@ import { POLICIES } from "../../src/lib/rate-limit/policies";
 import { shutdownRateLimit } from "../../src/lib/rate-limit";
 import { env } from "@repo/platform/engine/config/index";
 
+vi.mock("@repo/platform/engine/config/saas-deployment", async () => {
+  const { env } = await import("@repo/platform/engine/config/env");
+  return {
+    get isSaasDeployment() {
+      return env.CLOUD_MODE;
+    },
+  };
+});
+
 const originalEnv = { CLOUD_MODE: env.CLOUD_MODE, OPENSHIP_TRUST_EDGE: env.OPENSHIP_TRUST_EDGE };
 const floodLimit = POLICIES["flood-ip"].limit;
+const otpMailLimit = POLICIES["auth-otp-mail"].limit;
 beforeEach(() => {
   env.CLOUD_MODE = false;
   env.OPENSHIP_TRUST_EDGE = false;
@@ -17,6 +27,7 @@ afterEach(async () => {
   await shutdownRateLimit();
   Object.assign(env, originalEnv);
   POLICIES["flood-ip"].limit = floodLimit;
+  POLICIES["auth-otp-mail"].limit = otpMailLimit;
   vi.unstubAllEnvs();
 });
 
@@ -92,6 +103,21 @@ describe("floodGuard middleware", () => {
     const res = await app.request("/api/projects");
     expect(res.status).toBe(200);
     expect(res.headers.get("X-RateLimit-Limit")).toBe(String(POLICIES["flood-ip"].limit));
+  });
+
+  it("shares the Cloud OTP mail limit across recovery endpoints and aliases", async () => {
+    env.CLOUD_MODE = true;
+    POLICIES["auth-otp-mail"].limit = 1;
+    const app = new Hono();
+    app.use("*", withIp("203.0.113.52"));
+    app.use("/api/auth/*", authRouteLimiter);
+    app.post("/api/auth/*", (c) => c.json({ ok: true }));
+
+    const post = (path: string) => app.request(`/api/auth${path}`, { method: "POST" });
+    expect((await post("/email-otp/request-password-reset")).status).toBe(200);
+    expect((await post("/forget-password/email-otp")).status).toBe(429);
+    expect((await post("/email-otp/send-verification-otp")).status).toBe(429);
+    expect((await post("/sign-in/email")).status).toBe(200);
   });
 
   it("exempts /api/health so probes and SSR renders never trip it", async () => {

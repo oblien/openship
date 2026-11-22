@@ -107,6 +107,13 @@ describe("requestApiPublicUrl (URLs handed back to the caller)", () => {
 });
 
 describe("domainWebhookUrl (per-project domain strategy)", () => {
+  it("keeps the provider identity for shared and custom-domain deliveries", () => {
+    expect(sharedWebhookUrl("gitlab")).toMatch(/\/api\/webhooks\/gitlab$/);
+    expect(domainWebhookUrl("hooks.example.com", "https", "gitlab")).toBe(
+      "https://hooks.example.com/_openship/hooks/gitlab",
+    );
+  });
+
   it("builds the /_openship/hooks callback, https by default", () => {
     expect(domainWebhookUrl("hooks.example.com")).toBe(
       "https://hooks.example.com/_openship/hooks/github",

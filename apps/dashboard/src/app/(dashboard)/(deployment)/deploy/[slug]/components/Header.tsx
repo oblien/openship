@@ -3,6 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
+import { gitRepositoryLink } from "@repo/core";
 import { HeaderProps } from "@/components/import-project/types";
 import Link from "next/link";
 
@@ -13,7 +14,7 @@ const Header: React.FC<HeaderProps> = ({ repoData }) => {
   // Local-sourced deploys use "local" as a sentinel owner and have no remote
   // repo to open — only link real GitHub repos.
   const isRemoteRepo = !!repoData.owner && repoData.owner !== "local" && !!repoData.repo;
-  const repoUrl = `https://github.com/${repoData.owner}/${repoData.repo}`;
+  const repoUrl = gitRepositoryLink(repoData.gitProvider, repoData.owner, repoData.repo);
   return (
     <div className="mb-6 relative mt-10">
       <div className="flex items-center justify-between">
@@ -30,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({ repoData }) => {
               className="font-bold text-black mb-2"
               style={{ fontSize: '2.4rem', letterSpacing: '-0.5px' }}
             >
-              {isRemoteRepo ? (
+              {isRemoteRepo && repoUrl ? (
                 <a
                   href={repoUrl}
                   target="_blank"

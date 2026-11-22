@@ -6,13 +6,14 @@ import { FeatureIllustration } from "@repo/ui/illustrations";
 import React, { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
-import { useI18n } from "@/components/i18n-provider";
+import { interpolate, useI18n } from "@/components/i18n-provider";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { parseDeploySource } from "@repo/core";
+import { GIT_PROVIDERS, parseDeploySource } from "@repo/core";
 
 export function UrlImport({ header }: { header?: React.ReactNode }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const providers = new Intl.ListFormat(locale, { type: "disjunction" }).format(GIT_PROVIDERS.map(p => p.name));
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
@@ -25,10 +26,10 @@ export function UrlImport({ header }: { header?: React.ReactNode }) {
     try {
       const source = parseDeploySource({ repo: url });
       if (source.kind !== "repo") return;
-      router.push(`/deploy/${encodeRepoSlug(source.owner, source.repo)}`);
+      router.push(`/deploy/${encodeRepoSlug(source.owner, source.repo, source.provider)}`);
     } catch {
       // diagnostics-ignore: invalid user-entered repository URLs are shown inline.
-      setError(t.library.urlImport.invalidUrl);
+      setError(interpolate(t.library.urlImport.invalidUrl, { providers }));
     }
   };
 
@@ -45,7 +46,7 @@ export function UrlImport({ header }: { header?: React.ReactNode }) {
             {t.library.urlImport.title}
           </h3>
           <p className="text-sm text-muted-foreground text-center mb-6 leading-relaxed">
-            {t.library.urlImport.description}
+            {interpolate(t.library.urlImport.description, { providers })}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">

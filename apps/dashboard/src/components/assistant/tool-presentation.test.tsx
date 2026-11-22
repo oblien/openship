@@ -166,6 +166,15 @@ describe("OpenShip tool result presentation", () => {
     expect(html).not.toContain("<img");
     expect(html).not.toContain("deploy now");
   });
+  it("renders provider repository tools through the same import card without assuming GitHub for unknown providers", () => {
+    const call = tool("get_git_by_provider_repos", { data: [repo], total: 1 });
+    expect(presentToolResult(call)).toBeNull();
+    call.input = { provider: "github" };
+    expect(describeAssistantTool(call).title).toBe("Find repositories");
+    expect(presentToolResult(call)?.items).toEqual(presentToolResult(tool("get_github_repos", { data: [repo], total: 1 }))?.items);
+    call.input = { provider: "unknown" };
+    expect(presentToolResult(call)).toBeNull();
+  });
   it("does not make navigation from malformed identifiers or non-resource output", () => {
     for (const id of [
       "..",

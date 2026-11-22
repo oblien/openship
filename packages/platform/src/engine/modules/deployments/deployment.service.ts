@@ -20,7 +20,7 @@ import {
 } from "../../lib/deployment-runtime";
 import { assertNotControlPlane, assertNotControlPlaneById, assertResourceInOrg } from "../../lib/resource-access";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
-import { assertGitHubRepoAccess } from "../github/github-access";
+import { assertProjectRepositoryAccess } from "../git/provider";
 import { maskDeploymentEnv } from "../../lib/secret-env";
 import {
   rollback,
@@ -65,10 +65,7 @@ export async function assertGitHubAccessForDeployment(
   const dep = await getDeployment(deploymentId, organizationId);
   const project = await repos.project.findById(dep.projectId);
   if (!project) return;
-  await assertGitHubRepoAccess(ctx, {
-    owner: project.gitOwner,
-    repo: project.gitRepo,
-  });
+  await assertProjectRepositoryAccess(ctx, project);
 }
 
 export async function listDeployments(

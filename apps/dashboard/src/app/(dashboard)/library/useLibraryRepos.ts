@@ -1,9 +1,13 @@
 "use client";
 
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { useState, useEffect, useRef, useCallback } from "react";
-import { GITHUB_SOURCES_CHANGED_EVENT, githubApi, getApiErrorMessage } from "@/lib/api";
-import type { GitHubRepo } from "@/context/GitHubContext";
+import { paginateRepoList } from "@repo/contracts/git-repo-list";
+import type { GitConnection } from "@/context/GitContext";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { getApiErrorMessage } from "@/lib/api";
+import { gitApi, gitSourcesChangedEvent } from "@/lib/api/git";
+import { repositorySummary, type RepositorySummary as GitHubRepo } from "@/lib/git-types";
 import type { VisibilityFilter, SortBy } from "./types";
 
 export const REPOS_PER_PAGE = 20;
@@ -52,7 +56,12 @@ export interface LibraryReposState {
  * owner or a filter changes (atomically, so no wasted fetch). A monotonic
  * request id drops stale responses when the user pages/searches quickly.
  */
-export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposState {
+export function useLibraryRepos(
+  owner: string,
+  enabled: boolean,
+  provider = DEFAULT_GIT_PROVIDER,
+  catalog?: GitConnection["catalog"],
+): LibraryReposState {
   const [query, setQuery] = useState<{
     search: string;
     visibility: VisibilityFilter;
@@ -65,7 +74,7 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-  const refresh = useCallback(() => setRevision(value => value + 1), []);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
 
   // Reset to page 1 and drop the previous owner's data the instant `owner`
   // changes — done during render (React's "adjust state on a prop change"
@@ -73,9 +82,9 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
   // separate effect instead would fetch once for the stale page and again after
   // the reset commits (a wasted request), and would leave the sidebar showing
   // the previous owner's counts until the new page lands.
-  const [prevOwner, setPrevOwner] = useState(owner);
-  if (owner !== prevOwner) {
-    setPrevOwner(owner);
+  const [prevOwner, setPrevOwner] = useState(`${provider}/${owner}`);
+  if (`${provider}/${owner}` !== prevOwner) {
+    setPrevOwner(`${provider}/${owner}`);
     setQuery((q) => (q.page === 1 ? q : { ...q, page: 1 }));
     setRepos([]);
     setMeta(EMPTY_META);
@@ -92,8 +101,25 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
     return () => clearTimeout(timer);
   }, [query.search]);
 
+  const params = useMemo(
+    () => ({
+      page: query.page,
+      perPage: REPOS_PER_PAGE,
+      search: debouncedSearch || undefined,
+      visibility: query.visibility,
+      sort: query.sort,
+    }),
+    [query.page, query.visibility, query.sort, debouncedSearch],
+  );
+  const catalogRows = catalog?.rows;
+  const localPage = useMemo(
+    () => catalogRows && paginateRepoList(enabled && owner ? catalogRows : [], params),
+    [catalogRows, enabled, owner, params],
+  );
+  const hasCatalog = !!catalogRows;
   const reqId = useRef(0);
   useEffect(() => {
+    if (hasCatalog) return;
     if (!owner || !enabled) {
       reqId.current++; // invalidate any in-flight response so it can't repopulate
       setRepos([]);
@@ -105,22 +131,12 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
     const load = (force = false) => {
       const id = ++reqId.current;
       setLoading(true);
-      githubApi
-        .getUserRepos(
-          owner,
-          {
-            page: query.page,
-            perPage: REPOS_PER_PAGE,
-            search: debouncedSearch || undefined,
-            visibility: query.visibility,
-            sort: query.sort,
-          },
-          force,
-        )
+      gitApi(provider)
+        .getUserRepos(owner, params, force)
         .then((res) => {
           if (id !== reqId.current) return; // superseded by a newer request
           setError(null);
-          setRepos((res.data ?? []) as GitHubRepo[]);
+          setRepos((res.data ?? []).map(repositorySummary));
           setMeta({
             count: res.count ?? 0,
             total: res.total ?? 0,
@@ -131,7 +147,10 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
           });
         })
         .catch((diagnosticFailure) => {
-          observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/library/useLibraryRepos");
+          observeCaughtError(
+            diagnosticFailure,
+            "dashboard/app/(dashboard)/library/useLibraryRepos",
+          );
           if (id !== reqId.current) return;
           setError(getApiErrorMessage(diagnosticFailure));
           setRepos([]);
@@ -145,26 +164,26 @@ export function useLibraryRepos(owner: string, enabled: boolean): LibraryReposSt
     // Installing the App can grant repos without changing the OAuth user or
     // `enabled`. Re-read after completion, bypassing any pre-install request.
     const onSourcesChanged = () => load(true);
-    window.addEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
+    window.addEventListener(gitSourcesChangedEvent(provider), onSourcesChanged);
     return () => {
       reqId.current++;
-      window.removeEventListener(GITHUB_SOURCES_CHANGED_EVENT, onSourcesChanged);
+      window.removeEventListener(gitSourcesChangedEvent(provider), onSourcesChanged);
     };
-  }, [owner, enabled, query.page, query.visibility, query.sort, debouncedSearch, revision]);
+  }, [provider, owner, enabled, hasCatalog, params, revision]);
 
   return {
-    repos,
-    meta,
-    loading,
-    error,
-    refresh,
+    repos: localPage?.data ?? repos,
+    meta: localPage ?? meta,
+    loading: hasCatalog ? false : loading,
+    error: hasCatalog ? null : error,
+    refresh: catalog?.refresh ?? refresh,
     search: query.search,
     setSearch: (search) => setQuery((q) => ({ ...q, search })),
     visibility: query.visibility,
     setVisibility: (visibility) => setQuery((q) => ({ ...q, visibility, page: 1 })),
     sort: query.sort,
     setSort: (sort) => setQuery((q) => ({ ...q, sort, page: 1 })),
-    page: query.page,
+    page: localPage?.page ?? query.page,
     setPage: (page) => setQuery((q) => ({ ...q, page })),
   };
 }

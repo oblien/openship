@@ -98,6 +98,8 @@ beforeEach(async () => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
+      if (url.origin === "https://vm.oblien.com" && url.pathname === "/runtime")
+        return Response.json({ os: "linux" });
       if (url.origin !== "https://provider.openship.test") {
         // Catalog overlay refresh is advisory. Keep this test on the bundled
         // Supabase catalog and never allow external network access.
@@ -157,6 +159,16 @@ beforeEach(async () => {
       }
       if (url.pathname.endsWith("/lifecycle/permanent") && method === "POST")
         return Response.json({ success: true });
+      if (url.pathname.endsWith("/network") && method === "GET")
+        return Response.json({ public_access: true });
+      if (url.pathname.endsWith("/runtime-api-access") && method === "GET")
+        return Response.json({ enabled: true });
+      if (url.pathname.endsWith("/runtime-api-access/token") && method === "GET")
+        return Response.json({
+          success: true,
+          token: "scoped-runtime-token",
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
       if (workspaceId && method === "GET") {
         // Async deletion is only complete once a subsequent read confirms absent.
         if (deleting.has(workspaceId)) workspaces.delete(workspaceId);

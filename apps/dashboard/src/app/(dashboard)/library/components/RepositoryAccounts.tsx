@@ -1,10 +1,12 @@
 "use client";
 
-import { Icon } from "@repo/ui/icons";
+import { DEFAULT_GIT_PROVIDER, gitProviderDefinition } from "@repo/core";
+import { Icon, isIconName } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface RepositoryAccountsProps {
+  provider?: string;
   accounts: { login: string; avatar_url: string }[];
   selectedOwner: string;
   onSelectOwner: (login: string) => void;
@@ -16,6 +18,7 @@ interface RepositoryAccountsProps {
 
 /** Shared source controls for repository browsing and URL import. */
 export function RepositoryAccounts({
+  provider = DEFAULT_GIT_PROVIDER,
   accounts,
   selectedOwner,
   onSelectOwner,
@@ -25,6 +28,10 @@ export function RepositoryAccounts({
   importingUrl = false,
 }: RepositoryAccountsProps) {
   const { t } = useI18n();
+  const definition = gitProviderDefinition(provider);
+  const icon = definition && isIconName(definition.icon) ? definition.icon : "git-branch";
+
+  const addLabel = interpolate(t.library.repositoryList.addAccount, { provider: definition?.name ?? provider });
 
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -42,7 +49,7 @@ export function RepositoryAccounts({
               {account.avatar_url ? (
                 <img src={account.avatar_url} alt="" className="size-5 rounded-full" />
               ) : (
-                <Icon name="github" className="size-5" aria-hidden="true" />
+                <Icon name={icon} className="size-5" aria-hidden="true" />
               )}
               {account.login}
             </Button>
@@ -55,8 +62,8 @@ export function RepositoryAccounts({
             aria-pressed={!importingUrl}
             className={`h-9 shrink-0 rounded-lg px-3 ${!importingUrl ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}
           >
-            <Icon name="github" className="size-4" aria-hidden="true" />
-            {t.library.page.tabs.github}
+            <Icon name={icon} className="size-4" aria-hidden="true" />
+            {definition?.name ?? provider}
           </Button>
         )}
       </div>
@@ -67,8 +74,8 @@ export function RepositoryAccounts({
           size="icon"
           onClick={onAddAccount}
           disabled={addingAccount}
-          aria-label={t.library.repositoryList.addAccount}
-          title={t.library.repositoryList.addAccount}
+          aria-label={addLabel}
+          title={addLabel}
           className="rounded-lg"
         >
           <Icon

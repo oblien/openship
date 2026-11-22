@@ -239,9 +239,18 @@ export function edgeUnsyncedWarning(failures: string[], retryHint: string): stri
 /** Recognize the persisted managed-edge warning without accepting a hostname
  * mentioned in a different warning or clearing a combined routing/TLS warning. */
 export function isManagedEdgeWarningForHostname(warning: string, hostname: string): boolean {
-  return (
-    warning.startsWith(`${edgeWarningPrefix}${hostname} (`) &&
-    !warning.includes(" · ") &&
-    ["retry", "redeploy to retry"].some((hint) => warning.endsWith(`${edgeWarningRecovery}${hint}.`))
+  if (
+    !warning.startsWith(edgeWarningPrefix) ||
+    warning.includes(" · ") ||
+    !["retry", "redeploy to retry"].some((hint) => warning.endsWith(`${edgeWarningRecovery}${hint}.`))
+  ) {
+    return false;
+  }
+
+  const failures = warning.slice(
+    edgeWarningPrefix.length,
+    warning.lastIndexOf(edgeWarningRecovery),
   );
+  const entry = `${hostname} (`;
+  return failures.startsWith(entry) || failures.includes(`), ${entry}`);
 }

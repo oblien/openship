@@ -45,15 +45,18 @@ export function desktopInstanceLink(address: string): string {
   return url.href;
 }
 
-/** OS input is untrusted. Reject other handlers, extra fields, credentials and
- * arbitrary paths before queuing anything in the Desktop process. */
-export function parseDesktopInstanceLink(value: string): string | null {
-  if (value.length > 4096 || /[\s\\]/.test(value)) return null;
+/** Validate OS input before dispatching either registered Desktop link. */
+function desktopLinkParams(
+  value: string,
+  action: string,
+  maxLength: number,
+): URLSearchParams | null {
+  if (value.length > maxLength || /[\s\\]/.test(value)) return null;
   try {
     const url = new URL(value);
     if (
       url.protocol !== `${DESKTOP_INSTANCE_SCHEME}:` ||
-      url.hostname !== "connect" ||
+      url.hostname !== action ||
       url.port ||
       url.username ||
       url.password ||
@@ -61,12 +64,62 @@ export function parseDesktopInstanceLink(value: string): string | null {
       !["", "/"].includes(url.pathname)
     )
       return null;
-    const entries = [...url.searchParams];
-    if (entries.length !== 1 || entries[0]?.[0] !== "url") return null;
-    const address = entries[0][1];
-    if (!/^https?:\/\//.test(address)) return null;
-    return connectionAddress(address);
+    return url.searchParams;
   } catch {
     return null;
   }
+}
+
+export function parseDesktopInstanceLink(value: string): string | null {
+  const params = desktopLinkParams(value, "connect", 4096);
+  const address = params?.get("url");
+  if (params?.size !== 1 || !address || !/^https?:\/\//.test(address)) return null;
+  try {
+    return connectionAddress(address);
+  } catch {
+    // diagnostics-ignore: an invalid OS invitation is discarded before it can reach the renderer.
+    return null;
+  }
+}
+
+/** A one-time provider code travels back to the initiating desktop session.
+ * The provider's access and refresh tokens stay on the API. */
+export interface DesktopConnectionCallback {
+  state: string;
+  code: string | null;
+}
+
+/** The prefix selects the callback transport. The complete state is always
+ * generated and bound to the initiating session by the API. */
+export const DESKTOP_CONNECTION_STATE_PREFIX = "desktop.";
+
+const connectionCallbackAction = "connection-callback";
+
+function isDesktopConnectionState(state: string | null): state is string {
+  return (
+    !!state &&
+    state.startsWith(DESKTOP_CONNECTION_STATE_PREFIX) &&
+    /^[A-Za-z0-9_-]{43}$/.test(state.slice(DESKTOP_CONNECTION_STATE_PREFIX.length))
+  );
+}
+
+export function desktopConnectionCallbackLink(params: URLSearchParams): string | null {
+  const state = params.get("state");
+  if (!isDesktopConnectionState(state)) return null;
+  const url = new URL(`${DESKTOP_INSTANCE_SCHEME}://${connectionCallbackAction}`);
+  url.searchParams.set("state", state);
+  const code = params.get("code");
+  if (code && code.length <= 4096 && !params.has("error")) url.searchParams.set("code", code);
+  return url.href;
+}
+
+export function parseDesktopConnectionCallback(value: string): DesktopConnectionCallback | null {
+  // A 4096-character code can expand when URL-encoded.
+  const params = desktopLinkParams(value, connectionCallbackAction, 50_000);
+  if (!params) return null;
+  const state = params.get("state");
+  const code = params.get("code");
+  if (!isDesktopConnectionState(state) || params.size !== (code === null ? 1 : 2)) return null;
+  if (code !== null && (!code || code.length > 4096)) return null;
+  return { state, code };
 }

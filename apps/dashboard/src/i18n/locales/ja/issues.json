@@ -98,6 +98,8 @@
     "rescanPartial": "再スキャン完了。{n}件のチェックは確認範囲が不完全です",
     "rescanFailed": "再スキャンに失敗しました",
     "resolved": "完了",
+    "updateResolved": "更新完了: {name}",
+    "updatesResolved": "更新完了 ({count}): {names}",
     "resolveFailed": "この修復を適用できませんでした",
     "confirmDestructive": "この操作には取り消せない副作用があります。続行しますか？"
   },

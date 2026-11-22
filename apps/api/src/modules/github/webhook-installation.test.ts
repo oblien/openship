@@ -21,7 +21,7 @@ vi.mock("@repo/db", () => ({
       suspendByInstallationIdForProvider: h.suspendByInstallationId,
       findByOrgAndOwner: h.findByOrgAndOwner,
     },
-    resourceGrant: { deleteGitHubGrantsForOwner: h.deleteGrants },
+    resourceGrant: { deleteForGitNamespace: h.deleteGrants },
   },
 }));
 vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } }));
@@ -97,8 +97,8 @@ describe("GitHub installation webhooks", () => {
     await handleInstallation(payload("deleted"));
 
     expect(h.removeByInstallationId).toHaveBeenCalledWith(42, null);
-    expect(h.deleteGrants).toHaveBeenCalledWith("o1", "acme");
-    expect(h.deleteGrants).toHaveBeenCalledWith("o2", "acme");
+    expect(h.deleteGrants).toHaveBeenCalledWith("o1", expect.objectContaining({ id: "github" }), "acme");
+    expect(h.deleteGrants).toHaveBeenCalledWith("o2", expect.objectContaining({ id: "github" }), "acme");
   });
 
   it("refreshes an existing binding for the custom App that signed the delivery", async () => {
@@ -133,7 +133,7 @@ describe("GitHub installation webhooks", () => {
     expect(h.removeByInstallationId).toHaveBeenCalledTimes(1);
     expect(h.removeByInstallationId).toHaveBeenCalledWith(42, "src_custom");
     expect(h.deleteGrants).toHaveBeenCalledTimes(1);
-    expect(h.deleteGrants).toHaveBeenCalledWith("o1", "acme");
+    expect(h.deleteGrants).toHaveBeenCalledWith("o1", expect.objectContaining({ id: "github" }), "acme");
     expect(h.invalidateOrg).toHaveBeenCalledWith("o1");
     expect(h.invalidateOrg).not.toHaveBeenCalledWith("o2");
   });

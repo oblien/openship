@@ -72,3 +72,12 @@ export function mergeRepositorySources(...lists: MappedRepository[][]): MappedRe
   }
   return [...merged.values()];
 }
+
+/** Map a MappedRepository to the owner/repo key the access filter needs.
+ *  `full_name` is canonically "owner/repo"; fall back to the discrete
+ *  fields when it's absent. `||` (not `??`) so an empty split segment
+ *  ("" from a missing full_name) falls through instead of sticking. */
+export function githubRepositoryKey(r: { full_name?: string; owner?: string; name?: string }) {
+  const [owner, repo] = (r.full_name ?? "").split("/");
+  return { owner: owner || r.owner || "", repo: repo || r.name || "" };
+}

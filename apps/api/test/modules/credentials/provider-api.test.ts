@@ -59,6 +59,15 @@ describe("connection provider HTTP boundary", () => {
     expect(new URL(url).searchParams.get("teamId")).toBe("owned-team");
     expect(options).toMatchObject({ timeoutMs: 30_000, maxBodyBytes: 8 * 1024 * 1024 });
   });
+  it("recognizes a revoked OAuth grant without echoing the provider response", async () => {
+    const url = new URL("https://gitlab.com/oauth/token");
+    h.fetch.mockResolvedValueOnce(Response.json({ error: "invalid_grant", error_description: "sensitive" }, { status: 400 }));
+    await expect(providerJson(url)).rejects.toMatchObject({
+      code: "CONNECTION_RECONNECT_REQUIRED", message: expect.not.stringContaining("sensitive"),
+    });
+    h.fetch.mockResolvedValueOnce(Response.json({ error: "invalid_client" }, { status: 400 }));
+    await expect(providerJson(url)).rejects.toMatchObject({ code: "CONNECTION_REQUEST_FAILED" });
+  });
   it("redacts HTTP, GraphQL and transport error bodies", async () => {
     h.fetch.mockResolvedValue({ ok: false, status: 403, text: async () => "secret" });
     await expect(providerJson(new URL("https://api.vercel.com/v9/projects"))).rejects.toMatchObject(

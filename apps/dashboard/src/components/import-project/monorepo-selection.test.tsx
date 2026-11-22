@@ -16,6 +16,7 @@ import { MonorepoDomains } from "./MonorepoDomains";
 import { RepositoryAppPicker } from "./RepositoryAppPicker";
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 const api = vi.hoisted(() => ({ tree: vi.fn(), prepare: vi.fn() }));
+vi.mock("@/lib/api/git", () => ({ gitApi: () => ({ getRepoTree: api.tree }), gitSourcesChangedEvent: (provider: string) => `openship:${provider}-sources-changed` }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { getRepoTree: api.tree } }));
 vi.mock("@/lib/api/deploy", () => ({ deployApi: { prepare: api.prepare } }));
 vi.mock("@/components/i18n-provider", () => ({

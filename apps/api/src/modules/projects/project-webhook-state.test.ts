@@ -89,7 +89,7 @@ const load = () => import("@repo/platform/engine/modules/projects/project-crud.s
 const gitProject = {
   gitOwner: "acme",
   gitRepo: "app",
-  webhookId: 4242 as number | null,
+  webhookId: "4242" as string | null,
   webhookDomain: null as string | null,
   autoDeploy: true as boolean | null,
   deployTarget: "local" as string | null,
@@ -110,7 +110,7 @@ describe("resolveProjectWebhookState", () => {
 
     expect(state.strategy).toBe("repo");
     expect(state.webhookActive).toBe(true);
-    expect(state.sharedWebhookId).toBe(4242);
+    expect(state.sharedWebhookId).toBe("4242");
     // The project's own column answered it — no org-wide lookup needed.
     expect(h.sharedLookups).toBe(0);
   });
