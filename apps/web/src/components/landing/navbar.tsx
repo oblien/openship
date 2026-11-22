@@ -193,7 +193,7 @@ export function Navbar() {
 
   const linkColor = dark ? "rgba(255,255,255,.55)" : "var(--th-text-secondary)";
 
-  return (
+  const header = (
     <header className="fixed top-0 z-50 w-full">
       <div className="site-container site-nav-bar">
         {/* ── Logo ────────────────────────────────────────────── */}
@@ -222,12 +222,12 @@ export function Navbar() {
         {/* ── Center pill nav (same shape; links grouped into two dropdowns) ── */}
         <nav
           aria-label={copy("Main navigation")}
-          className="hidden items-center gap-0.5 rounded-full px-1.5 py-1.5 backdrop-blur-xl xl:flex"
+          className="hidden items-center gap-0.5 rounded-full border px-1.5 py-1.5 backdrop-blur-xl xl:flex"
           style={{
             background: dark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.72)",
-            border: dark ? "1px solid rgba(255,255,255,.10)" : "1px solid var(--th-on-05)",
-            boxShadow: dark ? "none" : "0 0 0 1px rgba(0,0,0,.03), 0 2px 8px rgba(0,0,0,.04)",
-            transition: "background .3s, border .3s, box-shadow .3s",
+            borderColor: dark ? "transparent" : "rgba(0,0,0,.04)",
+            boxShadow: dark ? "none" : "0 2px 8px rgba(0,0,0,.04)",
+            transition: "background .3s, border-color .3s, box-shadow .3s",
           }}
         >
           {NAV.map((entry) =>
@@ -396,5 +396,23 @@ export function Navbar() {
         </div>
       )}
     </header>
+  );
+
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className="twave hidden lg:block"
+        style={{ position: "fixed", height: 150, zIndex: 49 }}
+      >
+        <div />
+        <div />
+        <div />
+        <div />
+        <div />
+        <div />
+      </div>
+      {header}
+    </>
   );
 }

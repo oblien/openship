@@ -4,6 +4,7 @@
     "features",
     "apps",
     "deploy",
+    "deployments",
     "migrate",
     "compare",
     "sla",

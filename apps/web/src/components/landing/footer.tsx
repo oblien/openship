@@ -4,6 +4,7 @@ import { Link } from "@/i18n/Link";
 
 const footerLinks = {
   Product: [
+    { label: "App deployments", href: "/deployments" },
     { label: "Features", href: "/features" },
     { label: "Apps", href: "/apps" },
     { label: "Install", href: "/download" },
