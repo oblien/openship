@@ -120,6 +120,17 @@ describe("internal token resolution", () => {
     expect(rejected).toContain(COMPOSE_ENV_FILE);
   });
 
+  it("finds the token in a .env saved with CRLF line endings", () => {
+    // Docker Compose reads this file fine, so the running api has this token.
+    h.files.set(COMPOSE_FILE, "services: {}\n");
+    h.files.set(
+      COMPOSE_ENV_FILE,
+      "COMPOSE_PROJECT_NAME=openship\r\nINTERNAL_TOKEN=crlf-token\r\nAPI_PORT=4000\r\n",
+    );
+    expect(resolveInternalToken()).toBe("crlf-token");
+    expect(internalTokenSources().problems).toEqual([]);
+  });
+
   it("names the compose .env when the stack exists but the token key is gone", () => {
     composeInstall(null);
     expect(resolveInternalToken()).toBeNull();
