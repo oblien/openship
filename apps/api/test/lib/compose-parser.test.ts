@@ -1221,6 +1221,23 @@ describe("parseComposeFile — service resource limits", () => {
     expect(mem("1073741824")).toBe(1024); // bare number = bytes
   });
 
+  // compose-go reads the IEC spellings (KiB/MiB/GiB) as the same powers of 1024.
+  // They used to fall through as unparseable, dropping a declared cap silently.
+  it("accepts the KiB/MiB/GiB spellings compose allows", () => {
+    const mem = (v: string) =>
+      parseComposeFile(svc(`    mem_limit: ${v}\n`)).services[0]?.advanced?.resources?.memoryMb;
+    expect(mem("512MiB")).toBe(512);
+    expect(mem("1GiB")).toBe(1024);
+    expect(mem("2gib")).toBe(2048);
+    expect(mem("1048576KiB")).toBe(1024);
+    expect(mem("1073741824b")).toBe(1024); // a lone `b` is still bytes
+    expect(mem("512ib")).toBeUndefined();
+    const deploy = parseComposeFile(
+      svc("    deploy:\n      resources:\n        limits:\n          memory: 3GiB\n"),
+    );
+    expect(deploy.services[0]?.advanced?.resources?.memoryMb).toBe(3072);
+  });
+
   it("interpolates a limit from the env file", () => {
     const parsed = parseComposeFile(svc("    mem_limit: ${API_MEM}\n"), {
       envFileContent: "API_MEM=6g\n",
