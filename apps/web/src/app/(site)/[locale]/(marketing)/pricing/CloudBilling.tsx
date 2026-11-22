@@ -10,11 +10,13 @@ type BillingView = {
 };
 
 export function CloudBilling({
+  showHeadline,
   monthly,
   annual,
   monthsFree,
   children,
 }: {
+  showHeadline: boolean;
   monthly: BillingView;
   annual?: BillingView;
   monthsFree: number;
@@ -27,18 +29,20 @@ export function CloudBilling({
   const selected = annualSelected && annual ? annual : monthly;
   return (
     <>
-      <section className="pp-hero">
-        <div className="site-container pp-hero-inner">
-          <h1 className="pp-headline">
-            {copy("Cloud resources for your projects.")}
-            <br />
-            <span aria-live="polite" aria-atomic="true">
-              {selected.headline}
-            </span>
-          </h1>
-          {selected.note && <p className="pp-hero-billing">{selected.note}</p>}
-        </div>
-      </section>
+      {showHeadline && (
+        <section className="pp-hero">
+          <div className="site-container pp-hero-inner">
+            <h1 className="pp-headline">
+              {copy("Cloud resources for your projects.")}
+              <br />
+              <span aria-live="polite" aria-atomic="true">
+                {selected.headline}
+              </span>
+            </h1>
+            {selected.note && <p className="pp-hero-billing">{selected.note}</p>}
+          </div>
+        </section>
+      )}
       <section
         id="plans"
         className="pp-plans-section"
@@ -47,7 +51,7 @@ export function CloudBilling({
         <div className="site-container">
           <div className="pp-section-heading">
             <div>
-              <h2>{copy("Cloud resource pools")}</h2>
+              <h2>{copy("Cloud hosting plans")}</h2>
               <p>{copy("CPU, RAM and storage shared across your projects and builds.")}</p>
             </div>
             {annual && (

@@ -20,6 +20,7 @@ export function GET() {
     `- [Complete feature catalog](${SITE_URL}/features.md): feature details, availability, deployment modes and common questions.`,
     `- [Platform comparisons](${SITE_URL}/compare.md): OpenShip advantages, provider capabilities, official sources and migration paths.`,
     `- [Migration guides](${SITE_URL}/migrate): guided platform imports, Docker server imports and repository/data migration.`,
+    `- [App deployments](${SITE_URL}/deployments): GitHub and Docker Compose hosting on your own VPS or OpenShip Cloud.`,
     `- [Pricing](${SITE_URL}/pricing): current managed Cloud and server-management plans.`,
     `- [Cloud SLA](${SITE_URL}/sla): coverage, service credits and claim requirements.`,
     "",
