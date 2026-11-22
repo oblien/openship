@@ -33,7 +33,7 @@ export function createRateLimitRepo(db: Database) {
           },
           setWhere: and(...below),
         })
-        .returning({ id: verification.id });
+        .returning();
       return accepted.length === 1;
     },
   };
