@@ -86,7 +86,7 @@ describe("Cloud customer email delivery with real SQL", () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: signup.email,
-        customerSender: "support",
+        cloudOnly: true,
         replyTo: "support@openship.io",
         subject: "Welcome to OpenShip",
         messageId: expect.stringContaining("@openship.io>"),
@@ -145,10 +145,10 @@ describe("Cloud customer email delivery with real SQL", () => {
     expect(send).toHaveBeenCalledTimes(2);
     const invoice = send.mock.calls
       .map(([mail]) => mail)
-      .find((mail) => mail.customerSender === "billing");
+      .find((mail) => mail.subject.startsWith("Your OpenShip invoice"));
     const welcome = send.mock.calls
       .map(([mail]) => mail)
-      .find((mail) => mail.customerSender === "support");
+      .find((mail) => mail.subject.startsWith("Welcome aboard"));
     expect(invoice.subject).toBe("Your OpenShip invoice — $24.00");
     expect(invoice.replyTo).toBeUndefined();
     expect(invoice.text).toContain(
@@ -274,12 +274,12 @@ describe("Cloud customer email delivery with real SQL", () => {
     await commit(input);
     await worker().flush();
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls.find(([mail]) => mail.customerSender === "billing")![0].text).toContain(
-      `/billing/manage?organizationId=${f.orgId}`,
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: "Your OpenShip receipt — $24.00",
+        text: expect.stringContaining(`/billing/manage?organizationId=${f.orgId}`),
+      }),
     );
-    expect(
-      send.mock.calls.find(([mail]) => mail.customerSender === "billing")![0].subject,
-    ).toContain("receipt");
   });
 
   it.each(["topup", "plan_change"])(
@@ -300,13 +300,13 @@ describe("Cloud customer email delivery with real SQL", () => {
       await worker().flush();
       expect(send).toHaveBeenCalledOnce();
       expect(send.mock.calls[0][0]).toMatchObject({
-        customerSender: "billing",
+        cloudOnly: true,
         subject: "Your OpenShip invoice — $12.50",
       });
     },
   );
 
-  it("retries SMTP failures after a restart with the same message identity and bounded attempts", async () => {
+  it("retries failed submissions after a restart with the same message identity and bounded attempts", async () => {
     const f = await fixture();
     await commit(event(f, { eventType: "subscription.renewed" }));
     send.mockRejectedValue(new Error("secret SMTP credential and customer email"));
@@ -472,7 +472,7 @@ describe("subscription cancellation email", () => {
     const mail = send.mock.calls[0][0];
     expect(mail).toMatchObject({
       to: (await repos.user.findById(f.userId))!.email,
-      customerSender: "support",
+      cloudOnly: true,
       replyTo: "support@openship.io",
       subject: "Your OpenShip subscription update",
     });

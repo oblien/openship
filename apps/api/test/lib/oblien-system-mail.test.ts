@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect, it, vi } from "vitest";
-import { closeDb } from "@repo/db";
+import { closeDb, repos } from "@repo/db";
+import { deliverOrganizationInvitation } from "@repo/platform/engine/lib/organization-lifecycle";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { canSendMail, sendMail } from "@repo/platform/engine/lib/mail";
 
@@ -84,13 +85,84 @@ it("resets a Cloud password with the code submitted through the SDK without SMTP
   expect(changed.status).toBe(200);
 }, 30_000);
 
+it("keeps reset responses private when the SDK rejects a password reset", async () => {
+  const send = provider();
+  const email = "outage@example.test";
+  const signup = await authRequest("/sign-up/email", {
+    email,
+    name: "Outage",
+    password: "first-password-1234!",
+  });
+  expect(signup.status).toBe(200);
+  send.mockResolvedValueOnce(
+    Response.json({ success: false, error: "provider unavailable" }, { status: 503 }),
+  );
+  const reset = await authRequest("/email-otp/request-password-reset", { email });
+  const unknown = await authRequest("/email-otp/request-password-reset", {
+    email: "unknown@example.test",
+  });
+  expect(reset.status).toBe(200);
+  expect(unknown.status).toBe(reset.status);
+  expect(await reset.json()).toEqual(await unknown.json());
+  expect(send).toHaveBeenCalledTimes(2);
+}, 30_000);
+
+it("delivers a Cloud invitation through Oblien without loading instance SMTP settings", async () => {
+  const send = provider();
+  const settings = vi.spyOn(repos.instanceSettings, "get");
+  const createdAt = new Date();
+  const organization = { id: "org", name: "Team", slug: "team", createdAt };
+  const user = {
+    id: "owner",
+    name: "Owner",
+    email: "owner@example.test",
+    emailVerified: true,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  const email = "invitee@example.test";
+  const id = "invitation";
+  const role = "member";
+  await deliverOrganizationInvitation({
+    id,
+    email,
+    role,
+    organization,
+    inviter: {
+      id: "membership",
+      organizationId: organization.id,
+      userId: user.id,
+      role: "owner",
+      createdAt,
+      user,
+    },
+    invitation: {
+      id,
+      email,
+      role,
+      organizationId: organization.id,
+      inviterId: user.id,
+      createdAt,
+      expiresAt: new Date(Date.now() + 3600_000),
+      status: "pending",
+    },
+  });
+  expect(settings).not.toHaveBeenCalled();
+  expect(send).toHaveBeenCalledOnce();
+  expect(JSON.parse(String(send.mock.calls[0]![1]?.body))).toMatchObject({
+    from: "noreply@openship.io",
+    to: [email],
+    text: expect.stringContaining(id),
+  });
+});
+
 it("keeps the outbox identity and payload on retry, including the no-reply sender and reply address", async () => {
   const send = provider().mockRejectedValueOnce(new TypeError("Connection closed"));
   const mail = {
     to: "customer@example.net",
     subject: "Welcome",
     html: "<p>Welcome</p>",
-    customerSender: "support" as const,
+    cloudOnly: true as const,
     replyTo: "replies@example.test",
     messageId: "<customer-record@openship.io>",
     organizationId: "customer-org",

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "../config/env";
+import { isSaasDeployment } from "../config/saas-deployment";
 import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
 import { cloudClient } from "./cloud/client";
@@ -21,13 +22,7 @@ import { isSmtpAuthFailure } from "../modules/mail/smtp-auth-error";
  *      (`openship@<state.domain>`), via `ensureOpenshipPlatformMailbox`.
  *   3. Static env-configured SMTP (SMTP_HOST/USER/PASS) — deployment fallback.
  *
- * Self-hosted instances without any source no-op gracefully — email
- * features (verification, password reset, invitations) are simply
- * disabled.
- *
- * `smtpEnabled` exported for backward compat: true when ANY source
- * COULD deliver a message. Callers gated on this still work; new code
- * should prefer `await canSendMail()` for a fresh runtime check.
+ * Delivery availability is checked at send time.
  */
 
 export type SendMailSource = "platform" | "cloud" | "auto";
@@ -42,14 +37,10 @@ export type SendMailOptions = {
   /** Stable identity for durable deliveries retried after a process restart. */
   messageId?: string;
   /** Marks Cloud-only support and billing outbox messages. */
-  customerSender?: "support" | "billing";
+  cloudOnly?: true;
   /**
-   * Preferred transport source. Default "auto" — uses the platform
-   * mailbox when provisioned, otherwise falls back to env-configured
-   * SMTP. "platform" forces platform (returns silently if unavailable).
-   * "cloud" routes via the SaaS invitation-relay endpoint on a local
-   * instance (requires `organizationId`), and uses the SaaS's own
-   * configured system transport when run on the SaaS itself.
+   * Self-hosted only. "auto" uses the local SMTP chain. "platform" allows env
+   * SMTP only as the sole transport. "cloud" uses the organization's invitation relay.
    */
   preferSource?: SendMailSource;
   /**
@@ -63,8 +54,9 @@ export type SendMailOptions = {
 
 // ─── Env-based transport (singleton) ─────────────────────────────────────────
 
-/** True when env SMTP credentials are all present. */
-const envSmtpConfigured = !env.CLOUD_MODE && !!(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+export const CLOUD_MAIL_UNAVAILABLE = "Cloud email is temporarily unavailable. Please try again later.";
+
+const envSmtpConfigured = !isSaasDeployment && !!(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
 
 const envTransport: Transporter | null = envSmtpConfigured
   ? nodemailer.createTransport({
@@ -160,14 +152,8 @@ async function getPlatformTransport(options?: { rotate?: boolean }): Promise<{
 } | null> {
   // Hosted Cloud uses its configured system sender. Local mail-server records
   // must never bring the self-hosted SSH/provisioning path into this process.
-  if (env.CLOUD_MODE) return null;
+  if (isSaasDeployment) return null;
   const generation = platformTransportGeneration;
-  // `@repo/db` is universal (every controller / service / repo consumer
-  // already loads it eagerly at boot via `db = await createDb()`), so
-  // a dynamic import buys nothing — kept static for clarity. The ONLY
-  // dynamic import in this file is `platform-mailbox.service` below,
-  // because THAT module pulls in the local-only SSH manager chain that
-  // shouldn't load on CLOUD_MODE.
   let mailServers: Array<{ serverId: string; installedAt: Date | null }>;
   try {
     mailServers = (await repos.mailServer.list()) as Array<{
@@ -288,7 +274,7 @@ async function getInstanceTransport(): Promise<{
 } | null> {
   // Self-hosted only. On the SaaS (CLOUD_MODE) a stray instance_settings SMTP
   // row must never override the platform's own multi-tenant transport.
-  if (env.CLOUD_MODE) return null;
+  if (isSaasDeployment) return null;
   const generation = instanceTransportGeneration;
 
   const now = Date.now();
@@ -368,21 +354,8 @@ export async function sendInstanceTestEmail(to: string): Promise<void> {
 
 // ─── Public surface ──────────────────────────────────────────────────────────
 
-/**
- * Best-effort module-load flag — true if env SMTP is configured OR a
- * platform mailbox is potentially available at runtime.
- *
- * Better Auth needs callbacks wired/unwired at module-load time, so we
- * default this to `true` whenever the install is provisioned (i.e. the
- * mail server / platform mailbox may exist by the time invites are
- * sent). Pure-zero-state instances (no env vars AND code knows a mail
- * server can't appear) can be detected via `canSendMail()` at runtime.
- *
- * `requireEmailVerification` should NOT be derived from this — use
- * `requireEmailVerificationStrict` (env-only) so users aren't locked
- * out when the platform transport drops mid-signup.
- */
-export const smtpEnabled = true; // callbacks wired; runtime decides delivery
+/** @deprecated Mail callbacks are always enabled. Use canSendMail() to check configuration. */
+export const smtpEnabled = true;
 
 /**
  * Stricter env-only flag for gating `requireEmailVerification`. Avoids
@@ -393,7 +366,7 @@ export const requireEmailVerificationStrict = cloudMailConfigured || envSmtpConf
 
 /** Runtime check — true if any source could currently deliver. */
 export async function canSendMail(): Promise<boolean> {
-  if (env.CLOUD_MODE) return cloudMailConfigured;
+  if (isSaasDeployment) return cloudMailConfigured;
   if (envSmtpConfigured) return true;
   if (await getInstanceTransport()) return true;
   const platform = await getPlatformTransport();
@@ -406,25 +379,9 @@ interface ActiveTransport {
   source: "instance" | "platform" | "env";
 }
 
-/**
- * Ordered list of transports to try for this send, best first. sendMail walks
- * the chain and fails over to the next source when a send THROWS — so a
- * mistyped instance-SMTP password can't brick all mail (password resets,
- * verification) when a mail-server mailbox or env transport is also available.
- *
- * The operator-configured instance SMTP always LEADS when set — that's why it
- * powers team invites too, not just resets (invites call preferSource="platform",
- * but the deliberate global transport should still win). Order:
- *
- *   instance (if set) → platform mailbox → env
- *
- * For preferSource="platform" env is dropped (branded invites shouldn't
- * silently fall back to a generic env sender); instance + platform still apply.
- * "cloud" never reaches here on a local instance (sendMail short-circuits to
- * the relay first); on the SaaS it behaves like "auto".
- */
+/** Local delivery tries instance SMTP first, then the platform mailbox, then env SMTP. */
 async function getTransportChain(
-  preferSource: SendMailSource = "auto",
+  preferSource: "platform" | "auto",
 ): Promise<ActiveTransport[]> {
   const chain: ActiveTransport[] = [];
   const instance = await getInstanceTransport();
@@ -433,43 +390,54 @@ async function getTransportChain(
   const platform = await getPlatformTransport();
   if (platform)
     chain.push({ transport: platform.transport, from: platform.from, source: "platform" });
-  if (preferSource !== "platform" && envTransport) {
-    chain.push({ transport: envTransport, from: env.SMTP_FROM, source: "env" });
-  }
-  // Last resort for the "platform" preference: env is normally dropped so a branded
-  // invite can't quietly go out from a generic sender — but that only holds while a
-  // branded sender EXISTS. On a box whose only mail config is env SMTP the chain above
-  // is empty, and dropping env there doesn't downgrade the sender, it loses the mail
-  // entirely (sendMail's empty-chain path is a silent no-op). An invite delivered from
-  // the generic sender beats an invite that never arrives.
-  if (chain.length === 0 && envTransport) {
+  // A branded local invite prefers instance/platform SMTP. Use env SMTP if it is the sole transport.
+  if (envTransport && (preferSource !== "platform" || chain.length === 0)) {
     chain.push({ transport: envTransport, from: env.SMTP_FROM, source: "env" });
   }
   return chain;
 }
 
-/**
- * Send an email. Fails over across the transport chain when a send throws.
- *
- * RETURNS whether anything actually accepted the message. This used to be `void`,
- * and the empty-chain path still only warns rather than throwing — which is right
- * for the fire-and-forget callers, but it meant a caller could not TELL. That is how
- * an email notification channel ended up marked `verified` and every delivery marked
- * `sent` on a box with no transport at all: the send "succeeded" because it silently
- * did nothing.
- *
- * So: callers that must react check the boolean (see the email notification worker),
- * and callers that genuinely don't care keep ignoring it exactly as before. A hard
- * throw here would have changed behaviour for all eight call sites at once.
- */
-export async function sendMail(opts: SendMailOptions): Promise<boolean> {
-  if (opts.customerSender && !env.CLOUD_MODE) throw new Error("Customer mail is Cloud-only");
-  const preferSource = opts.preferSource ?? "auto";
+async function sendCloudSystemMail(opts: SendMailOptions): Promise<boolean> {
+  if (!cloudMailConfigured) {
+    errorDiagnostics.warn(
+      "platform/engine/lib/mail",
+      "[mail] Cloud email requires CLOUD_MODE and the existing Oblien owner credentials",
+    );
+    return false;
+  }
+  const { getOblienClient } = await import("./oblien-client");
+  // A lost response can follow acceptance. Outbox retries must use the same
+  // provider key and must never fall through to another transport.
+  const idempotencyKey = opts.messageId
+    ? createHash("sha256").update(opts.messageId).digest("hex")
+    : randomUUID();
+  const receipt = await getOblienClient().mail.messages.send(
+    env.OBLIEN_MAIL_NAMESPACE || "openship",
+    {
+      from: "noreply@openship.io",
+      to: [opts.to],
+      subject: opts.subject,
+      ...(opts.html ? { html: opts.html } : {}),
+      ...(opts.text ? { text: opts.text } : {}),
+      ...(opts.replyTo ? { replyTo: [opts.replyTo] } : {}),
+    },
+    { idempotencyKey },
+  );
+  if (
+    !receipt?.id ||
+    !["queued", "dispatching", "accepted", "delayed", "delivered"].includes(receipt.state)
+  ) {
+    throw new Error("Cloud email submission could not be confirmed");
+  }
+  return true;
+}
 
-  // Cloud relay branch — only meaningful on a local self-hosted instance.
-  // When CLOUD_MODE=true we ARE the SaaS, so "cloud" falls through to the
-  // normal transport selection (the SaaS has its own infra mailer).
-  if (preferSource === "cloud" && !env.CLOUD_MODE) {
+/** Returns true on submission, false for unavailable delivery, and throws on transport errors. */
+export async function sendMail(opts: SendMailOptions): Promise<boolean> {
+  if (isSaasDeployment) return sendCloudSystemMail(opts);
+  if (opts.cloudOnly) throw new Error("Customer mail is Cloud-only");
+  const preferSource = opts.preferSource ?? "auto";
+  if (preferSource === "cloud") {
     if (!opts.organizationId) {
       errorDiagnostics.warn("platform/engine/lib/mail",
         "[mail] preferSource=cloud requires organizationId - skipping email to",
@@ -477,10 +445,6 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
       );
       return false;
     }
-    // cloud-client is dual-side (local outbound → SaaS) with no local-
-    // only side effects on import, so static import is fine. Cargo-cult
-    // comment about matching "platform-transport pattern" was wrong —
-    // that one IS local-only, this one isn't.
     const result = await cloudClient({
       organizationId: opts.organizationId,
     }).sendInvitation({
@@ -494,38 +458,6 @@ export async function sendMail(opts: SendMailOptions): Promise<boolean> {
         `[mail] cloud invitation relay failed for org=${opts.organizationId}: ${result.error}`,
       );
       return false;
-    }
-    return true;
-  }
-
-  if (env.CLOUD_MODE) {
-    if (!cloudMailConfigured) {
-      errorDiagnostics.warn("platform/engine/lib/mail", "[mail] Cloud email requires Oblien API credentials");
-      return false;
-    }
-    const { getOblienClient } = await import("./oblien-client");
-    // A lost response can follow acceptance. Outbox retries must use the same
-    // provider key and must never fall through to another transport.
-    const idempotencyKey = opts.messageId
-      ? createHash("sha256").update(opts.messageId).digest("hex")
-      : randomUUID();
-    const receipt = await getOblienClient().mail.messages.send(
-      env.OBLIEN_MAIL_NAMESPACE || "openship",
-      {
-        from: "noreply@openship.io",
-        to: [opts.to],
-        subject: opts.subject,
-        ...(opts.html ? { html: opts.html } : {}),
-        ...(opts.text ? { text: opts.text } : {}),
-        ...(opts.replyTo ? { replyTo: [opts.replyTo] } : {}),
-      },
-      { idempotencyKey },
-    );
-    if (
-      !receipt?.id ||
-      !["queued", "dispatching", "accepted", "delayed", "delivered"].includes(receipt.state)
-    ) {
-      throw new Error("Cloud email submission could not be confirmed");
     }
     return true;
   }

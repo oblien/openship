@@ -4,9 +4,10 @@ import { APIError } from "better-auth/api";
 import { defaultStatements, adminAc, memberAc, ownerAc } from "better-auth/plugins/organization/access";
 import { createAccessControl } from "better-auth/plugins/access";
 import { repos } from "@repo/db";
-import { env, runtimeTargetId } from "../config/env";
+import { env } from "../config/env";
+import { isSaasDeployment } from "../config/saas-deployment";
 import { resolveDashboardPublicUrl, refreshSelfAppPublicUrl } from "./public-url";
-import { sendMail, smtpEnabled } from "./mail";
+import { sendAuthMail } from "./auth-mail";
 import { organizationInviteEmail } from "./email-templates";
 import { memberAudit } from "../modules/audit/member-emitter";
 import { getOrgBillingState } from "../modules/billing/billing-org-cleanup";
@@ -15,7 +16,7 @@ import { invitationNeedsEmail } from "./invitation-delivery";
 import { invitationAccountCreationMode } from "./invitation-claim";
 import { trackBackgroundWork } from "./background-work";
 
-export const isSaasDeployment = runtimeTargetId === "cloud-saas" || env.CLOUD_MODE;
+export { isSaasDeployment };
 
 /**
  * Better Auth organization-plugin access control config.
@@ -75,11 +76,9 @@ export const organizationOptions = {
     member: memberAc,
     restricted: RESTRICTED_ROLE,
   },
-  sendInvitationEmail: smtpEnabled
-    ? async (data, request) => {
-        if (invitationNeedsEmail(request)) await deliverOrganizationInvitation(data);
-      }
-    : undefined,
+  async sendInvitationEmail(data, request) {
+    if (invitationNeedsEmail(request)) await deliverOrganizationInvitation(data);
+  },
 
   /**
    * Lifecycle hooks for the org/member/invitation tables.
@@ -463,63 +462,29 @@ export const organizationOptions = {
 } satisfies OrganizationOptions;
 
 /** Shared delivery implementation for the authentication provider and native operations. */
-export async function deliverOrganizationInvitation(data: Parameters<NonNullable<OrganizationOptions["sendInvitationEmail"]>>[0]): Promise<void> {
-        // Link-only is still Better Auth's normal, authorized invitation
-        // write; it merely skips transport so a self-hosted operator with
-        // no SMTP/cloud relay can copy the pending link from Team settings.
+export async function deliverOrganizationInvitation(
+  data: Parameters<NonNullable<OrganizationOptions["sendInvitationEmail"]>>[0],
+): Promise<void> {
+  // Refresh the instance's public URL so the invite link uses its current dashboard domain.
+  await refreshSelfAppPublicUrl().catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/lib/organization-lifecycle");
+  });
+  const email = organizationInviteEmail({
+    invitee: { email: data.email },
+    inviter: { name: data.inviter.user.name, email: data.inviter.user.email },
+    organizationName: data.organization.name,
+    url: `${resolveDashboardPublicUrl()}${invitationClaimPath(data.id)}`,
+  });
 
-        // Use the instance's PUBLIC url so the accept link works from the
-        // invitee's browser (a VPS/self-host box's real domain), not the
-        // static loopback default. Falls back to the runtime-target dashboard
-        // when no public url is configured (pure localhost dev).
-        // Freshen the DB-derived self-app URL so the link uses the domain the
-        // operator added in the Domains tab (no restart needed). Env
-        // --public-url seed still wins inside resolveDashboardPublicUrl.
-        await refreshSelfAppPublicUrl().catch((diagnosticFailure) => {
-          observeCaughtError(diagnosticFailure, "platform/engine/lib/organization-lifecycle");
-        });
-        const inviteBase = resolveDashboardPublicUrl();
-        const inviteUrl = `${inviteBase}${invitationClaimPath(data.id)}`;
-        const email = organizationInviteEmail({
-          invitee: { email: data.email },
-          inviter: { name: data.inviter.user.name, email: data.inviter.user.email },
-          organizationName: data.organization.name,
-          url: inviteUrl,
-        });
-
-        // Per-instance source toggle. Default is "platform" — keep
-        // invites on our own SMTP identity. Operators on a
-        // cloud-only deployment can flip to "cloud" so the relay
-        // through /api/cloud/send-invitation on the SaaS owns
-        // delivery (sends from the SaaS's own mail infrastructure).
-        //
-        // The DB read is per-invite — invitations are rare and the
-        // round-trip lets operators flip the toggle without
-        // bouncing the API.
-        const settings = await repos.instanceSettings.get();
-        const source = settings?.invitationMailSource === "cloud" ? "cloud" : "platform";
-
-        const delivered = await sendMail({
-          to: data.email,
-          preferSource: source,
-          // organizationId is required by lib/mail.ts when
-          // preferSource === "cloud" on a local instance — the
-          // cloudClient uses it to resolve the org owner's cloud
-          // session token. Harmless on the platform path.
-          organizationId: data.organization.id,
-          ...email,
-        });
-        // An invite that cannot be delivered must not report success: the invitee
-        // has a pending row and no way to learn about it, and the inviter believes
-        // it went out. `sendMail` only warns on an empty chain, so this is the only
-        // place that can tell. Throwing surfaces it on the invite request itself.
-        if (!delivered) {
-          throw new APIError("SERVICE_UNAVAILABLE", {
-            message: isSaasDeployment
-              ? "Cloud email is temporarily unavailable. Please try again later."
-              : `Could not email the invitation to ${data.email} — this instance has ` +
-                `no working email transport. Configure SMTP in Settings → Email and ` +
-                `invite again.`,
-          });
-        }
+  // Only self-hosted installations can select the Cloud invitation relay.
+  const settings = isSaasDeployment ? null : await repos.instanceSettings.get();
+  await sendAuthMail(
+    {
+      to: data.email,
+      preferSource: settings?.invitationMailSource === "cloud" ? "cloud" : "platform",
+      organizationId: data.organization.id,
+      ...email,
+    },
+    `Could not email the invitation to ${data.email}. Configure SMTP in Settings → Email and invite again.`,
+  );
 }
