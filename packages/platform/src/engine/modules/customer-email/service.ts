@@ -143,7 +143,7 @@ export class CustomerEmailService {
         result.sent++;
       } catch {
         // diagnostics-ignore: only normalized delivery state is persisted, never
-        // SMTP credentials, payment links, addresses or provider error bodies.
+        // credentials, payment links, addresses or provider error bodies.
         const next =
           row.attempts >= 12
             ? null

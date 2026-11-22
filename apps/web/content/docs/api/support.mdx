@@ -50,7 +50,7 @@ older reply does not undo a later resolution.
 
 Replies use the existing durable mail outbox: customer replies notify the support
 mailbox, while operator replies appear in the conversation and are emailed to the
-customer. The dashboard does not expose SMTP attempts, errors, receipts or internal
+customer. The dashboard does not expose delivery attempts, errors, receipts or internal
 addresses. Inbound email replies still require the operator's mailbox workflow;
 they are not automatically imported into the ticket conversation.
 
@@ -124,8 +124,7 @@ curl --fail-with-body 'https://api.openship.io/api/cloud/support/tickets?status=
 
 For replies, send JSON with a fresh UUID in `requestId`, the reply in `message`,
 and `resolve: true` to close the ticket. Reuse the UUID when retrying an uncertain
-response. A 202 response means the reply is saved and queued, not that SMTP has
-delivered it. Read the ticket to check `deliveredAt`, `lastError`, and
+response. A 202 response confirms the outbox has queued the reply. Read the ticket to check `deliveredAt`, `lastError`, and
 `nextAttemptAt` for each message.
 
 Configure the Turnstile keys and contact inbox, then deploy the API with its
@@ -136,15 +135,14 @@ API, and verify receipt and team notification in the configured mailboxes.
 ## Verification
 
 `apps/api/test/modules/cloud-support` covers the website-to-API HTTP request, real
-SQL persistence, the shared SMTP sender, recipient rejection and retry, concurrent
+SQL persistence, the shared Oblien API sender, recipient rejection and retry, concurrent
 submission deduplication, worker lease recovery, operator access, replies,
 resolution, pagination, input validation, cross-account isolation, anonymous-ticket
 privacy, idempotent customer replies and the local relay. The connection integration
 test exercises a real Cloud session through the existing transport and auth middleware,
 and rejects PAT access. Dashboard tests cover connected and disconnected navigation,
 desktop access, personal versus shared accounts, draft preservation, connection changes
-and stale responses after navigation. SMTP tests use
-a loopback server; they do not send mail to real customers.
+and stale responses after navigation. Delivery tests exercise the SDK against a loopback HTTP server.
 
 ## Operations
 
