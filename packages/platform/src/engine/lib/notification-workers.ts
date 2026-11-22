@@ -23,7 +23,8 @@ import {
 } from "@repo/core/diagnostics";
 import { createHmac } from "node:crypto";
 import { repos, type NotificationChannel, type NotificationDelivery } from "@repo/db";
-import { sendMail } from "@repo/platform/engine/lib/mail";
+import { CLOUD_MAIL_UNAVAILABLE, sendMail } from "@repo/platform/engine/lib/mail";
+import { isSaasDeployment } from "../config/saas-deployment";
 import { decrypt } from "@repo/platform/engine/lib/encryption";
 import { findCategory, headlineForEventType } from "@repo/platform/engine/lib/notification-categories";
 import { env } from "@repo/platform/engine/config/env";
@@ -296,6 +297,10 @@ async function sendEmail(
     subject: `[Openship] ${title}`,
     text: body,
     html: renderEmailHtml(delivery),
+    // The one-off channel test uses a synthetic ID shared by all test sends.
+    ...(isSaasDeployment && delivery.id !== "test"
+      ? { messageId: `<notification-${delivery.id}@openship.io>` }
+      : {}),
     organizationId: delivery.organizationId,
   });
   // THROW when nothing could carry it. `sendMail` only warns on an empty transport
@@ -309,8 +314,10 @@ async function sendEmail(
   // endpoint's catch now refuses to verify the channel.
   if (!delivered) {
     throw new NotificationDeliveryError(
-      "No email transport is configured on this instance, so the message could not be " +
-        "sent. Configure SMTP in Settings → Email.",
+      isSaasDeployment
+        ? CLOUD_MAIL_UNAVAILABLE
+        : "No email transport is configured on this instance, so the message could not be " +
+          "sent. Configure SMTP in Settings → Email.",
     );
   }
 }

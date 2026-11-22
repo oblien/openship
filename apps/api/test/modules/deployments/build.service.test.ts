@@ -1545,7 +1545,8 @@ describe("triggerDeployment", () => {
 
     expect(resolveProjectInfo).toHaveBeenCalledWith(
       expect.objectContaining({
-        source: "github",
+        source: "git",
+        provider: "github",
         owner: "acme",
         repo: "app",
         branch: commitSha,
@@ -1734,7 +1735,8 @@ describe("triggerDeployment", () => {
       expect(resolveProjectInfo).toHaveBeenCalledOnce();
       expect(resolveProjectInfo).toHaveBeenCalledWith(
         expect.objectContaining({
-          source: "github",
+          source: "git",
+          provider: "github",
           rootDirectory,
         }),
       );
@@ -1933,7 +1935,7 @@ describe("triggerDeployment", () => {
       commitSha: "1eeaf76",
     });
 
-    expect(getCommitByRef).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76");
+    expect(getCommitByRef).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76", {});
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({ commitSha: full }),
     );
@@ -2386,6 +2388,7 @@ describe("redeployBuildSession environment snapshot", () => {
       id: "project-1",
       organizationId: "org-1",
       activeDeploymentId: "dep-old",
+      gitProvider: "github",
       gitOwner: "oblien",
       gitRepo: "openship",
       gitBranch: "main",

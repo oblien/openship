@@ -1,3 +1,5 @@
+import { REPOSITORY_SOURCE_PROVIDERS } from "./project-source";
+
 /**
  * Deployment class — the single source of truth for the THREE orthogonal axes
  * that describe how a project deploys. Historically two boolean columns
@@ -92,7 +94,7 @@ function deriveSource(s: DeploymentClassSignals): SourceKind {
   // The load-bearing git signal is a real clone URL, NOT the provider column —
   // `gitProvider` defaults to "github" even on projects that never clone.
   if (nonEmpty(s.gitUrl)) return "git";
-  if (provider === "github" || provider === "gitlab" || provider === "bitbucket") return "git";
+  if (REPOSITORY_SOURCE_PROVIDERS.some(id => id === provider)) return "git";
   // A local directory with no repo is staged, not cloned. Unknown → no clone
   // (nothing to fetch), matching the pre-#538 "no repoUrl" behaviour.
   return "upload";

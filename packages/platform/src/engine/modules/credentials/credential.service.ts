@@ -22,6 +22,7 @@ import {
   CREDENTIAL_MASK,
   getCredentialProvider,
   normalizeCredentialSelector,
+  supportsConnectionOAuth,
   splitCredentialValues,
   validateCredentialValues,
   type CredentialProvider,
@@ -221,10 +222,10 @@ async function updateCredentialUnlocked(
   if (!row) throw new NotFoundError("Credential", id);
   const provider = requireProvider(row.provider);
 
-  if (row.publicFields.authorization === "oauth") {
+  if (row.publicFields.authorization === "oauth" || row.publicFields.authorization === "host-cli") {
     if (input.values && Object.values(input.values).some((value) => !!value))
       throw new ValidationError(
-        "Reconnect this authorized account to change its access. Tokens cannot replace an OAuth grant.",
+        "Reconnect this authorized account to change its access. Use the original connection method.",
       );
     const name = input.name?.trim() || row.name;
     if (await repos.credential.nameTaken(organizationId, row.provider, row.selector, name, id))
@@ -348,8 +349,8 @@ async function checkStoredCredential(row: Credential): Promise<string | void> {
 
   let secrets = readCredentialSecrets(row);
   if (row.publicFields.authorization === "oauth") {
-    const { getProviderAccess } = await import("./connection-authorization");
-    await getProviderAccess(row.organizationId, row.id, { allowInvalid: true });
+    const { getConnectionAccess } = await import("./connection-authorization");
+    await getConnectionAccess(row.organizationId, row.id, supportsConnectionOAuth, { allowInvalid: true });
     // Refresh may replace the stored token. Check and record the same snapshot,
     // including a concurrent rotation, rather than the token read before refresh.
     const refreshed = await repos.credential.findById(row.organizationId, row.id);

@@ -258,6 +258,7 @@ const DeployRepository: React.FC = () => {
                 });
             } else {
                 result = await initializeFromRepo(decoded.owner, decoded.repo, force, {
+                    provider: decoded.provider,
                     branch: branch ?? decoded.branch,
                     projectId: projectId ?? decoded.projectId,
                     serverId: config.serverId,
@@ -372,6 +373,7 @@ const DeployRepository: React.FC = () => {
                         <div className="mt-5 space-y-5">
                             <div>
                                 <RepositoryBranchSelect
+                                    provider={config.gitProvider}
                                     owner={config.owner}
                                     repo={config.repo}
                                     serverId={config.serverId}

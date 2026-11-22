@@ -424,7 +424,8 @@ describe("platform import flow", () => {
     const popup = {
       closed: false,
       close: vi.fn(),
-      location: { replace: vi.fn() },
+      focus: vi.fn(),
+      location: { href: "about:blank" },
     } as unknown as Window;
     vi.spyOn(window, "open").mockReturnValue(popup);
     h.authorize.mockResolvedValue({
@@ -434,7 +435,7 @@ describe("platform import flow", () => {
     await render("vercel");
     // One tab chooses authorization and the submit button starts it.
     await act(async () => host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click());
-    expect(popup.location.replace).toHaveBeenCalledWith("https://vercel.com/oauth/authorize");
+    expect(popup.location.href).toBe("https://vercel.com/oauth/authorize");
     const finish = (origin: string, source: Window) =>
       window.dispatchEvent(
         new MessageEvent("message", {

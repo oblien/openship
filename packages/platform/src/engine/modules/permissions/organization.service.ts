@@ -4,7 +4,6 @@ import { createResourceGrantRepo, createInvitationPendingGrantRepo } from "@repo
 import type { InviteWithGrantsInput, PermissionGrantInput, WorkspaceList } from "@repo/contracts";
 import type { ContextRole, ExecutionContext } from "../../../context";
 import { organizationOptions, deliverOrganizationInvitation, INVITE_RATE_LIMIT_PER_HOUR, INVITE_RATE_LIMIT_WINDOW_MS } from "../../lib/organization-lifecycle";
-import { smtpEnabled } from "../../lib/mail";
 import { withInvitationLifecycleLock } from "../../lib/invitation-lifecycle-lock";
 import { captureExecutionAuthority, resolveExecutionAuthority } from "../../lib/execution-authority";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
@@ -109,7 +108,7 @@ export async function createInvitationWithGrants(ctx: ExecutionContext, body: In
     eventType: "invitation.sent", resourceType: "resource_grant", resourceId: result.invitation.id,
     after: { email, role, pendingGrantCount: grants.length },
   });
-  if (body.delivery !== "link" && smtpEnabled) await deliverOrganizationInvitation({
+  if (body.delivery !== "link") await deliverOrganizationInvitation({
     id: result.invitation.id, role, email, organization: result.organization,
     inviter: { ...result.member, user }, invitation: result.invitation,
   }).catch(providerError);
@@ -311,7 +310,7 @@ export async function resendInvitation(ctx: ExecutionContext, id: string, input:
       }).where(eq(schema.invitation.id, id)).returning();
       return { invitation: { ...updated!, status: "pending" as const }, organization: { ...organization, slug: organization.slug ?? organization.id }, member };
     });
-    if (input.delivery !== "link" && smtpEnabled) await deliverOrganizationInvitation({
+    if (input.delivery !== "link") await deliverOrganizationInvitation({
       id, email: result.invitation.email, role: result.invitation.role, invitation: result.invitation,
       organization: result.organization, inviter: { ...result.member, user },
     }).catch(providerError);

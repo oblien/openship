@@ -102,7 +102,7 @@ describe("deployment Check outbox", () => {
     expect(await reports.renew(root.id, "wrong")).toBe(false);
     await db.update(schema.deploymentCheckRun).set({ leaseExpiresAt: new Date(0) }).where(eq(schema.deploymentCheckRun.id, root.id));
     expect(await reports.claim(root.id, "recovery")).toBeDefined();
-    expect(await reports.published(root.id, token, root.id, { checkRunId: 5, status: "completed", conclusion: "success", publishedDigest: "stale" })).toBe(false);
+    expect(await reports.published(root.id, token, root.id, { checkRunId: "5", status: "completed", conclusion: "success", publishedDigest: "stale" })).toBe(false);
     await reports.release(root.id, token, { attempts: 0, lastError: null, nextAttemptAt: null });
     expect((await reports.list(dep.id))[0].leaseToken).toBe("recovery");
   });
@@ -114,8 +114,9 @@ describe("deployment Check outbox", () => {
     const second = await reports.ensureService(root, "web");
     expect(first.id).toBe(second.id);
     await reports.claim(root.id, "lease");
-    expect(await reports.published(root.id, "lease", first.id, { checkRunId: 15_000_000_001, status: "completed", conclusion: "failure", publishedDigest: "digest" })).toBe(true);
-    expect((await reports.findByCheckRunId(15_000_000_001))?.id).toBe(first.id);
+    expect(await reports.published(root.id, "lease", first.id, { checkRunId: "15000000001", status: "completed", conclusion: "failure", publishedDigest: "digest" })).toBe(true);
+    expect((await reports.findByCheckRunId(15_000_000_001, "github"))?.id).toBe(first.id);
+    expect(await reports.findByCheckRunId(15_000_000_001, "gitlab")).toBeUndefined();
     expect(await reports.list(dep.id)).toHaveLength(2);
   });
 });

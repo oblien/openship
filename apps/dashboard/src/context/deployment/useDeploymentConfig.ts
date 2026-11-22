@@ -17,6 +17,7 @@ import { settingsApi } from "@/lib/api/settings";
 import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
 import {
+  DEFAULT_GIT_PROVIDER,
   STACKS,
   runtimeNeedsInstall,
   getBuildImage,
@@ -56,6 +57,7 @@ import { monorepoAppFromScan, reconcileMonorepoApps, normalizeAppRoot } from "./
 type PersistedProject = Record<string, any> | null;
 
 interface PreparedConfigArgs {
+  provider?: string;
   response: PrepareProjectResponse;
   project: PersistedProject;
   repoName: string;
@@ -805,6 +807,7 @@ export function useDeploymentConfig() {
           projectId,
           repo: repoName,
           owner,
+          gitProvider: args.provider ?? project?.gitProvider,
           localPath,
           uploadSessionId,
           projectName: project?.name || repoName,
@@ -941,6 +944,7 @@ export function useDeploymentConfig() {
       repo: string,
       force?: string,
       context?: {
+        provider?: string;
         branch?: string;
         serverId?: string;
         projectId?: string;
@@ -961,12 +965,13 @@ export function useDeploymentConfig() {
       // attempted source is recorded even when prepare fails (#1666). Never
       // clobber an identity the operator has since moved to — a scan that
       // resolves after navigation to another project must not rewrite it.
-      let attemptedSource: { owner: string; repo: string; branch?: string } | null = null;
+      let attemptedSource: { provider: string; owner: string; repo: string; branch?: string } | null = null;
       const seedAttemptedSource = () => {
         if (!attemptedSource) return;
         const source = attemptedSource;
         setConfig((prev) => {
           if (
+            (prev.gitProvider && prev.gitProvider !== source.provider) ||
             (prev.owner && prev.owner !== source.owner) ||
             (prev.repo && prev.repo !== source.repo)
           )
@@ -979,6 +984,7 @@ export function useDeploymentConfig() {
             return prev;
           return {
             ...prev,
+            gitProvider: source.provider,
             owner: source.owner,
             repo: source.repo,
             branch: source.branch ?? prev.branch,
@@ -1004,14 +1010,17 @@ export function useDeploymentConfig() {
           }
         }
 
+        const sourceProvider = project?.gitProvider ?? context?.provider ?? DEFAULT_GIT_PROVIDER;
         const sourceOwner = project?.gitOwner || owner;
         const sourceRepo = project?.gitRepo || repo;
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
         const requestedBranch = context?.branch?.trim() || projectBranch.trim() || undefined;
         const changesSavedBranch = !!project && requestedBranch !== projectBranch;
-        attemptedSource = { owner: sourceOwner, repo: sourceRepo, branch: requestedBranch };
+        attemptedSource = { provider: sourceProvider, owner: sourceOwner, repo: sourceRepo, branch: requestedBranch };
 
         const preparedSource: PrepareProjectSource = {
+          source: "git",
+          provider: sourceProvider,
           owner: sourceOwner,
           repo: sourceRepo,
           branch: requestedBranch,
@@ -1087,6 +1096,7 @@ export function useDeploymentConfig() {
                 : project,
               repoName,
               owner: response.repository.owner?.login || sourceOwner,
+              provider: sourceProvider,
               branch: selectedBranch,
               branches: branchOptions,
               branchPage: 1,
@@ -1135,6 +1145,7 @@ export function useDeploymentConfig() {
       try {
         const response = await deployApi.prepare({
           projectId: config.projectId,
+          provider: config.gitProvider,
           owner: config.owner,
           repo: config.repo,
           serverId: config.serverId,
@@ -1148,6 +1159,7 @@ export function useDeploymentConfig() {
           // The provider can survive navigation to another project's build page.
           if (
             prev.projectId !== config.projectId ||
+            prev.gitProvider !== config.gitProvider ||
             prev.owner !== config.owner ||
             prev.repo !== config.repo ||
             prev.branch !== config.branch ||
@@ -1159,7 +1171,8 @@ export function useDeploymentConfig() {
             response,
             project: null,
             repoName: config.repo,
-            owner: config.owner,
+            provider: config.gitProvider,
+          owner: config.owner,
             branch: requestedBranch,
             branches: Array.from(
               new Set([
@@ -1324,6 +1337,7 @@ export function useDeploymentConfig() {
           };
         }
         const result = await initializeFromRepo(config.owner, config.repo, undefined, {
+          provider: config.gitProvider,
           branch: config.branch,
           serverId: config.serverId,
           projectId: config.projectId,
@@ -1339,6 +1353,7 @@ export function useDeploymentConfig() {
     },
     [
       config.localPath,
+      config.gitProvider,
       config.owner,
       config.repo,
       config.branch,
@@ -1522,7 +1537,7 @@ export function useDeploymentConfig() {
         if (context?.reviewCompose) {
           const source: PrepareProjectSource = project.localPath
             ? { source: "local", path: project.localPath }
-            : { source: "github", owner: project.gitOwner, repo: project.gitRepo, branch,
+            : { source: "git", provider: project.gitProvider ?? DEFAULT_GIT_PROVIDER, owner: project.gitOwner, repo: project.gitRepo, branch,
                 serverId: project.serverId ?? undefined };
           response = await deployApi.prepare({
             ...source,
@@ -1593,6 +1608,7 @@ export function useDeploymentConfig() {
               repoName,
               // Non-empty owner keeps the page's `!config.owner` guard satisfied;
               // local-sourced projects use the "local" sentinel (matches initializeFromLocal).
+              provider: project.gitProvider,
               owner: project.gitOwner || (project.localPath ? "local" : repoName),
               branch,
               branches: branch ? [branch] : [],

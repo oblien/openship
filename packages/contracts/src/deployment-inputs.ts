@@ -203,13 +203,14 @@ export const PrepareDeployBody = Type.Object({
   ),
   ...SourceScanOptionsSchema.properties,
   source: Type.Optional(
-    Type.Union([Type.Literal("github"), Type.Literal("local")], {
+    Type.Union([Type.Literal("git"), Type.Literal("github"), Type.Literal("local")], {
       description: "Source kind; inferred from owner/repo vs path when omitted.",
     }),
   ),
-  owner: Type.Optional(Type.String({ ...OwnerRepoParams.properties.owner, description: "GitHub repo owner (github source)." })),
-  repo: Type.Optional(Type.String({ ...OwnerRepoParams.properties.repo, description: "GitHub repo name (github source)." })),
-  branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
+  provider: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  owner: Type.Optional(Type.String({ minLength: 1, maxLength: 512, description: "Repository namespace, including nested groups." })),
+  repo: Type.Optional(Type.String({ ...OwnerRepoParams.properties.repo, description: "Repository name." })),
+  branch: Type.Optional(Type.String({ description: "Git branch." })),
   path: Type.Optional(
     Type.String({ description: "Local filesystem path (local source; self-hosted only)." }),
   ),

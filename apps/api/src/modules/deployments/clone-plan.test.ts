@@ -8,7 +8,7 @@ const base: ClonePlanInput = {
   cloneStrategy: "server",
   buildStrategy: "server",
   isDesktop: true,
-  repoIsGithub: true,
+  preferTargetClone: true,
   dockerTransport: "ssh",
 };
 
@@ -35,7 +35,7 @@ describe("resolveClonePlan — relayEligible (forward is the default on desktop)
       resolveClonePlan({
         ...base,
         cloneStrategy: "api-host",
-        repoIsGithub: false,
+        preferTargetClone: false,
       }).relayEligible,
     ).toBe(false);
   });

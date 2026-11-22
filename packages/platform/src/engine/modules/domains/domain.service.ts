@@ -1298,33 +1298,10 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
       serviceId: domain.serviceId,
       routing: serviceRouting,
     });
-  } else {
-    await repos.domain.remove(domain.id);
+    return;
   }
 
-  // A failed managed-domain sync is stored on the deployment snapshot. Once
-  // the failed hostname is removed and no managed domains remain, that warning
-  // no longer describes the project and must not keep the Dashboard in an
-  // action-required state.
-  const activeDeployment = project.activeDeploymentId
-    ? await findActiveDeployment(project)
-    : null;
-  const activeMeta = (activeDeployment?.meta ?? null) as Record<string, unknown> | null;
-  const remainingManagedDomains = (await repos.domain.listByProject(project.id))
-    .some((row) => resolveManagedHostname(row.hostname).isManaged);
-  if (
-    activeDeployment &&
-    !remainingManagedDomains &&
-    activeMeta?.edgeUnsynced === true &&
-    typeof activeMeta.deployWarning === "string" &&
-    activeMeta.deployWarning.includes(domain.hostname)
-  ) {
-    const nextMeta = { ...activeMeta };
-    delete nextMeta.edgeUnsynced;
-    delete nextMeta.deployWarning;
-    await repos.deployment.updateStatus(activeDeployment.id, activeDeployment.status, { meta: nextMeta });
-  }
-
+  await repos.domain.remove(domain.id);
 }
 
 /**

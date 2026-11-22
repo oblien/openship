@@ -213,12 +213,10 @@ async function inheritCloneCredentials(dump: DatabaseDump, warnings: string[]): 
         !project.gitRepo
       )
         continue;
-      const inherited =
-        settings?.cloneTokenAsDefault && settings.cloneTokenEncrypted
-          ? settings.cloneTokenEncrypted
-          : project.gitProvider === "github"
-            ? instance?.ghDeviceTokenEncrypted
-            : null;
+      // Both legacy defaults are GitHub credentials. Never copy them to another provider's project.
+      const inherited = (project.gitProvider == null || project.gitProvider === "github")
+        ? (settings?.cloneTokenAsDefault && settings.cloneTokenEncrypted) || instance?.ghDeviceTokenEncrypted
+        : null;
       if (inherited) {
         project.cloneTokenEncrypted = inherited;
         project.cloneTokenSetAt = new Date().toISOString();

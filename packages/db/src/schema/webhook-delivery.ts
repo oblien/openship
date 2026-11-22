@@ -50,11 +50,10 @@ export const webhookDelivery = pgTable(
     processedAt: timestamp("processed_at"),
   },
   (t) => [
-    // GitHub delivery-id dedup (the claim). Partial: only github rows with a
-    // delivery id participate, so incoming/backup rows never conflict.
-    uniqueIndex("uq_webhook_delivery_github_delivery")
+    // Provider receipts are unique per sender. Generic hook and backup feed rows stay independent.
+    uniqueIndex("uq_webhook_delivery_provider_delivery")
       .on(t.source, t.deliveryId)
-      .where(sql`${t.source} = 'github' AND ${t.deliveryId} IS NOT NULL`),
+      .where(sql`${t.source} NOT IN ('incoming', 'backup') AND ${t.deliveryId} IS NOT NULL`),
     // Feed lookups (keyset paginated on receivedAt desc, id desc).
     index("idx_webhook_delivery_project").on(t.projectId, t.receivedAt),
     index("idx_webhook_delivery_org").on(t.organizationId, t.receivedAt),

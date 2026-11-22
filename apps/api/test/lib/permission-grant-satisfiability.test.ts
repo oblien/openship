@@ -50,7 +50,8 @@ vi.mock("@repo/platform/engine/config/env", () => ({ env: { CLOUD_MODE: false } 
 
 import { checkPermission, ORG_SINGLETON_RESOURCES } from "../../src/lib/permission";
 import { GRANTABLE_RESOURCE_TYPES } from "../../src/lib/grantable-types";
-import { canUseGitHubRepo } from "@repo/platform/engine/modules/github/github-access";
+import { GIT_PROVIDERS, gitProviderForGrant } from "@repo/core";
+import { getGitProvider } from "@repo/platform/engine/modules/git/provider";
 
 type G = { resourceType: string; resourceId: string; permissions: string[] };
 
@@ -80,8 +81,9 @@ async function authorizedByCheckPermission(g: G, action: "read" | "write" | "adm
   );
 }
 
-/** Door 2: the GitHub gate. A scoped ctx so no owner auto-access applies. */
-async function authorizedByGitHubGate(
+/** Scoped provider access under a PAT, independent of the owner role. */
+async function authorizedByProvider(
+  provider: string,
   g: G,
   target: { owner: string; repo?: string | null },
 ): Promise<boolean> {
@@ -94,18 +96,12 @@ async function authorizedByGitHubGate(
     organizationId: "org1",
     tokenScope: { tokenId: "t1", scoped: true },
   } as unknown as RequestContext;
-  return canUseGitHubRepo(ctx, target, "read");
+  return getGitProvider(provider).access.canUse(ctx, target, "read");
 }
 
 /* ── Door 1: types authorized through checkPermission ───────────────────────── */
 
-// Derived, not listed: every grantable type that is NOT a GitHub grant target must
-// be authorized by `checkPermission`, and the two GitHub types by the GitHub gate.
-// Spelling the membership out again is how this ratchet would come to disagree with
-// the surface it guards.
-const VIA_CHECK_PERMISSION = GRANTABLE_RESOURCE_TYPES.filter(
-  (t) => t !== "github_installation" && t !== "github_repository",
-);
+const VIA_CHECK_PERMISSION = GRANTABLE_RESOURCE_TYPES.filter(type => !gitProviderForGrant(type));
 
 describe("door 1 — authorized through checkPermission", () => {
   it("per-resource types authorize on a concrete id", async () => {
@@ -195,25 +191,19 @@ describe("door 1 — authorized through checkPermission", () => {
   });
 });
 
-/* ── Door 2: types authorized through the GitHub gate ───────────────────────── */
+const VIA_PROVIDER_GATE = GIT_PROVIDERS.flatMap(({ grantTypes }) => [grantTypes.namespace, grantTypes.repository]);
 
-const VIA_GITHUB_GATE = ["github_installation", "github_repository"] as const;
-
-describe("door 2 — authorized through the GitHub gate", () => {
-  it("github_installation authorizes every repo under the granted owner login", async () => {
-    const g = { resourceType: "github_installation", resourceId: "hydralerne", permissions: ["read"] };
-    expect(await authorizedByGitHubGate(g, { owner: "hydralerne", repo: "charts" })).toBe(true);
+describe.each(GIT_PROVIDERS)("$name repository permission gate", ({ id, grantTypes }) => {
+  const owner = "engineering";
+  it("authorizes a namespace's repositories", async () => {
+    const grant = { resourceType: grantTypes.namespace, resourceId: owner, permissions: ["read"] };
+    expect(await authorizedByProvider(id, grant, { owner, repo: "charts" })).toBe(true);
+    expect(await authorizedByProvider(id, grant, { owner: "another", repo: "charts" })).toBe(false);
   });
-
-  it("github_repository authorizes exactly the granted repo and no other", async () => {
-    const g = {
-      resourceType: "github_repository",
-      resourceId: "hydralerne/charts",
-      permissions: ["read"],
-    };
-    expect(await authorizedByGitHubGate(g, { owner: "hydralerne", repo: "charts" })).toBe(true);
-    const other = { resourceType: "github_repository", resourceId: "hydralerne/charts", permissions: ["read"] };
-    expect(await authorizedByGitHubGate(other, { owner: "hydralerne", repo: "secrets" })).toBe(false);
+  it("authorizes only the granted repository", async () => {
+    const grant = { resourceType: grantTypes.repository, resourceId: owner + "/charts", permissions: ["read"] };
+    expect(await authorizedByProvider(id, grant, { owner, repo: "charts" })).toBe(true);
+    expect(await authorizedByProvider(id, grant, { owner, repo: "private" })).toBe(false);
   });
 });
 
@@ -221,7 +211,7 @@ describe("door 2 — authorized through the GitHub gate", () => {
 
 describe("every grantable type is provably satisfiable", () => {
   it("GRANTABLE_RESOURCE_TYPES is exactly the union of the two doors", () => {
-    const covered = [...VIA_CHECK_PERMISSION, ...VIA_GITHUB_GATE].sort();
+    const covered = [...VIA_CHECK_PERMISSION, ...VIA_PROVIDER_GATE].sort();
     const grantable = [...GRANTABLE_RESOURCE_TYPES].sort();
     expect(
       grantable,

@@ -52,7 +52,7 @@ vi.mock("@/context/PlatformContext", () => ({
   canUseCloudConnection: () => false,
 }));
 vi.mock("@/context/ModalContext", () => ({ useModal: () => ({}) }));
-vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ state: {} }) }));
+vi.mock("@/context/GitContext", () => ({ useGit: () => ({}) }));
 vi.mock("@/components/github/ServerGitHubConnect", () => ({
   useServerGitHubConnectModal: () => vi.fn(),
 }));

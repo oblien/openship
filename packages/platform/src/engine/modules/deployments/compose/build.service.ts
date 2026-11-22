@@ -19,7 +19,7 @@ import type {
   BuildConfig,
 } from "@repo/adapters";
 import { BuildLogger, DockerRuntime, CloudDockerRuntime, STATIC_RELEASE_BASE } from "@repo/adapters";
-import { composeBuildIssues, hasRelativeVolumeMounts, validateImageReference, type BaseImageReceipt, type ComposeAdvanced } from "@repo/core";
+import { composeBuildIssues, hasRelativeVolumeMounts, slugify, validateImageReference, type BaseImageReceipt, type ComposeAdvanced } from "@repo/core";
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 
 import {
@@ -833,7 +833,11 @@ export async function buildComposeImages(opts: {
       //   - Monorepo sub-app (source build)      → createMonorepoSourceBuildConfig
       //     keeps the sub-app's stack/installCommand/buildCommand/startCommand/
       //     outputDirectory so the runtime synthesizes a Dockerfile from them.
-      const buildSlug = `${sanitizeComposeImageName(opts.project.slug ?? opts.project.name)}-${sanitizeComposeImageName(service.name)}`;
+      const projectName = opts.project.slug ?? opts.project.name;
+      const imageSlug = `${sanitizeComposeImageName(projectName)}-${sanitizeComposeImageName(service.name)}`;
+      const buildSlug = validateImageReference(`openship/${imageSlug}`)
+        ? `${slugify(projectName) || "project"}-${slugify(service.name) || "service"}`
+        : imageSlug;
       // Docker builds these services sequentially on one host. Reuse the
       // resolved host budget, including measured headroom on managed servers.
       const resources = opts.buildResources;

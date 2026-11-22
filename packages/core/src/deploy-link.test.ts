@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { gitRepositoryLink } from "./git-providers";
 import {
   deployInstallCommand,
   deployLinkHref,
@@ -157,5 +158,15 @@ describe("public deployment intent", () => {
     expect(isRepositoryDeployPath(`//evil.test/deploy/${encodeRepoSlug("owner", "repo")}`)).toBe(
       false,
     );
+  });
+});
+
+
+describe("provider UI links", () => {
+  it("keeps legacy links and encodes revisions without falling back for an unknown provider", () => {
+    expect(gitRepositoryLink(undefined, "acme", "app")).toBe("https://github.com/acme/app");
+    expect(gitRepositoryLink("github", "acme", "app", "feature/x")).toBe("https://github.com/acme/app/commit/feature%2Fx");
+    expect(gitRepositoryLink("unsupported", "acme", "app")).toBeUndefined();
+    expect(gitRepositoryLink("local", "local", "app")).toBeUndefined();
   });
 });

@@ -1,12 +1,3 @@
-/**
- * Shared helpers for the GitHub webhook handler family.
- *
- * Leaf module: imports nothing from the dispatcher (github.webhook.ts) or
- * the handler families (webhook-push / webhook-installation /
- * webhook-check-run), so the dispatcher can import the handlers and the
- * handlers can import these helpers without a cycle.
- */
-
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 

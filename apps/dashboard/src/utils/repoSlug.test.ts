@@ -190,26 +190,21 @@ describe("extractOwnerRepoFromUrl", () => {
     });
   });
 
-  it("returns null for a non-GitHub host", () => {
-    expect(extractOwnerRepoFromUrl("https://gitlab.com/acme/widgets")).toBeNull();
+  it("returns null for an unregistered provider host", () => {
+    expect(extractOwnerRepoFromUrl("https://unregistered.example/acme/widgets")).toBeNull();
   });
 
-  it("bug: a trailing slash after the repo name is captured as part of the repo", () => {
-    // repo becomes "widgets/", not "widgets" — the non-greedy `.+?` still has
-    // to consume up to the end of the string since there's no `.git` to stop
-    // at, so the trailing slash comes along with it.
+  it("normalizes a trailing slash without changing the repository name", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets/")).toEqual({
       owner: "acme",
-      repo: "widgets/",
+      repo: "widgets",
     });
   });
 
-  it("bug: a GitHub tree/blob URL captures the whole trailing path as the repo name", () => {
-    // Pasting a URL to a specific branch or file (a very common copy-paste
-    // source) does not extract just the repo name.
-    expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets/tree/main")).toEqual({
-      owner: "acme",
-      repo: "widgets/tree/main",
-    });
-  });
+  it.each(["tree/main", "blob/main/README.md"])(
+    "rejects a %s page instead of treating its path as a repository name",
+    (path) => {
+      expect(extractOwnerRepoFromUrl(`https://github.com/acme/widgets/${path}`)).toBeNull();
+    },
+  );
 });

@@ -29,16 +29,6 @@ interface PendingResolution {
   notified?: boolean;
 }
 
-function updateCompletionMessage(
-  actions: readonly PendingResolution[],
-  copy: { resolved: string; updateResolved: string; updatesResolved: string },
-): string {
-  if (!actions.every(({ issue }) => issue.kind === "update_available")) return copy.resolved;
-  const names = actions.map(({ issue }) => issue.target.name);
-  if (names.length === 1) return interpolate(copy.updateResolved, { name: names[0]! });
-  return interpolate(copy.updatesResolved, { count: names.length, names: names.join(", ") });
-}
-
 /** One resolution flow for Home and Monitoring; queued deployments finish asynchronously. */
 export function useIssueActions(
   reload: (opts?: { silent?: boolean }) => void | Promise<void>,
@@ -122,8 +112,7 @@ export function useIssueActions(
       }
       reading = true;
       let failed = false;
-      const completedSuccesses: PendingResolution[] = [];
-      const completedFailures: string[] = [];
+      const completedUpdates: PendingResolution[] = [];
       try {
         await Promise.all(
           ids.map(async (id) => {
@@ -155,15 +144,20 @@ export function useIssueActions(
                 action.organizationId === organizationId &&
                 !action.notified
               ) {
-                action.notified = true;
                 const success = ["ready", "no_changes"].includes(status.deploymentStatus);
-                if (success) {
-                  completedSuccesses.push(action);
-                } else {
-                  completedFailures.push(
-                    status.errorMessage || status.warningMessage || latest.current.c.resolveFailed,
-                  );
+                if (success && action.issue.kind === "update_available") {
+                  completedUpdates.push(action);
+                  return;
                 }
+                action.notified = true;
+                const { toast, c } = latest.current;
+                toast(
+                  success ? "success" : "error",
+                  success
+                    ? c.resolved
+                    : status.errorMessage || status.warningMessage || c.resolveFailed,
+                  c.title,
+                );
               }
             } catch (diagnosticFailure) {
               observeCaughtError(diagnosticFailure, "dashboard/components/issues/useIssueActions");
@@ -172,12 +166,20 @@ export function useIssueActions(
             }
           }),
         );
-        const { toast, c } = latest.current;
-        if (completedSuccesses.length) {
-          toast("success", updateCompletionMessage(completedSuccesses, c), c.title);
+        if (!current()) return;
+        if (completedUpdates.length) {
+          const { toast, c } = latest.current;
+          const names = completedUpdates.map((action) => {
+            action.notified = true;
+            return action.issue.target.name;
+          });
+          const message =
+            names.length === 1
+              ? interpolate(c.updateResolved, { name: names[0]! })
+              : interpolate(c.updatesResolved, { count: names.length, names: names.join(", ") });
+          toast("success", message, c.title);
         }
-        for (const message of completedFailures) toast("error", message, c.title);
-        if (current() && completed.size) {
+        if (completed.size) {
           await latest.current.reload({ silent: true });
           if (current()) {
             let changed = false;

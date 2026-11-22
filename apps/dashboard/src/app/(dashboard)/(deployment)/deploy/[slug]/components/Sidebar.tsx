@@ -1,4 +1,5 @@
 "use client";
+import { useGit } from "@/context/GitContext";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
@@ -30,7 +31,7 @@ import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
-import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
+import { projectsApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { attachDeploymentDomainIds, deploymentDnsTargets } from "@/lib/deployment-dns";
 
@@ -182,13 +183,14 @@ const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: ServerS
   // Copy a ready-to-run `git clone` command with a short-lived GitHub App
   // installation token. Cloud / GitHub-App mode only — surfaces a clear
   // message otherwise (the backend 409s in gh-CLI / PAT mode).
+  const { cloneCommand, icon, definition } = useGit(config.owner && config.owner !== "local" && config.repo && !config.isApp && !config.localPath && !config.uploadSessionId ? config.gitProvider : undefined);
   const handleCopyCloneToken = useCallback(async () => {
-    if (!config.owner || !config.repo || config.owner === "local") {
+    if (!cloneCommand || !config.owner || !config.repo || config.owner === "local") {
       showToast(t.deploy.sidebar.cloneTokenNoRepo, "error", t.deploy.sidebar.cloneTokenTitle);
       return;
     }
     try {
-      const { command } = await githubApi.getCloneToken(config.owner, config.repo);
+      const command = await cloneCommand(config.owner, config.repo);
       await navigator.clipboard.writeText(command);
       showToast(
         t.deploy.sidebar.cloneTokenCopied,
@@ -198,7 +200,7 @@ const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: ServerS
     } catch (err) {
       showToast(getApiErrorMessage(err, t.deploy.sidebar.cloneTokenFailed), "error", t.deploy.sidebar.cloneTokenTitle);
     }
-  }, [config.owner, config.repo, showToast, t]);
+  }, [cloneCommand, config.owner, config.repo, showToast, t]);
   const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
   // Clone-strategy gate - only meaningful for self-hosted server deploys
   // where we need to pick how the repo gets cloned on the remote (local
@@ -466,11 +468,11 @@ const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: ServerS
         </div>
         <div className="p-4 pt-3">
           <div className="flex items-center gap-3">
-            <UiIcon name="github" className="size-4 text-muted-foreground shrink-0" />
+            <UiIcon name={icon} className="size-4 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               {config.owner && config.owner !== "local" && config.repo ? (
                 <a
-                  href={`https://github.com/${config.owner}/${config.repo}`}
+                  href={`${definition.webBaseUrl}/${config.owner.split("/").map(encodeURIComponent).join("/")}/${encodeURIComponent(config.repo)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`${config.owner}/${config.repo}`}
@@ -485,7 +487,7 @@ const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: ServerS
                 </p>
               )}
             </div>
-            {config.owner && config.owner !== "local" && config.repo && (
+            {cloneCommand && config.owner && config.owner !== "local" && config.repo && (
               <DropdownMenu
                 align="right"
                 triggerClassName="p-1.5 -me-1 rounded-lg text-muted-foreground hover:bg-muted transition-colors"
@@ -503,6 +505,7 @@ const Sidebar: React.FC<{ destinationReady: boolean; reviewDestination?: ServerS
           {config.branches.length > 0 && (
             <div className="mt-3">
               <RepositoryBranchSelect
+                provider={config.gitProvider}
                 owner={config.owner}
                 repo={config.repo}
                 serverId={config.serverId}

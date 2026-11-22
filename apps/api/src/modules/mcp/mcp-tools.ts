@@ -14,6 +14,7 @@ import {
   type CheckedResourceType,
 } from "../../lib/permission";
 import type { Permission } from "@repo/db";
+import { GIT_PROVIDERS, gitProviderForRoot } from "@repo/core";
 import { capabilityFor, type Capability, type GrantPermission } from "@repo/core";
 import { Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -250,8 +251,8 @@ export function getMcpTools(): McpToolDef[] {
       const pathParams = extractPathParams(route.path);
       const leafParam =
         (isPublicSpec(spec) ? undefined : spec.ids?.[leaf]) ?? DEFAULT_ID_PARAMS[leaf] ?? "id";
-      const namedGithubTarget =
-        leaf === "github" && (pathParams.includes("owner") || pathParams.includes("org"));
+      const namedGitTarget = leaf === "git" ||
+        (gitProviderForRoot(leaf) && (pathParams.includes("owner") || pathParams.includes("org")));
       const bodySchema = isPublicSpec(spec) ? undefined : spec.body;
       const hasBody = !!bodySchema && route.method !== "GET";
       return {
@@ -286,7 +287,7 @@ export function getMcpTools(): McpToolDef[] {
             !collectionProject &&
             ((collection && parsed?.root === parsed?.leaf) ||
               ((ORG_SINGLETON_RESOURCES.has(leaf) || (parsed?.isList && parsed.root === leaf)) &&
-                !namedGithubTarget) ||
+                !namedGitTarget) ||
               (CONDITIONAL_SINGLETON_RESOURCES.has(leaf) && !pathParams.includes(leafParam))),
           grantRoot: PROJECT_ROOTED.has(leaf as CheckedResourceType)
             ? "project"
@@ -311,12 +312,6 @@ export function getMcpTools(): McpToolDef[] {
  * `github_repository`) would advertise ZERO github tools even though it can
  * call the per-repo ones.
  */
-const GITHUB_GRANT_FAMILY: ReadonlySet<string> = new Set([
-  "github",
-  "github_installation",
-  "github_repository",
-]);
-
 /**
  * The action the route layer actually asserts for a tag.
  *
@@ -331,10 +326,8 @@ function assertedAction(tagAction: string): Permission {
 
 /** Does the principal hold a grant whose root type enables this tool? */
 function principalHasGrantFor(granted: ReadonlySet<string>, grantRoot: string): boolean {
-  if (grantRoot === "github") {
-    for (const t of GITHUB_GRANT_FAMILY) if (granted.has(t)) return true;
-    return false;
-  }
+  const providers = GIT_PROVIDERS.filter(provider => grantRoot === "git" || provider.grantTypes.root === grantRoot);
+  if (providers.length) return providers.some(provider => Object.values(provider.grantTypes).some(type => granted.has(type)));
   return granted.has(grantRoot);
 }
 

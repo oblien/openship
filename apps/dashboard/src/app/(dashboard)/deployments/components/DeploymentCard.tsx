@@ -3,6 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useState } from "react";
+import { gitRepositoryLink } from "@repo/core";
 import Link from "next/link";
 import { DeploymentMenu } from "./DeploymentMenu";
 import { CommitDetailsModal } from "./CommitDetailsModal";
@@ -283,11 +284,9 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (deployment.owner && deployment.repo) {
-                window.open(
-                  `https://github.com/${deployment.owner}/${deployment.repo}/commit/${deployment.commit.fullHash || deployment.commit.hash}`,
-                  "_blank",
-                );
+              const url = gitRepositoryLink(deployment.gitProvider, deployment.owner, deployment.repo, deployment.commit.fullHash || deployment.commit.hash);
+              if (url) {
+                window.open(url, "_blank", "noopener,noreferrer");
               } else {
                 setIsCommitModalOpen(true);
               }

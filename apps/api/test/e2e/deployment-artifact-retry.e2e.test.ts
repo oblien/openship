@@ -26,6 +26,10 @@ describeDockerE2E("retry completed Docker artifacts without rebuilding", () => {
     const org = await seedOrg();
     project = await seedProject(org.organizationId, {
       framework: "docker",
+      // Release projects may retain repo metadata; a pinned image never needs its credentials.
+      gitProvider: "release",
+      gitOwner: "acme",
+      gitRepo: "private-app",
       localPath: directory,
       hasBuild: false,
       hasServer: false,

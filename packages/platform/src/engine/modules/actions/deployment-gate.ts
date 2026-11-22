@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+  DEFAULT_GIT_PROVIDER,
+  matchesProjectRepository,
   AppError,
   actionFinished,
   generateId,
@@ -13,7 +15,7 @@ import {
   captureExecutionAuthority,
   resolveExecutionAuthority,
 } from "../../lib/execution-authority";
-import { repositoryHead } from "../github/repository-head";
+import { projectRepository } from "../git/provider";
 import type { DeploymentTriggerInput } from "../deployments/build.service";
 import { automaticDeploymentIntent } from "../deployments/automatic-deployment-intent";
 import { requireActionProject, getActionProjectPolicy } from "./project.service";
@@ -25,7 +27,7 @@ import {
 import { record } from "./workflow";
 import { assertRequiredPushWorkflow } from "./required-checks";
 import { authorization } from "../../lib/authorization";
-import { notifyAutoDeployFailed } from "../github/queued-pushes";
+import { notifyAutoDeployFailed } from "../git/queued-pushes";
 
 async function requireDeploymentProject(ctx: ExecutionContext, request: ActionDeploymentRequest) {
   if (request.intent.kind !== "push") return requireActionProject(ctx, request.projectId, true);
@@ -61,7 +63,7 @@ export async function queueActionDeployment(
       409,
       "ACTIONS_BRANCH_REQUIRED",
     );
-  const head = await repositoryHead(ctx, project, branch);
+  const head = await projectRepository(ctx, project).head(branch);
   const revision = input.commitSha || head;
   if (!isFullCommitSha(revision))
     throw new AppError(
@@ -252,12 +254,12 @@ export const actionDeploymentController = new ActionDeploymentController({
       !project.deletionInProgress &&
       (!project.gitBranch || project.gitBranch === branch) &&
       (request.intent.kind !== "push" ||
-        request.intent.repository === `${project.gitOwner}/${project.gitRepo}`.toLowerCase()) &&
+        ((request.intent.gitProvider ?? DEFAULT_GIT_PROVIDER) === (project.gitProvider ?? DEFAULT_GIT_PROVIDER) && request.intent.repository === `${project.gitOwner}/${project.gitRepo}`.toLowerCase())) &&
       links.every(
         ({ workflow }) =>
-          workflow.enabled &&
-          workflow.owner === project.gitOwner?.toLowerCase() &&
-          workflow.repo === project.gitRepo?.toLowerCase(),
+          workflow.enabled && matchesProjectRepository(project, {
+            provider: workflow.gitProvider, namespace: workflow.owner, name: workflow.repo,
+          }),
       );
     // The default queue waits cheaply in the database. Do not poll GitHub for
     // a blocked push on every retry while its predecessor is still running.
@@ -265,7 +267,7 @@ export const actionDeploymentController = new ActionDeploymentController({
       await (await import("../deployments/build.service")).checkNoActiveBuild(project.id);
     return {
       enabled: !!enabled,
-      head: enabled ? await repositoryHead(ctx, project, branch) : "",
+      head: enabled ? await projectRepository(ctx, project).head(branch) : "",
       requirements: Object.fromEntries(
         links.map(({ workflow }) => [workflow.id, workflow.updatedAt.toISOString()]),
       ),
@@ -309,7 +311,7 @@ export const actionDeploymentController = new ActionDeploymentController({
   async deploy(request, owner) {
     const ctx = await resolveExecutionAuthority(request.authority, `actions-deploy:${request.id}`);
     await requireDeploymentProject(ctx, request);
-    const { event: _event, kind: _kind, repository: _repository, ...intent } = request.intent;
+    const { event: _event, kind: _kind, repository: _repository, gitProvider: _gitProvider, ...intent } = request.intent;
     const result = await (
       await import("../deployments/build.service")
     ).triggerDeployment(ctx, {
@@ -410,7 +412,7 @@ export async function updateActionDeploymentRequest(
     if (
       !project.autoDeploy ||
       (project.gitBranch && project.gitBranch !== branch) ||
-      (await repositoryHead(ctx, project, branch)) !== request.revision
+      (await projectRepository(ctx, project).head(branch)) !== request.revision
     )
       throw new AppError(
         "This commit is no longer the automatic deployment target. Push a new commit or deploy manually.",

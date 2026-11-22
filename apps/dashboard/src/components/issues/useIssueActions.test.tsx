@@ -233,6 +233,41 @@ it("keeps the clicked row visible through an older or incomplete feed response",
   expect(button()).toBeNull();
 });
 
+it.each(["update_available", "deploy_blocked"] as const)(
+  "keeps update names when a concurrent %s action finishes",
+  async (kind) => {
+    const other: SystemIssue = {
+      ...issue,
+      id: "other",
+      kind,
+      target: { ...issue.target, id: "proj_other", name: "Other app" },
+    };
+    h.apply.mockResolvedValueOnce(accepted).mockResolvedValueOnce({
+      data: { deployment_id: "dep_z", project_id: "proj_other" },
+    });
+    await render("page", [issue, other]);
+    await act(async () => {
+      await actions.resolve(issue);
+      await actions.resolve(other);
+    });
+    h.status.mockResolvedValue(ready);
+    await tick();
+
+    if (kind === "update_available") {
+      expect(h.toast).toHaveBeenCalledExactlyOnceWith(
+        "success",
+        "Updates finished (2): MongoDB, Other app",
+        "Monitoring",
+      );
+    } else {
+      expect(h.toast.mock.calls).toEqual([
+        ["success", "Done", "Monitoring"],
+        ["success", "Update finished: MongoDB", "Monitoring"],
+      ]);
+    }
+  },
+);
+
 it.each([
   { status: "failed", deploymentStatus: "failed", errorMessage: "Image pull failed" },
   { status: "cancelled", deploymentStatus: "cancelled", errorMessage: "Deployment cancelled" },

@@ -44,6 +44,8 @@ import type { PlatformTokenOperations } from "./tokens";
 import { PermissionCollectionSchemas, PermissionResourceSchemas } from "@repo/contracts";
 import type { PlatformPermissionOperations } from "./permissions";
 import { GitHubCollectionSchemas, GitHubResourceSchemas } from "@repo/contracts";
+import { GitCollectionSchemas } from "@repo/contracts";
+import type { PlatformGitOperations } from "./git";
 import type { PlatformGitHubOperations } from "./github";
 import { NoticeCollectionSchemas } from "@repo/contracts";
 import type { PlatformNoticeOperations } from "./notices";
@@ -322,6 +324,7 @@ export async function createNativePlatform(value: NativePlatformOptions): Promis
     referralProgram: Object.freeze(Object.fromEntries(Object.keys(ReferralOperationSchemas).map(name => [name, (...args: unknown[]) => call(`referralProgram.${name}`, ...args)]))) as PlatformReferralOperations,
     billing: Object.freeze(Object.fromEntries(Object.keys({ ...BillingPublicSchemas, ...BillingOperationSchemas }).map(name => [name, (...args: unknown[]) => call(`billing.${name}`, ...args)]))) as PlatformBillingOperations,
     notices: Object.freeze(Object.fromEntries(Object.keys({ ...NoticeCollectionSchemas }).map(name => [name, (...args: unknown[]) => call(`notices.${name}`, ...args)]))) as PlatformNoticeOperations,
+    git: Object.freeze(Object.fromEntries(Object.keys(GitCollectionSchemas).map(name => [name, (...args: unknown[]) => call(`git.${name}`, ...args)]))) as PlatformGitOperations,
     github: Object.freeze(Object.fromEntries(Object.keys({ ...GitHubCollectionSchemas, ...GitHubResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`github.${name}`, ...args)]))) as PlatformGitHubOperations,
     permissions: Object.freeze(Object.fromEntries(Object.keys({ ...PermissionCollectionSchemas, ...PermissionResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`permissions.${name}`, ...args)]))) as PlatformPermissionOperations,
     tokens: Object.freeze(Object.fromEntries(Object.keys({ ...TokenCollectionSchemas, ...TokenResourceSchemas }).map(name => [name, (...args: unknown[]) => call(`tokens.${name}`, ...args)]))) as PlatformTokenOperations,

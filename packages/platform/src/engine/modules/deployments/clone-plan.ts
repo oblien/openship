@@ -51,7 +51,7 @@ export interface ClonePlanInput {
    *  credential (resolved later; degrades to an api-host clone otherwise). The
    *  adapter re-validates the URL (github + https) before downloading and falls
    *  back to clone. Local/imported projects → false → unchanged. */
-  repoIsGithub?: boolean;
+  preferTargetClone?: boolean;
   /** How Docker reaches its daemon. Source can be prepared on the target only
    *  when that transport also carries a command executor (SSH). Socket/TCP
    *  builds receive a context prepared on the API host. Omitted for non-Docker
@@ -117,7 +117,7 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
     !input.runtimeIsBare &&
     dockerCanCloneOnTarget &&
     !localDockerBuildRequested &&
-    (input.isHosted || input.cloneStrategy === "server" || input.repoIsGithub === true);
+    (input.isHosted || input.cloneStrategy === "server" || input.preferTargetClone === true);
 
   // Pipeline: the clone runs on the target (bare always; docker per above).
   const cloneRunsOnTarget =

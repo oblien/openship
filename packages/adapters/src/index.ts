@@ -651,6 +651,7 @@ export {
 } from "./runtime/cloud/server-connection";
 
 export { resolveSshAuthSock } from "./system/ssh-support";
+export { readLocalGlabToken } from "./system/local-gitlab";
 export { probeLocalGitHubToken } from "./system/local-github";
 export {
   ActionsWorker,

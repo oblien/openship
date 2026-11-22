@@ -94,29 +94,6 @@ export function supportEmail(input: {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/*  Verify email                                                       */
-/* ------------------------------------------------------------------ */
-
-export function verifyEmailTemplate(user: { name?: string | null; email: string }, url: string) {
-  const html = layout(`
-    ${greeting(user.name)}
-    <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 4px">
-      Please verify your email address to get started with ${BRAND}.
-    </p>
-    ${ctaButton(url, "Verify email")}
-    <p style="color:#9ca3af;font-size:13px;margin:0">
-      If you didn't create an account, you can ignore this email.
-    </p>
-  `);
-
-  return {
-    subject: "Verify your Openship email",
-    html,
-    text: `Hi ${user.name || "there"},\n\nVerify your email: ${url}\n\nIf you didn't create an account, ignore this email.`,
-  };
-}
-
 /** A signup retry must not disclose account existence in the HTTP response. */
 export function existingAccountEmail(
   user: { name?: string | null; email: string },

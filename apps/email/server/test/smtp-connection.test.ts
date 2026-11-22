@@ -10,8 +10,10 @@ import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { sendMail } from '../src/lib/smtp';
 import * as imap from '../src/lib/imap';
-import { enqueueSend, runOutboxPass, readJob } from '../src/mail/outbox';
+import { runOutboxPass, readJob } from '../src/mail/outbox';
 import { db, schema } from '../src/db';
+import { mailboxAuth } from '../src/mail/identity';
+import { mailRouter } from '../src/trpc/routes/mail';
 import { simpleParser } from 'mailparser';
 
 let dir: string;
@@ -124,7 +126,7 @@ async function waitForClose(server: Awaited<ReturnType<typeof localSmtp>>) {
 }
 
 describe('webmail submission over real local SMTP sockets', () => {
-  it('dispatches a durable scheduled job once and saves its MIME attachments in Sent', async () => {
+  it('accepts the mailbox address, formats its display name, and sends the scheduled message once', async () => {
     db.delete(schema.mailJob).run();
     const server = await localSmtp('starttls');
     const saved: Buffer[] = [];
@@ -138,6 +140,7 @@ describe('webmail submission over real local SMTP sockets', () => {
     );
     const mailbox = {
       email: 'user@example.test',
+      name: 'Sender, Example',
       password: 'test-only-password',
       imapHost: 'localhost',
       imapPort: 993,
@@ -146,23 +149,33 @@ describe('webmail submission over real local SMTP sockets', () => {
     };
     try {
       routeTo(server.port);
-      const queued = enqueueSend(
-        mailbox,
-        {
-          from: mailbox.email,
-          message: {
-            ...message,
-            attachments: [
-              {
-                name: 'report.txt',
-                type: 'text/plain',
-                base64: Buffer.from('report').toString('base64'),
-              },
-            ],
-          },
-        },
-        new Date(Date.now() + 60_000).toISOString(),
-      );
+      const caller = mailRouter.createCaller({
+        session: { ...mailbox, sessionId: 'smtp-fixture', expiresAt: new Date(Date.now() + 3600_000) },
+        ...mailboxAuth(mailbox),
+        hono: null,
+      });
+      const { to, subject, text } = message;
+      for (const displayName of [mailbox.name, mailbox.email]) {
+        await expect(
+          caller.send({ to, subject, text, fromEmail: `${displayName} <${mailbox.email}>` }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('fromEmail') });
+      }
+      await expect(
+        caller.send({ to, subject, text, fromEmail: 'other@example.test' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+      const queued = await caller.send({
+        to,
+        subject,
+        text,
+        fromEmail: mailbox.email,
+        attachments: [{
+          name: 'report.txt',
+          type: 'text/plain',
+          base64: Buffer.from('report').toString('base64'),
+        }],
+        scheduleAt: new Date(Date.now() + 60_000).toISOString(),
+      });
       await runOutboxPass();
       expect(server.deliveries).toHaveLength(0);
       await runOutboxPass(Date.now() + 120_000);
@@ -173,6 +186,7 @@ describe('webmail submission over real local SMTP sockets', () => {
       expect(saved).toHaveLength(1);
       const sent = await simpleParser(saved[0]!);
       expect(sent.messageId).toBe(`<${queued.messageId}@example.test>`);
+      expect(sent.from?.value).toEqual([{ address: mailbox.email, name: mailbox.name }]);
       expect(sent.attachments[0].content.toString()).toBe('report');
     } finally {
       db.delete(schema.mailJob).run();
