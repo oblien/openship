@@ -190,7 +190,7 @@ export const auth = betterAuth({
         await sendVerificationCode(user.email);
         return;
       }
-      if (!(await reserveAuthEmail(user.email))) return;
+      if (!(await reserveAuthEmail(user.email, "signup"))) return;
       const email = existingAccountEmail(user, resolveDashboardPublicUrl());
       await sendAuthMail(
         { to: user.email, ...email },
