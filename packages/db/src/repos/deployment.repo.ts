@@ -1121,6 +1121,24 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       return rows.length > 0;
     },
 
+    /** Clear only routing metadata. A domain delete can condition this on the
+     * exact warning it observed so it cannot clear a concurrent failure. */
+    async clearRoutingWarning(id: string, expectedWarning?: string): Promise<void> {
+      await db.update(deployment)
+        .set({
+          meta: sql`${deployment.meta} - 'edgeUnsynced' - 'deployWarning'`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(deployment.id, id),
+          ne(deployment.status, "cancelled"),
+          expectedWarning === undefined
+            ? sql`${deployment.meta} ?| array['edgeUnsynced', 'deployWarning']`
+            : sql`${deployment.meta}->'edgeUnsynced' = 'true'::jsonb
+                and ${deployment.meta}->>'deployWarning' = ${expectedWarning}`,
+        ));
+    },
+
     /** Append a dismissal without replacing concurrent metadata or deployment status. */
     async skipPortCheck(id: string, target: number | string): Promise<void> {
       const skipped = sql`case when jsonb_typeof(${deployment.meta}->'portCheckSkipped') = 'array'

@@ -6,6 +6,7 @@ const serviceRepo = vi.hoisted(() => ({ listByProject: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({
   findById: vi.fn(),
   updateStatus: vi.fn(),
+  clearRoutingWarning: vi.fn(),
   listPendingRoleHandovers: async () => [],
 }));
 const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn(), update: vi.fn() }));
@@ -215,13 +216,11 @@ describe("retryProjectRouting — safe self-heal", () => {
       },
     });
     const verifyDomains = vi.fn(async () => {
-      expect(deploymentRepo.updateStatus).not.toHaveBeenCalled();
+      expect(deploymentRepo.clearRoutingWarning).not.toHaveBeenCalled();
       return [];
     });
     expect(await retryProjectRouting("proj_1", "org_1", { verifyDomains })).toEqual({ ok: true });
-    expect(deploymentRepo.updateStatus).toHaveBeenCalledExactlyOnceWith("dep_1", "ready", {
-      meta: { serverId: "srv_1", deployTarget: "server" },
-    });
+    expect(deploymentRepo.clearRoutingWarning).toHaveBeenCalledExactlyOnceWith("dep_1");
   });
 
   it("keeps a skipped domain's diagnosis visible even when the edge itself is healthy (#879)", async () => {
@@ -415,7 +414,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     expect(syncManagedEdgeRoutes).not.toHaveBeenCalled();
     expect(reconcileServerEdge).not.toHaveBeenCalled();
     expect(withExecutor).not.toHaveBeenCalled();
-    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", { meta: { deployTarget: "cloud" } });
+    expect(deploymentRepo.clearRoutingWarning).toHaveBeenCalledExactlyOnceWith("dep_1");
   });
 
   it("preserves a failed managed Cloud port update instead of clearing its warning", async () => {
@@ -458,9 +457,7 @@ describe("retryProjectRouting — safe self-heal", () => {
 
     expect(await retryProjectRouting("proj_1", "org_1")).toEqual({ ok: true });
     expect(applyProjectRouting).toHaveBeenCalledWith("proj_1", expect.objectContaining({ onWarning: expect.any(Function) }));
-    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", {
-      meta: { deployTarget: "cloud", managedServer: { projectId: "proj_1", workspaceId: "ws_1", ownerWorkspaceId: "owner_1" } },
-    });
+    expect(deploymentRepo.clearRoutingWarning).toHaveBeenCalledExactlyOnceWith("dep_1");
     expect(withExecutor).not.toHaveBeenCalled();
   });
 

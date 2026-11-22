@@ -58,13 +58,13 @@ import {
   isLoopbackHost,
 } from "../../lib/server-target";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
-import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
+import { isManagedEdgeWarningForHostname, releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { generateToken } from "../../lib/domain-token";
 import { routableWithoutOwnership } from "../../lib/domain-claims";
 import { untrackedSiteFor } from "../../lib/edge-orphans.service";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import type { UntrackedEdgeSite } from "@repo/core";
-import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
+import { isCloudManagedHostname, publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
 import { sshManager } from "../../lib/ssh-manager";
 import {
   resolveServerIdForProject,
@@ -1213,15 +1213,16 @@ export async function removeDomain(ctx: RequestContext, domainId: string) {
 
 /** The complete domain + edge mutation, held under the project's runtime lock. */
 async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Project) {
+  const deployment = await findActiveDeployment(project).catch((error) => {
+    observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+    return undefined;
+  });
   try {
     // Tear the route down on the RIGHT host (remote server / cloud), not the
     // local orchestrator's OpenResty — reconcileProjectRoutes resolves the
     // deployment's own runtime and handles the cloud case.
-    const deployment = project.activeDeploymentId
-      ? await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/domains/domain.service"); return null; })
-      : null;
     await reconcileProjectRoutes(project, {
-      deployment,
+      deployment: deployment ?? null,
       removes: [{ hostname: domain.hostname, isCustomDomain: domain.domainType === "custom" }],
     });
   } catch (err) {
@@ -1232,9 +1233,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   }
 
   // ── Take back the DNS records we wrote, and only those ───────────────────────
-  // Above the service-scoped branch below on purpose: that branch returns early,
-  // so cleanup placed after it never runs for a per-service domain and leaves the
-  // records pointing at this box forever.
+  // Apply DNS cleanup to both project and service domains.
   //
   // `releaseRecords` deletes only records carrying our ownership marker. Matching
   // on the name alone is what makes this dangerous: for an apex custom domain
@@ -1298,10 +1297,31 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
       serviceId: domain.serviceId,
       routing: serviceRouting,
     });
-    return;
+  } else {
+    await repos.domain.remove(domain.id);
   }
 
-  await repos.domain.remove(domain.id);
+  const meta = deployment?.meta as { edgeUnsynced?: boolean; deployWarning?: string } | null | undefined;
+  const warning = meta?.deployWarning;
+  if (
+    deployment &&
+    !project.workspaceId &&
+    isCloudManagedHostname(domain.hostname) &&
+    meta?.edgeUnsynced === true &&
+    typeof warning === "string" &&
+    isManagedEdgeWarningForHostname(warning, domain.hostname)
+  ) {
+    // The hostname is already removed. Keep deletion successful even if the
+    // advisory cleanup fails, and leave other managed routes for Retry routing.
+    try {
+      const remaining = await repos.domain.listByProject(project.id);
+      if (!remaining.some((row) => isCloudManagedHostname(row.hostname))) {
+        await repos.deployment.clearRoutingWarning(deployment.id, warning);
+      }
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+    }
+  }
 }
 
 /**
