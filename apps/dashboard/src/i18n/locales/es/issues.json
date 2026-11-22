@@ -98,6 +98,8 @@
     "rescanPartial": "Análisis finalizado, {n} comprobación(es) con cobertura incompleta",
     "rescanFailed": "El análisis falló",
     "resolved": "Listo",
+    "updateResolved": "Actualización finalizada: {name}",
+    "updatesResolved": "Actualizaciones finalizadas ({count}): {names}",
     "resolveFailed": "No se pudo aplicar esa corrección",
     "confirmDestructive": "Esto tiene un efecto secundario que no se puede deshacer. ¿Continuar?"
   },
