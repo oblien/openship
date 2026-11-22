@@ -2,7 +2,7 @@ import { and, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { verification } from "../schema/auth";
 
-interface RateLimitWindow {
+export interface RateLimitWindow {
   limit: number;
   windowMs: number;
 }
