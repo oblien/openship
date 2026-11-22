@@ -1,7 +1,8 @@
 import { isImageUrl } from "@repo/core";
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { organizationOptions, isSaasDeployment } from "./organization-lifecycle";
-import { betterAuth, type User } from "better-auth";
+import { organizationOptions } from "./organization-lifecycle";
+import { isSaasDeployment } from "../config/saas-deployment";
+import { betterAuth } from "better-auth";
 import { APIError, getIP } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, jwt, emailOTP } from "better-auth/plugins";
@@ -13,10 +14,10 @@ import {
   resolveAuthBaseUrl,
   resolveDashboardPublicUrl,
 } from "./public-url";
-import { sendMail, smtpEnabled, canSendMail, requireEmailVerificationStrict } from "./mail";
+import { canSendMail, requireEmailVerificationStrict } from "./mail";
+import { sendAuthMail } from "./auth-mail";
 import {
   resetPasswordOtpEmail,
-  verifyEmailTemplate,
   verifyOtpEmailTemplate,
   existingAccountEmail,
 } from "./email-templates";
@@ -48,7 +49,7 @@ export const COOKIE_PREFIX = env.CLOUD_MODE ? "openship-cloud" : "openship";
 // runs with both; keying off either avoids missing it if only one is set. Used
 // to force email verification before login on SaaS only (self-hosted/desktop
 // keep the env-SMTP-gated behavior).
-export { isSaasDeployment } from "./organization-lifecycle";
+export { isSaasDeployment };
 
 function getSharedCookieDomain() {
   // A localhost / single-label host (dev — including the local SaaS on :4100)
@@ -150,15 +151,7 @@ export const auth = betterAuth({
     minPasswordLength: 8,
     maxPasswordLength: 128,
 
-    /* Password reset is CODE-based, so there is deliberately no
-       `sendResetPassword` here.
-
-       Leaving it defined would send a second, link-bearing email alongside the
-       code — Better Auth calls this callback from /request-password-reset, which
-       is a different endpoint from the OTP one, so both would fire for anyone
-       still hitting the old route. The reset code is sent by the emailOTP
-       plugin's `sendVerificationOTP` (type: "forget-password"), which refuses
-       up front when nothing can deliver — see the guard there. */
+    // The emailOTP plugin sends the reset code. Leave the link-based callback unset.
 
     /* Kick every existing session when a password is reset.
        The commonest reason somebody resets a password is that they believe
@@ -177,7 +170,7 @@ export const auth = betterAuth({
        - Self-hosted / desktop: unchanged — only required when env SMTP is
          configured, so a platform-mailbox instance isn't locked out by a
          transient mail-server fault mid-signup. */
-    requireEmailVerification: isSaasDeployment ? true : requireEmailVerificationStrict,
+    requireEmailVerification: isSaasDeployment || requireEmailVerificationStrict,
     // Better Auth deliberately returns the same response for existing addresses.
     // Continue privately by email without adding a credential or replacing a
     // password on an account whose ownership has not been proved.
@@ -189,28 +182,11 @@ export const auth = betterAuth({
         return;
       }
       const email = existingAccountEmail(user, resolveDashboardPublicUrl());
-      if (!(await sendMail({ to: user.email, ...email }))) {
-        throw new APIError("SERVICE_UNAVAILABLE", {
-          message: "Could not send the sign-in email. Please try again.",
-        });
-      }
+      await sendAuthMail(
+        { to: user.email, ...email },
+        "Could not send the sign-in email. Please try again.",
+      );
     },
-    sendVerificationEmail: smtpEnabled
-      ? async ({ user, url }: { user: User; url: string; token: string }) => {
-          const email = verifyEmailTemplate(user, url);
-          const delivered = await sendMail({ to: user.email, ...email });
-          // `requireEmailVerification` blocks sign-in until the address is confirmed,
-          // so a silently-dropped verification mail is an account that can never be
-          // used. Fail the request instead of creating one.
-          if (!delivered) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "Could not send the verification email — this instance has no working " +
-                "email transport. Configure SMTP in Settings → Email.",
-            });
-          }
-        }
-      : undefined,
   },
 
   /* ---------- OAuth Providers ---------- */
@@ -494,79 +470,25 @@ export const auth = betterAuth({
         // Two flows, both link-free by design. `sign-in` and `change-email` OTP
         // types are not enabled, so they fall through and send nothing.
         if (type === "email-verification") {
-          const tmpl = verifyOtpEmailTemplate(otp, { expiresMinutes: 10 });
-          const delivered = await sendMail({ to: email, ...tmpl });
-
-          // DEV ESCAPE HATCH, `local-saas` ONLY.
-          //
-          // That target is a localhost-only SaaS used for development
-          // (`OPENSHIP_TARGET=local-saas`, ports 4100/3100) and it normally has no
-          // mail transport at all. Because CLOUD_MODE is true there,
-          // `requireEmailVerification` is forced on — so without this, signup on a
-          // dev machine is a dead end: the account is created, no session is issued,
-          // and the code needed to finish is inside an email nothing can send.
-          //
-          // Printing an auth credential to a log is only acceptable because of how
-          // narrow the gate is: `runtimeTargetId` comes from OPENSHIP_TARGET, an
-          // explicit operator choice validated against a fixed table (an unknown
-          // value throws at boot), and the `cloud-saas` row — production — cannot
-          // reach this branch. It is NOT gated on NODE_ENV, which flips by accident.
-          if (runtimeTargetId === "local-saas") {
-            errorDiagnostics.warn("platform/engine/lib/auth",
-              `\n[dev:local-saas] email verification code for ${email}: ${otp}\n` +
-                `  (expires in 10 min. Logged because this target has no mail transport; ` +
-                `never happens on cloud-saas.)\n`,
+          // Local SaaS development supports signup before a mail transport is configured.
+          if (runtimeTargetId === "local-saas" && !(await canSendMail())) {
+            errorDiagnostics.warn(
+              "platform/engine/lib/auth",
+              `[dev:local-saas] email verification code for ${email}: ${otp} (expires in 10 min)`,
             );
-            // Deliberately does NOT throw on a delivery failure here, unlike every
-            // other target. The code above is the delivery channel on this target, so
-            // failing the request would make the account uncreatable.
             return;
           }
-
-          if (!delivered) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "Could not send the verification code — this instance has no working " +
-                "email transport. Configure SMTP in Settings → Email.",
-            });
-          }
-          return;
+          await sendAuthMail(
+            { to: email, ...verifyOtpEmailTemplate(otp, { expiresMinutes: 10 }) },
+            "Could not send the verification code. Configure SMTP in Settings → Email.",
+          );
         }
-        // Password reset. This replaced the link flow (`sendResetPassword` in the
-        // emailAndPassword block is deliberately gone): a "click here to change your
-        // password" URL is the most phishing-shaped mail we send, gets scored and
-        // rewritten by gateways, and a rewritten link is indistinguishable from an
-        // attack to whoever reads it. Same reasoning that already made verification
-        // a code.
         if (type === "forget-password") {
-          // Refuse loudly when nothing can deliver. `sendMail` returns SILENTLY with
-          // no transport configured (it warns to the server log and moves on), which
-          // on this flow means the operator is told to check their inbox for a code
-          // that was never sent, and waits — with the account still locked out. That
-          // is worse than an error. `smtpEnabled` cannot express this: it is a
-          // constant `true` ("callbacks wired; runtime decides delivery"), so
-          // `canSendMail()` is the only honest check.
-          if (!(await canSendMail())) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "This instance has no email transport configured, so a reset code " +
-                "cannot be sent. Configure SMTP in Settings → Email, or reset the " +
-                "password from the server with `openship reset-admin`.",
-            });
-          }
-          const tmpl = resetPasswordOtpEmail(otp, { expiresMinutes: 10 });
-          // Check the RESULT as well as the pre-flight above. `canSendMail()` reads a
-          // transport cache with a 60s TTL, so it can say yes for a config that has
-          // since been changed or broken — and being told to check your inbox while
-          // locked out is the worst place to be optimistic.
-          if (!(await sendMail({ to: email, ...tmpl }))) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              message:
-                "Could not send the reset code — this instance has no working email " +
-                "transport. Configure SMTP in Settings → Email, or reset the password " +
-                "from the server with `openship reset-admin`.",
-            });
-          }
+          await sendAuthMail(
+            { to: email, ...resetPasswordOtpEmail(otp, { expiresMinutes: 10 }) },
+            "Could not send the reset code. Configure SMTP in Settings → Email, or reset the password " +
+              "from the server with `openship reset-admin`.",
+          );
         }
       },
     }),

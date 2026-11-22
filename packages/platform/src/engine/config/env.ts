@@ -316,20 +316,16 @@ const envSchema = z.object({
   GITHUB_PRIVATE_KEY_BASE64: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
-  /* ---------- Email (SMTP) ---------- */
+  /* ---------- System email ---------- */
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Openship <noreply@openship.io>"),
-  /** Optional Cloud customer aliases authorized by the same SMTP credentials.
-   * Unset/blank aliases use the transport's configured sender. */
-  SMTP_SUPPORT_FROM: z.string().trim().optional(),
   /** Public contact intake fails closed until a production Turnstile widget is configured. */
   CONTACT_TURNSTILE_SECRET: z.string().trim().optional(),
   CONTACT_TURNSTILE_HOSTNAMES: z.string().default("openship.io,www.openship.io"),
   CONTACT_EMAIL: z.string().email().default("contact@openship.io"),
-  SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */
   /**

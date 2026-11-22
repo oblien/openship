@@ -136,7 +136,7 @@ it.each(["hosting", "management"] as const)(
       expect.objectContaining({
         to: (await repos.user.findById(f.userId))!.email,
         replyTo: "support@openship.io",
-        customerSender: "support",
+        cloudOnly: true,
       }),
     );
   },

@@ -57,13 +57,12 @@ export class CustomerEmailService {
       return null;
     const base = {
       to: recipient.email,
-      preferSource: "auto" as const,
+      cloudOnly: true as const,
       messageId: `<customer-${customerEmailId(row.id)}@openship.io>`,
     };
     if (row.kind === "signup")
       return {
         ...base,
-        customerSender: "support",
         replyTo: SUPPORT_EMAIL,
         ...signupWelcome(
           recipient.name,
@@ -82,7 +81,6 @@ export class CustomerEmailService {
       if (!current || current.canceledAt !== row.cancellation.canceledAt) return null;
       return {
         ...base,
-        customerSender: "support",
         replyTo: SUPPORT_EMAIL,
         ...cancellationEmail(
           recipient.name,
@@ -97,7 +95,6 @@ export class CustomerEmailService {
     return row.kind === "purchase"
       ? {
           ...base,
-          customerSender: "support",
           replyTo: SUPPORT_EMAIL,
           ...purchaseWelcome(
             recipient.name,
@@ -107,7 +104,6 @@ export class CustomerEmailService {
         }
       : {
           ...base,
-          customerSender: "billing",
           ...invoiceEmail(recipient.name, row.payment, billingUrl),
         };
   }
@@ -138,12 +134,12 @@ export class CustomerEmailService {
           result.canceled++;
           continue;
         }
-        if (!(await this.options.send(mail))) throw new Error("SMTP is unavailable");
+        if (!(await this.options.send(mail))) throw new Error("Cloud email is unavailable");
         await this.options.repo.finish(row.id, leaseId, "sent", this.now());
         result.sent++;
       } catch {
         // diagnostics-ignore: only normalized delivery state is persisted, never
-        // SMTP credentials, payment links, addresses or provider error bodies.
+        // credentials, payment links, addresses or provider error bodies.
         const next =
           row.attempts >= 12
             ? null

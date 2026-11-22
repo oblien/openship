@@ -18,7 +18,6 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
 });
 vi.mock("@repo/platform/engine/lib/mail", () => ({
   sendMail: h.send,
-  smtpEnabled: true,
   canSendMail: async () => true,
   requireEmailVerificationStrict: true,
 }));
@@ -75,7 +74,7 @@ it("welcomes a real SaaS email signup only after the real OTP verification flow"
     expect.objectContaining({
       to: email,
       subject: "Welcome to OpenShip",
-      customerSender: "support",
+      cloudOnly: true,
       replyTo: "support@openship.io",
     }),
   );
@@ -158,7 +157,7 @@ it("welcomes a verified Google signup through the same outbox without repeating 
       expect.objectContaining({
         to: email,
         subject: "Welcome to OpenShip",
-        customerSender: "support",
+        cloudOnly: true,
         replyTo: "support@openship.io",
       }),
     );
