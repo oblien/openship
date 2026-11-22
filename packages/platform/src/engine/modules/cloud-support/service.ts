@@ -179,7 +179,7 @@ export class CloudSupportService {
     const messages = await this.options.repo.messages(id);
     return {
       ticket: { ...customerTicket(ticket), message: ticket.message },
-      // Mail receipts, delivery leases, SMTP errors and operator addresses are
+      // Mail receipts, delivery leases, provider errors and operator addresses are
       // not conversation content and never enter the customer response.
       messages: messages.flatMap((message) =>
         (message.kind === "reply" || message.kind === "customer_reply") && message.body
@@ -399,18 +399,18 @@ export class CloudSupportService {
               throw new AppError(
                 "No mail transport accepted this message",
                 503,
-                "SMTP_UNAVAILABLE",
+                "CLOUD_MAIL_UNAVAILABLE",
               );
             await this.options.repo.delivered(message.id, leaseId, new Date());
             summary.delivered++;
           } catch (error) {
             observeCaughtError(error, "platform/engine/modules/cloud-support/service");
-            // SMTP errors may contain credentials/addresses. Persist only a safe
+            // Provider errors may contain credentials/addresses. Persist only a safe
             // operational diagnosis, never the provider's raw response.
             const reason =
-              error instanceof AppError && error.code === "SMTP_UNAVAILABLE"
-                ? "No configured mail transport accepted this email. Check Cloud SMTP settings."
-                : "Email delivery failed. Check Cloud SMTP settings and retry delivery.";
+              error instanceof AppError && error.code === "CLOUD_MAIL_UNAVAILABLE"
+                ? "Cloud email is unavailable. Check the Oblien API credentials."
+                : "Email submission failed. Check Oblien mail and retry delivery.";
             const delay = Math.min(60 * 60_000, 60_000 * 2 ** Math.min(message.attempts - 1, 6));
             await this.options.repo.failed(
               message.id,

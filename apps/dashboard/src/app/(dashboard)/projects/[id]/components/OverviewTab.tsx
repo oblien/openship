@@ -3,6 +3,7 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import React from "react";
+import { gitRepositoryLink } from "@repo/core";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
@@ -220,7 +221,7 @@ export const OverviewTab = () => {
               <div className="h-[14px] w-28 rounded bg-muted-foreground/20 animate-pulse" />
             ) : hasGit ? (
               <a
-                href={`https://github.com/${projectData.gitOwner}/${projectData.gitRepo}`}
+                href={gitRepositoryLink(projectData.gitProvider, projectData.gitOwner, projectData.gitRepo)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex min-w-0 items-center gap-1.5 truncate sm:max-w-[180px]"

@@ -27,6 +27,18 @@ const r = secureRouter(new Hono(), {
 });
 
 r.post(
+  "/cli",
+  {
+    tag: "settings:admin",
+    localOnly: true,
+    auditHandledByOperation: true,
+    body: CredentialCollectionSchemas.connectCli.input,
+    mcpExcluded: "Interactive instance administrator consent to link the controller's CLI.",
+  },
+  requireRole("admin"),
+  ctrl.connectCli,
+);
+r.post(
   "/authorization",
   {
     tag: "settings:admin",

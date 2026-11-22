@@ -67,12 +67,13 @@ export function createWebhookDeliveryRepo(db: Database) {
 
   return {
     /**
-     * Atomically CLAIM a GitHub delivery id (source='github'). Returns
+     * Atomically claim a delivery id within its provider. Returns
      * claimed:true + the new row id on the FIRST delivery; claimed:false on a
      * completed/in-flight redelivery. A finished failure can be reclaimed once
      * so an operator can redeliver after fixing a blocked deployment (#847).
      */
-    async claimGithub(
+    async claimProviderDelivery(
+      provider: string,
       input: Omit<WebhookDeliveryInput, "source" | "deliveryId" | "event"> & {
         deliveryId: string;
         event: string;
@@ -81,7 +82,7 @@ export function createWebhookDeliveryRepo(db: Database) {
       const id = generateId("wdl");
       const rows = await db
         .insert(webhookDelivery)
-        .values({ ...input, id, source: "github" })
+        .values({ ...input, id, source: provider })
         .onConflictDoNothing()
         .returning();
       if (rows.length > 0) return { claimed: true, id };
@@ -96,7 +97,7 @@ export function createWebhookDeliveryRepo(db: Database) {
         })
         .where(
           and(
-            eq(webhookDelivery.source, "github"),
+            eq(webhookDelivery.source, provider),
             eq(webhookDelivery.deliveryId, input.deliveryId),
             eq(webhookDelivery.event, input.event),
             eq(webhookDelivery.outcome, "failed"),

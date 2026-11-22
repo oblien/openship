@@ -359,6 +359,7 @@ function ProjectContent({ projectId }: { projectId: string }) {
         <WorkflowSetupDialog
           initial={{
             projectId,
+            gitProvider: value.policy.project.gitProvider,
             owner: value.policy.project.owner ?? undefined,
             repo: value.policy.project.repo ?? undefined,
             ref: value.policy.project.branch ?? undefined,

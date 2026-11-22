@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { LocalExecutor } from "./local-executor";
+import { readLocalGlabToken } from "./local-gitlab";
 import { hasLocalCommand, sq } from "./local-shell";
 import { createExecutor } from "./executor";
 import { BareRuntime } from "../runtime/bare";
@@ -35,6 +36,7 @@ describe("Cloud cannot execute on the API host", () => {
       const onLog = vi.fn();
       vi.stubEnv("CLOUD_MODE", mode);
       for (const operation of [
+        readLocalGlabToken,
         () => executor.exec(command),
         () => direct.exec(command),
         () => direct.rawExec(command),

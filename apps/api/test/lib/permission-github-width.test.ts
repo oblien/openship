@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Context } from "hono";
 import {
-  githubReadTarget,
+  repositoryReadTarget,
   parsePermissionTag,
   getRouteRegistry,
   isPublicSpec,
@@ -25,7 +25,7 @@ import {
  * These tests pin the routing decision that avoids that trap.
  */
 
-/** Minimal Context stand-in — githubReadTarget only reads req.param(). */
+/** Minimal Context stand-in — repositoryReadTarget only reads req.param(). */
 const ctxWith = (params: Record<string, string>) =>
   ({ req: { param: (n: string) => params[n] } }) as unknown as Context;
 
@@ -35,17 +35,17 @@ const paramsOf = (path: string): Record<string, string> =>
     (path.match(/:([A-Za-z0-9_]+)/g) ?? []).map((m) => [m.slice(1), `v-${m.slice(1)}`]),
   );
 
-describe("githubReadTarget: routes that resolve by grant width", () => {
+describe("repositoryReadTarget: routes that resolve by grant width", () => {
   it("matches a per-repo read and keys it owner/repo", () => {
-    const t = githubReadTarget(
+    const t = repositoryReadTarget(
       parsePermissionTag("github:read"),
       ctxWith({ owner: "hydralerne", repo: "charts" }),
     );
-    expect(t).toEqual({ owner: "hydralerne", repo: "charts", key: "hydralerne/charts" });
+    expect(t).toEqual({ provider: "github", owner: "hydralerne", repo: "charts", key: "hydralerne/charts" });
   });
 
   it("matches a per-repo list (branches, files, webhooks)", () => {
-    const t = githubReadTarget(
+    const t = repositoryReadTarget(
       parsePermissionTag("github:list"),
       ctxWith({ owner: "hydralerne", repo: "charts" }),
     );
@@ -53,26 +53,26 @@ describe("githubReadTarget: routes that resolve by grant width", () => {
   });
 
   it("matches /orgs/:org/repos on the `org` param, with no repo", () => {
-    const t = githubReadTarget(parsePermissionTag("github:list"), ctxWith({ org: "hydralerne" }));
-    expect(t).toEqual({ owner: "hydralerne", repo: null, key: "hydralerne" });
+    const t = repositoryReadTarget(parsePermissionTag("github:list"), ctxWith({ org: "hydralerne" }));
+    expect(t).toEqual({ provider: "github", owner: "hydralerne", repo: null, key: "hydralerne" });
   });
 });
 
-describe("githubReadTarget: routes that stay on the org-wide path", () => {
+describe("repositoryReadTarget: routes that stay on the org-wide path", () => {
   it("does NOT match write/admin — mutations still need owner role or an all-GitHub grant", () => {
     const params = { owner: "hydralerne", repo: "charts" };
-    expect(githubReadTarget(parsePermissionTag("github:write"), ctxWith(params))).toBeNull();
-    expect(githubReadTarget(parsePermissionTag("github:admin"), ctxWith(params))).toBeNull();
+    expect(repositoryReadTarget(parsePermissionTag("github:write"), ctxWith(params))).toBeNull();
+    expect(repositoryReadTarget(parsePermissionTag("github:admin"), ctxWith(params))).toBeNull();
   });
 
   it("does NOT match paramless GitHub reads (/home, /status, /repos)", () => {
-    expect(githubReadTarget(parsePermissionTag("github:read"), ctxWith({}))).toBeNull();
-    expect(githubReadTarget(parsePermissionTag("github:list"), ctxWith({}))).toBeNull();
+    expect(repositoryReadTarget(parsePermissionTag("github:read"), ctxWith({}))).toBeNull();
+    expect(repositoryReadTarget(parsePermissionTag("github:list"), ctxWith({}))).toBeNull();
   });
 
   it("does NOT match non-GitHub tags that happen to carry an owner param", () => {
     expect(
-      githubReadTarget(parsePermissionTag("project:read"), ctxWith({ owner: "x", repo: "y" })),
+      repositoryReadTarget(parsePermissionTag("project:read"), ctxWith({ owner: "x", repo: "y" })),
     ).toBeNull();
   });
 });
@@ -98,7 +98,7 @@ describe("every owner-scoped GitHub read route resolves by width", () => {
     expect(ownerScopedReads.length).toBeGreaterThanOrEqual(5);
 
     for (const route of ownerScopedReads) {
-      const target = githubReadTarget(
+      const target = repositoryReadTarget(
         parsePermissionTag(route.spec.tag as string),
         ctxWith(paramsOf(route.path)),
       );

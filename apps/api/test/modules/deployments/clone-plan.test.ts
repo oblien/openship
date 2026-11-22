@@ -15,7 +15,7 @@ const base: ClonePlanInput = {
 describe("resolveClonePlan", () => {
   it("hosted management keeps even an explicit local-build request on the SSH target", () => {
     const plan = resolveClonePlan({ ...base, isHosted: true, isDesktop: false,
-      repoIsGithub: false, dockerTransport: "ssh", buildStrategy: "local", cloneStrategy: "api-host" });
+      preferTargetClone: false, dockerTransport: "ssh", buildStrategy: "local", cloneStrategy: "api-host" });
     expect(plan.sourceLocation).toBe("target");
     expect(plan.cloneCredentialPurpose).toBe("server");
     expect(plan.relayEligible).toBe(false);
@@ -132,7 +132,7 @@ describe("resolveClonePlan", () => {
     it("local socket: server-row deployment acquires source on the API host", () => {
       const plan = resolveClonePlan({
         ...base,
-        repoIsGithub: true,
+        preferTargetClone: true,
         cloneStrategy: "server",
         dockerTransport: "socket",
       });
@@ -145,7 +145,7 @@ describe("resolveClonePlan", () => {
     it("TCP daemon: context is prepared on the API host because there is no command channel", () => {
       const plan = resolveClonePlan({
         ...base,
-        repoIsGithub: true,
+        preferTargetClone: true,
         dockerTransport: "tcp",
       });
       expect(plan.sourceLocation).toBe("api-host");
@@ -155,7 +155,7 @@ describe("resolveClonePlan", () => {
     it("remote SSH daemon: target source acquisition remains available", () => {
       const plan = resolveClonePlan({
         ...base,
-        repoIsGithub: true,
+        preferTargetClone: true,
         dockerTransport: "ssh",
       });
       expect(plan.sourceLocation).toBe("target");
@@ -166,7 +166,7 @@ describe("resolveClonePlan", () => {
     it("local build strategy stays API-host unless explicit target cloning was requested", () => {
       const automatic = resolveClonePlan({
         ...base,
-        repoIsGithub: true,
+        preferTargetClone: true,
         buildStrategy: "local",
         cloneStrategy: "api-host",
         dockerTransport: "ssh",
@@ -175,7 +175,7 @@ describe("resolveClonePlan", () => {
 
       const explicit = resolveClonePlan({
         ...base,
-        repoIsGithub: true,
+        preferTargetClone: true,
         buildStrategy: "local",
         cloneStrategy: "server",
         dockerTransport: "ssh",

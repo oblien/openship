@@ -3,6 +3,7 @@
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useState } from "react";
+import { gitRepositoryLink } from "@repo/core";
 import { formatDate } from "@/utils/date";
 import FileIcon from "@/components/ui/FileIcon";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -44,9 +45,7 @@ export const CommitDetailsModal: React.FC<CommitDetailsModalProps> = ({
   };
 
   const hasCommitData = deployment.commit && deployment.commit.hash && deployment.commit.hash !== 'N/A';
-  const commitUrl = deployment.owner && deployment.repo && deployment.commit?.hash
-    ? `https://github.com/${deployment.owner}/${deployment.repo}/commit/${deployment.commit.hash}`
-    : null;
+  const commitUrl = gitRepositoryLink(deployment.gitProvider, deployment.owner, deployment.repo, deployment.commit?.fullHash || deployment.commit?.hash);
 
   const changedFiles = deployment.commit?.changedFiles || [];
 

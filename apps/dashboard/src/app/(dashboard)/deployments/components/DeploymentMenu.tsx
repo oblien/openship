@@ -4,6 +4,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useState, useRef, useEffect } from "react";
+import { gitProviderDefinition, gitRepositoryLink } from "@repo/core";
 
 import { deployApi, getApiErrorMessage, type RestorePlanUI } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -17,7 +18,7 @@ import { canConfirmRestore, canRequestRestorePlan, restoreModeCopy } from "./res
  *  which silently disabled rollback and hid Pin entirely. */
 type Deployment = Pick<
   DeploymentRow,
-  "id" | "status" | "domain" | "owner" | "repo" | "artifactRetainedAt" | "pinned" | "isActive"
+  "id" | "status" | "domain" | "gitProvider" | "owner" | "repo" | "artifactRetainedAt" | "pinned" | "isActive"
 >;
 
 interface DeploymentMenuProps {
@@ -188,15 +189,15 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
             </button>
           )}
 
-          {deployment.owner && deployment.repo && (
+          {gitRepositoryLink(deployment.gitProvider, deployment.owner, deployment.repo) && (
             <button
               onClick={() => {
-                window.open(`https://github.com/${deployment.owner}/${deployment.repo}`, "_blank");
+                window.open(gitRepositoryLink(deployment.gitProvider, deployment.owner, deployment.repo), "_blank", "noopener,noreferrer");
                 setIsOpen(false);
               }}
               className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
             >
-              <UiIcon name="github" size={16} />
+              <UiIcon name={(gitProviderDefinition(deployment.gitProvider)?.icon ?? "git-branch") as import("@repo/ui/icons").IconName} size={16} />
               {t.deployments.menu.viewRepository}
             </button>
           )}

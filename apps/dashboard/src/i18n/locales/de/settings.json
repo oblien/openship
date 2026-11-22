@@ -1589,6 +1589,15 @@
     "namePlaceholder": "z. B. GHCR nur lesen",
     "secretKeptPlaceholder": "•••••••• (gespeichert — leer lassen zum Beibehalten)",
     "selectPlaceholder": "Auswählen…",
+    "gitlab": {
+      "continue": "Weiter mit GitLab",
+      "useToken": "Zugriffstoken verwenden",
+      "useCli": "GitLab CLI verwenden",
+      "createToken": "Token auf GitLab erstellen",
+      "oauthHelp": "Erlaube OpenShip, mit deinem GitLab-Konto deine Repositorys zu lesen und Deployment-Webhooks zu verwalten.",
+      "cliHelp": "Melde dich auf dem Rechner an, auf dem OpenShip läuft. Durch die Verbindung kann dieser Arbeitsbereich das CLI-Konto für Repositoryzugriffe und Builds auf diesem Rechner verwenden.",
+      "connectionName": "Verbindungsname (optional)"
+    },
     "verifyNote": "OpenShip prüft die Zugangsdaten beim Anbieter, bevor sie gespeichert werden.",
     "confirmDelete": "\"{name}\" löschen? Alles, was darauf angewiesen ist, funktioniert nicht mehr.",
     "toast": {
@@ -1602,6 +1611,14 @@
       "verifyFailed": "Der Anbieter hat die Zugangsdaten abgelehnt"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Zugriffstoken",
+            "help": "Verwende read_api und read_repository zum Durchsuchen und Klonen. Für Deployments bei einem Push wähle zusätzlich api und verwende ein Konto, das Projekt-Webhooks verwalten darf."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Container-Registry",
         "summary": "Private Images während des Deployments aus einer Registry laden.",

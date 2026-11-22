@@ -1,3 +1,4 @@
+import { gitProviderDefinition } from "@repo/core";
 /**
  * Pure sanitizers for the migration controller's request bodies. Extracted so
  * they can be unit-tested without the controller's heavy import graph (Hono,
@@ -170,13 +171,13 @@ export function sanitizeRoutes(
 /** Validate the optional project-level git source (v1: GitHub only). */
 export function sanitizeGitSource(
   input: unknown,
-): { provider: "github"; owner: string; repo: string; branch?: string } | undefined {
+): { provider: string; owner: string; repo: string; branch?: string } | undefined {
   if (!input || typeof input !== "object") return undefined;
   const g = input as { provider?: unknown; owner?: unknown; repo?: unknown; branch?: unknown };
-  if (g.provider !== "github") return undefined;
+  if (typeof g.provider !== "string" || !gitProviderDefinition(g.provider)) return undefined;
   const owner = typeof g.owner === "string" ? g.owner.trim() : "";
   const repo = typeof g.repo === "string" ? g.repo.trim() : "";
   if (!owner || !repo) return undefined;
   const branch = typeof g.branch === "string" && g.branch.trim() ? g.branch.trim() : undefined;
-  return { provider: "github", owner, repo, branch };
+  return { provider: g.provider, owner, repo, branch };
 }

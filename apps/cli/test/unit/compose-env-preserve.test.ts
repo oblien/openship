@@ -961,10 +961,25 @@ describe("the .env is read like Docker Compose reads it", () => {
     expect(h.written.get(composePaths.env)).not.toContain("\r");
   });
 
-  it("masks a lowercase secret in the dry-run plan", async () => {
-    seedEnv({ ...CONFIGURED, registry_password: "hunter2" });
-    const row = composePlan({}).settings.find((s) => s.key === "registry_password");
-    expect(row?.value).toBe("<preserved>");
+  it("lists preserved operator settings without exposing their values in the dry-run plan", () => {
+    seedEnv({
+      ...CONFIGURED,
+      http_proxy: "http://fixture-user:fixture-password@proxy.internal:3128",
+      registry_password: "fixture-registry-password",
+      aws_secret_access_key: "fixture-access-key",
+      CUSTOM_OPTION: "fixture-operator-value",
+    });
+    const plan = composePlan({});
+    expect(plan.settings).toEqual(
+      expect.arrayContaining([
+        { key: "http_proxy", value: "<preserved>" },
+        { key: "registry_password", value: "<preserved>" },
+        { key: "aws_secret_access_key", value: "<preserved>" },
+        { key: "CUSTOM_OPTION", value: "<preserved>" },
+        { key: "API_PORT", value: "4100" },
+      ]),
+    );
+    expect(plan.newSecrets).toEqual([]);
   });
 });
 

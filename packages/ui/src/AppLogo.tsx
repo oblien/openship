@@ -13,6 +13,8 @@ const BRAND_LOGO: Record<
   string,
   { slug?: string; src?: string; catalogIcon?: IconName; fill?: boolean; darkInvert?: boolean }
 > = {
+  github: { src: "/provider-logos/github.svg", darkInvert: true },
+  gitlab: { src: "/icons/gitlab.png" },
   railway: { src: "/provider-logos/railway.svg", darkInvert: true },
   vercel: { src: "/provider-logos/vercel.svg", darkInvert: true },
   // Runner capabilities are local information; their platform mark works offline too.

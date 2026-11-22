@@ -6,6 +6,7 @@ import {
   actionFinished,
   actionRunnerMismatch,
   generateId,
+  type GitRepositoryRef,
   type ActionJobSpec,
   type ActionWorkerEvent,
   type ActionRunAdmission,
@@ -539,15 +540,17 @@ export function createActionsRepo(db: Database) {
         .where(workflowWhere(org, id));
     },
     /** Internal webhook/schedule lookup. The caller reauthorizes each saved delegation. */
-    async matchingWorkflows(owner?: string, repo?: string) {
+    async matchingWorkflows(ref?: GitRepositoryRef, organizationIds?: readonly string[]) {
       return db
         .select()
         .from(actionWorkflow)
         .where(
           and(
             eq(actionWorkflow.enabled, true),
-            owner ? eq(actionWorkflow.owner, owner.toLowerCase()) : undefined,
-            repo ? eq(actionWorkflow.repo, repo.toLowerCase()) : undefined,
+            organizationIds && inArray(actionWorkflow.organizationId, [...organizationIds]),
+            ref ? eq(actionWorkflow.gitProvider, ref.provider) : undefined,
+            ref ? eq(actionWorkflow.owner, ref.namespace.toLowerCase()) : undefined,
+            ref ? eq(actionWorkflow.repo, ref.name.toLowerCase()) : undefined,
           ),
         );
     },

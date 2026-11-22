@@ -660,14 +660,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Önce GitHub'a bağlanın",
-      "description": "Bu projeye bir depo bağlamak için GitHub hesabınızı bağlayın.",
+      "title": "Önce {provider}'a bağlanın",
+      "description": "Bu projeye bir depo bağlamak için {provider} hesabınızı bağlayın.",
       "connecting": "Bağlanılıyor…",
-      "connect": "GitHub'a Bağlan"
+      "connect": "{provider}'a Bağlan"
     },
     "link": {
       "title": "Bir Depo Bağlayın",
-      "description": "Webhook tetiklemeli dağıtımları etkinleştirmek için bir GitHub deposu bağlayın.",
+      "description": "Webhook tetiklemeli dağıtımları etkinleştirmek için bir {provider} deposu bağlayın.",
       "select": "Depo Seç"
     },
     "picker": {

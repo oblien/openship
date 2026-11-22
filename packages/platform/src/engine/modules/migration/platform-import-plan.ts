@@ -1,5 +1,6 @@
 import { createHash, randomUUID, randomBytes } from "node:crypto";
 import {
+  DEFAULT_GIT_PROVIDER,
   AppError,
   normalizeAliasStrict,
   slugify,
@@ -20,7 +21,8 @@ import { authorization } from "../../lib/authorization";
 import { requireOrganizationAdmin } from "../../lib/organization-authorization";
 import { getProviderAccess } from "../credentials/connection-authorization";
 import { resolveProjectInfo } from "../deployments/prepare.service";
-import { createGitHubReader } from "../deployments/project-reader";
+import { gitRepository } from "../git/provider";
+import { createGitReader } from "../deployments/project-reader";
 import { requireMigrationServer } from "./migration-access";
 import { migrationProviders } from "./providers";
 import {
@@ -409,7 +411,9 @@ export async function reviewPlatform(
         services: [{ ...composeService, image: source.image }],
       };
     } else if (source.repository && source.commit) {
-      const [owner, repo] = source.repository.split("/");
+      const slash = source.repository.lastIndexOf("/");
+      const owner = source.repository.slice(0, slash), repo = source.repository.slice(slash + 1);
+      const provider = source.gitProvider ?? DEFAULT_GIT_PROVIDER;
       try {
         if (source.dockerfile) {
           const root = normalizeProjectRootDirectory(source.rootDirectory);
@@ -424,9 +428,7 @@ export async function reviewPlatform(
             );
             continue;
           }
-          const reader = createGitHubReader(ctx, owner, repo, source.commit, {
-            serverId: input.targetServerId,
-          });
+          const reader = createGitReader(gitRepository(ctx, { provider, namespace: owner, name: repo }, { serverId: input.targetServerId }), source.commit);
           if (!(await reader.readText([root, dockerfile].filter(Boolean).join("/")))) {
             source.blockers.push(
               "The selected Dockerfile was not found at the deployed Git revision. Check its path relative to the application root.",
@@ -435,7 +437,7 @@ export async function reviewPlatform(
           }
           service.create = {
             ...service.create,
-            gitProvider: "github",
+            gitProvider: provider,
             gitOwner: owner,
             gitRepo: repo,
             gitBranch: source.branch ?? "main",
@@ -447,7 +449,8 @@ export async function reviewPlatform(
           continue;
         }
         const info = await resolveProjectInfo({
-          source: "github",
+          source: "git",
+          provider,
           ctx,
           owner,
           repo,
@@ -475,7 +478,7 @@ export async function reviewPlatform(
         );
         service.create = {
           ...service.create,
-          gitProvider: "github",
+          gitProvider: provider,
           gitOwner: owner,
           gitRepo: repo,
           gitBranch: source.branch ?? "main",
@@ -507,7 +510,7 @@ export async function reviewPlatform(
         // Repository errors can include source files or private URLs. Keep this
         // review actionable without returning their contents or credentials.
         source.blockers.push(
-          "Openship could not read this GitHub revision. Grant repository access and check its build configuration, then review again.",
+          "Openship could not read this Git revision. Grant repository access and check its build configuration, then review again.",
         );
       }
     }

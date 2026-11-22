@@ -1,15 +1,17 @@
-import { AppError, NotFoundError } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, AppError, NotFoundError } from "@repo/core";
 import { repos, type ActionRun, type ActionWorkflow } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
-import { assertGitHubRepoAccess } from "../github/github-access";
-import { resolveGitHubApiBaseUrl } from "../github/github-source.service";
+import { requireGitCapability } from "../git/provider";
+import { actionRepository } from "./repository";
+export { actionRepository } from "./repository";
 import { assertJobServersWritable } from "../jobs/job-access";
 
 export async function authorizeActionRepository(
   ctx: ExecutionContext,
   owner: string | null,
   repo: string | null,
+  provider = DEFAULT_GIT_PROVIDER,
 ): Promise<void> {
   if (!owner && !repo) return;
   if (!owner || !repo)
@@ -18,16 +20,9 @@ export async function authorizeActionRepository(
       400,
       "ACTIONS_REPOSITORY_INVALID",
     );
-  await assertGitHubRepoAccess(ctx, { owner, repo }, "read");
-  const base = await resolveGitHubApiBaseUrl(ctx.organizationId, owner);
-  // The pinned execution engine is configured for github.com. Never give a
-  // GitHub Enterprise credential to a worker using a different GitHub host.
-  if (base && base.replace(/\/$/, "") !== "https://api.github.com")
-    throw new AppError(
-      "Actions currently supports github.com repositories. GitHub Enterprise runners are not available yet.",
-      422,
-      "ACTIONS_GITHUB_HOST_UNSUPPORTED",
-    );
+  const source = actionRepository(ctx, { owner, repo, gitProvider: provider });
+  await source.assertAccess("read");
+  await requireGitCapability(source.workflows, "workflow execution").assertExecution();
 }
 
 export async function authorizeActionRunners(
@@ -61,7 +56,7 @@ export async function authorizeActionWorkflow(
   write = false,
 ): Promise<void> {
   if (workflow.organizationId !== ctx.organizationId) throw new NotFoundError("Workflow");
-  await authorizeActionRepository(ctx, workflow.owner, workflow.repo);
+  await authorizeActionRepository(ctx, workflow.owner, workflow.repo, workflow.gitProvider);
   await authorizeActionRunners(ctx, workflow.runnerIds, write);
 }
 
@@ -71,13 +66,13 @@ export async function authorizeActionRun(
   write = false,
 ): Promise<void> {
   if (run.organizationId !== ctx.organizationId) throw new NotFoundError("Workflow run");
-  await authorizeActionRepository(ctx, run.configuration.owner, run.configuration.repo);
+  await authorizeActionRepository(ctx, run.configuration.owner, run.configuration.repo, run.configuration.gitProvider);
   if (write) {
-    const checked = new Set([`${run.configuration.owner}/${run.configuration.repo}`.toLowerCase()]);
+    const checked = new Set([`${run.configuration.gitProvider ?? DEFAULT_GIT_PROVIDER}:${run.configuration.owner}/${run.configuration.repo}`.toLowerCase()]);
     for (const source of Object.values(run.configuration.workflows ?? {})) {
-      const repository = `${source.owner}/${source.repo}`.toLowerCase();
+      const repository = `${source.gitProvider ?? run.configuration.gitProvider ?? DEFAULT_GIT_PROVIDER}:${source.owner}/${source.repo}`.toLowerCase();
       if (checked.has(repository)) continue;
-      await authorizeActionRepository(ctx, source.owner, source.repo);
+      await authorizeActionRepository(ctx, source.owner, source.repo, source.gitProvider ?? run.configuration.gitProvider);
       checked.add(repository);
     }
   }

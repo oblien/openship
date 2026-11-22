@@ -189,7 +189,7 @@ export interface StartMigrationInput {
   /** Optional project-level git repo to link to the migrated project (records
    *  source + binds push auto-deploy). The running image is still reused — no
    *  rebuild during migrate. Absent = no repo linked (today's behavior). */
-  gitSource?: { provider: "github"; owner: string; repo: string; branch?: string };
+  gitSource?: { provider: string; owner: string; repo: string; branch?: string };
   /** serviceName → build subpath inside the linked repo. Metadata only. */
   serviceSubpaths?: Record<string, string>;
   /** DISCOVERED service name → the repo compose service name to adopt the row AS
@@ -998,7 +998,7 @@ class MigrationOrchestratorImpl {
     const repoServices = await (async () => {
       const gs = input.gitSource;
       if (!gs?.owner || !gs?.repo) return undefined;
-      const parsed = await parseRepoCompose(ctx, gs.owner, gs.repo, gs.branch).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/migration/migration.orchestrator"); return []; });
+      const parsed = await parseRepoCompose(ctx, gs.owner, gs.repo, gs.branch, gs.provider).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/migration/migration.orchestrator"); return []; });
       return parsed.length ? new Map(parsed.map((s) => [s.name, s])) : undefined;
     })();
 

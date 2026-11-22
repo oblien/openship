@@ -1,4 +1,4 @@
-import { parseOpenshipConfig, type DeploySource } from "@repo/core";
+import { gitProviderDefinition, parseOpenshipConfig, type DeploySource } from "@repo/core";
 
 export type RepositoryBranding = { name?: string; logoUrl?: string };
 type Repository = Extract<DeploySource, { kind: "repo" }>;
@@ -12,9 +12,9 @@ const PRESENT_TTL = 30 * 60;
 const MISSING_TTL = 5 * 60;
 
 function fileUrl(source: Repository, path: string): string {
-  // HEAD follows GitHub's default branch. Encode a named branch as one segment,
-  // including branches such as release/v2. Neither host nor credentials are inputs.
-  return `https://raw.githubusercontent.com/${source.owner.toLowerCase()}/${source.repo.toLowerCase()}/${encodeURIComponent(source.branch ?? "HEAD")}/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const files = gitProviderDefinition(source.provider)?.publicFiles;
+  if (!files) throw new Error("This Git provider has no public file endpoint");
+  return `${files.baseUrl}/${source.owner.toLowerCase().split("/").map(encodeURIComponent).join("/")}/${encodeURIComponent(source.repo.toLowerCase())}/${encodeURIComponent(source.branch ?? files.defaultRef)}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 async function readManifest(response: Response): Promise<unknown> {
@@ -108,6 +108,7 @@ export function createRepositoryBrandingLoader({
   return async (
     source: Repository,
   ): Promise<{ display: RepositoryBranding | null; maxAge: number }> => {
+    if (!gitProviderDefinition(source.provider)?.publicFiles) return { display: null, maxAge: MISSING_TTL };
     const key = fileUrl(source, "openship.json");
     const previous = cache.get(key);
     let result = previous;

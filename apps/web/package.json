@@ -7,7 +7,7 @@
     "dev": "bun scripts/share-feature-art.tsx && node ../../scripts/web-client-messages.mjs && next dev --port 3009",
     "build": "bun scripts/share-feature-art.tsx && node ../../scripts/web-client-messages.mjs && fumadocs-mdx && next build",
     "start": "next start",
-    "lint": "next typegen && tsc --noEmit",
+    "lint": "next typegen && fumadocs-mdx && tsc --noEmit",
     "test": "bun test ./test",
     "test:metadata": "node ../../scripts/check-web-social-metadata.mjs",
     "clean": "rm -rf .next .turbo node_modules"

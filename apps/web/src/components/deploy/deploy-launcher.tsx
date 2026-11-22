@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@repo/ui/icons";
+import { Icon, type IconName } from "@repo/ui/icons";
 import { DeployReadme } from "./deploy-readme";
 import { useRepositoryBranding } from "./use-repository-branding";
 import { AppLogo } from "@repo/ui/app-logo";
 import {
   CLOUD_DASHBOARD_URL,
+  gitProviderDefinition,
   deployInstallCommand,
   deployLinkHref,
   deploySetupHref,
@@ -46,6 +47,7 @@ export function DeployLauncher({
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState(false);
   const branding = useRepositoryBranding(source);
+  const provider = gitProviderDefinition(source?.kind === "repo" ? source.provider : undefined);
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const command = source ? deployInstallCommand(source, installed) : "";
   const cloudUrl = source
@@ -114,7 +116,7 @@ export function DeployLauncher({
                       onError={(event) => setFailedLogo(event.currentTarget.src)}
                     />
                   ) : (
-                    <Icon name="github" size={32} />
+                    <Icon name={(provider?.icon ?? "git-branch") as IconName} size={32} />
                   )}
                 </span>
                 <div>
@@ -135,13 +137,13 @@ export function DeployLauncher({
                       rel="noopener noreferrer"
                       className="deploy-text-link"
                     >
-                      <Icon name="github" size={15} aria-hidden />
+                      <Icon name={(provider?.icon ?? "git-branch") as IconName} size={15} aria-hidden />
                       {branding?.name ? (
                         <bdi>
                           {source.owner}/{source.repo}
                         </bdi>
                       ) : (
-                        copy("GitHub repository")
+                        copy("Git repository")
                       )}
                       <Icon name="arrow-up-right" size={14} aria-hidden />
                     </a>
@@ -179,7 +181,7 @@ export function DeployLauncher({
               <section className="deploy-intro">
                 <div className="deploy-intro-art" aria-hidden>
                   <span>
-                    <Icon name="github" size={28} />
+                    <Icon name={(provider?.icon ?? "git-branch") as IconName} size={28} />
                   </span>
                   <i />
                   <span className="deploy-intro-brand">
@@ -187,7 +189,7 @@ export function DeployLauncher({
                   </span>
                 </div>
                 <h1>{copy("Deploy with OpenShip")}</h1>
-                <p>{copy("Deploy any GitHub repository. No catalog listing required.")}</p>
+                <p>{copy("Deploy a Git repository. No catalog listing required.")}</p>
                 {error && (
                   <p role="alert" className="deploy-error">
                     {copy(error)}
@@ -207,9 +209,9 @@ export function DeployLauncher({
                     }
                   }}
                 >
-                  <label htmlFor="deploy-repo">{copy("GitHub repository")}</label>
+                  <label htmlFor="deploy-repo">{copy("Git repository")}</label>
                   <div className="deploy-repo-input">
-                    <Icon name="github" size={19} aria-hidden />
+                    <Icon name={(provider?.icon ?? "git-branch") as IconName} size={19} aria-hidden />
                     <input
                       id="deploy-repo"
                       type="url"

@@ -14,6 +14,7 @@ export function WorkflowEditor({ id }: { id?: string }) {
         id={id}
         initial={{
           projectId,
+          gitProvider: params.get("gitProvider") || undefined,
           owner: params.get("owner") || undefined,
           repo: params.get("repo") || undefined,
           ref: params.get("ref") || undefined,

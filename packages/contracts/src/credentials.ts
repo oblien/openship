@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { CREDENTIAL_MASK } from "@repo/core";
+import { CREDENTIAL_MASK, CONNECTION_OAUTH_PROVIDERS } from "@repo/core";
 import { CreateCredentialBody, UpdateCredentialBody } from "./credential-inputs";
 import type {
   ResourceOperationSchema,
@@ -35,8 +35,11 @@ export const CredentialProviderSchema = Type.Object({
     Type.Literal("image-pull"),
     Type.Literal("dns"),
     Type.Literal("migration"),
+    Type.Literal("git"),
   ]),
-  authorization: Type.Optional(Type.Object({ available: Type.Boolean() })),
+  authorization: Type.Optional(
+    Type.Object({ available: Type.Boolean(), hostCli: Type.Optional(Type.Boolean()) }),
+  ),
   selector: Type.Union([
     Type.Null(),
     Type.Object({
@@ -69,12 +72,24 @@ export const CredentialCollectionSchemas = {
     action: "admin",
     input: Type.Object(
       {
-        provider: Type.Union([Type.Literal("railway"), Type.Literal("vercel")]),
+        provider: Type.Union(CONNECTION_OAUTH_PROVIDERS.map((id) => Type.Literal(id))),
+        desktop: Type.Optional(Type.Boolean()),
         name: Type.String({ minLength: 1, maxLength: 100 }),
       },
       { additionalProperties: false },
     ),
     output: Type.Object({ url: Type.String(), state: Type.String() }),
+  },
+  connectCli: {
+    action: "admin",
+    input: Type.Object(
+      {
+        provider: Type.Literal("gitlab"),
+        name: Type.String({ minLength: 1, maxLength: 100 }),
+      },
+      { additionalProperties: false },
+    ),
+    output: CredentialSchema,
   },
   completeAuthorization: {
     action: "admin",
@@ -88,6 +103,9 @@ export const CredentialCollectionSchemas = {
     output: CredentialSchema,
   },
 } as const satisfies Record<string, ResourceOperationSchema>;
+export type ConnectionAuthorizationInput = Static<typeof CredentialCollectionSchemas.authorize.input>;
+export type CompleteConnectionAuthorizationInput = Static<typeof CredentialCollectionSchemas.completeAuthorization.input>;
+
 export const CredentialResourceSchemas = {
   get: { action: "read", output: CredentialSchema },
   update: { action: "admin", input: UpdateCredentialBody, output: CredentialSchema },

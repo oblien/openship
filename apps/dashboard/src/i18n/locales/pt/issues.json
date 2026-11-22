@@ -98,6 +98,8 @@
     "rescanPartial": "Análise concluída, {n} verificação(ões) com cobertura incompleta",
     "rescanFailed": "A verificação falhou",
     "resolved": "Pronto",
+    "updateResolved": "Atualização concluída: {name}",
+    "updatesResolved": "Atualizações concluídas ({count}): {names}",
     "resolveFailed": "Não foi possível aplicar essa correção",
     "confirmDestructive": "Isso tem um efeito colateral que não pode ser desfeito. Continuar?"
   },
