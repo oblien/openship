@@ -75,7 +75,7 @@ Migrations `0143_cluster_database.sql` and `0144_cluster_database_recovery.sql` 
 
 ## Delivered behavior
 
-Setup checks every physical server, installs missing prerequisites through the shared toolchain, inspects existing networks and runtimes, selects unused pod/service ranges, pins the official K3s stable release, verifies the binary checksum and installs private cluster services. The version and ranges are saved before any runtime installation and remain fixed across retries.
+Setup checks every physical server, installs missing prerequisites through the shared toolchain, inspects existing networks and runtimes, selects unused pod/service ranges, pins the latest official K3s patch on the highest Kubernetes minor supported by the bundled PostgreSQL operator, verifies the binary checksum and installs private cluster services. The version and ranges are saved before any runtime installation and remain fixed across retries.
 
 Pools of one or two servers have one control server. Pools of three or more have three controls with embedded etcd; additional members are workers. All controls are also schedulable. Selection puts the local "This Server" first, so the server with the public address is the gateway control, then follows the saved, sorted member IDs; roles are not rebalanced automatically. This establishes control-plane quorum; it does not establish replicated application data or guarantee availability across provider failure domains.
 

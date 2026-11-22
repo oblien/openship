@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { AppError, ConflictError, NotFoundError } from "@repo/core";
+import { AppError, ConflictError, DESKTOP_CONNECTION_STATE_PREFIX, CONNECTION_OAUTH_TTL_SECONDS, NotFoundError, type ConnectionOAuthProvider } from "@repo/core";
 import { repos } from "@repo/db";
+import type { ConnectionAuthorizationInput, CompleteConnectionAuthorizationInput } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { cacheStore } from "../../lib/cache-store";
 import { encrypt, decrypt } from "../../lib/encryption";
@@ -19,12 +20,17 @@ import {
 } from "./provider-api";
 
 const CALLBACK = "/connections/callback";
+const tokenEndpoints: Record<ConnectionOAuthProvider, string> = {
+  gitlab: "https://gitlab.com/oauth/token",
+  railway: "https://backboard.railway.com/oauth/token",
+  vercel: "https://api.vercel.com/v2/oauth/access_token",
+};
 const digest = (value: string) => createHash("sha256").update(value).digest("base64url");
 interface AuthorizationState {
   organizationId: string;
   userId: string;
   session: string;
-  provider: MigrationProvider;
+  provider: ConnectionOAuthProvider;
   name: string;
   verifier: string;
   redirectUri: string;
@@ -38,7 +44,7 @@ interface TokenResponse {
   configuration_id?: string;
 }
 
-function application(provider: MigrationProvider) {
+function application(provider: ConnectionOAuthProvider) {
   const prefix = `OPENSHIP_CONNECTION_${provider.toUpperCase()}`;
   const clientId = process.env[`${prefix}_CLIENT_ID`]?.trim();
   const clientSecret = process.env[`${prefix}_CLIENT_SECRET`]?.trim();
@@ -52,8 +58,8 @@ function application(provider: MigrationProvider) {
   return { clientId, clientSecret, slug };
 }
 
-export function connectionAuthorizationAvailable(provider: string): boolean {
-  return (provider === "railway" || provider === "vercel") && !!application(provider);
+export function connectionAuthorizationAvailable(provider: ConnectionOAuthProvider): boolean {
+  return !!application(provider);
 }
 
 /** Organization connection grants are separate from Better Auth sign-in accounts.
@@ -61,7 +67,7 @@ export function connectionAuthorizationAvailable(provider: string): boolean {
  * Redis in Cloud and the shared DB lock make consumption single-use across replicas. */
 export async function beginConnectionAuthorization(
   ctx: ExecutionContext,
-  input: { provider: MigrationProvider; name: string },
+  input: ConnectionAuthorizationInput,
 ) {
   const app = application(input.provider);
   if (!app)
@@ -74,7 +80,7 @@ export async function beginConnectionAuthorization(
     throw new AppError("A connection name is required", 400, "CONNECTION_NAME_REQUIRED");
   if (await repos.credential.nameTaken(ctx.organizationId, input.provider, null, input.name.trim()))
     throw new ConflictError("A connection with this name already exists");
-  const state = randomBytes(32).toString("base64url");
+  const state = (input.desktop ? DESKTOP_CONNECTION_STATE_PREFIX : "") + randomBytes(32).toString("base64url");
   const verifier = randomBytes(32).toString("base64url");
   const redirectUri = new URL(CALLBACK, resolveDashboardPublicUrl()).href;
   const binding: AuthorizationState = {
@@ -87,19 +93,22 @@ export async function beginConnectionAuthorization(
     redirectUri,
   };
   const store = await cacheStore<string>("connection-authorization", { maxSize: 1000 });
-  await store.set(digest(state), encrypt(JSON.stringify(binding)), 600);
+  await store.set(digest(state), encrypt(JSON.stringify(binding)), CONNECTION_OAUTH_TTL_SECONDS);
   const url =
     input.provider === "railway"
       ? new URL("https://backboard.railway.com/oauth/auth")
-      : new URL(`https://vercel.com/integrations/${app.slug}/new`);
+      : input.provider === "gitlab"
+        ? new URL("https://gitlab.com/oauth/authorize")
+        : new URL(`https://vercel.com/integrations/${app.slug}/new`);
   url.searchParams.set("state", state);
-  if (input.provider === "railway") {
+  if (input.provider !== "vercel") {
     for (const [key, value] of Object.entries({
       response_type: "code",
       client_id: app.clientId,
       redirect_uri: redirectUri,
-      scope: "openid email profile offline_access workspace:member",
-      prompt: "consent",
+      ...(input.provider === "railway"
+        ? { scope: "openid email profile offline_access workspace:member", prompt: "consent" }
+        : { scope: "api read_repository" }),
       code_challenge: digest(verifier),
       code_challenge_method: "S256",
     }))
@@ -109,7 +118,7 @@ export async function beginConnectionAuthorization(
 }
 
 async function exchange(
-  provider: MigrationProvider,
+  provider: ConnectionOAuthProvider,
   fields: Record<string, string>,
 ): Promise<TokenResponse> {
   const app = application(provider);
@@ -127,14 +136,11 @@ async function exchange(
     body.set("client_id", app.clientId);
     body.set("client_secret", app.clientSecret);
   }
-  const result = await providerJson<TokenResponse>(
-    new URL(
-      provider === "railway"
-        ? "https://backboard.railway.com/oauth/token"
-        : "https://api.vercel.com/v2/oauth/access_token",
-    ),
-    { method: "POST", headers, body: body.toString() },
-  );
+  const result = await providerJson<TokenResponse>(new URL(tokenEndpoints[provider]), {
+    method: "POST",
+    headers,
+    body: body.toString(),
+  });
   if (
     typeof result.access_token !== "string" ||
     !result.access_token ||
@@ -146,8 +152,9 @@ async function exchange(
       "CONNECTION_TOKEN_INVALID",
     );
   if (
-    provider === "railway" &&
-    (!Number.isFinite(result.expires_in) ||
+    provider !== "vercel" &&
+    ((provider === "gitlab" && !result.refresh_token) ||
+      !Number.isFinite(result.expires_in) ||
       result.expires_in! <= 0 ||
       result.expires_in! > 31_536_000 ||
       (result.refresh_token !== undefined &&
@@ -180,7 +187,7 @@ function tokenSecrets(
 
 export async function completeConnectionAuthorization(
   ctx: ExecutionContext,
-  input: { state: string; code: string },
+  input: CompleteConnectionAuthorizationInput,
 ) {
   const key = digest(input.state);
   return createProvisionLock(`connection:authorization:${key}`).run(async () => {
@@ -210,7 +217,7 @@ export async function completeConnectionAuthorization(
     const token = await exchange(state.provider, {
       code: input.code,
       redirect_uri: state.redirectUri,
-      ...(state.provider === "railway"
+      ...(state.provider !== "vercel"
         ? { grant_type: "authorization_code", code_verifier: state.verifier }
         : {}),
     });
@@ -218,8 +225,16 @@ export async function completeConnectionAuthorization(
     if (state.provider === "railway") publicFields.tokenType = "oauth";
     if (state.provider === "vercel" && typeof token.team_id === "string")
       publicFields.teamId = token.team_id;
-    const secrets = tokenSecrets(token);
-    await verifyProviderAccess({ provider: state.provider, publicFields, secrets });
+    const secrets = tokenSecrets(
+      token,
+      state.provider === "gitlab" ? { _redirectUri: state.redirectUri } : {},
+    );
+    if (state.provider === "gitlab") {
+      const { verifyGitLabToken } = await import("../gitlab/client");
+      await verifyGitLabToken(secrets.apiToken);
+    } else {
+      await verifyProviderAccess({ provider: state.provider, publicFields, secrets });
+    }
     return sanitizeCredential(
       await repos.credential.create({
         organizationId: ctx.organizationId,
@@ -237,19 +252,19 @@ export async function completeConnectionAuthorization(
 
 /** Always resolve the selected connection by ID and organization. Never pick the
  * newest token for a provider; two connections can own entirely different teams. */
-export async function getProviderAccess(
+export async function getConnectionAccess<P extends ConnectionOAuthProvider>(
   organizationId: string,
   connectionId: string,
+  accepts: (provider: string) => provider is P,
   options: { allowInvalid?: boolean } = {},
-): Promise<ProviderAccess> {
+): Promise<ProviderAccess<P>> {
   return createProvisionLock(`connection:token:${organizationId}:${connectionId}`).run(async () => {
     const row = await repos.credential.findById(organizationId, connectionId);
-    if (!row || (row.provider !== "railway" && row.provider !== "vercel"))
-      throw new NotFoundError("Connection", connectionId);
+    if (!row || !accepts(row.provider)) throw new NotFoundError("Connection", connectionId);
     let secrets = readCredentialSecrets(row);
     if (!secrets.apiToken || (row.status !== "active" && !options.allowInvalid))
       throw new AppError(
-        "Reconnect this platform before importing",
+        "Reconnect this account to continue",
         409,
         "CONNECTION_RECONNECT_REQUIRED",
       );
@@ -258,7 +273,7 @@ export async function getProviderAccess(
       secrets._expiresAt &&
       Number(secrets._expiresAt) <= Date.now() + 60_000
     ) {
-      if (row.provider !== "railway" || !secrets._refreshToken)
+      if (row.provider === "vercel" || !secrets._refreshToken)
         throw new AppError(
           "This connection expired. Reconnect it.",
           409,
@@ -268,6 +283,7 @@ export async function getProviderAccess(
         await exchange(row.provider, {
           grant_type: "refresh_token",
           refresh_token: secrets._refreshToken,
+          ...(row.provider === "gitlab" && { redirect_uri: secrets._redirectUri }),
         }),
         secrets,
       );
@@ -278,4 +294,13 @@ export async function getProviderAccess(
     }
     return { provider: row.provider, publicFields: row.publicFields, secrets };
   });
+}
+
+/** Migration callers can only resolve credentials owned by migration providers. */
+export function getProviderAccess(organizationId: string, connectionId: string) {
+  return getConnectionAccess(
+    organizationId,
+    connectionId,
+    (id): id is MigrationProvider => id === "railway" || id === "vercel",
+  );
 }

@@ -6,6 +6,7 @@ import { RepositoryBranchSelect } from "./RepositoryBranchSelect";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 
 const api = vi.hoisted(() => ({ listBranches: vi.fn(), getBranchPage: vi.fn() }));
+vi.mock("@/lib/api/git", () => ({ gitApi: () => (api), gitSourcesChangedEvent: (provider: string) => `openship:${provider}-sources-changed` }));
 vi.mock("@/lib/api/github", () => ({ githubApi: api }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: api }));
 let container: HTMLDivElement;

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  DEFAULT_GIT_PROVIDER,
   AppError,
   ACTIONS_MAX_JOB_SECONDS,
   safeErrorMessage,
@@ -191,7 +192,7 @@ export async function synchronizeGitHubRun(
       ref,
       eventName: remote.event,
       event: {},
-      actor: remote.actor?.login ?? "github",
+      actor: remote.actor?.login ?? DEFAULT_GIT_PROVIDER,
       untrusted:
         remote.head_repository?.id !== remote.repository.id ||
         remote.event === "pull_request_target",

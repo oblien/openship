@@ -11,8 +11,8 @@ vi.mock("next/link", () => ({
     <a href={href}>{children}</a>
   ),
 }));
-vi.mock("@/context/GitHubContext", () => ({
-  useGitHub: () => ({ connected: true, loading: false }),
+vi.mock("@/context/GitContext", () => ({
+  useGit: () => ({ connections: [{ connected: true, loading: false }] }),
 }));
 vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: true }),

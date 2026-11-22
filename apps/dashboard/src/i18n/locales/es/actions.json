@@ -185,7 +185,7 @@
     "standalone": "Independiente",
     "standaloneHint": "Ejecuta tu YAML a demanda, con una programación o desde un webhook autenticado. No requiere repositorio.",
     "chooseRepo": "Elegir repositorio",
-    "connectRepo": "Conecta GitHub en los ajustes de Git para explorar tus repositorios.",
+    "connectRepo": "Conecta {provider} en los ajustes de Git para explorar tus repositorios.",
     "useCopy": "Guardar YAML en OpenShip",
     "noFiles": "No se encontraron workflows. Elige otro repositorio o inicia un workflow independiente.",
     "loading": "Cargando workflow…",

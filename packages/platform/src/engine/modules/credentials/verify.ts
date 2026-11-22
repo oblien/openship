@@ -244,6 +244,22 @@ const verifyDigitalOcean: Verifier = async ({ secrets }) => {
 };
 
 const VERIFIERS: Record<string, Verifier> = {
+  gitlab: async ({ secrets, publicFields }) => {
+    if (publicFields.authorization === "host-cli") {
+      const { resolveGlabToken } = await import("../gitlab/cli");
+      await resolveGlabToken(secrets.glabUserId);
+      return { ok: true };
+    }
+    if (!secrets.apiToken) return { ok: false, reason: "A GitLab access token is required." };
+    try {
+      const { verifyGitLabToken } = await import("../gitlab/client");
+      await verifyGitLabToken(secrets.apiToken);
+      return { ok: true };
+    } catch {
+      // diagnostics-ignore: verification reports a sanitized error to the operator.
+      return { ok: false, reason: "GitLab could not verify this token. Check its expiry and API access." };
+    }
+  },
   "docker-registry": verifyDockerRegistry,
   cloudflare: verifyCloudflare,
   digitalocean: verifyDigitalOcean,

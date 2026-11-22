@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@repo/ui/icons";
-import { inferActionWorkflowController, type ActionWorkflowNotifications } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, inferActionWorkflowController, type ActionWorkflowNotifications } from "@repo/core";
 import type {
   ActionWorkflowView,
   ActionRunnerView,
@@ -57,7 +57,7 @@ export interface WorkflowSetupProps {
   /** Project and deployment entry points own their association outside this editor. */
   projectScoped?: boolean;
   onBusyChange?: (busy: boolean) => void;
-  initial?: { owner?: string; repo?: string; ref?: string; projectId?: string; path?: string };
+  initial?: { gitProvider?: string; owner?: string; repo?: string; ref?: string; projectId?: string; path?: string };
   onSaved: (workflow: ActionWorkflowView, workflows?: ActionWorkflowView[]) => void;
   onCancel: () => void;
 }
@@ -143,6 +143,7 @@ function SetupForm({
   );
   const [step, setStep] = useState<"workflow" | "rules" | "access" | "checks">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
+  const [gitProvider, setGitProvider] = useState(workflow?.gitProvider ?? initial?.gitProvider ?? DEFAULT_GIT_PROVIDER);
   const [repository, setRepository] = useState(
     workflow?.owner
       ? `${workflow.owner}/${workflow.repo}`
@@ -157,7 +158,7 @@ function SetupForm({
       : (workflow?.path ?? initial?.path ?? ".github/workflows/ci.yml"),
   );
   const native = inferActionWorkflowController(path, !standalone) === "github";
-  const repositoryKey = `${repository.trim()}:${ref}`;
+  const repositoryKey = `${gitProvider}:${repository.trim()}:${ref}`;
   const identity = standalone ? "standalone" : `${repositoryKey}:${path}`;
   const [modes, setModes] = useState<Record<string, "repository" | "inline">>({});
   const mode = standalone
@@ -235,15 +236,16 @@ function SetupForm({
   const [picker, setPicker] = useState(false),
     [review, setReview] = useState<SourceReviewSnapshot[] | null>(null);
   const submission = useRef<WorkflowSaveEntry[] | null>(null);
-  const [owner, repo] = repository.trim().split("/");
-  const repositoryValid = /^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim());
+  const slash = repository.trim().lastIndexOf("/");
+  const owner = repository.trim().slice(0, slash), repo = repository.trim().slice(slash + 1);
+  const repositoryValid = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(repository.trim());
   const files = useActionResource(
     useCallback(
       () =>
         !standalone && repositoryValid
-          ? actionsApi.discover(owner!, repo!, ref)
+          ? actionsApi.discover(owner!, repo!, ref, gitProvider)
           : Promise.resolve([]),
-      [standalone, repositoryValid, owner, repo, ref],
+      [gitProvider, standalone, repositoryValid, owner, repo, ref],
     ),
   );
   useEffect(() => {
@@ -264,6 +266,7 @@ function SetupForm({
         (files.data?.some((file) => file.path === path) || (!!workflow && !!files.data))
           ? actionsApi
               .repositorySource({
+                gitProvider,
                 owner: owner!,
                 repo: repo!,
                 ref,
@@ -271,7 +274,7 @@ function SetupForm({
               })
               .then((data) => ({ ...data, identity }))
           : Promise.resolve(null),
-      [standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow],
+      [gitProvider, standalone, repositoryValid, owner, repo, ref, path, identity, files.data, workflow],
     ),
   );
   const loaded = useRef<{ identity: string; source: string; file: unknown } | null>(null);
@@ -281,7 +284,7 @@ function SetupForm({
     const previous = loaded.current;
     const first = previous?.identity !== identity;
     const savedIdentity = workflow?.owner
-      ? `${workflow.owner}/${workflow.repo}:${workflow.ref}:${workflow.path}`
+      ? `${workflow.gitProvider ?? DEFAULT_GIT_PROVIDER}:${workflow.owner}/${workflow.repo}:${workflow.ref}:${workflow.path}`
       : null;
     const keepSaved = !previous && !!workflow?.source && identity === savedIdentity;
     const untouched = previous?.source === source && mode === "repository" && !review;
@@ -407,6 +410,7 @@ function SetupForm({
       let remote = originals.current.get(key);
       if (!standalone && !remote) {
         const value = await actionsApi.repositorySource({
+                gitProvider,
           owner: owner!,
           repo: repo!,
           ref,
@@ -441,6 +445,7 @@ function SetupForm({
             : (names[key] ?? remote?.plan?.name ?? selectedPath.split("/").pop()!)
           ).trim(),
           accessPolicy,
+          gitProvider,
           owner: standalone ? null : owner!,
           repo: standalone ? null : repo!,
           ref: standalone ? "main" : ref,
@@ -469,6 +474,7 @@ function SetupForm({
       const differs = entry.original && entry.original.source !== entry.source;
       if (commit && differs && entry.original) {
         const written = await actionsApi.updateRepositorySource({
+          gitProvider: entry.input.gitProvider,
           owner: entry.input.owner!,
           repo: entry.input.repo!,
           ref: entry.input.ref,
@@ -796,6 +802,7 @@ function SetupForm({
                                 <>
                                   <ActionField label={a.ref}>
                                     <RepositoryBranchSelect
+                                      provider={gitProvider}
                                       owner={owner!}
                                       repo={repo!}
                                       value={ref}
@@ -925,13 +932,14 @@ function SetupForm({
                             ? !workflow.owner
                             : repository.trim().toLowerCase() ===
                               `${workflow.owner}/${workflow.repo}`) &&
-                          (!workflow.owner || workflow.accessPolicy.owner.provider === "github")
+                          (!workflow.owner || workflow.accessPolicy.owner.provider === gitProvider)
                             ? workflow.accessPolicy.owner.login
                             : undefined
                         }
                       />
                     ) : step === "checks" ? (
                       <WorkflowChecks
+                        gitProvider={gitProvider}
                         repository={!standalone && repositoryValid ? repository.trim() : null}
                         github={hasNative}
                         independent={hasIndependent}
@@ -1183,7 +1191,8 @@ function SetupForm({
       {picker && (
         <RepositoryPicker
           onClose={() => setPicker(false)}
-          onSelect={(owner, repository) => {
+          onSelect={(owner, repository, provider) => {
+            setGitProvider(provider);
             setRepository(`${owner}/${repository.name}`);
             setAccessPolicy({ ...defaultWorkflowAccess });
             setRef(repository.default_branch || "main");

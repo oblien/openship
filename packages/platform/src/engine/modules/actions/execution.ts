@@ -1,13 +1,14 @@
+import { AppError, safeErrorMessage } from "@repo/core";
 import { repos } from "@repo/db";
 import { diagnostics } from "@repo/core/diagnostics";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
 import { calledSecrets } from "./reusable";
 import { actionOidcService } from "./oidc";
 import { decrypt } from "../../lib/encryption";
-import { getInstallationToken } from "../github/github.auth";
-import { authorizeActionRun } from "./access";
+import { requireGitCapability } from "../git/provider";
+import { actionRepository, authorizeActionRun } from "./access";
 import { ActionController, type ActionControllerPorts } from "./controller";
-import { syncActionCheck } from "./github-checks";
+
 import { actionRuntimeEnvironment, authorizeActionStorage } from "./storage";
 import { completeActionRun } from "./notifications";
 import { refreshActionRunAdmission } from "./run-access";
@@ -46,11 +47,7 @@ export const actionControllerPorts: ActionControllerPorts = {
           run.untrusted ? ("read" as const) : value,
         ]),
     );
-    const token = await getInstallationToken(ctx, run.configuration.owner, undefined, {
-      repositories: [run.configuration.repo],
-      permissions,
-      noCache: true,
-    });
+    const token = await requireGitCapability(actionRepository(ctx, run.configuration).workflows, "workflow credentials").token(permissions);
     // Named mappings may use the automatic token, with this leaf job's reduced
     // grant. Neither token values nor evaluated secret mappings enter snapshots.
     secrets = calledSecrets(run, job.spec?.scope, secrets, token ?? undefined);
@@ -65,7 +62,19 @@ export const actionControllerPorts: ActionControllerPorts = {
     removeActionWorker(job, runner, owner, (patch) =>
       repos.actions.updateJob(run.organizationId, job.id, owner, patch),
     ),
-  check: syncActionCheck,
+  async check(run, job) {
+    if (!run.configuration.owner || !run.configuration.repo)
+      return { id: null, error: null, unavailable: true };
+    if (run.controller === "github") return { id: job.checkRunId, error: null, unavailable: true };
+    try {
+      const ctx = await resolveExecutionAuthority(run.authority, `actions-check:${run.id}`);
+      const workflows = actionRepository(ctx, run.configuration).workflows;
+      return workflows ? await workflows.syncCheck(run, job) : { id: job.checkRunId, error: null, unavailable: true };
+    } catch (error) {
+      diagnostics.warn("actions/checks", "Could not report the workflow check", error, { runId: run.id, jobId: job.id });
+      return { id: job.checkRunId, error: safeErrorMessage(error), unavailable: error instanceof AppError && [401, 403, 404].includes(error.statusCode) };
+    }
+  },
   completed: completeActionRun,
   reportError(error, context) {
     diagnostics.warn("actions/controller", "Workflow reconciliation failed", error, context);

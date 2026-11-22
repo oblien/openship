@@ -1,9 +1,9 @@
 import { ownedAgent, agentContainsGrants, approvedAssistantContext } from "./agent-access";
-import { AppError } from "@repo/core";
+import { AppError, hasProjectRepository } from "@repo/core";
 import type { TCreateTokenBody, AutomationAction } from "@repo/contracts";
 import { repos } from "@repo/db";
 import { validateGrants } from "@repo/platform/engine/modules/tokens/token.service";
-import { resolveSourceAccess } from "@repo/platform/engine/modules/github/github-access";
+import { projectGitProvider } from "@repo/platform/engine/modules/git/provider";
 import type { RequestContext } from "../../lib/request-context";
 
 export const repositoryAction = (action: string) =>
@@ -42,21 +42,22 @@ export async function automationGrants(
   const writeSource = actions.some(repositoryAction);
   if (readRepository || writeSource || actions.includes("redeploy")) {
     if (readRepository || writeSource) {
-      if (!project.gitOwner || !project.gitRepo)
+      if (!hasProjectRepository(project))
         throw new AppError(
-          "Connect this app to a GitHub repository to use source permissions.",
+          "Connect this app to a Git repository to use source permissions.",
           400,
           "ASSISTANT_AUTOMATION",
         );
     }
-    if (project.gitOwner && project.gitRepo) {
-      const source = await resolveSourceAccess(approved, {
+    if (hasProjectRepository(project) && project.gitOwner && project.gitRepo) {
+      const provider = projectGitProvider(project);
+      const source = await provider.access.source(approved, {
         owner: project.gitOwner,
         repo: project.gitRepo,
       });
       const agentSource = agent?.grants.find(
         (grant) =>
-          grant.resourceType === "github_repository" &&
+          grant.resourceType === provider.grantTypes.repository &&
           grant.resourceId === `${project.gitOwner}/${project.gitRepo}`,
       )?.scope;
       const readPaths = agent ? (agentSource?.read?.paths ?? []) : source.readPaths;
@@ -74,7 +75,7 @@ export async function automationGrants(
           "ASSISTANT_AUTOMATION",
         );
       grants.push({
-        resourceType: "github_repository",
+        resourceType: provider.grantTypes.repository,
         resourceId: `${project.gitOwner}/${project.gitRepo}`,
         permissions: [writeSource ? "write" : "read"],
         ...(readRepository || writeSource

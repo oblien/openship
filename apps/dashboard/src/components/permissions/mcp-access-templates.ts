@@ -1,3 +1,4 @@
+import { gitProviderForGrant, gitProviderDefinition } from "@repo/core";
 /**
  * Access templates for the MCP consent screen — the pure part.
  *
@@ -146,16 +147,8 @@ export function isProjectCreateGrant(g: PickerGrant): boolean {
 }
 
 export interface TemplateContext {
-  /**
-   * GitHub account logins to seed, from GET /api/github/home → `accounts`.
-   *
-   * That endpoint runs `filterAllowedAccounts`, so it returns exactly what THIS
-   * user may re-grant. Do NOT use GET /api/permissions/resources?type=
-   * github_installation here: that catalog is fetched as the org owner and is
-   * unfiltered, so for a non-owner admin it lists accounts they don't hold and
-   * the mint 403s GRANT_EXCEEDS_ACCESS on a grant the user never knowingly added.
-   */
-  githubAccounts: readonly string[];
+  /** Namespaces filtered by the connection for this caller, never the owner's catalog. */
+  gitAccounts: ReadonlyArray<{ provider: string; namespace: string }>;
 }
 
 export interface AccessSelection {
@@ -187,13 +180,12 @@ export function wouldSilentlyGrantEverything(selection: AccessSelection): boolea
   return !isUnscopedTemplate(selection.template) && wireGrants(selection).length === 0;
 }
 
-/** Read-only account grants for every seeded GitHub account. */
-function githubSeed(ctx: TemplateContext): PickerGrant[] {
-  return ctx.githubAccounts.map((login) => ({
-    resourceType: "github_installation",
-    resourceId: login,
-    permissions: ["read"],
-  }));
+/** Read-only namespace grants from the provider's existing permission family. */
+function gitSeed(ctx: TemplateContext): PickerGrant[] {
+  return ctx.gitAccounts.flatMap(account => {
+    const definition = gitProviderDefinition(account.provider);
+    return definition ? [{ resourceType: definition.grantTypes.namespace as PickerGrant["resourceType"], resourceId: account.namespace, permissions: ["read"] as PickerGrant["permissions"] }] : [];
+  });
 }
 
 /** The grant set a template stands for, resolved against the live catalog. */
@@ -202,13 +194,13 @@ export function templateGrants(id: AccessTemplateId, ctx: TemplateContext): Pick
     case "agent":
       // Read is all a deploy needs, and it's the least we can ask for. One grant
       // per account login covers every repo under it.
-      return [PROJECT_CREATE_GRANT, ...githubSeed(ctx)];
+      return [PROJECT_CREATE_GRANT, ...gitSeed(ctx)];
     case "existing":
       // DELIBERATELY no projects. Pre-selecting the org's projects would turn a
       // two-click Authorize into a write grant over everything that exists —
       // the opposite of what picking a narrow template means. GitHub read is
       // seeded because redeploying a git-linked project asserts repo read.
-      return githubSeed(ctx);
+      return gitSeed(ctx);
     default:
       return [];
   }
@@ -259,7 +251,7 @@ export function sameGrantSet(a: readonly PickerGrant[], b: readonly PickerGrant[
 function matchesExisting(selection: AccessSelection, ctx: TemplateContext): boolean {
   if (selection.readOnly) return false;
   if (hasCreateCapability(selection.grants)) return false;
-  const seeded = new Set(githubSeed(ctx).map(grantKey));
+  const seeded = new Set(gitSeed(ctx).map(grantKey));
   return selection.grants.every((g) => {
     if (g.resourceType === "project") return g.resourceId !== "*";
     return seeded.has(grantKey(g));
@@ -494,7 +486,7 @@ export function capabilityDigest(selection: AccessSelection): CapabilityDigest {
   const create = hasCreateCapability(live);
   const projects = live.filter((g) => g.resourceType === "project" && g.resourceId !== "*");
   const github = live.filter(
-    (g) => g.resourceType === "github_installation" || g.resourceType === "github_repository",
+    (g) => gitProviderForGrant(g.resourceType),
   );
   const servers = live.filter((g) => g.resourceType === "server" || g.resourceType === "mail_server");
   const backups = live.filter((g) => g.resourceType === "backup_destination");

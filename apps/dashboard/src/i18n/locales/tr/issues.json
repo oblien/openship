@@ -98,6 +98,8 @@
     "rescanPartial": "Tarama tamamlandı, {n} kontrolün kapsamı eksik",
     "rescanFailed": "Tarama başarısız",
     "resolved": "Tamam",
+    "updateResolved": "Güncelleme tamamlandı: {name}",
+    "updatesResolved": "Güncellemeler tamamlandı ({count}): {names}",
     "resolveFailed": "Bu düzeltme uygulanamadı",
     "confirmDestructive": "Bunun geri alınamayan bir yan etkisi var. Devam edilsin mi?"
   },

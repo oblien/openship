@@ -78,7 +78,6 @@ interface EmailComposerProps {
     subject: string;
     message: string;
     attachments: File[];
-    fromEmail?: string;
     scheduleAt?: string;
   }) => Promise<void>;
   onClose?: () => void;
@@ -371,7 +370,6 @@ export function EmailComposer({
         subject: values.subject,
         message: editor.getHTML(),
         attachments: values.attachments || [],
-        fromEmail: values.fromEmail,
         scheduleAt,
       });
       setHasUnsavedChanges(false);
@@ -380,7 +378,7 @@ export function EmailComposer({
       setIsComposeOpen(null);
     } catch (error) {
       console.error('Error sending email:', error);
-      toast.error('Failed to send email');
+      toast.error(m['pages.createEmail.failedToSendEmail']());
     } finally {
       setIsLoading(false);
     }

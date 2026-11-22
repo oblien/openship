@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   allocation: vi.fn(),
   owner: vi.fn(),
   binding: vi.fn(),
+  runtimeStatus: vi.fn(),
   projects: vi.fn(),
   verifyLink: vi.fn(),
 }));
@@ -28,7 +29,10 @@ vi.mock("@repo/platform/engine/lib/cloud/server-link", () => ({
   requireLinkedCloudServer: h.verifyLink,
 }));
 vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
-  getNamespaceClient: async () => ({ client: {}, namespace: "ns-test" }),
+  getNamespaceClient: async () => ({
+    client: { vm: () => ({ apiAccess: { status: h.runtimeStatus } }) },
+    namespace: "ns-test",
+  }),
 }));
 vi.mock("@repo/adapters", async (original) => ({
   ...(await original<typeof import("@repo/adapters")>()),
@@ -71,7 +75,8 @@ beforeEach(() => {
     linkedProjects: [],
     namespace: "ns-test",
   });
-  h.binding.mockResolvedValue({ workspaceId: "vm-test", namespace: "ns-test" });
+  h.binding.mockResolvedValue({ workspaceId: "vm-test", namespace: "ns-test", state: "ready" });
+  h.runtimeStatus.mockResolvedValue({ enabled: true });
   h.projects.mockResolvedValue([
     { id: "project-a", name: "API", slug: "api" },
     { id: "project-b", name: "Database", slug: "db" },
@@ -178,6 +183,13 @@ describe("measured subscription workspace resources", () => {
     expect(h.exec).not.toHaveBeenCalled();
     expect(h.dispose).not.toHaveBeenCalled();
     expect(workspaceBuildResources(result.capacity, result.usage)).toMatchObject({ cpuCores: 0, memoryMb: 0 });
+  });
+  it("rejects build admission while a Cloud runtime still needs owner initialization", async () => {
+    h.runtimeStatus.mockResolvedValue({ enabled: false });
+    await expect(sampleCloudWorkspaceResources("org-test", "cws-test", false)).rejects.toMatchObject({
+      code: "CLOUD_RUNTIME_OWNER_INITIALIZATION_REQUIRED",
+    });
+    expect(h.exec).not.toHaveBeenCalled();
   });
   it("uses a cheap host sample for build admission without scanning filesystem data", async () => {
     const result = await sampleCloudWorkspaceResources("org-test", "cws-test");

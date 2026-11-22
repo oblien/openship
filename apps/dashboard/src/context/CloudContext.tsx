@@ -24,7 +24,6 @@ import {
   CONNECT_PKCE_STORAGE_PREFIX,
 } from "@/lib/cloud-auth";
 import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
-import { useGitHub } from "@/context/GitHubContext";
 import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
 import type { CloudCapability } from "@repo/core";
@@ -113,10 +112,6 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const { selfHosted, deployMode, cloudApiUrl } = usePlatform();
   const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
   const hasNativeCloudAccess = !canConnectCloud;
-  // GitHubProvider is an ancestor of CloudProvider (see providers.tsx),
-  // so this consume is always safe. We use it to re-resolve GitHub state
-  // whenever the cloud connection flips (below).
-  const { refresh: refreshGitHub } = useGitHub();
   const cloudCapabilityCopy = useCloudCapabilityCopy();
   const { t } = useI18n();
   const modalLoc = t.settings.cloud.connectModal;
@@ -226,9 +221,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const prev = previousResourceKey.current;
     previousResourceKey.current = resourceKey;
     if (prev === null || prev === resourceKey) return;
-    void refreshGitHub();
     router.refresh();
-  }, [resourceKey, loading, refreshGitHub, router]);
+  }, [resourceKey, loading, router]);
 
   // Settle every pending requireCloud promise once, then clear the batch
   // atomically (reassign before calling, so a resolver that re-enters can't

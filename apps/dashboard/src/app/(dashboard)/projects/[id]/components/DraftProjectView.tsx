@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DEFAULT_GIT_PROVIDER, hasProjectRepository } from "@repo/core";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { Button } from "@/components/ui/button";
@@ -44,11 +45,11 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
   const deletingNow = deleting || status === "deleting";
   const busy = deletingNow || !!projectData.deletionInProgress;
 
-  const hasRepoSource = Boolean(projectData?.gitOwner && projectData?.gitRepo);
+  const hasRepoSource = hasProjectRepository(projectData);
   const hasLocalSource = Boolean(projectData?.localPath);
   const isApp = Boolean(projectData?.isApp);
   const appTemplateId = (projectData as { appTemplateId?: string | null }).appTemplateId ?? undefined;
-  const hasSource = hasRepoSource || hasLocalSource || isApp;
+  const hasSource = hasRepoSource || hasLocalSource || isApp || Boolean(projectData.releaseSource);
   const framework = projectData.framework ? getFrameworkConfig(projectData.framework) : null;
   // The project already carries its latest deployment. Let the shared history
   // own the request, pagination and errors instead of fetching a second list.
@@ -66,8 +67,8 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
       router.push(`/apps/new/${appTemplateId}?projectId=${pid}`);
       return;
     }
-    const slug = hasRepoSource
-      ? encodeRepoSlug(projectData.gitOwner, projectData.gitRepo)
+    const slug = hasRepoSource && projectData.gitOwner && projectData.gitRepo
+      ? encodeRepoSlug(projectData.gitOwner, projectData.gitRepo, projectData.gitProvider ?? DEFAULT_GIT_PROVIDER)
       : hasLocalSource
         ? encodeLocalSlug(projectData.localPath)
         : encodeProjectSlug(pid);

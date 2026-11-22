@@ -12,6 +12,7 @@
     "title": "新建项目",
     "subtitle": "部署应用或导入你自己的项目。",
     "tabs": {
+      "repositories": "代码仓库",
       "folder": "文件夹",
       "github": "GitHub",
       "templates": "模板",
@@ -36,7 +37,7 @@
       "copyCode": "点击复制"
     },
     "default": {
-      "title": "连接 GitHub 以部署",
+      "title": "连接 {provider} 以部署",
       "descSelfHosted": "选择 OpenShip 访问你的仓库的方式。",
       "descSaas": "关联你的 GitHub 账户，即可浏览仓库并在每次推送时部署。",
       "recommended": "推荐",
@@ -144,7 +145,7 @@
       "name": "名称",
       "stars": "星标"
     },
-    "addAccount": "添加 GitHub 账户",
+    "addAccount": "添加 {provider} 账户",
     "installTitle": "安装 GitHub App",
     "installDesc": "在你的账户或组织上安装 GitHub App，以授予对你仓库的访问权限。",
     "installButton": "安装 GitHub App",
@@ -174,8 +175,6 @@
     "total": "总计",
     "public": "公开",
     "private": "私有",
-    "quickTip": "小提示",
-    "quickTipDesc": "选择任意仓库即可立即部署。可配置在每次推送时自动部署。",
     "connection": "连接",
     "openshipGithubApp": "OpenShip GitHub App",
     "connected": "已连接",
@@ -187,14 +186,13 @@
     "notConnectedManage": "未连接——在设置中管理",
     "optional": "可选",
     "footnote": "管理用于浏览和部署仓库的 GitHub 连接。",
-    "manageGithubSettings": "在设置中管理 GitHub",
     "methodToken": "GitHub 令牌",
     "methodDevice": "GitHub 登录"
   },
   "urlImport": {
-    "invalidUrl": "请输入有效的 GitHub 仓库 URL",
+    "invalidUrl": "请输入有效的 {providers} 仓库 URL",
     "title": "从 Git URL 导入",
-    "description": "粘贴一个公开仓库的 URL 以导入。无需连接 GitHub。",
+    "description": "粘贴一个公开仓库的 URL 以导入。无需连接 {providers}。",
     "importButton": "导入仓库"
   },
   "customAppModal": {

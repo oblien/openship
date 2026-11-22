@@ -385,7 +385,9 @@ export class OblienBillingApi {
         ...diagnostic,
       });
       const known: Record<string, string> = {
-        affiliate_unavailable: "This referral code is no longer available or does not apply to your purchase. Remove it or choose an eligible Cloud plan.",
+        affiliate_unavailable: method === "POST" && path === "/billing/checkout"
+          ? "This referral code couldn’t be applied. You can’t use your own code or a workspace member’s code. Use an active code for your plan, or remove it before starting a new purchase."
+          : "This referral code is no longer available or does not apply to your purchase. Remove it or choose an eligible Cloud plan.",
         affiliate_paused: "Referral access is paused. Contact support.",
         affiliate_not_found: "This referral record was not found for your account.",
         affiliate_payout_minimum: "The payout amount is below your minimum. Refresh your balance to see the current minimum.",

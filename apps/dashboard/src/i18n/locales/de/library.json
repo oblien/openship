@@ -12,6 +12,7 @@
     "title": "Neues Projekt",
     "subtitle": "Stelle eine App bereit oder importiere dein eigenes Projekt.",
     "tabs": {
+      "repositories": "Repositorys",
       "folder": "Ordner",
       "github": "GitHub",
       "templates": "Vorlagen",
@@ -36,7 +37,7 @@
       "copyCode": "Klicken zum Kopieren"
     },
     "default": {
-      "title": "GitHub verbinden, um zu deployen",
+      "title": "{provider} verbinden, um zu deployen",
       "descSelfHosted": "Wähle, wie OpenShip auf deine Repositories zugreift.",
       "descSaas": "Verknüpfe dein GitHub-Konto, um Repos zu durchsuchen und bei jedem Push zu deployen.",
       "recommended": "Empfohlen",
@@ -144,7 +145,7 @@
       "name": "Name",
       "stars": "Sterne"
     },
-    "addAccount": "GitHub-Konto hinzufügen",
+    "addAccount": "{provider}-Konto hinzufügen",
     "installTitle": "GitHub App installieren",
     "installDesc": "Installiere die GitHub App auf deinem Konto oder deiner Organisation, um Zugriff auf deine Repositories zu gewähren.",
     "installButton": "GitHub App installieren",
@@ -174,8 +175,6 @@
     "total": "Gesamt",
     "public": "Öffentlich",
     "private": "Privat",
-    "quickTip": "Kurzer Tipp",
-    "quickTipDesc": "Wähle ein beliebiges Repository, um es sofort zu deployen. Konfiguriere automatische Deployments bei jedem Push.",
     "connection": "Verbindung",
     "openshipGithubApp": "OpenShip GitHub App",
     "connected": "Verbunden",
@@ -187,14 +186,13 @@
     "notConnectedManage": "Nicht verbunden — in den Einstellungen verwalten",
     "optional": "Optional",
     "footnote": "Verwalte die GitHub-Verbindungen zum Durchsuchen und Bereitstellen von Repositories.",
-    "manageGithubSettings": "GitHub in den Einstellungen verwalten",
     "methodToken": "GitHub-Token",
     "methodDevice": "GitHub-Anmeldung"
   },
   "urlImport": {
-    "invalidUrl": "Gib eine gültige GitHub-Repository-URL ein",
+    "invalidUrl": "Gib eine gültige {providers}-Repository-URL ein",
     "title": "Aus Git-URL importieren",
-    "description": "Füge eine öffentliche Repository-URL ein, um sie zu importieren. Keine GitHub-Verbindung erforderlich.",
+    "description": "Füge eine öffentliche Repository-URL ein, um sie zu importieren. Keine {providers}-Verbindung erforderlich.",
     "importButton": "Repository importieren"
   },
   "customAppModal": {

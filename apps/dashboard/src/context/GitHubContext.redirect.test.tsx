@@ -24,6 +24,7 @@ const h = vi.hoisted(() => ({
   platform: { selfHosted: false, deployMode: "cloud" },
 }));
 
+vi.mock("@/lib/api/git", () => ({ gitApi: () => (h), gitSourcesChangedEvent: (provider: string) => `openship:${provider}-sources-changed` }));
 vi.mock("@/lib/api", () => ({
   githubApi: h,
   settingsApi: { get: async () => ({}) },

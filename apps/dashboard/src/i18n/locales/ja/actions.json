@@ -185,7 +185,7 @@
     "standalone": "単独",
     "standaloneHint": "YAMLを手動、スケジュール、認証付きWebhookで実行します。リポジトリは不要です。",
     "chooseRepo": "リポジトリを選択",
-    "connectRepo": "Git設定でGitHubを接続すると、リポジトリを参照できます。",
+    "connectRepo": "Git設定で{provider}を接続すると、リポジトリを参照できます。",
     "useCopy": "YAMLをOpenShipに保存",
     "noFiles": "ワークフローが見つかりません。別のリポジトリを選択するか、単独のワークフローを作成してください。",
     "loading": "ワークフローを読み込み中…",

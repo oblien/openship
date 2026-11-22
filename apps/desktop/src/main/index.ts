@@ -26,6 +26,7 @@ import {
   CLOUD_API_URL as DEFAULT_CLOUD_API_URL,
   CLOUD_DASHBOARD_URL as DEFAULT_CLOUD_DASHBOARD_URL,
   DESKTOP_INSTANCE_SCHEME,
+  parseDesktopConnectionCallback,
 } from "@repo/core";
 import {
   type SystemSettings,
@@ -249,7 +250,14 @@ function notifyInstanceLink() {
 }
 
 const ownsInstance = registerInstanceLinks(app, (value) => {
-  if (instanceLinks.receive(value)) {
+  const callback = parseDesktopConnectionCallback(value);
+  if (callback) {
+    const frame = mainWindow?.webContents.mainFrame;
+    if (frame && isAllowedFrameUrl(frame.url, [getLocalDashboardUrl()])) {
+      frame.send("connection:callback", callback);
+      focusMainWindow();
+    }
+  } else if (instanceLinks.receive(value)) {
     focusMainWindow();
     notifyInstanceLink();
   }
@@ -1069,7 +1077,7 @@ handleIpc("onboarding:open-external", (_event, url: string) => {
     errorDiagnostics.warn("desktop/main/index", `[security] refused openExternal for ${url}`);
     return;
   }
-  shell.openExternal(url);
+  return shell.openExternal(url);
 });
 
 handleIpc("onboarding:browse-file", async () => {

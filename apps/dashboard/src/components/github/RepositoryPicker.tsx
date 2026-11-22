@@ -1,9 +1,11 @@
 "use client";
+import { GitProviderSelect } from "@/components/git/GitProviderSelect";
 import { useId } from "react";
 import Link from "next/link";
 import { Icon } from "@repo/ui/icons";
-import { useGitHub, type GitHubRepo } from "@/context/GitHubContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useGit } from "@/context/GitContext";
+import type { RepositorySummary } from "@/lib/git-types";
+import { interpolate, useI18n } from "@/components/i18n-provider";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -13,17 +15,24 @@ import { ActionError } from "@/components/actions/ActionStatus";
 
 /** Shared Library accounts, authentication and pagination, with a selection callback. */
 export function RepositoryPicker({
+  provider,
   onSelect,
   onClose,
 }: {
-  onSelect: (owner: string, repo: GitHubRepo) => void;
+  provider?: string;
+  onSelect: (owner: string, repo: RepositorySummary, provider: string) => void;
   onClose: () => void;
 }) {
-  const github = useGitHub();
+  const connection = useGit(provider);
   const { t } = useI18n();
   const title = useId();
   const { dialog, onKeyDown } = useDialogFocus(onClose);
-  const page = useLibraryRepos(github.selectedOwner, github.connected);
+  const page = useLibraryRepos(
+    connection.selectedOwner,
+    connection.connected,
+    connection.definition.id,
+    connection.catalog,
+  );
   return (
     <Modal isOpen onClose={onClose} showCloseButton={false} width="760px" maxWidth="95vw">
       <div
@@ -43,13 +52,20 @@ export function RepositoryPicker({
             <Icon name="close" />
           </Button>
         </header>
-        {!github.connected ? (
+        {!provider && (
+          <div className="px-5">
+            <GitProviderSelect />
+          </div>
+        )}
+        {!connection.connected ? (
           <div className="px-5 pb-5">
             <p className="mb-4 text-sm text-muted-foreground">
-              {t.actions.integration.connectRepo}
+              {interpolate(t.actions.integration.connectRepo, {
+                provider: connection.definition.name,
+              })}
             </p>
             <Button asChild variant="secondary">
-              <Link href="/settings?tab=git">{t.library.connect.manageInSettings}</Link>
+              <Link href={connection.settingsHref}>{t.library.connect.manageInSettings}</Link>
             </Button>
           </div>
         ) : page.error ? (
@@ -58,16 +74,17 @@ export function RepositoryPicker({
           </div>
         ) : (
           <RepositoryList
+            provider={connection.definition.id}
             repos={page.repos}
-            accounts={github.accounts}
-            selectedOwner={github.selectedOwner}
-            setSelectedOwner={github.setSelectedOwner}
-            loading={github.loading}
+            accounts={connection.accounts}
+            selectedOwner={connection.selectedOwner}
+            setSelectedOwner={connection.setSelectedOwner}
+            loading={connection.loading}
             loadingRepos={page.loading}
-            onSelect={onSelect}
-            installUrl={github.installUrl}
-            installing={github.connecting}
-            onInstall={() => void github.connect("oauth")}
+            onSelect={(owner, repo) => onSelect(owner, repo, connection.definition.id)}
+            installUrl={connection.installUrl}
+            installing={connection.connecting}
+            onInstall={connection.connectMore}
             server={{
               search: page.search,
               onSearch: page.setSearch,

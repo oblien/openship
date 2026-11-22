@@ -22,6 +22,8 @@ import { POLICIES } from "../lib/rate-limit/policies";
 import { webhookSubject } from "../lib/rate-limit/webhook-subject";
 import { getRequestContext } from "../lib/request-context";
 import { env } from "@repo/platform/engine/config/index";
+import { isSaasDeployment } from "@repo/platform/engine/config/saas-deployment";
+import { isAuthOtpEmailPath } from "@repo/platform/engine/lib/auth-mail-limit";
 
 function resolveSubjectId(c: Context, subject: RateLimitSubject): string | null {
   if (subject === "global") return "global";
@@ -70,10 +72,11 @@ async function enforce(c: Context, policyId: PolicyId): Promise<Response | null>
   // CRITICAL: NEVER exempt the auth/login gate. Behind a same-host reverse proxy
   // that forwards over loopback without TRUST_PROXY/OPENSHIP_PUBLIC_URL set (an
   // easy operator misconfig), EVERY internet request arrives as a loopback peer
-  // — exempting `auth-tight`/`auth-loose` would silently disable sign-in
-  // brute-force throttling. The auth gate always enforces (proxied traffic
+  // — exempting auth limits would silently disable sign-in brute-force
+  // throttling. The auth gate always enforces (proxied traffic
   // buckets under one loopback key when no client IP is trustable).
-  const isAuthGate = policyId === "auth-tight" || policyId === "auth-loose";
+  const isAuthGate =
+    policyId === "auth-tight" || policyId === "auth-loose" || policyId === "auth-otp-mail";
   if (
     !isAuthGate && policyId !== "diagnostics" &&
     !env.TRUST_PROXY &&
@@ -149,6 +152,14 @@ export const authRouteLimiter: MiddlewareHandler = async (c, next) => {
   const policy = authRouteRateLimitPolicy(c.req.method, c.req.path);
   const rejected = await enforce(c, policy);
   if (rejected) return rejected;
+  if (
+    isSaasDeployment &&
+    c.req.method === "POST" &&
+    isAuthOtpEmailPath(c.req.path.slice("/api/auth".length))
+  ) {
+    const mailLimit = await enforce(c, "auth-otp-mail");
+    if (mailLimit) return mailLimit;
+  }
   c.set("rateLimitApplied" as never, true);
   await next();
 };

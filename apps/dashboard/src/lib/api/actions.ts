@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import type { ActionOperations, CreateActionWorkflow } from "@repo/contracts";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
@@ -64,6 +65,6 @@ export const actionsApi = {
     ),
   updateRepositorySource: (input: Input<"updateRepositorySource">[0]) =>
     data<"updateRepositorySource">(api.put("actions/repository-source", input)),
-  discover: (owner: string, repo: string, ref: string) =>
-    data<"discover">(api.get(`${p.discover}?${new URLSearchParams({ owner, repo, ref })}`)),
+  discover: (owner: string, repo: string, ref: string, gitProvider = DEFAULT_GIT_PROVIDER) =>
+    data<"discover">(api.get(`${p.discover}?${new URLSearchParams({ gitProvider, owner, repo, ref })}`)),
 };

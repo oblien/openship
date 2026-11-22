@@ -8,6 +8,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 // Type-only: erased at compile time, so this never becomes a runtime require.
 import type { RendererConfigKey } from "../main/security";
+import type { DesktopConnectionCallback } from "@repo/core";
 import { isPrivateIp, validateServerAddress, validateSshPayload, buildSshSettings } from "@repo/onboarding";
 
 contextBridge.exposeInMainWorld("desktop", {
@@ -42,6 +43,12 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.on("instance:link", handler);
       return () => ipcRenderer.removeListener("instance:link", handler);
     },
+  },
+
+  onConnectionCallback: (cb: (result: DesktopConnectionCallback) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, result: DesktopConnectionCallback) => cb(result);
+    ipcRenderer.on("connection:callback", handler);
+    return () => ipcRenderer.removeListener("connection:callback", handler);
   },
 
   /** Onboarding helpers */

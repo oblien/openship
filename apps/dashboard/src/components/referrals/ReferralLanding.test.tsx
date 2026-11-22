@@ -22,7 +22,7 @@ const code = "AF-PARTNER";
 const offer: ReferralPublicOffer = {
   code,
   name: "Partner",
-  productId: "workspace_vm",
+  productId: "vm_compute",
   planId: null,
   discountBps: 500,
   durationMonths: 12,

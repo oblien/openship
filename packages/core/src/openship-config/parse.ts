@@ -598,7 +598,7 @@ function parseStopSignal(ctx: Ctx, v: unknown, path: string): string | undefined
 // read too, so a value accepted here is one the runtime applies as written.
 
 function parseDuration(ctx: Ctx, v: unknown, path: string): string | undefined {
-  const dur = ctx.str(v, path);
+  const dur = ctx.str(v, path)?.trim();
   if (dur === undefined) return undefined;
   if (!isComposeDuration(dur)) {
     ctx.err(path, 'must be a duration like "90s", "1m30s", "10m", or a bare number of seconds');

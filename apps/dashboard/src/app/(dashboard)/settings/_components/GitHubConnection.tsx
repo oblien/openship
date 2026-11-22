@@ -17,13 +17,16 @@ import { usePlatform } from "@/context/PlatformContext";
 import {
   GITHUB_SOURCES_CHANGED_EVENT,
   githubApi,
-  settingsApi,
   getApiErrorMessage,
 } from "@/lib/api";
 
+import { GITHUB_PROVIDER, gitProviderSettingsHref } from "@repo/core";
+import { GitConnectionManageButton, GitConnectionPrompt, GitConnectionStatusRow } from "@/components/git/GitConnectionStatusRow";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
+import { Button } from "@/components/ui/button";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { CreateGitHubTokenLink } from "@/components/github/CreateGitHubTokenLink";
+import { CreateGitTokenLink } from "@/components/git/CreateGitTokenLink";
 import type { GitHubCapabilities } from "@repo/contracts";
 
 const EMPTY_STATE: GitHubConnectionState = {
@@ -43,7 +46,10 @@ const EMPTY_STATE: GitHubConnectionState = {
  */
 type MethodKind = GitHubCapabilities["methods"][number]["kind"];
 
-export function GitHubConnection() {
+export function GitHubConnection({ embedded = false, onManageClone }: {
+  embedded?: boolean;
+  onManageClone?(): void;
+} = {}) {
   // The Settings card owns the App-connection truth. The library context
   // (useGitHub) can use a healthy local identity without probing the App, so we
   // fetch GET /github/status here for both sources and their health.
@@ -62,11 +68,7 @@ export function GitHubConnection() {
   // "Disconnect", which cannot remove a custom source).
   const [customSourcesConfigured, setCustomSourcesConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
-  // "Forward my git identity to build servers" (Settings → Clone credentials).
-  // DESKTOP only — `relayConfigEligible` requires isDesktop. When on, the stored
-  // identity (device sign-in or pasted token) is forwarded to remote build hosts
-  // over the SSH tunnel, so it authenticates remote server clones too.
-  const [forwardGit, setForwardGit] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
   // "Change method" disclosure for the connected state. Controlled (not native
   // <details>) so the toggle sits inline next to Disconnect in one flex row and
   // the method list drops full-width below, instead of a w-full <details> that
@@ -84,6 +86,7 @@ export function GitHubConnection() {
       // pre-mutation in-flight after connect/disconnect.
       const res = await githubApi.getStatusDeduped<any>(force);
       if (request !== statusRequest.current) return;
+      setStatusError(null);
       setState(res?.state ?? EMPTY_STATE);
       setAccounts(res?.accounts ?? []);
       setInstallUrl(res?.installUrl || null);
@@ -92,6 +95,7 @@ export function GitHubConnection() {
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/GitHubConnection");
       if (request !== statusRequest.current) return;
+      setStatusError(getApiErrorMessage(diagnosticFailure));
       setState(EMPTY_STATE);
       setAccounts([]);
       setInstallUrl(null);
@@ -104,12 +108,6 @@ export function GitHubConnection() {
 
   useEffect(() => {
     void loadStatus();
-    void settingsApi
-      .get()
-      .then((r) => setForwardGit(!!r.forwardGitToServer))
-      .catch((diagnosticFailure) => {
-        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/settings/_components/GitHubConnection");
-      });
     return () => {
       statusRequest.current++;
     };
@@ -169,7 +167,7 @@ export function GitHubConnection() {
   const can = (kind: MethodKind) => {
     const m = capabilities?.methods.find((x) => x.kind === kind);
     // A failed probe must not offer instance credentials on the Cloud website.
-    return m ? m.available : isSelfHosted || kind === "app" || kind === "token";
+    return capabilities ? !!m?.available : isSelfHosted || kind === "app" || kind === "token";
   };
 
   const promptDisconnect = (source: "oauth" | "cli" | "all", label: string, body: string) => {
@@ -224,12 +222,15 @@ export function GitHubConnection() {
   // sub-card with its own header, and a token footnote. Four competing CTAs,
   // three of which left the page. Now: show the method actually in use, and put
   // the rest behind a disclosure.
-  const ghConnected = state.sources.ghCli.available;
+  const ghConnected = state.sources.ghCli.available && !state.sources.ghCli.problem;
   const ghLogin = state.sources.ghCli.login;
   const personalToken = state.sources.personalToken;
   const anyConnected = appConnected || ghConnected || personalToken?.connected;
   // The backend selects the browsing identity. Clone credentials also depend
   // on the repository, build target and any project or server overrides.
+  const primaryBadge = [ghConnected, appConnected, personalToken?.connected].filter(Boolean).length > 1
+    ? <span className="rounded-full bg-muted px-2 py-1 text-xs font-medium">{t.settings.githubSources.defaultBadge}</span>
+    : undefined;
   const activeIsGh = state.primary === "gh-cli";
   const activeIsPersonal = state.primary === "personal-token";
   // Name the identity by how it was connected. "gh CLI" is only correct for a
@@ -282,22 +283,36 @@ export function GitHubConnection() {
     />
   ) : null;
 
-  return (
-    <SettingsSection
-      icon={"github"}
-      title={t.settings.github.title}
-      description={
-        loading
-          ? t.settings.github.checkingConnection
-          : anyConnected
-            ? interpolate(t.settings.github.activeVia, {
-                method: activeIsPersonal ? t.settings.github.methodToken : activeIsGh ? ghMethodLabel : t.settings.github.methodApp,
-              })
-            : t.settings.github.pickMethod
-      }
-      iconBg="bg-foreground/5"
-      iconColor="text-foreground"
-    >
+  const managing = !embedded || showChangeMethod;
+  const manageButton = (
+    <GitConnectionManageButton
+      expanded={showChangeMethod}
+      label={embedded ? undefined : t.settings.github.changeMethod}
+      onClick={() => setShowChangeMethod((open) => !open)}
+    />
+  );
+  const manageClone = onManageClone ?? (() => router.push(gitProviderSettingsHref(GITHUB_PROVIDER.id) + "&view=clone#clone-credentials"));
+  const methods = (
+    <MethodChooser
+      can={can}
+      appRequiresCloud={capabilities?.methods.find((m) => m.kind === "app")?.requiresCloud ?? isSelfHosted}
+      cloudConnected={cloudConnected}
+      connecting={connecting}
+      showSignIn={!ghConnected}
+      hostCliLogin={isSelfHosted && ghConnected && ghMethod === "host-cli" ? ghLogin : undefined}
+      showApp={!appConnected && !customSourcesConfigured}
+      primary={!anyConnected}
+      primaryMethod={capabilities?.primary ?? (isSelfHosted ? "device" : "app")}
+      onSignIn={() => connect("cli")}
+      onConnectApp={() => connect("oauth")}
+      onConnectCloud={startCloudConnect}
+      onSsh={() => router.push("/servers")}
+      onToken={() => setShowTokenForm(true)}
+    />
+  );
+
+  const content = (
+    <>
       {!loading && personalToken?.problem && (
         <div className="mb-4">
           <CredentialProblem
@@ -328,45 +343,54 @@ export function GitHubConnection() {
           <UiIcon name="spinner" className="size-4 animate-spin text-muted-foreground" />
           {t.settings.github.checkingConnection}
         </div>
+      ) : statusError ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p role="alert" className="text-sm text-muted-foreground">{statusError}</p>
+          <Button type="button" size="sm" variant="secondary" onClick={() => void loadStatus(true)}>
+            {t.onboarding.loading.retry}
+          </Button>
+        </div>
       ) : anyConnected ? (
         <div className="space-y-4">
           {credentialProblem}
           {/* Connected identities, with the primary browsing identity marked. */}
           {personalToken?.connected && (
-            <ActiveIdentity
+            <GitConnectionStatusRow
               icon="key"
-              label={personalToken.login ? `@${personalToken.login}` : t.settings.github.methodToken}
+              login={personalToken.login}
               avatarUrl={personalToken.avatarUrl}
-              method={t.settings.github.methodToken}
-              active={activeIsPersonal}
+              label={t.settings.github.methodToken} connected status={activeIsPersonal ? primaryBadge : undefined}
             />
           )}
           {ghConnected && (
             <div className="space-y-2">
-              <ActiveIdentity
+              <GitConnectionStatusRow
                 icon={"terminal"}
-                label={ghLogin ? `@${ghLogin}` : ghMethodLabel}
+                login={ghLogin}
                 avatarUrl={state.sources.ghCli.avatarUrl}
-                method={ghMethodLabel}
-                active={activeIsGh}
-                // Forwarding is a DESKTOP relay (api: relayConfigEligible requires
-                // isDesktop). Self-hosted remote builds use their own credentials.
-                forwardEnabled={isDesktop ? forwardGit : undefined}
-                remoteNeedsOwnCredential={!isDesktop}
-                onManageForward={() => router.push("/settings?tab=git")}
+                label={ghMethodLabel} connected status={activeIsGh ? primaryBadge : undefined}
               />
-              {!ghProblem && tokenActions}
+              {managing && !ghProblem && tokenActions}
+              {managing && (capabilities ? can("forwarding") : isDesktop) && (
+                <button type="button" onClick={manageClone} className="text-xs font-medium text-foreground hover:underline">
+                  {t.settings.github.ghCli.manageForward}
+                </button>
+              )}
+              {managing && isSelfHosted && !isDesktop && (
+                <p className="text-xs text-muted-foreground">{t.settings.github.remoteCredentialHint}</p>
+              )}
             </div>
           )}
 
-          {appConnected && !customSourcesConfigured && (
+          {appConnected && (
             <div className="space-y-3">
-              <ActiveIdentity
+              <GitConnectionStatusRow
                 icon={"github"}
-                label={appLogin ? `@${appLogin}` : t.settings.github.methodApp}
-                method={t.settings.github.methodApp}
-                active={state.primary === "openship-app"}
+                login={appLogin}
+                avatarUrl={state.sources.openshipApp.avatarUrl}
+                label={t.settings.github.methodApp} connected status={state.primary === "openship-app" ? primaryBadge : undefined}
               />
+              {!customSourcesConfigured && (managing || !hasInstallations) && <>
               {/* Installations the App can actually deploy from. */}
               {hasInstallations && (
                 <div className="space-y-2">
@@ -438,121 +462,99 @@ export function GitHubConnection() {
                   <UiIcon name="arrow-up-right" className="size-3" />
                 </a>
               </div>
+              </>}
             </div>
           )}
 
-          {/* Actions + the switcher. Everything shares ONE flex row; the method list
-              expands full-width below — no w-full <details> pushing the toggle onto
-              its own line. Order is by weight: switching method and administering the
-              credential at GitHub are routine, so they lead; Disconnect is destructive
-              and sits at the far end, away from the two links next to it. */}
-          <div className="space-y-3">
-            <div className="h-px bg-border/40" />
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowChangeMethod((v) => !v)}
-                aria-expanded={showChangeMethod}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-              >
-                {t.settings.github.changeMethod}
-                <UiIcon name="chevron-down"
-                  className={`size-3.5 transition-transform ${showChangeMethod ? "rotate-180" : ""}`}
-                />
-              </button>
-              {/* Revoking is only possible ON GitHub, so the card has to be able
-                  to send the operator there. Shown for the ACTIVE identity, same
-                  as Disconnect — the App block carries its own installs link. */}
-              {activeIsGh && (
-                <a
-                  href={ghManageUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  {ghManageLabel}
-                  <UiIcon name="arrow-up-right" className="size-3" />
-                </a>
-              )}
-              {(activeIsGh || !customSourcesConfigured) && (
-                <button
-                  onClick={() =>
-                    promptDisconnect(
-                      activeIsGh ? "cli" : "oauth",
-                      // Name what is being disconnected. This said "GitHub sign-in"
-                      // for every gh-side credential, including a pasted token.
-                      activeIsGh ? ghMethodLabel : t.settings.github.disconnectAppLabel,
-                      activeIsGh
-                        ? t.settings.github.ghCli.disconnectBody
-                        : t.settings.github.disconnectAppBody,
-                    )
-                  }
-                  className="ms-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-bg"
-                >
-                  <UiIcon name="unplug" className="size-3.5" />
-                  {t.settings.github.disconnect}
+          {managing && (
+            <div className="space-y-3">
+              <div className="h-px bg-border/40" />
+              <div className="flex flex-wrap items-center gap-2">
+                {!embedded && manageButton}
+                {/* Revoking is only possible ON GitHub, so the card has to be able
+                    to send the operator there. Shown for the ACTIVE identity, same
+                    as Disconnect — the App block carries its own installs link. */}
+                {activeIsGh && (
+                  <a
+                    href={ghManageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {ghManageLabel}
+                    <UiIcon name="arrow-up-right" className="size-3" />
+                  </a>
+                )}
+                {(activeIsGh || (appConnected && !customSourcesConfigured && !activeIsPersonal)) && (
+                  <button
+                    onClick={() =>
+                      promptDisconnect(
+                        activeIsGh ? "cli" : "oauth",
+                        // Name what is being disconnected. This said "GitHub sign-in"
+                        // for every gh-side credential, including a pasted token.
+                        activeIsGh ? ghMethodLabel : t.settings.github.disconnectAppLabel,
+                        activeIsGh
+                          ? t.settings.github.ghCli.disconnectBody
+                          : t.settings.github.disconnectAppBody,
+                      )
+                    }
+                    className="ms-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-bg"
+                  >
+                    <UiIcon name="unplug" className="size-3.5" />
+                    {t.settings.github.disconnect}
+                  </button>
+                )}
+              </div>
+              {activeIsPersonal && (
+                <button type="button" onClick={manageClone} className="text-xs font-medium text-foreground hover:underline">
+                  {t.settings.cloneCredentials.title}
                 </button>
               )}
+              {showChangeMethod && methods}
             </div>
-            {/* What Disconnect actually does. It clears the credential from this
-                instance and sweeps the caches; it cannot and does not revoke
-                anything at GitHub, which is a difference the operator has to know
-                before assuming a leaked token is dead. */}
-            {activeIsGh && (
-              <p className="text-xs text-muted-foreground/80 leading-relaxed">
-                {t.settings.github.disconnectScopeNote}
-              </p>
-            )}
-            {showChangeMethod && (
-              <MethodChooser
-                can={can}
-                appRequiresCloud={
-                  capabilities?.methods.find((m) => m.kind === "app")?.requiresCloud ?? isSelfHosted
-                }
-                cloudConnected={cloudConnected}
-                connecting={connecting}
-                showSignIn={!ghConnected}
-                hostCliLogin={
-                  isSelfHosted && ghConnected && ghMethod === "host-cli" ? ghLogin : undefined
-                }
-                showApp={!appConnected && !customSourcesConfigured}
-                onSignIn={() => connect("cli")}
-                onConnectApp={() => connect("oauth")}
-                onConnectCloud={startCloudConnect}
-                onSsh={() => router.push("/servers")}
-                onToken={() => setShowTokenForm(true)}
-              />
-            )}
-          </div>
+          )}
         </div>
       ) : (
-        /* Nothing connected. Signing in with GitHub is the default because it
-           needs no app registration, no Openship account and no shell on the box;
-           everything else is a deliberate choice behind the disclosure.
-
-           When a credential IS stored and merely failed its check, the chooser
-           alone would be a lie by omission — hence the banner above it. */
         <div className="space-y-4">
           {credentialProblem}
-          <MethodChooser
-            can={can}
-            appRequiresCloud={
-              capabilities?.methods.find((m) => m.kind === "app")?.requiresCloud ?? isSelfHosted
-            }
-            cloudConnected={cloudConnected}
-            connecting={connecting}
-            showSignIn
-            showApp={!customSourcesConfigured}
-            primary
-            primaryMethod={capabilities?.primary ?? (isSelfHosted ? "device" : "app")}
-            onSignIn={() => connect("cli")}
-            onConnectApp={() => connect("oauth")}
-            onConnectCloud={startCloudConnect}
-            onSsh={() => router.push("/servers")}
-            onToken={() => setShowTokenForm(true)}
-          />
+          {embedded && (
+            <GitConnectionPrompt provider={GITHUB_PROVIDER}
+              expanded={showChangeMethod} onConnect={() => setShowChangeMethod((open) => !open)} />
+          )}
+          {(!embedded || showChangeMethod) && methods}
         </div>
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <SettingsSection
+        icon="plug"
+        title={t.settings.credentials.title}
+        action={!loading && !statusError && !cliAction && !showTokenForm && anyConnected && manageButton}
+      >
+        {content}
+      </SettingsSection>
+    );
+  }
+  return (
+    <SettingsSection
+      icon={"github"}
+      title={t.settings.github.title}
+      description={
+        loading
+          ? t.settings.github.checkingConnection
+          : anyConnected
+            ? interpolate(t.settings.github.activeVia, {
+                method: activeIsPersonal ? t.settings.github.methodToken : activeIsGh ? ghMethodLabel : t.settings.github.methodApp,
+              })
+            : t.settings.github.pickMethod
+      }
+      iconBg="bg-foreground/5"
+      iconColor="text-foreground"
+    >
+      {content}
     </SettingsSection>
   );
 }
@@ -645,94 +647,6 @@ function CredentialProblem(props: {
 }
 
 /**
- * A connected GitHub identity: who, by which method, and whether it's the one
- * actually authorizing clones. Replaces the old gh-CLI sub-card, whose eight
- * mutually-exclusive prose paragraphs were most of this card's noise — the two
- * that carried real consequences (remote deploys refused; forwarding is what
- * lifts that) survive as a single inline note.
- */
-function ActiveIdentity(props: {
-  icon: IconName;
-  label: string;
-  method: string;
-  active: boolean;
-  avatarUrl?: string;
-  /** DESKTOP only: identity forwarding is what makes this reach REMOTE builds.
-   *  `undefined` = not applicable on this install, so the note is suppressed. */
-  forwardEnabled?: boolean;
-  onManageForward?: () => void;
-  /** Self-hosted: remote builds use each server's OWN credential — forwarding
-   *  isn't available, so say what actually applies instead. */
-  remoteNeedsOwnCredential?: boolean;
-}) {
-  const {
-    icon: Icon,
-    label,
-    method,
-    active,
-    avatarUrl,
-    forwardEnabled,
-    onManageForward,
-    remoteNeedsOwnCredential,
-  } = props;
-  const { t } = useI18n();
-  return (
-    <div className="space-y-2">
-      {/* One row, one surface: who, how, and whether it's the active credential.
-          The badge lives INSIDE the row so it reads as a property of this identity
-          rather than a floating label at the card's edge. */}
-      <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-3.5 py-3">
-        {avatarUrl ? (
-          <img src={avatarUrl} alt={label} className="size-8 shrink-0 rounded-full" />
-        ) : (
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-            <UiIcon name={Icon} className="size-4 text-muted-foreground" />
-          </span>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{label}</p>
-          <p className="truncate text-xs text-muted-foreground">{method}</p>
-        </div>
-        {active && (
-          <span
-            className="shrink-0 rounded-full bg-success-bg px-2 py-0.5 text-[10.5px] font-medium text-success"
-            title={t.settings.github.ghCli.usedForDeploysTitle}
-          >
-            {t.settings.github.ghCli.usedForDeploys}
-          </span>
-        )}
-      </div>
-      {/* The one consequence worth surfacing: this identity authorizes LOCAL
-          builds only. How you extend it to remote builds differs by install, so
-          exactly one of these renders — never both, never neither-but-wrong.
-            desktop     → turn on identity forwarding (the SSH relay)
-            self-hosted → give each server its own credential (no relay there) */}
-      {forwardEnabled === false && onManageForward && (
-        <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-muted-foreground">
-          <UiIcon name="key" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
-          <span>
-            {t.settings.github.forwardOffHint}{" "}
-            <button
-              type="button"
-              onClick={onManageForward}
-              className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
-            >
-              {t.settings.github.ghCli.manageForward}
-            </button>
-          </span>
-        </p>
-      )}
-      {remoteNeedsOwnCredential && (
-        <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-muted-foreground">
-          <UiIcon name="key" className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
-          <span>{t.settings.github.remoteCredentialHint}</span>
-        </p>
-      )}
-    </div>
-  );
-}
-
-/**
  * The in-flight login. Device flow is the normal case: a code to paste plus a
  * button that opens GitHub. GitHub's device grant returns no pre-filled URL
  * (there is no `verification_uri_complete`), so copy-then-open is genuinely the
@@ -816,19 +730,6 @@ function DeviceFlowPanel(props: {
   );
 }
 
-/** Collapsible "other methods" — native <details> so it needs no state. */
-function MethodDisclosure(props: { summary: string; children: React.ReactNode }) {
-  return (
-    <details className="group w-full">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-        {props.summary}
-        <UiIcon name="chevron-down" className="size-3.5 transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="mt-3">{props.children}</div>
-    </details>
-  );
-}
-
 /**
  * The method list. `primary` renders the recommended path as a real CTA with the
  * rest behind a disclosure; without it (the "change method" case) everything is
@@ -895,7 +796,8 @@ function MethodChooser(props: {
   // A cloud-backed App needs the cloud link first; an operator-owned local App
   // reports requiresCloud=false and goes straight to its install flow.
   const needsCloudFirst = appRequiresCloud && !cloudConnected;
-  const lead = primary && primaryMethod && can(primaryMethod) ? primaryMethod : null;
+  const eligibleLead = primaryMethod === "app" ? showApp : primaryMethod === "device" ? showSignIn : primaryMethod === "token";
+  const lead = primary && primaryMethod && eligibleLead && can(primaryMethod) ? primaryMethod : null;
   const appRow = row(
     "app",
     "github",
@@ -918,6 +820,9 @@ function MethodChooser(props: {
           ),
         ]
       : []),
+    ...(showSignIn && can("device") && lead !== "device"
+      ? [row("signin", "github", t.settings.github.signIn, t.settings.github.signInDesc, onSignIn)]
+      : []),
     ...(showApp && can("app") && lead !== "app" ? [appRow] : []),
     ...(can("ssh-key")
       ? [
@@ -936,14 +841,7 @@ function MethodChooser(props: {
   ];
 
   if (!lead) {
-    return (
-      <div className="space-y-2">
-        {showSignIn &&
-          can("device") &&
-          row("signin", "github", t.settings.github.signIn, t.settings.github.signInDesc, onSignIn)}
-        {others}
-      </div>
-    );
+    return <div className="space-y-2">{others}</div>;
   }
 
   return (
@@ -961,9 +859,12 @@ function MethodChooser(props: {
           {lead === "app" ? (needsCloudFirst ? t.settings.github.requiresCloud : t.settings.github.methodAppDesc) : lead === "token" ? t.settings.github.methodTokenDesc : t.settings.github.signInDesc}
         </p>
       </div>
-      <MethodDisclosure summary={t.settings.github.otherMethods}>
-        <div className="space-y-2">{others}</div>
-      </MethodDisclosure>
+      {others.length > 0 && (
+        <details>
+          <DisclosureSummary className="text-xs text-muted-foreground">{t.settings.github.otherMethods}</DisclosureSummary>
+          <div className="mt-3 space-y-2">{others}</div>
+        </details>
+      )}
     </div>
   );
 }
@@ -1035,7 +936,8 @@ function TokenForm(props: { message: string; hint?: string; onSaved: () => void;
       </div>
       {error && <p className="text-xs text-danger leading-relaxed">{error}</p>}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/70">
-        <CreateGitHubTokenLink
+        <CreateGitTokenLink
+          provider="github"
           label={t.settings.github.tokenCreate}
           className="text-foreground hover:text-primary"
         />

@@ -9,6 +9,6 @@ export { MailServer } from "./mail-server";
 export { Comparison } from "./comparison";
 export { DataPrivacy } from "./data-privacy";
 export { OpenSource } from "./open-source";
-export { FinalCta } from "./final-cta";
+export { FinalCta, LandingCtaSection } from "./final-cta";
 export { DarkSection } from "./dark-section";
 export { Footer } from "./footer";

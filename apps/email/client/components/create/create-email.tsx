@@ -2,7 +2,6 @@ import { undoStorageKey } from '@/lib/undo-storage';
 import { useUndoSend, type EmailData } from '@/hooks/use-undo-send';
 import { useActiveConnection } from '@/hooks/use-connections';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
-import { useEmailAliases } from '@/hooks/use-email-aliases';
 import { cleanEmailAddresses } from '@/lib/email-utils';
 
 import { useSendMail } from '@/hooks/use-send-mail';
@@ -47,7 +46,6 @@ export function CreateEmail({
 }) {
   const { data: session } = useSession();
 
-  const { data: aliases } = useEmailAliases();
   const [draftId, setDraftId] = useQueryState('draftId');
   const {
     data: draft,
@@ -72,11 +70,6 @@ export function CreateEmail({
     }
   }, [draftError]);
 
-  const { data: activeAccount } = useActiveConnection();
-
-  const userEmail = activeAccount?.email || activeConnection?.email || session?.user?.email || '';
-  const userName = activeAccount?.name || activeConnection?.name || session?.user?.name || '';
-
   const handleSendEmail = async (data: {
     to: string[];
     cc?: string[];
@@ -84,11 +77,8 @@ export function CreateEmail({
     subject: string;
     message: string;
     attachments: File[];
-    fromEmail?: string;
     scheduleAt?: string;
   }) => {
-    const fromEmail = data.fromEmail || aliases?.[0]?.email || userEmail;
-
     const result = await sendEmail({
       to: data.to.map((email) => ({ email, name: email.split('@')[0] || email })),
       cc: data.cc?.map((email) => ({ email, name: email.split('@')[0] || email })),
@@ -96,7 +86,7 @@ export function CreateEmail({
       subject: data.subject,
       message: data.message,
       attachments: await serializeFiles(data.attachments),
-      fromEmail: userName.trim() ? `${userName.replace(/[<>]/g, '')} <${fromEmail}>` : fromEmail,
+      fromEmail: activeConnection?.email ?? session?.user.email,
       draftId: draftId ?? undefined,
       scheduleAt: data.scheduleAt,
     });
@@ -111,7 +101,6 @@ export function CreateEmail({
       subject: data.subject,
       message: data.message,
       attachments: data.attachments,
-      fromEmail: data.fromEmail,
       scheduleAt: data.scheduleAt,
     });
   };

@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import { githubActionActor } from "./run-access";
 import cronParser from "cron-parser";
 import { repos } from "@repo/db";
-import { ValidationError, isFullCommitSha, safeErrorMessage } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, ValidationError, isFullCommitSha, safeErrorMessage } from "@repo/core";
 import { diagnostics } from "@repo/core/diagnostics";
 import { nativeJobsEnabled } from "../../native/execution-policy";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
+import { webhookRepository } from "../github/webhook-repository";
 import { githubFetch } from "../github/github.auth";
 import { getFileContent } from "../github/github.service";
 import { GitHubApiError } from "../github/github.error";
@@ -20,6 +21,7 @@ export async function enqueueActionWebhook(
   eventName: string,
   value: unknown,
   delivery: string,
+  organizationIds?: readonly string[],
 ): Promise<void> {
   if (
     !nativeJobsEnabled() ||
@@ -28,14 +30,13 @@ export async function enqueueActionWebhook(
   )
     return;
   const event = record(value);
-  const repository = record(event.repository);
   const installationId = record(event.installation).id;
-  if (typeof repository.full_name !== "string" || !Number.isSafeInteger(installationId)) return;
+  const ref = webhookRepository(event);
+  if (!ref || !Number.isSafeInteger(installationId)) return;
   if (Buffer.byteLength(JSON.stringify(event)) > 2 * 1024 * 1024)
     throw new ValidationError("Actions webhook payload exceeds 2 MiB");
-  const [owner, repo] = repository.full_name.split("/");
-  if (!owner || !repo) return;
-  for (const workflow of await repos.actions.matchingWorkflows(owner, repo)) {
+  const owner = ref.namespace;
+  for (const workflow of await repos.actions.matchingWorkflows(ref, organizationIds)) {
     const installation = await repos.gitInstallation.findByOrgAndOwner(
       workflow.organizationId,
       owner,
@@ -90,11 +91,11 @@ export async function dispatchActionWebhook(
   const event = record(value);
   const repository = record(event.repository);
   const installationId = record(event.installation).id;
-  if (typeof repository.full_name !== "string" || !Number.isSafeInteger(installationId)) return;
-  const [owner, repo] = repository.full_name.split("/");
-  if (!owner || !repo) return;
-  for (const workflow of await repos.actions.matchingWorkflows(owner, repo)) {
-    if (workflow.organizationId !== target.organizationId || workflow.id !== target.workflowId)
+  const repositoryRef = webhookRepository(event);
+  if (!repositoryRef || !Number.isSafeInteger(installationId)) return;
+  const { namespace: owner, name: repo } = repositoryRef;
+  for (const workflow of await repos.actions.matchingWorkflows(repositoryRef, [target.organizationId])) {
+    if (workflow.id !== target.workflowId)
       continue;
     const installation = await repos.gitInstallation.findByOrgAndOwner(
       workflow.organizationId,
@@ -261,7 +262,7 @@ export async function dispatchActionWebhook(
         workflowRevision,
         event,
         untrusted,
-        actor: String(record(event.sender).login ?? "github"),
+        actor: String(record(event.sender).login ?? DEFAULT_GIT_PROVIDER),
       });
       await repos.actions.workflowError(workflow.organizationId, workflow.id, null);
     } catch (error) {

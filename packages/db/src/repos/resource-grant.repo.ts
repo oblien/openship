@@ -6,9 +6,10 @@
  * call `permission.assert(c, ...)` and never read grants directly.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, not, or, sql } from "drizzle-orm";
 import {
   generateId,
+  type GitProviderDefinition,
   parseSourceAccessScope,
   serializeSourceAccessScope,
   type GrantPermission,
@@ -18,6 +19,29 @@ import {
 } from "@repo/core";
 import type { Database } from "../client";
 import { resourceGrant } from "../schema/resource-grant";
+
+type GrantProvider = Pick<GitProviderDefinition, "grantTypes">;
+
+function grantsInNamespaces(provider: GrantProvider, namespaces: readonly string[]) {
+  const owners = namespaces.map(namespace => namespace.toLowerCase());
+  const { grantTypes } = provider;
+  return or(
+    and(eq(resourceGrant.resourceType, grantTypes.namespace), inArray(sql`lower(${resourceGrant.resourceId})`, owners)),
+    and(eq(resourceGrant.resourceType, grantTypes.repository),
+      inArray(sql`lower(regexp_replace(${resourceGrant.resourceId}, '[^/]+$', ''))`, owners.map(owner => owner + "/"))),
+  )!;
+}
+
+/** Used both on standalone disconnect and inside the installation-removal transaction. */
+export async function deleteNamespaceGrants(
+  db: Pick<Database, "delete">, organizationId: string, provider: GitProviderDefinition, namespace: string,
+) {
+  const rows = await db.delete(resourceGrant).where(and(
+    eq(resourceGrant.organizationId, organizationId),
+    grantsInNamespaces(provider, [namespace]),
+  )).returning();
+  return rows.length;
+}
 
 export type ResourceGrantRow = typeof resourceGrant.$inferSelect;
 // Both live in @repo/core — the dashboard needs them and has no @repo/db
@@ -240,51 +264,20 @@ export function createResourceGrantRepo(db: Pick<Database, "select" | "insert" |
       return rows.length;
     },
 
-    /**
-     * Reconcile GitHub grants when an installation / org account is removed
-     * (uninstall, suspend, or transferred away). Deletes the account-level
-     * grant (github_installation, resourceId = owner login) and every
-     * single-repo grant under that owner (github_repository, "owner/..."),
-     * matched case-insensitively. Returns rows removed.
-     *
-     * Self-healing hygiene: access correctness already holds without this
-     * (list filtering runs against the live installation set; a gone
-     * installation can't mint a token) — pruning just stops dangling rows
-     * from accumulating.
-     */
-    async deleteGitHubGrantsForOwner(
-      organizationId: string,
-      owner: string,
-    ): Promise<number> {
-      const ownerLc = owner.toLowerCase();
-      const rows = await db
-        .delete(resourceGrant)
-        .where(
-          and(
-            eq(resourceGrant.organizationId, organizationId),
-            sql`(
-              (${resourceGrant.resourceType} = 'github_installation' AND lower(${resourceGrant.resourceId}) = ${ownerLc})
-              OR (${resourceGrant.resourceType} = 'github_repository' AND lower(${resourceGrant.resourceId}) LIKE ${`${ownerLc}/%`})
-            )`,
-          ),
-        )
-        .returning();
-      return rows.length;
+    /** Revoke one namespace and its repository grants within the workspace. */
+    async deleteForGitNamespace(organizationId: string, provider: GitProviderDefinition, namespace: string) {
+      return deleteNamespaceGrants(db, organizationId, provider, namespace);
     },
 
-    /**
-     * Delete ALL GitHub access grants (github / github_installation /
-     * github_repository) for an org. Called when the org disconnects
-     * Openship Cloud — the org loses its GitHub App identity entirely, so
-     * every member-level GitHub grant is moot. Returns rows removed.
-     */
-    async deleteAllGitHubGrants(organizationId: string): Promise<number> {
+    /** Broad grants are revoked even when specific namespaces still have a local connection. */
+    async deleteForGitProvider(organizationId: string, provider: GrantProvider, retainedNamespaces: readonly string[]): Promise<number> {
       const rows = await db
         .delete(resourceGrant)
         .where(
           and(
             eq(resourceGrant.organizationId, organizationId),
-            sql`${resourceGrant.resourceType} IN ('github', 'github_installation', 'github_repository')`,
+            inArray(resourceGrant.resourceType, Object.values(provider.grantTypes)),
+            retainedNamespaces.length ? not(grantsInNamespaces(provider, retainedNamespaces)) : undefined,
           ),
         )
         .returning();

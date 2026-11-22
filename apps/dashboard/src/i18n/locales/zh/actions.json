@@ -185,7 +185,7 @@
     "standalone": "独立工作流",
     "standaloneHint": "手动、定时或通过身份验证的 Webhook 运行 YAML，无需仓库。",
     "chooseRepo": "选择仓库",
-    "connectRepo": "在 Git 设置中连接 GitHub，即可浏览仓库。",
+    "connectRepo": "在 Git 设置中连接 {provider}，即可浏览仓库。",
     "useCopy": "将 YAML 保存在 OpenShip",
     "noFiles": "未找到工作流。请选择其他仓库或创建独立工作流。",
     "loading": "正在加载工作流…",

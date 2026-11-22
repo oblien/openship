@@ -7,8 +7,9 @@ import {
   gitSource,
   project,
   projectGroup,
-  resourceGrant,
 } from "../schema";
+import { GITHUB_PROVIDER } from "@repo/core";
+import { deleteNamespaceGrants } from "./resource-grant.repo";
 import { rebindGitHubInstallationRows } from "./project.repo";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -139,23 +140,6 @@ async function rebindAfterInstallationLoss(
       );
   }
   return reconciled;
-}
-
-async function deleteGitHubGrantsForOwner(
-  database: Database,
-  organizationId: string,
-  owner: string,
-): Promise<void> {
-  const ownerKey = owner.toLowerCase();
-  await database.delete(resourceGrant).where(
-    and(
-      eq(resourceGrant.organizationId, organizationId),
-      sql`(
-        (${resourceGrant.resourceType} = 'github_installation' AND lower(${resourceGrant.resourceId}) = ${ownerKey})
-        OR (${resourceGrant.resourceType} = 'github_repository' AND lower(${resourceGrant.resourceId}) LIKE ${`${ownerKey}/%`})
-      )`,
-    ),
-  );
 }
 
 // ─── Repository ──────────────────────────────────────────────────────────────
@@ -521,7 +505,7 @@ export function createGitInstallationRepo(db: Database) {
         // installation so stale access cannot spring back on a later reconnect.
         for (const row of reconciled) {
           if (!row.hasReplacement) {
-            await deleteGitHubGrantsForOwner(tx, row.organizationId, row.owner);
+            await deleteNamespaceGrants(tx, row.organizationId, GITHUB_PROVIDER, row.owner);
           }
         }
         return source;

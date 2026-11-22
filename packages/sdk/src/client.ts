@@ -1,3 +1,5 @@
+import { createRemoteGitOperations } from "./git-client";
+import type { GitOperations } from "@repo/contracts";
 import { createRemoteActionOperations } from "./action-client";
 import type { ActionOperations } from "@repo/contracts";
 import { isCreateDeploymentResult, isAcceptedDeploymentResult, parseCreateDeploymentInput, parseInput, isRecord, PrepareDeployBody, BuildAccessBody, ResourceIdSchema, type PreparedProject, type DeploymentOperations } from "@repo/contracts";
@@ -96,6 +98,7 @@ export class OpenshipClient {
   /** @deprecated Use referralProgram. */
   readonly affiliates: ReferralOperations;
   readonly notices: NoticeOperations;
+  readonly git: GitOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
   readonly tokens: TokenOperations;
@@ -133,6 +136,7 @@ export class OpenshipClient {
     this.referralProgram = createRemoteReferralOperations(http);
     this.affiliates = this.referralProgram;
     this.notices = createRemoteNoticeOperations(http);
+    this.git = createRemoteGitOperations(http);
     this.github = createRemoteGitHubOperations(http);
     this.permissions = createRemotePermissionOperations(http);
     this.tokens = createRemoteTokenOperations(http);

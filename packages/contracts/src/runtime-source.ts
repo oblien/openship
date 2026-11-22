@@ -19,6 +19,7 @@ export const RuntimeSourceEditSchema = Type.Object(
   { additionalProperties: false },
 );
 export const RuntimeSourceSchema = Type.Object({
+  provider: Type.Optional(Type.String()),
   owner: Type.String(),
   repo: Type.String(),
   branch: Type.String(),

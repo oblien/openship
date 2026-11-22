@@ -13,6 +13,7 @@ export function createRemoteCredentialOperations(http: HttpClient): CredentialOp
       listProviders: { method: "GET", path: () => "/credentials/providers", envelope: "data" },
       list: { method: "GET", path: () => "/credentials", envelope: "data" },
       create: { method: "POST", path: () => "/credentials", envelope: "data" },
+      connectCli: { method: "POST", path: () => "/credentials/cli", envelope: "data" },
       authorize: {
         method: "POST",
         path: () => "/credentials/authorization",

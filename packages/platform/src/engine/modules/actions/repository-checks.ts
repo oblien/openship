@@ -7,11 +7,13 @@ import { createGitHubSource } from "../github/sources/index";
 import { getInstallationToken, githubFetch } from "../github/github.auth";
 import { GitHubApiError } from "../github/github.error";
 import { filterAllowedAccounts } from "../github/github-access";
+import { requireGitCapability } from "../git/provider";
 import { authorizeActionRepository } from "./access";
+import { actionRepository } from "./repository";
 
 /** A read-only setup check, scoped to the same repository and credentials as
  * execution/reporting. Never create a Check, registration or workflow run here. */
-export async function actionRepositoryChecks(
+export async function githubActionRepositoryChecks(
   ctx: ExecutionContext,
   input: Parameters<ActionOperations["repositoryChecks"]>[0],
 ): Promise<ActionRepositoryChecks> {
@@ -106,4 +108,9 @@ export async function actionRepositoryChecks(
       return result("access_required");
     return result("unavailable");
   }
+}
+
+/** Dispatch setup diagnostics only to the selected provider's implementation. */
+export async function actionRepositoryChecks(ctx: ExecutionContext, input: Parameters<ActionOperations["repositoryChecks"]>[0]) {
+  return requireGitCapability(actionRepository(ctx, input).workflows, "workflow checks").inspectChecks(input.controller);
 }

@@ -1,6 +1,7 @@
 import { loadCatalog } from "@/i18n/catalogs";
 import { clientMessages } from "@/i18n/client-messages";
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations } from "next-intl/server";
 import { routing, localizedHref } from "@/i18n/routing";
@@ -212,6 +213,16 @@ export default async function RootLayout({
         <NextIntlClientProvider locale={locale} messages={clientMessages(messages)} timeZone="UTC">
           {children}
         </NextIntlClientProvider>
+        <Script id="google-tag-manager-init" strategy="afterInteractive">{`
+          window.dataLayer = window.dataLayer || [];
+          function gtag() { window.dataLayer.push(arguments); }
+          gtag('js', new Date());
+        `}</Script>
+        <Script
+          async
+          src="https://www.googletagmanager.com/gtm.js?id=GTM-N5SBDZKV"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );

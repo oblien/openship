@@ -18,7 +18,7 @@ vi.mock("@repo/platform/engine/modules/credentials/verify", () => ({
   verifyCredentialValues: h.verify,
 }));
 vi.mock("@repo/platform/engine/modules/credentials/connection-authorization", () => ({
-  getProviderAccess: h.providerAccess,
+  getConnectionAccess: h.providerAccess,
 }));
 import {
   recheckRejectedRegistryCredential,
@@ -137,7 +137,7 @@ describe("rechecking a registry after an image access denial", () => {
 
     await verifyCredential("org-a", row.id);
 
-    expect(h.providerAccess).toHaveBeenCalledWith("org-a", row.id, { allowInvalid: true });
+    expect(h.providerAccess).toHaveBeenCalledWith("org-a", row.id, expect.any(Function), { allowInvalid: true });
     expect(h.verify).toHaveBeenCalledWith(expect.objectContaining({ id: "railway" }), {
       selector: null,
       publicFields: { authorization: "oauth" },

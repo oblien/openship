@@ -463,13 +463,13 @@ describe("parseOpenshipConfig", () => {
       expect(config?.services?.[0]?.healthcheck?.test).toBe("pg_isready");
     });
 
-    it("accepts compose durations and bare seconds for healthcheck timings", () => {
+    it("normalizes whitespace around compose durations and bare seconds for healthcheck timings", () => {
       const { config, errors } = parseOpenshipConfig({
         services: [
           {
             name: "db",
             image: "postgres:16",
-            healthcheck: { test: "pg_isready", interval: "10s", timeout: "1m30s", startPeriod: "30" },
+            healthcheck: { test: "pg_isready", interval: " 10s ", timeout: "\t1m30s", startPeriod: "30 " },
           },
         ],
       });
@@ -484,7 +484,7 @@ describe("parseOpenshipConfig", () => {
     // The runtime treats an unreadable duration as unset, so these used to fall
     // back to Docker's defaults while `openship config validate` passed.
     it.each(["interval", "timeout", "startPeriod"])("rejects a healthcheck %s the runtime can't read", (field) => {
-      for (const value of ["30 seconds", "5sec", "1m30", "soon"]) {
+      for (const value of ["30 seconds", "5sec", "1m30", "soon", " "]) {
         const { config, errors } = parseOpenshipConfig({
           services: [{ name: "db", image: "postgres:16", healthcheck: { test: "pg_isready", [field]: value } }],
         });

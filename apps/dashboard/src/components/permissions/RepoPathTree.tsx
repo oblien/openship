@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -17,12 +18,14 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  * ./path-tree and is unit-tested; this file renders it.
  */
 
+import { gitApi } from "@/lib/api/git";
 import { useEffect, useMemo, useState } from "react";
-import { githubApi, getApiErrorMessage, type RepoTreeEntry } from "@/lib/api";
+import { getApiErrorMessage, type RepoTreeEntry } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { buildTree, nodeState, searchTree, toggleNode, type TreeNode } from "./path-tree";
 
 export interface RepoPathTreeProps {
+  provider?: string;
   owner: string;
   /** Repo NAME (not owner/repo) whose tree is browsed. */
   repo: string;
@@ -167,6 +170,7 @@ function Row({
 }
 
 export function RepoPathTree({
+  provider = DEFAULT_GIT_PROVIDER,
   owner,
   repo,
   branch,
@@ -187,7 +191,7 @@ export function RepoPathTree({
     let cancelled = false;
     setEntries(null);
     setError(null);
-    githubApi
+    gitApi(provider)
       .getRepoTree(owner, repo, branch)
       .then((res) => {
         if (!cancelled) setEntries(res?.data ?? []);
@@ -199,7 +203,7 @@ export function RepoPathTree({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [owner, repo, branch]);
+  }, [provider, owner, repo, branch]);
 
   const tree = useMemo(() => buildTree(entries ?? []), [entries]);
   const result = useMemo(() => searchTree(tree, query), [tree, query]);
