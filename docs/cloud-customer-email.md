@@ -49,10 +49,9 @@ The SaaS worker runs at startup and every minute as `cloud-customer-email:delive
 Cloud sends password resets, verification codes, invitations, and customer mail
 from `noreply@openship.io` using the Cloud API's existing Oblien owner client
 (`OBLIEN_CLIENT_ID` and `OBLIEN_CLIENT_SECRET`). All system messages use the
-`openship` mail namespace by default. If `openship.io` is already verified in
-a different platform-owned mail namespace, set `OBLIEN_MAIL_NAMESPACE` to its
-slug. The tenant needs an active sending allowance. Welcome and cancellation
-replies go to `support@openship.io` through Reply-To.
+platform-owned `openship` namespace. Sending requires an active mail tenant,
+a current nonzero sending allowance, and a verified `openship.io` sender domain.
+Welcome and cancellation replies go to `support@openship.io` through Reply-To.
 See the [Oblien mail API contract](https://oblien.com/openapi/mail-v2.json).
 
 Rows in `cloud_customer_email` retain delivery status, attempt count, lease and

@@ -16,7 +16,6 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
       SMTP_PASS: undefined,
       SMTP_FROM: "Ignored SMTP sender <local@example.test>",
       OBLIEN_API_URL: "https://mail.example.test/v2",
-      OBLIEN_MAIL_NAMESPACE: undefined,
       OBLIEN_CLIENT_ID: "fixture-owner",
       OBLIEN_CLIENT_SECRET: "fixture-secret",
     },

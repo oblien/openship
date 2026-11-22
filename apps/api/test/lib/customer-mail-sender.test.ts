@@ -9,7 +9,6 @@ const h = vi.hoisted(() => ({
     OBLIEN_CLIENT_ID: "fixture-owner",
     OBLIEN_CLIENT_SECRET: "fixture-secret",
     OBLIEN_API_URL: "https://mail.example.test/v2",
-    OBLIEN_MAIL_NAMESPACE: "openship-staging",
     SMTP_HOST: "smtp.example.test",
     SMTP_PORT: 587,
     SMTP_USER: "sender",
@@ -49,7 +48,7 @@ it("keeps a failed Cloud submission on the API path even with working SMTP confi
   await expect(sendMail({ ...message, cloudOnly: true })).rejects.toThrow();
   expect(submit).toHaveBeenCalledOnce();
   const [url, options] = submit.mock.calls[0]!;
-  expect(String(url)).toBe("https://mail.example.test/v2/mail/openship-staging/messages");
+  expect(String(url)).toBe("https://mail.example.test/v2/mail/openship/messages");
   expect(JSON.parse(String(options?.body)).from).toBe("noreply@openship.io");
   expect(h.smtp).not.toHaveBeenCalled();
 });

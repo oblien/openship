@@ -317,7 +317,6 @@ const envSchema = z.object({
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
   /* ---------- System email ---------- */
-  OBLIEN_MAIL_NAMESPACE: z.string().trim().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),

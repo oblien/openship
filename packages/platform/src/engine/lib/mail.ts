@@ -412,7 +412,7 @@ async function sendCloudSystemMail(opts: SendMailOptions): Promise<boolean> {
     ? createHash("sha256").update(opts.messageId).digest("hex")
     : randomUUID();
   const receipt = await getOblienClient().mail.messages.send(
-    env.OBLIEN_MAIL_NAMESPACE || "openship",
+    "openship",
     {
       from: "noreply@openship.io",
       to: [opts.to],
