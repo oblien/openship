@@ -69,11 +69,13 @@ const listRepositories: GitProvider["listRepositories"] = async (ctx, namespace)
   }));
 };
 
-function privateGitLabCloneRequiresDocker() {
+function privateGitLabCloneUnavailable(isHosted: boolean) {
   return new AppError(
-    "Use Docker for private GitLab repository deployments. OpenShip checks out the repository on the controller and transfers the source to the build server.",
+    isHosted
+      ? "Private GitLab checkout is unavailable on OpenShip Cloud. The workspace connection can still browse repositories and manage webhooks."
+      : "This build needs GitLab checkout on the destination. Use API-host source preparation with a trusted self-hosted Docker controller.",
     403,
-    "GITLAB_CONNECTION_REQUIRED",
+    "GITLAB_REMOTE_CLONE_UNAVAILABLE",
   );
 }
 
@@ -83,10 +85,9 @@ async function resolveGitLabClone({
   repo,
   repoUrl,
   buildStrategy,
-  allowApiHostFallback,
 }: Pick<
   GitCloneOptions,
-  "ctx" | "owner" | "repo" | "repoUrl" | "buildStrategy" | "allowApiHostFallback"
+  "ctx" | "owner" | "repo" | "repoUrl" | "buildStrategy"
 >): Promise<BuildGitCredential> {
   if (!owner || !repo) return {};
   const ref = { provider: id, namespace: owner, name: repo };
@@ -99,19 +100,19 @@ async function resolveGitLabClone({
     );
   if (!(await gitlabAccess.canUse(ctx, { owner, repo }, "read")))
     throw new AppError("GitLab repository access denied", 403);
-  const allowHostCli = buildStrategy === "local" || allowApiHostFallback === true;
+  const { env } = await import("../../../config/env");
+  const controllerCheckout = !env.CLOUD_MODE && buildStrategy === "local";
   let connection;
   try {
-    connection = await projectConnection(ctx.organizationId, ref, allowHostCli);
+    connection = await projectConnection(ctx.organizationId, ref, controllerCheckout);
   } catch (error) {
-    if (!allowHostCli && isGitLabStatus(error, 401, 403, 404))
-      throw privateGitLabCloneRequiresDocker();
+    if (isGitLabStatus(error, 401, 403, 404)) throw connectionError();
     throw error;
   }
   const { project, token } = connection;
   if (project.visibility === "public") return { anonymous: true };
   if (!token) throw connectionError();
-  if (!allowHostCli) throw privateGitLabCloneRequiresDocker();
+  if (!controllerCheckout) throw privateGitLabCloneUnavailable(env.CLOUD_MODE);
   return { token, tokenRepositories: [ref.name], apiHostFallback: true };
 }
 
@@ -188,7 +189,11 @@ export const gitlabProvider: GitProvider = {
       }
     },
     async checks(input) {
-      if (!input.ctx || !input.namespace || !input.name || !input.remoteCredential) return [];
+      if (!input.ctx || !input.namespace || !input.name) return [];
+      if (!input.remoteCredential) {
+        const { env } = await import("../../../config/env");
+        if (!env.CLOUD_MODE) return [];
+      }
       const base = { id: "gitlab-repository", label: "GitLab repository access" };
       try {
         await resolveGitLabClone({
@@ -196,21 +201,15 @@ export const gitlabProvider: GitProvider = {
           owner: input.namespace,
           repo: input.name,
           buildStrategy: "server",
-          allowApiHostFallback: input.canStageSourceOnApiHost ?? input.dockerClonesOnTarget,
         });
         return [{ ...base, status: "pass" }];
       } catch (error) {
-        /* diagnostics-ignore: preflight exposes the remediation, never a credential or upstream body. */ return [
-          {
-            ...base,
-            status: "fail",
-            code: "GITLAB_CONNECTION_REQUIRED",
-            message:
-              error instanceof AppError && error.code === "GITLAB_CONNECTION_REQUIRED"
-                ? error.message
-                : connectionError().message,
-          },
-        ];
+        // diagnostics-ignore: expose only the known, user-facing GitLab errors.
+        const failure =
+          error instanceof AppError && error.code === "GITLAB_REMOTE_CLONE_UNAVAILABLE"
+            ? error
+            : connectionError();
+        return [{ ...base, status: "fail", code: failure.code, message: failure.message }];
       }
     },
   },

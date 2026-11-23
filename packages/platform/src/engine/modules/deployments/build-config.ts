@@ -54,8 +54,6 @@ export interface BuildConfigFactoryOptions {
   envVars: Record<string, string>;
   resources: ResourceConfig;
   gitToken?: string;
-  gitTokenRepositories?: string[];
-  gitTokenHostOnly?: boolean;
   /** Desktop-only: remote credential-helper script path (deploy relay fallback). */
   gitCredentialHelperPath?: string;
   overrides?: Partial<BuildConfig>;
@@ -70,8 +68,6 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     envVars,
     resources,
     gitToken,
-    gitTokenRepositories,
-    gitTokenHostOnly,
     gitCredentialHelperPath,
     overrides,
   } = opts;
@@ -115,8 +111,6 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     envVars,
     resources,
     gitToken,
-    gitTokenRepositories,
-    gitTokenHostOnly,
     gitCredentialHelperPath,
     ...overrides,
     // Run intent is shared by generated, Dockerfile and monorepo builds. A

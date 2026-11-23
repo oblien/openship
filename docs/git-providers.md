@@ -12,7 +12,7 @@ connection in **Settings → Git → GitLab**. Both use the workspace credential
 | --- | --- |
 | Browser authorization | A workspace administrator authorizes OpenShip on GitLab.com. OpenShip stores the grant encrypted and refreshes it for repository reads, builds and webhook operations. The grant follows that user's GitLab project permissions. |
 | Personal, group or project access token | Use `read_api` and `read_repository` for browsing and private clones. Managing project webhooks requires `api` and permission to manage hooks on the project. A project token can limit access to a single project. |
-| GitLab CLI | On desktop or a self-hosted controller, install a current `glab` and run `glab auth login --hostname gitlab.com` as the OS user running the OpenShip API. An instance administrator with workspace admin access can then select **Use GitLab CLI**. This authorizes browsing, webhooks and cloning on the controller for that workspace. On Docker deployments, the controller checks out private source before transferring it to the build worker. OpenShip stores the account ID and lets glab supply and refresh its token. Switching the CLI to another account requires linking it again. |
+| GitLab CLI | On desktop or a self-hosted controller, install a current `glab` and run `glab auth login --hostname gitlab.com` as the OS user running the OpenShip API. An instance administrator with workspace admin access can then select **Use GitLab CLI**. This authorizes browsing, webhooks and cloning on the controller for that workspace. OpenShip stores the account ID and lets glab supply and refresh its token. Switching the CLI to another account requires linking it again. |
 
 ### Enable browser linking
 
@@ -31,7 +31,15 @@ Restart the API. Browser linking appears once both are configured. In OpenShip D
 In **New Project → Repositories**, select **GitLab**, then choose the namespace and
 repository. Nested groups retain their full path. An existing project keeps its own
 provider when another provider is selected in the picker. A reachable OpenShip API
-or a verified project domain can receive signed GitLab pushes. Private GitLab builds use Docker for remote targets. The controller checks out the pinned Git revision and transfers the source. Workspace GitLab tokens stay on the controller. Enable Auto Deploy in the project’s Git settings after its repository is connected. GitLab requires a token with project webhook management permission for Auto Deploy.
+or a verified project domain can receive signed GitLab pushes. Public
+repositories can be checked out on the build destination. Private GitLab
+deployments currently require source preparation on a trusted self-hosted
+controller or Desktop. OpenShip Cloud can browse GitLab repositories, detect
+stacks and configure webhooks. Private Cloud checkout is unavailable because
+the build destination needs a repository-scoped Git credential.
+
+Enable Auto Deploy in the project's Git settings after its repository is
+connected. GitLab requires a token with permission to manage project webhooks.
 
 GitLab implements browsing, stack detection, cloning and push deployments. GitHub
 App installation, check runs, pull-request previews, source edits and Actions remain

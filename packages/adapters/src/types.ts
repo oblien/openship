@@ -229,8 +229,6 @@ export interface BuildConfig {
   resources: ResourceConfig;
   /** Ephemeral token for cloning private repos - never persisted */
   gitToken?: string;
-  /** Acquire source on the controller before transferring it to a remote builder. */
-  gitTokenHostOnly?: boolean;
   /** Server-authorized expanded App repository grant, never persisted. */
   gitTokenRepositories?: string[];
   /**

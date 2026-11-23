@@ -3,10 +3,10 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   BuildLogger,
   DockerRuntime,
@@ -198,24 +198,31 @@ describeDockerE2E("native Compose build batches", () => {
     ).toBe("");
   }, 180_000);
 
-  it("transfers an exact controller checkout to an isolated SSH builder", async () => {
-    const repo = join(directory, "source");
+  it("checks out an exact revision through the destination executor in Cloud mode", async () => {
+    const repo = join(directory, "destination-source");
+    await run("git", ["clone", "-q", join(directory, "source"), repo]);
     const branch = (await run("git", ["-C", repo, "branch", "--show-current"])).stdout.trim();
     const revision = (await run("git", ["-C", repo, "rev-list", "--max-parents=0", "HEAD"])).stdout.trim();
-    const transferIn = executor.transferIn.bind(executor);
-    const transfer = vi.spyOn(executor, "transferIn").mockImplementation(async (source, ...args) => {
-      await expect(access(join(source, ".git"))).rejects.toMatchObject({ code: "ENOENT" });
-      return transferIn(source, ...args);
-    });
-    const build = await runtime.build({
-      ...specs("controller-checkout")[0]!.config,
-      localPath: undefined,
-      repoUrl: repo,
-      branch,
-      commitSha: revision,
-      cloneOnServer: true,
-      gitTokenHostOnly: true,
-    }, logger()).finally(() => transfer.mockRestore());
+    await writeFile(join(repo, "revision"), "destination tip\n");
+    await run("git", ["-C", repo, "add", "revision"]);
+    await commit(repo, "advance the destination branch");
+    const remoteRepo = `/tmp/git-fixture-${suffix}`;
+    await run("docker", ["cp", repo, `${target}:${remoteRepo}`]);
+    await executor.exec(`chown -R 0:0 ${sq(remoteRepo)}`);
+    vi.stubEnv("CLOUD_MODE", "true");
+    let build;
+    try {
+      build = await runtime.build({
+        ...specs("destination-checkout")[0]!.config,
+        localPath: undefined,
+        repoUrl: pathToFileURL(remoteRepo).href,
+        branch,
+        commitSha: revision,
+        cloneOnServer: true,
+      }, logger());
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect(build.status, logs.map((entry) => entry.message).join("\n")).toBe("deploying");
     const container = await runtime.docker.createContainer({
       Image: build.imageRef,

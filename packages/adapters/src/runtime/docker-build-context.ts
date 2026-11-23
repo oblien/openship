@@ -1,9 +1,9 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { redactUrlCredentials } from "@repo/core";
+import { assertLocalHostExecutionAllowed, redactUrlCredentials } from "@repo/core";
 import { spawn } from "node:child_process";
 import { access, lstat, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { devNull, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import ignore from "ignore";
@@ -53,24 +53,13 @@ const GIT_CHECKOUT_IDLE_TIMEOUT_MS = 60_000;
  */
 function spawnGit(
   args: string[],
-  opts: { timeoutMs: number; onLog?: LogCallback; env?: Record<string, string>; isolated?: boolean },
+  opts: { timeoutMs: number; onLog?: LogCallback; env?: Record<string, string> },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    // A controller-only checkout uses neither ambient Git configuration nor
-    // the API's environment secrets. The credential helper supplies its one token.
-    const inheritedEnv = opts.isolated
-      ? {
-          PATH: process.env.PATH,
-          SystemRoot: process.env.SystemRoot,
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: devNull,
-          GIT_TEMPLATE_DIR: "",
-        }
-      : process.env;
     const child = spawn("git", args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
-        ...inheritedEnv,
+        ...process.env,
         GIT_TERMINAL_PROMPT: "0",
         GIT_ASKPASS: "/bin/echo",
         ...opts.env,
@@ -431,7 +420,6 @@ async function cloneGitSource(
     gitTokenRepositories: config.gitTokenRepositories,
     ssh: sshMaterial,
   });
-  const gitOptions = { env: gitEnv, isolated: config.gitTokenHostOnly };
 
   try {
     await spawnGit(
@@ -446,14 +434,14 @@ async function cloneGitSource(
         cloneUrl,
         targetPath,
       ],
-      { timeoutMs: GIT_CLONE_IDLE_TIMEOUT_MS, onLog, ...gitOptions },
+      { timeoutMs: GIT_CLONE_IDLE_TIMEOUT_MS, onLog, env: gitEnv },
     );
 
     if (config.commitSha) {
       const fetchArgs = exactCommitFetchArgs(config.commitSha);
       const commitPresent = await spawnGit(
         ["-C", targetPath, "cat-file", "-e", `${config.commitSha}^{commit}`],
-        { timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS, ...gitOptions },
+        { timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS, env: gitEnv },
       ).then(
         () => true,
         () => { /* diagnostics-ignore: A nonzero commit presence probe selects the exact fetch; a missing object still fails at checkout. */ return false; },
@@ -462,20 +450,20 @@ async function cloneGitSource(
         await spawnGit([...credArgs, "-C", targetPath, ...fetchArgs], {
           timeoutMs: GIT_CLONE_IDLE_TIMEOUT_MS,
           onLog,
-          ...gitOptions,
+          env: gitEnv,
         });
       }
       await spawnGit([...credArgs, "-C", targetPath, "checkout", config.commitSha], {
         timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS,
         onLog,
-        ...gitOptions,
+        env: gitEnv,
       });
     }
 
     await spawnGit([...credArgs, "-C", targetPath, ...GIT_SUBMODULE_UPDATE_ARGS], {
       timeoutMs: GIT_CLONE_IDLE_TIMEOUT_MS,
       onLog,
-      ...gitOptions,
+      env: gitEnv,
     });
 
     // A submodule's .git is usually a file pointing into the parent's metadata.
@@ -559,6 +547,7 @@ export async function prepareSourceTree(
   config: BuildConfig,
   opts?: { onLog?: LogCallback; perServiceBuildContexts?: boolean },
 ): Promise<SourceTree> {
+  assertLocalHostExecutionAllowed();
   const contextDir = await mkdtemp(join(tmpdir(), "openship-docker-context-"));
 
   try {
