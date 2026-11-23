@@ -130,7 +130,8 @@ beforeEach(async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
-      const path = new URL(url).pathname.replace("/client/v4", "");
+      const requestUrl = new URL(url);
+      const path = requestUrl.pathname.replace("/client/v4", "");
       const method = init.method ?? "GET",
         body = init.body ? JSON.parse(init.body as string) : null;
       calls.push({ path, method, body });
@@ -172,10 +173,11 @@ beforeEach(async () => {
           config_src: "cloudflare",
           status: "healthy",
         });
-      if (path === "/zones")
-        return response([
-          { id: "zone", name: "example.test", account: { id: "account", name: "Account" } },
-        ]);
+      if (path === "/zones") {
+        const name = requestUrl.searchParams.get("name");
+        const zones = [{ id: "zone", name: "example.test", account: { id: "account", name: "Account" } }];
+        return response(zones.filter((zone) => !name || name === zone.name));
+      }
       if (path === "/zones/zone/dns_records") {
         if (method === "POST") {
           const record = { id: "record", ...body };
@@ -206,6 +208,23 @@ async function setup() {
   return row;
 }
 describe("domain lifecycle through the real database and Cloudflare adapter", () => {
+  it("shows the credential name only in the settings-scoped ingress status", async () => {
+    await setup();
+    const domain = await h.repos.domain.create({
+      projectId: "project",
+      hostname: "app.other.test",
+      domainType: "custom",
+    });
+    await ingress.reconcileHostname(await h.repos.ingress.forDomain(domain.id));
+
+    const saved = await h.repos.ingress.forDomain(domain.id);
+    expect(saved.error).toContain("DNS zone for app.other.test");
+    expect(saved.error).not.toContain("(Cloudflare)");
+    expect((await h.repos.domain.findById(domain.id))?.lastVerifyError).toBe(saved.error);
+    const details = await ingress.getDomain(ctx, { domainId: domain.id });
+    expect(details?.error).toContain("(Cloudflare) cannot manage the DNS zone for app.other.test");
+  });
+
   it("publishes protected project domains after edge setup, then cleans only owned resources after deletion", async () => {
     const c = await setup();
     const domain = await h.repos.domain.create({

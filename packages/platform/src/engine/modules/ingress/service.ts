@@ -25,7 +25,7 @@ import { deferBackgroundWork } from "../../lib/background-work";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { assertSelfHosted, assertServerExecution } from "../system/server-access";
 import { authorization } from "../../lib/authorization";
-import { CloudflareIngress } from "./cloudflare";
+import { CloudflareIngress, ingressZoneUnavailableMessage } from "./cloudflare";
 import { manageConnector } from "./connector";
 export const publicConnection = (c: IngressConnection): PublicConnection => ({
   id: c.id,
@@ -270,7 +270,22 @@ export async function disconnect(ctx: ExecutionContext, id: string) {
 export async function getDomain(ctx: ExecutionContext, input: { domainId: string }) {
   await domainOwner(ctx, input.domainId);
   const row = await repos.ingress.forDomain(input.domainId);
-  return row ? publicHostname(row) : null;
+  if (!row) return null;
+  const result = publicHostname(row);
+  if (row.error !== ingressZoneUnavailableMessage(row.hostname)) return result;
+
+  // This settings:read operation can show a credential label. The persisted
+  // error also feeds domain verification and project pending actions.
+  const linked = await repos.ingress.get(ctx.organizationId, row.connectionId);
+  const credential = linked
+    ? await repos.credential.findById(ctx.organizationId, linked.credentialId)
+    : undefined;
+  return credential
+    ? {
+        ...result,
+        error: safeErrorMessage(ingressZoneUnavailableMessage(row.hostname, credential.name)),
+      }
+    : result;
 }
 export async function setDomain(ctx: ExecutionContext, input: IngressDomainInput) {
   assertNativeJobs();
