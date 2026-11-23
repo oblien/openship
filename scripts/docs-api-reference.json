@@ -438,6 +438,12 @@
       "description": "Upsert and delete named environment variables.",
       "route": "PATCH /api/projects/:id/env"
     },
+    "projects.revealEnv": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Reveal explicitly requested shared environment values after authorization.",
+      "route": "POST /api/projects/:id/env-reveal"
+    },
     "projects.getResources": {
       "page": "projects",
       "section": "Environments and settings",

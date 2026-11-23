@@ -605,6 +605,17 @@ export const projectsApi = {
     },
   ) => api.patch<{ upserted: number; deleted: number; warnings?: string[] }>(endpoints.projects.env(id), body),
 
+  /** Real values for named keys in the shared (project-level) env store only. */
+  revealEnv: (
+    id: string | number,
+    keys: string[],
+    environment?: "production" | "preview" | "development",
+  ) =>
+    api.post<{ success: boolean; environment: Record<string, string> }>(
+      endpoints.projects.envReveal(id),
+      { keys, ...(environment ? { environment } : {}) },
+    ),
+
   /** Get environment variables (secret values returned masked) */
   getEnv: (id: string | number) =>
     api.get<{
