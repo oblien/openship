@@ -20,12 +20,12 @@ export const serverMaintenanceResources: Pick<ServerDependencies["resources"],
   "listModules" | "scanModules" | "applyModule" | "getRateLimit" | "updateRateLimit" | "getEdgePages" | "updateEdgePages"> = {
   async getEdgePages(ctx, id) {
     await requireConnectedServer(ctx, id);
-    return { config: await withOpenRestyRouting(id, routing => routing.getEdgePages()) };
+    return { config: await withOpenRestyRouting(id, routing => routing.getEdgePages(), { useServingEdge: true }) };
   },
   async updateEdgePages(ctx, id, input) {
     await requireConnectedServer(ctx, id);
     const config = normalizeEdgePages(input, "server");
-    await withOpenRestyRouting(id, routing => routing.setEdgePages(config));
+    await withOpenRestyRouting(id, routing => routing.setEdgePages(config), { useServingEdge: true });
     audit.recordAsync(operationAuditContext(ctx), { eventType: "server:admin", resourceType: "server", resourceId: id });
     return { config };
   },

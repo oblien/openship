@@ -1,6 +1,8 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   NginxProvider,
+  containerEdgeProvider,
+  detectEdgeContainer,
   detectOpenRestyPaths,
   rootOrDegrade,
   type OpenRestyPaths,
@@ -41,6 +43,7 @@ export async function invalidateOpenRestyPaths(serverId?: string): Promise<void>
 export async function withOpenRestyRouting<T>(
   serverId: string,
   fn: (routing: NginxProvider) => Promise<T>,
+  options: { useServingEdge?: boolean } = {},
 ): Promise<T> {
   // Fast-fail an unreachable/offline box in ~2.5s instead of paying the full
   // 15-20s SSH-connect timeout (doubled by withExecutor's reconnect retry). This
@@ -65,6 +68,13 @@ export async function withOpenRestyRouting<T>(
       consequence: "Reads still work; a write will fail with the permission error it earns.",
       report: (message) => errorDiagnostics.error("platform/engine/lib/openresty-paths", `[openresty] ${message}`),
     });
+
+    if (options.useServingEdge) {
+      const edge = await detectEdgeContainer(edgeExecutor);
+      if (edge?.name) {
+        return fn(await containerEdgeProvider(executor, edge.name, await resolveEdgeProviderOptions(serverId)));
+      }
+    }
 
     const run = async (forceRefresh = false) => {
       const paths = await getOpenRestyPaths(serverId, executor, forceRefresh);
