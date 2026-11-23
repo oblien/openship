@@ -1646,6 +1646,13 @@
       "when": 1795223437981,
       "tag": "0234_git_webhook_delivery_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1795223438981,
+      "tag": "0235_default_rollback_window",
+      "breakpoints": true
     }
   ]
 }

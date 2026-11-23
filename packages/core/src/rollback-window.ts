@@ -10,10 +10,10 @@
  *
  *   explicit — the operator typed a number. Honored as-is (clamped).
  *   default  — no override (`project.rollbackWindow IS NULL`): inherit the
- *              instance default, which starts at five past releases.
+ *              default, which starts at two past releases.
  */
 
-export const DEFAULT_ROLLBACK_WINDOW = 5;
+export const DEFAULT_ROLLBACK_WINDOW = 2;
 export const MAX_ROLLBACK_WINDOW = 20;
 
 /**

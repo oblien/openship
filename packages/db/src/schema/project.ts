@@ -346,7 +346,7 @@ export const project = pgTable(
     workloadType: text("workload_type"),
     /**
      * How many past releases stay restorable. Explicit operator override;
-     * NULL inherits `instance_settings.default_rollback_window` (default 5).
+     * NULL inherits the default for this installation.
      * Active and pinned releases are excluded from the count. Resolved in one
      * place: `resolveRollbackWindow` (modules/deployments/release-retention.ts).
      */

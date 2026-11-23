@@ -72,8 +72,10 @@ export async function setup(c: Context) {
     tunnelProvider: body.tunnelProvider || null,
     tunnelToken: body.tunnelToken || null,
     defaultBuildMode: body.defaultBuildMode || "auto",
-    defaultRollbackWindow: normalizeRollbackWindow(body.defaultRollbackWindow),
   };
+  if (body.defaultRollbackWindow !== undefined) {
+    settingsPatch.defaultRollbackWindow = normalizeRollbackWindow(body.defaultRollbackWindow);
+  }
   if (body.authMode !== undefined) {
     const validation = validateAuthModeChange(body);
     if (!validation.ok) return c.json(validation.body, validation.status);

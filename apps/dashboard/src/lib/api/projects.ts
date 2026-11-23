@@ -69,7 +69,7 @@ export interface PendingAction {
   resolveWith: PendingActionResolution[];
 }
 
-/** Fixed rollback limit: project override, otherwise the instance default (5). */
+/** Fixed rollback limit: project override or the default for this installation. */
 export type RollbackCapacityUI = RollbackCapacity;
 
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
