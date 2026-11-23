@@ -113,6 +113,8 @@ export interface PortMatchInput {
   port: number;
   services: UpstreamCandidateService[];
   rowByService: Map<string, UpstreamCandidateRow>;
+  /** Allow configured services before their deployment creates containers. */
+  includeUnstarted?: boolean;
   /** ALL of the project's domain rows (service-scoped included). The canonical row is
    *  the first tie-breaker, so an ambiguous port resolves to the same service the
    *  project's access URL names — and to the same container `deployment.containerId`
@@ -162,12 +164,12 @@ function publishedPortPairs(
   return pairs;
 }
 
-/** Services that could serve this route at all: enabled, with a live container. */
+/** Live routing requires a running container. Planning uses configured services. */
 function upstreamCandidates(input: PortMatchInput): UpstreamCandidateService[] {
-  // A disabled service is not a candidate even if a stale row still names its
-  // container, and a container-less one has nothing to proxy to.
   return input.services.filter(
-    (service) => service.enabled !== false && !!input.rowByService.get(service.id)?.containerId,
+    (service) =>
+      service.enabled !== false &&
+      (input.includeUnstarted || !!input.rowByService.get(service.id)?.containerId),
   );
 }
 

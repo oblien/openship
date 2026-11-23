@@ -10,8 +10,65 @@ import {
   resolvePublicUrlPlaceholders,
   resolvePublicUrlTemplate,
   resolveServiceHostnameLabel,
+  servicePortPairs,
   MAX_SERVICE_LABEL_LENGTH,
 } from "../src/service-routing";
+
+describe("servicePortPairs", () => {
+  it("reads fixed host:container mappings, with or without an interface or protocol", () => {
+    expect(servicePortPairs(["8080:3000"])).toEqual([{ host: 8080, container: 3000 }]);
+    expect(servicePortPairs(["127.0.0.1:8080:3000"])).toEqual([{ host: 8080, container: 3000 }]);
+    expect(servicePortPairs(["0.0.0.0:5353:53/udp"])).toEqual([{ host: 5353, container: 53 }]);
+    expect(servicePortPairs(["[::1]:8080:3000"])).toEqual([{ host: 8080, container: 3000 }]);
+  });
+
+  it("skips a spec with no fixed host port, in every form compose accepts", () => {
+    // All of these get a random host port from Docker, so there's no pair to report.
+    expect(servicePortPairs(["3000"])).toEqual([]);
+    expect(servicePortPairs(["127.0.0.1::3000"])).toEqual([]);
+    expect(servicePortPairs([":3000"])).toEqual([]);
+    expect(servicePortPairs(["[::1]::3000/tcp"])).toEqual([]);
+    expect(servicePortPairs(["0:3000"])).toEqual([]);
+  });
+
+  it("skips a spec with no usable container port", () => {
+    expect(servicePortPairs(["8080:"])).toEqual([]);
+    expect(servicePortPairs(["8080:0"])).toEqual([]);
+    expect(servicePortPairs(["8080:70000"])).toEqual([]);
+    expect(servicePortPairs(["3000-3005:3000-3005"])).toEqual([]);
+  });
+
+  it("keeps the fixed mappings next to one it has to skip", () => {
+    expect(servicePortPairs(["127.0.0.1::3000", "8080:4000"])).toEqual([
+      { host: 8080, container: 4000 },
+    ]);
+  });
+
+  it("never turns a random host port into a :0 URL", () => {
+    const lookup = buildPublicUrlLookup(
+      [{ name: "web", portPairs: servicePortPairs(["127.0.0.1::80"]), primaryPort: 80 }],
+      "203.0.113.5",
+    );
+    expect(lookup.size).toBe(0);
+  });
+
+  it("lets a fixed mapping answer for a container port also published at random", () => {
+    // Lookup entries are first-write-wins, so a bogus pair ahead of the real one
+    // used to take the key for itself.
+    const lookup = buildPublicUrlLookup(
+      [
+        {
+          name: "web",
+          portPairs: servicePortPairs(["127.0.0.1::80", "8080:80"]),
+          primaryPort: 80,
+        },
+      ],
+      "203.0.113.5",
+    );
+    expect(lookup.get("web:80")).toBe("http://203.0.113.5:8080");
+    expect(lookup.get("web")).toBe("http://203.0.113.5:8080");
+  });
+});
 
 describe("firstServicePort", () => {
   it("reads the container-side port from compose port specs", () => {
