@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import {
   pgTable,
   text,
@@ -63,7 +64,7 @@ export const projectGroup = pgTable("project_app", {
   slug: text("slug").notNull(),
 
   /** Shared source identity */
-  gitProvider: text("git_provider").default("github"),
+  gitProvider: text("git_provider").default(DEFAULT_GIT_PROVIDER),
   gitOwner: text("git_owner"),
   gitRepo: text("git_repo"),
   gitUrl: text("git_url"),
@@ -136,7 +137,7 @@ export const project = pgTable(
      *                Redeploys track a VERSION, not a commit. Config lives in
      *                `releaseSource`.
      */
-    gitProvider: text("git_provider").default("github"),
+    gitProvider: text("git_provider").default(DEFAULT_GIT_PROVIDER),
     /** Owner/org on the git provider */
     gitOwner: text("git_owner"),
     /** Repo name on the git provider */
@@ -463,7 +464,7 @@ export const project = pgTable(
     /** Currently active deployment ID */
     activeDeploymentId: text("active_deployment_id"),
     /** GitHub webhook ID registered on the repo */
-    webhookId: integer("webhook_id"),
+    webhookId: text("webhook_id"),
     /** Domain hostname used for receiving GitHub webhooks (null = edge relay or none) */
     webhookDomain: text("webhook_domain"),
     /**

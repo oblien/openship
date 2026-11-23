@@ -1,16 +1,18 @@
 "use client";
 
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/components/i18n-provider";
 import { CustomSelect, type CustomSelectProps } from "@/components/ui/CustomSelect";
-import { githubApi } from "@/lib/api/github";
+import { gitApi } from "@/lib/api/git";
 import { projectsApi } from "@/lib/api/projects";
 
 interface Props {
   id?: string;
+  provider?: string;
   owner: string;
   repo: string;
   projectId?: string;
@@ -26,10 +28,11 @@ interface Props {
 
 /** Repository identity owns the pending requests and pagination state. */
 export function RepositoryBranchSelect(props: Props) {
-  return <BranchSelect key={`${props.projectId ?? ""}/${props.owner}/${props.repo}/${props.serverId ?? ""}`} {...props} />;
+  return <BranchSelect key={`${props.provider ?? DEFAULT_GIT_PROVIDER}/${props.projectId ?? ""}/${props.owner}/${props.repo}/${props.serverId ?? ""}`} {...props} />;
 }
 
 function BranchSelect({
+  provider = "github",
   id,
   owner,
   repo,
@@ -68,7 +71,7 @@ function BranchSelect({
     try {
       const result = projectId
         ? await projectsApi.getBranchPage(projectId, page.current + 1)
-        : await githubApi.listBranches(owner, repo, page.current + 1, serverId);
+        : await gitApi(provider).listBranches(owner, repo, page.current + 1, serverId);
       if (!active.current) return;
       page.current = result.pagination.page;
       setBranches((previous) => [

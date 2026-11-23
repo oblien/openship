@@ -40,6 +40,26 @@ export async function listEnvVars(projectId: string, organizationId: string, env
   });
 }
 
+/**
+ * GH-1836: return the SHARED (project-level, serviceId IS NULL) env store's REAL
+ * (unmasked) values — the write-gated reveal that backs the shared-environment
+ * editor's "show values" toggle, mirroring `revealServiceEnvVars` for the
+ * service-scoped store. `listEnvVars` above always masks secrets.
+ *
+ * Returns the FULL stored map; the caller narrows it to the keys the request
+ * named (`pickRevealed`) so only those cross the wire.
+ */
+export async function revealEnvVars(
+  projectId: string,
+  organizationId: string,
+  environment?: string,
+): Promise<Record<string, string>> {
+  const p = await repos.project.findById(projectId);
+  assertResourceInOrg(p, "Project", organizationId, projectId);
+  const vars = await repos.project.listEnvVars(projectId, environment, null);
+  return decryptEnvMap(Object.fromEntries(vars.map((v) => [v.key, v.value])));
+}
+
 // ─── Set env vars ────────────────────────────────────────────────────────────
 
 // ─── Merge env vars (partial — safe for masked secrets) ──────────────────────

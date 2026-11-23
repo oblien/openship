@@ -13,6 +13,7 @@ export const revalidate = 3600;
 export async function GET() {
   const entries: SitemapEntry[] = [
     { loc: `${SITE_URL}/`, changefreq: "daily", priority: 1.0 },
+    { loc: `${SITE_URL}/deployments`, changefreq: "weekly", priority: 0.9 },
     { loc: `${SITE_URL}/pricing`, changefreq: "weekly", priority: 0.95 },
     {
       loc: `${SITE_URL}/compare`,

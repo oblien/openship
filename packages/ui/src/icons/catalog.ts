@@ -96,6 +96,7 @@ export const outlineModern = {
   "git-branch": mask("git branch-159-1658431404.png", [3.375, 3.1875, 16.875, 17.625]),
   "git-commit": mask("commit git-149-1658431404.png", [3.1875, 8.4375, 17.0625, 7.125]),
   "git-fork": mask("git fork-164-1658431404.png", [3.375, 3.375, 16.875, 17.25]),
+  "gitlab": color("gitlab.png", [1, 1, 22, 22]),
   "github": mask("github-9-1693375160.png", [2.25, 2.625, 19.5, 18.75]),
   "globe": mask("world-344-1658433758.png", [2.25, 2.25, 19.5, 19.5]),
   "google": color("google.png", [0.9375, 0.9375, 21.75, 22.125]),

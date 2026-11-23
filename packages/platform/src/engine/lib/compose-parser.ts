@@ -804,7 +804,7 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   dns: "dns is not modeled — the container uses the Docker network's resolver.",
   dns_search: "dns_search is not modeled.",
   dns_opt: "dns_opt is not modeled.",
-  extra_hosts: "extra_hosts is not modeled — services resolve each other by service name.",
+  // `extra_hosts` is modeled — see parseAdvanced (advanced.extraHosts).
   links: "links is legacy and not modeled — services already resolve by service name.",
   external_links: "external_links is not modeled — link the app as a service connection instead.",
   // ── Compose model ──
@@ -918,9 +918,10 @@ function collectUnsupportedMounts(
 
 /**
  * Compose memory string → MB. Accepts the byte-suffix forms compose allows
- * (`512m`, `2g`, `1024k`, `1073741824`) plus the `2gb`/`512mb` spellings people
- * actually write. Returns undefined for anything unparseable — a malformed
- * limit must not silently become a tiny cap.
+ * (`512m`, `2g`, `1024k`, `1073741824`, `1073741824b`) plus the `2gb`/`512mb` and
+ * `512MiB`/`1GiB` spellings; compose reads all of them as powers of 1024.
+ * Returns undefined for anything unparseable — a malformed limit must not
+ * silently become a tiny cap.
  */
 function parseComposeMemory(raw: unknown): number | undefined {
   if (typeof raw === "number") {
@@ -933,7 +934,7 @@ function parseComposeMemory(raw: unknown): number | undefined {
   const m = raw
     .trim()
     .toLowerCase()
-    .match(/^(\d+(?:\.\d+)?)\s*([kmgt]?)b?$/);
+    .match(/^(\d+(?:\.\d+)?)\s*(?:([kmgt])(?:i?b)?|b)?$/);
   if (!m) return undefined;
   const value = parseFloat(m[1]!);
   if (!Number.isFinite(value) || value <= 0) return undefined;
@@ -944,7 +945,7 @@ function parseComposeMemory(raw: unknown): number | undefined {
     g: 1024,
     t: 1024 * 1024,
   };
-  const mb = value * (factor[m[2]!] ?? 1);
+  const mb = value * factor[m[2] ?? ""]!;
   return Number.isFinite(mb) && mb >= 1 ? Math.floor(mb) : undefined;
 }
 

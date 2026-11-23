@@ -181,6 +181,7 @@ export function createRemoteProjectOperations(
       },
       listEnvVars: { method: "GET", path: (id) => path(id) + "/env", envelope: "data" },
       mergeEnvVars: { method: "PATCH", path: (id) => path(id) + "/env" },
+      revealEnv: { method: "POST", path: (id) => path(id) + "/env-reveal", envelope: "environment" },
       getResources: { method: "GET", path: (id) => path(id) + "/resources", envelope: "data" },
       getClusterWorkload: { method: "GET", path: (id) => path(id) + "/cluster", envelope: "data" },
       listClusterDatabases: {

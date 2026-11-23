@@ -21,7 +21,6 @@ import {
   dockerMigrationApi,
   isScanStreamStalled,
   deployApi,
-  githubApi,
   getApiErrorMessage,
   type DiscoveredStack,
   type DiscoveredGroup,
@@ -62,7 +61,9 @@ import {
 import { MigrationPrompt } from "./MigrationPrompt";
 import { MigrationProxyReview } from "./MigrationProxyReview";
 import { RecoveredProjectReview, type RecoveryResult } from "./RecoveredProjectReview";
-import { useGitHub } from "@/context/GitHubContext";
+import { useGit } from "@/context/GitContext";
+import { GitProviderSelect } from "@/components/git/GitProviderSelect";
+import { parseGitRepositoryReference } from "@repo/core";
 import { RepositoryList } from "@/app/(dashboard)/library/components/RepositoryList";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
@@ -70,7 +71,6 @@ import DropdownMenu from "@/components/ui/DropdownMenu";
 import { type PublicEndpoint } from "@/context/deployment/types";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { randomUUID } from "@/lib/random-uuid";
-import { extractOwnerRepoFromUrl } from "@/utils/repoSlug";
 import { AppLogo } from "@/components/AppLogo";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
 import { Logo } from "@/components/logo";
@@ -170,9 +170,9 @@ function formatBytes(n: number): string {
 
 /** A project-level git repo linked to a migrated project. Records the source so
  *  the project can redeploy / push auto-deploy later — the running image is
- *  still reused during the migrate (no rebuild). GitHub only in v1. */
+ *  still reused during the migrate (no rebuild). Provider identity is retained for subsequent deployments. */
 interface RepoLink {
-  provider: "github";
+  provider: string;
   owner: string;
   repo: string;
   branch: string;
@@ -217,7 +217,7 @@ interface MigrateItem {
   /** serviceName → "copy" (only copy entries are sent; reuse is the default). */
   volumeStrategies: Record<string, VolumeStrategy>;
   /** Project-level repo to link (records source; sent to the migrate API). */
-  gitSource?: { provider: "github"; owner: string; repo: string; branch?: string };
+  gitSource?: { provider: string; owner: string; repo: string; branch?: string };
   /** serviceName → build subpath (sent to the migrate API). */
   serviceSubpaths?: Record<string, string>;
   /** discovered serviceName → repo compose service name (step-2 map, sent to the
@@ -302,7 +302,7 @@ export function ServerMigrationWizard({
   ownerRef.current = ownerKey;
   const previousOwnerRef = useRef(ownerKey);
   const router = useRouter();
-  const github = useGitHub();
+  const git = useGit();
 
   // All imports review their destination after configuring services.
   const [step, setStep] = useState<"select" | "source" | "domains" | "plan">("select");
@@ -771,7 +771,7 @@ export function ServerMigrationWizard({
     }
     setParsingRepo(projectId);
     try {
-      const res = await dockerMigrationApi.parseRepoCompose(repo.owner, repo.repo, repo.branch);
+      const res = await dockerMigrationApi.parseRepoCompose(repo.owner, repo.repo, repo.branch, repo.provider);
       if (!isCurrent()) return;
       const services = res?.services ?? [];
       const names = services.map((s) => s.name);
@@ -1297,7 +1297,7 @@ export function ServerMigrationWizard({
         volumeStrategies,
         gitSource: p.repo
           ? {
-              provider: "github" as const,
+              provider: p.repo.provider,
               owner: p.repo.owner,
               repo: p.repo.repo,
               branch: p.repo.branch,
@@ -1779,26 +1779,27 @@ export function ServerMigrationWizard({
                 parsing={parsingRepo === active.id}
                 onSetMap={(uid, name) => setServiceMap(active.id, uid, name)}
               />
-            ) : github.connected ? (
+            ) : git.connected ? (
               <div className="rounded-2xl bg-card p-4">
                 <RepositoryList
-                  repos={github.repos}
-                  accounts={github.accounts}
-                  selectedOwner={github.selectedOwner}
-                  setSelectedOwner={github.setSelectedOwner}
-                  loading={github.loading}
-                  loadingRepos={github.loadingRepos}
+                  provider={git.definition.id}
+                  repos={git.repos}
+                  accounts={git.accounts}
+                  selectedOwner={git.selectedOwner}
+                  setSelectedOwner={git.setSelectedOwner}
+                  loading={git.loading}
+                  loadingRepos={git.loadingRepos}
                   onSelect={(owner, repo) =>
                     void onRepoChange(active.id, {
-                      provider: "github",
+                      provider: git.definition.id,
                       owner,
                       repo: repo.name,
                       branch: repo.default_branch || "main",
                     })
                   }
-                  installUrl={github.installUrl}
-                  onInstall={() => void github.connect("oauth")}
-                  installing={github.connecting}
+                  installUrl={git.installUrl}
+                  onInstall={() => void git.connectMore()}
+                  installing={git.connecting}
                 />
               </div>
             ) : (
@@ -1867,7 +1868,7 @@ export function ServerMigrationWizard({
                 <RepoSourceCard
                   key={active.id}
                   project={active}
-                  github={github}
+                  git={git}
                   parsing={parsingRepo === active.id}
                   onRepoChange={(repo) => void onRepoChange(active.id, repo)}
                 />
@@ -2517,34 +2518,18 @@ function NoResults({ message, isError }: { message: string; isError?: boolean })
   );
 }
 
-/** Parse a GitHub repo reference. Delegates the URL forms (https/ssh, ±.git) to
- *  the shared `extractOwnerRepoFromUrl`; adds only the bare `owner/repo` case it
- *  doesn't cover. Returns null for anything else (v1 = GitHub only). */
-function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
-  const s = input.trim();
-  if (!s) return null;
-  const fromUrl = extractOwnerRepoFromUrl(s);
-  if (fromUrl) return fromUrl;
-  // Bare "owner/repo" (no github.com / scheme) — not handled by the URL parser.
-  if (!s.includes("://") && !s.includes("github.com")) {
-    const bare = s.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
-    if (bare) return { owner: bare[1]!, repo: bare[2]! };
-  }
-  return null;
-}
-
 /** Step 2 left column — link ONE project-level repo (list picker OR URL) and
  *  pick a branch. `onRepoChange` (link / branch / unlink) triggers the parent to
  *  parse the repo's compose + auto-map. Records source only — migrate still
  *  reuses the running image. */
 function RepoSourceCard({
   project,
-  github,
+  git,
   parsing,
   onRepoChange,
 }: {
   project: ImportProject;
-  github: ReturnType<typeof useGitHub>;
+  git: ReturnType<typeof useGit>;
   parsing: boolean;
   onRepoChange: (repo: RepoLink | null) => void;
 }) {
@@ -2555,13 +2540,13 @@ function RepoSourceCard({
   const repo = project.repo;
 
   const applyUrl = () => {
-    const parsed = parseGitHubRepo(urlInput);
+    const parsed = parseGitRepositoryReference(urlInput, git.definition.id);
     if (!parsed) {
       setUrlError(s.repoUrlInvalid);
       return;
     }
     setUrlError(null);
-    onRepoChange({ provider: "github", owner: parsed.owner, repo: parsed.repo, branch: "main" });
+    onRepoChange({ provider: parsed.provider, owner: parsed.owner, repo: parsed.repo, branch: "main" });
     setUrlInput("");
   };
 
@@ -2572,10 +2557,11 @@ function RepoSourceCard({
         <span className="text-xs text-muted-foreground">{s.repoOptional}</span>
       </div>
       <p className="text-xs text-muted-foreground">{s.linkRepoDesc}</p>
+      <GitProviderSelect />
 
-      {!github.connected ? (
-        <Button onClick={() => void github.connect()} className="w-full">
-          {s.connectGithub}
+      {!git.connected ? (
+        <Button onClick={() => void git.connect()} className="w-full">
+          {`Connect ${git.definition.name}`}
         </Button>
       ) : !repo ? (
         <div className="space-y-2">
@@ -2624,6 +2610,7 @@ function RepoSourceCard({
           <div className="space-y-1.5">
             <p className="text-sm font-medium text-foreground">{s.branch}</p>
             <RepositoryBranchSelect
+              provider={repo.provider}
               owner={repo.owner}
               repo={repo.repo}
               value={repo.branch}

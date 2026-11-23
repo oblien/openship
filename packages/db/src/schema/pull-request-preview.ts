@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { pgTable, text, integer, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { project } from "./project";
 import { organization } from "./organization";
@@ -13,6 +14,7 @@ export const pullRequestPreview = pgTable(
     // Deliberately retained after the source project is removed so its previews can be cleaned up.
     sourceProjectId: text("source_project_id").notNull(),
     projectId: text("project_id").references(() => project.id, { onDelete: "set null" }),
+    provider: text("provider").notNull().default(DEFAULT_GIT_PROVIDER),
     owner: text("owner").notNull(),
     repo: text("repo").notNull(),
     number: integer("number").notNull(),
@@ -32,6 +34,7 @@ export const pullRequestPreview = pgTable(
   (table) => [
     uniqueIndex("pull_request_preview_source_repository_number").on(
       table.sourceProjectId,
+      table.provider,
       table.owner,
       table.repo,
       table.number,

@@ -263,10 +263,12 @@ export function firstServicePort(ports: readonly string[] | undefined): number |
 
 /**
  * Fixed `host:container` port mappings a service publishes — what makes it
- * reachable at `http://<host>:<hostPort>` with no domain. A container-only spec
- * ("3000") gets a random host port we can't know up front, so it's skipped. Both
- * sides are kept: a `{{publicUrl:svc:3000}}` token names the CONTAINER port while
- * the reachable URL carries the HOST one.
+ * reachable at `http://<host>:<hostPort>` with no domain. A spec with no host side
+ * gets a random host port we can't know up front, so it's skipped: container-only
+ * ("3000") and interface-scoped ("127.0.0.1::3000", what the compose parser stores
+ * for `host_ip` with no `published`). Both sides are kept: a
+ * `{{publicUrl:svc:3000}}` token names the CONTAINER port while the reachable URL
+ * carries the HOST one.
  *
  * The ONE parser feeding `buildPublicUrlLookup`, shared by the deploy and the
  * app-settings path so their `portPairs` maps stay keyed identically — a fix here
@@ -275,13 +277,16 @@ export function firstServicePort(ports: readonly string[] | undefined): number |
 export function servicePortPairs(
   ports: readonly string[] | null | undefined,
 ): { host: number; container: number }[] {
+  // Range-checked rather than just finite: `Number("")` is 0, which would turn an
+  // empty host side into the URL `http://<host>:0`.
+  const isPort = (port: number) => Number.isInteger(port) && port >= 1 && port <= 65535;
   const out: { host: number; container: number }[] = [];
   for (const spec of ports ?? []) {
     const parts = String(spec).split(":");
     if (parts.length < 2) continue;
     const host = Number(parts[parts.length - 2]);
     const container = Number(String(parts[parts.length - 1]).replace(/\/(?:tcp|udp)$/i, ""));
-    if (Number.isFinite(host) && Number.isFinite(container)) out.push({ host, container });
+    if (isPort(host) && isPort(container)) out.push({ host, container });
   }
   return out;
 }

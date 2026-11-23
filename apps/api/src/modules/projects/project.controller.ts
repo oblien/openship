@@ -198,6 +198,16 @@ export async function mergeEnvVars(c: Context) {
   return c.json(result.data);
 }
 
+export async function revealEnv(c: Context) {
+  const result = await getPlatformKernel().projects.revealEnv(
+    operationContext(c),
+    param(c, "id"),
+    await c.req.json(),
+  );
+  applyOperationContext(c, result.context);
+  return c.json({ success: true, environment: result.data });
+}
+
 export async function migrateCommandEnvironment(c: Context) {
   const result = await getPlatformKernel().projects.migrateCommandEnvironment(operationContext(c), param(c, "id"), await c.req.json());
   applyOperationContext(c, result.context);

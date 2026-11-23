@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **572 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **579 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -267,6 +267,18 @@ The current API has **572 unique tools**. Permission tags below describe the rou
 | `post_domains_preview`<br />`POST /api/domains/preview` | Preview the DNS records a domain will need, before adding it. | `domain:read` |
 | `post_domains_renew_all`<br />`POST /api/domains/renew-all` | Attempt certificate renewal for eligible domains in this workspace. Inspect individual domain SSL state afterward; one domain’s failure does not prove all renewals failed. | `domain:write` |
 | `post_domains_verify_pending`<br />`POST /api/domains/verify-pending` | Recheck pending domains in this workspace and record current DNS/verification results. Read individual domain status for remaining blockers. | `domain:write` |
+
+### git
+
+| Tool and HTTP route | Description | Access |
+| --- | --- | --- |
+| `get_git_by_provider_repos`<br />`GET /api/git/:provider/repos` | List repositories for a connected Git provider, scoped to the caller’s grants. | `git:read` |
+| `get_git_by_provider_repos_by_owner_by_repo`<br />`GET /api/git/:provider/repos/:owner/:repo` | Get repository metadata from the selected Git provider. | `git:read` |
+| `get_git_by_provider_repos_by_owner_by_repo_branches`<br />`GET /api/git/:provider/repos/:owner/:repo/branches` | List repository branches from the selected Git provider. | `git:read` |
+| `get_git_by_provider_repos_by_owner_by_repo_detect`<br />`GET /api/git/:provider/repos/:owner/:repo/detect` | Detect deployment settings without exposing repository file content or environment secrets. | `git:read` |
+| `get_git_by_provider_repos_by_owner_by_repo_file`<br />`GET /api/git/:provider/repos/:owner/:repo/file` | Read a repository file within the caller’s granted source paths. Prefer detect for derived deployment settings. | `git:read` |
+| `get_git_by_provider_repos_by_owner_by_repo_files`<br />`GET /api/git/:provider/repos/:owner/:repo/files` | List repository files within the caller’s granted source paths. | `git:read` |
+| `post_git_by_provider_repos_by_owner_by_repo_changes`<br />`POST /api/git/:provider/repos/:owner/:repo/changes` | Publish reviewed repository file changes using the selected provider. Requires source write access to every changed path. | `git:write` |
 
 ### github
 
@@ -908,12 +920,14 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/cloud/teardown-project` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/cloud/token` | Internal Cloud relay or browser credential handoff. Use the authenticated project, domain, GitHub, analytics and Cloud status tools instead. |
 | `POST /api/credentials/authorization/complete` | Browser OAuth callback, bound to the initiating authenticated session. |
+| `POST /api/credentials/cli` | Interactive instance administrator consent to link the controller's CLI. |
 | `POST /api/deployments/:id/build` | Legacy start-by-deployment-ID adapter. Start or redeploy through /api/deployments or /api/deployments/build/access. |
 | `GET /api/deployments/:id/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/deployments/ssl/renew` | Legacy hostname renewal; use POST /api/domains/:id/renew for managed domain identity and ownership. |
 | `POST /api/deployments/ssl/status` | Legacy hostname probe; use the managed domain detail/status tools for scoped routing and certificate evidence. |
 | `POST /api/diagnostics/client-errors` | Browser error intake; no user operation or data access. |
 | `POST /api/domains/:id/verify/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
+| `GET /api/git/:provider/repos/:owner/:repo/tree` | Recursive dashboard picker. Use path-scoped files for bounded browsing. |
 | `GET /api/github/connect/redirect` | GitHub OAuth callback - no session yet during redirect |
 | `POST /api/github/disconnect` | GitHub credential ownership and App installation are configured by the workspace owner in Settings → GitHub. Use connect/status for an existing supported connection flow. |
 | `POST /api/github/installations/claim` | The browser completes GitHub authorization and selects an installation. Use connect/status to start and inspect the connection. |
@@ -969,6 +983,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/projects/:id/cluster/databases/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `GET /api/projects/:id/cluster/volumes/stream` | SSE transport for live volume status. Use the JSON list tool over MCP. |
 | `POST /api/projects/:id/deployment-session` | Browser deployment-session handoff. MCP starts deployments through /api/deployments/build/access. |
+| `POST /api/projects/:id/env-reveal` | Explicit dashboard secret reveal. MCP reads masked project environment and saves named merges without retrieving plaintext. |
 | `GET /api/projects/:id/logs/stream` | SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming. |
 | `POST /api/projects/:id/resources` | Compatibility alias; use PATCH /api/projects/:id/resources. |
 | `POST /api/projects/:id/routing/ensure-edge/respond` | Response to the browser’s ensure-edge SSE session. Use routing/retry and the project pending-actions tool for routing repair; interactive edge setup and proxy takeover remain in the dashboard. |
@@ -1104,7 +1119,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /api/tokens/mcp-clients` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `DELETE /api/tokens/mcp-clients/:clientId` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /api/tokens/mcp-clients/:clientId` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
-| `POST /api/webhooks/:provider` | Provider webhook (GitHub) - HMAC/signature verified in handler |
+| `POST /api/webhooks/:provider` | Git provider webhook signature verified in handler |
 | `POST /api/webhooks/backup` | Backup webhook - bearer token in Authorization header is the credential |
 | `POST /api/webhooks/incoming/:id` | Incoming webhook - per-hook token/HMAC/none credential verified in handler |
 | `GET /auth/callback/close` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |

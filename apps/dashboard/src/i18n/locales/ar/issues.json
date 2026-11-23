@@ -98,6 +98,8 @@
     "rescanPartial": "اكتملت إعادة الفحص، لكن تغطية {n} فحص غير مكتملة",
     "rescanFailed": "فشل الفحص",
     "resolved": "تم",
+    "updateResolved": "اكتمل التحديث: {name}",
+    "updatesResolved": "اكتملت التحديثات ({count}): {names}",
     "resolveFailed": "تعذّر تطبيق هذا الإصلاح",
     "confirmDestructive": "لهذا الإجراء أثر جانبي لا يمكن التراجع عنه. أتريد المتابعة؟"
   },

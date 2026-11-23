@@ -40,6 +40,9 @@ export const endpoints = {
     storage: (id: string | number) => `projects/${id}/storage`,
     connection: (id: string | number, linkId: string) => `projects/${id}/connections/${linkId}`,
     env: (id: string | number) => `projects/${id}/env`,
+    // GH-1836: POST { keys } — real (unmasked) values for named keys in the
+    // shared (project-level) environment store.
+    envReveal: (id: string | number) => `projects/${id}/env-reveal`,
     git: (id: string | number) => `projects/${id}/git`,
     gitLink: (id: string | number) => `projects/${id}/git/link`,
     releaseImageSource: (id: string | number) => `projects/${id}/release-image-source`,

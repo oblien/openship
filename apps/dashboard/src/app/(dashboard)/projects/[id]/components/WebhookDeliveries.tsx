@@ -5,6 +5,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useCallback, useEffect, useState } from "react";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import type { WebhookDelivery, WebhookDeliveryPage } from "@/lib/api/incoming-webhooks";
 
 /**
@@ -132,9 +133,10 @@ function DeliveryRow({ d }: { d: WebhookDelivery }) {
         : d.event
       : d.summary?.name || d.event;
   const commit = d.summary?.commit ? d.summary.commit.slice(0, 7) : null;
+  const composeChanges = d.summary?.composeChanges;
 
   return (
-    <li className="flex items-center gap-3 py-2.5">
+    <li className="flex items-start gap-3 py-2.5">
       <span
         className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${tone}`}
       >
@@ -148,6 +150,25 @@ function DeliveryRow({ d }: { d: WebhookDelivery }) {
           {commit && <code className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{commit}</code>}
         </span>
         {reason && <p className="mt-1 text-xs text-muted-foreground">{reason}</p>}
+        {d.error && (
+          <details className="group mt-1 text-xs text-danger">
+            <DisclosureSummary className="cursor-pointer text-xs text-danger hover:text-danger focus-visible:ring-danger/40">
+              <span className="truncate">{d.error}</span>
+            </DisclosureSummary>
+            <div className="mt-1.5 rounded-lg border border-danger/20 bg-danger/5 p-2 font-mono text-[11px] text-danger whitespace-pre-wrap break-words">
+              {d.error}
+            </div>
+          </details>
+        )}
+        {composeChanges && (
+          <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+            Services: {[
+              ...(composeChanges.added?.map((s) => `+${s}`) ?? []),
+              ...(composeChanges.changed?.map((s) => `~${s}`) ?? []),
+              ...(composeChanges.removed?.map((s) => `-${s}`) ?? []),
+            ].join(", ")}
+          </p>
+        )}
       </div>
       <span className="shrink-0 text-[11px] text-muted-foreground/60" title={when.toLocaleString()}>
         {when.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}

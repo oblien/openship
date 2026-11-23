@@ -1,25 +1,14 @@
 import { AppError, safeErrorMessage } from "@repo/core";
-import { diagnostics, redactDiagnosticText } from "@repo/core/diagnostics";
+import { diagnostics } from "@repo/core/diagnostics";
 import type { ExecutionContext } from "@repo/platform";
 import { githubFetch, getInstallationToken } from "./github.auth";
 import { GitHubApiError } from "./github.http";
 
-export interface GitHubCheckUpdate {
-  name: string;
-  externalId: string;
-  headSha: string;
-  status: "queued" | "in_progress" | "completed";
-  conclusion?: "success" | "failure" | "cancelled" | "neutral" | "skipped" | "timed_out" | "action_required";
-  detailsUrl?: string;
-  startedAt?: string;
-  completedAt?: string;
-  output: { title: string; summary: string };
-}
+import type { GitCheckUpdate as GitHubCheckUpdate, GitCheckOptions } from "../git/types";
+export type { GitCheckUpdate as GitHubCheckUpdate } from "../git/types";
 
-/** Bounded summaries only. Do not attach build logs, environments or provider payloads. */
-export function checkFailureSummary(message: string, secrets: readonly string[] = []): string {
-  return redactDiagnosticText(message, 4000, secrets);
-}
+import { checkFailureSummary } from "../git/checks";
+export { checkFailureSummary } from "../git/checks";
 
 /** Shared transport for workflow and deployment Checks, pinned to the scoped App. */
 export async function syncGitHubCheck(
@@ -28,12 +17,7 @@ export async function syncGitHubCheck(
   repo: string,
   id: string | null,
   update: GitHubCheckUpdate,
-  options?: {
-    canSend?: () => Promise<boolean>;
-    createIfMissing?: boolean;
-    verifyIdentity?: boolean;
-    beforeCreate?: () => Promise<void>;
-  },
+  options?: GitCheckOptions,
 ): Promise<{ id: string | null; error: string | null; unavailable?: boolean; skipped?: boolean }> {
   try {
     if (!await getInstallationToken(ctx, owner, undefined, { repositories: [repo] }))

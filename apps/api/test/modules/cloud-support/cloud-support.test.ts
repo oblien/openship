@@ -203,7 +203,7 @@ describe("Cloud support tickets", () => {
     }
   });
 
-  it("persists requests during SMTP failure, retries after restart, and never re-sends the successful half", async () => {
+  it("persists requests during a mail submission failure, retries after restart, and never re-sends the successful half", async () => {
     const receipt = await (await call("", "POST", input())).json();
     send.mockImplementation(async (mail) => mail.to === SUPPORT_EMAIL);
     expect(await state.service!.flush()).toEqual({ delivered: 1, failed: 1 });
@@ -211,7 +211,7 @@ describe("Cloud support tickets", () => {
     const failed = (await repo.messages(receipt.id)).find((m) => m.kind === "receipt")!;
     expect(failed.deliveredAt).toBeNull();
     expect(failed.nextAttemptAt!.getTime()).toBeGreaterThan(Date.now());
-    expect(failed.lastError).toContain("SMTP");
+    expect(failed.lastError).toContain("Oblien");
     const restarted = new CloudSupportService({ enabled: () => true, repo, send });
     await db.execute(
       sql`UPDATE cloud_support_message SET next_attempt_at = now() WHERE delivered_at IS NULL`,
@@ -467,7 +467,7 @@ describe("private Cloud customer support", () => {
       message: "Please include the build output.",
       resolve: true,
     });
-    // A saved reply is available in-app even while SMTP is unavailable.
+    // A saved reply is available in-app even while mail submission is unavailable.
     send.mockResolvedValue(false);
     await state.service!.flush();
     const detail = parseInput(
@@ -479,7 +479,7 @@ describe("private Cloud customer support", () => {
       expect.objectContaining({ author: "support", body: "Please include the build output." }),
     ]);
     expect(JSON.stringify(detail)).not.toMatch(
-      /SMTP|leaseId|deliveredAt|lastError|attempts|notification|receipt/,
+      /Oblien|leaseId|deliveredAt|lastError|attempts|notification|receipt/,
     );
     const reply = {
       requestId: randomUUID(),

@@ -12,6 +12,7 @@
     "title": "مشروع جديد",
     "subtitle": "انشر تطبيقًا أو استورد مشروعك.",
     "tabs": {
+      "repositories": "المستودعات",
       "folder": "مجلد",
       "github": "GitHub",
       "templates": "القوالب",
@@ -36,7 +37,7 @@
       "copyCode": "انقر للنسخ"
     },
     "default": {
-      "title": "اتصل بـ GitHub للنشر",
+      "title": "اتصل بـ {provider} للنشر",
       "descSelfHosted": "اختر كيف يصل OpenShip إلى مستودعاتك.",
       "descSaas": "اربط حساب GitHub الخاص بك لتصفح المستودعات والنشر مع كل دفعة.",
       "recommended": "موصى به",
@@ -144,7 +145,7 @@
       "name": "الاسم",
       "stars": "النجوم"
     },
-    "addAccount": "إضافة حساب GitHub",
+    "addAccount": "إضافة حساب {provider}",
     "installTitle": "تثبيت تطبيق GitHub",
     "installDesc": "ثبّت تطبيق GitHub على حسابك أو مؤسستك لمنح الوصول إلى مستودعاتك.",
     "installButton": "تثبيت تطبيق GitHub",
@@ -174,8 +175,6 @@
     "total": "الإجمالي",
     "public": "عام",
     "private": "خاص",
-    "quickTip": "نصيحة سريعة",
-    "quickTipDesc": "اختر أي مستودع لنشره فورًا. أعدّ عمليات النشر التلقائية مع كل دفعة.",
     "connection": "الاتصال",
     "openshipGithubApp": "تطبيق OpenShip على GitHub",
     "connected": "متصل",
@@ -187,14 +186,13 @@
     "notConnectedManage": "غير متصل — الإدارة من الإعدادات",
     "optional": "اختياري",
     "footnote": "إدارة اتصالات GitHub المستخدمة لتصفح المستودعات ونشرها.",
-    "manageGithubSettings": "إدارة GitHub من الإعدادات",
     "methodToken": "رمز GitHub",
     "methodDevice": "تسجيل الدخول عبر GitHub"
   },
   "urlImport": {
-    "invalidUrl": "أدخل رابط مستودع GitHub صالحًا",
+    "invalidUrl": "أدخل رابط مستودع {providers} صالحًا",
     "title": "استيراد من رابط Git",
-    "description": "الصق رابط مستودع عام لاستيراده. لا حاجة إلى اتصال GitHub.",
+    "description": "الصق رابط مستودع عام لاستيراده. لا حاجة إلى اتصال {providers}.",
     "importButton": "استيراد المستودع"
   },
   "customAppModal": {

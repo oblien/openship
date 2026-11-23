@@ -766,11 +766,9 @@ async function clearRoutingWarning(
   dep: Awaited<ReturnType<typeof repos.deployment.findById>> | null,
 ): Promise<void> {
   if (!dep) return;
-  const meta = { ...((dep.meta as Record<string, unknown> | null) ?? {}) };
+  const meta = (dep.meta as Record<string, unknown> | null) ?? {};
   if (!("edgeUnsynced" in meta) && !("deployWarning" in meta)) return;
-  delete meta.edgeUnsynced;
-  delete meta.deployWarning;
-  await repos.deployment.updateStatus(dep.id, dep.status, { meta });
+  await repos.deployment.clearRoutingWarning(dep.id);
 }
 
 /** Set the routing-unsynced markers so the project reads "Action Required" and

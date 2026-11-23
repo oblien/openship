@@ -438,6 +438,12 @@
       "description": "Upsert and delete named environment variables.",
       "route": "PATCH /api/projects/:id/env"
     },
+    "projects.revealEnv": {
+      "page": "projects",
+      "section": "Environments and settings",
+      "description": "Reveal explicitly requested shared environment values after authorization.",
+      "route": "POST /api/projects/:id/env-reveal"
+    },
     "projects.getResources": {
       "page": "projects",
       "section": "Environments and settings",
@@ -1035,8 +1041,14 @@
     "credentials.authorize": {
       "page": "credentials",
       "section": "Operations",
-      "description": "Begin a Railway or Vercel organization connection through OAuth. Open the returned authorization URL in the initiating authenticated session.",
+      "description": "Begin a GitLab, Railway or Vercel organization connection through OAuth. Open the returned authorization URL. Desktop clients can set `desktop` to receive the callback in the app.",
       "route": "POST /api/credentials/authorization"
+    },
+    "credentials.connectCli": {
+      "page": "credentials",
+      "section": "Operations",
+      "description": "Link the local GitLab CLI account to this workspace from an interactive instance administrator session on a self-hosted controller.",
+      "route": "POST /api/credentials/cli"
     },
     "credentials.completeAuthorization": {
       "page": "credentials",
@@ -4056,6 +4068,54 @@
       "section": "Security maintenance",
       "description": "Subscribe to this server run’s saved steps, live logs and final verification. Reconnect only reads the existing run; requires server admin.",
       "route": "GET /api/system/servers/:id/security/runs/:runId/stream"
+    },
+    "git.listRepos": {
+      "page": "git",
+      "section": "Operations",
+      "description": "List repositories visible to the caller.",
+      "route": "GET /api/git/:provider/repos"
+    },
+    "git.getRepo": {
+      "page": "git",
+      "section": "Operations",
+      "description": "Read repository metadata.",
+      "route": "GET /api/git/:provider/repos/:owner/:repo"
+    },
+    "git.listBranches": {
+      "page": "git",
+      "section": "Operations",
+      "description": "List branches.",
+      "route": "GET /api/git/:provider/repos/:owner/:repo/branches"
+    },
+    "git.listFiles": {
+      "page": "git",
+      "section": "Operations",
+      "description": "Browse files within granted source paths.",
+      "route": "GET /api/git/:provider/repos/:owner/:repo/files"
+    },
+    "git.listTree": {
+      "page": "git",
+      "section": "Operations",
+      "description": "Read the permitted repository tree.",
+      "route": "GET /api/git/:provider/repos/:owner/:repo/tree"
+    },
+    "git.getFile": {
+      "page": "git",
+      "section": "Operations",
+      "description": "Read a file within granted source paths.",
+      "route": "GET /api/git/:provider/repos/:owner/:repo/file"
+    },
+    "git.detectStack": {
+      "page": "git",
+      "section": "Operations",
+      "description": "Detect deployment settings without returning source contents.",
+      "route": "GET /api/git/:provider/repos/:owner/:repo/detect"
+    },
+    "git.publishChange": {
+      "page": "git",
+      "section": "Operations",
+      "description": "Publish reviewed changes with source write authorization.",
+      "route": "POST /api/git/:provider/repos/:owner/:repo/changes"
     }
   },
   "http": {

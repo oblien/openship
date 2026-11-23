@@ -19,6 +19,8 @@ import {
 } from "./deployment-resources";
 import { AppError } from "@repo/core";
 import { ProjectSchema } from "./projects";
+import { EnvRevealKeysSchema } from "./env-reveal";
+import { EnvironmentScopeSchema } from "./environment-scope";
 import type { ResourceOperationSchema, ResourceOperations } from "./resource-operations";
 import { ProjectIntegrationSchemas } from "./project-integrations";
 import {
@@ -538,6 +540,20 @@ export const ProjectControlSchemas = {
       deleted: Type.Integer(),
       warnings: Type.Optional(Type.Array(Type.String())),
     }),
+  },
+  // GH-1836: project-level counterpart of the service env-reveal — real values
+  // for named keys in the shared (serviceId IS NULL) store only. Write action
+  // so the read-only masked list can never reach plaintext.
+  revealEnv: {
+    action: "write",
+    input: Type.Object(
+      {
+        keys: EnvRevealKeysSchema,
+        environment: Type.Optional(EnvironmentScopeSchema),
+      },
+      { additionalProperties: false },
+    ),
+    output: Type.Record(Type.String(), Type.String()),
   },
   getResources: { action: "read", output: ProjectResourcesSchema },
   migrateCommandEnvironment: {

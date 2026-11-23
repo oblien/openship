@@ -21,6 +21,5 @@ export interface Account {
   name?: string;
 }
 
-export type VisibilityFilter = "all" | "public" | "private";
-export type SortBy = "name" | "updated" | "stars";
+export type { RepoVisibility as VisibilityFilter, RepoSort as SortBy } from "@repo/contracts/git-repo-list";
 

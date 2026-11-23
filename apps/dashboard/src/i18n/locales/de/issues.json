@@ -98,6 +98,8 @@
     "rescanPartial": "Scan abgeschlossen, {n} Prüfung(en) mit unvollständiger Abdeckung",
     "rescanFailed": "Prüfung fehlgeschlagen",
     "resolved": "Fertig",
+    "updateResolved": "Update abgeschlossen: {name}",
+    "updatesResolved": "Updates abgeschlossen ({count}): {names}",
     "resolveFailed": "Diese Korrektur konnte nicht angewendet werden",
     "confirmDestructive": "Das hat eine Nebenwirkung, die nicht rückgängig gemacht werden kann. Fortfahren?"
   },

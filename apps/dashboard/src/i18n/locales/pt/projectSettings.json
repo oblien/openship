@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Conecte primeiro o GitHub",
-      "description": "Associe a sua conta GitHub para ligar um repositório a este projeto.",
+      "title": "Conecte primeiro o {provider}",
+      "description": "Associe a sua conta {provider} para ligar um repositório a este projeto.",
       "connecting": "A conectar…",
-      "connect": "Conectar GitHub"
+      "connect": "Conectar {provider}"
     },
     "link": {
       "title": "Associar um repositório",
-      "description": "Ligue um repositório GitHub para ativar implementações despoletadas por webhook.",
+      "description": "Ligue um repositório {provider} para ativar implementações despoletadas por webhook.",
       "select": "Selecionar repositório"
     },
     "picker": {

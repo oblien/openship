@@ -1,6 +1,7 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 import type { CredentialProvider } from "@repo/core";
+import type { ConnectionAuthorizationInput, CompleteConnectionAuthorizationInput } from "@repo/contracts";
 
 /**
  * Third-party credentials — registry logins, DNS tokens, and whatever comes next.
@@ -32,9 +33,11 @@ export interface Credential {
 }
 
 export const credentialsApi = {
-  authorize: (input: { provider: "railway" | "vercel"; name: string }) =>
+  connectCli: (input: { provider: "gitlab"; name: string }) =>
+    api.post<{ data: Credential }>("credentials/cli", input),
+  authorize: (input: ConnectionAuthorizationInput) =>
     api.post<{ state: string; url: string }>("credentials/authorization", input),
-  completeAuthorization: (input: { state: string; code: string }) =>
+  completeAuthorization: (input: CompleteConnectionAuthorizationInput) =>
     api.post<{ data: Credential }>("credentials/authorization/complete", input),
   /** The providers this instance can store and verify, with their field schema. */
   providers: () =>

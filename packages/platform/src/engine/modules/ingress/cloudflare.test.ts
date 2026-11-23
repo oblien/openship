@@ -51,7 +51,9 @@ beforeEach(() => {
         if (method === "PUT") config = body.config;
         result = { config };
       } else if (path === "/zones")
-        result = [{ id: "zone", name: "example.test", account: { id: "account" } }];
+        result = [{ id: "zone", name: "example.test", account: { id: "account" } }].filter(
+          (z) => z.name === u.searchParams.get("name"),
+        );
       else if (path === "/zones/zone/dns_records") {
         if (method === "POST") {
           result = { id: `dns-${records.length}`, ...body };
@@ -162,6 +164,14 @@ describe("Cloudflare owned ingress merge", () => {
   });
 });
 describe("DNS and Access ownership", () => {
+  it("names the hostname when the token cannot see the zone", async () => {
+    const api = new CloudflareIngress("secret", "account"),
+      other = { ...h, hostname: "app.other.test" };
+    await expect(api.dns(other, c, ledger().value, ledger().save)).rejects.toMatchObject({
+      code: "INGRESS_ZONE_UNAVAILABLE",
+      message: expect.stringContaining("DNS zone for app.other.test"),
+    });
+  });
   it("creates a proxied tunnel CNAME and recovers a lost creation response without duplicates", async () => {
     const api = new CloudflareIngress("secret", "account"),
       state = ledger();

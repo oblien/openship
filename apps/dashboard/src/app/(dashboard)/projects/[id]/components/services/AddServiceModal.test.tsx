@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   tree: vi.fn(),
   connected: true,
 }));
+vi.mock("@/lib/api/git", () => ({ gitApi: () => ({ getRepoTree: h.tree }), gitSourcesChangedEvent: (provider: string) => `openship:${provider}-sources-changed` }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { getRepoTree: h.tree } }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ deployMode: h.mode }) }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: h.connected }) }));

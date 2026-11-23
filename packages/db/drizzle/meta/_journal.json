@@ -1636,8 +1636,22 @@
     {
       "idx": 233,
       "version": "7",
-      "when": 1794373204000,
-      "tag": "0233_default_rollback_window",
+      "when": 1795223436981,
+      "tag": "0233_git_provider_previews",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1795223437981,
+      "tag": "0234_git_webhook_delivery_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1795223438981,
+      "tag": "0235_default_rollback_window",
       "breakpoints": true
     }
   ]

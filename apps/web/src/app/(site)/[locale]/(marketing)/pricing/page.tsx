@@ -1,274 +1,16 @@
+import { getLocale } from "next-intl/server";
+import { ArrowRight, ChevronDown } from "lucide-react";
+import { Footer, Navbar } from "@/components/landing";
+import { getCopy } from "@/i18n/copy-server";
 import { Link } from "@/i18n/Link";
 import { useCopy } from "@/i18n/use-copy";
-import { getLocale } from "next-intl/server";
-
-import { getCopy } from "@/i18n/copy-server";
-import type { ReactNode } from "react";
-import { ArrowRight, Check, ChevronDown } from "lucide-react";
-import { formatMemoryMb, resolveStandard } from "@repo/core";
-import { Navbar, Footer } from "@/components/landing";
-import { IllustratedLink } from "@/components/marketing/illustrated-link";
-import { CLOUD_SLA, cloudSlaPlanSummary, cloudSlaUptimePercent } from "@/lib/cloud-service";
-import {
-  UI,
-  startingCloudPlan,
-  priceParts,
-  getCloudPricing,
-  cloudPlanSummary,
-  money,
-  type PricedPlan,
-  type CloudPricing,
-} from "@/lib/pricing";
-import { CLOUD_CTA_HREF, SELF_HOST_CTA_HREF, faq } from "./_data";
-import { CloudBilling } from "./CloudBilling";
-import { cloudPlanHref, managePlanHref } from "@/lib/cloud-links";
+import { managePlanHref } from "@/lib/cloud-links";
+import { getCloudPricing, money, type CloudPricing } from "@/lib/pricing";
+import { SELF_HOST_CTA_HREF, faq } from "./_data";
+import { CloudPricingSection } from "./cloud-pricing-section";
+import { PlanCard, PlanFacts, formatPlanCount } from "./plan-card";
 
 export const revalidate = 60;
-
-const supportLabels: Record<string, string> = {
-  community: "Community support",
-  email: "Email support",
-  priority: "Priority support",
-  dedicated: "Dedicated support",
-};
-const count = (value: number | null | undefined) =>
-  value === undefined ? "Not listed" : value === null ? "No set limit" : value.toLocaleString("en");
-
-type Fact = { label: string; value: string; href?: string };
-
-function PlanFacts({ facts }: { facts: Fact[] }) {
-  const copy = useCopy();
-
-  return (
-    <dl className="pp-plan-limits">
-      {facts.map(({ label, value, href }) => (
-        <div className="pp-plan-limit" key={label}>
-          <dt>{href ? <Link href={href}>{copy(label)}</Link> : copy(label)}</dt>
-          <dd>{copy(value)}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function PlanCard({
-  name,
-  description,
-  amount,
-  per,
-  billingNote,
-  href,
-  cta,
-  popular,
-  support,
-  benefits = [],
-  children,
-}: {
-  name: string;
-  description: string;
-  amount: string;
-  per?: string | null;
-  billingNote: ReactNode;
-  href: string;
-  cta: string;
-  popular?: boolean;
-  support: string;
-  benefits?: string[];
-  children: ReactNode;
-}) {
-  const copy = useCopy();
-
-  return (
-    <article
-      className={`pp-plan${popular ? " pp-plan--highlight" : ""}`}
-      aria-label={copy("{value0} plan", { value0: String(name) })}
-    >
-      <div className="pp-plan-heading">
-        <h3 className="pp-plan-name">{copy(name)}</h3>
-        {popular && <span className="pp-plan-ribbon">{copy(UI.mostPopular)}</span>}
-      </div>
-      <p className="pp-plan-lead">{copy(description)}</p>
-      <div className="pp-plan-price-block">
-        <div className="pp-plan-price">
-          <span className="pp-plan-amt">{copy(amount)}</span>
-          {per && <span className="pp-plan-per">{copy(per)}</span>}
-        </div>
-        <p className="pp-plan-billing">{copy(billingNote)}</p>
-      </div>
-      <a href={href} className={`pp-plan-cta${popular ? " pp-plan-cta--filled" : ""}`}>
-        {copy(cta)} <ArrowRight className="size-4" aria-hidden="true" />
-      </a>
-      <div className="pp-plan-details">{children}</div>
-      <ul className="pp-plan-support">
-        {[...benefits, support].map((benefit) => (
-          <li key={benefit}>
-            <Check className="size-4" aria-hidden="true" />
-            {copy(benefit)}
-          </li>
-        ))}
-      </ul>
-    </article>
-  );
-}
-
-function PlanResources({ plan }: { plan: PricedPlan }) {
-  const copy = useCopy();
-
-  const pool = plan.resourceLimits;
-  const capacity = [
-    { label: "vCPU", value: pool?.max_total_vcpus != null ? count(pool.max_total_vcpus) : "—" },
-    {
-      label: "RAM",
-      value: pool?.max_total_ram_mb != null ? formatMemoryMb(pool.max_total_ram_mb) : "—",
-    },
-    {
-      label: copy("Storage"),
-      value: pool?.max_total_disk_gb != null ? `${count(pool.max_total_disk_gb)} GB` : "—",
-    },
-  ];
-  const facts = [
-    { label: copy("Projects"), value: count(plan.limits.maxProjects) },
-    { label: copy("Running services"), value: count(plan.limits.runningServices) },
-    { label: copy("Concurrent builds"), value: count(plan.limits.concurrentBuilds) },
-    ...(plan.limits.buildMinutesPerMonth !== null
-      ? [
-          {
-            label: copy("Build time"),
-            value: copy("{minutes} min/month", {
-              minutes: count(plan.limits.buildMinutesPerMonth),
-            }),
-          },
-        ]
-      : plan.billingMode !== "monthly"
-        ? [{ label: copy("Build time"), value: "Metered" }]
-        : []),
-    {
-      label: copy("Monthly uptime SLA"),
-      value: `${cloudSlaUptimePercent(plan.id)}%`,
-      href: CLOUD_SLA.termsHref,
-    },
-  ];
-  return (
-    <>
-      <dl className="pp-plan-capacity" aria-label={copy("Shared resource pool")}>
-        {capacity.map(({ label, value }) => (
-          <div key={label}>
-            <dt>{copy(label)}</dt>
-            <dd>{copy(value)}</dd>
-          </div>
-        ))}
-      </dl>
-      <PlanFacts facts={facts} />
-    </>
-  );
-}
-
-async function CloudPlans({
-  pricing,
-  interval,
-}: {
-  pricing: CloudPricing;
-  interval: "monthly" | "annual";
-}) {
-  const copy = await getCopy();
-  const standard = resolveStandard(await getLocale());
-  const plans = pricing.tiers.filter((plan) => plan.price[interval] != null);
-
-  if (!pricing.available)
-    return (
-      <div className="pp-unavailable" role="status">
-        <h3>{copy("Current plans are temporarily unavailable.")}</h3>
-        <p>{copy("View the latest prices in OpenShip Cloud.")}</p>
-        <a href={CLOUD_CTA_HREF} className="pp-solid-cta">
-          {copy("Open Cloud ")}
-          <ArrowRight className="size-4" aria-hidden="true" />
-        </a>
-      </div>
-    );
-  return (
-    <>
-      <div className="pp-plans">
-        {plans.map((plan) => {
-          const price = priceParts(plan, interval);
-          const billing =
-            interval === "annual"
-              ? pricing.annual.monthsFree > 0
-                ? copy("{months} months free", { months: pricing.annual.monthsFree })
-                : copy("Billed yearly")
-              : copy("Billed monthly");
-          return (
-            <PlanCard
-              key={plan.id}
-              name={plan.name}
-              description={cloudPlanSummary(plan, copy)}
-              amount={price.amount}
-              per={copy(price.per)}
-              billingNote={
-                <>
-                  {billing}
-                  {plan.billingMode !== "monthly" && (
-                    <>
-                      <br />
-                      {plan.monthlyCredits === null
-                        ? copy("See included usage in Cloud")
-                        : copy("{credits} usage credits / month", {
-                            credits: count(plan.monthlyCredits / 1000),
-                          })}
-                    </>
-                  )}
-                </>
-              }
-              href={cloudPlanHref(plan.id, interval)}
-              cta={copy("Choose {name}", { name: plan.name })}
-              popular={plan.popular}
-              support={supportLabels[plan.support] ?? "See support options"}
-              benefits={
-                pricing.management?.includedWithCloud
-                  ? [
-                      copy("Free management for {count} servers", {
-                        count: pricing.management.includedServers,
-                      }),
-                    ]
-                  : []
-              }
-            >
-              <PlanResources plan={plan} />
-            </PlanCard>
-          );
-        })}
-      </div>
-      <div className="pp-billing-note">
-        <p>
-          {plans.every((plan) => plan.billingMode === "monthly")
-            ? copy(
-                "CPU, RAM and storage included. Apps and builds share capacity. Managed proxy transfer and backups are billed separately.",
-              )
-            : copy(
-                "Apps and builds share capacity. Review each plan’s billing mode and usage allowance before checkout.",
-              )}
-        </p>
-        <a href="/docs/guides/billing">
-          {copy("Billing details ")}
-          <ArrowRight className="size-3.5" aria-hidden="true" />
-        </a>
-      </div>
-      <details className="pp-included">
-        <summary>
-          {standard.title}
-          <ChevronDown className="size-4" aria-hidden="true" />
-        </summary>
-        <ul>
-          {standard.features.map((feature) => (
-            <li key={feature}>
-              <Check className="size-4" aria-hidden="true" />
-              {copy(feature)}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </>
-  );
-}
 
 function ManagementPlans({ pricing }: { pricing: CloudPricing }) {
   const copy = useCopy();
@@ -320,7 +62,7 @@ function ManagementPlans({ pricing }: { pricing: CloudPricing }) {
           >
             <PlanFacts
               facts={[
-                { label: "Servers included", value: count(management.includedServers) },
+                { label: "Servers included", value: formatPlanCount(management.includedServers) },
                 {
                   label: "Additional server",
                   value: copy("{amount}/month", {
@@ -346,7 +88,7 @@ function ManagementPlans({ pricing }: { pricing: CloudPricing }) {
   );
 }
 
-function InfrastructurePlans({ pricing }: { pricing: CloudPricing }) {
+function InfrastructurePlans() {
   const copy = useCopy();
 
   return (
@@ -373,11 +115,7 @@ function InfrastructurePlans({ pricing }: { pricing: CloudPricing }) {
         description={copy("Dedicated hardware for your capacity and support needs.")}
         amount="Custom"
         billingNote="Quoted for your requirements"
-        href={
-          pricing.management
-            ? `mailto:${pricing.management.dedicatedContact}?subject=Dedicated%20Openship%20hosting`
-            : "/support"
-        }
+        href="/contact"
         cta="Request a quote"
         support="Support agreed in your quote"
       >
@@ -397,74 +135,11 @@ export default async function PricingPage() {
   const copy = await getCopy();
 
   const pricing = await getCloudPricing(await getLocale());
-  const billingView = (interval: "monthly" | "annual") => {
-    const startingPlan = startingCloudPlan(pricing, interval);
-    const yearly = interval === "annual";
-    return {
-      plans: <CloudPlans pricing={pricing} interval={interval} />,
-      headline: startingPlan
-        ? copy.rich(
-            yearly ? "From <price>{amount}</price>/year" : "From <price>{amount}</price>/month",
-            {
-              amount: priceParts(startingPlan, interval).amount,
-              price: (amount) => <bdi dir="ltr">{amount}</bdi>,
-            },
-          )
-        : copy("Choose your capacity."),
-      note: !startingPlan
-        ? null
-        : yearly
-          ? pricing.annual.monthsFree > 0
-            ? copy("{months} months free", { months: pricing.annual.monthsFree })
-            : copy("Billed yearly")
-          : copy("Billed monthly"),
-    };
-  };
   return (
     <>
       <Navbar />
       <main className="pp-root">
-        <CloudBilling
-          monthly={billingView("monthly")}
-          annual={
-            pricing.annual.enabled && startingCloudPlan(pricing, "annual")
-              ? billingView("annual")
-              : undefined
-          }
-          monthsFree={pricing.annual.monthsFree}
-        >
-          <div
-            className="pp-cloud-benefits"
-            role="group"
-            aria-label={copy("Included with every Cloud plan")}
-          >
-            <IllustratedLink
-              href={CLOUD_SLA.termsHref}
-              illustration="deployment-health-checks"
-              heading="h2"
-              title={copy("Cloud uptime SLA")}
-              description={cloudSlaPlanSummary(copy)}
-            />
-            <IllustratedLink
-              href="/support"
-              illustration="notifications"
-              heading="h2"
-              title={copy("Support included")}
-              description={copy("Email us or open Support in your app’s sidebar.")}
-            />
-          </div>
-          {pricing.customTiers.map((plan) => (
-            <div className="pp-enterprise" key={plan.id}>
-              <p>
-                <strong>{copy(plan.name)}</strong>
-                <span>{copy(plan.description)}</span>
-              </p>
-              <a href={plan.contactSales ?? CLOUD_CTA_HREF} className="pp-text-link">
-                {copy(UI.ctaContact)} <ArrowRight className="size-4" aria-hidden="true" />
-              </a>
-            </div>
-          ))}
-        </CloudBilling>
+        <CloudPricingSection showHeadline />
         <section className="pp-offering-section" aria-labelledby="management-title">
           <div className="site-container">
             <header className="pp-section-heading">
@@ -484,7 +159,7 @@ export default async function PricingPage() {
                 <p>{copy("Run the platform yourself, or arrange dedicated infrastructure.")}</p>
               </div>
             </header>
-            <InfrastructurePlans pricing={pricing} />
+            <InfrastructurePlans />
           </div>
         </section>
         <section className="pp-faq-section">

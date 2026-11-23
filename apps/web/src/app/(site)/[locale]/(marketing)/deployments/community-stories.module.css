@@ -1,0 +1,59 @@
+.card {
+  --tint: #edb583;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: clamp(1.75rem, 3vw, 2.75rem);
+  padding: clamp(1.5rem, 2.7vw, 2.75rem);
+  background: linear-gradient(115deg,
+    color-mix(in srgb, var(--tint) 17%, var(--th-bg-page)) 30%,
+    color-mix(in srgb, var(--tint) 33%, var(--th-bg-page)));
+  border-radius: clamp(1.25rem, 2vw, 2rem);
+}
+.card:nth-child(3n + 2) { --tint: var(--th-clr-plum-soft); }
+.card:nth-child(3n) { --tint: #8ec7b6; }
+.byline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: .75rem;
+  border-radius: .5rem;
+}
+.source img {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--th-bg-page);
+}
+.author {
+  display: block;
+  color: var(--th-text-title);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.source:hover .author { text-decoration: underline; }
+.platform {
+  display: block;
+  margin-top: .125rem;
+  color: var(--th-text-body);
+  font-size: .85rem;
+}
+.mark {
+  color: color-mix(in srgb, var(--tint) 75%, var(--th-text-body));
+  font: bold 4.5rem/1 Georgia, serif;
+  height: .58em;
+  user-select: none;
+}
+.quote {
+  color: var(--th-text-heading);
+  font-size: clamp(1.375rem, 1.9vw, 1.875rem);
+  letter-spacing: -.03em;
+  line-height: 1.25;
+  text-wrap: pretty;
+}

@@ -552,6 +552,7 @@ IDs.
 | Create an environment from the supplied configuration. | `projects.createEnvironment(id, input)` | `POST /api/projects/:id/environments`<br />`project:write` |
 | Read environment variables with secrets masked. | `projects.listEnvVars(id, input?)` | `GET /api/projects/:id/env`<br />`project:read` |
 | Upsert and delete named environment variables. | `projects.mergeEnvVars(id, input)` | `PATCH /api/projects/:id/env`<br />`project:write` |
+| Reveal explicitly requested shared environment values after authorization. | `projects.revealEnv(id, input)` | `POST /api/projects/:id/env-reveal`<br />`project:write` |
 | Read resource limits and sleep settings. | `projects.getResources(id)` | `GET /api/projects/:id/resources`<br />`project:read` |
 | Change resource allocations. | `projects.updateResources(id, input)` | `PATCH /api/projects/:id/resources`<br />`project:write` |
 | Set the project’s sleep behavior. | `projects.setSleepMode(id, input)` | `POST /api/projects/:id/sleep-mode`<br />`project:write` |

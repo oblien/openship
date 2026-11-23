@@ -5,6 +5,8 @@ import { db, eq, repos, schema } from "@repo/db";
 import { seedOrg, seedProject, seedDeployment, seedService } from "../../helpers/seed";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
 import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
+import * as cloudProjects from "@repo/platform/engine/lib/cloud/projects";
+import * as cloudTransport from "@repo/platform/engine/lib/cloud/transport";
 import { env } from "@repo/platform/engine/config/env";
 import { registerWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
 import { githubWebhookProvider } from "../../../src/modules/github/github.webhook";
@@ -109,7 +111,8 @@ async function fixture() {
 describe("GitHub blocked deployment redelivery (#847)", () => {
   it("reports a blocked push as failed, records it, then accepts redelivery of the same id", async () => {
     const f = await fixture();
-    // Neither a different branch nor a disabled sibling should be dispatched.
+    // Provider, branch, and deployment policy all participate in admission.
+    await seedProject(f.organizationId, { ...f.fields, gitProvider: "another-provider" });
     await seedProject(f.organizationId, { ...f.fields, gitBranch: "develop" });
     await seedProject(f.organizationId, { ...f.fields, autoDeploy: false });
     dispatch.mockRejectedValueOnce(new Error("Clone credential unavailable"));
@@ -143,6 +146,54 @@ describe("GitHub blocked deployment redelivery (#847)", () => {
     expect(await f.anchor()).toMatchObject({ outcome: "received", statusCode: 200, error: null });
     expect((await f.send(f.deliveryId)).status).toBe(200);
     expect(dispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("routes a repository hook only to the workspace whose key verified it", async () => {
+    const f = await fixture();
+    const other = await seedOrg();
+    await seedProject(other.organizationId, { ...f.fields, webhookSecret: encrypt("sibling-project-key") });
+    expect((await f.send(f.deliveryId)).status).toBe(200);
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ organizationId: f.organizationId }),
+      expect.objectContaining({ projectId: f.project.id }),
+    );
+  });
+
+  it("forwards a promoted project to the matching Cloud repository and remembers its provider", async () => {
+    const f = await fixture();
+    const other = await seedOrg();
+    await repos.project.update(f.project.id, { autoDeploy: false });
+    vi.spyOn(repos.settings, "listCloudLinkedOrgIds").mockResolvedValue([other.organizationId, f.organizationId]);
+    const project = { ...f.fields, gitOwner: "ACME", gitRepo: f.fields.gitRepo.toUpperCase() };
+    const list = vi.spyOn(cloudProjects, "fetchOrgCloudProjects").mockResolvedValue({
+      state: "merged", numbers: {}, projects: [
+        { ...project, id: "different-provider", gitProvider: "gitlab" },
+        { ...project, id: "different-branch", gitBranch: "develop" },
+        { ...project, id: "promoted", gitProvider: null },
+      ],
+    });
+    const deploy = vi.spyOn(cloudTransport, "cloudFetchAsOrgOwner").mockResolvedValue(new Response(null, { status: 202 }));
+    const previousMode = env.CLOUD_MODE;
+    env.CLOUD_MODE = false;
+    try {
+      for (const id of [f.deliveryId, f.deliveryId + "-next"]) {
+        const response = await f.send(id);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ message: "Forwarded push to Openship Cloud (promoted)" });
+      }
+      expect(list).toHaveBeenCalledExactlyOnceWith(f.organizationId);
+      expect(deploy).toHaveBeenCalledTimes(2);
+      for (const [org, path, init] of deploy.mock.calls) {
+        expect([org, path, init?.method]).toEqual([f.organizationId, "/api/deployments", "POST"]);
+        expect(JSON.parse(String(init?.body))).toMatchObject({ projectId: "promoted", branch: "main" });
+      }
+      expect(await repos.cloudWebhookBinding.findByRepo({
+        provider: "github", namespace: f.fields.gitOwner, name: f.fields.gitRepo,
+      })).toEqual([expect.objectContaining({ organizationId: f.organizationId, cloudProjectId: "promoted" })]);
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      env.CLOUD_MODE = previousMode;
+    }
   });
 
   it("retries only blocked siblings after a partially successful push", async () => {

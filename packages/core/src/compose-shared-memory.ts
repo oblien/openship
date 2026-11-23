@@ -8,9 +8,10 @@ export function parseComposeShmSize(value: unknown): number | undefined {
   let bytes: number;
   if (typeof value === "number") bytes = value;
   else if (typeof value === "string") {
-    const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*([kmgt]?)b?$/i);
+    // Compose reads `512m`, `512mb` and `512MiB` alike, all as powers of 1024.
+    const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*(?:([kmgt])(?:i?b)?|b)?$/i);
     if (!match) throw new ValidationError("shm_size must be bytes or a size such as 2g");
-    const exponent = { "": 0, k: 1, m: 2, g: 3, t: 4 }[match[2]!.toLowerCase()]!;
+    const exponent = { "": 0, k: 1, m: 2, g: 3, t: 4 }[(match[2] ?? "").toLowerCase()]!;
     bytes = Number(match[1]) * 1024 ** exponent;
   } else throw new ValidationError("shm_size must be bytes or a size such as 2g");
   if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > MAX_COMPOSE_SHM_BYTES)

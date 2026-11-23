@@ -2,8 +2,8 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { repos, type Project } from "@repo/db";
 import { compareCommitSha } from "@repo/core";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import { compareCommits } from "../github/github.service";
-import { classifyChangedFiles, routeServicesByChanges } from "../github/webhook-changed-files";
+import { projectRepository } from "../git/provider";
+import { classifyChangedFiles, routeServicesByChanges } from "../git/changed-files";
 
 /**
  * Smart per-service routing for a MANUAL multi-service redeploy.
@@ -13,7 +13,7 @@ import { classifyChangedFiles, routeServicesByChanges } from "../github/webhook-
  * the affected services. This is the dashboard "Redeploy" button's path.
  *
  * ORCHESTRATOR, not a classifier: it composes `compareCommits` (the git diff)
- * with the SHARED leaf classifiers in github/webhook-changed-files
+ * with the SHARED leaf classifiers in git/changed-files
  * (`classifyChangedFiles` / `routeServicesByChanges`) — the exact same matching
  * the webhook uses, so per-service targeting is identical with no duplicated
  * logic. It deliberately imports NOTHING from build.service, staying a leaf.
@@ -62,10 +62,7 @@ export async function resolveSmartRoute(
       // single-app, same commit, config-only, or no diffable repo → rebuild all
       resolvedForceAll = true;
     } else {
-      const compare = await compareCommits(
-        ctx,
-        project.gitOwner,
-        project.gitRepo,
+      const compare = await projectRepository(ctx, project).compare(
         opts.commitShaBefore,
         opts.commitSha,
       ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/smart-route"); return null; });

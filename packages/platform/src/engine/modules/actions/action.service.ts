@@ -2,6 +2,7 @@ import { assertRequiredPushWorkflow } from "./required-checks";
 import { createHash } from "node:crypto";
 import { parse } from "yaml";
 import {
+  DEFAULT_GIT_PROVIDER,
   AppError,
   NotFoundError,
   ValidationError,
@@ -15,14 +16,13 @@ import type { ActionOperations, CreateActionWorkflow } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { captureExecutionAuthority } from "../../lib/execution-authority";
 import { encrypt } from "../../lib/encryption";
-import { githubFetch } from "../github/github.auth";
-import { assertGitHubRepoAccess } from "../github/github-access";
+import { requireGitCapability } from "../git/provider";
 import { GitHubActionsApi } from "./github-api";
-import { getFileContent, listFiles } from "../github/github.service";
 import {
   authorizeActionRunners,
   authorizeActionWorkflow,
   authorizeActionRun,
+  actionRepository,
   authorizeActionRepository,
 } from "./access";
 import { ACTIONS_YAML_ALIAS_LIMIT, actionConcurrency, parseActionWorkflow, record } from "./workflow";
@@ -32,7 +32,6 @@ import { reusableSourceReader } from "./reusable-source";
 import { validateActionNotifications } from "./notifications";
 import {
   actionCallerIdentity,
-  githubActionActor,
   prepareActionAccessPolicy,
   evaluateActionRunAdmission,
 } from "./run-access";
@@ -106,7 +105,9 @@ async function prepareActionWorkflow(
     input.notifications,
     existing?.notifications,
   );
-  await authorizeActionRepository(ctx, input.owner, input.repo);
+  await authorizeActionRepository(ctx, input.owner, input.repo, input.gitProvider);
+  if (input.owner && input.repo && !requireGitCapability(actionRepository(ctx, input).workflows, "workflow execution").controllers.includes(controller))
+    throw new ValidationError("This Git provider does not support the selected workflow controller");
   const accessPolicy = await prepareActionAccessPolicy(ctx, input, existing);
   if (accessPolicy.forks === "review") {
     const runners = await Promise.all(
@@ -117,12 +118,12 @@ async function prepareActionWorkflow(
   }
   const source =
     input.source ??
-    (await getFileContent(ctx, input.owner!, input.repo!, input.path, { branch: input.ref }))
+    (await actionRepository(ctx, input).file(input.path, input.ref))
       .content;
   const definition = await parseActionWorkflow(source, input.path, controller);
   let githubWorkflowId: string | null = null;
   if (controller === "github") {
-    await assertGitHubRepoAccess(ctx, { owner: input.owner!, repo: input.repo! }, "write");
+    await actionRepository(ctx, input).assertAccess("write");
     const api = new GitHubActionsApi(ctx, input.owner!, input.repo!);
     const remote = await api.workflow(input.path);
     if (remote.path !== input.path)
@@ -174,6 +175,7 @@ async function prepareActionWorkflow(
       controller,
       githubWorkflowId,
       syncAfter: new Date(0),
+      gitProvider: input.gitProvider ?? DEFAULT_GIT_PROVIDER,
       owner: input.owner?.toLowerCase() ?? null,
       repo: input.repo?.toLowerCase() ?? null,
       path: input.path,
@@ -299,14 +301,16 @@ export async function discoverActionWorkflows(
   owner: string,
   repo: string,
   ref: string,
+  gitProvider = DEFAULT_GIT_PROVIDER,
 ) {
-  await authorizeActionRepository(ctx, owner, repo);
+  await authorizeActionRepository(ctx, owner, repo, gitProvider);
+  const repository = actionRepository(ctx, { owner, repo, gitProvider });
   const results: Array<{ path: string; name: string }> = [];
-  for (const path of [".github/workflows", ".openship/workflows"]) {
+  for (const path of requireGitCapability(repository.workflows, "workflow discovery").paths) {
     try {
-      for (const file of await listFiles(ctx, owner, repo, { branch: ref, path }))
+      for (const file of await repository.files(path, ref))
         if (file.type === "file" && /\.ya?ml$/i.test(file.name))
-          results.push({ path: file.path, name: file.name });
+          results.push({ path: `${path}/${file.name}`, name: file.name });
     } catch (error) {
       // A missing folder is normal. Auth, network and rate-limit errors remain visible.
       if (!(error instanceof Error && "status" in error && error.status === 404)) throw error;
@@ -370,28 +374,6 @@ export interface ActionTrigger {
   sourceJob?: import("@repo/db").ActionRunConfiguration["sourceJob"];
 }
 
-async function resolveActionRef(
-  ctx: ExecutionContext,
-  workflow: Pick<ActionWorkflow, "owner" | "repo"> & { owner: string; repo: string },
-  base: string,
-  selected: string,
-): Promise<string> {
-  if (selected.startsWith("refs/")) return selected;
-  for (const kind of ["heads", "tags"]) {
-    // Matching refs returns an empty list for a missing branch. An exact match
-    // avoids accepting a similarly named branch and preserves bare tag refs.
-    const refs = await githubFetch<Array<{ ref: string }>>({
-      ctx,
-      owner: workflow.owner,
-      repo: workflow.repo,
-      url: `${base}/git/matching-refs/${kind}/${encodeURIComponent(selected)}`,
-    });
-    const ref = `refs/${kind}/${selected}`;
-    if (refs.some((value) => value.ref === ref)) return ref;
-  }
-  throw new ValidationError(`Branch or tag ${selected} was not found`);
-}
-
 /** Resolving source is independent of execution; standalone YAML never requests a GitHub credential. */
 async function resolveActionSource(
   ctx: ExecutionContext,
@@ -411,34 +393,18 @@ async function resolveActionSource(
       defaultBranch: workflow.ref,
     };
   }
-  const repositoryIdentity = { owner: workflow.owner, repo: workflow.repo };
-  const base = `https://api.github.com/repos/${encodeURIComponent(workflow.owner)}/${encodeURIComponent(workflow.repo)}`;
-  const repository = await githubFetch<{
-    default_branch: string;
-    private: boolean;
-    full_name: string;
-    id: number;
-  }>({ ctx, ...repositoryIdentity, url: base });
+  const sourceRepository = actionRepository(ctx, workflow);
+  const repository = await sourceRepository.info();
   const selectedRef =
     trigger.eventName === "schedule" ? repository.default_branch : (trigger.ref ?? workflow.ref);
-  const ref = await resolveActionRef(ctx, repositoryIdentity, base, selectedRef);
-  const revision =
-    trigger.revision ??
-    (
-      await githubFetch<{ sha: string }>({
-        ctx,
-        ...repositoryIdentity,
-        url: `${base}/commits/${encodeURIComponent(ref)}`,
-      })
-    ).sha;
-  if (!isFullCommitSha(revision))
-    throw new ValidationError("GitHub did not resolve an immutable workflow commit");
+  const ref = await requireGitCapability(sourceRepository.workflows, "workflow source resolution").resolveRef(selectedRef);
+  const revision = trigger.revision ?? await sourceRepository.revision(ref);
+  if (!revision || !isFullCommitSha(revision))
+    throw new ValidationError("The Git provider did not resolve an immutable workflow commit");
   const source =
     workflow.source ??
     (
-      await getFileContent(ctx, workflow.owner, workflow.repo, workflow.path, {
-        branch: trigger.workflowRevision ?? revision,
-      })
+      await sourceRepository.file(workflow.path, trigger.workflowRevision ?? revision)
     ).content;
   return { source, revision, ref, repository, defaultBranch: repository.default_branch };
 }
@@ -494,6 +460,7 @@ export async function triggerActionWorkflow(
   if (!workflow.owner) validateStandaloneWorkflow(source, plan);
   const workflows = await snapshotActionWorkflows(
     {
+      gitProvider: workflow.gitProvider ?? DEFAULT_GIT_PROVIDER,
       owner: workflow.owner,
       repo: workflow.repo,
       path: workflow.path,
@@ -551,15 +518,15 @@ export async function triggerActionWorkflow(
   const group = concurrency
     ? createHash("sha256")
         .update(
-          `${workflow.owner ? `${workflow.owner}/${workflow.repo}` : workflow.id}:${concurrency.group}`,
+          `${workflow.owner ? `${workflow.gitProvider ?? DEFAULT_GIT_PROVIDER}:${workflow.owner}/${workflow.repo}` : workflow.id}:${concurrency.group}`,
         )
         .digest("hex")
     : null;
   const actorIdentity = ["push", "pull_request"].includes(trigger.eventName)
-    ? githubActionActor(trigger.event?.sender as { id?: number; login: string } | undefined)
+    ? await actionRepository(ctx, workflow).workflows?.eventActor?.(trigger.event ?? {}) ?? null
     : trigger.eventName === "schedule" && workflow.accessPolicy?.audience === "owner"
       ? workflow.accessPolicy.owner
-      : await actionCallerIdentity(ctx, !!workflow.owner);
+      : await actionCallerIdentity(ctx, !!workflow.owner, workflow.gitProvider);
   const value: Parameters<typeof repos.actions.createRun>[0] = {
     id: generateId("arun"),
     organizationId: ctx.organizationId,
@@ -579,6 +546,7 @@ export async function triggerActionWorkflow(
     concurrencyGroup: group,
     cancelInProgress: concurrency?.cancelInProgress ?? false,
     configuration: {
+      gitProvider: workflow.gitProvider ?? DEFAULT_GIT_PROVIDER,
       owner: workflow.owner,
       repo: workflow.repo,
       path: workflow.path,
@@ -623,7 +591,7 @@ export async function rerunActionWorkflow(
   const { id: _id, createdAt, updatedAt, ...snapshot } = run;
   const workflow = await requireActionWorkflow(ctx, run.workflowId, true);
   const triggeringActorIdentity =
-    webhookActor === undefined ? await actionCallerIdentity(ctx, !!workflow.owner) : webhookActor;
+    webhookActor === undefined ? await actionCallerIdentity(ctx, !!workflow.owner, workflow.gitProvider) : webhookActor;
   const value: Parameters<typeof repos.actions.createRun>[0] = {
     ...snapshot,
     id: generateId("arun"),

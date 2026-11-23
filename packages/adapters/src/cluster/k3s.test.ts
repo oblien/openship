@@ -410,20 +410,31 @@ try:
 except RuntimeError as error: assert 'Remove cluster workloads' in str(error)
 `);
   });
-  it("validates the release service instead of accepting an arbitrary download target", async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [{ id: "stable", latest: "https://untrusted.example/script" }],
-      }),
-    });
-    vi.stubGlobal("fetch", fetcher);
+  it("uses the latest patch on the PostgreSQL-supported minor when stable advances", async () => {
+    const data = [
+      { id: "stable", latest: "v1.37.2+k3s1" },
+      { id: "v1.36", latest: "v1.36.6+k3s2" },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data })));
     try {
-      await expect(k3sTools.resolveVersion()).rejects.toThrow("valid stable release");
+      await expect(k3sTools.resolveVersion()).resolves.toBe("v1.36.6+k3s2");
     } finally {
       vi.unstubAllGlobals();
     }
   });
+  it.each([undefined, "v1.37.2+k3s1", "v1.360.0+k3s1", "https://untrusted.example/script"])(
+    "rejects a missing or invalid compatible release (%s) even when stable is available",
+    async (latest) => {
+      const data = [{ id: "stable", latest: "v1.37.2+k3s1" }];
+      if (latest !== undefined) data.push({ id: "v1.36", latest });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ data })));
+      try {
+        await expect(k3sTools.resolveVersion()).rejects.toThrow("v1.36");
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
   it("runs a pod on each node, tests their Services and preserves verification errors if cleanup also fails", async () => {
     const runtime = clusterRuntimeFixture();
     let applied = false;

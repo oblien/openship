@@ -17,6 +17,12 @@ export const referralCard = {
 } satisfies ShareCard;
 
 export const sectionCards = {
+  deployments: {
+    title: "Deploy your full stack.",
+    subtitle: "Managed Docker hosting on OpenShip Cloud.",
+    art: { feature: "compose-multi-service" },
+    layout: "reverse",
+  },
   login: { title: "Sign in to OpenShip.", art: { feature: "two-factor-auth" }, layout: "reverse" },
   about: {
     title: "About OpenShip.",
@@ -43,8 +49,8 @@ export const sectionCards = {
     art: { object: "compare" },
   },
   mail: {
-    title: "Your email.",
-    secondLine: "Your control panel.",
+    eyebrow: "OpenShip Mail",
+    title: "Email on your own domain.",
     art: { object: "mail" },
     layout: "reverse",
   },

@@ -3,6 +3,7 @@
     "title": "Yeni Proje",
     "subtitle": "Bir uygulama dağıtın veya kendi projenizi içe aktarın.",
     "tabs": {
+      "repositories": "Depolar",
       "folder": "Klasör",
       "github": "GitHub",
       "templates": "Şablonlar",
@@ -27,7 +28,7 @@
       "copyCode": "Kopyalamak için tıklayın"
     },
     "default": {
-      "title": "Dağıtım yapmak için GitHub'a bağlanın",
+      "title": "Dağıtım yapmak için {provider} hesabınıza bağlanın",
       "descSelfHosted": "OpenShip'in depolarınıza nasıl erişeceğini seçin.",
       "descSaas": "Depolara göz atmak ve her push işleminde dağıtım yapmak için GitHub hesabınızı bağlayın.",
       "recommended": "Önerilen",
@@ -135,7 +136,7 @@
       "name": "Ad",
       "stars": "Yıldızlar"
     },
-    "addAccount": "GitHub hesabı ekle",
+    "addAccount": "{provider} hesabı ekle",
     "installTitle": "GitHub Uygulamasını Kur",
     "installDesc": "Depolarınıza erişim izni vermek için GitHub Uygulamasını hesabınıza veya organizasyonunuza kurun.",
     "installButton": "GitHub Uygulamasını Kur",
@@ -165,8 +166,6 @@
     "total": "Toplam",
     "public": "Herkese açık",
     "private": "Özel",
-    "quickTip": "Hızlı İpucu",
-    "quickTipDesc": "Anında dağıtmak için herhangi bir depoyu seçin. Her push işleminde otomatik dağıtımları yapılandırın.",
     "connection": "Bağlantı",
     "openshipGithubApp": "OpenShip GitHub Uygulaması",
     "connected": "Bağlandı",
@@ -178,14 +177,13 @@
     "notConnectedManage": "Bağlı değil — Ayarlar kısmında yönetin",
     "optional": "İsteğe bağlı",
     "footnote": "Depoları görüntülemek ve dağıtmak için kullanılan GitHub bağlantılarını yönetin.",
-    "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin",
     "methodToken": "GitHub belirteci",
     "methodDevice": "GitHub ile oturum açma"
   },
   "urlImport": {
-    "invalidUrl": "Geçerli bir GitHub depo URL'si girin",
+    "invalidUrl": "Geçerli bir {providers} depo URL'si girin",
     "title": "Git URL'sinden İçe Aktar",
-    "description": "İçe aktarmak için herkese açık bir depo URL'si yapıştırın. GitHub bağlantısı gerekmez.",
+    "description": "İçe aktarmak için herkese açık bir depo URL'si yapıştırın. {providers} bağlantısı gerekmez.",
     "importButton": "Depoyu İçe Aktar"
   },
   "ghCliConsent": {

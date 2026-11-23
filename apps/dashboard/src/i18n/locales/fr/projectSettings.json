@@ -610,14 +610,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Connectez d'abord GitHub",
-      "description": "Liez votre compte GitHub pour connecter un dépôt à ce projet.",
+      "title": "Connectez d'abord {provider}",
+      "description": "Liez votre compte {provider} pour connecter un dépôt à ce projet.",
       "connecting": "Connexion…",
-      "connect": "Connecter GitHub"
+      "connect": "Connecter {provider}"
     },
     "link": {
       "title": "Lier un dépôt",
-      "description": "Connectez un dépôt GitHub pour activer les déploiements déclenchés par webhook.",
+      "description": "Connectez un dépôt {provider} pour activer les déploiements déclenchés par webhook.",
       "select": "Sélectionner un dépôt"
     },
     "picker": {

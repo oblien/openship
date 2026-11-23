@@ -1,3 +1,4 @@
+import type { GitOperations } from "@repo/contracts";
 import type { ReferralOperations } from "@repo/contracts";
 import type { ActionOperations } from "@repo/contracts";
 import { createDeploymentHandle, type DeploymentHandle } from "./deployment-handle";
@@ -105,6 +106,7 @@ export interface ScopedShip {
   /** @deprecated Use referralProgram. */
   readonly affiliates: ReferralOperations;
   readonly notices: NoticeOperations;
+  readonly git: GitOperations;
   readonly github: GitHubOperations;
   readonly permissions: PermissionOperations;
   readonly tokens: TokenOperations;
@@ -556,6 +558,7 @@ function createAttachedShip<Assertion>({
         referralProgram,
         affiliates: referralProgram,
         notices: bindGroup(platform.notices),
+        git: bindGroup(platform.git),
         github: bindGroup(platform.github),
         permissions: bindGroup(platform.permissions),
         tokens: bindGroup(platform.tokens),

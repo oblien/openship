@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   syncManagedEdge: vi.fn(),
   deregisterManagedEdge: vi.fn(),
   updateDeployment: vi.fn(),
+  clearRoutingWarning: vi.fn(),
 }));
 vi.mock("@repo/db", async (original) => ({
   ...(await original<typeof import("@repo/db")>()),
@@ -26,6 +27,7 @@ vi.mock("@repo/db", async (original) => ({
     deployment: {
       findById: vi.fn(async () => h.deployment),
       updateStatus: h.updateDeployment,
+      clearRoutingWarning: h.clearRoutingWarning,
       listPendingRoleHandovers: async () => [],
     },
     domain: {
@@ -99,6 +101,11 @@ beforeEach(() => {
     return Number(new URL(url).port);
   });
   h.updateDeployment.mockImplementation(async (_id, _status, changes) => Object.assign(h.deployment, changes));
+  h.clearRoutingWarning.mockImplementation(async () => {
+    const meta = h.deployment.meta as Record<string, unknown>;
+    delete meta.edgeUnsynced;
+    delete meta.deployWarning;
+  });
 });
 
 async function editRoutes(previous: string[]) {
@@ -142,10 +149,12 @@ describe("managed Cloud route port edits and repair", () => {
     const verifyDomains = vi.fn(async () => {
       expect(h.fixture.routes.set).toHaveBeenCalledOnce();
       expect(h.updateDeployment).not.toHaveBeenCalled();
+      expect(h.clearRoutingWarning).not.toHaveBeenCalled();
       return [];
     });
     expect(await retryProjectRouting(h.project.id, h.project.organizationId, { verifyDomains })).toEqual({ ok: true });
     expect(verifyDomains).toHaveBeenCalledOnce();
+    expect(h.clearRoutingWarning).toHaveBeenCalledExactlyOnceWith(h.deployment.id);
     expect(h.deployment.meta).not.toHaveProperty("edgeUnsynced");
     expect(h.deployment.meta).toHaveProperty("managedServer.workspaceId", h.fixture.workspaceId);
   });

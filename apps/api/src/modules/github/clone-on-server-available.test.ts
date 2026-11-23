@@ -47,7 +47,7 @@ describe("credentials that do NOT", () => {
     const r = cloneOnServerAvailable(cred({}));
     expect(r.available).toBe(false);
     if (!r.available) {
-      expect(r.reason).toContain("no GitHub identity of its own");
+      expect(r.reason).toContain("no Git identity of its own");
       expect(r.reason).toContain("no git identity could be forwarded");
     }
   });

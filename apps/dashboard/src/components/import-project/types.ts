@@ -8,6 +8,7 @@ export interface Framework {
 }
 
 export interface RepoData {
+  gitProvider?: string;
   repo: string;
   owner: string;
   branch: string;

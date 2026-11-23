@@ -202,7 +202,7 @@ describe("Manage purchase tab", () => {
 
 describe("referral checkout handoff", () => {
   const code = "AF-0123456789";
-  const referral = { code, name: "Community", productId: "workspace_vm", planId: null,
+  const referral = { code, name: "Community", productId: "vm_compute", planId: null,
     discountBps: 500, durationMonths: 12, expiresAt: null, minimumMonthlyCents: 1000 };
   const purchase = () => <ManagedServerPurchase requestedPlanId="starter" initialReferralCode={code} autoCheckout />;
 

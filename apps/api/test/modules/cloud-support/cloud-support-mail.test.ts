@@ -1,12 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createServer as httpServer, type Server as HttpServer } from "node:http";
-import type { Socket } from "node:net";
-import { createServer as smtpServer, type Server as SmtpServer } from "node:tls";
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { Hono } from "hono";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -14,24 +9,19 @@ import type { Database } from "@repo/db/factory";
 import { createCloudSupportRepo } from "../../../../../packages/db/src/repos/cloud-support.repo";
 import { CloudSupportService } from "@repo/platform/engine/modules/cloud-support/service";
 
-// Real HTTP, SQL and SMTP; external infrastructure, auth sessions and unrelated
-// platform mail provisioning are the only boundaries isolated in this test.
+// Exercise the support route, outbox and Oblien SDK over loopback HTTP.
 const state = vi.hoisted(() => ({
   url: "",
   env: {
     CLOUD_MODE: true,
     DEPLOY_MODE: "docker",
     INTERNAL_TOKEN: "operator-test-token",
-    SMTP_HOST: "127.0.0.1",
-    SMTP_PORT: 465,
-    SMTP_USER: "test",
-    SMTP_PASS: "test",
-    SMTP_FROM: "Openship Support <support@openship.io>",
+    OBLIEN_CLIENT_ID: "fixture-owner",
+    OBLIEN_CLIENT_SECRET: "fixture-secret",
+    OBLIEN_API_URL: "",
   },
   service: null as CloudSupportService | null,
   localMail: vi.fn(),
-  ca: "",
-  port: 0,
 }));
 vi.mock("@repo/core", async (original) => ({
   ...(await original<object>()),
@@ -39,22 +29,6 @@ vi.mock("@repo/core", async (original) => ({
     return state.url;
   },
 }));
-vi.mock("nodemailer", async (original) => {
-  const real = await original<{ default: typeof import("nodemailer") }>();
-  return {
-    default: {
-      ...real.default,
-      // Authenticated SMTP requires verified TLS: map port 465 to the disposable listener and
-      // trust only this test's certificate.
-      createTransport: (options: { tls?: object }) =>
-        real.default.createTransport({
-          ...options,
-          port: state.port,
-          tls: { ...options.tls, ca: state.ca },
-        }),
-    },
-  };
-});
 vi.mock("@repo/platform/engine/config/env", () => ({ env: state.env }));
 vi.mock("@repo/platform/engine/config/index", () => ({ env: state.env }));
 vi.mock("@repo/db", () => ({ repos: { mailServer: { list: state.localMail } } }));
@@ -76,14 +50,12 @@ vi.mock("../../../src/lib/rate-limit", () => ({
   rateLimit: vi.fn(async () => ({ allowed: true })),
 }));
 
-let smtp: SmtpServer;
 let api: HttpServer;
 let client: PGlite;
 let repo: ReturnType<typeof createCloudSupportRepo>;
 let apiMode = "ok";
 let rejectRecipient = "";
-const sockets = new Set<Socket>();
-const delivered: Array<{ recipient: string; message: string }> = [];
+const delivered: Array<{ to: string[]; from: string; replyTo: string[]; text: string }> = [];
 const forwarded: Headers[] = [];
 const payload = () => ({
   requestId: randomUUID(),
@@ -99,71 +71,6 @@ const submit = (body: unknown) => fetch(`${state.url}/api/cloud/support`, {
 });
 
 beforeAll(async () => {
-  const directory = mkdtempSync(join(tmpdir(), "openship-support-smtp-"));
-  const certificate = spawnSync("openssl", [
-    "req",
-    "-x509",
-    "-newkey",
-    "rsa:2048",
-    "-nodes",
-    "-days",
-    "1",
-    "-subj",
-    "/CN=127.0.0.1",
-    "-addext",
-    "subjectAltName=IP:127.0.0.1",
-    "-keyout",
-    join(directory, "key.pem"),
-    "-out",
-    join(directory, "cert.pem"),
-  ]);
-  if (certificate.status !== 0) throw new Error("Failed to generate SMTP fixture certificate");
-  const key = readFileSync(join(directory, "key.pem"));
-  const cert = readFileSync(join(directory, "cert.pem"));
-  rmSync(directory, { recursive: true, force: true });
-  state.ca = cert.toString();
-  smtp = smtpServer({ key, cert }, (socket: Socket) => {
-    sockets.add(socket);
-    socket.on("close", () => sockets.delete(socket));
-    socket.setEncoding("utf8");
-    socket.write("220 localhost SMTP test\r\n");
-    let buffer = "",
-      data = false,
-      recipient = "",
-      message = "";
-    socket.on("data", (chunk) => {
-      buffer += chunk;
-      while (buffer.includes("\r\n")) {
-        const end = buffer.indexOf("\r\n");
-        const line = buffer.slice(0, end);
-        buffer = buffer.slice(end + 2);
-        if (data) {
-          if (line === ".") {
-            delivered.push({ recipient, message });
-            data = false;
-            message = "";
-            socket.write("250 accepted\r\n");
-          } else message += line.replace(/^\.\./, ".") + "\r\n";
-        } else if (line.startsWith("EHLO") || line.startsWith("HELO"))
-          socket.write("250-localhost\r\n250-AUTH PLAIN\r\n250 SIZE 65536\r\n");
-        else if (line.startsWith("AUTH")) socket.write("235 authenticated\r\n");
-        else if (line.startsWith("RCPT TO:")) {
-          recipient = line.match(/<([^>]+)>/)?.[1] ?? "";
-          socket.write(
-            recipient === rejectRecipient
-              ? "550 Recipient address rejected: User unknown\r\n"
-              : "250 recipient ok\r\n",
-          );
-        } else if (line === "DATA") {
-          data = true;
-          socket.write("354 send message\r\n");
-        } else if (line === "QUIT") socket.end("221 goodbye\r\n");
-        else socket.write("250 ok\r\n");
-      }
-    });
-  });
-  await new Promise<void>((resolve) => smtp.listen(0, "127.0.0.1", resolve));
-  state.port = (smtp.address() as { port: number }).port;
   client = new PGlite("memory://");
   await client.exec(
     readFileSync(
@@ -185,6 +92,18 @@ beforeAll(async () => {
   api = httpServer(async (req, res) => {
     const parts: Buffer[] = [];
     for await (const chunk of req) parts.push(Buffer.from(chunk));
+    if (req.method === "POST" && req.url === "/v2/mail/openship/messages") {
+      const mail = JSON.parse(Buffer.concat(parts).toString());
+      if (req.headers["x-client-id"] !== "fixture-owner" || req.headers["x-client-secret"] !== "fixture-secret") {
+        res.writeHead(401).end();
+      } else if (mail.to.includes(rejectRecipient)) {
+        res.writeHead(422).end(JSON.stringify({ success: false, code: "mail_invalid_address" }));
+      } else {
+        delivered.push(mail);
+        res.writeHead(202).end(JSON.stringify({ success: true, data: { id: randomUUID(), state: "queued" } }));
+      }
+      return;
+    }
     const headers = new Headers();
     for (const [key, value] of Object.entries(req.headers))
       if (value) headers.set(key, Array.isArray(value) ? value.join(",") : value);
@@ -206,6 +125,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
   state.url = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+  state.env.OBLIEN_API_URL = state.url + "/v2";
   // Cold PostgreSQL WASM startup and route transforms contend with the full API suite.
 }, 30_000);
 beforeEach(async () => {
@@ -216,8 +136,6 @@ beforeEach(async () => {
   rejectRecipient = "";
 });
 afterAll(async () => {
-  for (const socket of sockets) socket.destroy();
-  if (smtp) await new Promise<void>((resolve) => smtp.close(() => resolve()));
   if (api) {
     api.closeAllConnections();
     await new Promise<void>((resolve) => api.close(() => resolve()));
@@ -225,7 +143,7 @@ afterAll(async () => {
   await client?.close();
 });
 
-it("saves a website submission through HTTP and delivers both emails through the real SMTP sender", async () => {
+it("saves a website submission through HTTP and delivers both emails through the Oblien SDK", async () => {
   const body = payload();
   const response = await submit(body);
   expect(response.status).toBe(201);
@@ -233,13 +151,11 @@ it("saves a website submission through HTTP and delivers both emails through the
   expect(await repo.find(receipt.id)).toMatchObject({ message: body.message });
   expect(await state.service!.flush()).toEqual({ delivered: 2, failed: 0 });
   expect(delivered).toHaveLength(2);
-  const acknowledgement = delivered.find((m) => m.recipient === body.email)!;
-  expect(acknowledgement.message).toContain("Reply-To: support@openship.io");
-  expect(acknowledgement.message).toContain("From: Openship Support <support@openship.io>");
-  expect(acknowledgement.message).toContain(receipt.id);
-  expect(delivered.find((m) => m.recipient === "support@openship.io")!.message).toContain(
-    `Reply-To: ${body.email}`,
-  );
+  const acknowledgement = delivered.find((m) => m.to.includes(body.email))!;
+  expect(acknowledgement.from).toBe("noreply@openship.io");
+  expect(acknowledgement.replyTo).toEqual(["support@openship.io"]);
+  expect(acknowledgement.text).toContain(receipt.id);
+  expect(delivered.find((m) => m.to.includes("support@openship.io"))!.replyTo).toEqual([body.email]);
   expect(state.localMail).not.toHaveBeenCalled();
   for (const name of ["cookie", "x-internal-token", "x-real-ip"])
     expect(forwarded[0]!.get(name)).toBeNull();
@@ -247,7 +163,7 @@ it("saves a website submission through HTTP and delivers both emails through the
   expect(await state.service!.flush()).toEqual({ delivered: 0, failed: 0 });
 });
 
-it("keeps the ticket after an actual SMTP recipient rejection and delivers on retry", async () => {
+it("keeps the ticket after an API recipient rejection and delivers on retry", async () => {
   const body = payload();
   rejectRecipient = body.email;
   const receipt = await (await submit(body)).json();

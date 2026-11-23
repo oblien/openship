@@ -185,7 +185,7 @@
     "standalone": "مستقل",
     "standaloneHint": "شغّل ملف YAML عند الطلب، أو بجدول زمني، أو عبر webhook موثّق. لا يلزم مستودع.",
     "chooseRepo": "اختر المستودع",
-    "connectRepo": "اربط GitHub من إعدادات Git لاستعراض مستودعاتك.",
+    "connectRepo": "اربط {provider} من إعدادات Git لاستعراض مستودعاتك.",
     "useCopy": "احفظ YAML في OpenShip",
     "noFiles": "لم نعثر على سير عمل. اختر مستودعًا آخر أو ابدأ سير عمل مستقلًا.",
     "loading": "جارٍ تحميل سير العمل…",

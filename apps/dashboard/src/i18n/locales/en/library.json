@@ -12,6 +12,7 @@
     "title": "New Project",
     "subtitle": "Deploy an app or import your own project.",
     "tabs": {
+      "repositories": "Repositories",
       "folder": "Folder",
       "github": "GitHub",
       "templates": "Templates",
@@ -36,7 +37,7 @@
       "copyCode": "Click to copy"
     },
     "default": {
-      "title": "Connect GitHub to deploy",
+      "title": "Connect {provider} to deploy",
       "descSelfHosted": "Pick how OpenShip reaches your repositories.",
       "descSaas": "Link your GitHub account to browse repos and deploy on every push.",
       "recommended": "Recommended",
@@ -144,7 +145,7 @@
       "name": "Name",
       "stars": "Stars"
     },
-    "addAccount": "Add GitHub account",
+    "addAccount": "Add {provider} account",
     "installTitle": "Install the GitHub App",
     "installDesc": "Install the GitHub App on your account or organization to grant access to your repositories.",
     "installButton": "Install GitHub App",
@@ -174,8 +175,6 @@
     "total": "Total",
     "public": "Public",
     "private": "Private",
-    "quickTip": "Quick Tip",
-    "quickTipDesc": "Select any repository to deploy it instantly. Configure automatic deployments on every push.",
     "connection": "Connection",
     "openshipGithubApp": "OpenShip GitHub App",
     "connected": "Connected",
@@ -187,14 +186,13 @@
     "notConnectedManage": "Not connected — manage in Settings",
     "optional": "Optional",
     "footnote": "Manage the GitHub connections used to browse and deploy repositories.",
-    "manageGithubSettings": "manage GitHub in Settings",
     "methodToken": "GitHub token",
     "methodDevice": "GitHub sign-in"
   },
   "urlImport": {
-    "invalidUrl": "Enter a valid GitHub repository URL",
+    "invalidUrl": "Enter a valid {providers} repository URL",
     "title": "Import from Git URL",
-    "description": "Paste a public repository URL to import. No GitHub connection required.",
+    "description": "Paste a public repository URL to import. No {providers} connection required.",
     "importButton": "Import Repository"
   },
   "customAppModal": {

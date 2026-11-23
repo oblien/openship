@@ -20,7 +20,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { SourceAccessScope } from "@repo/core";
+import { gitGrantTarget, type RegisteredGitProvider, type SourceAccessScope } from "@repo/core";
 import { permissionsApi, type Permission } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { LevelSwitch, type LevelOption } from "./LevelSwitch";
@@ -58,6 +58,7 @@ const SUMMARY_COPY_KEY: Record<SummaryKey, string> = {
 };
 
 export interface SourceAccessModalProps {
+  provider: RegisteredGitProvider;
   /** Rendered inline; the caller owns the open/close state. */
   open: boolean;
   onClose: () => void;
@@ -380,6 +381,7 @@ function Summary({
 }
 
 export function SourceAccessModal({
+  provider,
   open,
   onClose,
   targetLabel,
@@ -420,8 +422,8 @@ export function SourceAccessModal({
   // Which repo the tree shows. A repo grant browses itself; an ACCOUNT grant has no
   // single tree, so the operator picks one to browse while authoring patterns that
   // will apply to every repo under the account.
-  const owner = wholeAccount ? targetLabel : (targetLabel.split("/")[0] ?? "");
-  const ownRepo = wholeAccount ? null : (targetLabel.split("/")[1] ?? null);
+  const { owner, repo: ownRepo } = gitGrantTarget(provider,
+    wholeAccount ? provider.grantTypes.namespace : provider.grantTypes.repository, targetLabel);
   const [browseRepo, setBrowseRepo] = useState<string | null>(null);
   const [repoChoices, setRepoChoices] = useState<string[] | null>(null);
 
@@ -430,11 +432,11 @@ export function SourceAccessModal({
     if (!open || !needsRepoChoice) return;
     let cancelled = false;
     permissionsApi
-      .listResources("github_repository", owner)
+      .listResources(provider.grantTypes.repository, owner)
       .then((res) => {
         if (cancelled) return;
         const names = (res?.data ?? [])
-          .map((e) => String(e.id).split("/")[1] ?? "")
+          .map((e) => gitGrantTarget(provider, provider.grantTypes.repository, e.id).repo ?? "")
           .filter(Boolean);
         setRepoChoices(names);
         setBrowseRepo((cur) => cur ?? names[0] ?? null);
@@ -447,7 +449,7 @@ export function SourceAccessModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, needsRepoChoice, owner]);
+  }, [open, needsRepoChoice, owner, provider]);
 
   const browse =
     selection.tier === "deploy"
@@ -563,6 +565,7 @@ export function SourceAccessModal({
 
             {browse ? (
               <RepoPathTree
+                provider={provider.id}
                 fill
                 owner={browse.owner}
                 repo={browse.repo}

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  DEFAULT_GIT_PROVIDER,
   ValidationError,
   type ActionCallFrame,
   type ActionJobDefinition,
@@ -22,7 +23,7 @@ export async function snapshotActionWorkflows(root: Source, read: ReusableSource
   const visiting = new Set<string>();
   const reads = new Map<string, Promise<Source>>();
   const identity = (source: Source) =>
-    `${source.owner?.toLowerCase()}/${source.repo?.toLowerCase()}/${source.path}@${source.sha}`;
+    `${source.gitProvider ?? DEFAULT_GIT_PROVIDER}/${source.owner?.toLowerCase()}/${source.repo?.toLowerCase()}/${source.path}@${source.sha}`;
   const visit = async (source: Source, key: string, depth: number): Promise<string> => {
     const id = identity(source);
     if (visiting.has(id)) throw new ValidationError(`Reusable workflow cycle: ${source.path}`);
@@ -41,8 +42,8 @@ export async function snapshotActionWorkflows(root: Source, read: ReusableSource
     for (const job of plan.jobs) {
       if (!job.uses) continue;
       const referenceKey = job.uses.startsWith("./")
-        ? `${source.owner}/${source.repo}@${source.sha}:${job.uses}`
-        : job.uses;
+        ? `${source.gitProvider ?? DEFAULT_GIT_PROVIDER}/${source.owner}/${source.repo}@${source.sha}:${job.uses}`
+        : `${source.gitProvider ?? DEFAULT_GIT_PROVIDER}:${job.uses}`;
       let pending = reads.get(referenceKey);
       if (!pending) {
         pending = read(job.uses, source);
@@ -63,7 +64,7 @@ export async function snapshotActionWorkflows(root: Source, read: ReusableSource
         if (record(value).required === true && !(name in (job.with ?? {})))
           throw new ValidationError(`${job.id}: required workflow input ${name} is missing`);
       if (job.secrets === "inherit") {
-        if (!source.owner || source.owner.toLowerCase() !== called.owner?.toLowerCase())
+        if ((source.gitProvider ?? DEFAULT_GIT_PROVIDER) !== (called.gitProvider ?? DEFAULT_GIT_PROVIDER) || !source.owner || source.owner.toLowerCase() !== called.owner?.toLowerCase())
           throw new ValidationError(
             `${job.id}: secrets: inherit requires workflows owned by the same account or organization; map secrets explicitly for other owners`,
           );

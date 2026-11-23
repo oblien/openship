@@ -4,6 +4,7 @@ import { prepareDatabaseAddon, ensureClusterAddonObject } from "./database-addon
 import type { ClusterDatabaseConfig } from "@repo/core";
 import { KubernetesApiError, type KubernetesApi } from "./kubernetes-api";
 import { projectNamespaceManifest } from "./namespace";
+import { clusterRuntimePlanFixture } from "../../../contracts/test/cluster-runtime-fixtures";
 const config: ClusterDatabaseConfig = {
   engine: "postgres",
   mode: "cluster",
@@ -32,6 +33,38 @@ const adapter = (
     new AbortController().signal,
     vi.fn(),
   );
+describe("cluster database preflight", () => {
+  it.each([
+    ["postgres", "34"],
+    ["postgres", "35"],
+    ["postgres", "36+"],
+    ["redis", "37"],
+  ] as const)("accepts %s on Kubernetes 1.%s", async (engine, minor) => {
+    const { hosts } = clusterRuntimePlanFixture();
+    const nodes = hosts.map(({ nodeName }) => ({
+      metadata: { name: nodeName },
+      status: { conditions: [{ type: "Ready", status: "True" }] },
+    }));
+    const request = vi.fn(async (_method: string, path: string) =>
+      path === "/version" ? { major: "1", minor } : { items: nodes },
+    );
+    const api = { request } as unknown as KubernetesApi;
+    const db = adapter({ engine, mode: engine === "redis" ? "replication" : "cluster" }, api);
+    db.target.hosts = hosts;
+    await expect(db.preflight()).resolves.toEqual(nodes);
+  });
+  it.each(["33", "37", "3.6"])(
+    "reports the incompatible cluster version 1.%s before setup",
+    async (minor) => {
+      const request = vi.fn().mockResolvedValue({ major: "1", minor });
+      const db = adapter({}, { request } as unknown as KubernetesApi);
+      await expect(db.preflight()).rejects.toThrow(
+        `This cluster runs Kubernetes 1.${minor}. For PostgreSQL, choose a cluster running a supported Kubernetes version (1.34, 1.35, 1.36).`,
+      );
+      expect(request).toHaveBeenCalledExactlyOnceWith("GET", "/version", undefined, db.signal);
+    },
+  );
+});
 describe("operator database manifests", () => {
   it.each(["redis-rdb-set", "postgres-logical", "backup-artifact"] as const)(
     "keeps a completed %s import while applying updated resources",

@@ -14,16 +14,15 @@ import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
  * leaving a torn img, so this works offline and behind egress restrictions.
  */
 
+import { gitGrantTarget, gitProviderForGrant, type RegisteredGitProvider, type GitProviderDefinition } from "@repo/core";
 import { useState } from "react";
 import type { ResourceType } from "@/lib/api";
 
 // Every grantable type needs an entry or it renders as a generic box, which makes
 // a 14-tab picker unreadable. Keyed by the full ResourceType so adding a grantable
 // type without an icon is visible here rather than in the UI.
-const FALLBACK_ICON: Record<ResourceType, IconName> = {
+const FALLBACK_ICON: Record<Exclude<ResourceType, RegisteredGitProvider["grantTypes"]["namespace" | "repository"]>, IconName> = {
   project: "project",
-  github_installation: "github",
-  github_repository: "github",
   server: "hard-drive",
   mail_server: "mail",
   backup_destination: "database",
@@ -36,19 +35,6 @@ const FALLBACK_ICON: Record<ResourceType, IconName> = {
   audit: "file-text",
   billing: "credit-card",
 };
-
-/** GitHub avatar for an account login, or the owner of an "owner/repo" id. */
-function githubAvatar(resourceType: ResourceType, resourceId: string, size: number): string | null {
-  if (resourceId === "*") return null;
-  if (resourceType === "github_installation") {
-    return `https://github.com/${encodeURIComponent(resourceId)}.png?size=${size}`;
-  }
-  if (resourceType === "github_repository") {
-    const owner = resourceId.split("/")[0];
-    return owner ? `https://github.com/${encodeURIComponent(owner)}.png?size=${size}` : null;
-  }
-  return null;
-}
 
 export function ResourceAvatar({
   resourceType,
@@ -64,7 +50,10 @@ export function ResourceAvatar({
   pixels?: number;
 }) {
   const [failed, setFailed] = useState(false);
-  const src = failed ? null : githubAvatar(resourceType, resourceId, pixels);
+  const provider = gitProviderForGrant(resourceType);
+  const avatar = (provider as GitProviderDefinition | undefined)?.avatarUrl;
+  const src = provider && avatar && resourceId !== "*" && !failed
+    ? avatar(gitGrantTarget(provider, resourceType, resourceId).owner, pixels) : null;
 
   if (src) {
     return (
@@ -79,7 +68,7 @@ export function ResourceAvatar({
     );
   }
 
-  const Icon = FALLBACK_ICON[resourceType] ?? "help-circle";
+  const Icon = provider?.icon ?? FALLBACK_ICON[resourceType as keyof typeof FALLBACK_ICON] ?? "help-circle";
   return (
     <span
       aria-hidden

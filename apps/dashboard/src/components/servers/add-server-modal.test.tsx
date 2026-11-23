@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   createDestination: vi.fn(),
   toast: vi.fn(),
 }));
+vi.mock("@/context/GitContext", () => ({ GitConnectionsProvider: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("@/lib/api/system", () => ({
   systemApi: {
     listServers: api.list,

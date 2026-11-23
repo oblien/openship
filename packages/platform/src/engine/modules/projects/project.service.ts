@@ -37,7 +37,7 @@ export {
 export { previewProjectDeletion } from "./project-cleanup.service";
 export type { DeletionPreview, DeletionPreviewService } from "./project-cleanup.service";
 
-export { listEnvVars, mergeEnvVars } from "./project-env.service";
+export { listEnvVars, mergeEnvVars, revealEnvVars } from "./project-env.service";
 
 export { getResources, updateResources, setSleepMode } from "./project-resources.service";
 

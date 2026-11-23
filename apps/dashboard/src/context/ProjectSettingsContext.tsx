@@ -1,5 +1,6 @@
 "use client";
 
+import { gitProviderDefinition, gitRepositoryLink } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { useCloudResourceKey } from "./CloudResourceContext";
 import type { IconName } from "@repo/ui/icons";
@@ -13,7 +14,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import type { ReleaseSource, WorkloadType } from "@repo/core";
+import type { ProjectGitSource, ReleaseSource, WorkloadType } from "@repo/core";
 import type { ProjectRoutingClaim, ProjectRoutingRetry } from "@repo/contracts";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
@@ -71,7 +72,7 @@ interface ProjectOptions {
   [key: string]: any;
 }
 
-interface BasicProjectData {
+interface BasicProjectData extends ProjectGitSource {
   environmentType?: "production" | "preview" | "development";
   id: string;
   slug: string;
@@ -738,8 +739,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
             // auto-deploy switch gates on; without it that control was hidden
             // for every git project.
             full_name: `${response.owner}/${response.repo}`,
-            provider: "GitHub",
-            url: `https://github.com/${response.owner}/${response.repo}`,
+            provider: gitProviderDefinition(response.provider)?.name ?? response.provider,
+            url: gitRepositoryLink(response.provider, response.owner, response.repo) ?? "",
           },
           branch: response.branch || "main",
           recentCommits: mappedCommits,

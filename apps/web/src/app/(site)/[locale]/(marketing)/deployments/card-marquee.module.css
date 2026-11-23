@@ -1,0 +1,34 @@
+.window {
+  margin-top: 1.5rem;
+  container-type: inline-size;
+  --card-gap: clamp(.75rem, 1.5vw, 1.5rem);
+}
+.window + .window { margin-top: var(--card-gap); }
+.group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: var(--card-gap);
+}
+.group[aria-hidden] { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Keyboard focus restores the static grid in its natural reading order. */
+  .window:not(:has(:focus-visible)) {
+    overflow: clip;
+    & .track {
+      display: flex;
+      width: max-content;
+      max-width: none;
+      margin-inline: 0;
+      padding-inline: 0;
+      animation: slide var(--marquee-duration, 62s) linear infinite;
+      animation-play-state: var(--marquee-state, running);
+    }
+    &:dir(rtl) .track { animation-name: slide-rtl; }
+    &[data-reverse] .track { animation-direction: reverse; animation-delay: -6s; }
+    & .group { display: flex; padding-inline-start: var(--card-gap); }
+    & .group > * { width: var(--marquee-card-width, max(34cqw, min(32rem, 86cqw))); }
+  }
+}
+@keyframes slide { to { transform: translateX(-50%); } }
+@keyframes slide-rtl { to { transform: translateX(50%); } }

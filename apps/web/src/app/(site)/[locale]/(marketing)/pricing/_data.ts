@@ -87,7 +87,7 @@ export function faq(pricing: CloudPricing, copy: Copy): FaqItem[] {
     {
       q: copy("Is managed email included?"),
       a: copy(
-        "Cloud resource pools host your applications; they do not provision a mail server. Managed email is coming soon. Self-hosted mail is available on your own server.",
+        "Eligible paid compute plans include a mailbox. You can also choose a standalone email plan or host mail on your own server.",
       ),
     },
     {

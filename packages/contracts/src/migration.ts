@@ -86,6 +86,7 @@ export const MigrationRequestSchemas = {
   source: MigrationSourceInputSchema,
   scan: Type.Object({ serverId: ResourceIdSchema, flatDocker: selectedServices.flatDocker }),
   repoCompose: Type.Object({
+    provider: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
     owner: Type.String({ minLength: 1 }),
     repo: Type.String({ minLength: 1 }),
     branch: Type.Optional(Type.String()),
@@ -122,7 +123,7 @@ export const MigrationRequestSchemas = {
     serviceEnv,
     gitSource: Type.Optional(
       Type.Object({
-        provider: Type.Literal("github"),
+        provider: Type.String({ minLength: 1, maxLength: 64 }),
         owner: Type.String({ minLength: 1 }),
         repo: Type.String({ minLength: 1 }),
         branch: Type.Optional(Type.String()),

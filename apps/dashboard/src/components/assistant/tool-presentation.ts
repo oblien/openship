@@ -9,6 +9,7 @@ import {
 } from "@repo/contracts";
 import { readAutomationFlow, type AutomationFlowSummary } from "./automation-flow";
 import type { IconName } from "@repo/ui/icons";
+import { gitProviderDefinition, parseGitRepositoryReference } from "@repo/core";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import { openshipToolName, outputLabel, outputRecord, parseToolOutput } from "./tool-output";
 
@@ -61,6 +62,8 @@ const definitions: Record<string, { title: string; icon: IconName }> = {
   get_github_repos: { title: "Find repositories", icon: "github" },
   get_github_orgs_by_org_repos: { title: "Find repositories", icon: "github" },
   get_github_repos_by_owner_by_repo: { title: "View repository", icon: "github" },
+  get_git_by_provider_repos: { title: "Find repositories", icon: "git-branch" },
+  get_git_by_provider_repos_by_owner_by_repo: { title: "View repository", icon: "git-branch" },
   get_projects_by_id_services: { title: "Check services", icon: "layers" },
   get_system_diagnostics: { title: "Check instance health", icon: "activity" },
   get_permissions_workspaces: { title: "Find workspaces", icon: "folder-tree" },
@@ -415,36 +418,37 @@ export function presentToolResult(tool: AssistantTool): ToolResultView | null {
     case "get_github_repos":
     case "get_github_orgs_by_org_repos":
     case "get_github_repos_by_owner_by_repo":
+    case "get_git_by_provider_repos":
+    case "get_git_by_provider_repos_by_owner_by_repo": {
+      const provider = name.startsWith("get_git_") ? text(outputRecord(tool.input)?.provider) : "github";
+      if (!provider) return null;
+      const definition = gitProviderDefinition(provider);
+      if (!definition) return null;
       title = "Repositories";
-      icon = "github";
+      icon = definition.icon as IconName;
       empty = "No repositories in this result.";
       rows =
-        name === "get_github_repos_by_owner_by_repo"
+        name.endsWith("repos_by_owner_by_repo")
           ? single(value)
           : records(value, name === "get_github_home" ? "repos" : "data");
       note = "Import opens the setup flow so you can review before deploying.";
       map = (row) => {
-        const fullName = text(row.full_name),
-          parts = fullName?.split("/");
-        if (!parts || parts.length !== 2) return null;
-        const [owner, repo] = parts as [string, string];
-        if (
-          !/^[a-zA-Z0-9-]{1,100}$/.test(owner) ||
-          !/^[a-zA-Z0-9_.-]{1,100}$/.test(repo) ||
-          repo === "." ||
-          repo === ".."
-        )
-          return null;
+        const fullName = text(row.full_name);
+        if (!fullName) return null;
+        const repository = parseGitRepositoryReference(fullName, provider);
+        if (!repository || fullName !== `${repository.owner}/${repository.repo}`) return null;
+        const { owner, repo } = repository;
         return {
           id: fullName!,
           title: fullName!,
           description: join(row.language, row.default_branch),
           status: row.private === true ? "Private" : row.private === false ? "Public" : undefined,
-          href: `/deploy/${encodeRepoSlug(owner, repo)}`,
+          href: `/deploy/${encodeRepoSlug(owner, repo, provider)}`,
           action: "Import",
         };
       };
       break;
+    }
     case "get_projects_by_id_services":
       title = "Services";
       icon = "layers";

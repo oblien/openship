@@ -8,6 +8,7 @@ import { ProjectEdgePagesSchema } from "./edge-pages";
 import { Type, type Static, type TLiteral } from "@sinclair/typebox";
 import { GitHubDeploymentChecksSchema } from "./deployment-checks";
 import {
+  DEFAULT_GIT_PROVIDER,
   STACK_IDS,
   MAX_IMAGE_URL_LENGTH,
   RUNTIME_VERSION_PATTERN,
@@ -405,7 +406,7 @@ export const CreateProjectBody = Type.Object({
   // Local source
   localPath: Type.Optional(Type.String({ maxLength: 1000 })),
   // Git source
-  gitProvider: Type.Optional(Type.String({ default: "github" })),
+  gitProvider: Type.Optional(Type.String({ default: DEFAULT_GIT_PROVIDER })),
   gitOwner: Type.Optional(Type.String({ maxLength: 100 })),
   gitRepo: Type.Optional(Type.String({ maxLength: 100 })),
   gitBranch: Type.Optional(Type.String({ default: "main" })),
@@ -684,6 +685,7 @@ export const UpdateResourcesBody = Type.Object({
 
 /** POST /:id/git/link — link a git repository to the project. */
 export const LinkRepoBody = Type.Object({
+  provider: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   owner: Type.String({ minLength: 1, description: "GitHub repo owner." }),
   repo: Type.String({ minLength: 1, description: "GitHub repo name." }),
   branch: Type.Optional(
