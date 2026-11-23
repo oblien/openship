@@ -1,20 +1,23 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { mapConcurrent, safeErrorMessage } from "@repo/core";
+import { isLoopbackHost, mapConcurrent, safeErrorMessage } from "@repo/core";
 import { isIP } from "node:net";
 import {
   COMPONENT_INSTALLERS,
-  edgeProxyFor,
   type CommandExecutor,
   ensureEdge,
   ourEdgeContainerRunning,
   recoverInterruptedTakeover,
+  scanRunningOpenshipEdge,
   type PromptPayload,
   type PromptUserFn,
   type SystemLog,
 } from "@repo/adapters";
 import type { ExecutionContext } from "../../../context";
 import { isArtifactRef, usableRef } from "../../lib/container-ref";
+import { pickProjectPortOwner } from "../../lib/project-service-upstream";
+import { buildServiceRouteDomains } from "../../lib/routing-domains";
+import { resolveRouteStrategy } from "../../lib/upstream-url";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { disposeRuntime, resolveDeploymentRuntimeForRead, withDeploymentPlatform } from "../../lib/deployment-runtime";
 import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
@@ -72,23 +75,50 @@ export async function resolveProjectServer(
 export async function staleProjectEdgeUpstreams(
   project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
   executor: CommandExecutor,
+  edgeContainer: string,
 ): Promise<string[]> {
-  if (project.routeStrategy !== "container-ip") return [];
+  if (resolveRouteStrategy(project.routeStrategy) !== "container-ip") return [];
   const deployment = await findActiveDeployment(project);
   if (!deployment) return [];
 
-  const [domains, rows] = await Promise.all([
+  const [domains, defs, rows] = await Promise.all([
     repos.domain.listByProject(project.id),
+    repos.service.listByProject(project.id),
     repos.service.listByDeployment(deployment.id),
   ]);
   const topologyHosts = new Set(project.compositeRoutes?.map((route) => route.hostname.toLowerCase()));
-  const byService = new Map(rows.map((row) => [row.serviceId, row]));
+  const domainByHostname = new Map(domains.map((domain) => [domain.hostname.toLowerCase(), domain]));
+  const rowByService = new Map(rows.map((row) => [row.serviceId, row]));
+
+  const serviceRoutes = new Map<string, { serviceId: string; containerPort: number }>();
+  for (const service of defs) {
+    if (!service.enabled) continue;
+    for (const route of buildServiceRouteDomains({
+      project, service, domainByHostname, runtimeName: "docker", usesManagedRouting: false,
+    })) {
+      const hostname = route.hostname.toLowerCase();
+      if (route.targetPort && !route.redirectTo && domainByHostname.get(hostname)?.serviceId === service.id) {
+        serviceRoutes.set(hostname, { serviceId: service.id, containerPort: route.targetPort });
+      }
+    }
+  }
+
   const candidates = domains.flatMap((domain) => {
-    if (topologyHosts.has(domain.hostname.toLowerCase())) return [];
-    if (!domain.serviceId && rows.length > 1) return [];
-    const row = domain.serviceId ? byService.get(domain.serviceId) : rows[0];
-    const containerId = usableRef(row?.containerId ?? (row || domain.serviceId ? null : deployment.containerId));
-    return containerId && !isArtifactRef(containerId) ? [{ hostname: domain.hostname, containerId }] : [];
+    const hostname = domain.hostname.toLowerCase();
+    if (topologyHosts.has(hostname) || domain.redirectTo || domain.targetPath) return [];
+    const port = domain.targetPort ?? (defs.length ? null : project.port);
+    const owner = domain.serviceId
+      ? serviceRoutes.get(hostname)
+      : port
+        ? pickProjectPortOwner({ port, services: defs, rowByService, domainRows: domains })
+        : null;
+    const containerPort = owner?.containerPort ?? port;
+    const containerId = usableRef(
+      owner ? rowByService.get(owner.serviceId)?.containerId : !domain.serviceId ? deployment.containerId : null,
+    );
+    return containerPort && containerId && !isArtifactRef(containerId)
+      ? [{ hostname, containerId, containerPort }]
+      : [];
   });
   if (!candidates.length) return [];
 
@@ -96,14 +126,19 @@ export async function staleProjectEdgeUpstreams(
   try {
     if (runtime.name !== "docker" || !runtime.supports("containerInfo") || !runtime.getContainerInfo) return [];
     const inspect = runtime.getContainerInfo.bind(runtime);
-    const proxy = edgeProxyFor(executor, "openresty", { ours: true });
+    const { sites } = await scanRunningOpenshipEdge(executor, edgeContainer);
+    const byHostname = new Map(sites.flatMap((site) =>
+      site.serverNames.map((hostname) => [hostname.toLowerCase(), site] as const),
+    ));
     const lookups = new Map<string, ReturnType<typeof inspect>>();
-    const stale = await mapConcurrent(candidates, 4, async ({ hostname, containerId }) => {
+    const stale = await mapConcurrent(candidates, 4, async ({ hostname, containerId, containerPort }) => {
       try {
-        const site = await proxy.siteFor(hostname);
+        const site = byHostname.get(hostname);
         if (site?.target.kind !== "proxy" || (site.routes?.length ?? 0) > 1) return null;
-        const current = new URL(site.target.url).hostname;
-        if (isIP(current) !== 4 || current.startsWith("127."))
+        const upstream = new URL(site.target.url);
+        const current = upstream.hostname;
+        const currentPort = Number(upstream.port || (upstream.protocol === "https:" ? 443 : 80));
+        if (currentPort !== containerPort || isIP(current) !== 4 || isLoopbackHost(current))
           return null;
         let live = lookups.get(containerId);
         if (!live) {

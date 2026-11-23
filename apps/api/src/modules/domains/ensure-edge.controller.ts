@@ -15,7 +15,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { safeErrorMessage } from "@repo/core";
-import { probeEdge, ourEdgeContainerRunning, type PromptUserFn } from "@repo/adapters";
+import { probeEdge, resolveOurEdgeContainer, type PromptUserFn } from "@repo/adapters";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { param } from "../../lib/controller-helpers";
@@ -82,22 +82,22 @@ export async function edgeStatus(c: Context) {
     // also credits a bare-host OpenResty leftover as ours even when the container
     // is stopped — which is why the pill said "ready" while the server tab said
     // "down". The edge is container-only now, so the container is the truth.
-    const { status, containerRunning, staleUpstreams } = await sshManager.withExecutor(
+    const { status, container, staleUpstreams } = await sshManager.withExecutor(
       serverId,
       async (executor) => {
         const status = await probeEdge(executor);
-        const containerRunning = await ourEdgeContainerRunning(executor);
-        const staleUpstreams = containerRunning
-          ? await staleProjectEdgeUpstreams(project, executor).catch((error) => {
+        const container = await resolveOurEdgeContainer(executor);
+        const staleUpstreams = container
+          ? await staleProjectEdgeUpstreams(project, executor, container).catch((error) => {
               observeCaughtError(error, "api/modules/domains/ensure-edge.controller");
               return [];
             })
           : [];
-        return { status, containerRunning, staleUpstreams };
+        return { status, container, staleUpstreams };
       },
     );
     return c.json({
-      ready: containerRunning,
+      ready: Boolean(container),
       reachable: true,
       ...(staleUpstreams.length && { staleUpstreams }),
       classification: status.classification,

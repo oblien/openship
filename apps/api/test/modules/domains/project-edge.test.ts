@@ -9,13 +9,13 @@ const io = vi.hoisted(() => ({
   reuse: vi.fn(),
   verify: vi.fn(),
   provision: vi.fn(),
-  siteFor: vi.fn(),
+  scanEdge: vi.fn(),
   getContainerInfo: vi.fn(),
   dispose: vi.fn(),
 }));
 vi.mock("@repo/adapters", async (original) => ({
-  ...(await original<Record<string, unknown>>()),
-  edgeProxyFor: () => ({ siteFor: io.siteFor }),
+  ...(await original<typeof import("@repo/adapters")>()),
+  scanRunningOpenshipEdge: io.scanEdge,
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -169,10 +169,18 @@ describe("pending domains recover after edge setup without a restart", () => {
     expect(io.events).toContain("service paths");
   });
 
-  it("reports an owned route on an old bridge IP and clears after the edge is repaired", async () => {
+  it("checks direct service routes and resolves a project domain by its published port", async () => {
     const project = (await repos.project.findById(projectId))!;
-    const web = await seedService(project.id, { name: "web" });
-    const internal = await seedService(project.id, { name: "internal" });
+    const scoped = { ...project, routeStrategy: "container-ip" as const };
+    const hostname = "owned-edge.example.com";
+    const web = await seedService(project.id, {
+      name: "web",
+      exposed: true,
+      enabled: true,
+      ports: ["8080:80"],
+      publicEndpoints: [{ domainType: "custom", customDomain: hostname, port: 80 }],
+    });
+    const internal = await seedService(project.id, { name: "internal", ports: ["9000"] });
     await seedServiceDeployment(project.activeDeploymentId!, web, {
       containerId: "current-web",
       ip: "172.19.0.2",
@@ -181,27 +189,36 @@ describe("pending domains recover after edge setup without a restart", () => {
       containerId: "internal",
       ip: "172.19.0.4",
     });
-    const routed = await domain({ serviceId: web.id });
-    const loopback = await domain({ serviceId: web.id });
-    const read = (hostname: string) => ({
-      target: {
-        kind: "proxy",
-        url: hostname === loopback.hostname ? "http://127.0.0.1:8080" : "http://172.19.0.2:80",
-      },
+    const routed = await domain({ serviceId: web.id, hostname, targetPort: 80 });
+    const projectRoute = await domain({ targetPort: 8080 });
+    const loopback = await domain({ targetPort: 8080 });
+    const unconfigured = await domain({ serviceId: web.id, targetPort: 80 });
+    const site = (host: string, url: string) => ({
+      serverNames: [host],
+      target: { kind: "proxy", url },
     });
-    io.siteFor.mockImplementation(read);
+    io.scanEdge.mockReturnValue({
+      sites: [
+        site(routed.hostname, "http://172.19.0.2:80"),
+        site(projectRoute.hostname, "http://172.19.0.2:80"),
+        site(loopback.hostname, "http://127.0.0.1:80"),
+        site(unconfigured.hostname, "http://172.19.0.2:80"),
+      ],
+    });
     io.getContainerInfo.mockResolvedValue({ status: "running", ip: "172.19.0.5" });
     const executor = {} as CommandExecutor;
 
-    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "container-ip" }, executor))
-      .toEqual([routed.hostname]);
+    expect(await staleProjectEdgeUpstreams(scoped, executor, "serving-edge"))
+      .toEqual([routed.hostname, projectRoute.hostname].sort());
+    expect(io.scanEdge).toHaveBeenCalledExactlyOnceWith(executor, "serving-edge");
     expect(io.getContainerInfo).toHaveBeenCalledExactlyOnceWith("current-web");
     expect(io.dispose).toHaveBeenCalledOnce();
-    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "loopback-port" }, executor))
+    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "loopback-port" }, executor, "serving-edge"))
       .toEqual([]);
 
-    io.siteFor.mockReturnValue({ target: { kind: "proxy", url: "http://172.19.0.5:80" } });
-    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "container-ip" }, executor))
-      .toEqual([]);
+    io.scanEdge.mockReturnValue({
+      sites: [site(routed.hostname, "http://172.19.0.5:80"), site(projectRoute.hostname, "http://172.19.0.5:80")],
+    });
+    expect(await staleProjectEdgeUpstreams(scoped, executor, "serving-edge")).toEqual([]);
   });
 });

@@ -748,14 +748,25 @@ export async function scanOpenshipEdgeStrict(
   }
   const container = knownContainer ?? detected.name;
   if (!container) throw new Error("Cannot read Openship edge routes: container identity missing");
-  // Dump the FULL resolved config from the active process namespace. Reading
-  // only sites-enabled misses loopback upstreams in the baked/base config (ACME,
-  // webhook/control routes) and misses includes outside the known site globs.
-  const fromContainer = await executor.exec(
-    containerCommand(container, "openresty -T 2>/dev/null"),
-  );
-  if (!fromContainer.trim() || !/server\s*\{/.test(fromContainer)) {
+  return parseStrictEdgeConfig(await readRunningOpenshipEdgeConfig(executor, container));
+}
+
+/** Read the selected running edge's own configuration and includes. */
+export async function scanRunningOpenshipEdge(
+  executor: CommandExecutor,
+  container: string,
+): Promise<ProxyScanResult> {
+  return parseNginxConfig(await readRunningOpenshipEdgeConfig(executor, container, { timeout: 10_000 }));
+}
+
+async function readRunningOpenshipEdgeConfig(
+  executor: CommandExecutor,
+  container: string,
+  options?: { timeout?: number },
+): Promise<string> {
+  const config = await executor.exec(containerCommand(container, "openresty -T 2>/dev/null"), options);
+  if (!config.trim() || !/server\s*\{/.test(config)) {
     throw new Error("Cannot read Openship edge routes: active OpenResty config dump was empty");
   }
-  return parseStrictEdgeConfig(fromContainer);
+  return config;
 }

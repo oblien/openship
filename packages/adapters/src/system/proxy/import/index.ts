@@ -9,7 +9,7 @@ import type { CommandExecutor } from "../../../types";
 import type { ImportedSite, ProxyKind, ProxyScanResult } from "../../types";
 import { EDGE_CONTAINER_MOUNTS } from "../../../infra/openresty-lua";
 import { sq } from "../detect";
-import { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanForeignOpenResty } from "./nginx";
+import { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanRunningOpenshipEdge, scanForeignOpenResty } from "./nginx";
 import { scanCaddy } from "./caddy";
 import { scanApache } from "./apache";
 import { scanTraefik } from "./traefik";
@@ -125,7 +125,7 @@ export function canImportProxy(proxy: ProxyKind | undefined): boolean {
   );
 }
 
-export { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanCaddy, scanApache, scanTraefik };
+export { scanNginx, scanOpenshipEdge, scanOpenshipEdgeStrict, scanRunningOpenshipEdge, scanCaddy, scanApache, scanTraefik };
 
 /** One adopted static site whose docroot the containerized edge cannot read. */
 export interface UnreachableStaticRoot {
