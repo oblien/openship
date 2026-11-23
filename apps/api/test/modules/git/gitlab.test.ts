@@ -106,6 +106,24 @@ it("offers reconnection for a revoked token and preserves retryable provider err
   }
 });
 
+it("caps GitLab response bodies even without a Content-Length header", async () => {
+  const { gitlabRequest } = await import("@repo/platform/engine/modules/gitlab/client");
+  const cancel = vi.fn();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const chunk = new Uint8Array(1024 * 1024);
+      for (let count = 0; count < 17; count++) controller.enqueue(chunk);
+    },
+    cancel,
+  });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+  await expect(gitlabRequest("projects")).rejects.toMatchObject({
+    statusCode: 502,
+    code: "GITLAB_RESPONSE_INVALID",
+  });
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
 it("creates a Cloud GitLab project without claiming auto-deploy is already enabled", async () => {
   const { organizationId, userId } = await seedOrg();
   const ctx = buildBackgroundContext({ organizationId, userId, label: "test" });
