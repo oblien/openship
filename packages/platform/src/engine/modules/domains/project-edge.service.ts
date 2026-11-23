@@ -19,7 +19,13 @@ import { pickProjectPortOwner } from "../../lib/project-service-upstream";
 import { buildServiceRouteDomains } from "../../lib/routing-domains";
 import { resolveRouteStrategy } from "../../lib/upstream-url";
 import { findActiveDeployment } from "../../lib/active-deployment";
-import { disposeRuntime, resolveDeploymentRuntimeForRead, withDeploymentPlatform } from "../../lib/deployment-runtime";
+import {
+  disposeRuntime,
+  resolveDeploymentRuntimeForRead,
+  usesManagedRouting,
+  withDeploymentPlatform,
+} from "../../lib/deployment-runtime";
+import { platform } from "../../lib/platform-config";
 import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
 import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
@@ -80,6 +86,9 @@ export async function staleProjectEdgeUpstreams(
   if (resolveRouteStrategy(project.routeStrategy) !== "container-ip") return [];
   const deployment = await findActiveDeployment(project);
   if (!deployment) return [];
+  const { deployTarget } = await resolveProjectLiveDeployTarget(project, deployment);
+  if (!deployTarget || deployTarget === "cloud") return [];
+  const managedRouting = usesManagedRouting(platform().target, deployTarget);
 
   const [domains, defs, rows] = await Promise.all([
     repos.domain.listByProject(project.id),
@@ -94,7 +103,11 @@ export async function staleProjectEdgeUpstreams(
   for (const service of defs) {
     if (!service.enabled) continue;
     for (const route of buildServiceRouteDomains({
-      project, service, domainByHostname, runtimeName: "docker", usesManagedRouting: false,
+      project,
+      service,
+      domainByHostname,
+      runtimeName: "docker",
+      usesManagedRouting: managedRouting,
     })) {
       const hostname = route.hostname.toLowerCase();
       if (route.targetPort && !route.redirectTo && domainByHostname.get(hostname)?.serviceId === service.id) {

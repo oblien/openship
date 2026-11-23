@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, repos, schema } from "@repo/db";
 import type { CommandExecutor } from "@repo/adapters";
 import type { ExecutionContext } from "@repo/platform";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
 import { seedDeployment, seedOrg, seedProject, seedService, seedServiceDeployment, setActive } from "../../helpers/seed";
 
 const io = vi.hoisted(() => ({
@@ -29,6 +30,10 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async (original) => ({
   }),
   withDeploymentPlatform: async (_deployment: unknown, run: (platform: unknown) => unknown) =>
     run({ routing: {} }),
+}));
+vi.mock("@repo/platform/engine/lib/platform-config", async (original) => ({
+  ...(await original<typeof import("@repo/platform/engine/lib/platform-config")>()),
+  platform: () => ({ target: "selfhosted" }),
 }));
 vi.mock("@repo/platform/engine/lib/edge-challenge", () => ({
   ensureEdgeChallengeReady: async () => {
@@ -173,12 +178,16 @@ describe("pending domains recover after edge setup without a restart", () => {
     const project = (await repos.project.findById(projectId))!;
     const scoped = { ...project, routeStrategy: "container-ip" as const };
     const hostname = "owned-edge.example.com";
+    const freeHostname = `edge-drift.${getRoutingBaseDomain()}`;
     const web = await seedService(project.id, {
       name: "web",
       exposed: true,
       enabled: true,
       ports: ["8080:80"],
-      publicEndpoints: [{ domainType: "custom", customDomain: hostname, port: 80 }],
+      publicEndpoints: [
+        { domainType: "custom", customDomain: hostname, port: 80 },
+        { domainType: "free", domain: "edge-drift", port: 80 },
+      ],
     });
     const internal = await seedService(project.id, { name: "internal", ports: ["9000"] });
     await seedServiceDeployment(project.activeDeploymentId!, web, {
@@ -190,6 +199,9 @@ describe("pending domains recover after edge setup without a restart", () => {
       ip: "172.19.0.4",
     });
     const routed = await domain({ serviceId: web.id, hostname, targetPort: 80 });
+    const free = await domain({
+      serviceId: web.id, hostname: freeHostname, targetPort: 80, domainType: "free",
+    });
     const projectRoute = await domain({ targetPort: 8080 });
     const loopback = await domain({ targetPort: 8080 });
     const unconfigured = await domain({ serviceId: web.id, targetPort: 80 });
@@ -200,6 +212,7 @@ describe("pending domains recover after edge setup without a restart", () => {
     io.scanEdge.mockReturnValue({
       sites: [
         site(routed.hostname, "http://172.19.0.2:80"),
+        site(free.hostname, "http://172.19.0.2:80"),
         site(projectRoute.hostname, "http://172.19.0.2:80"),
         site(loopback.hostname, "http://127.0.0.1:80"),
         site(unconfigured.hostname, "http://172.19.0.2:80"),
@@ -209,7 +222,7 @@ describe("pending domains recover after edge setup without a restart", () => {
     const executor = {} as CommandExecutor;
 
     expect(await staleProjectEdgeUpstreams(scoped, executor, "serving-edge"))
-      .toEqual([routed.hostname, projectRoute.hostname].sort());
+      .toEqual([routed.hostname, free.hostname, projectRoute.hostname].sort());
     expect(io.scanEdge).toHaveBeenCalledExactlyOnceWith(executor, "serving-edge");
     expect(io.getContainerInfo).toHaveBeenCalledExactlyOnceWith("current-web");
     expect(io.dispose).toHaveBeenCalledOnce();
@@ -217,7 +230,11 @@ describe("pending domains recover after edge setup without a restart", () => {
       .toEqual([]);
 
     io.scanEdge.mockReturnValue({
-      sites: [site(routed.hostname, "http://172.19.0.5:80"), site(projectRoute.hostname, "http://172.19.0.5:80")],
+      sites: [
+        site(routed.hostname, "http://172.19.0.5:80"),
+        site(free.hostname, "http://172.19.0.5:80"),
+        site(projectRoute.hostname, "http://172.19.0.5:80"),
+      ],
     });
     expect(await staleProjectEdgeUpstreams(scoped, executor, "serving-edge")).toEqual([]);
   });
