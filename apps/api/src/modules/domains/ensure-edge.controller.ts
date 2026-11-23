@@ -21,7 +21,7 @@ import { permission } from "../../lib/permission";
 import { param } from "../../lib/controller-helpers";
 import { streamSSE } from "../../lib/sse";
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
-import { prepareServerEdge, applyProjectEdgeRoutes, resolveProjectServer } from "@repo/platform/engine/modules/domains/project-edge.service";
+import { prepareServerEdge, applyProjectEdgeRoutes, resolveProjectServer, staleProjectEdgeUpstreams } from "@repo/platform/engine/modules/domains/project-edge.service";
 export { resolveProjectServer } from "@repo/platform/engine/modules/domains/project-edge.service";
 import {
   createEdgeConsentSession,
@@ -62,7 +62,7 @@ export async function edgeStatus(c: Context) {
   if ("error" in resolved) {
     return c.json({ ready: false, reachable: null, reason: resolved.error });
   }
-  const { serverId, isLocal } = resolved;
+  const { project, serverId, isLocal } = resolved;
 
   // Fast-fail if the box is offline — but ONLY dial SSH for a real remote server.
   // The local host-server has no sshHost (probeReachable would falsely report it
@@ -82,13 +82,24 @@ export async function edgeStatus(c: Context) {
     // also credits a bare-host OpenResty leftover as ours even when the container
     // is stopped — which is why the pill said "ready" while the server tab said
     // "down". The edge is container-only now, so the container is the truth.
-    const { status, containerRunning } = await sshManager.withExecutor(serverId, async (executor) => ({
-      status: await probeEdge(executor),
-      containerRunning: await ourEdgeContainerRunning(executor),
-    }));
+    const { status, containerRunning, staleUpstreams } = await sshManager.withExecutor(
+      serverId,
+      async (executor) => {
+        const status = await probeEdge(executor);
+        const containerRunning = await ourEdgeContainerRunning(executor);
+        const staleUpstreams = containerRunning
+          ? await staleProjectEdgeUpstreams(project, executor).catch((error) => {
+              observeCaughtError(error, "api/modules/domains/ensure-edge.controller");
+              return [];
+            })
+          : [];
+        return { status, containerRunning, staleUpstreams };
+      },
+    );
     return c.json({
       ready: containerRunning,
       reachable: true,
+      ...(staleUpstreams.length && { staleUpstreams }),
       classification: status.classification,
       canProceedClean: status.canProceedClean,
       occupants: status.occupants.map((o) => ({

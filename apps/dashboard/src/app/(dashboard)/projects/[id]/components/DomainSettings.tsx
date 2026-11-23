@@ -448,7 +448,6 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
   const openRoutingRetry = useRoutingRetryModal(presentRoutingRetry);
   const openVerifyModal = useVerifyModal(presentRoutingRetry);
   const openEdgeModal = useEdgeModal(presentRoutingRetry);
-  const retryRouting = () => openRoutingRetry(String(id), { onSession: rememberRoutingSession });
   useEffect(() => {
     const sessionId = projectData.routingRetry?.sessionId;
     if (projectData.id !== id || !sessionId || seenRoutingSession.current === sessionId) return;
@@ -503,6 +502,7 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
   const [edge, setEdge] = useState<{
     loading: boolean;
     ready: boolean;
+    staleUpstreams?: string[];
     classification?: "free" | "ours" | "known" | "unknown";
     reachable?: boolean | null;
   }>({ loading: false, ready: false });
@@ -514,6 +514,7 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
       setEdge({
         loading: false,
         ready: !!res.ready,
+        staleUpstreams: res.staleUpstreams,
         classification: res.classification,
         reachable: res.reachable ?? null,
       });
@@ -522,6 +523,12 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
       setEdge({ loading: false, ready: false });
     }
   }, [id, selfHosted, isCloudProject]);
+
+  const retryRouting = () =>
+    openRoutingRetry(String(id), {
+      onSession: rememberRoutingSession,
+      onSettled: () => void checkEdge(),
+    });
 
   // Install/own OpenResty + apply routes reload-free (no redeploy), surfacing the
   // 80/443 takeover consent if a foreign proxy holds them. Reused by the first
@@ -804,6 +811,21 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
           spinning
           disabled
         />
+      );
+    }
+    if (edge.staleUpstreams?.length) {
+      return (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <span className="text-sm text-warning" title={edge.staleUpstreams.join(", ")}>
+            {t.projectSettings.domains.edge.staleUpstream}
+          </span>
+          <ActionButton
+            label={t.projects.routingRetry.retry}
+            icon="refresh"
+            onClick={retryRouting}
+            disabled={!!routingOperation?.running || !!projectData.awaitingDecision}
+          />
+        </span>
       );
     }
     if (edge.ready) {

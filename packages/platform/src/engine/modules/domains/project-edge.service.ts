@@ -1,8 +1,11 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { mapConcurrent, safeErrorMessage } from "@repo/core";
+import { isIP } from "node:net";
 import {
   COMPONENT_INSTALLERS,
+  edgeProxyFor,
+  type CommandExecutor,
   ensureEdge,
   ourEdgeContainerRunning,
   recoverInterruptedTakeover,
@@ -11,8 +14,9 @@ import {
   type SystemLog,
 } from "@repo/adapters";
 import type { ExecutionContext } from "../../../context";
+import { isArtifactRef, usableRef } from "../../lib/container-ref";
 import { findActiveDeployment } from "../../lib/active-deployment";
-import { withDeploymentPlatform } from "../../lib/deployment-runtime";
+import { disposeRuntime, resolveDeploymentRuntimeForRead, withDeploymentPlatform } from "../../lib/deployment-runtime";
 import { ensureEdgeChallengeReady } from "../../lib/edge-challenge";
 import { repairEdgeVhosts } from "../../lib/edge-vhost-repair";
 import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
@@ -59,6 +63,64 @@ export async function resolveProjectServer(
   const server = await repos.server.getInOrganization(serverId, organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/domains/project-edge.service"); return null; });
   if (!server) return { error: "Project deployment server was not found", status: 400 };
   return { project, serverId, isLocal: Boolean(server.isLocal) };
+}
+
+/**
+ * Report proven address drift on direct bridge-IP routes. The supported retry
+ * operation owns every write, including route locking and TLS preservation.
+ */
+export async function staleProjectEdgeUpstreams(
+  project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
+  executor: CommandExecutor,
+): Promise<string[]> {
+  if (project.routeStrategy !== "container-ip") return [];
+  const deployment = await findActiveDeployment(project);
+  if (!deployment) return [];
+
+  const [domains, rows] = await Promise.all([
+    repos.domain.listByProject(project.id),
+    repos.service.listByDeployment(deployment.id),
+  ]);
+  const topologyHosts = new Set(project.compositeRoutes?.map((route) => route.hostname.toLowerCase()));
+  const byService = new Map(rows.map((row) => [row.serviceId, row]));
+  const candidates = domains.flatMap((domain) => {
+    if (topologyHosts.has(domain.hostname.toLowerCase())) return [];
+    if (!domain.serviceId && rows.length > 1) return [];
+    const row = domain.serviceId ? byService.get(domain.serviceId) : rows[0];
+    const containerId = usableRef(row?.containerId ?? (row || domain.serviceId ? null : deployment.containerId));
+    return containerId && !isArtifactRef(containerId) ? [{ hostname: domain.hostname, containerId }] : [];
+  });
+  if (!candidates.length) return [];
+
+  const { runtime } = await resolveDeploymentRuntimeForRead(deployment);
+  try {
+    if (runtime.name !== "docker" || !runtime.supports("containerInfo") || !runtime.getContainerInfo) return [];
+    const inspect = runtime.getContainerInfo.bind(runtime);
+    const proxy = edgeProxyFor(executor, "openresty", { ours: true });
+    const lookups = new Map<string, ReturnType<typeof inspect>>();
+    const stale = await mapConcurrent(candidates, 4, async ({ hostname, containerId }) => {
+      try {
+        const site = await proxy.siteFor(hostname);
+        if (site?.target.kind !== "proxy" || (site.routes?.length ?? 0) > 1) return null;
+        const current = new URL(site.target.url).hostname;
+        if (isIP(current) !== 4 || current.startsWith("127."))
+          return null;
+        let live = lookups.get(containerId);
+        if (!live) {
+          live = inspect(containerId);
+          lookups.set(containerId, live);
+        }
+        const { ip, status } = await live;
+        return status === "running" && ip && isIP(ip) === 4 && ip !== current ? hostname : null;
+      } catch (error) {
+        observeCaughtError(error, "platform/engine/modules/domains/project-edge.service");
+        return null;
+      }
+    });
+    return [...new Set(stale.filter((hostname): hostname is string => hostname !== null))].sort();
+  } finally {
+    disposeRuntime(runtime);
+  }
 }
 
 /** The same consent/install path for migration and the project's Set up edge action. */

@@ -1161,6 +1161,7 @@
       "enterSubdomain": "Enter a subdomain."
     },
     "edge": {
+      "staleUpstream": "Edge routing needs an update",
       "setUp": "Set up edge",
       "ready": "Edge ready",
       "checking": "Checking edge…",

@@ -1,16 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, repos, schema } from "@repo/db";
+import type { CommandExecutor } from "@repo/adapters";
 import type { ExecutionContext } from "@repo/platform";
-import { seedDeployment, seedOrg, seedProject, setActive } from "../../helpers/seed";
+import { seedDeployment, seedOrg, seedProject, seedService, seedServiceDeployment, setActive } from "../../helpers/seed";
 
 const io = vi.hoisted(() => ({
   events: [] as string[],
   reuse: vi.fn(),
   verify: vi.fn(),
   provision: vi.fn(),
+  siteFor: vi.fn(),
+  getContainerInfo: vi.fn(),
+  dispose: vi.fn(),
+}));
+vi.mock("@repo/adapters", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  edgeProxyFor: () => ({ siteFor: io.siteFor }),
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async (original) => ({
   ...(await original<Record<string, unknown>>()),
+  resolveDeploymentRuntimeForRead: async () => ({
+    runtime: {
+      name: "docker",
+      supports: (capability: string) => capability === "containerInfo",
+      getContainerInfo: io.getContainerInfo,
+      dispose: io.dispose,
+    },
+  }),
   withDeploymentPlatform: async (_deployment: unknown, run: (platform: unknown) => unknown) =>
     run({ routing: {} }),
 }));
@@ -48,7 +64,7 @@ vi.mock("@repo/platform/engine/lib/domain-ssl", async (original) => ({
   manageDomainSsl: io.provision,
 }));
 
-import { applyProjectEdgeRoutes } from "@repo/platform/engine/modules/domains/project-edge.service";
+import { applyProjectEdgeRoutes, staleProjectEdgeUpstreams } from "@repo/platform/engine/modules/domains/project-edge.service";
 
 describe("pending domains recover after edge setup without a restart", () => {
   let ctx: ExecutionContext;
@@ -151,5 +167,41 @@ describe("pending domains recover after edge setup without a restart", () => {
     );
     expect(await repos.domain.findById(pending.id)).toBeDefined();
     expect(io.events).toContain("service paths");
+  });
+
+  it("reports an owned route on an old bridge IP and clears after the edge is repaired", async () => {
+    const project = (await repos.project.findById(projectId))!;
+    const web = await seedService(project.id, { name: "web" });
+    const internal = await seedService(project.id, { name: "internal" });
+    await seedServiceDeployment(project.activeDeploymentId!, web, {
+      containerId: "current-web",
+      ip: "172.19.0.2",
+    });
+    await seedServiceDeployment(project.activeDeploymentId!, internal, {
+      containerId: "internal",
+      ip: "172.19.0.4",
+    });
+    const routed = await domain({ serviceId: web.id });
+    const loopback = await domain({ serviceId: web.id });
+    const read = (hostname: string) => ({
+      target: {
+        kind: "proxy",
+        url: hostname === loopback.hostname ? "http://127.0.0.1:8080" : "http://172.19.0.2:80",
+      },
+    });
+    io.siteFor.mockImplementation(read);
+    io.getContainerInfo.mockResolvedValue({ status: "running", ip: "172.19.0.5" });
+    const executor = {} as CommandExecutor;
+
+    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "container-ip" }, executor))
+      .toEqual([routed.hostname]);
+    expect(io.getContainerInfo).toHaveBeenCalledExactlyOnceWith("current-web");
+    expect(io.dispose).toHaveBeenCalledOnce();
+    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "loopback-port" }, executor))
+      .toEqual([]);
+
+    io.siteFor.mockReturnValue({ target: { kind: "proxy", url: "http://172.19.0.5:80" } });
+    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "container-ip" }, executor))
+      .toEqual([]);
   });
 });

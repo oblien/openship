@@ -1078,6 +1078,7 @@
       "publishFailed": "域名已保存，但部署未启动 — 请重新部署以进行发布。"
     },
     "edge": {
+      "staleUpstream": "边缘路由需要更新",
       "setUp": "设置边缘",
       "ready": "边缘就绪",
       "checking": "正在检查边缘…",

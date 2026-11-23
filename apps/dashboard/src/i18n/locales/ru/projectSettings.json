@@ -1161,6 +1161,7 @@
       "enterSubdomain": "Введите поддомен."
     },
     "edge": {
+      "staleUpstream": "Необходимо обновить маршрутизацию на прокси",
       "setUp": "Настроить edge",
       "ready": "Edge готов",
       "checking": "Проверка edge…",

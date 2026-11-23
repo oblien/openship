@@ -1111,6 +1111,7 @@
       "close": "Annuler"
     },
     "edge": {
+      "staleUpstream": "Le routage du proxy doit être mis à jour",
       "setUp": "Configurer l'edge",
       "ready": "Edge prêt",
       "checking": "Vérification de l'edge…",
