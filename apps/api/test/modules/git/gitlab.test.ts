@@ -1,4 +1,4 @@
-import "@repo/platform/engine/config/env";
+import { env } from "@repo/platform/engine/config/env";
 import { createHmac, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { afterEach, expect, it, vi } from "vitest";
@@ -106,6 +106,35 @@ it("offers reconnection for a revoked token and preserves retryable provider err
   }
 });
 
+it("creates a Cloud GitLab project without claiming auto-deploy is already enabled", async () => {
+  const { organizationId, userId } = await seedOrg();
+  const ctx = buildBackgroundContext({ organizationId, userId, label: "test" });
+  const billing = await import("@repo/platform/engine/modules/billing/management.service");
+  const { createProject } = await import("@repo/platform/engine/modules/projects/project-crud.service");
+  // This test covers the creation funnel independently of host billing.
+  vi.spyOn(billing, "isCustomerServer").mockResolvedValue(true);
+  const previousMode = env.CLOUD_MODE;
+  env.CLOUD_MODE = true;
+  try {
+    const created = await createProject({
+      name: "Cloud GitLab project",
+      gitProvider: ref.provider,
+      gitOwner: ref.namespace,
+      gitRepo: ref.name,
+      gitBranch: "main",
+      installationId: 42,
+    }, organizationId, undefined, ctx);
+    expect(await repos.project.findById(created.id)).toMatchObject({
+      gitProvider: "gitlab",
+      autoDeploy: false,
+      webhookId: null,
+      installationId: null,
+    });
+  } finally {
+    env.CLOUD_MODE = previousMode;
+  }
+});
+
 it("dispatches a signed subgroup push once to the intended provider and workspace", async () => {
   const { organizationId, userId } = await seedOrg();
   const other = await seedOrg();
@@ -116,7 +145,7 @@ it("dispatches a signed subgroup push once to the intended provider and workspac
     gitBranch: "main",
     autoDeploy: true,
   };
-  const project = await seedProject(organizationId, fields);
+  const project = await seedProject(organizationId, { ...fields, autoDeploy: false });
   const otherProject = await seedProject(other.organizationId, fields);
   await seedProject(organizationId, { ...fields, gitProvider: "github" });
   const hooks: Array<{ id: number; name: string; url: string; push_events: boolean }> = [];
@@ -151,8 +180,19 @@ it("dispatches a signed subgroup push once to the intended provider and workspac
   });
   const ctx = buildBackgroundContext({ organizationId, userId, label: "test" });
   const webhook = adapter.repository(ctx, ref).webhooks!;
-  const opts = { projectId: project.id, url: "https://openship.example/api/webhooks/gitlab" };
-  expect(await ensureSharedWebhook(ctx, project, ref, opts.url)).toBe("15");
+  const previousUrl = env.OPENSHIP_PUBLIC_URL;
+  env.OPENSHIP_PUBLIC_URL = "https://openship.example";
+  try {
+    expect(hooks).toHaveLength(0);
+    await createProjectGitOperations(vi.fn()).setAutoDeploy(ctx, project.id, { enabled: true });
+    expect(await repos.project.findById(project.id)).toMatchObject({
+      autoDeploy: true,
+      webhookId: "15",
+    });
+  } finally {
+    env.OPENSHIP_PUBLIC_URL = previousUrl;
+  }
+  const opts = { projectId: project.id, url: hooks[0]!.url };
   expect(await ensureSharedWebhook(ctx, project, ref, opts.url)).toBe("15");
   expect(hooks).toHaveLength(1);
   expect(tokens).toHaveLength(2);
@@ -336,7 +376,21 @@ it("links GitLab OAuth, rotates once across concurrent private repository reads 
     repoUrl: repo.web_url + ".git",
     buildStrategy: "local",
   });
-  expect(clone).toMatchObject({ token: "second", tokenRepositories: [ref.name] });
+  expect(clone).toMatchObject({
+    token: "second",
+    tokenRepositories: [ref.name],
+    apiHostFallback: true,
+  });
+  const remote = {
+    ctx, projectId: "test", owner: ref.namespace, repo: ref.name, buildStrategy: "server" as const,
+  };
+  await expect(adapter.resolveCloneCredentials(remote)).rejects.toMatchObject({
+    code: "GITLAB_CONNECTION_REQUIRED",
+  });
+  expect(await adapter.resolveCloneCredentials({ ...remote, allowApiHostFallback: true })).toMatchObject({
+    token: "second",
+    apiHostFallback: true,
+  });
   await expect(
     completeConnectionAuthorization(ctx, { state: started.state, code: "again" }),
   ).rejects.toMatchObject({ code: "CONNECTION_STATE_EXPIRED" });
@@ -345,7 +399,6 @@ it("links GitLab OAuth, rotates once across concurrent private repository reads 
 it("uses the host CLI only after operator consent, binds its account and never consults it on Cloud", async () => {
   const adapters = await import("@repo/adapters");
   const { canLinkGlab, connectGlab } = await import("@repo/platform/engine/modules/gitlab/cli");
-  const { env } = await import("@repo/platform/engine/config/env");
   const probe = vi.spyOn(adapters, "readLocalGlabToken").mockResolvedValue("cli-secret");
   const owner = await seedOrg({ ownsHost: true });
   const ctx = { ...buildBackgroundContext({ ...owner }), sessionKind: "cookie" as const };

@@ -145,7 +145,11 @@ export const githubProvider: GitProvider = {
   },
   async resolveCloneCredentials(options) {
     const { resolveBuildGitToken } = await import("../../github/clone-auth");
-    return resolveBuildGitToken(options);
+    const { env } = await import("../../../config/env");
+    return resolveBuildGitToken({
+      ...options,
+      allowApiHostFallback: !env.CLOUD_MODE && options.allowApiHostFallback,
+    });
   },
   repository(ctx, ref, options = {}) {
     const { namespace: owner, name: repo } = ref;

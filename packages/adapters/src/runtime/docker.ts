@@ -2254,6 +2254,22 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       signal?.throwIfAborted();
       return;
     }
+    if (config.gitTokenHostOnly) {
+      log.protectBuild(config);
+      const tree = await prepareSourceTree(config, {
+        onLog: log.callback,
+        perServiceBuildContexts: true,
+      });
+      try {
+        signal?.throwIfAborted();
+        await executor.mkdir(remoteContextDir);
+        await executor.transferIn(tree.contextDir, remoteContextDir, log.callback);
+        signal?.throwIfAborted();
+      } finally {
+        await tree.cleanup();
+      }
+      return;
+    }
     const useHelper = !!config.gitCredentialHelperPath;
 
     // Prefer a direct GitHub tarball download on the server (no git, no history,

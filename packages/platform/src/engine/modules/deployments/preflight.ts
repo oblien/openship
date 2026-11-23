@@ -1329,6 +1329,7 @@ export async function runPreflightChecks(
       platformTarget: plat.target, forwardGitCredentials: snapshot.forwardGitCredentials,
       remoteCredential: clonePlan.cloneCredentialPurpose === "server",
       clonesOnRemote, dockerClonesOnTarget: clonePlan.dockerClonesOnTarget,
+      canStageSourceOnApiHost: clonePlan.canStageSourceOnApiHost,
     }));
   }
 

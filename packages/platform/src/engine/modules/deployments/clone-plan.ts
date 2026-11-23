@@ -71,6 +71,8 @@ export interface ClonePlan {
   /** BuildStrategy to resolve the clone credential with (resolveBuildGitToken):
    *  "local" → local gh / broad resolver chain; "server" → shippable App/PAT. */
   cloneCredentialPurpose: "local" | "server";
+  /** Docker can receive source checked out by the controller. Bare builds need target Git access. */
+  canStageSourceOnApiHost: boolean;
   /** Desktop relay eligible: forward the operator's gh identity to the server for
    *  an on-server clone (nothing persisted). Requires the desktop app + opt-in. */
   relayEligible: boolean;
@@ -164,6 +166,7 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
     cloneRunsOnTarget,
     dockerClonesOnTarget,
     cloneCredentialPurpose: sourceLocation === "api-host" ? "local" : "server",
+    canStageSourceOnApiHost: !input.runtimeIsBare && sourceLocation !== "api-host",
     // Forward is the DEFAULT for a desktop server clone (secure + atomic: clone
     // on the build host with the operator's gh identity, nothing persisted),
     // opt-out via forwardGitCredentials === false. Real capability (SSH tunnel +

@@ -1201,8 +1201,8 @@ async function executeBuildAndDeploy(
     // must agree or a rollback resolves a git token it has no use for.
 
 
-    const gitCred: Awaited<ReturnType<typeof resolveBuildGitCredentials>> = needsGitSource
-      ? await resolveBuildGitCredentials(project.gitProvider ?? DEFAULT_GIT_PROVIDER, {
+    const gitCred: Awaited<ReturnType<typeof resolveBuildGitCredentials>> = gitProvider
+      ? await resolveBuildGitCredentials(gitProvider.id, {
           ctx: buildBackgroundContext({
             userId: actorUserId,
             organizationId: dep.organizationId,
@@ -1220,7 +1220,7 @@ async function executeBuildAndDeploy(
           // Docker clone-on-server can degrade to an api-host clone, so resolve
           // gracefully (a LOCAL fallback credential, flagged apiHostFallback) instead
           // of hard-failing at token resolution after the server is provisioned.
-          allowApiHostFallback: !env.CLOUD_MODE && clonePlan.dockerClonesOnTarget,
+          allowApiHostFallback: clonePlan.canStageSourceOnApiHost,
           // Lets the chain ask the target server whether it already reaches this
           // repo on its own — only consulted for a clone that runs THERE.
           serverExecutor: clonePlan.cloneRunsOnTarget ? targetExecutor : null,
@@ -1273,6 +1273,8 @@ async function executeBuildAndDeploy(
       envVars: buildEnv.envVars,
       resources: buildResources,
       gitToken: gitCred.token,
+      gitTokenRepositories: gitCred.tokenRepositories,
+      gitTokenHostOnly: gitCred.apiHostFallback,
     });
     // A static app builds via the minimal nginx image (generateStaticDockerfile);
     // only this flag selects it. Bare builds ignore it. A worker also has
@@ -1280,7 +1282,6 @@ async function executeBuildAndDeploy(
     // so key strictly off the static workload, not `!hasServer` (issue #538-B).
     buildConfig.isStatic = workload === "static";
     logger.protectSecrets([gitCred.token ?? "", gitCred.ssh?.privateKey ?? ""]);
-    buildConfig.gitTokenRepositories = gitCred.tokenRepositories;
     // When opted in, the runtime clones on the remote build host instead of the
     // orchestrator transferring the context. The credential arrives either via
     // the relay (gitCredentialHelperPath, set once the relay is open) or the
@@ -1389,6 +1390,7 @@ async function executeBuildAndDeploy(
           runtimeResources: prodResources,
           gitToken: gitCred.token,
           gitTokenRepositories: gitCred.tokenRepositories,
+          gitTokenHostOnly: gitCred.apiHostFallback,
           gitCredentialHelperPath: composeRelay?.scriptPath,
           gitSsh: gitCred.ssh,
           gitAmbient: effectiveCloneOnTarget ? gitCred.ambient : undefined,

@@ -778,7 +778,7 @@ function buildProductionProjectInput(
     gitUrl: source.gitUrl,
     releaseSource: source.releaseSource,
     installationId: data.installationId,
-    autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
+    autoDeploy: !!(env.CLOUD_MODE && data.installationId && source.gitOwner && source.gitRepo),
     githubChecks: data.githubChecks,
     autoDeployCancelBuilds: data.autoDeployCancelBuilds,
     framework: normalizeFramework(data.framework),
@@ -1033,8 +1033,12 @@ async function createProductionProject(
   // (linkProjectRepo resolves it server-side on its own path.)
   if (hasProjectRepository(data)) {
     const provider = getGitProvider(data.gitProvider ?? DEFAULT_GIT_PROVIDER);
-    if (await provider.connections.managesInstallations(organizationId))
-      data.installationId = (await provider.connections.installation(organizationId, data.gitOwner!.trim())) ?? undefined;
+    if (await provider.connections.managesInstallations(organizationId)) {
+      data.installationId =
+        (await provider.connections.installation(organizationId, data.gitOwner!.trim())) ?? undefined;
+    } else if (env.CLOUD_MODE) {
+      data.installationId = undefined;
+    }
   } else {
     data.installationId = undefined;
   }

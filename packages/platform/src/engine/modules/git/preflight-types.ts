@@ -28,6 +28,7 @@ export interface GitPreflightInput {
   remoteCredential: boolean;
   clonesOnRemote: boolean;
   dockerClonesOnTarget: boolean;
+  canStageSourceOnApiHost?: boolean;
 }
 
 export interface GitPreflight {

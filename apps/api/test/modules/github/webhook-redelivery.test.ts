@@ -272,8 +272,8 @@ describe("GitHub blocked deployment redelivery (#847)", () => {
       .mockRejectedValueOnce(new Error("storage unavailable"));
     const response = await f.send(f.deliveryId);
     expect(response.status).toBe(500);
-    expect(await response.json()).toMatchObject({ success: false, error: "storage unavailable" });
-    expect(await f.anchor()).toMatchObject({ outcome: "failed", error: "storage unavailable" });
+    expect(await response.json()).toMatchObject({ success: false, error: "Webhook processing failed. Retry the delivery." });
+    expect(await f.anchor()).toMatchObject({ outcome: "failed", error: "Webhook processing failed. Retry the delivery." });
     lookup.mockRestore();
     expect((await f.send(f.deliveryId)).status).toBe(200);
     expect(dispatch).toHaveBeenCalledTimes(1);

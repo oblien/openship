@@ -1,3 +1,5 @@
+export const WEBHOOK_HANDLER_FAILURE = "Webhook processing failed. Retry the delivery.";
+
 /**
  * Webhook types - shared across all webhook providers.
  *

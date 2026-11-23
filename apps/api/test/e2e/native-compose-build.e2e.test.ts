@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -197,6 +197,39 @@ describeDockerE2E("native Compose build batches", () => {
       (await executor.exec("docker ps -a --filter name=buildx_buildkit --format '{{.ID}}'")).trim(),
     ).toBe("");
   }, 180_000);
+
+  it("transfers an exact controller checkout to an isolated SSH builder", async () => {
+    const repo = join(directory, "source");
+    const branch = (await run("git", ["-C", repo, "branch", "--show-current"])).stdout.trim();
+    const revision = (await run("git", ["-C", repo, "rev-list", "--max-parents=0", "HEAD"])).stdout.trim();
+    const transferIn = executor.transferIn.bind(executor);
+    const transfer = vi.spyOn(executor, "transferIn").mockImplementation(async (source, ...args) => {
+      await expect(access(join(source, ".git"))).rejects.toMatchObject({ code: "ENOENT" });
+      return transferIn(source, ...args);
+    });
+    const build = await runtime.build({
+      ...specs("controller-checkout")[0]!.config,
+      localPath: undefined,
+      repoUrl: repo,
+      branch,
+      commitSha: revision,
+      cloneOnServer: true,
+      gitTokenHostOnly: true,
+    }, logger()).finally(() => transfer.mockRestore());
+    expect(build.status, logs.map((entry) => entry.message).join("\n")).toBe("deploying");
+    const container = await runtime.docker.createContainer({
+      Image: build.imageRef,
+      Cmd: ["cat", "/revision"],
+      NetworkDisabled: true,
+    });
+    try {
+      await container.start();
+      expect((await container.wait()).StatusCode).toBe(0);
+      expect(String(await container.logs({ stdout: true }))).toContain("first");
+    } finally {
+      await container.remove({ force: true });
+    }
+  }, 120_000);
 
   it("finishes sibling builds when one image fails", async () => {
     const repo = join(directory, "source");

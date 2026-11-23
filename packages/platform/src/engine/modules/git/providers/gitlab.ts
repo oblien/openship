@@ -69,6 +69,14 @@ const listRepositories: GitProvider["listRepositories"] = async (ctx, namespace)
   }));
 };
 
+function privateGitLabCloneRequiresDocker() {
+  return new AppError(
+    "Use Docker for private GitLab repository deployments. OpenShip checks out the repository on the controller and transfers the source to the build server.",
+    403,
+    "GITLAB_CONNECTION_REQUIRED",
+  );
+}
+
 async function resolveGitLabClone({
   ctx,
   owner,
@@ -97,21 +105,14 @@ async function resolveGitLabClone({
     connection = await projectConnection(ctx.organizationId, ref, allowHostCli);
   } catch (error) {
     if (!allowHostCli && isGitLabStatus(error, 401, 403, 404))
-      throw new AppError(
-        "Connect GitLab through OAuth or add a workspace access token for a private clone on the build server.",
-        403,
-        "GITLAB_CONNECTION_REQUIRED",
-      );
+      throw privateGitLabCloneRequiresDocker();
     throw error;
   }
   const { project, token } = connection;
   if (project.visibility === "public") return { anonymous: true };
   if (!token) throw connectionError();
-  return {
-    token,
-    tokenRepositories: [ref.name],
-    ...(allowApiHostFallback ? { apiHostFallback: true } : {}),
-  };
+  if (!allowHostCli) throw privateGitLabCloneRequiresDocker();
+  return { token, tokenRepositories: [ref.name], apiHostFallback: true };
 }
 
 export const gitlabProvider: GitProvider = {
@@ -190,23 +191,13 @@ export const gitlabProvider: GitProvider = {
       if (!input.ctx || !input.namespace || !input.name || !input.remoteCredential) return [];
       const base = { id: "gitlab-repository", label: "GitLab repository access" };
       try {
-        const { env } = await import("../../../config/env");
-        const grant = await resolveGitLabClone({
+        await resolveGitLabClone({
           ctx: input.ctx,
           owner: input.namespace,
           repo: input.name,
           buildStrategy: "server",
-          allowApiHostFallback: !env.CLOUD_MODE && input.dockerClonesOnTarget,
+          allowApiHostFallback: input.canStageSourceOnApiHost ?? input.dockerClonesOnTarget,
         });
-        if (grant.token && !grant.apiHostFallback && input.clonesOnRemote)
-          return [
-            {
-              ...base,
-              status: "warn",
-              message:
-                "The build host will use the workspace’s GitLab token. Use a project access token scoped to this repository.",
-            },
-          ];
         return [{ ...base, status: "pass" }];
       } catch (error) {
         /* diagnostics-ignore: preflight exposes the remediation, never a credential or upstream body. */ return [

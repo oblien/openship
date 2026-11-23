@@ -225,7 +225,7 @@ export function createProjectGitOperations(
           date: c.date,
           url: c.url,
         })),
-        auto_deploy: info.autoDeploy ?? false,
+        auto_deploy: Boolean(info.autoDeploy && webhookActive),
         github_checks: info.githubChecks,
         github_checks_delivery: info.githubChecksDelivery ? {
           error: info.githubChecksDelivery.error,
