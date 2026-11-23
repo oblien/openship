@@ -124,30 +124,38 @@ it("caps GitLab response bodies even without a Content-Length header", async () 
   expect(cancel).toHaveBeenCalledOnce();
 });
 
-it("creates a Cloud GitLab project without claiming auto-deploy is already enabled", async () => {
+it.each([
+  { provider: "gitlab", owner: ref.namespace, installationId: null },
+  { provider: "github", owner: "acme", installationId: null },
+  { provider: "github", owner: "acme", installationId: 17 },
+])("sets Cloud $provider auto-deploy using the resolved installation ($installationId)", async (scenario) => {
   const { organizationId, userId } = await seedOrg();
   const ctx = buildBackgroundContext({ organizationId, userId, label: "test" });
   const billing = await import("@repo/platform/engine/modules/billing/management.service");
   const { createProject } = await import("@repo/platform/engine/modules/projects/project-crud.service");
-  // This test covers the creation funnel independently of host billing.
   vi.spyOn(billing, "isCustomerServer").mockResolvedValue(true);
+  const lookup = vi.spyOn(getGitProvider(scenario.provider).connections, "installation")
+    .mockResolvedValue(scenario.installationId);
   const previousMode = env.CLOUD_MODE;
   env.CLOUD_MODE = true;
   try {
     const created = await createProject({
-      name: "Cloud GitLab project",
-      gitProvider: ref.provider,
-      gitOwner: ref.namespace,
+      name: "Cloud source project",
+      gitProvider: scenario.provider,
+      gitOwner: scenario.owner,
       gitRepo: ref.name,
       gitBranch: "main",
       installationId: 42,
     }, organizationId, undefined, ctx);
     expect(await repos.project.findById(created.id)).toMatchObject({
-      gitProvider: "gitlab",
-      autoDeploy: false,
+      gitProvider: scenario.provider,
+      autoDeploy: scenario.installationId !== null,
       webhookId: null,
-      installationId: null,
+      installationId: scenario.installationId,
     });
+    if (scenario.provider === "github") {
+      expect(lookup).toHaveBeenCalledWith(organizationId, scenario.owner);
+    }
   } finally {
     env.CLOUD_MODE = previousMode;
   }
@@ -386,45 +394,20 @@ it("links GitLab OAuth, rotates once across concurrent private repository reads 
   expect(
     transport.mock.calls.slice(1).map(([, init]) => new Headers(init.headers).get("authorization")),
   ).toEqual(["Bearer second", "Bearer second"]);
-  const clone = await adapter.resolveCloneCredentials({
+  const checkout = {
     ctx,
     projectId: "test",
     owner: ref.namespace,
     repo: ref.name,
     repoUrl: repo.web_url + ".git",
-    buildStrategy: "local",
-  });
-  expect(clone).toMatchObject({
-    token: "second",
-    tokenRepositories: [ref.name],
-    apiHostFallback: true,
-  });
-  const local = {
-    ctx, projectId: "test", owner: ref.namespace, repo: ref.name, buildStrategy: "local" as const,
   };
-  const remote = { ...local, buildStrategy: "server" as const, allowApiHostFallback: true };
-  await expect(adapter.resolveCloneCredentials(remote)).rejects.toMatchObject({
-    code: "GITLAB_REMOTE_CLONE_UNAVAILABLE",
-  });
-
+  const clone = await adapter.resolveCloneCredentials({ ...checkout, buildStrategy: "local" });
+  expect(clone).toMatchObject({ token: "second", tokenRepositories: [ref.name] });
   const previousMode = env.CLOUD_MODE;
   env.CLOUD_MODE = true;
   try {
-    for (const options of [local, remote]) {
-      await expect(adapter.resolveCloneCredentials(options)).rejects.toMatchObject({
-        code: "GITLAB_REMOTE_CLONE_UNAVAILABLE",
-      });
-    }
-    expect(await adapter.preflight!.checks({
-      ctx,
-      namespace: ref.namespace,
-      name: ref.name,
-      effectiveTarget: "cloud",
-      platformTarget: "self-hosted",
-      remoteCredential: false,
-      clonesOnRemote: false,
-      dockerClonesOnTarget: false,
-    })).toMatchObject([{ status: "fail", code: "GITLAB_REMOTE_CLONE_UNAVAILABLE" }]);
+    const remote = await adapter.resolveCloneCredentials({ ...checkout, buildStrategy: "server" });
+    expect(remote).toEqual({ token: "second", tokenRepositories: [ref.name] });
   } finally {
     env.CLOUD_MODE = previousMode;
   }
@@ -493,16 +476,15 @@ it("uses the host CLI only after operator consent, binds its account and never c
     { status: "fail", code: "GITLAB_CONNECTION_REQUIRED" },
   ]);
   expect(probe).not.toHaveBeenCalled();
-  await expect(
-    adapter.resolveCloneCredentials({ ...clone, allowApiHostFallback: true }),
-  ).rejects.toMatchObject({ code: "GITLAB_CONNECTION_REQUIRED" });
-  expect(probe).not.toHaveBeenCalled();
   expect(
-    await adapter.resolveCloneCredentials({ ...clone, buildStrategy: "local" }),
+    await adapter.resolveCloneCredentials({ ...clone, allowApiHostFallback: true }),
   ).toMatchObject({
     token: "cli-secret",
     apiHostFallback: true,
   });
+  expect(
+    await adapter.preflight!.checks({ ...preflight, dockerClonesOnTarget: true }),
+  ).toMatchObject([{ status: "pass" }]);
   account.id = 12;
   await expect(adapter.listRepositories(ctx)).rejects.toThrow("account changed");
   const previous = env.CLOUD_MODE;

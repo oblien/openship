@@ -1201,8 +1201,8 @@ async function executeBuildAndDeploy(
     // must agree or a rollback resolves a git token it has no use for.
 
 
-    const gitCred: Awaited<ReturnType<typeof resolveBuildGitCredentials>> = gitProvider
-      ? await resolveBuildGitCredentials(gitProvider.id, {
+    const gitCred: Awaited<ReturnType<typeof resolveBuildGitCredentials>> = needsGitSource
+      ? await resolveBuildGitCredentials(project.gitProvider ?? DEFAULT_GIT_PROVIDER, {
           ctx: buildBackgroundContext({
             userId: actorUserId,
             organizationId: dep.organizationId,

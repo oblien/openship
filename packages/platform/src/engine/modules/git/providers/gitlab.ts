@@ -69,25 +69,16 @@ const listRepositories: GitProvider["listRepositories"] = async (ctx, namespace)
   }));
 };
 
-function privateGitLabCloneUnavailable(isHosted: boolean) {
-  return new AppError(
-    isHosted
-      ? "Private GitLab checkout is unavailable on OpenShip Cloud. The workspace connection can still browse repositories and manage webhooks."
-      : "This build needs GitLab checkout on the destination. Use API-host source preparation with a trusted self-hosted Docker controller.",
-    403,
-    "GITLAB_REMOTE_CLONE_UNAVAILABLE",
-  );
-}
-
 async function resolveGitLabClone({
   ctx,
   owner,
   repo,
   repoUrl,
   buildStrategy,
+  allowApiHostFallback,
 }: Pick<
   GitCloneOptions,
-  "ctx" | "owner" | "repo" | "repoUrl" | "buildStrategy"
+  "ctx" | "owner" | "repo" | "repoUrl" | "buildStrategy" | "allowApiHostFallback"
 >): Promise<BuildGitCredential> {
   if (!owner || !repo) return {};
   const ref = { provider: id, namespace: owner, name: repo };
@@ -100,20 +91,27 @@ async function resolveGitLabClone({
     );
   if (!(await gitlabAccess.canUse(ctx, { owner, repo }, "read")))
     throw new AppError("GitLab repository access denied", 403);
-  const { env } = await import("../../../config/env");
-  const controllerCheckout = !env.CLOUD_MODE && buildStrategy === "local";
+  const allowHostCli = buildStrategy === "local" || allowApiHostFallback === true;
   let connection;
   try {
-    connection = await projectConnection(ctx.organizationId, ref, controllerCheckout);
+    connection = await projectConnection(ctx.organizationId, ref, allowHostCli);
   } catch (error) {
-    if (isGitLabStatus(error, 401, 403, 404)) throw connectionError();
+    if (!allowHostCli && isGitLabStatus(error, 401, 403, 404))
+      throw new AppError(
+        "Connect GitLab through OAuth or add a workspace access token for a private clone on the build server.",
+        403,
+        "GITLAB_CONNECTION_REQUIRED",
+      );
     throw error;
   }
   const { project, token } = connection;
   if (project.visibility === "public") return { anonymous: true };
   if (!token) throw connectionError();
-  if (!controllerCheckout) throw privateGitLabCloneUnavailable(env.CLOUD_MODE);
-  return { token, tokenRepositories: [ref.name], apiHostFallback: true };
+  return {
+    token,
+    tokenRepositories: [ref.name],
+    ...(allowApiHostFallback ? { apiHostFallback: true } : {}),
+  };
 }
 
 export const gitlabProvider: GitProvider = {
@@ -189,27 +187,39 @@ export const gitlabProvider: GitProvider = {
       }
     },
     async checks(input) {
-      if (!input.ctx || !input.namespace || !input.name) return [];
-      if (!input.remoteCredential) {
-        const { env } = await import("../../../config/env");
-        if (!env.CLOUD_MODE) return [];
-      }
+      if (!input.ctx || !input.namespace || !input.name || !input.remoteCredential) return [];
       const base = { id: "gitlab-repository", label: "GitLab repository access" };
       try {
-        await resolveGitLabClone({
+        const { env } = await import("../../../config/env");
+        const grant = await resolveGitLabClone({
           ctx: input.ctx,
           owner: input.namespace,
           repo: input.name,
           buildStrategy: "server",
+          allowApiHostFallback: !env.CLOUD_MODE && input.dockerClonesOnTarget,
         });
+        if (grant.token && !grant.apiHostFallback && input.clonesOnRemote)
+          return [
+            {
+              ...base,
+              status: "warn",
+              message:
+                "The build host will use the workspace’s GitLab token. Use a project access token scoped to this repository.",
+            },
+          ];
         return [{ ...base, status: "pass" }];
       } catch (error) {
-        // diagnostics-ignore: expose only the known, user-facing GitLab errors.
-        const failure =
-          error instanceof AppError && error.code === "GITLAB_REMOTE_CLONE_UNAVAILABLE"
-            ? error
-            : connectionError();
-        return [{ ...base, status: "fail", code: failure.code, message: failure.message }];
+        /* diagnostics-ignore: preflight exposes the remediation, never a credential or upstream body. */ return [
+          {
+            ...base,
+            status: "fail",
+            code: "GITLAB_CONNECTION_REQUIRED",
+            message:
+              error instanceof AppError && error.code === "GITLAB_CONNECTION_REQUIRED"
+                ? error.message
+                : connectionError().message,
+          },
+        ];
       }
     },
   },

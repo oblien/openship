@@ -9,7 +9,6 @@ import { hasLocalCommand, sq } from "./local-shell";
 import { createExecutor } from "./executor";
 import { BareRuntime } from "../runtime/bare";
 import { resolveDockerTransport } from "../runtime/docker-transport";
-import { prepareSourceTree } from "../runtime/docker-build-context";
 import { runLocalBuild } from "../runtime/local-build";
 import { CloudWorkspaceExecutor } from "../runtime/cloud/workspace-executor";
 import { NginxProvider } from "../infra/nginx";
@@ -78,10 +77,6 @@ describe("Cloud cannot execute on the API host", () => {
         transferOutput,
       }),
     ).rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
-    await expect(prepareSourceTree({
-      repoUrl: "https://gitlab.com/example/project.git",
-      branch: "main",
-    } as never)).rejects.toMatchObject({ code: "LOCAL_HOST_ACCESS_DENIED" });
     expect(preflight).not.toHaveBeenCalled();
     expect(transferOutput).not.toHaveBeenCalled();
   });

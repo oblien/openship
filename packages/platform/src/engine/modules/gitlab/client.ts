@@ -68,6 +68,7 @@ export async function gitlabRequest<T>(
   try {
     return JSON.parse(await readBoundedResponseText(response, MAX_RESPONSE_BYTES, "GitLab response")) as T;
   } catch {
+    init.signal?.throwIfAborted();
     throw new AppError(
       "GitLab returned an invalid or oversized response.",
       502,
