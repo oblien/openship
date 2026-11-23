@@ -25,6 +25,7 @@ import {
   createComposeInterpolationDiagnostics,
   readComposeGpuConfig,
   readComposeShmConfig,
+  normalizeProjectRootDirectory,
 } from "@repo/core";
 import type {
   ComposeAdvanced,
@@ -150,6 +151,19 @@ export interface ComposeParseOptions {
   envFileContent?: string | string[];
   /** Explicit interpolation values. Overrides values loaded from envFileContent. */
   env?: Record<string, string>;
+  /**
+   * Directory the compose file lives in, relative to the repository root
+   * ("" or omitted = the root itself). Service `env_file` paths resolve
+   * against it — the same base Compose itself uses.
+   */
+  composeDirectory?: string;
+  /**
+   * Contents of files named by service `env_file`, keyed by the normalized
+   * repo-relative path (see {@link composeEnvFilePaths}). An absent entry
+   * means the file could not be read: its variables are then reported on
+   * `unsupported` rather than dropped silently (#533).
+   */
+  envFileContents?: Record<string, string | undefined>;
 }
 
 // ─── Parser ──────────────────────────────────────────────────────────────────
@@ -200,6 +214,17 @@ export function parseComposeFile(
     const svc = def as Record<string, unknown>;
     const build = parseBuild(svc.build, interpolationEnv);
     const environment = parseEnvironment(svc.environment, interpolationEnv);
+    // `env_file:` vars are dotenv lines, not Compose expressions: they merge
+    // BELOW `environment:` (Compose's own precedence) and stay literal (#1854).
+    const envFiles = parseServiceEnvFiles(
+      svc.env_file,
+      name,
+      interpolationEnv,
+      options,
+      unsupported,
+    );
+    const environmentValues = { ...envFiles.values, ...environment.values };
+    const environmentMetadata = { ...envFiles.metadata, ...environment.metadata };
     const rawImage = typeof svc.image === "string" ? svc.image : undefined;
     const image =
       rawImage === undefined ? undefined : resolveComposeInterpolation(rawImage, interpolationEnv);
@@ -241,7 +266,8 @@ export function parseComposeFile(
     // no `args` key, so removing that key clears previously stored args through
     // non-authoritative snapshot-safe sync paths. A legacy snapshot has no marker
     // and therefore still treats an omitted buildArgs field as "no opinion".
-    const hasEnvironmentDeclaration = Object.hasOwn(svc, "environment");
+    const hasEnvironmentDeclaration =
+      Object.hasOwn(svc, "environment") || Object.hasOwn(svc, "env_file");
     const hasBuildDeclaration = Object.hasOwn(svc, "build");
     const advanced: ComposeAdvanced | undefined =
       parsedAdvanced ||
@@ -274,12 +300,12 @@ export function parseComposeFile(
       ports: parsePorts(svc.ports, interpolationEnv),
       ...(exposePorts.length > 0 && { expose: exposePorts }),
       dependsOn: parseDependsOn(svc.depends_on),
-      environment: environment.values,
+      environment: environmentValues,
       ...(Object.keys(environment.templates).length > 0 && {
         environmentTemplates: environment.templates,
       }),
-      ...(Object.keys(environment.metadata).length > 0 && {
-        environmentMeta: environment.metadata,
+      ...(Object.keys(environmentMetadata).length > 0 && {
+        environmentMeta: environmentMetadata,
       }),
       volumes: parseVolumes(svc.volumes, interpolationEnv),
       command: parsedCommand.command,
@@ -808,6 +834,8 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   links: "links is legacy and not modeled — services already resolve by service name.",
   external_links: "external_links is not modeled — link the app as a service connection instead.",
   // ── Compose model ──
+  // `env_file` is modeled — see parseServiceEnvFiles (env merge + per-file
+  // warnings for what could not be read).
   configs: "configs is not modeled — use a bind-mounted file instead.",
   secrets: "secrets is not modeled — use environment variables instead.",
   volumes_from: "volumes_from is legacy and not modeled — declare the volume on both services.",
@@ -914,6 +942,208 @@ function collectUnsupportedMounts(
       unsupported.push({ service: serviceName, ...issue });
     }
   }
+}
+
+// ─── Service env_file ────────────────────────────────────────────────────────
+
+/** One `env_file` declaration, normalized to what the parser can act on. */
+interface ResolvedEnvFileEntry {
+  /** The path as interpolated from the file — what the warning quotes. */
+  declared: string;
+  /**
+   * Repo-relative path resolved against `composeDirectory`, or undefined when
+   * the declaration cannot name a file inside the repository (absolute, `~`,
+   * or `..` above the root). The caller reads exactly these paths.
+   */
+  resolved?: string;
+  /** `required: false` lets Compose ignore a missing file — so do we. */
+  required: boolean;
+  /** `format: raw` keeps each line verbatim; dotenv (the default) unquotes. */
+  format: "dotenv" | "raw";
+  /** The entry was not a usable declaration at all (no path). */
+  malformed?: boolean;
+}
+
+/**
+ * Normalize `service.env_file` — a string, a list mixing strings and long-form
+ * `{path, required, format}` objects — into resolved entries. Anything that
+ * isn't a declaration at all lands in `malformed` so the caller can report it
+ * instead of dropping it (#533).
+ */
+function resolveServiceEnvFiles(
+  raw: unknown,
+  interpolationEnv: Record<string, string>,
+  composeDirectory: string | undefined,
+): ResolvedEnvFileEntry[] {
+  if (!requestsSomething(raw)) return [];
+  const items = typeof raw === "string" ? [raw] : Array.isArray(raw) ? raw : [raw];
+  const entries: ResolvedEnvFileEntry[] = [];
+  for (const item of items) {
+    if (typeof item === "string") {
+      const declared = interpolateComposeString(item, interpolationEnv);
+      entries.push({
+        declared,
+        resolved: resolveComposeEnvFilePath(declared, composeDirectory),
+        required: true,
+        format: "dotenv",
+      });
+      continue;
+    }
+    if (item && typeof item === "object") {
+      const obj = item as Record<string, unknown>;
+      if (typeof obj.path === "string") {
+        const declared = interpolateComposeString(obj.path, interpolationEnv);
+        entries.push({
+          declared,
+          resolved: resolveComposeEnvFilePath(declared, composeDirectory),
+          required: obj.required !== false,
+          format: obj.format === "raw" ? "raw" : "dotenv",
+        });
+      } else if (Object.keys(obj).length > 0) {
+        entries.push({ declared: "", required: true, format: "dotenv", malformed: true });
+      }
+      continue;
+    }
+    entries.push({ declared: "", required: true, format: "dotenv", malformed: true });
+  }
+  return entries;
+}
+
+/**
+ * Resolve a declared `env_file` path to a repo-relative path, or undefined when
+ * it cannot live inside the repository. Compose resolves these against the
+ * compose file's directory; `..` may climb within the repo but not above its
+ * root, and absolute/`~`/drive paths name host files a source scan can't read.
+ */
+function resolveComposeEnvFilePath(
+  declared: string,
+  composeDirectory: string | undefined,
+): string | undefined {
+  const path = declared.trim();
+  if (!path) return undefined;
+  if (
+    path.startsWith("/") ||
+    path.startsWith("\\") ||
+    path.startsWith("~") ||
+    /^[A-Za-z]:[\\/]/.test(path)
+  ) {
+    return undefined;
+  }
+  const segments = normalizeProjectRootDirectory(composeDirectory).split("/").filter(Boolean);
+  for (const part of path.split(/[\\/]/)) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (segments.length === 0) return undefined;
+      segments.pop();
+      continue;
+    }
+    segments.push(part);
+  }
+  return segments.join("/") || undefined;
+}
+
+/** `env_file` `format: raw` — literal `KEY=VALUE` lines, no dotenv unquoting. */
+function parseRawEnvFile(content: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    result[key] = trimmed.slice(eq + 1);
+  }
+  return result;
+}
+
+/**
+ * Read a service's `env_file` declarations into environment values + metadata,
+ * reporting every file that could not be read on `unsupported` (#533/#1854).
+ * Values merge BELOW `environment:` — the caller overlays that map on top.
+ */
+function parseServiceEnvFiles(
+  raw: unknown,
+  serviceName: string,
+  interpolationEnv: Record<string, string>,
+  options: ComposeParseOptions,
+  unsupported: ComposeUnsupportedField[],
+): {
+  values: Record<string, string>;
+  metadata: Record<string, ComposeEnvironmentMeta>;
+} {
+  const values: Record<string, string> = {};
+  const metadata: Record<string, ComposeEnvironmentMeta> = {};
+  for (const entry of resolveServiceEnvFiles(raw, interpolationEnv, options.composeDirectory)) {
+    if (entry.malformed) {
+      unsupported.push({
+        service: serviceName,
+        field: "env_file",
+        reason: "An env_file entry is not a file path — its variables are not imported.",
+      });
+      continue;
+    }
+    if (!entry.resolved) {
+      unsupported.push({
+        service: serviceName,
+        field: "env_file",
+        reason: `env_file "${entry.declared}" is not a path inside the repository — its variables are not imported.`,
+      });
+      continue;
+    }
+    const content = options.envFileContents?.[entry.resolved];
+    if (content === undefined) {
+      // `required: false` is Compose's own opt-out for a missing file.
+      if (entry.required) {
+        unsupported.push({
+          service: serviceName,
+          field: "env_file",
+          reason:
+            options.envFileContents === undefined
+              ? `env_file "${entry.declared}" is not read by this import — its variables are not imported.`
+              : `env_file "${entry.declared}" could not be read — its variables are not imported.`,
+        });
+      }
+      continue;
+    }
+    const parsed = entry.format === "raw" ? parseRawEnvFile(content) : parseComposeEnvFile(content);
+    for (const [key, value] of Object.entries(parsed)) {
+      values[key] = value;
+      metadata[key] = { source: "env-file", resolvedValue: value };
+    }
+  }
+  return { values, metadata };
+}
+
+/**
+ * Repo-relative paths a compose file's services name via `env_file`, resolved
+ * against `composeDirectory`. A caller reads exactly these through its source
+ * reader and hands the contents back as `envFileContents`. Paths that cannot
+ * live inside the repository are omitted — the parser reports those itself.
+ */
+export function composeEnvFilePaths(
+  content: string,
+  options: Pick<ComposeParseOptions, "envFileContent" | "env" | "composeDirectory"> = {},
+): string[] {
+  const doc = parseYaml(content, { merge: true });
+  if (!doc || typeof doc !== "object") return [];
+  const services = (doc as Record<string, unknown>).services;
+  if (!services || typeof services !== "object") return [];
+  const interpolationEnv = buildInterpolationEnv(options);
+  const paths = new Set<string>();
+  for (const def of Object.values(services as Record<string, unknown>)) {
+    if (!def || typeof def !== "object") continue;
+    const svc = def as Record<string, unknown>;
+    if (!Object.hasOwn(svc, "env_file")) continue;
+    for (const entry of resolveServiceEnvFiles(
+      svc.env_file,
+      interpolationEnv,
+      options.composeDirectory,
+    )) {
+      if (entry.resolved) paths.add(entry.resolved);
+    }
+  }
+  return [...paths];
 }
 
 /**

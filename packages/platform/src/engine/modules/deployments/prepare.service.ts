@@ -13,6 +13,7 @@ import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
 import {
   blockingComposeFields,
+  composeEnvFilePaths,
   describeBlockingComposeFields,
   parseComposeEnvFile,
   parseComposeFile,
@@ -965,6 +966,36 @@ async function readComposeText(
 }
 
 /**
+ * Read every repo file a compose `env_file:` names, keyed by its resolved
+ * repo-relative path — the map {@link parseComposeFile} consumes as
+ * `envFileContents`. A path the reader can't return stays absent so the
+ * parser reports it on `unsupported` rather than dropping it silently (#1854).
+ * An unparsable compose file yields nothing here; toProjectInfo surfaces the
+ * real parse error.
+ */
+async function readComposeEnvFileContents(
+  reader: ProjectReader,
+  composeContent: string,
+  options: {
+    envFileContent?: string;
+    env?: Record<string, string>;
+    composeDirectory?: string;
+  },
+): Promise<Record<string, string | undefined>> {
+  let paths: string[];
+  try {
+    paths = composeEnvFilePaths(composeContent, options);
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/prepare.service");
+    return {};
+  }
+  const entries = await Promise.all(
+    paths.map(async (path) => [path, await reader.readText(path)] as const),
+  );
+  return Object.fromEntries(entries);
+}
+
+/**
  * Resolve project info from either a GitHub repo or a local filesystem path.
  * Both paths converge on detectStack and return the same ProjectInfo shape.
  */
@@ -1133,6 +1164,21 @@ export async function resolveFromReader(
     );
   }
 
+  // Service `env_file:` targets resolve against the compose file's directory —
+  // the same base Compose itself uses. Read them through the same reader so the
+  // parser can merge their variables below `environment:` (#1854).
+  const envFileContents =
+    composeContent && !useNativeServices
+      ? await readComposeEnvFileContents(reader, composeContent, {
+          envFileContent: composeEnvContent,
+          env: {
+            ...(openship.config?.env ? envMapToRecord(openship.config.env) : {}),
+            ...(opts.env ?? {}),
+          },
+          composeDirectory: root.selected.rootDirectory,
+        })
+      : undefined;
+
   const info = toProjectInfo(
     repoMeta,
     root.selected,
@@ -1153,6 +1199,7 @@ export async function resolveFromReader(
         ...(openship.config?.env ? envMapToRecord(openship.config.env) : {}),
         ...(opts.env ?? {}),
       },
+      envFileContents,
     },
   );
   if (openship.diagnostics) info.configDiagnostics = openship.diagnostics;
@@ -1252,6 +1299,10 @@ function toProjectInfo(
     declaredCompose?: boolean;
     /** See {@link ResolveOptions.env}. */
     env?: Record<string, string>;
+    /** Contents of service `env_file` targets, keyed by resolved repo path
+     *  (see {@link composeEnvFilePaths}). Undefined = nothing was read, so the
+     *  parser reports each declared file it cannot see (#1854). */
+    envFileContents?: Record<string, string | undefined>;
   },
 ): ProjectInfo {
   const stack = projectRoot.stack;
@@ -1265,6 +1316,8 @@ function toProjectInfo(
       const parsed = parseComposeFile(composeContent, {
         envFileContent: composeEnvContent,
         env: opts?.env,
+        composeDirectory: projectRoot.rootDirectory,
+        envFileContents: opts?.envFileContents,
       });
       services = parsed.services;
       // Values the file demands (`${VAR:?…}`) that nothing here supplied. NOT an
