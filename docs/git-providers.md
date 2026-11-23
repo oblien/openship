@@ -34,6 +34,10 @@ provider when another provider is selected in the picker. A reachable OpenShip A
 or a verified project domain can receive signed GitLab pushes. Private builds that
 clone on a remote worker require trusting that worker with the clone credential.
 
+For a new Cloud GitLab project, enable Auto Deploy from the project's Git
+settings. OpenShip uses the connected account to register the repository webhook.
+The account or token needs permission to manage project webhooks.
+
 GitLab implements browsing, stack detection, cloning and push deployments. GitHub
 App installation, check runs, pull-request previews, source edits and Actions remain
 GitHub capabilities. Self-managed GitLab origins are outside this adapter.

@@ -12,6 +12,7 @@
 
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context } from "hono";
+import { WEBHOOK_HANDLER_FAILURE } from "@repo/platform/engine/modules/webhooks/webhook.types";
 import { getWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
 /** The registered handlers are the allowlist. Unregistered names never reach verification. */
 export async function handleWebhook(c: Context) {
@@ -43,8 +44,7 @@ export async function handleWebhook(c: Context) {
     // Failed dispatches must remain visible and redeliverable at the provider.
     return c.json(result, result.success ? 200 : 500);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Internal handler error";
     errorDiagnostics.error("api/modules/webhooks/webhook.controller", `[Webhook] ${provider.name} handler error:`, err);
-    return c.json({ success: false, error: message }, 500);
+    return c.json({ success: false, error: WEBHOOK_HANDLER_FAILURE }, 500);
   }
 }

@@ -1,5 +1,8 @@
 import { AppError, GITLAB_PROVIDER, type GitRepositoryRef } from "@repo/core";
 import type { GitRepositorySummary } from "@repo/contracts";
+import { readBoundedResponseText } from "../../lib/bounded-response";
+
+const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export interface GitLabProject {
   id: number;
@@ -61,7 +64,17 @@ export async function gitlabRequest<T>(
       "GITLAB_API_ERROR",
     );
   }
-  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+  if (response.status === 204) return undefined as T;
+  try {
+    return JSON.parse(await readBoundedResponseText(response, MAX_RESPONSE_BYTES, "GitLab response")) as T;
+  } catch {
+    init.signal?.throwIfAborted();
+    throw new AppError(
+      "GitLab returned an invalid or oversized response.",
+      502,
+      "GITLAB_RESPONSE_INVALID",
+    );
+  }
 }
 
 export function isGitLabStatus(error: unknown, ...statuses: number[]) {

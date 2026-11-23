@@ -1,8 +1,9 @@
 import { repos } from "@repo/db";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import type {
-  WebhookHandlerResult,
-  WebhookProviderName,
+import {
+  WEBHOOK_HANDLER_FAILURE,
+  type WebhookHandlerResult,
+  type WebhookProviderName,
 } from "@repo/platform/engine/modules/webhooks/webhook.types";
 
 export async function processGitDelivery(
@@ -38,7 +39,7 @@ export async function processGitDelivery(
         .markProcessed(anchorId, {
           outcome: "failed",
           statusCode: 500,
-          error: error instanceof Error ? error.message : "Webhook handler failed",
+          error: WEBHOOK_HANDLER_FAILURE,
           summary: { handledProjectIds: [...handledProjectIds] },
         })
         .catch((diagnosticFailure) => {

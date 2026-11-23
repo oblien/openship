@@ -1,4 +1,5 @@
 import { env } from "../../config/env";
+import { readBoundedResponseText } from "../../lib/bounded-response";
 import {
   securityAdvisoryAppliesToMode,
   RELEASES_LATEST_API,
@@ -17,28 +18,8 @@ import { verifySecurityManifest } from "./security-signature";
 
 const MAX_BYTES = 1_000_000;
 const SECURITY_CACHE_ID = "security:v2";
-async function readText(response: Response): Promise<string> {
-  if (Number(response.headers.get("content-length")) > MAX_BYTES)
-    throw new Error("Advisory response is too large.");
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("Advisory response is empty.");
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  try {
-    for (;;) {
-      const result = await reader.read();
-      if (result.done) break;
-      length += result.value.length;
-      if (length > MAX_BYTES) throw new Error("Advisory response is too large.");
-      chunks.push(result.value);
-    }
-  } finally {
-    await reader.cancel().catch(() => {
-      // diagnostics-ignore: stream cleanup must not replace the primary read failure.
-    });
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
+const readText = (response: Response) =>
+  readBoundedResponseText(response, MAX_BYTES, "Advisory response");
 const readJson = async (response: Response): Promise<unknown> =>
   JSON.parse(await readText(response));
 

@@ -5,7 +5,8 @@ import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assembleGitClone } from "@repo/adapters";
+import { assembleGitClone, BuildLogger, DockerRuntime } from "@repo/adapters";
+import { UNLIMITED_RESOURCES } from "@repo/core";
 import { getGitProvider } from "@repo/platform/engine/modules/git/provider";
 import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import { serve } from "@hono/node-server";
@@ -162,3 +163,92 @@ it("checks out a public GitLab repository using the deployment clone credentials
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+it.skipIf(process.env.RUN_DOCKER_E2E !== "1")(
+  "builds and serves a pinned public GitLab.com repository over HTTP",
+  async () => {
+    env.CLOUD_MODE = false;
+    const { requireDocker } = await import("../helpers/docker-e2e");
+    await requireDocker();
+    const owner = await seedOwner();
+    const client = liveClient(owner);
+    const source = { provider: "gitlab", owner: "pages", repo: "plain-html" };
+    const info = await client.git.getRepo(source);
+    const branch = info.default_branch;
+    const branches = await client.git.listBranches(source);
+    const revision = branches.data.find((entry) => entry.name === branch)!.sha;
+    const page = await client.git.getFile({
+      ...source,
+      file: "public/index.html",
+      branch: revision,
+    });
+    const ctx = buildBackgroundContext({
+      userId: owner.userId,
+      organizationId: owner.orgId,
+      label: "live-gitlab-deploy",
+    });
+    const provider = getGitProvider(source.provider);
+    const ref = { provider: source.provider, namespace: source.owner, name: source.repo };
+    const repoUrl = (await provider.cloneUrl(owner.orgId, ref))!;
+    const projectId = "gitlab-live-" + randomUUID();
+    const credentials = await provider.resolveCloneCredentials({
+      ctx, projectId, repoUrl, owner: ref.namespace, repo: ref.name, buildStrategy: "local",
+    });
+    expect(credentials).toEqual({ anonymous: true });
+
+    const runtime = await DockerRuntime.create({ transport: "socket" });
+    const logs: string[] = [];
+    const logger = new BuildLogger((entry) => logs.push(entry.message));
+    let imageRef: string | undefined;
+    let containerId: string | undefined;
+    try {
+      const result = await runtime.build({
+        sessionId: randomUUID(),
+        projectId,
+        slug: projectId,
+        repoUrl,
+        branch,
+        commitSha: revision,
+        stack: "static",
+        buildImage: "alpine:3.21",
+        packageManager: "npm",
+        installCommand: "",
+        buildCommand: "",
+        startCommand: "",
+        outputDirectory: "public",
+        rootDirectory: "",
+        port: 8080,
+        isStatic: true,
+        hasServer: false,
+        envVars: {},
+        resources: UNLIMITED_RESOURCES,
+      }, logger);
+      imageRef = result.imageRef;
+      expect(result.status, logs.join("\n")).toBe("deploying");
+      const deployed = await runtime.deploy({
+        deploymentId: randomUUID(),
+        projectId,
+        imageRef: imageRef!,
+        stack: "static",
+        startCommand: "",
+        port: 8080,
+        envVars: {},
+        resources: UNLIMITED_RESOURCES,
+      });
+      containerId = deployed.containerId;
+      expect(containerId).toBeTruthy();
+      const container = await runtime.docker.getContainer(containerId!).inspect();
+      const port = container.NetworkSettings.Ports["8080/tcp"]?.[0]?.HostPort;
+      expect(port).toBeTruthy();
+      await expect.poll(async () => {
+        const response = await fetch(`http://127.0.0.1:${port}/`).catch(() => null);
+        return response?.ok ? (await response.text()) : null;
+      }, { timeout: 20_000 }).toBe(page.content);
+    } finally {
+      if (containerId) await runtime.docker.getContainer(containerId).remove({ force: true });
+      if (imageRef) await runtime.docker.getImage(imageRef).remove();
+      await runtime.dispose();
+    }
+  },
+  180_000,
+);

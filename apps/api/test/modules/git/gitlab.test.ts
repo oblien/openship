@@ -1,4 +1,4 @@
-import "@repo/platform/engine/config/env";
+import { env } from "@repo/platform/engine/config/env";
 import { createHmac, randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { afterEach, expect, it, vi } from "vitest";
@@ -106,6 +106,61 @@ it("offers reconnection for a revoked token and preserves retryable provider err
   }
 });
 
+it("caps GitLab response bodies even without a Content-Length header", async () => {
+  const { gitlabRequest } = await import("@repo/platform/engine/modules/gitlab/client");
+  const cancel = vi.fn();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const chunk = new Uint8Array(1024 * 1024);
+      for (let count = 0; count < 17; count++) controller.enqueue(chunk);
+    },
+    cancel,
+  });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+  await expect(gitlabRequest("projects")).rejects.toMatchObject({
+    statusCode: 502,
+    code: "GITLAB_RESPONSE_INVALID",
+  });
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
+it.each([
+  { provider: "gitlab", owner: ref.namespace, installationId: null },
+  { provider: "github", owner: "acme", installationId: null },
+  { provider: "github", owner: "acme", installationId: 17 },
+])("sets Cloud $provider auto-deploy using the resolved installation ($installationId)", async (scenario) => {
+  const { organizationId, userId } = await seedOrg();
+  const ctx = buildBackgroundContext({ organizationId, userId, label: "test" });
+  const billing = await import("@repo/platform/engine/modules/billing/management.service");
+  const { createProject } = await import("@repo/platform/engine/modules/projects/project-crud.service");
+  vi.spyOn(billing, "isCustomerServer").mockResolvedValue(true);
+  const lookup = vi.spyOn(getGitProvider(scenario.provider).connections, "installation")
+    .mockResolvedValue(scenario.installationId);
+  const previousMode = env.CLOUD_MODE;
+  env.CLOUD_MODE = true;
+  try {
+    const created = await createProject({
+      name: "Cloud source project",
+      gitProvider: scenario.provider,
+      gitOwner: scenario.owner,
+      gitRepo: ref.name,
+      gitBranch: "main",
+      installationId: 42,
+    }, organizationId, undefined, ctx);
+    expect(await repos.project.findById(created.id)).toMatchObject({
+      gitProvider: scenario.provider,
+      autoDeploy: scenario.installationId !== null,
+      webhookId: null,
+      installationId: scenario.installationId,
+    });
+    if (scenario.provider === "github") {
+      expect(lookup).toHaveBeenCalledWith(organizationId, scenario.owner);
+    }
+  } finally {
+    env.CLOUD_MODE = previousMode;
+  }
+});
+
 it("dispatches a signed subgroup push once to the intended provider and workspace", async () => {
   const { organizationId, userId } = await seedOrg();
   const other = await seedOrg();
@@ -116,7 +171,7 @@ it("dispatches a signed subgroup push once to the intended provider and workspac
     gitBranch: "main",
     autoDeploy: true,
   };
-  const project = await seedProject(organizationId, fields);
+  const project = await seedProject(organizationId, { ...fields, autoDeploy: false });
   const otherProject = await seedProject(other.organizationId, fields);
   await seedProject(organizationId, { ...fields, gitProvider: "github" });
   const hooks: Array<{ id: number; name: string; url: string; push_events: boolean }> = [];
@@ -151,8 +206,19 @@ it("dispatches a signed subgroup push once to the intended provider and workspac
   });
   const ctx = buildBackgroundContext({ organizationId, userId, label: "test" });
   const webhook = adapter.repository(ctx, ref).webhooks!;
-  const opts = { projectId: project.id, url: "https://openship.example/api/webhooks/gitlab" };
-  expect(await ensureSharedWebhook(ctx, project, ref, opts.url)).toBe("15");
+  const previousUrl = env.OPENSHIP_PUBLIC_URL;
+  env.OPENSHIP_PUBLIC_URL = "https://openship.example";
+  try {
+    expect(hooks).toHaveLength(0);
+    await createProjectGitOperations(vi.fn()).setAutoDeploy(ctx, project.id, { enabled: true });
+    expect(await repos.project.findById(project.id)).toMatchObject({
+      autoDeploy: true,
+      webhookId: "15",
+    });
+  } finally {
+    env.OPENSHIP_PUBLIC_URL = previousUrl;
+  }
+  const opts = { projectId: project.id, url: hooks[0]!.url };
   expect(await ensureSharedWebhook(ctx, project, ref, opts.url)).toBe("15");
   expect(hooks).toHaveLength(1);
   expect(tokens).toHaveLength(2);
@@ -328,15 +394,23 @@ it("links GitLab OAuth, rotates once across concurrent private repository reads 
   expect(
     transport.mock.calls.slice(1).map(([, init]) => new Headers(init.headers).get("authorization")),
   ).toEqual(["Bearer second", "Bearer second"]);
-  const clone = await adapter.resolveCloneCredentials({
+  const checkout = {
     ctx,
     projectId: "test",
     owner: ref.namespace,
     repo: ref.name,
     repoUrl: repo.web_url + ".git",
-    buildStrategy: "local",
-  });
+  };
+  const clone = await adapter.resolveCloneCredentials({ ...checkout, buildStrategy: "local" });
   expect(clone).toMatchObject({ token: "second", tokenRepositories: [ref.name] });
+  const previousMode = env.CLOUD_MODE;
+  env.CLOUD_MODE = true;
+  try {
+    const remote = await adapter.resolveCloneCredentials({ ...checkout, buildStrategy: "server" });
+    expect(remote).toEqual({ token: "second", tokenRepositories: [ref.name] });
+  } finally {
+    env.CLOUD_MODE = previousMode;
+  }
   await expect(
     completeConnectionAuthorization(ctx, { state: started.state, code: "again" }),
   ).rejects.toMatchObject({ code: "CONNECTION_STATE_EXPIRED" });
@@ -345,7 +419,6 @@ it("links GitLab OAuth, rotates once across concurrent private repository reads 
 it("uses the host CLI only after operator consent, binds its account and never consults it on Cloud", async () => {
   const adapters = await import("@repo/adapters");
   const { canLinkGlab, connectGlab } = await import("@repo/platform/engine/modules/gitlab/cli");
-  const { env } = await import("@repo/platform/engine/config/env");
   const probe = vi.spyOn(adapters, "readLocalGlabToken").mockResolvedValue("cli-secret");
   const owner = await seedOrg({ ownsHost: true });
   const ctx = { ...buildBackgroundContext({ ...owner }), sessionKind: "cookie" as const };
