@@ -91,7 +91,10 @@ describe("incoming webhook multi-service dispatch", () => {
 
     await expect(
       triggerIncomingWebhook({ id: "hook-1", rawBody: Buffer.alloc(0) }),
-    ).resolves.toEqual({ error: "action_failed" });
+    ).resolves.toEqual({
+      error: "action_failed",
+      message: "Webhook targets missing, disabled, or cross-project services: deleted-service",
+    });
 
     expect(triggerDeployment).not.toHaveBeenCalled();
     expect(markFired).not.toHaveBeenCalled();
@@ -115,7 +118,10 @@ describe("incoming webhook multi-service dispatch", () => {
 
     await expect(
       triggerIncomingWebhook({ id: "hook-1", rawBody: Buffer.alloc(0) }),
-    ).resolves.toEqual({ error: "action_failed" });
+    ).resolves.toEqual({
+      error: "action_failed",
+      message: "Webhook targets missing, disabled, or cross-project services: service-worker",
+    });
 
     expect(triggerDeployment).not.toHaveBeenCalled();
   });
@@ -242,7 +248,12 @@ describe("incoming webhook multi-service dispatch", () => {
 
     await expect(
       triggerIncomingWebhook({ id: "hook-1", rawBody: Buffer.alloc(0) }),
-    ).resolves.toEqual({ error: "action_failed" });
+    ).resolves.toEqual({
+      error: "action_failed",
+      code: "COMPOSE_REVIEW_REQUIRED",
+      message:
+        "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+    });
 
     expect(record).toHaveBeenCalledWith(
       expect.objectContaining({

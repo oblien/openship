@@ -96,7 +96,10 @@ export const webhooksDependencies: WebhookDependencies = {
       if (!row.enabled) throw new AppError("This webhook is disabled", 409, "WEBHOOK_DISABLED");
       await authorizeAction(ctx, projectId, row.actionType, row.actionConfig ?? {}, row.authMode);
       const result = await service.dispatchIncomingWebhook(row, { clientIp: ctx.clientIp ?? undefined, userAgent: ctx.userAgent ?? undefined });
-      if ("error" in result) throw new AppError("Action failed", 502, "WEBHOOK_ACTION_FAILED");
+      if ("error" in result) {
+        if (result.error === "unauthorized") throw new AppError("Unauthorized", 401, "UNAUTHORIZED");
+        throw new AppError(result.message || "Action failed", 502, result.code ?? "WEBHOOK_ACTION_FAILED");
+      }
       recorded(ctx, projectId, "invoke", hookId);
       return { action: result.action, ...(result.ref ? { ref: result.ref } : {}) };
     },

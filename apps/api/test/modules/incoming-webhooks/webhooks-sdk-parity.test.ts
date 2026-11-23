@@ -14,6 +14,7 @@ import { settingsRoutes } from "../../../src/modules/settings/settings.routes";
 import { webhookRoutes } from "../../../src/modules/webhooks/webhook.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
+import { OperationError } from "@repo/contracts";
 
 const external = vi.hoisted(() => ({ deploy: vi.fn(), runJob: vi.fn() }));
 vi.mock("@repo/platform/engine/modules/deployments/build.service", async original => ({
@@ -175,5 +176,44 @@ describe("incoming webhooks share management, dispatch and authority across SDK/
     await repos.incomingWebhook.update(hook.id, { authMode: "hmac", tokenEncrypted: null });
     await expect(updateHook(p.id, hook.id, { name: "Stale" }, true, authorized)).rejects.toMatchObject({ statusCode: 409 });
     expect((await repos.incomingWebhook.findById(hook.id))?.name).toBe("Webhook");
+  });
+
+  it("surfaces machine-readable code on failed public trigger and detailed message on invoke", async () => {
+    const owner = await seedOwner(), p = await project(owner, "fail-diagnostics"), c = await clients(owner);
+    const hook = await c.native.webhooks.create(p.id, { actionType: "deploy" });
+    external.deploy.mockRejectedValueOnce(
+      new OperationError(
+        "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+        409,
+        "COMPOSE_REVIEW_REQUIRED",
+      ),
+    );
+
+    const res = await fire(hook.id, hook.secret!);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({
+      error: "Action failed",
+      code: "COMPOSE_REVIEW_REQUIRED",
+    });
+
+    external.deploy.mockRejectedValueOnce(
+      new OperationError(
+        "Pre-deploy checks failed: database unreachable",
+        400,
+        "PREDEPLOY_FAILED",
+      ),
+    );
+    await expect(c.native.webhooks.invoke(p.id, hook.id)).rejects.toMatchObject({
+      message: "Pre-deploy checks failed: database unreachable",
+      code: "PREDEPLOY_FAILED",
+      statusCode: 502,
+    });
+
+    const deliveries = await c.native.webhooks.hookDeliveries(p.id, hook.id);
+    expect(deliveries.deliveries).toHaveLength(2);
+    expect(deliveries.deliveries.map(d => d.error)).toEqual([
+      "Pre-deploy checks failed: database unreachable",
+      "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+    ]);
   });
 });

@@ -35,7 +35,13 @@ export async function triggerHook(c: Context) {
     // Auth / existence failures are opaque (404) so a caller can't probe for
     // valid hook ids or token prefixes. A genuine action failure is a 502.
     if (result.error === "action_failed") {
-      return c.json({ error: "Action failed" }, 502);
+      return c.json(
+        {
+          error: "Action failed",
+          ...(result.code ? { code: result.code } : {}),
+        },
+        502,
+      );
     }
     return c.json({ error: "Not found" }, 404);
   }

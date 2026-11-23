@@ -52,3 +52,40 @@ it("shows the persisted impact explanation beside its delivery without exposing 
   expect(host.textContent).not.toContain("internal-unknown-code");
   expect(host.querySelectorAll("li")).toHaveLength(2);
 });
+
+it("shows the failure error details and compose changes when a delivery fails", async () => {
+  const failedDelivery = {
+    id: "delivery-failed",
+    source: "incoming",
+    event: "deploy",
+    outcome: "failed",
+    error: "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+    summary: {
+      name: "Deploy hook",
+      composeChanges: {
+        added: ["worker"],
+        changed: ["api"],
+        removed: ["cache"],
+      },
+    },
+    receivedAt: new Date().toISOString(),
+  };
+  const fetchPage = vi.fn().mockResolvedValue({ deliveries: [failedDelivery] });
+  await act(async () =>
+    root.render(
+      <I18nProvider>
+        <WebhookDeliveries fetchPage={fetchPage} />
+      </I18nProvider>,
+    ),
+  );
+  expect(host.textContent).toContain("Deploy hook");
+  expect(host.textContent).toContain(
+    "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+  );
+  expect(host.textContent).toContain("Services: +worker, ~api, -cache");
+  const details = host.querySelector("details");
+  expect(details).not.toBeNull();
+  expect(details?.querySelector("summary")?.textContent).toContain(
+    "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+  );
+});

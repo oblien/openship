@@ -49,7 +49,18 @@ export interface WebhookDelivery {
   authResult: string | null;
   statusCode: number | null;
   error: string | null;
-  summary: { repo?: string; branch?: string; commit?: string; name?: string; reason?: string } | null;
+  summary: {
+    repo?: string;
+    branch?: string;
+    commit?: string;
+    name?: string;
+    reason?: string;
+    composeChanges?: {
+      added?: string[];
+      changed?: string[];
+      removed?: string[];
+    };
+  } | null;
   receivedAt: string;
   processedAt: string | null;
 }
