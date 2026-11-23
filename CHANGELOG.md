@@ -4,10 +4,83 @@ All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
-## Unreleased
+## 1.0.2
 
-- Fix automatic DNS-01 certificate renewal on remote macOS/OrbStack edges by
-  staging private ACME files inside the container where Certbot runs.
+**Recommended update** for GitLab connections, Cloud deployment reliability,
+Compose imports, and certificate renewal on remote edges.
+
+### Git and deployments
+
+- **GitLab.com connections** — connect with OAuth or an access token, or link the
+  host GitLab CLI on supported installations. Browse repositories, detect stacks,
+  deploy, and enable Auto Deploy through a signed repository webhook. GitHub and
+  GitLab share the repository picker and deployment pipeline (#1871, #1875).
+- **Deployment destinations** — choose the target after clicking Deploy and
+  avoid defaulting to a Cloud space without an active plan (#1826, #1828).
+- **Compose builds and imports** — pull registry images alongside source builds.
+  Honor Compose memory units, empty published ports, and `extra_hosts`.
+  Validate health check durations in `openship.json` (#1827, #1846, #1847, #1849, #1850).
+- **Folder imports and environment variables** — handle multibyte PAX archive
+  records and reveal shared Compose values through the project-level store
+  with authorization and auditing (#1843, #1852).
+- **Image updates** — recover missing source files and simplify reviewing image
+  changes before creating a source update pull request (#1831).
+- **Rollback retention** — default to two previous deployments on new instances.
+  Existing retention settings and project overrides keep their saved values (#1839).
+
+### Cloud, networking, and TLS
+
+- **Cloud provisioning** — initialize the scoped VM runtime and verify that its
+  gateway is reachable before starting builds. Enable the edge ingress gate and
+  report blocked route publication (#1861).
+- **Cloud metrics and domain verification** — use the Oblien SDK v4, read
+  edge traffic aggregates for the selected server, verify domain ownership
+  using namespace DNS proofs, and recover tunnel retries (#1835).
+- **Controller isolation** — require a destination executor for Cloud Docker
+  checkout and static output extraction. Package uploaded folders without
+  inspecting their Git metadata on the controller (#1876).
+- **Certificate renewal** — stage temporary DNS-01 hooks and ACME credentials
+  inside the remote Certbot container so OrbStack bind-mount permissions do not
+  block renewal (#1842).
+- **Routing diagnostics** — clear the warning for a removed hostname, name the
+  selected ingress credential in settings when it cannot manage a zone, and
+  identify the affected component in monitoring update notices (#1837, #1859, #1868).
+- **K3s provisioning** — use a Kubernetes minor compatible with the bundled
+  PostgreSQL operator and report compatibility before enabling the add-on (#1865).
+
+### Mail and webhook delivery
+
+- **Cloud system mail** — route password resets, verification codes, invitations,
+  and other platform mail through the Oblien API with a consistent no-reply
+  sender and idempotent retries. Apply per-recipient limits to signup and
+  recovery messages after validating the request (#1869, #1870, #1872).
+- **Webmail sender** — send from the signed-in mailbox address (#1863).
+- **Webhook failures** — show delivery errors in the dashboard and keep failed
+  deliveries retryable. Unexpected exceptions stay in server diagnostics
+  while callers receive a retry message (#1856, #1875).
+
+### Dashboard, CLI, and website
+
+- **Settings and setup** — rename a workspace in Team settings, manage
+  repository connections from Git settings, and keep server setup usable
+  while Manage plan checks run (#1829, #1830, #1832).
+- **Dashboard and assistant** — keep long domains inside the project sidebar
+  and resolve the shared assistant runtime without a startup import cycle
+  (#1799, #1853).
+- **Self-hosted CLI** — read Compose `.env` values using Compose-compatible
+  parsing (#1851).
+- **Pricing and referrals** — update Cloud pricing and uptime information,
+  link dedicated quotes to the contact form, and validate referral products
+  against the current Oblien contract (#1834, #1855, #1860).
+- **Website** — add the deployments page, refresh mail pricing and localized
+  marketing pages, and add Google Tag Manager to the website (#1866, #1873).
+
+### Upgrade notes
+
+- Upgrade the API, dashboard, edge, Desktop, and CLI components you run.
+  The API applies the Git provider and rollback-default migrations.
+- For a new GitLab.com project, enable Auto Deploy in the project's Git
+  settings with an account that can manage the repository webhook.
 
 ## 1.0.1
 
