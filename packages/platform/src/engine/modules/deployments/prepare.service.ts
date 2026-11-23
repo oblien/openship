@@ -5,7 +5,7 @@
  * No database writes, no deployment logic.
  */
 
-import { assertRuntimeVersionTarget, normalizeRuntimeImageOverride, runtimeProjectUpdate, resolveRuntimeImages, ValidationError } from "@repo/core";
+import { mapConcurrent, assertRuntimeVersionTarget, normalizeRuntimeImageOverride, runtimeProjectUpdate, resolveRuntimeImages, ValidationError } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { gitRepository } from "../git/provider";
 import type { GitReadOptions, GitRepositoryRef } from "../git/types";
@@ -989,8 +989,8 @@ async function readComposeEnvFileContents(
     observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/prepare.service");
     return {};
   }
-  const entries = await Promise.all(
-    paths.map(async (path) => [path, await reader.readText(path)] as const),
+  const entries = await mapConcurrent(paths, 4, async (path) =>
+    [path, await reader.readText(path)] as const,
   );
   return Object.fromEntries(entries);
 }
@@ -1164,17 +1164,16 @@ export async function resolveFromReader(
     );
   }
 
-  // Service `env_file:` targets resolve against the compose file's directory —
-  // the same base Compose itself uses. Read them through the same reader so the
-  // parser can merge their variables below `environment:` (#1854).
+  // The repository's explicit shared environment sits above the adjacent .env.
+  const interpolationOverrides = {
+    ...(openship.config?.env ? envMapToRecord(openship.config.env) : {}),
+    ...(opts.env ?? {}),
+  };
   const envFileContents =
     composeContent && !useNativeServices
       ? await readComposeEnvFileContents(reader, composeContent, {
           envFileContent: composeEnvContent,
-          env: {
-            ...(openship.config?.env ? envMapToRecord(openship.config.env) : {}),
-            ...(opts.env ?? {}),
-          },
+          env: interpolationOverrides,
           composeDirectory: root.selected.rootDirectory,
         })
       : undefined;
@@ -1191,14 +1190,7 @@ export async function resolveFromReader(
       declaredCompose:
         !!root.declaredComposePath ||
         (opts.expectCompose === true && !useNativeServices && root.composeFiles.length > 0),
-      // `openship.json.env` is the repository's explicit shared environment
-      // layer. Let it resolve Compose fields during the same source read; an
-      // environment supplied by the deploy request remains the higher-priority
-      // operator override. The adjacent `.env` stays the parser's lowest layer.
-      env: {
-        ...(openship.config?.env ? envMapToRecord(openship.config.env) : {}),
-        ...(opts.env ?? {}),
-      },
+      env: interpolationOverrides,
       envFileContents,
     },
   );

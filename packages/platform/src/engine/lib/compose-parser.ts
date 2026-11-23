@@ -214,8 +214,7 @@ export function parseComposeFile(
     const svc = def as Record<string, unknown>;
     const build = parseBuild(svc.build, interpolationEnv);
     const environment = parseEnvironment(svc.environment, interpolationEnv);
-    // `env_file:` vars are dotenv lines, not Compose expressions: they merge
-    // BELOW `environment:` (Compose's own precedence) and stay literal (#1854).
+    // Resolved service env_file values sit below explicit environment values.
     const envFiles = parseServiceEnvFiles(
       svc.env_file,
       name,
@@ -224,7 +223,9 @@ export function parseComposeFile(
       unsupported,
     );
     const environmentValues = { ...envFiles.values, ...environment.values };
-    const environmentMetadata = { ...envFiles.metadata, ...environment.metadata };
+    const environmentMetadata = { ...envFiles.metadata };
+    for (const key of Object.keys(environment.values)) delete environmentMetadata[key];
+    Object.assign(environmentMetadata, environment.metadata);
     const rawImage = typeof svc.image === "string" ? svc.image : undefined;
     const image =
       rawImage === undefined ? undefined : resolveComposeInterpolation(rawImage, interpolationEnv);
@@ -948,7 +949,7 @@ function collectUnsupportedMounts(
 
 /** One `env_file` declaration, normalized to what the parser can act on. */
 interface ResolvedEnvFileEntry {
-  /** The path as interpolated from the file — what the warning quotes. */
+  /** The source path expression, safe to report without interpolated values. */
   declared: string;
   /**
    * Repo-relative path resolved against `composeDirectory`, or undefined when
@@ -980,10 +981,12 @@ function resolveServiceEnvFiles(
   const entries: ResolvedEnvFileEntry[] = [];
   for (const item of items) {
     if (typeof item === "string") {
-      const declared = interpolateComposeString(item, interpolationEnv);
+      const declared = item;
       entries.push({
         declared,
-        resolved: resolveComposeEnvFilePath(declared, composeDirectory),
+        resolved: resolveComposeEnvFilePath(
+          interpolateComposeString(declared, interpolationEnv), composeDirectory,
+        ),
         required: true,
         format: "dotenv",
       });
@@ -992,10 +995,12 @@ function resolveServiceEnvFiles(
     if (item && typeof item === "object") {
       const obj = item as Record<string, unknown>;
       if (typeof obj.path === "string") {
-        const declared = interpolateComposeString(obj.path, interpolationEnv);
+        const declared = obj.path;
         entries.push({
           declared,
-          resolved: resolveComposeEnvFilePath(declared, composeDirectory),
+          resolved: resolveComposeEnvFilePath(
+          interpolateComposeString(declared, interpolationEnv), composeDirectory,
+        ),
           required: obj.required !== false,
           format: obj.format === "raw" ? "raw" : "dotenv",
         });
@@ -1044,9 +1049,9 @@ function resolveComposeEnvFilePath(
 
 /** `env_file` `format: raw` — literal `KEY=VALUE` lines, no dotenv unquoting. */
 function parseRawEnvFile(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
+  const result: Record<string, string> = Object.create(null);
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trimStart();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
     if (eq <= 0) continue;
@@ -1072,8 +1077,8 @@ function parseServiceEnvFiles(
   values: Record<string, string>;
   metadata: Record<string, ComposeEnvironmentMeta>;
 } {
-  const values: Record<string, string> = {};
-  const metadata: Record<string, ComposeEnvironmentMeta> = {};
+  const values: Record<string, string> = Object.create(null);
+  const metadata: Record<string, ComposeEnvironmentMeta> = Object.create(null);
   for (const entry of resolveServiceEnvFiles(raw, interpolationEnv, options.composeDirectory)) {
     if (entry.malformed) {
       unsupported.push({
@@ -1091,7 +1096,9 @@ function parseServiceEnvFiles(
       });
       continue;
     }
-    const content = options.envFileContents?.[entry.resolved];
+    const content = options.envFileContents && Object.hasOwn(options.envFileContents, entry.resolved)
+      ? options.envFileContents[entry.resolved]
+      : undefined;
     if (content === undefined) {
       // `required: false` is Compose's own opt-out for a missing file.
       if (entry.required) {
@@ -1106,7 +1113,9 @@ function parseServiceEnvFiles(
       }
       continue;
     }
-    const parsed = entry.format === "raw" ? parseRawEnvFile(content) : parseComposeEnvFile(content);
+    const parsed = entry.format === "raw"
+      ? parseRawEnvFile(content)
+      : parseComposeEnvFile(content, { ...values, ...interpolationEnv });
     for (const [key, value] of Object.entries(parsed)) {
       values[key] = value;
       metadata[key] = { source: "env-file", resolvedValue: value };

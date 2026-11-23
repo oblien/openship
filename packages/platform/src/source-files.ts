@@ -11,7 +11,7 @@ export const SOURCE_EXCLUSIONS = new Set(["node_modules", ".git", ".DS_Store"]);
 export const MAX_SOURCE_BYTES = 300_000_000;
 export const MAX_SOURCE_ENTRIES = 100_000;
 
-function assertContained(root: string, path: string): void {
+export function assertSourcePathContained(root: string, path: string): void {
   const target = relative(root, path);
   if (target === ".." || target.startsWith("../") || target.startsWith("..\\") || isAbsolute(target))
     throw new ValidationError("Source symlinks must remain inside the selected directory");
@@ -63,7 +63,7 @@ export async function validateSourceDirectory(root: string, signal?: AbortSignal
   let total = 0, count = 0;
   async function visit(directory: string, parents: Set<string>): Promise<void> {
     const current = await realpath(directory);
-    assertContained(canonical, current);
+    assertSourcePathContained(canonical, current);
     if (parents.has(current)) throw new ValidationError("Source contains a symlink cycle");
     const ancestors = new Set(parents).add(current);
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -72,7 +72,7 @@ export async function validateSourceDirectory(root: string, signal?: AbortSignal
       if (++count > MAX_SOURCE_ENTRIES) throw new ValidationError("Source contains too many files");
       const path = join(directory, entry.name);
       const resolved = await realpath(path);
-      assertContained(canonical, resolved);
+      assertSourcePathContained(canonical, resolved);
       const info = await lstat(resolved);
       if (info.isDirectory()) await visit(path, ancestors);
       else if (info.isFile()) {
@@ -123,7 +123,7 @@ export async function archiveSourceDirectory(directory: string, options: { tempo
       cwd: canonical, gzip: true, portable: true, strict: true, follow: true,
       filter(entry) {
         if (entry.split(/[\\/]/).some(part => SOURCE_EXCLUSIONS.has(part))) return false;
-        assertContained(canonical, realpathSync(resolve(canonical, entry)));
+        assertSourcePathContained(canonical, realpathSync(resolve(canonical, entry)));
         return true;
       },
     }, ["."]);

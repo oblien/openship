@@ -57,8 +57,22 @@ export function createComposeInterpolationDiagnostics(env: Record<string, string
   return required;
 }
 
-export function parseComposeEnvFile(content: string): Record<string, string> {
+export function parseComposeEnvFile(
+  content: string,
+  lookup?: Readonly<Record<string, string>>,
+): Record<string, string> {
   const entries = parseEnvFile(content);
+  if (lookup) {
+    const result: Record<string, string> = Object.create(null);
+    const scope = Object.assign(Object.create(null), lookup) as Record<string, string>;
+    for (const { key, value, interpolation } of entries) {
+      result[key] = interpolation === undefined
+        ? value
+        : interpolateComposeString(interpolation, scope);
+      if (!Object.hasOwn(lookup, key)) scope[key] = result[key]!;
+    }
+    return { ...result };
+  }
   const result = Object.fromEntries(entries.map(({ key, value }) => [key, value]));
   const expressions = new Map<string, string>();
   for (const { key, interpolation } of entries) {

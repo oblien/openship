@@ -1,6 +1,8 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { stat, readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { constants } from "node:fs";
+import { open, realpath, readdir, stat } from "node:fs/promises";
+import { basename, resolve, join } from "node:path";
+import { assertSourcePathContained } from "../../../source-files";
 import { isIgnoredRepoPath, type RepoTreeEntry } from "../../lib/project-root-detector";
 import type { ProjectReader } from "./project-reader";
 import {
@@ -41,12 +43,33 @@ async function listLocalTree(dirPath: string): Promise<RepoTreeEntry[]> {
 function createLocalReader(dirPath: string): ProjectReader {
   let treePromise: Promise<RepoTreeEntry[]> | null = null;
 
-  const absolutePathFor = (path: string) => (path ? join(dirPath, path) : dirPath);
+  const resolvePath = async (path: string) => {
+    const candidate = resolve(dirPath, path);
+    assertSourcePathContained(dirPath, candidate);
+    const canonical = await realpath(candidate);
+    assertSourcePathContained(dirPath, canonical);
+    return canonical;
+  };
+
+  const readText = async (path: string): Promise<string | undefined> => {
+    try {
+      const file = await open(await resolvePath(path), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        if (!(await file.stat()).isFile()) return undefined;
+        return await file.readFile("utf-8");
+      } finally {
+        await file.close();
+      }
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/local-source");
+      return undefined;
+    }
+  };
 
   return {
     listDirectory: async (path: string) => {
       try {
-        const entries = await readdir(absolutePathFor(path), { withFileTypes: true });
+        const entries = await readdir(await resolvePath(path), { withFileTypes: true });
         return entries.map((entry) => ({
           name: entry.name,
           type: entry.isDirectory() ? "dir" : "file",
@@ -56,17 +79,12 @@ function createLocalReader(dirPath: string): ProjectReader {
         return [];
       }
     },
-    readText: async (path: string) => {
-      try {
-        return await readFile(absolutePathFor(path), "utf-8");
-      } catch (diagnosticFailure) {
-        observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/local-source");
-        return undefined;
-      }
-    },
+    readText,
     readJson: async (path: string) => {
+      const content = await readText(path);
+      if (!content) return undefined;
       try {
-        return JSON.parse(await readFile(absolutePathFor(path), "utf-8"));
+        return JSON.parse(content);
       } catch (diagnosticFailure) {
         observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/local-source");
         return undefined;
@@ -87,9 +105,10 @@ export async function resolveSourceEnvFromLocal(
   dirPath: string,
   rootDirectory = "",
 ): Promise<ProjectSourceEnv> {
-  const st = await stat(dirPath);
+  const canonical = await realpath(dirPath);
+  const st = await stat(canonical);
   if (!st.isDirectory()) throw new Error("Path is not a directory");
-  return resolveSourceEnvFromReader(createLocalReader(dirPath), rootDirectory);
+  return resolveSourceEnvFromReader(createLocalReader(canonical), rootDirectory);
 }
 
 export async function resolveFromLocal(
@@ -97,12 +116,13 @@ export async function resolveFromLocal(
   opts: ResolveOptions = {},
   fallbackName = basename(dirPath),
 ): Promise<ProjectInfo> {
-  const st = await stat(dirPath);
+  const canonical = await realpath(dirPath);
+  const st = await stat(canonical);
   if (!st.isDirectory()) {
     throw new Error("Path is not a directory");
   }
 
-  const reader = createLocalReader(dirPath);
+  const reader = createLocalReader(canonical);
   const rootPackageJson = await reader.readJson("package.json");
   const name = (rootPackageJson?.name as string) || fallbackName;
 

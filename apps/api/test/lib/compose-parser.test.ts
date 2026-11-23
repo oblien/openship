@@ -1972,6 +1972,26 @@ describe("parseComposeFile — service env_file (#1854)", () => {
     expect(parsed.unsupported).toEqual([]);
   });
 
+  it("resolves later env files against earlier values and project interpolation inputs", () => {
+    const parsed = parseComposeFile(
+      svc("    env_file: [base.env, app.env]\n    environment:\n      MODE: production\n"),
+      {
+        env: { DOMAIN: "example.test" },
+        envFileContents: {
+          "base.env": "HOST=${DOMAIN}\nMODE=dev\n",
+          "app.env": "URL=https://${HOST}/\nCOPY=${URL}\n",
+        },
+      },
+    );
+    expect(parsed.services[0]?.environment).toEqual({
+      HOST: "example.test",
+      MODE: "production",
+      URL: "https://example.test/",
+      COPY: "https://example.test/",
+    });
+    expect(parsed.services[0]?.environmentMeta?.MODE).toBeUndefined();
+  });
+
   it("keeps env_file values literal — they are never Compose templates", () => {
     const parsed = parseComposeFile(svc("    env_file: app.env\n"), {
       envFileContents: { "app.env": "PRICE=$$5\nTOKEN=pa$word\n" },
