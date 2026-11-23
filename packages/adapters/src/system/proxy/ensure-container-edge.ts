@@ -116,7 +116,7 @@ export interface ContainerEdgeResult {
  */
 export type EdgeProviderOptions = Omit<
   NginxProviderOptions,
-  "executor" | "hostExecutor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir"
+  "executor" | "hostExecutor" | "paths" | "pinPaths" | "containerEdge" | "challengeDir" | "writeAcmeFile"
 >;
 
 /**
@@ -161,13 +161,29 @@ export async function containerEdgeProvider(
   opts?: EdgeProviderOptions,
 ): Promise<NginxProvider> {
   const { NginxProvider: Provider } = await import("../../infra/nginx");
+  const host = await edgeHostExecutor(executor);
   return new Provider({
     ...opts,
     // Vhosts go to the BIND-MOUNTED HOST dir (so every host-side reader — the
     // migrate proxy scan, cert reuse, the mail cert symlinks — keeps working),
     // while reload/certbot run inside the container.
     paths: EDGE_HOST_PATHS,
-    executor: edgeContainerExecutor(await edgeHostExecutor(executor), container),
+    executor: edgeContainerExecutor(host, container),
+    // Container root cannot chmod or read private root-owned Mac files on an
+    // OrbStack bind mount. Send credentials over stdin, not in command argv.
+    writeAcmeFile: async (path, content, mode) => {
+      const dir = await host.exec("mktemp -d /tmp/.openship-acme-transfer.XXXXXXXXXX");
+      const source = `${dir}/payload`;
+      try {
+        await host.writeFile(source, content, { mode: 0o600 });
+        const write = `umask 077 && cat > ${sq(path)} && chmod ${sq(mode.toString(8))} ${sq(path)}`;
+        await host.exec(`${containerCommand(container, write, { stdin: true })} < ${sq(source)}`);
+      } finally {
+        await host.rm(dir).catch(() => {
+          errorDiagnostics.error("adapters/system/proxy/ensure-container-edge", "Failed to remove private ACME transfer directory");
+        });
+      }
+    },
     hostExecutor: executor,
     // Challenge tokens go to the HOST side of the ACME mount, for the same reason
     // vhosts do. This is the ONE mount whose two sides differ

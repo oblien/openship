@@ -782,6 +782,8 @@ export interface NginxProviderOptions {
    * edge. The command executor itself runs inside the edge. Local socket edges
    * omit this and read the resolved configuration through their command channel. */
   hostExecutor?: CommandExecutor;
+  /** Write private ACME material in Certbot's filesystem, not on a bind mount. */
+  writeAcmeFile?: (path: string, content: string, mode: number) => Promise<void>;
   /**
    * Directory edge-target challenge tokens are WRITTEN to, as seen by whatever
    * performs the write. Default = the container path (`EDGE_CHALLENGE_DIR`), which
@@ -1295,6 +1297,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private readonly pinPaths: boolean;
   private readonly containerEdge: boolean;
   private readonly hostExecutor: CommandExecutor | undefined;
+  private readonly writeAcmeFile: NginxProviderOptions["writeAcmeFile"];
   private readonly challengeDir: string;
   private readonly configLock: ProvisionLock;
   private readonly configContext = new AsyncLocalStorage<ConfigTransaction>();
@@ -1324,6 +1327,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     this.paths = opts.paths;
     this.containerEdge = opts.containerEdge ?? false;
     this.hostExecutor = opts.hostExecutor;
+    this.writeAcmeFile = opts.writeAcmeFile;
     this.reloadCommand = buildReloadCommand(opts.paths);
     this.pinPaths = opts.pinPaths ?? false;
     this.challengeDir = opts.challengeDir ?? EDGE_CHALLENGE_DIR;
@@ -1819,6 +1823,24 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     return this.acmeEabHmacKey ? value.split(this.acmeEabHmacKey).join("[REDACTED]") : value;
   }
 
+  private async createAcmeScratchDir(kind: "dns" | "eab"): Promise<string> {
+    const dir = join(this.writeAcmeFile ? "/tmp" : dirname(this.certDir), `.openship-${kind}-${randomBytes(12).toString("hex")}`);
+    if (this.writeAcmeFile && this.executor) await this.executor.exec(`mkdir -m 700 ${sq(dir)}`);
+    else if (this.executor) await this.executor.mkdir(dir);
+    else await fsMkdir(dir, { recursive: true, mode: 0o700 });
+    return dir;
+  }
+
+  private async removeAcmeScratchDir(dir: string): Promise<void> {
+    if (this.writeAcmeFile && this.executor) await this.executor.exec(`rm -rf ${sq(dir)}`);
+    else await this._rm(dir);
+  }
+
+  private async writeAcmeScratchFile(path: string, content: string, mode: number): Promise<void> {
+    if (this.writeAcmeFile) await this.writeAcmeFile(path, content, mode);
+    else await this._writeFile(path, content, mode);
+  }
+
   /**
    * Keep EAB HMAC material out of argv/process listings and remove it after use.
    *
@@ -1830,24 +1852,22 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    */
   private async createEphemeralEabConfig(): Promise<string | null> {
     if (!this.acmeEabKid || !this.acmeEabHmacKey) return null;
-    const dir = join(dirname(this.certDir), `.openship-eab-${randomBytes(12).toString("hex")}`);
+    const dir = await this.createAcmeScratchDir("eab");
     const path = join(dir, "eab.ini");
-    if (this.executor) await this.executor.mkdir(dir);
-    else await fsMkdir(dir, { recursive: true, mode: 0o700 });
     try {
       // Remote: mkdir is a FILE op with no mode, so the tightening is its own step —
       // and it has to be INSIDE this try, or a chmod the edge refuses (a path its
       // shell can't see, a read-only mount) leaks the directory. provisionCert's
       // `finally` cannot clean it up: it only ever sees a RETURNED path.
-      await this._chmod(dir, 0o700);
-      await this._writeFile(
+      if (!this.writeAcmeFile) await this._chmod(dir, 0o700);
+      await this.writeAcmeScratchFile(
         path,
         `eab-kid = ${this.acmeEabKid}\neab-hmac-key = ${this.acmeEabHmacKey}\n`,
         0o600,
       );
     } catch (err) {
       // A partial write must not leave key material behind (git-ssh-material rule).
-      await this._rm(dir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      await this.removeAcmeScratchDir(dir).catch((err) => { observeCaughtError(err, "adapters/infra/nginx"); });
       throw err;
     }
     return path;
@@ -1858,19 +1878,18 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     opts?: ProvisionCertOptions,
   ): Promise<{ dir: string; authCommand: string; cleanupCommand?: string } | null> {
     if (!opts?.dnsAuthHookScript) return null;
-    const dir = join(dirname(this.certDir), `.openship-dns-${randomBytes(12).toString("hex")}`);
+    const dir = await this.createAcmeScratchDir("dns");
     const authPath = join(dir, "auth.sh");
     const cleanupPath = join(dir, "cleanup.sh");
     const recordPath = join(dir, "record-id.txt");
-    await this._mkdir(dir);
     try {
-      await this._chmod(dir, 0o700);
-      await this._writeFile(authPath, opts.dnsAuthHookScript, 0o700);
+      if (!this.writeAcmeFile) await this._chmod(dir, 0o700);
+      await this.writeAcmeScratchFile(authPath, opts.dnsAuthHookScript, 0o700);
       if (opts.dnsCleanupHookScript) {
-        await this._writeFile(cleanupPath, opts.dnsCleanupHookScript, 0o700);
+        await this.writeAcmeScratchFile(cleanupPath, opts.dnsCleanupHookScript, 0o700);
       }
     } catch (err) {
-      await this._rm(dir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      await this.removeAcmeScratchDir(dir).catch((err) => { observeCaughtError(err, "adapters/infra/nginx"); });
       throw err;
     }
     const recordEnv = `OPENSHIP_DNS_RECORD_FILE=${sq(recordPath)}`;
@@ -2972,8 +2991,8 @@ ${serveLocation}
     } finally {
       // Remove the whole 0700 directory, not just the ini — one unit, like
       // git-ssh-material's cleanup.
-      if (eabConfig) await this._rm(dirname(eabConfig)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
-      if (generatedDnsHooks) await this._rm(generatedDnsHooks.dir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      if (eabConfig) await this.removeAcmeScratchDir(dirname(eabConfig)).catch((err) => { observeCaughtError(err, "adapters/infra/nginx"); });
+      if (generatedDnsHooks) await this.removeAcmeScratchDir(generatedDnsHooks.dir).catch((err) => { observeCaughtError(err, "adapters/infra/nginx"); });
     }
 
     // An imported pair keeps its served path while Certbot issues into a free

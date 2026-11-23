@@ -4,6 +4,11 @@ All notable changes to OpenShip. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## Unreleased
+
+- Fix automatic DNS-01 certificate renewal on remote macOS/OrbStack edges by
+  staging private ACME files inside the container where Certbot runs.
+
 ## 1.0.1
 
 **Recommended update** for self-hosted startup, application image updates, and
