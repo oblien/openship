@@ -5,9 +5,11 @@ import {
   detectEdgeContainer,
   detectOpenRestyPaths,
   rootOrDegrade,
+  resolveOurEdgeContainer,
   type OpenRestyPaths,
 } from "@repo/adapters";
 import type { CommandExecutor } from "@repo/adapters";
+import { AppError } from "@repo/contracts";
 import { sshManager } from "./ssh-manager";
 import { cacheStore } from "./cache-store/index";
 import { resolveEdgeProviderOptions } from "./edge-provider-options";
@@ -57,12 +59,7 @@ export async function withOpenRestyRouting<T>(
   }
 
   return sshManager.withExecutor(serverId, async (executor) => {
-    // `applyRateLimit` — the one write behind this helper — edits the root-owned
-    // nginx.conf, and this path never asked for privilege, so a non-root login got an
-    // EACCES rendered as "Failed to update OpenResty rate limit config". Elevated when
-    // the box allows it; degraded (not refused) when it doesn't, because the READS here
-    // work unelevated today on a world-readable nginx.conf and refusing would take the
-    // Security tab away from boxes where it currently works.
+    // Host config reads can still work when the SSH account cannot elevate.
     const edgeExecutor = await rootOrDegrade(executor, {
       purpose: "Editing OpenResty configuration",
       consequence: "Reads still work; a write will fail with the permission error it earns.",
@@ -70,9 +67,32 @@ export async function withOpenRestyRouting<T>(
     });
 
     if (options.useServingEdge) {
-      const edge = await detectEdgeContainer(edgeExecutor);
-      if (edge?.name) {
-        return fn(await containerEdgeProvider(executor, edge.name, await resolveEdgeProviderOptions(serverId)));
+      const running = await resolveOurEdgeContainer(edgeExecutor, { fresh: true });
+      if (running) {
+        return fn(
+          await containerEdgeProvider(executor, running, await resolveEdgeProviderOptions(serverId)),
+        );
+      }
+
+      const installed = await detectEdgeContainer(edgeExecutor);
+      if (installed?.exists) {
+        throw new AppError(
+          "The OpenShip edge is installed but unavailable. Check the edge and retry.",
+          503,
+          "SERVER_EDGE_UNAVAILABLE",
+        );
+      }
+      if (!installed) {
+        const docker = await edgeExecutor.exec(
+          "if command -v docker >/dev/null 2>&1; then printf present; else printf absent; fi",
+        );
+        if (docker.trim() !== "absent") {
+          throw new AppError(
+            "Could not verify which edge serves this server. Check Docker and retry.",
+            503,
+            "SERVER_EDGE_UNAVAILABLE",
+          );
+        }
       }
     }
 
