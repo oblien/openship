@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { PACKAGE_ROOT_ONLY_EXCLUDES } from "@repo/core";
+import { isLocalHostExecutionAllowed, PACKAGE_ROOT_ONLY_EXCLUDES } from "@repo/core";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,10 +62,12 @@ function tarCreateBaseArgs(localPath: string): string[] {
  * precisely (a *tracked* `build/` route survives; a gitignored `dist/`/`.next/`
  * drops), never guesses by folder name, and is tar-flavour independent.
  *
- * Returns null when `localPath` isn't inside a git work tree (or `git` is
- * unavailable) — callers then fall back to the name-based exclude list.
+ * Returns null on the Cloud API host or when the local work tree cannot be
+ * inspected. Callers then pack the staged files with their transfer excludes.
  */
 export async function gitTrackedFiles(localPath: string): Promise<string[] | null> {
+  // Upload staging can contain repository metadata supplied by the customer.
+  if (!isLocalHostExecutionAllowed()) return null;
   try {
     const [{ stdout }, { stdout: deleted }] = await Promise.all([
       execFileAsync(

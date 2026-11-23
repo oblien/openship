@@ -1,5 +1,5 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { redactUrlCredentials } from "@repo/core";
+import { assertLocalHostExecutionAllowed, redactUrlCredentials } from "@repo/core";
 import { spawn } from "node:child_process";
 import { access, lstat, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -547,6 +547,7 @@ export async function prepareSourceTree(
   config: BuildConfig,
   opts?: { onLog?: LogCallback; perServiceBuildContexts?: boolean },
 ): Promise<SourceTree> {
+  assertLocalHostExecutionAllowed();
   const contextDir = await mkdtemp(join(tmpdir(), "openship-docker-context-"));
 
   try {
