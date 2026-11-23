@@ -1581,12 +1581,23 @@
     "connect": "認証情報を追加",
     "delete": "削除",
     "verify": "プロバイダーで再確認",
-    "badgeActive": "有効",
+    "badgeActive": "前回の確認に成功",
+    "badgeSaved": "保存済み",
+    "lastVerified": "最終確認: {date}",
     "badgeInvalid": "確認が必要",
     "fieldName": "ラベル",
     "namePlaceholder": "例: GHCR 読み取り専用",
     "secretKeptPlaceholder": "••••••••（保存済み — 空のままで維持）",
     "selectPlaceholder": "選択…",
+    "gitlab": {
+      "continue": "GitLab で続行",
+      "useToken": "アクセストークンを使う",
+      "useCli": "GitLab CLI を使う",
+      "createToken": "GitLab でトークンを作成",
+      "oauthHelp": "GitLab アカウントでリポジトリを読み取り、デプロイ用の Webhook を管理することを OpenShip に許可します。",
+      "cliHelp": "OpenShip が動作するマシンでサインインしてください。接続すると、このワークスペースは CLI アカウントを使ってリポジトリにアクセスし、そのマシンでビルドできます。",
+      "connectionName": "接続名（任意）"
+    },
     "verifyNote": "保存する前に、OpenShip がプロバイダーへ認証情報を確認します。",
     "confirmDelete": "「{name}」を削除しますか？これに依存しているものは動作しなくなります。",
     "toast": {
@@ -1600,6 +1611,14 @@
       "verifyFailed": "プロバイダーが認証情報を拒否しました"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "アクセストークン",
+            "help": "リポジトリの閲覧とクローンには read_api と read_repository を使用します。プッシュ時にデプロイするには、api も選択し、プロジェクトの Webhook を管理できるアカウントを使ってください。"
+          }
+        }
+      },
       "docker-registry": {
         "label": "コンテナレジストリ",
         "summary": "デプロイ時にレジストリからプライベートイメージを取得します。",
@@ -1791,5 +1810,22 @@
     "confirmCta": "配信を停止",
     "cancel": "キャンセル",
     "noReverseProxy": "このマシンでリバースプロキシが検出されませんでした。"
+  },
+  "imageUrl": {
+    "preview": "画像プレビュー",
+    "invalid": "認証情報を含まない HTTP または HTTPS の画像 URL を入力してください。",
+    "failed": "画像 URL を保存できませんでした。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "保存しました",
+    "previewFailed": "プレビューを表示できません。画像の直接 URL か確認してください。"
+  },
+  "profile": {
+    "change": "アバターを変更",
+    "title": "プロフィール",
+    "description": "個人アカウントの画像。",
+    "label": "アバター URL",
+    "hint": "画像の直接 URL を使用します。空欄にすると名前の頭文字を表示します。",
+    "reset": "頭文字を使用"
   }
 }

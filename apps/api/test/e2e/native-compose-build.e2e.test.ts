@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   BuildLogger,
   DockerRuntime,
@@ -18,11 +18,12 @@ import {
 import { repos } from "@repo/db";
 import { parseComposeFile } from "@repo/platform/engine/lib/compose-parser";
 import { deployComposeServices } from "@repo/platform/engine/modules/deployments/compose/deploy.service";
+import { buildComposeImages } from "@repo/platform/engine/modules/deployments/compose/build.service";
 import { SshExecutor } from "../../../../packages/adapters/src/system/ssh-executor";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
 import { availablePort, sshReady } from "../helpers/migration-host";
 import { protectedBuildKitImage } from "../helpers/buildkit-image";
-import { seedDeployment, seedOrg, seedProject } from "../helpers/seed";
+import { seedDeployment, seedOrg, seedProject, seedService } from "../helpers/seed";
 
 const run = promisify(execFile);
 const fixture = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/migration-target");
@@ -197,6 +198,46 @@ describeDockerE2E("native Compose build batches", () => {
     ).toBe("");
   }, 180_000);
 
+  it("checks out an exact revision through the destination executor in Cloud mode", async () => {
+    const repo = join(directory, "destination-source");
+    await run("git", ["clone", "-q", join(directory, "source"), repo]);
+    const branch = (await run("git", ["-C", repo, "branch", "--show-current"])).stdout.trim();
+    const revision = (await run("git", ["-C", repo, "rev-list", "--max-parents=0", "HEAD"])).stdout.trim();
+    await writeFile(join(repo, "revision"), "destination tip\n");
+    await run("git", ["-C", repo, "add", "revision"]);
+    await commit(repo, "advance the destination branch");
+    const remoteRepo = `/tmp/git-fixture-${suffix}`;
+    await run("docker", ["cp", repo, `${target}:${remoteRepo}`]);
+    await executor.exec(`chown -R 0:0 ${sq(remoteRepo)}`);
+    vi.stubEnv("CLOUD_MODE", "true");
+    let build;
+    try {
+      build = await runtime.build({
+        ...specs("destination-checkout")[0]!.config,
+        localPath: undefined,
+        repoUrl: pathToFileURL(remoteRepo).href,
+        branch,
+        commitSha: revision,
+        cloneOnServer: true,
+      }, logger());
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(build.status, logs.map((entry) => entry.message).join("\n")).toBe("deploying");
+    const container = await runtime.docker.createContainer({
+      Image: build.imageRef,
+      Cmd: ["cat", "/revision"],
+      NetworkDisabled: true,
+    });
+    try {
+      await container.start();
+      expect((await container.wait()).StatusCode).toBe(0);
+      expect(String(await container.logs({ stdout: true }))).toContain("first");
+    } finally {
+      await container.remove({ force: true });
+    }
+  }, 120_000);
+
   it("finishes sibling builds when one image fails", async () => {
     const repo = join(directory, "source");
     await writeFile(join(repo, "Dockerfile.failure"),
@@ -208,6 +249,74 @@ describeDockerE2E("native Compose build batches", () => {
     expect(results.map(item => item.result.status)).toEqual(["failed", "deploying"]);
     expect((await runtime.docker.getImage(results[1]!.result.imageRef!).inspect()).Id).toMatch(/^sha256:/);
   });
+
+  it("overlaps registry pulls with a source build and deploys the acquired images", async () => {
+    const { organizationId } = await seedOrg();
+    const project = await seedProject(organizationId, {
+      slug: `mixed-${suffix}`, framework: "docker-compose", runtimeMode: "docker", routeStrategy: "container-ip",
+    });
+    await seedService(project.id, {
+      name: "worker", enabled: true,
+      advanced: { build: { dockerfile: `FROM alpine:3.21\nRUN sleep 5 && echo ${suffix} > /proof\nCMD ["sleep", "300"]\n` } },
+    });
+    const registryRef = "busybox:1.37";
+    await seedService(project.id, {
+      name: "sidecar", enabled: true, image: registryRef, command: "sleep 300",
+    });
+    const deployment = await seedDeployment(project, { status: "building", trigger: "manual" });
+    const compile = runtime.buildImages.bind(runtime);
+    const pull = runtime.pullImage.bind(runtime);
+    let compiling!: () => void;
+    const compilerStarted = new Promise<void>(resolve => { compiling = resolve; });
+    let buildFinished = false;
+    const builds = vi.spyOn(runtime, "buildImages").mockImplementation(async (specs, log, options) => {
+      try {
+        return await compile(specs.map(spec => ({
+          ...spec,
+          onStart: () => { spec.onStart?.(); compiling(); },
+          onResult: result => { buildFinished = true; spec.onResult?.(result); },
+        })), log, options);
+      } finally { buildFinished = true; compiling(); }
+    });
+    const pulls = vi.spyOn(runtime, "pullImage").mockImplementation(async (ref, options) => {
+      if (ref === registryRef) {
+        await compilerStarted;
+        expect(buildFinished, "registry pull was delayed until after compilation").toBe(false);
+      }
+      await pull(ref, options);
+    });
+    try {
+      const result = await buildComposeImages({
+        project, dep: deployment, runtime, logger: logger(), buildSessionId: `mixed-${suffix}`,
+        composeInterpolationEnv: {}, buildEnvVars: {},
+        buildResources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
+        snapshot: { repoUrl: "", branch: "main", framework: "docker", buildImage: "", runtimeImage: "",
+          packageManager: "", installCommand: "", buildCommand: "", startCommand: "", port: 8080,
+          outputDirectory: "", productionPaths: [], rootDirectory: "", hasServer: true, hasBuild: false },
+      });
+      expect([...result.buildFailures], JSON.stringify(logs)).toEqual([]);
+      expect(pulls.mock.calls.filter(([ref]) => ref === registryRef)).toHaveLength(1);
+      const acquired = await result.imagePreparation?.receipt(registryRef, { retained: false, refresh: true });
+      expect(acquired).toBeDefined();
+      await repos.deployment.updateStatus(deployment.id, "deploying");
+      const noop = new NoopInfraProvider();
+      const deployed = await deployComposeServices(project, deployment, runtime, logger(), {
+        builtImages: result.imageRefs, preparedLocalImages: result.preparedLocalImages,
+        imagePreparation: result.imagePreparation, executor, localHost: false,
+        routing: noop, ssl: noop, usesManagedRouting: false,
+      });
+      expect(deployed.status, JSON.stringify({ deployed, logs })).toBe("ready");
+      expect(pulls.mock.calls.filter(([ref]) => ref === registryRef)).toHaveLength(1);
+      const sidecar = deployed.services.find(service => service.serviceName === "sidecar")!;
+      expect((await runtime.getContainerInfo(sidecar.containerId!)).imageId).toBe(acquired!.imageId);
+      const worker = deployed.services.find(service => service.serviceName === "worker")!;
+      expect((await executor.exec(`docker exec ${sq(worker.containerId!)} cat /proof`)).trim()).toBe(suffix);
+    } finally {
+      compiling();
+      builds.mockRestore();
+      pulls.mockRestore();
+    }
+  }, 180_000);
 
   it("cancels in-flight and queued batch builds without returning deployable images", async () => {
     const repo = join(directory, "source");
@@ -318,6 +427,12 @@ describeDockerE2E("native Compose build batches", () => {
       stderr: "",
     }));
     const commands = vi.spyOn(executor, "exec");
+    const write = executor.writeFile.bind(executor);
+    // An unattainable free-space target reproduces pressure without filling the
+    // test host. The production reservedSpace/budget/guard remain unchanged.
+    const writes = vi.spyOn(executor, "writeFile").mockImplementation((path, contents, options) =>
+      write(path, /^\/tmp\/openship-buildkit-.*\.toml$/.test(path)
+        ? contents.replace('minFreeSpace = "20%"', 'minFreeSpace = "100%"') : contents, options));
     try {
       const batch = specs("protected");
       for (const spec of batch) spec.config.resources = { cpuCores: 1, memoryMb: 2048, diskMb: 0 };
@@ -341,8 +456,18 @@ describeDockerE2E("native Compose build batches", () => {
           )
         ).trim(),
       ).not.toBe("");
+      logs.length = 0;
+      const warm = await runtime.buildImages(specs("protected-warm").map(spec => ({
+        ...spec, config: { ...spec.config, resources: batch[0]!.config.resources },
+      })), logger());
+      expect(warm.map(entry => entry.result.status), JSON.stringify(warm))
+        .toEqual(["deploying", "deploying", "deploying"]);
+      expect(logs.map(entry => entry.message).join("\n"))
+        .toMatch(/#(\d+) \[[^\n]+\] RUN sleep 2[^\n]*\n(?:\n)*#\1 CACHED/);
+      writes.mockRestore();
       await verifyGeneratedEnvironmentBatch("protected-secrets", { cpuCores: 2, memoryMb: 2048, diskMb: 0 });
     } finally {
+      writes.mockRestore();
       commands.mockRestore();
       await workerImage.dispose();
     }

@@ -163,7 +163,6 @@ export async function transferVolume(
   // one daemon or across two (src.exec / dst.exec may differ).
   const read = await src.exec.streamPath(src.handle, src.sourceId, {
     compression: plan.compression,
-    allowEmpty: true,
   });
   // Observe source termination from the start, including a rejected target
   // setup. A broken destination must not leave the producer streaming forever.

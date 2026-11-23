@@ -57,6 +57,13 @@ export interface ComposeService {
    * different args, and those values must reach only their own image build. */
   buildArgs?: Record<string, string | null>;
   ports: string[];
+  /**
+   * Container ports the file declares with `expose:`. Compose advertises these
+   * to the other services on the same network; they are NOT published to the
+   * host, so a public domain still needs a `ports:` entry. Carried so the import
+   * wizard can name the port the operator has to publish (#1733).
+   */
+  expose?: string[];
   dependsOn: string[];
   environment: Record<string, string>;
   /**
@@ -256,6 +263,8 @@ export function parseComposeFile(
         : undefined;
     collectUnsupported(name, svc, unsupported, interpolationEnv);
 
+    const exposePorts = parseExpose(svc.expose, interpolationEnv);
+
     services.push({
       name,
       image: image?.value,
@@ -263,6 +272,7 @@ export function parseComposeFile(
       dockerfile: build.dockerfile,
       ...(build.args && { buildArgs: build.args }),
       ports: parsePorts(svc.ports, interpolationEnv),
+      ...(exposePorts.length > 0 && { expose: exposePorts }),
       dependsOn: parseDependsOn(svc.depends_on),
       environment: environment.values,
       ...(Object.keys(environment.templates).length > 0 && {
@@ -421,6 +431,23 @@ function parsePorts(ports: unknown, env: Record<string, string>): string[] {
     }
     return String(p);
   });
+}
+
+/**
+ * `expose:` names the container ports a service offers to the other services on
+ * the same network. Compose's short form is a port or "port/proto"; the values
+ * are kept verbatim (like `ports:`) so the wizard can show exactly what the
+ * file declared. Nothing is published to the host by them.
+ */
+function parseExpose(expose: unknown, env: Record<string, string>): string[] {
+  if (!Array.isArray(expose)) return [];
+  return expose
+    .map((value) => {
+      if (typeof value === "number") return String(value);
+      if (typeof value === "string") return interpolateComposeString(value, env);
+      return String(value);
+    })
+    .filter((value) => value.length > 0);
 }
 
 function parseDependsOn(deps: unknown): string[] {
@@ -777,10 +804,9 @@ const UNSUPPORTED_SERVICE_KEYS: Record<string, string> = {
   dns: "dns is not modeled — the container uses the Docker network's resolver.",
   dns_search: "dns_search is not modeled.",
   dns_opt: "dns_opt is not modeled.",
-  extra_hosts: "extra_hosts is not modeled — services resolve each other by service name.",
+  // `extra_hosts` is modeled — see parseAdvanced (advanced.extraHosts).
   links: "links is legacy and not modeled — services already resolve by service name.",
   external_links: "external_links is not modeled — link the app as a service connection instead.",
-  expose: "expose is not modeled — every service is reachable by name on the project network.",
   // ── Compose model ──
   configs: "configs is not modeled — use a bind-mounted file instead.",
   secrets: "secrets is not modeled — use environment variables instead.",
@@ -892,9 +918,10 @@ function collectUnsupportedMounts(
 
 /**
  * Compose memory string → MB. Accepts the byte-suffix forms compose allows
- * (`512m`, `2g`, `1024k`, `1073741824`) plus the `2gb`/`512mb` spellings people
- * actually write. Returns undefined for anything unparseable — a malformed
- * limit must not silently become a tiny cap.
+ * (`512m`, `2g`, `1024k`, `1073741824`, `1073741824b`) plus the `2gb`/`512mb` and
+ * `512MiB`/`1GiB` spellings; compose reads all of them as powers of 1024.
+ * Returns undefined for anything unparseable — a malformed limit must not
+ * silently become a tiny cap.
  */
 function parseComposeMemory(raw: unknown): number | undefined {
   if (typeof raw === "number") {
@@ -907,7 +934,7 @@ function parseComposeMemory(raw: unknown): number | undefined {
   const m = raw
     .trim()
     .toLowerCase()
-    .match(/^(\d+(?:\.\d+)?)\s*([kmgt]?)b?$/);
+    .match(/^(\d+(?:\.\d+)?)\s*(?:([kmgt])(?:i?b)?|b)?$/);
   if (!m) return undefined;
   const value = parseFloat(m[1]!);
   if (!Number.isFinite(value) || value <= 0) return undefined;
@@ -918,7 +945,7 @@ function parseComposeMemory(raw: unknown): number | undefined {
     g: 1024,
     t: 1024 * 1024,
   };
-  const mb = value * (factor[m[2]!] ?? 1);
+  const mb = value * factor[m[2] ?? ""]!;
   return Number.isFinite(mb) && mb >= 1 ? Math.floor(mb) : undefined;
 }
 

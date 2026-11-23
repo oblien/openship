@@ -202,6 +202,20 @@
     "pageOf": "Page {page} sur {total}",
     "range": "Déploiements {from}–{to} sur {total}"
   },
+  "registryAccess": {
+    "title": "Accès à l’image refusé",
+    "description": "Vérifiez que cette image existe. Dans Paramètres → Connexions → Registre de conteneurs, ajoutez ou mettez à jour les identifiants du registre et autorisez le téléchargement de cette image.",
+    "githubHint": "Les identifiants de clonage GitHub sont distincts de ceux du registre de conteneurs. Pour GHCR, utilisez un jeton classique avec read:packages et accès au paquet ; autorisez le SSO si votre organisation l’exige.",
+    "retryHint": "Après l’enregistrement, actualisez les images et redéployez pour récupérer la dernière image.",
+    "manageAccess": "Gérer l’accès au registre"
+  },
+  "containerConflict": {
+    "title": "Résoudre les conteneurs en double",
+    "description": "Inspectez les conteneurs et leurs volumes montés sur le serveur cible. Conservez le conteneur prévu et ses données, supprimez uniquement un doublon dont vous avez confirmé qu’il est inutilisé, puis redéployez. En cas de doute, contactez le support avec cette référence de déploiement.",
+    "containers": "Conteneurs correspondants",
+    "reviewServer": "Examiner le serveur",
+    "reference": "Référence du déploiement"
+  },
   "resourceGuidance": {
     "label": "Conseils sur les ressources du déploiement",
     "reviewCapacity": "Examiner la capacité",

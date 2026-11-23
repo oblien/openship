@@ -3,8 +3,8 @@ import type { ImportBinding, PlannedImportService } from "../platform-import-pla
 const privateHost = /\b[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.railway\.internal\b/gi;
 
 /** Keep Railway's resolved values, replacing provider DNS with the native service
- * aliases inside the imported project. Dependencies describe deployment order;
- * they do not create cross-project connections or publish database ports. */
+ * aliases inside the imported project. Retain a host template for native private
+ * connections when the destination must span several projects. */
 export function resolveRailwayBindings(
   service: PlannedImportService,
   selected: Map<string, PlannedImportService>,
@@ -26,10 +26,32 @@ export function resolveRailwayBindings(
       );
       continue;
     }
+    const external = new Set(
+      dependencies
+        .filter(({ source }) => source !== service)
+        .map(({ source }) => source!.source.id),
+    );
+    const template =
+      external.size === 1 && !value.includes("${host}")
+        ? value.replace(privateHost, (host) => {
+            const dependency = dependencies.find((candidate) => candidate.host === host)!;
+            return dependency.source === service ? service.create.internalAlias! : "${host}";
+          })
+        : undefined;
     let resolved = value;
     for (const { host, source } of dependencies) {
       resolved = resolved.replaceAll(host, source!.create.internalAlias!);
-      if (source !== service) bindings.push({ sourceId: source!.source.id, envKey: key });
+      if (
+        source !== service &&
+        !bindings.some(
+          (binding) => binding.sourceId === source!.source.id && binding.envKey === key,
+        )
+      )
+        bindings.push({
+          sourceId: source!.source.id,
+          envKey: key,
+          ...(template === undefined ? {} : { valueTemplate: template }),
+        });
       // A resolved URL can declare an otherwise undiscovered private listener.
       // A hostname-only value still works through the project network's DNS.
       if (!source!.source.port) {
@@ -38,7 +60,8 @@ export function resolveRailwayBindings(
           const port = Number(
             url.port || (url.protocol === "https:" ? 443 : url.protocol === "http:" ? 80 : 0),
           );
-          if (url.hostname === host && port > 0 && port <= 65535) source!.source.port = port;
+          if (url.hostname.toLowerCase() === host.toLowerCase() && port > 0 && port <= 65535)
+            source!.source.port = port;
         } catch {
           /* diagnostics-ignore: arbitrary strings and hostname-only variables do not declare a listener. */
         }

@@ -1,0 +1,54 @@
+/* Bind the shared client to Mail's existing surfaces and type scale. */
+.mail-assistant-client .react-ai-agent {
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-tertiary: var(--muted-foreground);
+  --text-danger: var(--destructive);
+  --bg-elevated: var(--card);
+  --bg-muted: var(--muted);
+  --bg-surface: var(--card);
+  --bg-secondary: var(--muted);
+  --inverse-bg: var(--foreground);
+  --inverse-text: var(--background);
+  --overlay-bg: var(--muted);
+  font: inherit;
+  color: var(--foreground);
+}
+.mail-assistant-client .react-ai-agent-ai-content,
+.mail-assistant-client .react-ai-agent-user-message-text {
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  letter-spacing: normal;
+}
+.mail-assistant-client .react-ai-agent-message-item {
+  padding-inline: 1rem;
+}
+.mail-assistant-client .react-ai-agent-user-message-text {
+  white-space: pre-wrap;
+}
+.mail-assistant-client .react-ai-agent-user-message-bubble {
+  background: var(--muted);
+}
+.mail-assistant-client .react-ai-agent-input {
+  padding: 0.5rem 0.75rem 0;
+}
+.mail-assistant-client .react-ai-agent-input-backdrop {
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+.mail-assistant-client .react-ai-agent-input-content {
+  padding: 0.5rem 0.75rem 0;
+}
+.mail-assistant-client .react-ai-agent-input textarea {
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.mail-assistant-client .react-ai-agent-input textarea::placeholder {
+  color: var(--muted-foreground);
+}
+.mail-assistant-client .mindwire-composer-send {
+  background: var(--foreground);
+  color: var(--background);
+}

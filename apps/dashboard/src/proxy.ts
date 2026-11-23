@@ -50,7 +50,7 @@ export function proxy(req: NextRequest) {
   // enforced by the API process, which returns 401 rather than a redirect.
   if (pathname.startsWith("/api/")) return NextResponse.next();
 
-  const isPublic = PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
+  const isPublic = pathname === "/connections/callback" || PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
   const hasCookie = req.cookies.getAll().some((c) => c.name.endsWith(SESSION_COOKIE_SUFFIX));
 
   if (!hasCookie && !isPublic) {
@@ -90,5 +90,7 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // API routes authenticate in the API process. Matching them here makes Next
+  // clone/buffer uploads, truncating the stream at its middleware body limit.
+  matcher: ["/((?!api(?:/|$)|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

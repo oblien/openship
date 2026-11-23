@@ -13,11 +13,11 @@ import {
   type CloudPricing,
 } from "@/lib/pricing";
 import { faq } from "./_data";
-import { CLOUD_SLA } from "@/lib/cloud-service";
 
 const PAGE_URL = "https://openship.io/pricing";
 export const revalidate = 60;
-const DESCRIPTION = `Compare OpenShip Cloud resource pools for your projects. Shared CPU, RAM and storage, support included, and a ${CLOUD_SLA.monthlyUptimePercent}% monthly uptime guarantee on every plan.`;
+const DESCRIPTION =
+  "Compare OpenShip Cloud plans for CPU, RAM and storage. Every paid Cloud plan includes support, an uptime SLA and service credits.";
 const pageMetadata: Metadata = {
   title: "Pricing",
   description: DESCRIPTION,
@@ -110,10 +110,7 @@ export default async function PricingLayout({ children }: { children: ReactNode 
 
 export async function generateMetadata() {
   const copy = await getCopy();
-  const description = copy(
-    "Compare OpenShip Cloud resource pools for your projects. Shared CPU, RAM and storage, support included, and a {uptime}% monthly uptime guarantee on every plan.",
-    { uptime: CLOUD_SLA.monthlyUptimePercent },
-  );
+  const description = copy(DESCRIPTION);
   return localizedMetadata({
     ...pageMetadata,
     description,

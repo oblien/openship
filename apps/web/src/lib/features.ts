@@ -8,13 +8,7 @@ import type { FeatureIllustrationName } from "@repo/ui/illustrations";
  */
 
 export type FeatureCategory =
-  | "Deploy"
-  | "Run"
-  | "Connect"
-  | "Data"
-  | "Manage"
-  | "Secure"
-  | "Collaborate";
+  "Deploy" | "Run" | "Connect" | "Data" | "Manage" | "Secure" | "Collaborate";
 
 export const CATEGORY_ORDER: FeatureCategory[] = [
   "Deploy",
@@ -37,7 +31,8 @@ export const CATEGORY_BLURB: Record<FeatureCategory, string> = {
 };
 
 export interface Feature {
-  slug: FeatureIllustrationName;
+  slug: string;
+  illustration: FeatureIllustrationName;
   title: string;
   category: FeatureCategory;
   /** One line for the grid card + detail sub-header. */
@@ -56,7 +51,392 @@ export interface Feature {
 
 export const FEATURES: Feature[] = [
   {
+    slug: "build-performance",
+    illustration: "runner-destinations",
+    title: "Build location & caching",
+    category: "Deploy",
+    tagline: "Keep builds off production when it matters. Reuse work on the next release.",
+    summary:
+      "Choose where supported deployments build, reuse project caches and ship the result to its runtime. Your production server does not have to be your build machine.",
+    body: [
+      "For supported server deployments, build on the OpenShip controller or the destination. The controller can be an always-on server or your optional desktop app. Local source upload, Git clone location and build location are separate choices.",
+      "Warm project caches reuse dependency and framework work. Storage-aware cleanup reclaims idle caches while protecting active deployments and retained rollback artifacts. Available build paths depend on the workload and destination.",
+    ],
+    highlights: [
+      {
+        title: "Build where it fits",
+        desc: "Use controller-side builds to keep compilation off a small target server.",
+      },
+      {
+        title: "Warm caches",
+        desc: "Reuse dependency, framework and Docker build work across releases.",
+      },
+      {
+        title: "Storage-aware cleanup",
+        desc: "Reclaim idle cache space without treating running workloads as disposable.",
+      },
+    ],
+    guide: "/docs/architecture/runtime-model",
+    screenshot: null,
+  },
+  {
+    slug: "docker-swarm",
+    illustration: "autoscaling-load-balancing",
+    title: "Docker Swarm deployments",
+    category: "Run",
+    tagline: "Use your existing Swarm manager as an OpenShip deployment destination.",
+    summary:
+      "Deploy new applications and Compose services through a connected Docker Swarm manager. Keep environment settings, build history, logs, replica changes and rollbacks in the same OpenShip workflow.",
+    body: [
+      "Connect an existing manager, review its identity and select the registered Swarm as a project destination. Stateless services can use replicas across eligible Linux nodes. Named-volume services stay pinned to the manager to preserve their node-local data.",
+      "Connecting a manager preserves its existing stacks. This path does not support existing-stack adoption, node administration or distributed Swarm storage. Replacement can interrupt a service; review the deployment guide before moving production traffic.",
+    ],
+    highlights: [
+      {
+        title: "Native Swarm services",
+        desc: "Deploy supported application and Compose workloads through the manager.",
+      },
+      {
+        title: "Replica controls",
+        desc: "Set stateless service instance counts and inspect observed task state.",
+      },
+      {
+        title: "Shared operations",
+        desc: "Use the existing deployment, environment, log and rollback workflows.",
+      },
+    ],
+    guide: "/docs/guides/mcp-clusters-and-scaling#existing-docker-swarm",
+    screenshot: null,
+    availability:
+      "Cluster management is available from self-hosted and desktop controllers on registered Linux servers.",
+  },
+  {
+    slug: "static-sites-workers",
+    illustration: "any-stack",
+    title: "Static sites & background workers",
+    category: "Deploy",
+    tagline: "Give each workload the runtime it needs.",
+    summary:
+      "Serve built static files directly at the edge, run web applications, or deploy background workers that do not need a public HTTP port.",
+    body: [
+      "On supported self-hosted paths, OpenShip extracts a static build into a retained release and serves it as files. A Docker build does not require keeping an application container running after publication. Cloud offers its supported static-hosting destinations.",
+      "Workers follow the deployment pipeline without requiring a web route. Choose containers or a supported host process, then use logs, health and resource settings for the selected runtime.",
+    ],
+    highlights: [
+      {
+        title: "Static-file delivery",
+        desc: "Publish assets without a persistent application process on supported targets.",
+      },
+      {
+        title: "Portless workers",
+        desc: "Run queue consumers and other long-lived background jobs.",
+      },
+      {
+        title: "Runtime choice",
+        desc: "Use containers or supervised host processes where the destination supports them.",
+      },
+    ],
+    guide: "/docs/architecture/runtime-model",
+    screenshot: null,
+  },
+  {
+    slug: "traffic-analytics",
+    illustration: "logs-monitoring",
+    title: "Edge traffic analytics",
+    category: "Connect",
+    tagline: "Understand requests without a browser analytics script or a database write per hit.",
+    summary:
+      "Inspect per-domain traffic, visitor countries, status codes, request logs and optional top paths. The OpenResty edge measures traffic and the control plane collects aggregates.",
+    body: [
+      "The edge updates bounded in-memory counters during its logging phase. Visitor requests do not call the OpenShip API or database for analytics. The controller periodically collects aggregated data for dashboards and history.",
+      "Top-path collection is optional and bounds distinct paths. Recent requests use a fixed-size buffer. These limits keep analytics storage and collection work bounded as traffic grows.",
+    ],
+    highlights: [
+      {
+        title: "Server-side visibility",
+        desc: "See traffic and response behavior without adding JavaScript to your app.",
+      },
+      {
+        title: "In-memory aggregation",
+        desc: "Collect counters instead of inserting a database row per request.",
+      },
+      {
+        title: "Bounded collection",
+        desc: "Use capped request history and optional path analytics.",
+      },
+    ],
+    guide: "/docs/guides/the-edge#watching-your-traffic",
+    screenshot: null,
+  },
+  {
+    slug: "ai-agents",
+    illustration: "ai-mcp",
+    title: "AI agents & automations",
+    category: "Manage",
+    tagline: "Investigate deployments and run scoped operational tasks with your own agent.",
+    summary:
+      "Connect Codex or Claude Code, create specialist agents and schedule approved automations. Work from the same application context and resource permissions used by the platform.",
+    body: [
+      "The assistant can start from deployment failures, app issues and health reports. Review its requested access, connect your own agent account or supported API configuration, and choose where the agent runs.",
+      "Agents and automations use the approved workspace permissions. Desktop can use a local agent; self-hosted installations use their host, and Cloud can use an authorized paid instance or connected server.",
+    ],
+    highlights: [
+      {
+        title: "Contextual investigation",
+        desc: "Start from the app, deployment or incident you are reviewing.",
+      },
+      {
+        title: "Your agent connection",
+        desc: "Use supported native agents with your chosen account or API configuration.",
+      },
+      {
+        title: "Scheduled work",
+        desc: "Create scoped specialists and recurring automations with run history.",
+      },
+    ],
+    guide: "/docs/dashboard/assistant",
+    screenshot: null,
+  },
+  {
+    slug: "chat-integrations",
+    illustration: "notifications",
+    title: "Chat integrations",
+    category: "Connect",
+    tagline: "Bring app operations into Slack, Discord, Telegram and Microsoft Teams.",
+    summary:
+      "Connect supported chat providers to OpenShip commands and optional assistant conversations. Team members link their own identity and approved access.",
+    body: [
+      "Choose allowed conversations and an available transport. Outbound connections can work without a public webhook endpoint; webhook delivery uses the provider-specific verification flow.",
+      "Operational commands use the linked member’s permissions. Deployment and restart confirmations are tied to the conversation and current deployment so a retried chat event does not become a second operation.",
+    ],
+    highlights: [
+      {
+        title: "Team chat",
+        desc: "Connect Slack, Discord, Telegram or Microsoft Teams.",
+      },
+      {
+        title: "Commands and assistants",
+        desc: "Choose deployment commands, assistant conversations or both.",
+      },
+      {
+        title: "Scoped identities",
+        desc: "Use each linked member’s authorized resources and operations.",
+      },
+    ],
+    guide: "/docs/api/chat-apps",
+    screenshot: null,
+  },
+  {
+    slug: "dns-tunnels",
+    illustration: "domains-ssl",
+    title: "DNS providers & tunnels",
+    category: "Connect",
+    tagline:
+      "Preview DNS changes and publish services through the connection that fits your network.",
+    summary:
+      "Connect Cloudflare or DigitalOcean DNS, review the records a domain needs and apply them from OpenShip. Cloudflare Tunnel provides a separate ingress option for supported server setups.",
+    body: [
+      "DNS credentials are stored through the existing credential flow. Domain setup can inspect the zone, show a record plan and apply an approved change; saving a route does not silently rewrite the provider’s zone.",
+      "Use tunnel ingress when the server should receive traffic through Cloudflare instead of a direct public connection. Domain ownership, tunnel setup and certificate challenges remain visible in their own setup flows.",
+    ],
+    highlights: [
+      {
+        title: "DNS plans",
+        desc: "Inspect and apply the required records through a connected provider.",
+      },
+      {
+        title: "Certificate challenges",
+        desc: "Follow automatic HTTPS and supported DNS challenge workflows.",
+      },
+      {
+        title: "Tunnel ingress",
+        desc: "Connect supported server routes through Cloudflare Tunnel.",
+      },
+    ],
+    guide: "/docs/guides/cloudflare-tunnel",
+    screenshot: null,
+  },
+  {
+    slug: "terminals",
+    illustration: "dashboard-cli-desktop",
+    title: "Server & service terminals",
+    category: "Manage",
+    tagline: "Inspect a host or running service without leaving your deployment context.",
+    summary:
+      "Open authenticated terminals for connected servers and supported services. Use the dashboard for an interactive session or the CLI and SDK for the same authorized transport.",
+    body: [
+      "Terminal access is scoped to the intended server or project. Short-lived session tickets, trusted origins and current permissions protect the connection; opening a terminal does not bypass resource access.",
+      "Interactive sessions support terminal resizing and documented reconnect behavior. For scripts, service execution preserves the remote command’s exit result so automation can react to a failure.",
+    ],
+    highlights: [
+      {
+        title: "Host sessions",
+        desc: "Open a shell on an authorized connected server.",
+      },
+      {
+        title: "Service sessions",
+        desc: "Inspect the running container through its project context.",
+      },
+      {
+        title: "CLI and SDK",
+        desc: "Use interactive terminals or command execution in your own tooling.",
+      },
+    ],
+    guide: "/docs/api/terminal",
+    screenshot: null,
+  },
+  {
+    slug: "security-advisories",
+    illustration: "updates",
+    title: "Runtime security advisories",
+    category: "Secure",
+    tagline: "Connect security notices to the applications and images actually deployed.",
+    summary:
+      "Review matching runtime and image advisories, affected services and available remediation. OpenShip ties findings to deployment inventory so the next action has concrete context.",
+    body: [
+      "Security views distinguish affected, fixed and unknown runtime state. Supported fixes can refresh an image or prepare a repository change, with verification against the deployed result.",
+      "Host security maintenance has a separate reviewed workflow for supported Ubuntu systems. Inspect the exact package plan, apply an approved patch and review reboot requirements and run output.",
+    ],
+    highlights: [
+      {
+        title: "Affected workloads",
+        desc: "Match advisories to observed runtime versions and image identities.",
+      },
+      {
+        title: "Reviewed remediation",
+        desc: "Inspect available image refresh or repository-change actions.",
+      },
+      {
+        title: "Host patch plans",
+        desc: "Review supported Ubuntu patch and reboot operations before applying them.",
+      },
+    ],
+    guide: "/docs/api/updates",
+    screenshot: null,
+  },
+  {
+    slug: "cluster-databases",
+    illustration: "managed-databases",
+    title: "PostgreSQL & Redis clusters",
+    category: "Data",
+    tagline: "Manage database replicas, recovery and data cutover alongside your applications.",
+    summary:
+      "Run operator-managed PostgreSQL or Redis on prepared Kubernetes infrastructure, with dedicated setup, scaling, backup and import workflows.",
+    body: [
+      "PostgreSQL supports a primary and read replicas, with supported upgrades through new database copies. Redis offers replication with Sentinel or a sharded Redis Cluster. Choose a mode your application client supports.",
+      "Backups, restore-to-new-database and explicit connection replacement make data moves reviewable. Replica counts do not automatically split application queries, and stateful availability depends on the selected topology.",
+    ],
+    highlights: [
+      {
+        title: "PostgreSQL replicas",
+        desc: "Add supported read replicas and inspect the observed database state.",
+      },
+      {
+        title: "Redis topologies",
+        desc: "Choose replication with Sentinel or client-compatible sharding.",
+      },
+      {
+        title: "Recovery and imports",
+        desc: "Restore or import into a new database before changing app connections.",
+      },
+    ],
+    guide: "/docs/guides/mcp-clusters-and-scaling",
+    screenshot: null,
+    availability:
+      "Cluster management is available from self-hosted and desktop controllers on registered Linux servers.",
+  },
+  {
+    slug: "shared-cluster-storage",
+    illustration: "persistent-storage",
+    title: "Shared cluster storage",
+    category: "Data",
+    tagline: "Keep files available to applications running across your Kubernetes servers.",
+    summary:
+      "Prepare supported distributed storage, create shared project volumes and keep two or three independent copies. Manage capacity, backups and restore through the volume’s own lifecycle.",
+    body: [
+      "Applications can mount project-owned shared files across selected servers. Storage setup checks host prerequisites and reports observed readiness rather than treating saved settings as available storage.",
+      "Expand supported volumes, schedule external backups and restore into a new volume. Replication and external backups solve different problems, so keep both in the recovery plan.",
+    ],
+    highlights: [
+      {
+        title: "Shared files",
+        desc: "Mount supported project volumes across application instances.",
+      },
+      {
+        title: "Independent copies",
+        desc: "Configure supported replica placement across storage hosts.",
+      },
+      {
+        title: "Volume recovery",
+        desc: "Expand capacity and restore external backups into a new volume.",
+      },
+    ],
+    guide: "/docs/guides/mcp-clusters-and-scaling",
+    screenshot: null,
+    availability:
+      "Cluster management is available from self-hosted and desktop controllers on registered Linux servers.",
+  },
+  {
+    slug: "static-response-routes",
+    illustration: "edge-routing",
+    title: "Static response routes",
+    category: "Connect",
+    tagline: "Return a response at the edge without deploying another service.",
+    summary:
+      "Add a domain path that returns text, JSON or another literal response with a chosen status, content type and headers. Use it for verification files, fixed endpoints and small public documents.",
+    body: [
+      "Choose an exact path or a path prefix, set the response and restrict HTTP methods when needed. Rules run at the edge after the domain’s access policies; the body is content, not executable server code.",
+      "Responses are bounded to 64 KiB and validated before application. The edge handles matching directly so a simple response does not need an application container or a control-plane request.",
+    ],
+    highlights: [
+      {
+        title: "Path matching",
+        desc: "Match one path or a prefix on the selected domain.",
+      },
+      {
+        title: "Response control",
+        desc: "Choose status, content type, body and allowed headers.",
+      },
+      {
+        title: "No extra service",
+        desc: "Serve a bounded literal response directly from the edge.",
+      },
+    ],
+    guide: "/docs/guides/static-response-routes",
+    screenshot: null,
+  },
+  {
+    slug: "project-topology",
+    illustration: "compose-multi-service",
+    title: "Project topology",
+    category: "Manage",
+    tagline: "See applications, services, routes and data connections in one operational view.",
+    summary:
+      "Work with a visual map of a project environment. Inspect running services, configure resources and connections, and open the same deployment, scaling and migration workflows used elsewhere in OpenShip.",
+    body: [
+      "The topology combines saved project configuration with observed runtime state. Add a service, inspect its logs, edit environment variables or review CPU and memory changes from the selected node.",
+      "Application replicas, clustered databases and shared volumes use their existing setup and deployment flows. Review changes before applying them; arranging the canvas itself does not mutate a running workload.",
+    ],
+    highlights: [
+      {
+        title: "One project view",
+        desc: "Understand services, public routes and shared connections together.",
+      },
+      {
+        title: "Contextual operations",
+        desc: "Open configuration, logs and lifecycle actions from the selected resource.",
+      },
+      {
+        title: "Scaling and data",
+        desc: "Manage supported replicas, databases and volumes through their existing workflows.",
+      },
+    ],
+    guide: "/docs/dashboard/projects",
+    screenshot: null,
+  },
+  {
     slug: "local-folder-deploys",
+    illustration: "local-folder-deploys",
     title: "Deploy local folders",
     category: "Deploy",
     tagline: "Ship local source without creating a Git repository first.",
@@ -76,6 +456,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "configuration-as-code",
+    illustration: "configuration-as-code",
     title: "Configuration as code",
     category: "Deploy",
     tagline: "Keep supported project settings in openship.json.",
@@ -104,6 +485,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "api-sdk",
+    illustration: "api-sdk",
     title: "API & TypeScript SDK",
     category: "Manage",
     tagline: "Automate platform operations with documented HTTP routes and typed clients.",
@@ -133,6 +515,7 @@ export const FEATURES: Feature[] = [
   // ── Deploy ────────────────────────────────────────────────────────────────
   {
     slug: "deploy-anywhere",
+    illustration: "deploy-anywhere",
     guide: "/docs/getting-started/first-deployment",
     title: "Deploy anywhere",
     category: "Deploy",
@@ -158,6 +541,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "push-to-deploy",
+    illustration: "push-to-deploy",
     guide: "/docs/guides/auto-deploy",
     title: "Push to deploy",
     category: "Deploy",
@@ -183,6 +567,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "any-stack",
+    illustration: "any-stack",
     guide: "/docs/guides/openship-json",
     title: "Languages & build settings",
     category: "Deploy",
@@ -205,6 +590,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "compose-multi-service",
+    illustration: "compose-multi-service",
     guide: "/docs/guides/compose-multi-service",
     title: "Compose & multi-service",
     category: "Deploy",
@@ -227,6 +613,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "instant-rollbacks",
+    illustration: "instant-rollbacks",
     guide: "/docs/guides/rollback-redeploy",
     title: "Release history & rollbacks",
     category: "Deploy",
@@ -253,6 +640,7 @@ export const FEATURES: Feature[] = [
   // ── Run ─────────────────────────────────────────────────────────────────
   {
     slug: "logs-monitoring",
+    illustration: "logs-monitoring",
     guide: "/docs/guides/logs-monitoring",
     title: "Logs, metrics & incidents",
     category: "Run",
@@ -281,6 +669,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "jobs-triggers",
+    illustration: "jobs-triggers",
     guide: "/docs/guides/jobs",
     title: "Scheduled jobs & automation",
     category: "Run",
@@ -303,12 +692,13 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "autoscaling-load-balancing",
+    illustration: "autoscaling-load-balancing",
     availability:
       "Cluster operations require a self-hosted or desktop controller and are unavailable on the hosted Cloud controller.",
     guide: "/docs/guides/mcp-clusters-and-scaling",
-    title: "Clusters & application replicas",
+    title: "Kubernetes & k3s clusters",
     category: "Run",
-    tagline: "Prepare a cluster and change application replica counts explicitly.",
+    tagline: "Run applications across your servers with k3s and controlled replica scaling.",
     screenshot: null,
     summary:
       "Group registered servers, prepare K3s, and deploy supported applications with multiple replicas. Scale an active application using its existing image.",
@@ -328,6 +718,7 @@ export const FEATURES: Feature[] = [
   // ── Connect ─────────────────────────────────────────────────────────────
   {
     slug: "domains-ssl",
+    illustration: "domains-ssl",
     guide: "/docs/guides/custom-domains",
     title: "Domains & SSL",
     category: "Connect",
@@ -353,6 +744,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "private-networking",
+    illustration: "private-networking",
     availability:
       "Service links depend on the runtime. Fleet network administration requires a self-hosted or desktop controller.",
     guide: "/docs/guides/mcp-clusters-and-scaling",
@@ -377,6 +769,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "route-rules-waf",
+    illustration: "route-rules-waf",
     availability: "Self-hosted edge controls. Managed Cloud capabilities are provider-specific.",
     guide: "/docs/guides/the-edge",
     title: "Route rules & protection",
@@ -401,6 +794,7 @@ export const FEATURES: Feature[] = [
   // ── Data ────────────────────────────────────────────────────────────────
   {
     slug: "managed-databases",
+    illustration: "managed-databases",
     guide: "/docs/reference/app-catalog",
     title: "Databases & service connections",
     category: "Data",
@@ -426,6 +820,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "mail",
+    illustration: "mail",
     availability:
       "Mail-server provisioning is available through desktop and self-hosted OpenShip. The hosted Cloud mail console is not available yet.",
     guide: "/docs/guides/email-webmail",
@@ -454,6 +849,7 @@ export const FEATURES: Feature[] = [
   // ── Manage ──────────────────────────────────────────────────────────────
   {
     slug: "dashboard-cli-desktop",
+    illustration: "dashboard-cli-desktop",
     guide: "/download",
     title: "Dashboard, CLI & desktop",
     category: "Manage",
@@ -476,6 +872,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "ai-mcp",
+    illustration: "ai-mcp",
     guide: "/docs/mcp",
     title: "AI & MCP",
     category: "Manage",
@@ -498,6 +895,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "preview-deployments",
+    illustration: "preview-deployments",
     title: "Preview environments",
     category: "Deploy",
     tagline: "Review branch changes in a separate running environment.",
@@ -523,6 +921,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "actions-ci",
+    illustration: "actions-ci",
     title: "Actions & CI",
     category: "Run",
     tagline: "GitHub-compatible workflows with visual editing and live execution.",
@@ -551,6 +950,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "runner-destinations",
+    illustration: "runner-destinations",
     title: "Self-hosted & Cloud runners",
     category: "Run",
     tagline: "Existing servers, dedicated machines, or disposable Cloud VMs.",
@@ -572,6 +972,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "sleep-resource-limits",
+    illustration: "sleep-resource-limits",
     title: "Resources & sleep mode",
     category: "Run",
     tagline: "Control CPU, memory, disk settings, and supported idle behavior.",
@@ -591,6 +992,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "edge-routing",
+    illustration: "edge-routing",
     title: "Edge & path routing",
     category: "Connect",
     tagline: "Route domains and specific paths to the right services.",
@@ -613,6 +1015,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "webhooks",
+    illustration: "webhooks",
     title: "Webhooks & external triggers",
     category: "Connect",
     tagline: "Trigger supported automation from authenticated external events.",
@@ -635,6 +1038,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "git-authentication",
+    illustration: "git-authentication",
     title: "Git source access",
     category: "Connect",
     tagline: "GitHub Apps and saved credentials for private source.",
@@ -657,6 +1061,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "app-catalog",
+    illustration: "app-catalog",
     title: "Ready-to-deploy apps",
     category: "Data",
     tagline: "Backends, databases, publishing tools, and automation templates.",
@@ -679,6 +1084,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "persistent-storage",
+    illustration: "persistent-storage",
     title: "Volumes & persistent files",
     category: "Data",
     tagline: "Keep application data outside replacement containers.",
@@ -701,6 +1107,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "backups-restore",
+    illustration: "backups-restore",
     title: "Backups & restore",
     category: "Data",
     tagline: "Scheduled recovery points with your destinations and retention.",
@@ -726,6 +1133,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "object-storage",
+    illustration: "object-storage",
     title: "S3-compatible object storage",
     category: "Data",
     tagline: "Deploy MinIO or connect an existing bucket for backups.",
@@ -745,6 +1153,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "server-management",
+    illustration: "server-management",
     title: "Servers & infrastructure",
     category: "Manage",
     tagline: "Connect hosts, inspect capabilities, and manage supported services.",
@@ -764,6 +1173,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "migration-import",
+    illustration: "migration-import",
     title: "Workload migration & import",
     category: "Manage",
     tagline: "Discover existing services and review their migration plan.",
@@ -789,6 +1199,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "instance-transfer",
+    illustration: "instance-transfer",
     title: "Instance export & transfer",
     category: "Manage",
     tagline: "Move the OpenShip control plane with reviewed credential handling.",
@@ -808,6 +1219,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "notifications",
+    illustration: "notifications",
     title: "Notifications & delivery history",
     category: "Manage",
     tagline: "Route operational events to channels and inspect delivery.",
@@ -827,6 +1239,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "secrets-credentials",
+    illustration: "secrets-credentials",
     title: "Secrets & saved credentials",
     category: "Secure",
     tagline: "Manage application variables and encrypted infrastructure credentials.",
@@ -852,6 +1265,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "scoped-tokens",
+    illustration: "scoped-tokens",
     title: "Scoped access tokens",
     category: "Secure",
     tagline: "Give an API client or agent only the capabilities it needs.",
@@ -880,6 +1294,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "audit-log",
+    illustration: "audit-log",
     title: "Audit history",
     category: "Secure",
     tagline: "Inspect recorded platform changes and export the audit trail.",
@@ -902,6 +1317,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "two-factor-auth",
+    illustration: "two-factor-auth",
     title: "Passkeys & two-factor authentication",
     category: "Secure",
     tagline: "Protect sign-in with passkeys, authenticator codes, and recovery codes.",
@@ -921,6 +1337,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "deployment-health-checks",
+    illustration: "deployment-health-checks",
     title: "Deployment health & preparation",
     category: "Secure",
     tagline: "Prepare replacement images and inspect application readiness.",
@@ -943,6 +1360,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "updates",
+    illustration: "updates",
     title: "Updates & version visibility",
     category: "Secure",
     tagline: "Review instance and supported infrastructure versions before updating.",
@@ -965,6 +1383,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "workspaces",
+    illustration: "workspaces",
     title: "Workspaces",
     category: "Collaborate",
     tagline: "Separate projects, infrastructure, and members by workspace.",
@@ -990,6 +1409,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "team-roles",
+    illustration: "team-roles",
     title: "Team roles",
     category: "Collaborate",
     tagline: "Owner, admin, member, and restricted access for teammates.",
@@ -1009,6 +1429,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "resource-permissions",
+    illustration: "resource-permissions",
     title: "Per-resource permissions",
     category: "Collaborate",
     tagline: "Share selected resources and actions with restricted teammates.",
@@ -1031,6 +1452,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "invitations",
+    illustration: "invitations",
     title: "Team invitations",
     category: "Collaborate",
     tagline: "Invite teammates to the intended workspace and role.",
@@ -1050,6 +1472,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "workflow-approvals",
+    illustration: "workflow-approvals",
     title: "Workflow access & approvals",
     category: "Collaborate",
     tagline: "Decide who may run workflows and which executions need review.",
@@ -1069,6 +1492,7 @@ export const FEATURES: Feature[] = [
   },
   {
     slug: "project-environments",
+    illustration: "project-environments",
     title: "Project environments",
     category: "Collaborate",
     tagline: "Organize production, staging, and preview configuration.",

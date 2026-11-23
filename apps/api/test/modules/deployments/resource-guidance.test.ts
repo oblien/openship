@@ -237,3 +237,21 @@ it("retains resource guidance for a published partial rollout without turning it
     errorDetails: { resourceIssue: "storage-full" },
   });
 });
+
+
+it.each([true, false])("restores a container conflict on a Cloud=%s attempt without relabeling it as capacity", async (cloud) => {
+  const ctx = await attempt(cloud);
+  const details = {
+    projectId: ctx.project.id,
+    serviceId: "app-service",
+    containerNames: ["app-current", "app-duplicate"],
+    serverId: ctx.project.serverId ?? "ssh-original",
+    workspaceId: ctx.project.workspaceId,
+  };
+  await onFailure(ctx, "More than one container matches the active service", undefined, {
+    errorCode: "SERVICE_CONTAINER_CONFLICT", errorDetails: details,
+  });
+  expect(await getBuildSessionStatus(ctx.dep.id)).toMatchObject({
+    status: "failed", errorCode: "SERVICE_CONTAINER_CONFLICT", errorDetails: details,
+  });
+});

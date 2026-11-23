@@ -9,6 +9,7 @@ import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billin
 import { savedOffer, savedMetadata, savedMonthlyHobby } from "../../../test/helpers/saved-cloud-offer";
 import capacityFixture from "../../../test/fixtures/oblien-capacity-catalog.json";
 import { oblienCapacityCatalogSchema } from "@repo/platform/engine/lib/oblien-capacity";
+import { cloudBillingContract } from "@repo/adapters";
 
 const savedPro = (): NonNullable<OblienSubscription> => ({ tierId: "reseller", status: "active", billingInterval: "monthly",
   periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-10-01T00:00:00Z", cancelAtPeriodEnd: false, canceledAt: null,
@@ -17,7 +18,7 @@ const monthlyPro = (): NonNullable<OblienSubscription> => ({ ...savedPro(),
   offer: subscriptionOffer("pro", "monthly"), metadata: subscriptionMetadata("pro", "org-a", "ns-a") });
 
 describe("funded Cloud offers and isolated capacity", () => {
-  it.each([undefined, oblienCapacityCatalogSchema.parse(capacityFixture)])(
+  it.each([undefined, oblienCapacityCatalogSchema.parse(cloudBillingContract(capacityFixture))])(
     "publishes only subscription plans without prepaid compute offers (with or without provider capacity)",
     (provider) => {
       const catalog = presentCloudPlans("en", provider);

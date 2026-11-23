@@ -301,7 +301,7 @@ export async function applySecurityAdvisory(
       const result = await updateProjectRuntime(
         ctx,
         projectId,
-        input.serviceId ? { serviceIds: [input.serviceId] } : {},
+        { ...(input.serviceId && { serviceIds: [input.serviceId] }), ...(input.composeRevision && { composeRevision: input.composeRevision }) },
         verified && match.serviceId
           ? await approveSecurityUpdate(project, {
               deploymentId: verified.deploymentId,

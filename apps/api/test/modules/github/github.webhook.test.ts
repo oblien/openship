@@ -72,9 +72,9 @@ describe("githubWebhookProvider", () => {
       { "x-github-event": "pull_request" },
     );
     expect(result.success).toBe(true);
-    expect(findByGitRepo).toHaveBeenCalledExactlyOnceWith("owner", "repo");
+    expect(findByGitRepo).toHaveBeenCalledExactlyOnceWith({ provider: "github", namespace: "owner", name: "repo" }, undefined);
     expect(enqueue).toHaveBeenCalledExactlyOnceWith({
-      organizationId: "org", sourceProjectId: "source", owner: "owner", repo: "repo", number: 42,
+      organizationId: "org", sourceProjectId: "source", provider: "github", owner: "owner", repo: "repo", number: 42,
     });
     expect(triggerDeployment).not.toHaveBeenCalled();
   });

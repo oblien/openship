@@ -5,7 +5,7 @@ import { getCopy } from "@/i18n/copy-server";
 import { Link } from "@/i18n/Link";
 import { ArrowRight } from "lucide-react";
 import { cloudFrom, getCloudPricing, UI } from "@/lib/pricing";
-import { CLOUD_SLA } from "@/lib/cloud-service";
+import { cloudSlaPlanSummary } from "@/lib/cloud-service";
 import { cloudPlanHref } from "@/lib/cloud-links";
 
 function models(from: string | null, copy: Copy) {
@@ -19,9 +19,7 @@ function models(from: string | null, copy: Copy) {
       ),
       points: [
         copy("Resources shared across projects and builds"),
-        copy("{value0}% monthly uptime guarantee", {
-          value0: String(CLOUD_SLA.monthlyUptimePercent),
-        }),
+        cloudSlaPlanSummary(copy),
         copy("Email and in-app support included"),
       ],
       price: from

@@ -1773,6 +1773,11 @@ export async function restoreSubgraphInTransaction(
     }
   }
 
+  // Resolve legacy image inheritance once for large instance archives.
+  const legacyGroupIcons = new Map(
+    (dump.tables.project_app ?? []).map((group) => [group.id, group.favicon]),
+  );
+
   // Pre-compute the encrypted-column specs keyed by table so the insert
   // loop below can redact those fields without re-scanning ENCRYPTED_COLUMNS
   // per row. Redaction on restore is REQUIRED (not optional like the
@@ -1835,6 +1840,11 @@ export async function restoreSubgraphInTransaction(
     const prepared = rows.map((r) => {
       const { row: next, dropped } = filterRowToKnownColumns(r, knownCols);
       for (const d of dropped) droppedCols.add(d);
+      // Archives from before iconUrl used a discovered favicon. Honor an explicit
+      // iconUrl (including a cleared null) when the archive already has the field.
+      if (spec.sqlName === "project" && !Object.hasOwn(r, "iconUrl")) {
+        next.iconUrl = r.favicon ?? legacyGroupIcons.get(r.groupId) ?? null;
+      }
       // Older instance dumps predate per-factor confirmation. Preserve active
       // authenticators while keeping unfinished enrollments unconfirmed.
       if (spec.sqlName === "two_factor" && !Object.hasOwn(r, "verified")) {

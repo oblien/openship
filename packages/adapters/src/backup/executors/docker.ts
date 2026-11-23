@@ -434,9 +434,8 @@ export class DockerBackupExecutor implements BackupExecutor {
           // Idempotent on purpose: the column stores whatever was written at deploy
           // time, and for services deployed from an already-scoped spec that is the
           // SCOPED name. Prefixing twice named a volume that never existed, which docker
-          // creates empty on mount — a capture that archives nothing (now a failure
-          // rather than a green run, via the empty-source gate) and a restore into a
-          // volume nothing reads.
+          // creates empty on mount. Capture verifies that the resolved volume exists
+          // before mounting it; restore must address the volume the service reads.
           const source =
             parsed.type !== "volume" || !service.namespaceVolumes
               ? parsed.source
@@ -578,16 +577,23 @@ export class DockerBackupExecutor implements BackupExecutor {
     const excludeArgs = (opts?.exclude ?? []).flatMap((p) => ["--exclude", shellQuote(p)]);
     const tarFlags = compressionFlag(compression);
     const isFile = source.type === "bind" && source.isDirectory === false;
-    if (opts?.allowEmpty && source.type === "volume") await this.dockerode.getVolume(source.source).inspect();
+    // Docker creates missing named volumes even for read-only mounts. Verify on
+    // this daemon before creating the helper; emptiness is not an existence check.
+    if (source.type === "volume") await this.dockerode.getVolume(source.source).inspect();
     const tarCmd = `tar -c${tarFlags} -C /mnt ${excludeArgs.join(" ")} ${isFile ? "file" : "."}`;
     const helperImage = compression === "zstd" ? "alpine:3" : HELPER_IMAGE;
 
     await this.ensureImage(helperImage);
 
     const hostConfig: Dockerode.HostConfig = {
-      ...(source.type === "bind"
-        ? { Mounts: [{ Type: "bind" as const, Source: source.source, Target: `/mnt${isFile ? "/file" : ""}`, ReadOnly: true }] }
-        : { Binds: [`${source.source}:/mnt:ro`] }),
+      Mounts: [
+        {
+          Type: source.type as "bind" | "volume",
+          Source: source.source,
+          Target: `/mnt${isFile ? "/file" : ""}`,
+          ReadOnly: true,
+        },
+      ],
       // OFF, for the reason demuxContainerStream already documents but this line
       // used to contradict: AutoRemove lets the daemon reap the helper before
       // container.wait() answers and before the attach stream has drained, which
@@ -638,29 +644,10 @@ export class DockerBackupExecutor implements BackupExecutor {
           tarCmd,
           compression === "zstd" ? "zstd" : "none",
           [
-            // REFUSE an empty mount before doing anything else.
-            //
-            // The daemon CREATES a missing bind directory and a missing named volume
-            // when it honors HostConfig.Binds, so a source that is not on this host
-            // produces a helper that starts fine and a `tar -c` of nothing that exits
-            // 0. That archive is ~350 bytes compressed, so the orchestrator's
-            // zero-byte guard passes and the run is recorded as a successful backup —
-            // a nightly green tick over an external disk that failed to mount, a data
-            // directory that was renamed under a still-running container, or a volume
-            // that `docker system prune --volumes` took.
-            //
-            // An intentionally-empty source fails too, which is the deliberate half of
-            // the trade: an archive of nothing is not a restore point either way, and
-            // the operator has `payloadConfig.sourceIds` to narrow the policy. Silence
-            // is the only outcome that cannot be recovered from.
-            `SRC=${shellQuote(sourceId)}`,
-            opts?.allowEmpty ? "true" : `[ -n "$(ls -A /mnt 2>/dev/null)" ] || { echo "openship: backup source $SRC is ` +
-              `empty or missing on this host, so this archive would contain nothing. ` +
-              `Refusing to record it as a backup. If it is a mount, check that it is ` +
-              `mounted; if it is empty on purpose, narrow the policy's sourceIds." >&2; ` +
-              `exit 91; }`,
-            // zstd is not in alpine:3, so the helper installs it. Second, so a doomed
-            // capture does not pay the ~20s fetch first.
+            // Bind Mounts reject missing host paths instead of creating them.
+            // Named volumes were inspected above. Existing empty sources are valid;
+            // tar still fails if the source cannot be read or storage cannot mount.
+            // zstd is not in alpine:3, so the helper installs it.
             compression === "zstd" ? "apk add --no-cache zstd >/dev/null 2>&1" : null,
           ]
             .filter(Boolean)

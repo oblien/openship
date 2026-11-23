@@ -11,67 +11,42 @@ Its job is to answer three questions and then do the work: **where should this r
 The wizard lives at `/deploy/<source>`. When you press **Deploy** it hands off to the
 live build screen at `/build/<id>`, which streams the logs until your app is online.
 
-<Callout title="Desktop vs. browser">
-The very first screen — **Deploy target** — only appears in the **desktop app**, where
-you can choose between your own servers, Openship Cloud, and your own machine. On a
-self-hosted or cloud dashboard opened in a browser, the wizard skips straight to
-**Config**.
-</Callout>
+The wizard opens on **Config** with a **Build & deploy** summary. Select its edit control to review
+the destination, runtime, build location and rollback settings. These controls are available from the
+web dashboard and optional desktop app; the available choices depend on the selected destination.
 
-## Screen 1 — Deploy target (desktop app only)
+## Build & deploy settings
 
-This is the "where do you want this to run?" screen. Its heading reads **"Where do you
-want to deploy?"** and it shows one card per place you can deploy to.
+### Deployment destination
 
-### The target cards
+Choose a connected server or a managed Cloud Space from the destination picker. You can connect
+your own server over SSH or add Cloud capacity when your account and permissions allow it.
+A saved project retains its destination; changing a deployment setting does not move its existing data.
+See [Custom servers](/docs/guides/custom-servers) and [server-to-server migration](/docs/guides/server-to-server-migration).
 
-| Card | What it means |
-|---|---|
-| **Your server** (shown by name) | Deploy to one of your connected servers over SSH. A single server shows by its name; multiple servers collapse into a **Your servers** card that expands to a picker. |
-| **Openship Cloud** | Deploy to managed cloud infrastructure — no server setup. If you haven't connected Cloud yet, the card explains that and prompts you to connect when you continue. |
+The machine running the OpenShip controller and the server running your application can be different.
+On supported paths, the build-location setting lets you build on the controller and transfer the result.
+With Desktop, the controller runs on your computer; with self-hosted web, it runs on your OpenShip server.
 
-If you run Openship self-hosted, an **Add your own server** button sits below the cards.
-It opens the **Add your server** form (name, IP address, port, username, and
-authentication — password, SSH key, or agent) right inside the wizard; the new server is
-selected automatically once saved, so you don't lose your place. See
-[Custom servers](/docs/guides/custom-servers) for the full walkthrough.
+### Cloud resource limits
 
-<Callout title="Building or running on your own machine" type="info">
-There isn't a separate "local machine" target card in this picker — the two cards are your
-server(s) and Openship Cloud. Running the **build** on your own computer is offered
-separately as the **This Machine** build option (see *Advanced*, below), which is the
-fast path when you have a capable laptop and a small VPS.
-</Callout>
+Cloud projects share the CPU, memory and storage of their selected Cloud Space. Where supported,
+choose a resource preset or custom limits within that space's capacity. A project resource limit is
+not a separate server subscription. Managed Cloud builds run on the selected Cloud destination.
 
-### Power — the cloud resource tier
+Static-file deployments do not need a persistent application process. Their options depend on whether
+you choose managed static hosting or serve the files from a selected server. Compose stacks and
+container workloads retain their service resource settings.
 
-When **Openship Cloud** is selected, a **Power** panel appears on the right. This is where
-you size the machine your app runs on:
+### Runtime and build options
 
-| Tier | Best for | Resources |
-|---|---|---|
-| **Micro** | Side projects, low traffic | 0.25 vCPU · 256 MB RAM · 4 GB disk |
-| **Low** (default) | Small apps, light APIs | 0.5 vCPU · 512 MB RAM · 8 GB disk |
-| **Medium** | Most production apps | 1 vCPU · 1 GB RAM · 16 GB disk |
-| **High** | Heavy workloads, fast builds | 2 vCPU · 2 GB RAM · 32 GB disk |
-| **Custom** | Dial it in yourself | Opens a dialog to set vCPU, RAM (MB), and disk (GB) |
-
-<Callout title="Static sites don't need a tier" type="info">
-If the project is just static files (no long-running server), there's no machine to size —
-the summary shows a **Static** chip instead of a power tier.
-</Callout>
-
-### Advanced (server targets)
-
-Pick a server and an **Advanced** section appears (collapsed by default — most people
-never open it). Its summary line shows the current build location; expand it for:
+For supported server deployments, review:
 
 - **Runtime** — how the app is isolated on the server.
-  - **Sandboxed** (recommended) — runs in an isolated container; a compromise can't reach
-    the host. Tiny overhead.
-  - **Direct** — runs straight on the host. Lowest overhead, but full host access if
-    compromised. Picking it shows a security caveat (and a memory-aware note on small
-    boxes).
+  - **Sandboxed** (recommended) — runs in a container with its own dependencies and
+    runtime isolation. Host updates, restricted privileges and careful mounts still matter.
+  - **Direct** — runs as a host process and shares the machine's environment. Its access
+    depends on the process user and host permissions. Picking it shows a security caveat.
 - **Build location** — **This Machine** (build locally, then transfer the output — faster
   on a powerful machine) or **Remote** (build on the deploy target — best when your machine
   is limited).
@@ -88,17 +63,10 @@ server clone uses your local `gh` over SSH (nothing stored on the server). See
 
 ### Save as default & Continue
 
-Tick **"Save as my default for every deployment"** to remember this target (and server)
-for next time — you can change it later in Settings or per-deploy from this picker. Press
-**Continue** to move to Config.
+On self-hosted controllers, **Save as default** remembers the selected destination for later projects.
+Press **Continue** to return to Config. Reopen **Build & deploy** whenever you need to review the selection.
 
-<Callout title="Returning here is quick">
-Once you've deployed before, the wizard remembers your last pick and drops you straight on
-**Config** with a compact **Build & deploy** summary bar at the top. Click that bar (it has
-a pencil) to reopen this picker for a one-off change.
-</Callout>
-
-## Screen 2 — Config
+## Config
 
 This screen is where you confirm what Openship detected and set anything it can't guess.
 The main column holds the settings; a sticky sidebar on the right holds your repo info,
@@ -188,8 +156,7 @@ build, deploy, and so on), with a spinner on the current step and a red mark if 
 
 ### Build Terminal
 
-A live terminal streams the build output line by line — like watching the oven through the
-glass. This is where you read what actually happened. After a successful deploy of a
+The build terminal streams output from each deployment stage. After a successful deploy of a
 server app, the same panel switches to **Production Logs** so you can watch the running
 app; a failed deploy adds a "See logs for issue details" hint. For more, see
 [Logs & monitoring](/docs/guides/logs-monitoring).

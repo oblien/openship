@@ -61,8 +61,12 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
       scripts: { postinstall: `bun -e 'await Bun.write(".install-id", crypto.randomUUID())'` },
     });
     await write("pnpm-workspace.yaml", "packages:\n  - apps/*\n  - packages/*\n");
+    await copyFile(join(root, "bunfig.toml"), join(directory, "bunfig.toml"));
     await write("tsconfig.base.json", "{}");
     await write("patches/fixture.patch", "first patch input\n");
+    await write("vendor/fixture.txt", "first vendored package input\n");
+    await write("scripts/web-client-messages.mjs", "// Website build preparation fixture.\n");
+    await write("scripts/web-client-messages.d.mts", "export {};\n");
     await write("packages/shared/package.json", {
       name: "@fixture/shared",
       version: "1.0.0",
@@ -76,7 +80,11 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
         private: true,
         type: "module",
         dependencies: { "@fixture/shared": "workspace:*" },
-        scripts: { build: "bun build.js" },
+        scripts: {
+          build: app === "web"
+            ? "bun ../../scripts/web-client-messages.mjs && bun build.js"
+            : "bun build.js",
+        },
       });
       await write(`apps/${app}/revision.txt`, "first source");
       await write(
@@ -176,7 +184,9 @@ describeDockerE2E("official Dockerfile cache invalidation", () => {
       "apps/dashboard/package.json",
       "packages/shared/package.json",
       "bun.lock",
+      "bunfig.toml",
       "patches/fixture.patch",
+      "vendor/fixture.txt",
       "apps/email/server/bun.lock",
       "apps/email/client/package.json",
     ]) {

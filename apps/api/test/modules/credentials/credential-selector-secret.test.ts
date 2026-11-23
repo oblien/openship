@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   credentialRepo: {
     findById: vi.fn(),
     nameTaken: vi.fn(async () => false),
+    create: vi.fn(),
     update: vi.fn(),
   },
   verifyCredentialValues: vi.fn(),
@@ -22,7 +23,10 @@ vi.mock("@repo/platform/engine/modules/credentials/verify", () => ({
   verifyCredentialValues: h.verifyCredentialValues,
 }));
 
-import { updateCredential } from "@repo/platform/engine/modules/credentials/credential.service";
+import {
+  createCredential,
+  updateCredential,
+} from "@repo/platform/engine/modules/credentials/credential.service";
 
 const stored = (overrides: Record<string, unknown> = {}) => ({
   id: "cred_1",
@@ -97,4 +101,25 @@ describe("credential destination changes", () => {
       }),
     );
   });
+});
+
+it("saves an unchallenged registry login without a verification date on create or rotation", async () => {
+  h.verifyCredentialValues.mockResolvedValue({
+    ok: true,
+    unverifiedReason: "Registry allows anonymous access.",
+  });
+  h.credentialRepo.create.mockImplementation(async (data) => stored(data));
+  const values = { username: "operator", secret: "new-token" };
+
+  const created = await createCredential("org_1", {
+    provider: "docker-registry",
+    name: "Production registry",
+    selector: "registry.example.com",
+    values,
+  });
+  const updated = await updateCredential("org_1", "cred_1", { values });
+
+  for (const credential of [created, updated]) {
+    expect(credential).toMatchObject({ status: "active", lastVerifiedAt: null });
+  }
 });

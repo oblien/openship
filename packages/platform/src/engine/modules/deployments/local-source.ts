@@ -95,6 +95,7 @@ export async function resolveSourceEnvFromLocal(
 export async function resolveFromLocal(
   dirPath: string,
   opts: ResolveOptions = {},
+  fallbackName = basename(dirPath),
 ): Promise<ProjectInfo> {
   const st = await stat(dirPath);
   if (!st.isDirectory()) {
@@ -103,7 +104,7 @@ export async function resolveFromLocal(
 
   const reader = createLocalReader(dirPath);
   const rootPackageJson = await reader.readJson("package.json");
-  const name = (rootPackageJson?.name as string) ?? basename(dirPath);
+  const name = (rootPackageJson?.name as string) || fallbackName;
 
   return resolveFromReader(
     reader,

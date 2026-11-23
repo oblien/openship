@@ -1,4 +1,4 @@
-import { app } from "../../app";
+import { inProcessRequest } from "../../lib/in-process-request";
 import { SDK_SCOPE_HEADER } from "@repo/contracts";
 import { Value } from "@sinclair/typebox/value";
 import type { TSchema } from "@sinclair/typebox";
@@ -128,7 +128,7 @@ export async function dispatchTool(
     body = JSON.stringify(args.body ?? {});
   }
 
-  const res = await app.fetch(new Request(url.toString(), { method: tool.method, headers, body }));
+  const res = await inProcessRequest(new Request(url.toString(), { method: tool.method, headers, body }));
 
   if (res.headers.get("content-type")?.split(";", 1)[0]?.trim() === "text/event-stream") {
     // A mistakenly advertised stream must not leave tools/call waiting forever.

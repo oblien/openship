@@ -31,6 +31,8 @@ import {
   DOMAIN_VERIFY_GRACE_MS,
 } from "@repo/core";
 import { assertResourceInOrg } from "../../lib/resource-access";
+import { authorization } from "../../lib/authorization";
+import { requireOrganizationAdmin } from "../../lib/organization-authorization";
 import { platform } from "../../lib/platform-config";
 import { buildBackgroundContext } from "../../lib/background-context";
 import { trackBackgroundWork } from "../../lib/background-work";
@@ -45,6 +47,9 @@ import {
 } from "../../lib/domain-ssl";
 import { getRoutingBaseDomain, resolveServiceRouteEndpoints } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
+import { checkCloudDomainDns } from "../../lib/cloud-domain-dns";
+import { cloudBillingOwner, requireCloudWorkspace, workspaceForServer } from "../../lib/cloud-workspace-scope";
+import { getNamespaceClient } from "../../lib/openship-cloud";
 import {
   resolveProjectServerHost,
   resolveLocalServerHost,
@@ -53,13 +58,13 @@ import {
   isLoopbackHost,
 } from "../../lib/server-target";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
-import { releaseManagedHostnames } from "../../lib/managed-edge-proxy";
+import { isManagedEdgeWarningForHostname, releaseManagedHostnames } from "../../lib/managed-edge-proxy";
 import { generateToken } from "../../lib/domain-token";
 import { routableWithoutOwnership } from "../../lib/domain-claims";
 import { untrackedSiteFor } from "../../lib/edge-orphans.service";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
 import type { UntrackedEdgeSite } from "@repo/core";
-import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
+import { isCloudManagedHostname, publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
 import { sshManager } from "../../lib/ssh-manager";
 import {
   resolveServerIdForProject,
@@ -83,6 +88,7 @@ import {
   type DnsProvisionResult,
 } from "../dns/dns-credential.service";
 import type { DnsRecordInput } from "../dns/types";
+import { normalizeName, zoneCandidates } from "../dns/names";
 import { withDomainDiagnostics } from "./domain-diagnostics";
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -108,7 +114,7 @@ export async function getDomain(ctx: RequestContext, domainId: string) {
 
 /**
  * Make a domain the project's primary. Primary is the project's canonical
- * hostname — what favicon detection, analytics, and the dashboard's project
+ * hostname — what analytics and the dashboard's project
  * link resolve to (getPrimaryByProject). setPrimary unsets any prior primary
  * for the project and marks this one, so exactly one row stays primary.
  * Survives redeploys: per-service route registration preserves an existing
@@ -259,15 +265,7 @@ export async function addDomain(
       ...patch,
       ...(data.isPrimary ? { isPrimary: true } : {}),
     };
-    const token = domain.verificationToken ?? generateToken(hostname);
-    const records = await buildRecords(
-      hostname,
-      token,
-      project,
-      domain.externalIngress,
-      ctx.organizationId,
-      !!data.includeWww,
-    );
+    const records = await recordsAfterDomainSave(domain, project, ctx.organizationId, !!data.includeWww);
     return { domain, records, ...resaveWww };
   }
 
@@ -326,18 +324,7 @@ export async function addDomain(
   // it — the apex stays, and the operator can add www by hand.
   const www = data.includeWww ? await addWwwSibling(ctx, data, hostname) : null;
 
-  // `includeWww` reaches buildRecords so the returned panel lists the SIBLING's
-  // record too. It didn't before, which is why "Include www" so often ended in a
-  // www that never resolved: the row and the route existed, but the operator was
-  // never told to add its DNS record, so its certificate could never be issued.
-  const records = await buildRecords(
-    domain.hostname,
-    token,
-    project,
-    domain.externalIngress,
-    ctx.organizationId,
-    !!data.includeWww,
-  );
+  const records = await recordsAfterDomainSave(domain, project, ctx.organizationId, !!data.includeWww);
 
   // DNS is not written here. Auto-configuration is on-demand (planDomainDns /
   // applyDomainDns): the operator sees what would change and presses to apply,
@@ -559,8 +546,9 @@ export async function getDomainRecords(
  * the apply and the "records to paste" can never diverge. Empty-value records
  * (target not yet resolved) are dropped — plan/provision treat "" as nothing to
  * write, so they would only pad the plan with un-actionable rows. Names are
- * restricted to this hostname's own route + challenge names via `dnsRecordHosts`:
- * a per-domain panel provisions its own row, never a sibling's.
+ * restricted to this hostname's route and ownership proof. The managed Cloud
+ * verifier can request a parent TXT, which DNS apply only adds within the
+ * authorized zone.
  */
 async function desiredDnsInputs(
   ctx: RequestContext,
@@ -581,8 +569,13 @@ async function desiredDnsInputs(
   const { routeName, txtName } = dnsRecordHosts(domain.hostname);
   const own = new Set([routeName.toLowerCase(), txtName.toLowerCase()]);
   const inputs = built.records
-    .filter((r) => r.value && own.has(r.name.toLowerCase()))
-    .map<DnsRecordInput>((r) => ({ type: r.type, name: r.name, content: r.value }));
+    .filter((record) => record.value && (own.has(record.name.toLowerCase()) || (record.type === "TXT" && record.append)))
+    .map<DnsRecordInput>((record) => ({
+      type: record.type,
+      name: record.name,
+      content: record.value,
+      ...(record.type === "TXT" && record.append ? { append: true } : {}),
+    }));
   return { hostname: domain.hostname, inputs };
 }
 
@@ -611,6 +604,14 @@ export async function applyDomainDns(
   targetServerId?: string,
 ): Promise<DnsProvisionResult> {
   const { hostname, inputs } = await desiredDnsInputs(ctx, domainId, targetServerId);
+  if (inputs.some((record) => record.append)) {
+    // This proof can cover sibling hostnames. Use the same authority as
+    // management of the organization's connected DNS credentials.
+    await authorization.authorize({ ...ctx, scopeMode: "fixed" }, {
+      resourceType: "settings", resourceId: "*", action: "admin",
+    });
+    await requireOrganizationAdmin(ctx);
+  }
   return provisionRecords(ctx.organizationId, hostname, inputs);
 }
 
@@ -1101,10 +1102,14 @@ async function checkDomain(
 
   // ── Cloud (Oblien-managed): CNAME via Oblien + ownership TXT ───────────────
   const token = domain.verificationToken ?? generateToken(domain.hostname);
-  const routeOk = external ? true : await verifyCname(domain.hostname);
-  const txtOk = await verifyTxt(domain.hostname, token);
+  const workspaceId = external ? null : await managedDnsWorkspaceId(ctx.organizationId, project);
+  const cloudDns = workspaceId
+    ? await checkCloudDomainDns((await getNamespaceClient(ctx.organizationId, workspaceId)).client, domain.hostname)
+    : undefined;
+  const routeOk = external || (cloudDns?.cname ?? await verifyCname(domain.hostname));
+  const txtOk = cloudDns ? cloudDns.ownership === true || cloudDns.verified : await verifyTxt(domain.hostname, token);
 
-  if (routeOk && txtOk) {
+  if (cloudDns ? cloudDns.verified : routeOk && txtOk) {
     await markDomainVerifiedActive(domain, domainId, {
       sslStatus: external ? "external" : domain.sslStatus === "active" ? "active" : "provisioning",
     });
@@ -1178,7 +1183,7 @@ async function checkDomain(
   // Persist the failed attempt so the UI can distinguish never-tried /
   // propagating / persistently-failing, and so the auto-verify cron records
   // progress instead of leaving the row an eternal "pending".
-  const message = verifyMessage(domain.hostname, token, routeOk, txtOk, target);
+  const message = cloudDns?.message ?? verifyMessage(domain.hostname, token, routeOk, txtOk, target);
   const attempts = await repos.domain.recordVerifyFailure(domainId, message);
 
   return {
@@ -1208,15 +1213,16 @@ export async function removeDomain(ctx: RequestContext, domainId: string) {
 
 /** The complete domain + edge mutation, held under the project's runtime lock. */
 async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Project) {
+  const deployment = await findActiveDeployment(project).catch((error) => {
+    observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+    return undefined;
+  });
   try {
     // Tear the route down on the RIGHT host (remote server / cloud), not the
     // local orchestrator's OpenResty — reconcileProjectRoutes resolves the
     // deployment's own runtime and handles the cloud case.
-    const deployment = project.activeDeploymentId
-      ? await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/domains/domain.service"); return null; })
-      : null;
     await reconcileProjectRoutes(project, {
-      deployment,
+      deployment: deployment ?? null,
       removes: [{ hostname: domain.hostname, isCustomDomain: domain.domainType === "custom" }],
     });
   } catch (err) {
@@ -1227,9 +1233,7 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
   }
 
   // ── Take back the DNS records we wrote, and only those ───────────────────────
-  // Above the service-scoped branch below on purpose: that branch returns early,
-  // so cleanup placed after it never runs for a per-service domain and leaves the
-  // records pointing at this box forever.
+  // Apply DNS cleanup to both project and service domains.
   //
   // `releaseRecords` deletes only records carrying our ownership marker. Matching
   // on the name alone is what makes this dangerous: for an apex custom domain
@@ -1293,10 +1297,31 @@ async function removeLiveDomain(ctx: RequestContext, domain: Domain, project: Pr
       serviceId: domain.serviceId,
       routing: serviceRouting,
     });
-    return;
+  } else {
+    await repos.domain.remove(domain.id);
   }
 
-  await repos.domain.remove(domain.id);
+  const meta = deployment?.meta as { edgeUnsynced?: boolean; deployWarning?: string } | null | undefined;
+  const warning = meta?.deployWarning;
+  if (
+    deployment &&
+    !project.workspaceId &&
+    isCloudManagedHostname(domain.hostname) &&
+    meta?.edgeUnsynced === true &&
+    typeof warning === "string" &&
+    isManagedEdgeWarningForHostname(warning, domain.hostname)
+  ) {
+    // The hostname is already removed. Keep deletion successful even if the
+    // advisory cleanup fails, and leave other managed routes for Retry routing.
+    try {
+      const remaining = await repos.domain.listByProject(project.id);
+      if (!remaining.some((row) => isCloudManagedHostname(row.hostname))) {
+        await repos.deployment.clearRoutingWarning(deployment.id, warning);
+      }
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+    }
+  }
 }
 
 /**
@@ -1691,7 +1716,7 @@ async function verifyTxt(hostname: string, token: string): Promise<boolean> {
 type DnsRecord =
   | { type: "CNAME"; host: string; name: string; value: string }
   | { type: "A"; host: string; name: string; value: string }
-  | { type: "TXT"; host: string; name: string; value: string };
+  | { type: "TXT"; host: string; name: string; value: string; append?: true };
 
 /**
  * The sub-label of a hostname relative to its registrable domain, or null for
@@ -1726,6 +1751,87 @@ export function dnsRecordHosts(hostname: string): {
   };
 }
 
+async function managedDnsWorkspaceId(organizationId: string, project?: Project, serverId?: string): Promise<string | null> {
+  if (serverId) {
+    const workspaceId = (await workspaceForServer(organizationId, serverId)).workspace?.id ?? null;
+    if (project?.workspaceId && workspaceId !== project.workspaceId)
+      throw new AppError("Choose the project's managed server to configure DNS.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+    return workspaceId;
+  }
+  if (project?.workspaceId) return project.workspaceId;
+  if (project?.serverId) return (await workspaceForServer(organizationId, project.serverId)).workspace?.id ?? null;
+
+  if (project) {
+    const release = await findActiveDeployment(project);
+    const target = release?.meta as { serverId?: string; managedWorkspaceId?: string; deployTarget?: string } | null;
+    if (target?.serverId) {
+      const workspaceId = (await workspaceForServer(organizationId, target.serverId)).workspace?.id;
+      if (target.managedWorkspaceId && target.managedWorkspaceId !== workspaceId)
+        throw new AppError("The active deployment's managed server changed. Select a server before configuring DNS.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
+      if (workspaceId || target.deployTarget !== "cloud") return workspaceId ?? null;
+    } else if (target?.managedWorkspaceId) {
+      return (await requireCloudWorkspace(organizationId, target.managedWorkspaceId)).id;
+    }
+  } else {
+    const owner = await cloudBillingOwner(organizationId);
+    if (owner.workspaceId) return owner.workspaceId;
+  }
+  throw new AppError("Choose a managed server before setting up this domain's DNS.", 409, "CLOUD_DOMAIN_SERVER_REQUIRED");
+}
+
+async function managedDnsRecords(organizationId: string, workspaceId: string, hostnames: string[]) {
+  const { client } = await getNamespaceClient(organizationId, workspaceId);
+  const checks = await Promise.all(hostnames.map(async (hostname): Promise<DnsRecord[]> => {
+    const check = await checkCloudDomainDns(client, hostname);
+    const { cname, txt } = check.requiredRecords;
+    const records: DnsRecord[] = [];
+    if (cname?.target) {
+      const { routeHost, routeName } = dnsRecordHosts(hostname);
+      records.push({ type: "CNAME", host: routeHost, name: routeName, value: cname.target });
+    }
+    if (txt?.value) {
+      const name = normalizeName(txt.host);
+      const separator = name.indexOf(".");
+      const label = name.slice(0, separator);
+      const parent = name.slice(separator + 1);
+      // A provider can request an apex proof for a child. Accept only a DNS
+      // challenge at this hostname or a parent. Apply also checks the zone.
+      if (/^_[a-z0-9_-]+$/.test(label) && zoneCandidates(hostname).includes(parent)) {
+        const relative = relativeSubdomain(parent);
+        records.push({ type: "TXT", host: relative ? `${label}.${relative}` : label, name, value: txt.value, append: true });
+      }
+    }
+    if (!check.verified && records.length === 0)
+      throw new AppError(`Couldn't confirm the DNS records for ${hostname}. Please retry.`, 502, "CLOUD_DOMAIN_DNS_UNAVAILABLE");
+    return records;
+  }));
+  const seen = new Set<string>();
+  return checks.flat().filter((record) => {
+    const key = JSON.stringify([record.type, record.name, record.value]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function recordsAfterDomainSave(domain: Domain, project: Project, organizationId: string, includeWww: boolean) {
+  try {
+    return await buildRecords(
+      domain.hostname,
+      domain.verificationToken ?? generateToken(domain.hostname),
+      project,
+      domain.externalIngress,
+      organizationId,
+      includeWww,
+    );
+  } catch (error) {
+    if (platform().target !== "cloud") throw error;
+    observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+    // The domain is already saved. A dedicated records read can be retried.
+    return { mode: "cloud" as const, records: [] };
+  }
+}
+
 /**
  * Build the DNS records the user needs to add — with the CORRECT per-hostname
  * host (previously hard-coded to the apex `@`, so a subdomain could never
@@ -1754,11 +1860,21 @@ async function buildRecords(
   const { routeHost, routeName, txtHost, txtName } = dnsRecordHosts(hostname);
 
   if (target === "cloud") {
-    // Cloud (Oblien-managed): CNAME to the edge + an ownership TXT, since a
-    // shared multi-tenant edge genuinely needs to prove who owns the hostname.
     const txt: DnsRecord = { type: "TXT", host: txtHost, name: txtName, value: token };
     if (externalIngress) {
       return { mode: "external", records: [txt] };
+    }
+    if (organizationId) {
+      const workspaceId = await managedDnsWorkspaceId(organizationId, project, targetServerId);
+      if (workspaceId) {
+        try {
+          const hostnames = wwwHostname ? [hostname, wwwHostname] : [hostname];
+          return { mode: "cloud", records: await managedDnsRecords(organizationId, workspaceId, hostnames) };
+        } catch (error) {
+          observeCaughtError(error, "platform/engine/modules/domains/domain.service");
+          throw new AppError(`Couldn't check the DNS records for ${hostname}. Please retry.`, 502, "CLOUD_DOMAIN_DNS_UNAVAILABLE");
+        }
+      }
     }
     let cnameTarget: string | null = null;
     try {

@@ -1,8 +1,10 @@
-import { OperationError } from "@repo/contracts";
+import { OperationError, type ComposeServiceDiff } from "@repo/contracts";
 import { createHmac } from "node:crypto";
-import { commandToArgv, sortJsonKeys } from "@repo/core";
-import { toComposeSpec, type Service } from "@repo/db";
+import { commandToArgv, sortJsonKeys, hasComposeInterpolation, ENV_MASK } from "@repo/core";
+import { toComposeSpec, composeSpecDiff, type Service } from "@repo/db";
 import { env } from "../../config/env";
+import { redactDiagnosticText } from "@repo/core/diagnostics";
+import { maskDriftChanges } from "../../lib/secret-env";
 
 type SourceService = Parameters<typeof toComposeSpec>[0] & { name: string; kind?: string | null };
 
@@ -32,7 +34,7 @@ function sourceSpec(value: Parameters<typeof toComposeSpec>[0]) {
     if (spec.advanced?.[key]?.length) spec.advanced[key] = [...spec.advanced[key]].sort();
     else if (spec.advanced) delete spec.advanced[key];
   }
-  return sortJsonKeys(spec);
+  return sortJsonKeys(spec) as typeof spec;
 }
 
 export function composeSourceRevision(
@@ -50,39 +52,130 @@ export function composeSourceRevision(
     .digest("hex");
 }
 
-export function composeSourceChanges(rows: readonly Service[], services: readonly SourceService[]) {
+/** One comparison for the gate, name summary and detailed review. */
+function sourceChanges(rows: readonly Service[], services: readonly SourceService[]) {
   const existing = rows.filter((s) => s.kind === "compose" && !s.archivedAt);
   const byName = new Map(existing.map((s) => [s.name, s]));
   const incoming = services.filter((s) => !s.kind || s.kind === "compose");
   const names = new Set(incoming.map((s) => s.name));
+  type Spec = ReturnType<typeof sourceSpec>;
+  const changes: Array<{
+    name: string;
+    kind: ComposeServiceDiff["kind"];
+    before: Spec | null;
+    after: Spec | null;
+  }> = [];
+  for (const service of incoming) {
+    const existing = byName.get(service.name);
+    const after = sourceSpec(service);
+    if (!existing) {
+      changes.push({ name: service.name, kind: "added", before: null, after });
+      continue;
+    }
+    const base = existing.importedSpec;
+    // Legacy rows adopt their first baseline without losing saved settings.
+    if (!base) continue;
+    // Preserve the existing baseline migrations; a schema upgrade is not a source edit.
+    const baseline = Object.hasOwn(base, "buildArgs")
+      ? base
+      : {
+          ...base,
+          buildArgs: service.buildArgs,
+          advanced: {
+            ...base.advanced,
+            buildArgTemplateKeys: service.advanced?.buildArgTemplateKeys,
+          },
+        };
+    const template = service.advanced?.commandTemplate;
+    const migrated =
+      !baseline.advanced?.commandTemplate && template && baseline.command === template.sourceValue
+        ? { ...baseline, advanced: { ...baseline.advanced, commandTemplate: template } }
+        : baseline;
+    const before = sourceSpec(migrated);
+    if (JSON.stringify(before) !== JSON.stringify(after))
+      changes.push({ name: service.name, kind: "changed", before, after });
+  }
+  for (const service of existing) {
+    if (service.importedSpec && !names.has(service.name))
+      changes.push({
+        name: service.name,
+        kind: "removed",
+        before: sourceSpec(service.importedSpec),
+        after: null,
+      });
+  }
+  return changes;
+}
+
+function summarize(changes: ReturnType<typeof sourceChanges>) {
   return {
-    added: incoming.filter((s) => !byName.has(s.name)).map((s) => s.name),
-    changed: incoming
-      .filter((s) => {
-        const base = byName.get(s.name)?.importedSpec;
-        // Legacy rows adopt their first baseline without losing saved settings.
-        if (!base) return false;
-        // Build args were added after the original baseline format. Backfill that
-        // field once; do not mistake a schema upgrade for a source edit.
-        const baseline = Object.hasOwn(base, "buildArgs")
-          ? base
-          : {
-              ...base,
-              buildArgs: s.buildArgs,
-              advanced: {
-                ...base.advanced,
-                buildArgTemplateKeys: s.advanced?.buildArgTemplateKeys,
-              },
-            };
-        const template = s.advanced?.commandTemplate;
-        const migrated = !baseline.advanced?.commandTemplate && template && baseline.command === template.sourceValue
-          ? { ...baseline, advanced: { ...baseline.advanced, commandTemplate: template } }
-          : baseline;
-        return JSON.stringify(sourceSpec(migrated)) !== JSON.stringify(sourceSpec(s));
-      })
-      .map((s) => s.name),
-    removed: existing.filter((s) => s.importedSpec && !names.has(s.name)).map((s) => s.name),
+    added: changes.filter((s) => s.kind === "added").map((s) => s.name),
+    changed: changes.filter((s) => s.kind === "changed").map((s) => s.name),
+    removed: changes.filter((s) => s.kind === "removed").map((s) => s.name),
   };
+}
+
+export function composeSourceChanges(rows: readonly Service[], services: readonly SourceService[]) {
+  return summarize(sourceChanges(rows, services));
+}
+
+function displayDiff(changes: ReturnType<typeof sourceChanges>): ComposeServiceDiff[] {
+  return changes.map(({ name, kind, before, after }) => {
+    const secrets = [before, after]
+      .flatMap((spec) => [
+        ...Object.values(spec?.environment ?? {}),
+        ...Object.values(spec?.buildArgs ?? {}),
+      ])
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+    const display = (value: unknown): string | null => {
+      if (value === undefined || value === null) return null;
+      const text = typeof value === "string" ? value : JSON.stringify(value);
+      // Authored expressions can hold nested defaults and required-value messages.
+      // Use the shared interpolation detector and mask the whole value, as the
+      // drift preview already does for template provenance.
+      if (hasComposeInterpolation(text)) return ENV_MASK;
+      return redactDiagnosticText(text, 4000, secrets);
+    };
+    // Share the drift UI's comparison and masking instead of maintaining a
+    // second interpretation of Compose fields or secret-bearing provenance.
+    const raw = composeSpecDiff(before ?? {}, after ?? {});
+    const masked = maskDriftChanges(raw);
+    const fields: ComposeServiceDiff["fields"] = [];
+    for (const [index, change] of masked.entries()) {
+      // command is a lossy copy; argv preserves shell/list command semantics.
+      if (change.field === "command") continue;
+      if (change.field === "environment" || change.field === "buildArgs") {
+        const previous = (raw[index]!.from ?? {}) as Record<string, unknown>;
+        const next = (raw[index]!.to ?? {}) as Record<string, unknown>;
+        for (const key of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+          if (JSON.stringify(previous[key]) === JSON.stringify(next[key])) continue;
+          const path = `${change.field === "buildArgs" ? "build.args" : "environment"}.${key}`;
+          fields.push({
+            path,
+            before: Object.hasOwn(previous, key)
+              ? (display((change.from as Record<string, unknown>)[key]) ?? "null")
+              : null,
+            after: Object.hasOwn(next, key)
+              ? (display((change.to as Record<string, unknown>)[key]) ?? "null")
+              : null,
+          });
+        }
+      } else {
+        const path =
+          change.field === "commandArgv"
+            ? "command"
+            : change.field === "dependsOn"
+              ? "depends_on"
+              : change.field;
+        fields.push({
+          path,
+          before: before ? display(change.from) : null,
+          after: after ? display(change.to) : null,
+        });
+      }
+    }
+    return { name, kind, fields };
+  });
 }
 
 /**
@@ -108,16 +201,23 @@ export function assertComposeReviewed(
   source: readonly SourceService[],
   reviewedRevision?: string,
 ) {
-  const changes = composeSourceChanges(rows, source);
+  const delta = sourceChanges(rows, source);
+  const changes = summarize(delta);
+  const revision = composeSourceRevision(projectId, source);
   const changed =
     rows.some((s) => s.kind === "compose") &&
     (changes.added.length > 0 || changes.changed.length > 0 || changes.removed.length > 0);
-  if (reviewedRevision ? reviewedRevision !== composeSourceRevision(projectId, source) : changed) {
+  if (reviewedRevision ? reviewedRevision !== revision : changed) {
     throw new OperationError(
-      "The Compose configuration has changed. Review the latest services in Configure before deploying.",
+      "The Compose configuration has changed. Review the changes before deploying.",
       409,
       "COMPOSE_REVIEW_REQUIRED",
-      { projectId, composeChanges: changes },
+      {
+        projectId,
+        composeRevision: revision,
+        composeChanges: changes,
+        composeDiff: displayDiff(delta),
+      },
     );
   }
 }

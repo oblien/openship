@@ -29,6 +29,7 @@ import {
 const ACCESS_REFRESH_MS = 60_000;
 const lock = <T>(org: string, work: () => Promise<T>) =>
   createProvisionLock(`management-billing:${org}`).run(work);
+const managementRefreshes = new Map<string, ReturnType<typeof refresh>>();
 export const managementNamespace = (org: string) =>
   `os-manage-${createHash("sha256").update(org).digest("hex").slice(0, 32)}`;
 const key = (org: string, value: string) =>
@@ -177,9 +178,9 @@ async function refresh(org: string) {
   return { row: { ...row, verified: paid, cloudCoveredUntil, checkedAt }, subscription, paid };
 }
 
-async function state(org: string): Promise<ManagementState> {
+async function state(org: string, refreshed = refresh(org)): Promise<ManagementState> {
   const [{ row, subscription }, servers, catalog] = await Promise.all([
-    refresh(org),
+    refreshed,
     connected(org),
     getOblienBillingApi().getCatalog(),
   ]);
@@ -207,7 +208,15 @@ async function state(org: string): Promise<ManagementState> {
 
 export async function getManagement(ctx: ExecutionContext) {
   assertCloud();
-  return lock(ctx.organizationId, () => state(ctx.organizationId));
+  const org = ctx.organizationId;
+  // Several views can request the plan at once. Share the provider refresh
+  // and keep the catalog and inventory reads outside the mutation lock.
+  let pending = managementRefreshes.get(org);
+  if (!pending) {
+    pending = lock(org, () => refresh(org)).finally(() => managementRefreshes.delete(org));
+    managementRefreshes.set(org, pending);
+  }
+  return state(org, pending);
 }
 
 async function assertSales() {
@@ -243,7 +252,7 @@ export async function purchaseManagement(ctx: ExecutionContext, input: Managemen
           name: "Openship Manage",
           slug: owner.namespace,
           resource_limits: {
-            max_workspaces: 0,
+            max_vms: 0,
             max_vcpus: 0,
             max_ram_mb: 0,
             max_disk_gb: 0,

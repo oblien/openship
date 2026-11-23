@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./image-url";
 export * from "./docker-swarm";
 export * from "./actions";
 export * from "./action-capabilities";
@@ -37,7 +38,7 @@ export * from "./domain-retry";
 export * from "./utils";
 export * from "./runtime-version";
 export * from "./errors";
-export { assertLocalHostExecutionAllowed } from "./local-execution-policy";
+export { assertLocalHostExecutionAllowed, isLocalHostExecutionAllowed } from "./local-execution-policy";
 export * from "./operation-state";
 export * from "./service-routing";
 export * from "./volume-spec";
@@ -145,3 +146,7 @@ export * from "./locale";
 export * from "./concurrency";
 export * from "./migration-links";
 export * from "./edge-response";
+export * from "./edge-pages";
+export * from "./deploy-link";
+
+export * from "./git-providers";

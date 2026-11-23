@@ -11,6 +11,7 @@ import {
 } from "@repo/core";
 import { KubernetesApiError, type KubernetesApi, type KubernetesObject } from "./kubernetes-api";
 import { clusterObject, installDatabaseAddon, waitForClusterResource } from "./database-addons";
+import addons from "./database-addons.json";
 import {
   listNamespaceResources,
   kubernetesProjectNamespace,
@@ -25,6 +26,7 @@ import { kubernetesPodIssue, kubernetesPodPhase } from "./kubernetes-health";
 import { kubernetesIdLabel } from "./kubernetes-label";
 import { deleteKubernetesObject, patchKubernetesObject } from "./kubernetes-mutation";
 import { RedisArchive, DatabaseArchiveTasks } from "./redis-backups";
+import { redisSentinelReadiness } from "./redis-readiness";
 export type { ClusterDatabaseBackupStorage } from "./database-backups";
 
 export const DATABASE_IMAGES = {
@@ -224,15 +226,20 @@ export class ClusterDatabaseAdapter {
 
   async preflight() {
     validateClusterDatabase(this.target.config);
-    const version = await this.api.request<any>("GET", "/version", undefined, this.signal);
-    const minor = Number(String(version.minor).replace(/\D/g, ""));
-    if (
-      this.target.config.engine === "postgres" &&
-      (Number(version.major) !== 1 || minor < 34 || minor > 36)
-    )
-      throw new Error(
-        "This PostgreSQL template supports Kubernetes 1.34–1.36. Update the server cluster before installing it.",
+    if (this.target.config.engine === "postgres") {
+      const version = await this.api.request<{ major: string; minor: string }>(
+        "GET",
+        "/version",
+        undefined,
+        this.signal,
       );
+      const minor = `${version.major}.${String(version.minor).replace(/\+$/, "")}`;
+      const supported = addons.postgres.supportedKubernetesMinors;
+      if (!supported.includes(minor))
+        throw new Error(
+          `This cluster runs Kubernetes ${minor}. For PostgreSQL, choose a cluster running a supported Kubernetes version (${supported.join(", ")}).`,
+        );
+    }
     const nodes = await this.api.request<{ items: KubernetesObject[] }>(
       "GET",
       `/api/v1/nodes?labelSelector=${encodeURIComponent(`openship.io/runtime=${this.target.runtimeId}`)}`,
@@ -1023,7 +1030,7 @@ export class ClusterDatabaseAdapter {
         `timeout 10 redis-cli -h ${host} INFO replication | tr -d '\\r' | grep -qx 'role:master'`,
         `timeout 10 redis-cli -h ${host} INFO replication | tr -d '\\r' | grep -qx 'connected_slaves:${c.instances - 1}'`,
         `timeout 15 redis-cli -h ${host} WAIT ${c.instances - 1} 10000 | grep -qx '${c.instances - 1}'`,
-        `timeout 10 redis-cli -h database-sentinel.${this.namespace}.svc.cluster.local -p 26379 SENTINEL CKQUORUM mymaster | grep -q '^OK '`,
+        redisSentinelReadiness(this.namespace, c.instances - 1),
       );
     const check =
       c.engine === "postgres"

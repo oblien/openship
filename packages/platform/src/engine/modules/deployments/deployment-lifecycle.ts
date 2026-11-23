@@ -38,12 +38,11 @@ import {
   sanitizeStorableStrings,
   sliceWithoutSplittingPair,
 } from "./build-log-sanitize";
-import { detectAndStoreFavicon } from "../../lib/favicon-detector";
-import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
 import { deploymentArtifacts } from "./deployment-artifacts";
+import { recheckRejectedRegistryCredential } from "../credentials/credential.service";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -779,6 +778,19 @@ export async function onFailure(
       },
     },
   );
+
+  // The deploy is already terminal. A diagnostic check must not turn a package
+  // permission failure into a disabled registry login, or replace its error.
+  if (
+    errorMeta?.errorCode === "REGISTRY_ACCESS_DENIED" &&
+    typeof errorMeta.errorDetails?.registry === "string"
+  ) {
+    try {
+      await recheckRejectedRegistryCredential(dep.organizationId, errorMeta.errorDetails.registry);
+    } catch (checkError) {
+      observeCaughtError(checkError, "platform/engine/modules/deployments/registry-credential-recheck");
+    }
+  }
 }
 
 export async function onCancelled(
@@ -1064,11 +1076,6 @@ export async function onSuccess(
       },
     },
   );
-
-  // Async favicon detection - don't block the deploy response
-  if (result.url) {
-    void trackBackgroundWork(detectAndStoreFavicon(project.id, result.url));
-  }
 
   // Webmail on Openship Cloud, routed on the mail server's own `mail.<domain>`:
   // the mail VPS proxies that hostname to the cloud URL, which can only be

@@ -13,13 +13,13 @@ import { verifyCredentialValues } from "@repo/platform/engine/modules/credential
 
 const provider = getCredentialProvider("docker-registry")!;
 
-function response(status: number, headers: Record<string, string> = {}) {
+function response(status: number, headers: Record<string, string> = {}, body: unknown = {}) {
   return {
     status,
     ok: status >= 200 && status < 300,
     headers,
-    text: async () => "",
-    json: async () => ({}),
+    text: async () => JSON.stringify(body),
+    json: async () => body,
     bytes: async () => Buffer.alloc(0),
   };
 }
@@ -46,7 +46,7 @@ describe("container-registry credential verification SSRF policy", () => {
     );
 
     expect(h.safeFetch).toHaveBeenCalledWith("http://127.0.0.1:8080/v2/", {
-      headers: undefined,
+      sameOriginRedirectsOnly: true,
       timeoutMs: 10_000,
       allowHttp: false,
       allowPrivate: false,
@@ -76,7 +76,7 @@ describe("container-registry credential verification SSRF policy", () => {
     ["registry.example.com", "https://registry.example.com/token"],
   ])("preserves trusted token authentication for %s", async (registry, realm) => {
     h.safeFetch.mockResolvedValueOnce(response(401, { "www-authenticate": `Bearer realm="${realm}"` }))
-      .mockResolvedValueOnce(response(200));
+      .mockResolvedValueOnce(response(200, {}, { token: "fixture-token" }));
     expect(await verifyCredentialValues(provider, values(registry))).toEqual({ ok: true });
     expect(h.safeFetch).toHaveBeenNthCalledWith(2, realm, expect.objectContaining({
       headers: { authorization: `Basic ${Buffer.from("operator:registry-token").toString("base64")}` },
@@ -102,6 +102,7 @@ describe("container-registry credential verification SSRF policy", () => {
         },
         allowPrivate: false,
         maxRedirects: 3,
+        sameOriginRedirectsOnly: true,
       }),
     );
   });
@@ -110,8 +111,9 @@ describe("container-registry credential verification SSRF policy", () => {
     h.env.CLOUD_MODE = false;
     h.safeFetch.mockResolvedValueOnce(response(200));
 
-    await expect(verifyCredentialValues(provider, values("localhost:5000"))).resolves.toEqual({
+    await expect(verifyCredentialValues(provider, values("localhost:5000"))).resolves.toMatchObject({
       ok: true,
+      unverifiedReason: expect.stringContaining("could not verify"),
     });
 
     expect(h.safeFetch).toHaveBeenCalledWith(
@@ -122,6 +124,64 @@ describe("container-registry credential verification SSRF policy", () => {
 });
 
 describe("registry connection errors", () => {
+  it("checks the registry login without a repository scope supplied in the challenge", async () => {
+    h.safeFetch
+      .mockResolvedValueOnce(response(401, {
+        "www-authenticate": 'Bearer realm="https://registry.example.com/token?scope=repository:private:pull",service="registry.example.com"',
+      }))
+      .mockResolvedValueOnce(response(200, {}, { access_token: "fixture-token" }));
+
+    expect(await verifyCredentialValues(provider, values("registry.example.com"))).toEqual({ ok: true });
+    expect(h.safeFetch).toHaveBeenNthCalledWith(
+      2,
+      "https://registry.example.com/token?service=registry.example.com",
+      expect.objectContaining({ sameOriginRedirectsOnly: true }),
+    );
+  });
+
+  it.each(["{}", "invalid JSON"])(
+    "does not verify a login from a successful response without a token (%s)",
+    async (body) => {
+      h.safeFetch
+        .mockResolvedValueOnce(
+          response(401, {
+            "www-authenticate": 'Bearer realm="https://registry.example.com/token"',
+          }),
+        )
+        .mockResolvedValueOnce({ ...response(200), text: async () => body });
+
+      await expect(
+        verifyCredentialValues(provider, values("registry.example.com")),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: expect.stringContaining("did not return a registry token"),
+      });
+    },
+  );
+
+  it("treats a blocked authentication redirect as inconclusive", async () => {
+    h.safeFetch
+      .mockResolvedValueOnce(response(401, { "www-authenticate": 'Basic realm="registry"' }))
+      .mockResolvedValueOnce(response(302, { location: "https://other.example.com/login" }));
+
+    const result = await verifyCredentialValues(provider, values("registry.example.com"));
+    expect(result).toEqual({ ok: false, reason: expect.stringContaining("answered 302") });
+  });
+
+  it.each([
+    'Bearer realm="https://registry.example.com/token",service="registry.example.com"',
+    'Basic realm="registry"',
+  ])("distinguishes a rejected login from an unavailable authentication endpoint: %s", async challenge => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      h.safeFetch.mockResolvedValueOnce(response(401, { "www-authenticate": challenge }))
+        .mockResolvedValueOnce(response(status));
+      const result = await verifyCredentialValues(provider, values("registry.example.com"));
+      expect(result.ok).toBe(false);
+      expect("credentialRejected" in result).toBe(status === 401);
+    }
+    for (const [url] of h.safeFetch.mock.calls) expect(new URL(url).searchParams.has("scope")).toBe(false);
+  });
+
   it.each([
     ["probe", undefined, "ERR_TLS_CERT_ALTNAME_INVALID"],
     [

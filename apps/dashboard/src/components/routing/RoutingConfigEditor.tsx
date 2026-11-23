@@ -29,6 +29,7 @@ type HeaderRule = { source: string; headers: { key: string; value: string }[] };
 
 function normalize(value: RoutingConfig | null | undefined): RoutingConfig {
   return {
+    edgePages: value?.edgePages,
     rewrites: value?.rewrites ?? [],
     redirects: value?.redirects ?? [],
     headers: value?.headers ?? [],
@@ -42,6 +43,7 @@ function normalize(value: RoutingConfig | null | undefined): RoutingConfig {
 /** Collapse to null when nothing is configured, so we don't persist an empty blob. */
 function compact(cfg: RoutingConfig): RoutingConfig | null {
   const out: RoutingConfig = {};
+  if (cfg.edgePages) out.edgePages = cfg.edgePages;
   if (cfg.rewrites?.length) out.rewrites = cfg.rewrites;
   if (cfg.redirects?.length) out.redirects = cfg.redirects;
   if (cfg.headers?.length) out.headers = cfg.headers;
@@ -127,6 +129,7 @@ export const RoutingConfigEditor: React.FC<{
    * wizard can't wipe a limit set on the project tab.
    */
   showProxySettings?: boolean;
+  section?: "routing" | "proxy";
   /** Live edge read-back for the proxy section (saved vs. served), when fetched. */
   edgeConfig?: EdgeConfigReport | null;
   onRefreshEdgeConfig?: () => void;
@@ -136,6 +139,7 @@ export const RoutingConfigEditor: React.FC<{
   onChange,
   disabled,
   showProxySettings,
+  section,
   edgeConfig,
   onRefreshEdgeConfig,
   edgeConfigLoading,
@@ -155,6 +159,7 @@ export const RoutingConfigEditor: React.FC<{
 
   return (
     <div className="@container space-y-4">
+      {section !== "proxy" && <>
       {/* Rewrites */}
       <section aria-label={w.rewrites} className="rounded-2xl bg-card p-5 space-y-4">
         <SectionHeader
@@ -446,6 +451,7 @@ export const RoutingConfigEditor: React.FC<{
         </div>
       </section>
 
+      </>}
       {showProxySettings && (
         <ProxySettingsSection
           cfg={cfg}

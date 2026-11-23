@@ -6,7 +6,7 @@ import { createResourceGrantRepo } from "@repo/db/repos";
 import { withInvitationLifecycleLock } from "../../lib/invitation-lifecycle-lock";
 import { listAuthorizedProjects } from "../../lib/authorized-projects";
 import { checkPermissionOnResource } from "../../lib/authorization";
-import { canUseGitHubRepo } from "../github/github-access";
+import { gitGrantProvider, gitGrantTarget } from "../git/provider";
 /**
  * Permissions controller — team management + per-resource grants.
  *
@@ -29,7 +29,6 @@ import { buildBackgroundContext } from "../../lib/background-context";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
-import { createGitHubSource } from "@repo/platform/engine/modules/github/sources/index";
 import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
 import { resolveOrgCloudUserId } from "@repo/platform/engine/lib/cloud/transport";
 import { env } from "@repo/platform/engine/config/index";
@@ -252,7 +251,8 @@ export async function listResources(ctx: ExecutionContext, input: { type: string
   }
 
 
-  if (type === "github_installation" || type === "github_repository") {
+  const provider = gitGrantProvider(type);
+  if (provider) {
     assertOrgAdmin(ctx);
     // This branch fetches the FULL org repo/account list as the owner, so
     // it MUST NOT be reachable by a regular member — the /resources route
@@ -278,31 +278,8 @@ export async function listResources(ctx: ExecutionContext, input: { type: string
       organizationId,
       label: "permissions:github-catalog",
     });
-    const source = await createGitHubSource(ownerCtx).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/permissions/permissions.service"); return null; });
-    if (!source) return [];
-
-    if (type === "github_installation") {
-      const home = await source.getHome().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/permissions/permissions.service"); return ({ accounts: [], repos: [] }); });
-      return (home.accounts ?? []).map((a) => ({
-          id: a.login,
-          label: a.login,
-          meta: { type: a.type },
-        }));
-    }
-
-    // github_repository. `?owner=<login>` narrows to one org's repos (the tree
-    // picker's per-org lazy load) via listReposForOwner — which returns that
-    // org's full list, not just the primary installation's repos that getHome
-    // surfaces. No owner → fall back to the primary-installation repos.
-    const ownerParam = input.owner;
-    const repoList = ownerParam
-      ? (await source.listReposForOwner(ownerParam).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/permissions/permissions.service"); return null; })) ?? []
-      : (await source.getHome().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/permissions/permissions.service"); return ({ repos: [] }); })).repos ?? [];
-    return repoList.map((r) => ({
-        id: r.full_name,
-        label: r.full_name,
-        meta: r.private ? { visibility: "private" } : { visibility: "public" },
-      }));
+    return provider.grantResources(ownerCtx, type === provider.grantTypes.namespace ? "namespace" : "repository", input.owner)
+      .catch((error) => { observeCaughtError(error, "platform/engine/modules/permissions/permissions.service"); return []; });
   }
 
   return [];
@@ -712,13 +689,13 @@ export async function normalizeGrants(ctx: ExecutionContext, input: readonly Per
     if (!permissions.length) continue;
     if (isOrgSingletonResourceType(resourceType) && resourceId !== "*")
       throw responseError({ error: `${resourceType} is granted for the whole organization — use "*" as the resource id`, code: "SINGLETON_REQUIRES_WILDCARD" }, 400);
-    const github = resourceType === "github_installation" || resourceType === "github_repository";
-    if (resourceId !== "*" && !github && !isOrgSingletonResourceType(resourceType) &&
+    const provider = gitGrantProvider(resourceType);
+    if (resourceId !== "*" && !provider && !isOrgSingletonResourceType(resourceType) &&
         !(await resourceBelongsToOrg(resourceType, resourceId, ctx.organizationId, ctx.scopeMode === "fixed")))
       throw responseError({ error: `Resource not in this organization: ${resourceType}/${resourceId}`, code: "RESOURCE_NOT_IN_ORG" }, 400);
     const action = permissions.includes("admin") ? "admin" : permissions.includes("write") ? "write" : "read";
-    const allowed = github
-      ? await canUseGitHubRepo(ctx, { owner: resourceId.split("/")[0]!, repo: resourceType === "github_repository" ? resourceId.split("/")[1] ?? null : null }, action === "read" ? "read" : "write", { ownerLevel: "authority" })
+    const allowed = provider
+      ? await provider.access.canUse(ctx, gitGrantTarget(provider, resourceType, resourceId), action === "read" ? "read" : "write", { ownerLevel: "authority" })
       : await checkPermissionOnResource(ctx, { resourceType, resourceId, action });
     if (!allowed) throw responseError({ error: "The requested grant exceeds your access", code: "GRANT_EXCEEDS_ACCESS" }, 403);
     const scope = parseSourceAccessScope(raw.scope ? JSON.stringify(raw.scope) : null);

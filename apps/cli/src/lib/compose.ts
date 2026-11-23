@@ -3187,8 +3187,7 @@ function writeEnvFile(rendered: string, before: string): void {
   renameSync(ENV_TMP_FILE, ENV_FILE);
 }
 
-/** `.env` keys whose VALUE must never be printed. Suffix-matched so a key added
- *  to renderEnv later is masked by default rather than leaked by omission. */
+/** Managed `.env` secret keys. Operator-set values are always hidden in the preview. */
 const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/;
 
 /**
@@ -3208,7 +3207,7 @@ export interface ComposePlan {
   buildFile?: string;
   /** The compose file that would be written, verbatim. */
   yaml: string;
-  /** The `.env` that would be written, with secret values masked. */
+  /** The `.env` that would be written, with managed secrets and operator-set values masked. */
   settings: Array<{ key: string; value: string }>;
   /** Secret keys this run would GENERATE (absent from the current `.env`). */
   newSecrets: string[];
@@ -3241,13 +3240,18 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
   const settings: Array<{ key: string; value: string }> = [];
   const newSecrets: string[] = [];
   const pgData = resolvePgData(prev);
-  const rendered = renderEnvAndCarried(
+  const { text: rendered, carried } = renderEnvAndCarried(
     opts, hostChannel, cfg, prev, pgData.path ?? "<unresolved>",
-  ).text;
+  );
+  const operatorKeys = new Set(carried);
   for (const line of rendered.split("\n")) {
     const at = line.indexOf("=");
     if (at < 1 || line.startsWith("#")) continue;
     const key = line.slice(0, at);
+    if (operatorKeys.has(key)) {
+      settings.push({ key, value: "<preserved>" });
+      continue;
+    }
     const value = line.slice(at + 1);
     if (!SECRET_ENV_KEY.test(key)) {
       settings.push({ key, value });

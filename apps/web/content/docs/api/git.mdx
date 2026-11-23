@@ -1,0 +1,43 @@
+---
+title: Git providers
+description: Shared repository operations for connected Git providers.
+---
+
+The `git` collection uses a provider ID for browsing, detection and reviewed source changes.
+Use `github` for GitHub or `gitlab` for GitLab.com. Both support repository browsing, stack detection, cloning and push deployments. GitLab supports OAuth, access tokens and the local GitLab CLI through [workspace connections](/docs/api/credentials). GitHub App installation, OAuth and device login are documented in the [GitHub API](/docs/api/github).
+
+Open **Settings → Git → GitLab** or **New Project → Repositories → GitLab → Connect GitLab**. Choose browser authorization or enter a personal, group or project access token. Read-only tokens need `read_api` and `read_repository`. Automatic deployments require `api`, permission to manage project webhooks and a reachable webhook endpoint.
+
+To enable browser authorization, register a confidential GitLab OAuth application with the exact dashboard origin followed by `/connections/callback`. Select `api` and `read_repository`. Set `OPENSHIP_CONNECTION_GITLAB_CLIENT_ID` and `OPENSHIP_CONNECTION_GITLAB_CLIENT_SECRET` on the OpenShip API and restart it.
+
+Desktop opens authorization in the system browser. Select **Return to OpenShip Desktop** after authorizing.
+
+On desktop and self-hosted controllers, an instance administrator with workspace admin access can also select **glab CLI** after running `glab auth login --hostname gitlab.com` as the API's OS user. The CLI authenticates controller-local clones. Private clones that must run on the build server need a workspace OAuth connection or access token. Each workspace can keep both GitHub and GitLab connected.
+
+```ts
+const repository = await ship.git.getRepo({ provider: "github", owner: "acme", repo: "app" });
+const branches = await ship.git.listBranches({ provider: "gitlab", owner: "acme/platform", repo: "app" });
+```
+
+The owner is the complete provider namespace. Encode it as one URL path segment in REST
+requests. Unknown providers are rejected; they never use another provider's credentials.
+
+Repository access alone permits metadata and deployment detection. Reading source requires
+source content permission; publishing requires write permission on every changed path.
+Unavailable capabilities return an explicit error. Tenant and repository authorization run
+inside the same platform operations for HTTP, native, SDK, CLI and MCP callers.
+
+{/* api-operations:start */}
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| List repositories visible to the caller. | `git.listRepos(input)` | `GET /api/git/:provider/repos`<br />`git:read` |
+| Read repository metadata. | `git.getRepo(input)` | `GET /api/git/:provider/repos/:owner/:repo`<br />`git:read` |
+| List branches. | `git.listBranches(input)` | `GET /api/git/:provider/repos/:owner/:repo/branches`<br />`git:read` |
+| Browse files within granted source paths. | `git.listFiles(input)` | `GET /api/git/:provider/repos/:owner/:repo/files`<br />`git:read` |
+| Read the permitted repository tree. | `git.listTree(input)` | `GET /api/git/:provider/repos/:owner/:repo/tree`<br />`git:read` |
+| Read a file within granted source paths. | `git.getFile(input)` | `GET /api/git/:provider/repos/:owner/:repo/file`<br />`git:read` |
+| Detect deployment settings without returning source contents. | `git.detectStack(input)` | `GET /api/git/:provider/repos/:owner/:repo/detect`<br />`git:read` |
+| Publish reviewed changes with source write authorization. | `git.publishChange(input)` | `POST /api/git/:provider/repos/:owner/:repo/changes`<br />`git:write` |
+
+{/* api-operations:end */}

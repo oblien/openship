@@ -1,6 +1,7 @@
 "use client";
 import { useResourceScope } from "@/hooks/use-scoped-resource";
 import { ManagementPlan } from "./ManagementPlan";
+import { ManagementPlanStatus } from "./ManagementPlanStatus";
 import { useManagementPlan } from "./useManagementPlan";
 
 /** Shared by the page and inline connection dialog. The API enforces the same
@@ -17,8 +18,17 @@ export function ManagementAccess(props: ManagementAccessProps) {
 
 function ScopedManagementAccess({ children, serverId }: ManagementAccessProps) {
   const resource = useManagementPlan({ refreshIdle: false });
-  const { data, loading, error } = resource;
-  if (loading || error || !data?.active || (!serverId && data.connectedServers >= data.serverLimit))
+  const { data, loading, refreshing, error, refresh } = resource;
+  if (!error && data && (!data.active || (!serverId && data.connectedServers >= data.serverLimit)))
     return <ManagementPlan resource={resource} embedded />;
-  return children;
+  return (
+    <>
+      {(loading || error || !data) && (
+        <div className="mb-4">
+          <ManagementPlanStatus pending={loading || refreshing} error={error} onRetry={refresh} showConnectionHint />
+        </div>
+      )}
+      {children}
+    </>
+  );
 }

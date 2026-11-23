@@ -90,6 +90,38 @@ async function project(owner: SeededOwner, name: string, deployed = true) {
 }
 
 describe("runtime update shared SDK/HTTP operation", () => {
+  it.each(["runtime", "runtime/check"])("rejects malformed optional input on %s", async path => {
+    const owner = await seedOwner(), p = await project(owner, "invalid-runtime-input");
+    for (const body of ["{", '{"serviceIds":"invalid"}']) {
+      const response = await app.request(`/api/updates/${p.id}/${path}`, {
+        method: "POST", headers: { ...owner.auth, "content-type": "application/json" }, body,
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(provider.deploy).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, "", "{}"])("accepts optional runtime-update input over HTTP: %j", async body => {
+    const owner = await seedOwner(), p = await project(owner, "optional-runtime-input");
+    const response = await app.request(`/api/updates/${p.id}/runtime`, {
+      method: "POST", headers: { ...owner.auth, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body }),
+    });
+    expect(await response.json()).toEqual({ data: { project_id: p.id, deployment_id: "runtime-update" } });
+    expect(response.status).toBe(200);
+    expect(provider.deploy).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ organizationId: owner.orgId }), expect.objectContaining({
+      projectId: p.id, trigger: "update", forcePullImages: true, commitSha: shipped,
+    }));
+  });
+
+  it("preserves the Compose review revision through native and HTTP runtime refresh", async () => {
+    const owner = await seedOwner(), p = await project(owner, "reviewed-runtime"), c = await clients(owner);
+    const composeRevision = "b".repeat(64);
+    for (const client of [c.native.updates, c.remote.updates]) await client.updateRuntime(p.id, { composeRevision });
+    expect(provider.deploy).toHaveBeenCalledTimes(2);
+    for (const [, input] of provider.deploy.mock.calls) expect(input).toMatchObject({ projectId: p.id, composeRevision, forcePullImages: true });
+  });
+
   it("rebuilds a source runtime at the active commit without requiring source drift", async () => {
     const owner = await seedOwner(),
       p = await project(owner, "source"),

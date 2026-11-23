@@ -4,6 +4,8 @@ const h = vi.hoisted(() => ({
   project: {} as Record<string, unknown>,
   rows: [] as unknown[],
   updates: [] as unknown[],
+  services: [] as Array<Record<string, unknown>>,
+  serviceUpdates: [] as unknown[],
   updateError: false,
 }));
 vi.mock("../../src/lib/ship-client", async (importOriginal) => {
@@ -28,6 +30,18 @@ vi.mock("../../src/lib/ship-client", async (importOriginal) => {
       update: async (id: string, input: unknown) => {
         if (h.updateError) throw new Error("update unavailable");
         h.updates.push({ id, input });
+      },
+    },
+    services: {
+      list: async () => h.services,
+      get: async (_project: string, id: string) => {
+        const service = h.services.find(service => service.id === id);
+        if (!service) throw new Error("Service not found in project");
+        return service;
+      },
+      update: async (project: string, id: string, input: unknown) => {
+        if (h.updateError) throw new Error("update unavailable");
+        h.serviceUpdates.push({ project, id, input });
       },
     },
     domains: {
@@ -59,6 +73,8 @@ beforeEach(() => {
   h.rows = [];
   h.updates = [];
   h.updateError = false;
+  h.services = [];
+  h.serviceUpdates = [];
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -122,28 +138,48 @@ describe("CLI custom domain routing", () => {
     expect(h.updates).toEqual([]);
   });
 
-  it("warns without attaching a portless worker or failing the command", async () => {
+  it("refuses a portless worker before claiming a domain", async () => {
     h.project = { ...h.project, hasServer: false, workloadType: "worker", port: null };
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = await add();
-    expect(result.code).toBe(0);
-    expect(h.rows).toHaveLength(1);
+    expect(result.code).toBe(1);
+    expect(h.rows).toEqual([]);
     expect(h.updates).toEqual([]);
-    expect(warning.mock.calls.flat().join(" ")).toMatch(/worker.*no public route/i);
-    expect(result.err).not.toContain("routed on the next deploy");
+    expect(result.err).toContain("worker has no public route");
   });
 
-  it.each(["services", "monorepo"])("warns without attaching a %s project", async (projectType) => {
-    h.project = { ...h.project, name: "My project", projectType };
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it.each(["services", "monorepo"])("requires an explicit target before claiming a domain for %s", async projectType => {
+    h.project = { ...h.project, projectType };
     const result = await add();
-    expect(result.code).toBe(0);
-    expect(h.rows).toHaveLength(1);
+    expect(result.code).toBe(1);
+    expect(h.rows).toEqual([]);
+    expect(result.err).toContain("--service");
+  });
+
+  it.each(["web", "svc_web"])("attaches to the project-scoped service selected by %s", async ref => {
+    h.project.projectType = "services";
+    const existing = [{ domainType: "free", domain: "existing", port: 8080 }];
+    h.services = [{ id: "svc_web", name: "web", ports: ["8080:3000"], publicEndpoints: existing }];
+    const result = await runCommand(domainCommand, ["add", "app.example.com", "-p", "project-1", "--service", ref, "--port", "3000"]);
+    expect(result.code, result.err).toBe(0);
     expect(h.updates).toEqual([]);
-    expect(warning).toHaveBeenCalledWith(
-      "Domain app.example.com was added, but My project is a multi-service project, so routes belong to a service. Attach it to a service in the dashboard.",
-    );
-    expect(result.err).not.toContain("routed on the next deploy");
+    expect(h.serviceUpdates).toEqual([{ project: "project-1", id: "svc_web", input: { exposed: true, publicEndpoints: [...existing, { domainType: "custom", customDomain: "app.example.com", port: 3000 }] } }]);
+  });
+
+  it.each(["unknown", "svc_foreign"])("rejects an unknown or foreign service %s before claiming the hostname", async ref => {
+    h.project.projectType = "services";
+    const result = await runCommand(domainCommand, ["add", "app.example.com", "-p", "project-1", "--service", ref, "--port", "3000"]);
+    expect(result.code).toBe(1);
+    expect(h.rows).toEqual([]);
+    expect(h.serviceUpdates).toEqual([]);
+  });
+
+  it("requires a port when the selected service has several possible targets", async () => {
+    h.project.projectType = "services";
+    h.services = [{ id: "svc_web", name: "web", ports: ["3000", "3001"] }];
+    const result = await runCommand(domainCommand, ["add", "app.example.com", "-p", "project-1", "--service", "web"]);
+    expect(result.code).toBe(1);
+    expect(h.rows).toEqual([]);
+    expect(result.err).toContain("--port");
   });
 
   it.each(["domain", "edge"])(

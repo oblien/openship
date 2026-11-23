@@ -72,8 +72,10 @@ export async function setup(c: Context) {
     tunnelProvider: body.tunnelProvider || null,
     tunnelToken: body.tunnelToken || null,
     defaultBuildMode: body.defaultBuildMode || "auto",
-    defaultRollbackWindow: normalizeRollbackWindow(body.defaultRollbackWindow),
   };
+  if (body.defaultRollbackWindow !== undefined) {
+    settingsPatch.defaultRollbackWindow = normalizeRollbackWindow(body.defaultRollbackWindow);
+  }
   if (body.authMode !== undefined) {
     const validation = validateAuthModeChange(body);
     if (!validation.ok) return c.json(validation.body, validation.status);
@@ -356,7 +358,7 @@ export async function resetAdminPassword(c: Context) {
   // multi-user box the reset never lands on an arbitrary member row.
   const admin = await repos.user.findFoundingAdmin();
   if (!admin) {
-    return c.json({ error: "No admin account exists yet — run `openship` to create one." }, 409);
+    return c.json({ error: "No admin account exists yet — run `openship` and choose Create first admin, or run `openship up --non-interactive --admin-email <email>` with OPENSHIP_ADMIN_PASSWORD set." }, 409);
   }
 
   const email =

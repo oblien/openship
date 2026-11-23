@@ -1,7 +1,7 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
-import type { AppearancePreferences } from "@repo/core";
+import { DEFAULT_ROLLBACK_WINDOW, type AppearancePreferences } from "@repo/core";
 
 // ─── Instance Settings ───────────────────────────────────────────────────────
 
@@ -62,8 +62,8 @@ export const instanceSettings = pgTable("instance_settings", {
 
   /** Default build mode for new users on this instance */
   defaultBuildMode: text("default_build_mode").notNull().default("auto"),
-  /** Default number of previous successful bare releases to retain for rollback */
-  defaultRollbackWindow: integer("default_rollback_window").notNull().default(5),
+  /** Default number of past releases to retain for rollback on this instance. */
+  defaultRollbackWindow: integer("default_rollback_window").notNull().default(DEFAULT_ROLLBACK_WINDOW),
 
   /**
    * Source that drives `sendInvitationEmail` in `lib/auth.ts`:

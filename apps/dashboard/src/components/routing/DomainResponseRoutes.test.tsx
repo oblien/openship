@@ -83,8 +83,44 @@ async function submit() {
   });
 }
 
+it("keeps routes behind the count row and navigates back without losing an unfinished edit", async () => {
+  api.listRouteRules.mockResolvedValue({ rules: [rule()] });
+  await render();
+  const trigger = container.querySelector("button")!;
+  trigger.focus();
+  expect(trigger.textContent).toContain("1");
+  expect(container.textContent).not.toContain("/x");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await click("Virtual routes · app.test");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  await click("Edit route /x");
+  await input("textarea", "unfinished content");
+  await act(async () => {
+    document
+      .querySelector("textarea")!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+  });
+  expect(document.querySelector("form")).toBeNull();
+  expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
+  await click("Edit route /x");
+  expect(document.querySelector("textarea")?.value).toBe("unfinished content");
+  await click("Cancel");
+  expect(document.querySelector("form")).toBeNull();
+  await click("Edit route /x");
+  expect(document.querySelector("textarea")?.value).toBe("original");
+  await click("Virtual routes");
+  await click("Close");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(api.updateRouteRule).not.toHaveBeenCalled();
+});
+
 it("creates a response for this domain, keeps preview HTML inert, and reports edge acknowledgement", async () => {
   await render();
+  await click("Virtual routes · app.test");
   await click("Add route");
   await input('input[placeholder="/health"]', "/status");
   await input("textarea", "<script>window.injected = true</script>");
@@ -111,11 +147,15 @@ it("creates a response for this domain, keeps preview HTML inert, and reports ed
     }),
   );
   expect(document.body.textContent).toContain("Saved and applied to the edge.");
-  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("/status");
+  expect(document.querySelector("form")).toBeNull();
+  expect(container.textContent).not.toContain("/status");
+  expect(container.textContent).toContain("1");
 });
 
 it("retains a failed draft, avoids double submit and distinguishes saved from applied", async () => {
   await render();
+  await click("Virtual routes · app.test");
   await click("Add route");
   await input('input[placeholder="/health"]', "/x");
   await input("textarea", "keep this content");
@@ -140,6 +180,7 @@ it("retains a failed draft, avoids double submit and distinguishes saved from ap
 
 it("rejects duplicate or injected headers before sending a mutation", async () => {
   await render();
+  await click("Virtual routes · app.test");
   await click("Add route");
   await input('input[placeholder="/health"]', "/headers");
   for (const [index, name] of ["X-Test", "x-test"].entries()) {
@@ -160,7 +201,10 @@ it("edits only the selected domain response and preserves its disabled state", a
     ],
   });
   await render();
-  expect(container.textContent).not.toContain("/other-domain");
+  expect(container.textContent).not.toContain("/x");
+  expect(container.textContent).toContain("1");
+  await click("Virtual routes · app.test");
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("/other-domain");
   await click("Edit route /x");
   expect(document.querySelector("textarea")?.value).toBe("original");
   await input("textarea", "changed");
@@ -177,9 +221,12 @@ it("edits only the selected domain response and preserves its disabled state", a
 it("keeps failed loading distinct from an empty list and requires confirmation to remove", async () => {
   api.listRouteRules.mockRejectedValueOnce(new Error("Cannot reach API"));
   await render();
-  expect(container.textContent).toContain("Cannot reach API");
+  expect(container.textContent).not.toContain("0");
+  await click("Virtual routes · app.test");
+  expect(document.body.textContent).toContain("Cannot reach API");
+  expect(document.body.textContent).not.toContain("No virtual routes yet");
   expect(
-    [...container.querySelectorAll("button")].find((button) =>
+    [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Add route"),
     )?.disabled,
   ).toBe(true);
@@ -189,5 +236,7 @@ it("keeps failed loading distinct from an empty list and requires confirmation t
   expect(api.deleteRouteRule).not.toHaveBeenCalled();
   await click("Remove");
   expect(api.deleteRouteRule).toHaveBeenCalledWith("project", "response-a");
-  expect(container.textContent).not.toContain("/x");
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("/x");
+  expect(document.body.textContent).toContain("No virtual routes yet");
+  expect(container.textContent).toContain("0");
 });

@@ -24,6 +24,7 @@ import { doctorCommand } from "./commands/doctor";
 
 // Deploy loop
 import { deployCommand } from "./commands/deploy";
+import { launchCommand } from "./commands/launch";
 import { deploymentCommand } from "./commands/deployment";
 import { logsCommand } from "./commands/logs";
 
@@ -41,6 +42,7 @@ import { webhookCommand } from "./commands/webhook";
 import { auditCommand } from "./commands/audit";
 import { accessCommand } from "./commands/access";
 import { billingCommand } from "./commands/billing";
+import { gitCommand } from "./commands/git";
 import { githubCommand } from "./commands/github";
 import { settingsCommand } from "./commands/settings";
 import { analyticsCommand } from "./commands/analytics";
@@ -82,7 +84,7 @@ const sdkCommands = new Set([
   deploymentCommand, logsCommand, initCommand, serverCommand, systemCommand,
   backupCommand, jobCommand, statusCommand, doctorCommand, monitoringCommand,
   credentialCommand, dnsCommand, notificationCommand, webhookCommand, auditCommand, accessCommand, tokenCommand,
-  billingCommand, githubCommand, settingsCommand, analyticsCommand,
+  billingCommand, githubCommand, gitCommand, settingsCommand, analyticsCommand,
 ]);
 const remoteCommands = new Set([...sdkCommands, apiCommand, edgeCommand, mailCommand, migrationCommand, openCommand, logoutCommand]);
 
@@ -163,6 +165,7 @@ program.addCommand(doctorCommand);
 
 // Deploy loop
 program.addCommand(deployCommand);
+program.addCommand(launchCommand);
 program.addCommand(deploymentCommand);
 program.addCommand(logsCommand);
 
@@ -181,6 +184,7 @@ program.addCommand(auditCommand);
 program.addCommand(accessCommand);
 program.addCommand(billingCommand);
 program.addCommand(githubCommand);
+program.addCommand(gitCommand);
 program.addCommand(settingsCommand);
 program.addCommand(analyticsCommand);
 program.addCommand(migrationCommand);

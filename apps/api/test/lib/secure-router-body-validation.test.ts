@@ -98,6 +98,20 @@ describe("secureRouter auto-wires validation from spec.body", () => {
     expect(res.status).toBe(200);
   });
 
+  it.each([undefined, ""])("accepts an empty action without requiring JSON: %j", async body => {
+    const app = buildApp();
+    const init = {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      ...(body === undefined ? {} : { body }),
+    };
+    const response = await app.request("/api/t/no-body", init);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    // The same transport must still enforce a route's required input.
+    expect((await app.request("/api/t/with-body", init)).status).toBe(400);
+  });
+
   it("preserves optional bodies when their shared operation owns validation", async () => {
     const response = await buildApp().request("/api/t/operation", { method: "POST", headers: { "Content-Type": "application/json" } });
     expect(response.status).toBe(200);

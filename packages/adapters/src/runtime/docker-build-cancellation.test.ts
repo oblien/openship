@@ -378,6 +378,28 @@ describe("DockerRuntime build cancellation", () => {
     expect(results[0]!.result.imageRef).toBeUndefined();
   });
 
+  it("refuses controller-side static extraction when a Cloud destination executor is unavailable", async () => {
+    const config = buildConfig("session-cloud-static-no-executor");
+    const extractDocRootViaDaemon = vi.fn();
+    const { runtime } = runtimeWith({ exec: vi.fn() } as never, {
+      transport: { kind: "cloud", description: "test Cloud" },
+      connectionOptions: {},
+      build: vi.fn(async () => ({ status: "deploying", imageRef: "openship/static:fixture" })),
+      extractDocRootViaDaemon,
+      removeImage: vi.fn(async () => {}),
+    });
+    vi.stubEnv("CLOUD_MODE", "true");
+    try {
+      await expect(runtime.buildStaticToHost(config, "/tmp/unused-cloud-output")).resolves.toMatchObject({
+        status: "failed",
+        errorCause: { code: "LOCAL_HOST_ACCESS_DENIED" },
+      });
+      expect(extractDocRootViaDaemon).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("returns cancelled when the cancel lands during buildStaticToHost's extract", async () => {
     const executor = {
       exec: vi.fn(async () => ""),

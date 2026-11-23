@@ -2,6 +2,8 @@
  * Deployment validation schemas - Shared TypeBox operation contracts.
  */
 
+import { ComposeRevisionSchema } from "./compose-review";
+
 import { Type, type Static } from "@sinclair/typebox";
 import { OwnerRepoParams } from "./github-inputs";
 import { CreateDeploymentSchema } from "./deployments";
@@ -110,9 +112,7 @@ export const BuildServiceInput = Type.Object({
  */
 export const BuildAccessBody = Type.Object({
   projectId: Type.String({ description: "Target project id (from projects/ensure). Required." }),
-  composeRevision: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$",
-    description: "Reviewed Compose revision returned by prepare with projectId. Required when an existing source stack changes; a stale revision is rejected before synchronization.",
-  })),
+  composeRevision: Type.Optional(ComposeRevisionSchema),
   uploadSessionId: Type.Optional(
     Type.String({
       description: "Folder-upload session id — deploys the uploaded source instead of git.",
@@ -203,13 +203,14 @@ export const PrepareDeployBody = Type.Object({
   ),
   ...SourceScanOptionsSchema.properties,
   source: Type.Optional(
-    Type.Union([Type.Literal("github"), Type.Literal("local")], {
+    Type.Union([Type.Literal("git"), Type.Literal("github"), Type.Literal("local")], {
       description: "Source kind; inferred from owner/repo vs path when omitted.",
     }),
   ),
-  owner: Type.Optional(Type.String({ ...OwnerRepoParams.properties.owner, description: "GitHub repo owner (github source)." })),
-  repo: Type.Optional(Type.String({ ...OwnerRepoParams.properties.repo, description: "GitHub repo name (github source)." })),
-  branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
+  provider: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+  owner: Type.Optional(Type.String({ minLength: 1, maxLength: 512, description: "Repository namespace, including nested groups." })),
+  repo: Type.Optional(Type.String({ ...OwnerRepoParams.properties.repo, description: "Repository name." })),
+  branch: Type.Optional(Type.String({ description: "Git branch." })),
   path: Type.Optional(
     Type.String({ description: "Local filesystem path (local source; self-hosted only)." }),
   ),

@@ -5,9 +5,9 @@ description: How Openship decides who can do what — organizations, the four ro
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-Every request into Openship passes through one gate — the **permission plane** — that answers a single question: *is this person allowed to do this thing to this resource?* Think of it like the front desk of a building: your keycard says which floors you can reach, and the desk checks it every single time, not just once at the door.
-
-Access is decided by three things working together: which **organization** a resource belongs to, your **role** in that organization, and — for the tightest role — the specific **grants** you've been given.
+OpenShip authorizes operations against the authenticated identity, organization, requested action,
+and target resource. Roles provide organization-level authority; scoped grants and token capabilities
+limit access to particular resources and operations.
 
 <Callout title="One gate, no side doors" type="info">
 Openship refuses to boot if any API route forgets to declare a permission. There is no "unprotected by accident" route — the safe default is enforced at startup, not left to reviewers to catch.

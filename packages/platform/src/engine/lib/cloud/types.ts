@@ -115,7 +115,7 @@ export interface CloudClient {
   };
   pages: {
     create(input: {
-      workspace_id: string;
+      vm_id: string;
       path: string;
       name: string;
       slug: string;
@@ -147,9 +147,7 @@ export interface CloudClient {
     checkVerification(verificationId: number): Promise<CloudEdgeVerificationResult | null>;
   };
   analytics: {
-    timeseries<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;
-    requests<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;
-    streamToken<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;
+    timeseries<T>(domain: string, params?: Record<string, unknown>, serverId?: string): Promise<T>;
   };
   preflight(input: {
     slug?: string;

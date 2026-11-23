@@ -16,7 +16,7 @@ import {
   runResolution,
   type SystemIssue,
 } from "@/lib/api/issues";
-import { useI18n } from "@/components/i18n-provider";
+import { interpolate, useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/components/toast";
 import { useInfraFix } from "@/hooks/useInfraFix";
 import type { SystemPreparePresenter } from "@/hooks/useSystemPrepareModal";
@@ -112,6 +112,7 @@ export function useIssueActions(
       }
       reading = true;
       let failed = false;
+      const completedUpdates: PendingResolution[] = [];
       try {
         await Promise.all(
           ids.map(async (id) => {
@@ -143,9 +144,13 @@ export function useIssueActions(
                 action.organizationId === organizationId &&
                 !action.notified
               ) {
+                const success = ["ready", "no_changes"].includes(status.deploymentStatus);
+                if (success && action.issue.kind === "update_available") {
+                  completedUpdates.push(action);
+                  return;
+                }
                 action.notified = true;
                 const { toast, c } = latest.current;
-                const success = ["ready", "no_changes"].includes(status.deploymentStatus);
                 toast(
                   success ? "success" : "error",
                   success
@@ -161,7 +166,20 @@ export function useIssueActions(
             }
           }),
         );
-        if (current() && completed.size) {
+        if (!current()) return;
+        if (completedUpdates.length) {
+          const { toast, c } = latest.current;
+          const names = completedUpdates.map((action) => {
+            action.notified = true;
+            return action.issue.target.name;
+          });
+          const message =
+            names.length === 1
+              ? interpolate(c.updateResolved, { name: names[0]! })
+              : interpolate(c.updatesResolved, { count: names.length, names: names.join(", ") });
+          toast("success", message, c.title);
+        }
+        if (completed.size) {
           await latest.current.reload({ silent: true });
           if (current()) {
             let changed = false;

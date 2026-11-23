@@ -1,0 +1,75 @@
+name: openship-mail-sample
+
+services:
+  mail:
+    image: greenmail/standalone:2.1.15
+    environment:
+      JAVA_OPTS: -Xms32m -Xmx192m -Djava.net.preferIPv4Stack=true
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.smtps.port=465
+        -Dgreenmail.imaps.port=993
+        -Dgreenmail.users=alex:sample-mail@openship.test,sam:sample-mail@openship.test
+        -Dgreenmail.users.login=email
+        -Dgreenmail.tls.keystore.file=/certs/mail.p12
+        -Dgreenmail.tls.keystore.password=sample-only
+    volumes:
+      - ../.dev-mail/certs:/certs:ro
+    networks: [mail]
+    mem_limit: 256m
+
+  api:
+    image: oven/bun:1.4.4
+    working_dir: /app/server
+    command: [sh, -c, "bun install --frozen-lockfile && bun --watch /app/dev/server.ts"]
+    env_file: ../.dev-mail/server.env
+    environment:
+      NODE_ENV: development
+      PORT: "3030"
+      SQLITE_PATH: /sample/mail.db
+      BRANDING_PATH: /sample/branding
+      DEFAULT_IMAP_HOST: mail
+      DEFAULT_IMAP_PORT: "993"
+      DEFAULT_SMTP_HOST: mail
+      DEFAULT_SMTP_PORT: "465"
+      SESSION_COOKIE_NAME: zero_session
+      TRUSTED_ORIGINS: http://127.0.0.1:3040,http://127.0.0.1:3041
+      COOKIE_DOMAIN: 127.0.0.1
+      NODE_EXTRA_CA_CERTS: /certs/ca.crt
+      MAIL_PUBLIC_URL: http://127.0.0.1:3041
+      MAIL_MINDWIRE_TARGETS: "{}"
+      MAIL_MINDWIRE_DOCKER_SOCKET: /var/run/docker.sock
+      MAIL_MINDWIRE_DOCKER_NETWORK: openship-mail-sample_default
+      MAIL_MINDWIRE_MCP_URL: http://api:3030/mcp
+    ports: ["127.0.0.1:3041:3030"]
+    volumes:
+      - ../:/app:ro
+      - dependencies:/app/server/node_modules
+      - state:/sample
+      # Dev-only provisioning. Assistant containers never receive this socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../.dev-mail/certs/ca.crt:/certs/ca.crt:ro
+    depends_on: [mail]
+    networks: [default, mail]
+    healthcheck:
+      test:
+        [
+          CMD,
+          bun,
+          -e,
+          "fetch('http://127.0.0.1:3030/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    mem_limit: 512m
+
+networks:
+  # The mail backend has no route to the Internet and no host-published mail ports.
+  mail:
+    internal: true
+
+volumes:
+  dependencies:
+  state:

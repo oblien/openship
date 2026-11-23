@@ -37,7 +37,7 @@ vi.mock("@repo/platform/engine/lib/cloud-workspace-host", () => ({
   readCloudWorkspaceHost: async () => ({ provider: null }),
 }));
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({
-  getOblienClient: () => ({ workspaces: { getQuota: h.quota } }),
+  getOblienClient: () => ({ vms: { getQuota: h.quota } }),
   getOblienBillingApi: () => ({
     createCheckout: h.checkout,
     createPortal: h.portal,

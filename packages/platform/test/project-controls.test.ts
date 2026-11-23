@@ -13,6 +13,7 @@ let context: ExecutionContext;
 const controls = {
   setBranch: vi.fn(),
   listEnvVars: vi.fn(),
+  revealEnv: vi.fn(),
   updateCloneToken: vi.fn(),
   remove: vi.fn(),
   getInfo: vi.fn(),
@@ -85,6 +86,37 @@ describe("authorized project controls", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(controls.setBranch).toHaveBeenCalledTimes(1);
     expect(controls.updateCloneToken).not.toHaveBeenCalled();
+  });
+
+  it("gates the shared env reveal on the project write grant", async () => {
+    state.members.set("org-a:alice", { id: "member-a", role: "restricted" });
+    state.grants.set("org-a:alice:project:project-a", {
+      permissions: ["read"],
+    });
+    await expect(
+      operations.revealEnv(context, "project-a", { keys: ["SHARED_TOKEN"] }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(controls.revealEnv).not.toHaveBeenCalled();
+    state.grants.set("org-a:alice:project:project-a", {
+      permissions: ["write"],
+    });
+    controls.revealEnv.mockResolvedValue({ SHARED_TOKEN: "value" });
+    await expect(
+      operations.revealEnv(context, "project-a", {
+        keys: ["SHARED_TOKEN"],
+        environment: "production",
+      }),
+    ).resolves.toMatchObject({ data: { SHARED_TOKEN: "value" } });
+    expect(controls.revealEnv).toHaveBeenCalledOnce();
+    await expect(operations.revealEnv(context, "project-a", { keys: [] })).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    await expect(operations.revealEnv(context, "project-b", { keys: ["K"] })).rejects.toMatchObject(
+      {
+        code: "NOT_FOUND",
+      },
+    );
+    expect(controls.revealEnv).toHaveBeenCalledOnce();
   });
 
   it("rejects invalid inputs and malformed service results instead of promising a false shape", async () => {

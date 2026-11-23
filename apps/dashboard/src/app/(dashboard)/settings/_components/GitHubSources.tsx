@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
@@ -10,13 +11,13 @@ import { useToast } from "@/context/ToastContext";
 import { authClient, useSession } from "@/lib/auth-client";
 import {
   getApiErrorMessage,
-  GITHUB_SOURCES_CHANGED_EVENT,
   githubApi,
   type GitHubSource,
   type GitHubSourceConfiguration,
   type ManualGitHubSourceInput,
   type UpdateGitHubSourceInput,
 } from "@/lib/api";
+import { notifyGitHubSourcesChanged } from "@/lib/api/github";
 import { SettingsSection } from "./SettingsSection";
 
 const orgClient = (
@@ -39,21 +40,10 @@ function navigateWindow(popup: Window | null, url: string): void {
   else window.location.assign(url);
 }
 
-export function GitHubSources() {
+export function GitHubSources({ collapsible = false }: { collapsible?: boolean } = {}) {
   const { data: session } = useSession();
   const { t } = useI18n();
-  const copy = t.settings.githubSources;
-  const { showToast } = useToast();
-  const [isOwner, setIsOwner] = useState<boolean | null>(null);
-  const [sources, setSources] = useState<GitHubSource[]>([]);
-  const [configuration, setConfiguration] = useState<GitHubSourceConfiguration | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [panel, setPanel] = useState<"manifest" | "manual" | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [manifestName, setManifestName] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const pendingExternalFlow = useRef(false);
-
+  const [isOwner, setIsOwner] = useState(false);
   useEffect(() => {
     let cancelled = false;
     orgClient
@@ -70,28 +60,10 @@ export function GitHubSources() {
     return () => {
       cancelled = true;
     };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, session?.session.activeOrganizationId]);
 
-  const load = useCallback(async () => {
-    if (isOwner !== true) return;
-    setLoading(true);
-    try {
-      const response = await githubApi.listSources();
-      setSources(response.data ?? []);
-      setConfiguration(response.configuration);
-      githubApi.invalidateStatus();
-      window.dispatchEvent(new Event(GITHUB_SOURCES_CHANGED_EVENT));
-    } catch (error) {
-      showToast(getApiErrorMessage(error, copy.toast.loadFailed), "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [copy.toast.loadFailed, isOwner, showToast]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
+  const pendingExternalFlow = useRef(false);
+  const [revision, setRevision] = useState(0);
   // Manifest creation and App installation finish in a separate GitHub window.
   // Refresh both settings cards when the operator returns so the newly created
   // source/installation appears without a full page reload.
@@ -99,7 +71,8 @@ export function GitHubSources() {
     const refreshIfPending = () => {
       if (!pendingExternalFlow.current) return;
       pendingExternalFlow.current = false;
-      void load();
+      notifyGitHubSourcesChanged();
+      setRevision((revision) => revision + 1);
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") refreshIfPending();
@@ -110,9 +83,52 @@ export function GitHubSources() {
       window.removeEventListener("focus", refreshIfPending);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [load]);
+  }, []);
 
-  if (isOwner !== true) return null;
+  if (!isOwner) return null;
+  return (
+    <SettingsSection
+      icon="github"
+      title={t.settings.githubSources.title}
+      description={t.settings.githubSources.description}
+      collapsible={collapsible}
+    >
+      <GitHubSourceManager revision={revision} onExternalFlowStarted={() => { pendingExternalFlow.current = true; }} />
+    </SettingsSection>
+  );
+}
+
+function GitHubSourceManager({ revision, onExternalFlowStarted }: {
+  revision: number;
+  onExternalFlowStarted(): void;
+}) {
+  const { t } = useI18n();
+  const copy = t.settings.githubSources;
+  const { showToast } = useToast();
+  const [sources, setSources] = useState<GitHubSource[]>([]);
+  const [configuration, setConfiguration] = useState<GitHubSourceConfiguration | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [panel, setPanel] = useState<"manifest" | "manual" | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [manifestName, setManifestName] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await githubApi.listSources();
+      setSources(response.data ?? []);
+      setConfiguration(response.configuration);
+    } catch (error) {
+      showToast(getApiErrorMessage(error, copy.toast.loadFailed), "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [copy.toast.loadFailed, showToast]);
+
+  useEffect(() => {
+    void load();
+  }, [load, revision]);
 
   const beginManifest = async () => {
     const target = `openship-github-app-${Date.now()}`;
@@ -130,7 +146,7 @@ export function GitHubSources() {
       input.value = JSON.stringify(result.manifest);
       form.appendChild(input);
       document.body.appendChild(form);
-      pendingExternalFlow.current = true;
+      onExternalFlowStarted();
       form.submit();
       form.remove();
       setPanel(null);
@@ -148,7 +164,7 @@ export function GitHubSources() {
     setBusy(source.id);
     try {
       const result = await githubApi.createSourceInstallUrl(source.id);
-      pendingExternalFlow.current = true;
+      onExternalFlowStarted();
       navigateWindow(popup, result.url);
     } catch (error) {
       popup?.close();
@@ -163,9 +179,11 @@ export function GitHubSources() {
     try {
       await githubApi.verifySource(source.id);
       showToast(copy.toast.verified, "success");
+      notifyGitHubSourcesChanged();
       await load();
     } catch (error) {
       showToast(getApiErrorMessage(error, copy.toast.verifyFailed), "error");
+      notifyGitHubSourcesChanged();
       await load();
     } finally {
       setBusy(null);
@@ -177,6 +195,7 @@ export function GitHubSources() {
     try {
       await githubApi.setDefaultSource(source.id);
       showToast(copy.toast.defaultChanged, "success");
+      notifyGitHubSourcesChanged();
       await load();
     } catch (error) {
       showToast(getApiErrorMessage(error, copy.toast.defaultFailed), "error");
@@ -193,7 +212,7 @@ export function GitHubSources() {
       showToast(copy.toast.deleted, "success");
       if (editing === source.id) setEditing(null);
       await load();
-      githubApi.invalidateStatus();
+      notifyGitHubSourcesChanged();
     } catch (error) {
       showToast(getApiErrorMessage(error, copy.toast.deleteFailed), "error");
     } finally {
@@ -202,7 +221,7 @@ export function GitHubSources() {
   };
 
   return (
-    <SettingsSection icon={"github"} title={copy.title} description={copy.description}>
+    <>
       {loading ? (
         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
           <UiIcon name="spinner" className="size-4 animate-spin" /> {t.settings.common.loading}
@@ -272,11 +291,9 @@ export function GitHubSources() {
               onSaved={async () => {
                 setPanel(null);
                 await load();
-                githubApi.invalidateStatus();
+                notifyGitHubSourcesChanged();
               }}
-              onExternalFlowStarted={() => {
-                pendingExternalFlow.current = true;
-              }}
+              onExternalFlowStarted={onExternalFlowStarted}
             />
           )}
 
@@ -432,7 +449,7 @@ export function GitHubSources() {
                           onSaved={async () => {
                             setEditing(null);
                             await load();
-                            githubApi.invalidateStatus();
+                            notifyGitHubSourcesChanged();
                           }}
                         />
                       </div>
@@ -444,7 +461,7 @@ export function GitHubSources() {
           )}
         </div>
       )}
-    </SettingsSection>
+    </>
   );
 }
 
@@ -644,9 +661,9 @@ function SourceForm({
         />
       </Field>
       <details>
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+        <DisclosureSummary className="cursor-pointer text-xs font-medium text-muted-foreground">
           {copy.enterpriseSettings}
-        </summary>
+        </DisclosureSummary>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <Field label={copy.webUrlLabel}>
             <input

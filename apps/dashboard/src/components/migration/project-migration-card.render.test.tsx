@@ -57,9 +57,9 @@ describe("ProjectMigrationCard first paint", () => {
     expect(text(render())).toContain("Server 1");
   });
 
-  it("says Cloud is out of scope instead of silently offering only servers", () => {
-    // Otherwise a missing Cloud option reads as a bug rather than a boundary.
-    expect(text(render())).toContain("OpenShip Cloud");
+  it("describes supported Docker destinations and workload limits", () => {
+    expect(text(render())).toContain("connected or managed servers");
+    expect(text(render())).toContain("Worker roles and cluster workloads");
   });
 
   it("renders no confirm dialog until a plan has been fetched", () => {

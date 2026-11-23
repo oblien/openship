@@ -3,11 +3,12 @@
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS dependencies
 WORKDIR /app
 
-COPY package.json bun.lock pnpm-workspace.yaml ./
+COPY package.json bun.lock bunfig.toml pnpm-workspace.yaml ./
 # Preserve workspace paths without making installation depend on source edits.
 # Email's postinstall also installs its two nested packages.
 COPY --parents apps/*/package.json packages/*/package.json apps/email/*/package.json apps/email/*/bun.lock ./
 COPY patches/ ./patches/
+COPY vendor/ ./vendor/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
@@ -16,9 +17,10 @@ FROM dependencies AS builder
 COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
+COPY scripts/web-client-messages.mjs scripts/web-client-messages.d.mts ./scripts/
 
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN cd apps/web && bun run build
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN cd apps/web && bun run build
 
 # Keep the glibc runtime compatible with native packages selected by Bun.
 # ─── Production stage ──────────────────────────────────

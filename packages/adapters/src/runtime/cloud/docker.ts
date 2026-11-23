@@ -426,6 +426,7 @@ export class CloudDockerRuntime extends DockerRuntime {
   override async buildImages(
     specs: Parameters<DockerRuntime["buildImages"]>[0],
     logger: BuildLogger,
+    options?: Parameters<DockerRuntime["buildImages"]>[2],
   ) {
     for (const spec of specs) this.assertProject(spec.config.projectId);
     await this.canSpend();
@@ -433,6 +434,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     return super.buildImages(
       specs.map((spec) => ({ ...spec, config: this.remoteBuild(spec.config) })),
       logger,
+      options,
     );
   }
   /** Static output stays on the project-owned workspace tree until Pages exports it. */
@@ -789,7 +791,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     };
   }
   override async listAllContainers() {
-    const workspace = await this.client.workspaces.get(this.workspaceId);
+    const workspace = await this.client.vms.get(this.workspaceId);
     assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     assertCloudWorkspaceRunning(workspace);
     const containers = await super.listAllContainers();
@@ -802,7 +804,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       throw new Error("A Docker workspace is not a service container");
     let workspace;
     try {
-      workspace = await this.client.workspaces.get(this.workspaceId);
+      workspace = await this.client.vms.get(this.workspaceId);
     } catch (error) {
       if (notFound(error)) return { containerId, status: "missing" };
       throw error;
@@ -841,7 +843,7 @@ export class CloudDockerRuntime extends DockerRuntime {
   override async stop(containerId: string) {
     if (containerId === this.workspaceId)
       throw new Error("A Docker workspace is not a service container");
-    const workspace = await this.client.workspaces.get(this.workspaceId);
+    const workspace = await this.client.vms.get(this.workspaceId);
     assertDockerWorkspaceOwner(workspace, this.options.namespace, this.workspaceId);
     if (!isDockerWorkspaceRunning(workspace)) return;
     return super.stop(containerId);

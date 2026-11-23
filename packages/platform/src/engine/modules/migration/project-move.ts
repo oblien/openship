@@ -49,6 +49,7 @@ export class ProjectMoveRefused extends Error {
       | "nothing_running"
       | "builds_from_source"
       | "scoped_move"
+      | "shared_data"
       | "unknown_service",
     message: string,
   ) {
@@ -190,6 +191,16 @@ export function assertProjectMovable(input: {
   sourceServerName?: string | null;
 }): { sourceServerId: string } {
   const { project, targetServerId } = input;
+  if (
+    input.intent === "copy" &&
+    input.serviceNames &&
+    !input.serviceNames.some((name) => name.trim())
+  ) {
+    throw new ProjectMoveRefused(
+      "unknown_service",
+      "Select at least one service to duplicate. Omit the selection to copy the whole application.",
+    );
+  }
 
   if (input.isControlPlane) {
     // Openship cannot migrate itself with itself: the run would stop the API executing
@@ -209,8 +220,8 @@ export function assertProjectMovable(input: {
       project.runtimeMode === "bare"
         ? `"${project.name}" runs directly on its server. Docker migration supports container workloads only.`
         : target === "cluster"
-        ? `"${project.name}" runs on Kubernetes. Docker host migration cannot move its cluster workloads.`
-        : `"${project.name}" isn't bound to a server, so there's no source host to move it from.`,
+          ? `"${project.name}" runs on Kubernetes. Docker host migration cannot move its cluster workloads.`
+          : `"${project.name}" isn't bound to a server, so there's no source host to move it from.`,
     );
   }
 
@@ -243,7 +254,7 @@ export function assertProjectMovable(input: {
     );
   }
 
-  if (project.serverId === targetServerId) {
+  if (project.serverId === targetServerId && input.intent !== "copy") {
     // NAMES the server. "already runs on that server" is true and unhelpful: after a migration
     // that rolled back, the operator's mental model of where the project lives is exactly what
     // is wrong, so the refusal has to state where it actually is rather than confirm a guess.
@@ -288,7 +299,7 @@ export function planProjectMove(input: {
    * hosts and no way to say where it lives — so a scoped move is refused, and the operator
    * is pointed at the copy they almost certainly meant.
    *
-   * Absent/empty = every service.
+   * Absent = every service. An explicit empty copy selection is refused.
    */
   serviceNames?: string[];
 }): ProjectMoveWorkload {
@@ -306,6 +317,7 @@ export function planProjectMove(input: {
   // database. Same rule, same reason, as `selectDiscoveredServices`.
   const ours = new Set(ourContainerIds.filter(Boolean));
   let chosen = discovered.filter((s) => s.containerId && ours.has(s.containerId));
+  const allOwned = chosen;
 
   // Narrowing happens AFTER the ownership filter, never instead of it: a name is only
   // unique within the project, so scoping the whole-host pool by name first would select a
@@ -324,6 +336,27 @@ export function planProjectMove(input: {
       );
     }
     chosen = scoped;
+  }
+
+  if (input.intent === "copy") {
+    const copiedMounts = new Set(
+      chosen
+        .flatMap((service) => service.volumes)
+        .filter((mount) => mount.source)
+        .map((mount) => mount.source),
+    );
+    const selected = new Set(chosen.map((service) => service.containerId));
+    const otherWriters = allOwned.filter(
+      (service) =>
+        !selected.has(service.containerId) &&
+        service.running &&
+        service.volumes.some((mount) => mount.rw !== false && copiedMounts.has(mount.source)),
+    );
+    if (otherWriters.length)
+      throw new ProjectMoveRefused(
+        "shared_data",
+        `Include ${otherWriters.map((service) => service.name).join(", ")} in this copy: they write to the same storage and must pause together for a consistent snapshot.`,
+      );
   }
 
   if (chosen.length === 0) {
@@ -404,7 +437,8 @@ export async function loadProjectMoveWorkload(
   // Checked before the scan: the refusals that need no host round trip should not cost one.
   // `planProjectMove` re-checks them (it is the single decision), this just fails faster.
   if (
-    deriveProjectDeployTarget(project) === "cluster" || project.runtimeMode === "bare" ||
+    deriveProjectDeployTarget(project) === "cluster" ||
+    project.runtimeMode === "bare" ||
     !project.serverId ||
     (project.roles?.length ?? 0) > 0 ||
     roleWorkRunsRoles(roleWork) ||
@@ -431,8 +465,27 @@ export async function loadProjectMoveWorkload(
   // `DiscoveredService` shape the pipeline speaks.
   const rt = await createServerDockerRuntime(project.serverId, input.organizationId);
   let ourContainerIds: string[];
+  const trackedNames = new Map<string, string>();
   try {
     ourContainerIds = await rt.listProjectContainerIds(project.id);
+    // An in-place import cannot change Docker labels. Its validated active
+    // deployment owns exact container IDs, including renamed services. Never
+    // recover by a bare service name or a deployment from another server.
+    const activeServerId = (roleWork.active?.meta as { serverId?: unknown } | null)?.serverId;
+    if (roleWork.active && activeServerId === project.serverId) {
+      const [rows, placements] = await Promise.all([
+        repos.service.listByProject(project.id),
+        repos.service.listByDeployment(roleWork.active.id),
+      ]);
+      const names = new Map(rows.map((row) => [row.id, row.name]));
+      for (const placement of placements) {
+        const name = names.get(placement.serviceId);
+        if (name && placement.containerId && /^[a-f0-9]{64}$/.test(placement.containerId)) {
+          trackedNames.set(placement.containerId, name);
+        }
+      }
+      ourContainerIds = [...new Set([...ourContainerIds, ...trackedNames.keys()])];
+    }
   } finally {
     await rt.dispose().catch((diagnosticFailure) => {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/migration/project-move");
@@ -465,14 +518,50 @@ export async function loadProjectMoveWorkload(
     onlyContainerIds: ourContainerIds,
   });
 
-  return planProjectMove({
+  const workload = planProjectMove({
     project,
     targetServerId: input.targetServerId,
     roleWork,
-    discovered: stack.services,
+    discovered: stack.services.map((service) => ({
+      ...service,
+      name: trackedNames.get(service.containerId ?? "") ?? service.name,
+    })),
     ourContainerIds,
     isControlPlane: false,
     intent: input.intent,
     serviceNames: input.serviceNames,
   });
+  const sources = new Set(
+    workload.chosen
+      .flatMap((service) => service.volumes)
+      .map((mount) => mount.source)
+      .filter(Boolean),
+  );
+  if (input.intent === "copy" && sources.size) {
+    // A cheap container listing exposes mounts without rescanning other
+    // projects' configuration or secrets. External writers cannot be stopped
+    // as part of this project's operation, so refuse before creating the copy.
+    const source = await createServerDockerRuntime(project.serverId, input.organizationId);
+    try {
+      const owned = new Set(ourContainerIds);
+      const containers = await source.docker.listContainers();
+      if (
+        containers.some(
+          (container) =>
+            !owned.has(container.Id) &&
+            container.Mounts?.some(
+              (mount) => mount.RW !== false && sources.has(mount.Name || mount.Source),
+            ),
+        )
+      ) {
+        throw new ProjectMoveRefused(
+          "shared_data",
+          "Other running containers outside this project write to its storage. Stop those writers before duplicating so the snapshot stays consistent. No containers have been stopped.",
+        );
+      }
+    } finally {
+      await source.dispose();
+    }
+  }
+  return workload;
 }

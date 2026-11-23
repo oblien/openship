@@ -1,4 +1,5 @@
-import { AppError, type OblienLimits } from "@repo/core";
+import { AppError } from "@repo/core";
+import type { NamespaceResourceLimits } from "@repo/adapters";
 import { getOblienClient } from "./oblien-client";
 import { ensureOblienDefaultQuota } from "../modules/billing/billing-oblien-quota";
 
@@ -7,7 +8,7 @@ import { ensureOblienDefaultQuota } from "../modules/billing/billing-oblien-quot
 export async function ensureCloudNamespace(input: {
   name: string;
   slug: string;
-  resource_limits: OblienLimits;
+  resource_limits: NamespaceResourceLimits;
 }): Promise<void> {
   await ensureOblienDefaultQuota();
   const ensured = await getOblienClient().namespaces.ensure(input);

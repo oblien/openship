@@ -202,6 +202,20 @@
     "pageOf": "Seite {page} von {total}",
     "range": "Bereitstellungen {from}–{to} von {total}"
   },
+  "registryAccess": {
+    "title": "Zugriff auf das Image verweigert",
+    "description": "Prüfe, ob dieses Image existiert. Ergänze oder aktualisiere unter Einstellungen → Verbindungen → Container-Registry die Zugangsdaten und erteile die Berechtigung, dieses Image herunterzuladen.",
+    "githubHint": "GitHub-Klon-Zugangsdaten und Registry-Zugangsdaten sind getrennt. Verwende für GHCR ein klassisches Token mit read:packages und Paketzugriff; autorisiere SSO, falls deine Organisation dies verlangt.",
+    "retryHint": "Aktualisiere nach dem Speichern die Images und deploye erneut, um das neueste Image abzurufen.",
+    "manageAccess": "Registry-Zugriff verwalten"
+  },
+  "containerConflict": {
+    "title": "Doppelte Container prüfen",
+    "description": "Prüfe die Container und ihre eingebundenen Datenträger auf dem Zielserver. Behalte den vorgesehenen Container und seine Daten. Entferne nur ein nachweislich ungenutztes Duplikat und stelle dann erneut bereit. Bei Unsicherheit kontaktiere den Support mit dieser Bereitstellungsreferenz.",
+    "containers": "Übereinstimmende Container",
+    "reviewServer": "Server prüfen",
+    "reference": "Bereitstellungsreferenz"
+  },
   "resourceGuidance": {
     "label": "Ressourcenhinweise zur Bereitstellung",
     "reviewCapacity": "Kapazität prüfen",

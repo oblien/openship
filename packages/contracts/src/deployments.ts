@@ -1,3 +1,4 @@
+import { ComposeRevisionSchema } from "./compose-review";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { ValidationError } from "@repo/core";
@@ -25,6 +26,7 @@ export const CreateDeploymentSchema = Type.Object({
   refresh: Type.Optional(
     Type.Boolean({ description: "Re-apply environment without pulling source or rebuilding." }),
   ),
+  composeRevision: Type.Optional(ComposeRevisionSchema),
   acceptComposeChanges: Type.Optional(
     Type.Boolean({
       description: "Accept the current Compose source as reviewed for this deploy.",
@@ -97,7 +99,7 @@ export const DeploymentSchema = Type.Object({
   updatedAt: Type.String(),
   isActive: Type.Optional(Type.Boolean()),
   projectName: Type.Optional(Type.String()),
-  favicon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  iconUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type Deployment = Static<typeof DeploymentSchema>;

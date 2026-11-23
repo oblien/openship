@@ -1,5 +1,6 @@
 // No DOM needed: renderToStaticMarkup runs no effects, and the modal seeds its
 // state from props on the first render (deliberately, not in an effect).
+import { GIT_PROVIDERS } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { SourceAccessScope } from "@repo/core";
@@ -24,6 +25,7 @@ function render(opts: {
   return renderToStaticMarkup(
     <I18nProvider>
       <SourceAccessModal
+        provider={GIT_PROVIDERS[0]}
         open={opts.open ?? true}
         onClose={() => {}}
         targetLabel={opts.targetLabel ?? "hydralerne/charts"}

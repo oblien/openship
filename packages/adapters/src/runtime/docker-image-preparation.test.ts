@@ -28,7 +28,7 @@ describe("deployment image preparation", () => {
     });
     expect(io.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: true });
   });
-  it("preserves cached local images even when manual deploys refresh tags", async () => {
+  it("preserves cached local images during ordinary redeploy", async () => {
     const io = fixture([]);
     await expect(
       prepareDockerImage("local-api:dev", { refreshMutableTag: true }, io),
@@ -38,7 +38,7 @@ describe("deployment image preparation", () => {
     });
     expect(io.pull).not.toHaveBeenCalled();
   });
-  it("does not mistake a local alias of a pulled base image for a registry image", async () => {
+  it("preserves a local alias of a pulled base image during ordinary redeploy", async () => {
     const io = fixture([`ubuntu@sha256:${"c".repeat(64)}`]);
     const result = await prepareDockerImage("my-app:local", { refreshMutableTag: true }, io);
     expect(result.deploymentRef).toBe(imageId);
@@ -55,6 +55,24 @@ describe("deployment image preparation", () => {
     const result = await prepareDockerImage(ref, {}, io);
     expect(result.imageId).toBe(nextImageId);
     expect(io.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: false });
+  });
+  it("still forces a fresh pull when the image has never existed on the host", async () => {
+    const io = fixture();
+    io.inspect.mockRejectedValueOnce(missing());
+    expect((await prepareDockerImage(ref, { force: true }, io)).imageId).toBe(nextImageId);
+    expect(io.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: true });
+  });
+  it("refreshes a registry tag without a matching digest while retaining a known local image", async () => {
+    const local = fixture([]);
+    const registry = fixture([]);
+    const [kept, refreshed] = await Promise.all([
+      prepareDockerImage("internal/database:migrated", { force: true, requirePresent: true }, local),
+      prepareDockerImage(ref, { force: true }, registry),
+    ]);
+    expect(kept.imageId).toBe(imageId);
+    expect(local.pull).not.toHaveBeenCalled();
+    expect(refreshed.imageId).toBe(nextImageId);
+    expect(registry.pull).toHaveBeenCalledExactlyOnceWith(ref, { force: true });
   });
   it("does not replace a missing retained artifact with an upstream tag", async () => {
     const io = fixture();
@@ -98,9 +116,9 @@ describe("deployment image preparation", () => {
     expect(io.pull).not.toHaveBeenCalled();
   });
   it("propagates registry failure instead of falling back to the cached image", async () => {
-    const io = fixture();
+    const io = fixture([]);
     io.pull.mockRejectedValueOnce(new Error("registry denied the pull"));
-    await expect(prepareDockerImage(ref, { refreshMutableTag: true }, io)).rejects.toThrow(
+    await expect(prepareDockerImage(ref, { force: true }, io)).rejects.toThrow(
       "registry denied",
     );
   });

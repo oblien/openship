@@ -23,6 +23,7 @@ import {
   registerControllerLifecycle,
 } from "./modules/system/instance/controller-state";
 import { resumeControllerSockets } from "./lib/ws";
+import { resumeControllerStreams } from "./lib/sse";
 import { trackBackgroundWork } from "@repo/platform/engine/lib/background-work";
 import { instanceAuthorityGuard } from "./modules/system/instance/authority-guard";
 import { quiesceController } from "./modules/system/instance/quiescence";
@@ -60,6 +61,9 @@ import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
+import { gitlabWebhookProvider } from "./modules/gitlab/gitlab.webhook";
+import { registerWebhookProvider } from "@repo/platform/engine/modules/webhooks/webhook.service";
+import { gitRoutes } from "./modules/git/git.routes";
 import * as githubAuth from "@repo/platform/engine/modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
 import { tokenRoutes } from "./modules/tokens/token.routes";
@@ -220,6 +224,8 @@ app.route("/api/dns", dnsRoutes);
 app.route("/api/credentials", credentialRoutes);
 app.route("/api/webhooks", webhookRoutes);
 app.route("/api/github", githubRoutes);
+registerWebhookProvider(gitlabWebhookProvider);
+app.route("/api/git", gitRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/tokens", tokenRoutes);
@@ -408,6 +414,7 @@ async function startControllerBackground(): Promise<void> {
   backgroundStarted = true;
   try {
     resumeControllerSockets();
+    resumeControllerStreams();
     // ─── Backup job runner + boot reconcile ─────────────────────────────
     //
     // One JobRunner powers all backup work — BullMQ when Redis is

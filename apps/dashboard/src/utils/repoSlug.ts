@@ -3,14 +3,15 @@
  * Uses base64url encoding (URL-safe base64) for owner/repo format
  */
 
-import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { parseGitRepositoryUrl } from "@repo/core";
+export { encodeRepoSlug } from "@repo/core";
 const LOCAL_PREFIX = "local:";
 const UPLOAD_PREFIX = "upload:";
 const REPO_V2_PREFIX = "repo:v2:";
 const PROJECT_PREFIX = "project:";
 
 type DecodedSlug =
-  | { kind: "repo"; owner: string; repo: string; branch?: string; projectId?: string }
+  | { kind: "repo"; provider?: string; owner: string; repo: string; branch?: string; projectId?: string }
   | { kind: "local"; path: string }
   | { kind: "upload"; sessionId: string }
   | { kind: "project"; projectId: string };
@@ -21,13 +22,6 @@ function encodeBase64Url(data: string): string {
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
-}
-
-/**
- * Encodes owner and repo into a URL-safe base64 slug
- */
-export function encodeRepoSlug(owner: string, repo: string): string {
-  return encodeBase64Url(`${owner}/${repo}`);
 }
 
 /**
@@ -89,13 +83,14 @@ export function decodeSlug(slug: string): DecodedSlug | null {
       const payload = JSON.parse(decoded.slice(REPO_V2_PREFIX.length));
       if (!payload || typeof payload !== "object") return null;
 
-      const { owner, repo, branch, projectId } = payload as Record<string, unknown>;
+      const { provider, owner, repo, branch, projectId } = payload as Record<string, unknown>;
       if (typeof owner !== "string" || typeof repo !== "string" || !owner || !repo) {
         return null;
       }
 
       return {
         kind: "repo",
+        ...(typeof provider === "string" && provider ? { provider } : {}),
         owner,
         repo,
         ...(typeof branch === "string" && branch ? { branch } : {}),
@@ -111,39 +106,8 @@ export function decodeSlug(slug: string): DecodedSlug | null {
   }
 }
 
-/**
- * Extracts owner and repo from a GitHub URL
- * @param url - GitHub repository URL
- * @returns Object with owner and repo, or null if invalid
- */
+/** Compatibility helper backed by the shared registered-provider URL parser. */
 export function extractOwnerRepoFromUrl(url: string): { owner: string; repo: string } | null {
-  try {
-    // Handle various GitHub URL formats
-    // https://github.com/owner/repo
-    // https://github.com/owner/repo.git
-    // git@github.com:owner/repo.git
-    
-    // Match HTTPS URLs - allow dots in repo name, optionally strip .git suffix
-    const httpsMatch = url.match(/github\.com\/([^\/]+)\/(.+?)(?:\.git)?$/);
-    if (httpsMatch) {
-      return {
-        owner: httpsMatch[1],
-        repo: httpsMatch[2],
-      };
-    }
-    
-    // Match SSH URLs - allow dots in repo name, optionally strip .git suffix
-    const sshMatch = url.match(/github\.com:([^\/]+)\/(.+?)(?:\.git)?$/);
-    if (sshMatch) {
-      return {
-        owner: sshMatch[1],
-        repo: sshMatch[2],
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    errorDiagnostics.error("dashboard/utils/repoSlug", 'Failed to extract owner/repo from URL:', error);
-    return null;
-  }
+  const repository = parseGitRepositoryUrl(url);
+  return repository ? { owner: repository.owner, repo: repository.repo } : null;
 }

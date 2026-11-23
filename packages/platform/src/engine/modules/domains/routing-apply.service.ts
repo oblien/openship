@@ -538,7 +538,7 @@ export async function applyCloudRouting(opts: {
       !input.routes.some(
         (rule) =>
           rule.action.kind === "proxy" &&
-          rule.action.workspace === backend.workspace &&
+          rule.action.vm === backend.vm &&
           rule.action.port === backend.port,
       )
     ) {

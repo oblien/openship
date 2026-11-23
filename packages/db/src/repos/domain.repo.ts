@@ -224,10 +224,18 @@ export function createDomainRepo(db: Database) {
         }
       }
       await tx.insert(domain).values(row);
-      if (connection) await tx.insert(ingressHostname).values({
-        id: generateId("igh"), connectionId: connection.id, domainId: row.id,
-        hostname: row.hostname, accessPolicyId: connection.defaultAccessPolicyId,
-      });
+      if (connection) {
+        const [hostname] = await tx.insert(ingressHostname).values({
+          id: generateId("igh"), connectionId: connection.id, domainId: row.id,
+          hostname: row.hostname, accessPolicyId: connection.defaultAccessPolicyId,
+        }).onConflictDoNothing({
+          target: [ingressHostname.connectionId, ingressHostname.hostname],
+        }).returning();
+        if (!hostname)
+          throw new ConflictError(
+            "This hostname still has a Cloudflare Tunnel binding. Retry the tunnel from Servers and wait for cleanup before adding the domain again.",
+          );
+      }
       // A force-deleted project's route orphan owns the hostname until its
       // physical vhost and managed registration are actually reclaimed. Check
       // AFTER the unique domain insert: if this insert waited for the old

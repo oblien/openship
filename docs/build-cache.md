@@ -134,8 +134,14 @@ with the host daemon's native cache and migration sources never build, so the se
 offered on either.
 Collection removes the least recently used idle state first. BuildKit
 workers also receive that cache ceiling and a native BuildKit GC target of
-20% free space. Attached state and active build records remain protected. Collection runs
-before and after builds and in the daily cache sweep. Explicit cache clearing and project deletion use
+20% free space. Their `reservedSpace` uses the same bounded minimum of the configured
+budget and `min(5 GiB, 10%)`. This prevents BuildKit from discarding fresh layers merely
+because application data makes the free-space target unattainable. It does not preallocate
+disk space or exempt idle caches from emergency cleanup.
+Attached state and active build records remain protected. Builds measure free bytes and
+inodes before and after execution; they scan idle caches only below the free-space target
+or when inodes are exhausted. The daily sweep handles routine budget and age accounting.
+Explicit cache clearing and project deletion use
 the same protected collector for both Cloud and SSH destinations. Project deletion handles
 deleted-project state; the daily Cloud sweep also discovers ready owned hosts
 whose last project was moved or deleted.
@@ -181,11 +187,12 @@ continues to remove expired managed images separately.
 
 ## Automatic rollback artifacts
 
-A project without an explicit rollback count uses **Automatic** retention. The
-instance default (initially five past releases) is a ceiling. On Docker hosts,
-existing retention reconciliation also reclaims eligible historical artifacts
-when Docker’s filesystem has less than 20% available space. This is shared free
-space on the actual host or Cloud space, not a separate allowance per project.
+A project without an explicit rollback count uses **Automatic** retention.
+OpenShip Cloud and new installations keep up to two past releases by default,
+in addition to the active release and any pinned releases. Self-hosted instances
+can set their own default. On Docker hosts, retention cleanup also reclaims
+eligible historical artifacts when Docker’s filesystem has less than 20%
+available space. This is shared free space on the actual host or Cloud space.
 
 The existing deployment-admission/retention lock covers selection and removal.
 Cleanup defers while deployments or role handovers are unsettled. It considers

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { PACKAGE_ROOT_ONLY_EXCLUDES } from "@repo/core";
+import { isLocalHostExecutionAllowed, PACKAGE_ROOT_ONLY_EXCLUDES } from "@repo/core";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,18 +62,27 @@ function tarCreateBaseArgs(localPath: string): string[] {
  * precisely (a *tracked* `build/` route survives; a gitignored `dist/`/`.next/`
  * drops), never guesses by folder name, and is tar-flavour independent.
  *
- * Returns null when `localPath` isn't inside a git work tree (or `git` is
- * unavailable) — callers then fall back to the name-based exclude list.
+ * Returns null on the Cloud API host or when the local work tree cannot be
+ * inspected. Callers then pack the staged files with their transfer excludes.
  */
 export async function gitTrackedFiles(localPath: string): Promise<string[] | null> {
+  // Upload staging can contain repository metadata supplied by the customer.
+  if (!isLocalHostExecutionAllowed()) return null;
   try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", localPath, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-      { maxBuffer: 256 * 1024 * 1024 },
-    );
-    const files = stdout.split("\0").filter(Boolean);
-    return files.length > 0 ? files : null;
+    const [{ stdout }, { stdout: deleted }] = await Promise.all([
+      execFileAsync(
+        "git",
+        ["-C", localPath, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        { maxBuffer: 256 * 1024 * 1024 },
+      ),
+      execFileAsync("git", ["-C", localPath, "ls-files", "-z", "--deleted"], {
+        maxBuffer: 256 * 1024 * 1024,
+      }),
+    ]);
+    // The index still lists unstaged deletions. Preserve the working tree's
+    // deletions instead of handing tar paths that no longer exist.
+    const removed = new Set(deleted.split("\0").filter(Boolean));
+    return stdout.split("\0").filter((file) => file && !removed.has(file));
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "adapters/archive");
     // Not a repo, git missing, or the dir is outside any work tree.
@@ -140,10 +149,7 @@ export async function prepareSourceTarArgs(
  * git checkout (imported tarballs, uploads). Prefer `prepareSourceTarArgs`,
  * which uses git truth when available.
  */
-export function getTarCreateArgs(
-  localPath: string,
-  options?: TarTransferOptions,
-): string[] {
+export function getTarCreateArgs(localPath: string, options?: TarTransferOptions): string[] {
   const args = tarCreateBaseArgs(localPath);
 
   if (options?.includes?.length) {

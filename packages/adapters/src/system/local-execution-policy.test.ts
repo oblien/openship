@@ -3,11 +3,15 @@ import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
+import { execFileSync } from "node:child_process";
+import { gitTrackedFiles } from "../archive";
 import { LocalExecutor } from "./local-executor";
+import { readLocalGlabToken } from "./local-gitlab";
 import { hasLocalCommand, sq } from "./local-shell";
 import { createExecutor } from "./executor";
 import { BareRuntime } from "../runtime/bare";
 import { resolveDockerTransport } from "../runtime/docker-transport";
+import { prepareSourceTree } from "../runtime/docker-build-context";
 import { runLocalBuild } from "../runtime/local-build";
 import { CloudWorkspaceExecutor } from "../runtime/cloud/workspace-executor";
 import { NginxProvider } from "../infra/nginx";
@@ -35,6 +39,8 @@ describe("Cloud cannot execute on the API host", () => {
       const onLog = vi.fn();
       vi.stubEnv("CLOUD_MODE", mode);
       for (const operation of [
+        readLocalGlabToken,
+        () => prepareSourceTree({ repoUrl: "https://gitlab.com/example/repo.git", branch: "main" } as never),
         () => executor.exec(command),
         () => direct.exec(command),
         () => direct.rawExec(command),
@@ -52,6 +58,34 @@ describe("Cloud cannot execute on the API host", () => {
       await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
     },
   );
+
+  it("packs a staged Cloud upload without inspecting its Git metadata", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "openship-upload-boundary-"));
+    dirs.push(dir);
+    execFileSync("git", ["init", "-q", dir]);
+    await writeFile(join(dir, "index.html"), "hello");
+    await writeFile(join(dir, ".gitignore"), "upload.txt\n");
+    await writeFile(join(dir, "upload.txt"), "provided by the upload");
+    vi.stubEnv("CLOUD_MODE", "false");
+    expect(await gitTrackedFiles(dir)).toEqual([".gitignore", "index.html"]);
+
+    const upload = vi.fn(async ({ body }: { body: Buffer }) => {
+      const files = execFileSync("tar", ["-tzf", "-"], { input: body, encoding: "utf8" });
+      expect(files).toContain("./index.html");
+      expect(files).toContain("./upload.txt");
+      expect(files).not.toContain("./.git/");
+      return { files_extracted: 3 };
+    });
+    const executor = new CloudWorkspaceExecutor(async () => ({ transfer: { upload } }) as never);
+    vi.stubEnv("CLOUD_MODE", "true");
+    try {
+      await expect(gitTrackedFiles(dir)).resolves.toBeNull();
+      await executor.transferIn(dir, "/tmp/staged-source");
+      expect(upload).toHaveBeenCalledOnce();
+    } finally {
+      await executor.dispose();
+    }
+  });
 
   it("refuses implicit bare runtimes and local Docker sockets, including pre-created transports", async () => {
     vi.stubEnv("CLOUD_MODE", "false");

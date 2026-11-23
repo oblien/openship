@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   syncManagedEdge: vi.fn(),
   deregisterManagedEdge: vi.fn(),
   updateDeployment: vi.fn(),
+  clearRoutingWarning: vi.fn(),
 }));
 vi.mock("@repo/db", async (original) => ({
   ...(await original<typeof import("@repo/db")>()),
@@ -26,6 +27,7 @@ vi.mock("@repo/db", async (original) => ({
     deployment: {
       findById: vi.fn(async () => h.deployment),
       updateStatus: h.updateDeployment,
+      clearRoutingWarning: h.clearRoutingWarning,
       listPendingRoleHandovers: async () => [],
     },
     domain: {
@@ -99,6 +101,11 @@ beforeEach(() => {
     return Number(new URL(url).port);
   });
   h.updateDeployment.mockImplementation(async (_id, _status, changes) => Object.assign(h.deployment, changes));
+  h.clearRoutingWarning.mockImplementation(async () => {
+    const meta = h.deployment.meta as Record<string, unknown>;
+    delete meta.edgeUnsynced;
+    delete meta.deployWarning;
+  });
 });
 
 async function editRoutes(previous: string[]) {
@@ -113,7 +120,7 @@ describe("managed Cloud route port edits and repair", () => {
     await editRoutes(["app.opsh.io"]);
     expect(h.fixture.pages.create).toHaveBeenCalledOnce();
     expect(h.fixture.routes.set).toHaveBeenLastCalledWith("app.opsh.io", expect.objectContaining({
-      routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32001 } }],
+      routes: [{ match: { path: "/", type: "prefix" }, action: { kind: "proxy", vm: h.fixture.workspaceId, port: 32001 } }],
     }));
     expect(h.syncManagedEdge).not.toHaveBeenCalled();
   });
@@ -124,7 +131,7 @@ describe("managed Cloud route port edits and repair", () => {
     expect(h.fixture.pages.connectDomain).toHaveBeenCalledWith(expect.any(String), { domain: "app.example.com" });
     expect(h.fixture.workspace.network.update).toHaveBeenCalledWith(expect.objectContaining({ ingress_ports: [443, 32000] }));
     expect(h.fixture.routes.set).toHaveBeenCalledWith("app.example.com", expect.objectContaining({
-      routes: expect.arrayContaining([expect.objectContaining({ action: { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 } })]),
+      routes: expect.arrayContaining([expect.objectContaining({ action: { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 } })]),
     }));
   });
 
@@ -142,10 +149,12 @@ describe("managed Cloud route port edits and repair", () => {
     const verifyDomains = vi.fn(async () => {
       expect(h.fixture.routes.set).toHaveBeenCalledOnce();
       expect(h.updateDeployment).not.toHaveBeenCalled();
+      expect(h.clearRoutingWarning).not.toHaveBeenCalled();
       return [];
     });
     expect(await retryProjectRouting(h.project.id, h.project.organizationId, { verifyDomains })).toEqual({ ok: true });
     expect(verifyDomains).toHaveBeenCalledOnce();
+    expect(h.clearRoutingWarning).toHaveBeenCalledExactlyOnceWith(h.deployment.id);
     expect(h.deployment.meta).not.toHaveProperty("edgeUnsynced");
     expect(h.deployment.meta).toHaveProperty("managedServer.workspaceId", h.fixture.workspaceId);
   });
@@ -165,8 +174,8 @@ describe("managed Cloud route port edits and repair", () => {
     h.domains.push({ ...h.domains[0]!, id: "domain-b", hostname: "console.opsh.io", targetPort: 9000, isPrimary: false });
     expect(await retryProjectRouting(h.project.id, h.project.organizationId)).toEqual({ ok: true });
     expect(h.fixture.routes.set.mock.calls.map(([host, table]) => [host, table.routes[0]?.action])).toEqual([
-      ["app.opsh.io", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 }],
-      ["console.opsh.io", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32001 }],
+      ["app.opsh.io", { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 }],
+      ["console.opsh.io", { kind: "proxy", vm: h.fixture.workspaceId, port: 32001 }],
     ]);
   });
 
@@ -196,8 +205,8 @@ describe("managed Cloud route port edits and repair", () => {
     }));
     expect(await retryProjectRouting(h.project.id, h.project.organizationId)).toEqual({ ok: true });
     expect(h.fixture.routes.set.mock.calls.map(([host, table]) => [host, table.routes[0]?.action])).toEqual([
-      ["app.example.com", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 }],
-      ["alias.example.com", { kind: "proxy", workspace: h.fixture.workspaceId, port: 32000 }],
+      ["app.example.com", { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 }],
+      ["alias.example.com", { kind: "proxy", vm: h.fixture.workspaceId, port: 32000 }],
     ]);
     expect(h.fixture.pages.delete).not.toHaveBeenCalled();
   });

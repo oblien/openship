@@ -2,7 +2,7 @@ import { repos, type Permission, type PublicPersonalAccessToken, type ResourceTy
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import type { ExecutionContext as RequestContext, ContextRole as RequestContextRole } from "../../../context";
 import { checkPermissionOnResource } from "@repo/platform/engine/lib/authorization";
-import { canUseGitHubRepo, resolveSourceAccess } from "@repo/platform/engine/modules/github/github-access";
+import { gitGrantProvider, gitGrantTarget } from "../git/provider";
 import {
   AppError,
   capabilityAction,
@@ -67,19 +67,6 @@ function strongestAction(perms: readonly GrantPermission[]): Permission {
 }
 
 /**
- * A github grant's resourceId → (owner, repo). `github_repository` is
- * "owner/repo"; `github_installation` is the bare account login.
- */
-function splitRepoGrant(g: { resourceType: string; resourceId: string }): {
-  owner: string | undefined;
-  repo: string | undefined;
-} {
-  const [owner, repo] =
-    g.resourceType === "github_repository" ? g.resourceId.split("/") : [g.resourceId, undefined];
-  return { owner, repo };
-}
-
-/**
  * A token can only grant access the MINTER already has — reuses the live
  * permission path (owner ⇒ everything; others ⇒ their own grants). GitHub goes
  * through its dedicated gate.
@@ -106,16 +93,17 @@ async function minterHasAccess(
   }
   if (g.permissions.every(isCapability)) return true;
   const action = strongestAction(g.permissions);
-  if (g.resourceType === "github_installation" || g.resourceType === "github_repository") {
+  const provider = gitGrantProvider(g.resourceType);
+  if (provider) {
     const op = action === "read" ? "read" : "write";
-    const { owner, repo } = splitRepoGrant(g);
+    const { owner, repo } = gitGrantTarget(provider, g.resourceType, g.resourceId);
     // "authority", not "reach": the grant written here IS the downstream
     // authority, so there is nothing left to narrow an owner-level pass. Without
     // this, one `github_repository` grant under `acme` mints an owner-wide
     // `github_installation` grant over every repo under `acme`
     // (GHSA-qv27-39pc-qw9f finding 2). Repo-level grants are unaffected — they
     // carry a concrete repo and match exactly.
-    return canUseGitHubRepo(ctx, { owner: owner ?? "", repo: repo ?? null }, op, {
+    return provider.access.canUse(ctx, { owner: owner ?? "", repo: repo ?? null }, op, {
       ownerLevel: "authority",
     });
   }
@@ -293,9 +281,10 @@ export async function validateGrants(
     // repo. Without this, a member scoped to `src/**` could mint a token granting
     // itself the whole repo — the grant loop above only checks the repo, not how
     // far into it. Resolved through the same gate that enforces at call time.
-    if (g.scope && (g.resourceType === "github_repository" || g.resourceType === "github_installation")) {
-      const { owner, repo } = splitRepoGrant(g);
-      const mine = await resolveSourceAccess(ctx, { owner: owner ?? "", repo: repo ?? null });
+    const provider = gitGrantProvider(g.resourceType);
+    if (g.scope && provider) {
+      const target = gitGrantTarget(provider, g.resourceType, g.resourceId);
+      const mine = await provider.access.source(ctx, target);
       const readOk = scopeIsSubset(g.scope.read?.paths ?? [], mine.readPaths);
       const writeOk = scopeIsSubset(g.scope.write?.paths ?? [], mine.writePaths);
       if (!readOk || !writeOk) {

@@ -1618,6 +1618,41 @@
       "when": 1794373201000,
       "tag": "0230_restore_workspace_security_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1794373202000,
+      "tag": "0231_project_icon_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1794373203000,
+      "tag": "0232_project_icon_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1795223436981,
+      "tag": "0233_git_provider_previews",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1795223437981,
+      "tag": "0234_git_webhook_delivery_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1795223438981,
+      "tag": "0235_default_rollback_window",
+      "breakpoints": true
     }
   ]
 }

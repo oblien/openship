@@ -35,7 +35,10 @@ export default async function AppsPage({
   const category = Array.isArray(params.category) ? params.category[0] : params.category;
   const query = Array.isArray(params.q) ? params.q[0] : params.q;
   // Articles stay on server-rendered detail pages, outside the directory's client payload.
-  const cards = apps.map(({ article: _, ...app }) => app);
+  const cards = apps.map(({ article: _, ...app }) => ({
+    ...app,
+    description: copy(app.description),
+  }));
   return (
     <main className="marketing-page marketplace-main">
       <MarketingIntro

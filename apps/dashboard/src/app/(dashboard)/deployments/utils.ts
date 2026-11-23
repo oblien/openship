@@ -36,12 +36,13 @@ export const mapRowToDeployment = (row: any): Deployment => {
     createdAt: row.createdAt,
     type: "git",
     environment: row.environment ?? "production",
+    gitProvider: row.meta?.gitProvider,
     owner: row.meta?.gitOwner,
     repo: row.meta?.gitRepo,
     branch: row.branch ?? undefined,
     projectId: row.projectId,
     projectName: row.projectName,
-    favicon: row.favicon ?? null,
+    iconUrl: row.iconUrl ?? null,
     failureReason: row.errorMessage ?? undefined,
     /* Rollback state — flows from the listing endpoint, which enriches
      * each row with isActive and surfaces the orchestrator-owned

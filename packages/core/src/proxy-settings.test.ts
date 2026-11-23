@@ -243,10 +243,12 @@ describe("render → parse round-trip", () => {
 });
 
 describe("resolveProxyDirectives — the one gate", () => {
-  it("emits nothing for empty settings", () => {
-    expect(resolveProxyDirectives(undefined, { scope: "all" })).toEqual([]);
-    expect(resolveProxyDirectives({}, { scope: "all" })).toEqual([]);
-    expect(resolveProxyDirectives({ clientMaxBodySize: "bad" }, { scope: "all" })).toEqual([]);
+  it("emits the same bounded defaults for empty and invalid settings", () => {
+    const defaults = resolveProxyDirectives(undefined, { scope: "all" });
+    expect(defaults).toHaveLength(4);
+    expect(defaults).toContainEqual(expect.objectContaining({ directive: "proxy_buffer_size", text: "32k" }));
+    expect(resolveProxyDirectives({}, { scope: "all" })).toEqual(defaults);
+    expect(resolveProxyDirectives({ clientMaxBodySize: "bad" }, { scope: "all" })).toEqual(defaults);
   });
 
   it("keeps TLS-only directives out of the shared scope", () => {
@@ -281,7 +283,7 @@ describe("resolveProxyDirectives — the one gate", () => {
 
   it("carries gzip's companions when gzip is on, and drops them when it's off", () => {
     const on = resolveProxyDirectives({ gzip: true }, { scope: "shared" });
-    expect(on.map((d) => d.directive)).toEqual([
+    expect(on.filter(d => d.directive.startsWith("gzip")).map((d) => d.directive)).toEqual([
       "gzip",
       "gzip_types",
       "gzip_vary",
@@ -291,8 +293,8 @@ describe("resolveProxyDirectives — the one gate", () => {
     expect(on.find((d) => d.directive === "gzip_types")!.text).toContain("application/json");
 
     const off = resolveProxyDirectives({ gzip: false }, { scope: "shared" });
-    expect(off.map((d) => d.directive)).toEqual(["gzip"]);
-    expect(off[0]!.text).toBe("off");
+    expect(off.filter(d => d.directive.startsWith("gzip")).map((d) => d.directive)).toEqual(["gzip"]);
+    expect(off.find(d => d.directive === "gzip")!.text).toBe("off");
   });
 
   it("lets an explicit value beat the companion default", () => {
@@ -340,6 +342,7 @@ describe("expectedProxyState — what a read-back must compare against", () => {
     // and a read-back that compared the live vhost against the raw settings saw a
     // value nobody asked for and reported drift forever.
     expect(expectedProxyState({ gzip: true }, { tls: true })).toEqual({
+      ...expectedProxyState(undefined, { tls: true }),
       gzip: true,
       gzipMinLength: 1024,
     });
@@ -364,14 +367,15 @@ describe("expectedProxyState — what a read-back must compare against", () => {
     expect(expectedProxyState(SAMPLE, { tls: true }).http2).toBe(true);
   });
 
-  it("expects nothing at all when the project configured nothing", () => {
-    expect(expectedProxyState(null, { tls: true })).toEqual({});
-    expect(expectedProxyState({ clientMaxBodySize: "20M" }, { tls: true })).toEqual({});
+  it("expects effective defaults when the project configured nothing", () => {
+    expect(expectedProxyState(null, { tls: true })).toMatchObject({ proxyBufferSize: "32k", largeClientHeaderBuffers: "4 32k" });
+    expect(expectedProxyState({ clientMaxBodySize: "20M" }, { tls: true })).toEqual(expectedProxyState(null, { tls: true }));
   });
 
   it("reflects the version gate, so an old box isn't reported as drifting", () => {
-    expect(expectedProxyState({ http2: true }, { tls: true, nginxVersion: [1, 24, 0] })).toEqual({});
+    expect(expectedProxyState({ http2: true }, { tls: true, nginxVersion: [1, 24, 0] })).toEqual(expectedProxyState(null, { tls: true }));
     expect(expectedProxyState({ http2: true }, { tls: true, nginxVersion: [1, 27, 1] })).toEqual({
+      ...expectedProxyState(null, { tls: true }),
       http2: true,
     });
   });

@@ -18,12 +18,12 @@ import type { RoutingConfig } from "@repo/core";
 import { compileVercelRouting, type CompiledRouting } from "../infra/vercel-routing";
 
 /** Sentinel so reused `compileVercelRouting` marks which proxy targets are the
- *  owned backend (→ Oblien `workspace`+`port`) vs. a literal external URL. */
+ *  owned backend (→ Oblien `vm`+`port`) vs. a literal external URL. */
 const BACKEND_SENTINEL = "oblien-backend://self";
 
-/** An owned Oblien workspace to reverse-proxy to. */
-export interface OblienWorkspaceTarget {
-  workspace: string;
+/** An owned Oblien VM to reverse-proxy to. */
+export interface OblienVmTarget {
+  vm: string;
   port: number;
 }
 
@@ -34,11 +34,11 @@ export interface OblienRoutingContext {
   /** Workspace backing `/` when the frontend runs as a container instead of a
    *  Page (a catch-all `/` proxy is appended last). Mutually exclusive with
    *  `staticPage`. Also the server-only shape: set `root`, omit `backend`. */
-  root?: OblienWorkspaceTarget;
+  root?: OblienVmTarget;
   /** Backend workspace that path rewrites (e.g. `/api/*`) proxy to. */
-  backend?: OblienWorkspaceTarget;
+  backend?: OblienVmTarget;
   /** Resolved internal URLs, shared by the generic route-registration path. */
-  proxyTargets?: ReadonlyMap<string, OblienWorkspaceTarget>;
+  proxyTargets?: ReadonlyMap<string, OblienVmTarget>;
 }
 
 /** Oblien only accepts 301/302/307/308; coerce anything else to a safe default
@@ -51,7 +51,7 @@ function toOblienRedirectStatus(code: number): 301 | 302 | 307 | 308 {
 export function compileRoutingToOblien(
   routing: RoutingConfig,
   ctx: OblienRoutingContext = {},
-): RoutesInput {
+): RoutesInput & { routes: RouteRule[] } {
   const compiled = compileVercelRouting(routing, {
     backendTargetUrl: ctx.backend ? BACKEND_SENTINEL : undefined,
   });
@@ -63,7 +63,7 @@ export function compileRoutingToOblien(
 export function compileResolvedRoutingToOblien(
   compiled: Pick<CompiledRouting, "redirects" | "proxyLocations" | "headerRules" | "cleanUrls" | "trailingSlash" | "spaFallback">,
   ctx: OblienRoutingContext = {},
-): RoutesInput {
+): RoutesInput & { routes: RouteRule[] } {
   const routes: RouteRule[] = [];
 
   // Terminal rules are first-match-wins, evaluated before static files; order
@@ -88,7 +88,7 @@ export function compileResolvedRoutingToOblien(
   for (const loc of compiled.proxyLocations) {
     const owned = loc.targetUrl === BACKEND_SENTINEL ? ctx.backend : ctx.proxyTargets?.get(loc.targetUrl);
     const action: RouteProxyAction = owned
-      ? { kind: "proxy", workspace: owned.workspace, port: owned.port }
+      ? { kind: "proxy", vm: owned.vm, port: owned.port }
       : { kind: "proxy", origin: loc.targetUrl };
     // A capture-bearing rewrite carries its upstream path as a `$1..$9` template —
     // exactly what `RouteProxyAction.path` takes, against a `wildcard` match.
@@ -107,7 +107,7 @@ export function compileResolvedRoutingToOblien(
   if (ctx.root) {
     routes.push({
       match: { path: "/", type: "prefix" },
-      action: { kind: "proxy", workspace: ctx.root.workspace, port: ctx.root.port },
+      action: { kind: "proxy", vm: ctx.root.vm, port: ctx.root.port },
     });
   }
 
@@ -118,7 +118,7 @@ export function compileResolvedRoutingToOblien(
     });
   }
 
-  const input: RoutesInput = { routes };
+  const input: RoutesInput & { routes: RouteRule[] } = { routes };
   if (ctx.staticPage) {
     input.static = { page: ctx.staticPage };
     if (compiled.spaFallback !== undefined) input.spa = compiled.spaFallback;

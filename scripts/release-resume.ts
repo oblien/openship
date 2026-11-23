@@ -197,17 +197,25 @@ async function github<T>(path: string): Promise<T> {
     return JSON.parse(
       execFileSync("gh", ["api", path], { encoding: "utf8", maxBuffer: 16 * 1024 ** 2 }),
     );
-  const response = await fetch(`https://api.github.com/${path}`, {
-    headers: {
-      Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok)
+  // History reads are safe to retry. Never treat unavailable history as proof
+  // that a check passed or that an unpublished tag can be moved.
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(`https://api.github.com/${path}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.ok) return response.json() as Promise<T>;
+    if (attempt < 2 && [502, 503, 504].includes(response.status)) {
+      await response.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+      continue;
+    }
     throw new Error(`GitHub returned HTTP ${response.status} while checking release history.`);
-  return response.json() as Promise<T>;
+  }
 }
 
 async function allPages<T>(path: string, key: string): Promise<T[]> {
@@ -286,12 +294,6 @@ export async function findReusableJob(options: {
       run.head_sha !== git("rev-parse", "HEAD")
     )
       continue;
-    const jobs = await allPages<ResumeJob>(
-      `repos/${options.repository}/actions/runs/${id}/jobs?filter=latest`,
-      "jobs",
-    );
-    const job = successfulJob(jobs, options.jobName);
-    if (!job) continue;
     // A resume can use a previous revision, never an unrelated branch's run.
     try {
       git("merge-base", "--is-ancestor", run.head_sha, "HEAD");
@@ -307,6 +309,12 @@ export async function findReusableJob(options: {
       .split("\0")
       .filter(Boolean);
     if (changed.some((path) => affectsScope(path, options.scope))) continue;
+    const jobs = await allPages<ResumeJob>(
+      `repos/${options.repository}/actions/runs/${id}/jobs?filter=latest`,
+      "jobs",
+    );
+    const job = successfulJob(jobs, options.jobName);
+    if (!job) continue;
     let artifactId: number | undefined;
     if (options.artifact) {
       const artifacts = await allPages<{ id: number; name: string; expired: boolean }>(

@@ -68,7 +68,7 @@ export function CompletePlatform() {
                 <div className="cp-grid">
                   {group.features.map((feature) => (
                     <Link key={feature.slug} href={`/features/${feature.slug}`} className="cp-item">
-                      <FeatureIllustration name={feature.slug} className="cp-item-art" />
+                      <FeatureIllustration name={feature.illustration} className="cp-item-art" />
                       <h4>{copy(feature.title)}</h4>
                       <p>{copy(feature.tagline)}</p>
                       <ArrowRight className="cp-item-arrow" aria-hidden="true" />

@@ -118,7 +118,7 @@ function serviceConfig(localPath: string, overrides: Partial<BuildConfig> = {}):
 }
 
 function runtimeFor(
-  transport: { kind: "ssh" | "local" | "socket" | "tcp"; description: string },
+  transport: { kind: "ssh" | "cloud" | "local" | "socket" | "tcp"; description: string },
   extra: Record<string, unknown>,
 ) {
   const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime & Record<string, unknown>;
@@ -658,6 +658,89 @@ describe("dockerode docker build — declared build context (#634)", () => {
     completeLookup({ imageId: digest, deploymentRef: `php@${digest}`, registryDigest: `php@${digest}` });
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(results[0]!.result.baseImages).toBeUndefined();
+  });
+});
+
+describe("batch image preparation and protected worker ownership", () => {
+  it.each(["ssh", "cloud"] as const)("starts pulls after %s worker setup and drains them before cleanup", async kind => {
+    const executor = { exec: vi.fn(async () => "") };
+    const runtime = runtimeFor({ kind, description: kind }, {
+      connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}),
+      buildImageOnRemote: vi.fn(async () => undefined),
+      managedCacheReceipt: vi.fn(async () => undefined),
+    });
+    const setup = vi.fn(async () => {});
+    const cleanup = vi.fn(async () => {});
+    Object.assign(runtime, { startProtectedBuildWorker: setup, cleanupProtectedBuildWorker: cleanup });
+    const compiled = vi.fn();
+    let finishPull!: () => void;
+    const pendingPull = new Promise<void>(resolve => { finishPull = resolve; });
+    const prepareImages = vi.fn(async () => {
+      expect(setup).toHaveBeenCalledOnce();
+      await pendingPull;
+    });
+    const pending = runtime.buildImages([
+      { ...spec(serviceConfig(await makeRepo())), onResult: compiled },
+    ], new BuildLogger(() => {}), { prepareImages });
+    try {
+      await expect.poll(() => compiled.mock.calls.length).toBe(1);
+      expect(prepareImages).toHaveBeenCalledOnce();
+      expect(cleanup).not.toHaveBeenCalled();
+      finishPull();
+      expect((await pending)[0]!.result.status).toBe("deploying");
+      expect(cleanup).toHaveBeenCalledOnce();
+    } finally { finishPull(); await pending; }
+  });
+
+  it("settles a failed preparation before removing the shared worker", async () => {
+    const runtime = runtimeFor({ kind: "cloud", description: "cloud" }, {
+      connectionOptions: { executor: { exec: vi.fn(async () => "") } },
+      transferBuildContext: vi.fn(async () => {}), buildImageOnRemote: vi.fn(async () => undefined),
+      managedCacheReceipt: vi.fn(async () => undefined),
+    });
+    const cleanup = vi.fn(async () => {});
+    Object.assign(runtime, { cleanupProtectedBuildWorker: cleanup });
+    const compiled = vi.fn();
+    await expect(runtime.buildImages([
+      { ...spec(serviceConfig(await makeRepo())), onResult: compiled },
+    ], new BuildLogger(() => {}), {
+      prepareImages: async () => { throw new Error("registry unavailable"); },
+    })).rejects.toThrow("registry unavailable");
+    expect(compiled).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it("cancels pending pulls even after compilation finishes and drains before cleanup", async () => {
+    const runtime = runtimeFor({ kind: "cloud", description: "cloud" }, {
+      connectionOptions: { executor: { exec: vi.fn(async () => "") } },
+      _docker: { listContainers: vi.fn(async () => []) },
+      transferBuildContext: vi.fn(async () => {}), buildImageOnRemote: vi.fn(async () => undefined),
+      managedCacheReceipt: vi.fn(async () => undefined),
+    });
+    let pullSettled = false;
+    let finishPull!: () => void;
+    const pulling = new Promise<void>(resolve => { finishPull = resolve; });
+    const cleanup = vi.fn(async () => { expect(pullSettled).toBe(true); });
+    Object.assign(runtime, { cleanupProtectedBuildWorker: cleanup });
+    const compiled = vi.fn();
+    const sessionId = "cancel-pending-registry-pull";
+    const pending = runtime.buildImages([
+      { ...spec(serviceConfig(await makeRepo(), { sessionId })), onResult: compiled },
+    ], new BuildLogger(() => {}), {
+      prepareImages: async signal => {
+        signal.addEventListener("abort", finishPull, { once: true });
+        if (signal.aborted) finishPull();
+        try { await pulling; signal.throwIfAborted(); }
+        finally { pullSettled = true; }
+      },
+    });
+    try {
+      await expect.poll(() => compiled.mock.calls.length).toBe(1);
+      expect(cleanup).not.toHaveBeenCalled();
+      await runtime.cancelBuild(sessionId);
+      expect((await pending)[0]!.result.status).toBe("cancelled");
+      expect(cleanup).toHaveBeenCalledOnce();
+    } finally { finishPull(); await pending; }
   });
 });
 

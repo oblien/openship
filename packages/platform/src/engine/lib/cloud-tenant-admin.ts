@@ -17,7 +17,7 @@ export function createTenantCloudAdmin(organizationId: string, namespace: string
   };
   const requireWorkspace = async (id: string) => {
     validateId(id);
-    const workspace = await admin.workspaces.get(id);
+    const workspace = await admin.vms.get(id);
     if (workspace.namespace !== namespace) throw deny();
     return workspace;
   };
@@ -47,13 +47,13 @@ export function createTenantCloudAdmin(organizationId: string, namespace: string
     get: requirePage,
     create: async (input) => {
       if (input.slug) validateId(input.slug);
-      await requireWorkspace(input.workspace_id);
+      await requireWorkspace(input.vm_id);
       await assertCloudCanSpend(organizationId, workspaceId);
       return admin.pages.create({ ...input, namespace });
     },
     deploy: async (slug, input) => {
       await requirePage(slug);
-      await requireWorkspace(input.workspace_id);
+      await requireWorkspace(input.vm_id);
       await assertCloudCanSpend(organizationId, workspaceId);
       return admin.pages.deploy(slug, input);
     },
@@ -83,14 +83,14 @@ export function createTenantCloudAdmin(organizationId: string, namespace: string
       if (!owned) throw deny();
       if (input.static) await requirePage(input.static.page);
       const workspaces = new Set<string>();
-      for (const rule of input.routes) {
+      for (const rule of input.routes ?? []) {
         if (rule.action.kind !== "proxy") continue;
         // External origins need separate tenant ownership verification. Admin
         // scope alone would authorize another customer's verified origin.
-        if (rule.action.origin || !rule.action.workspace) {
+        if (rule.action.origin || !rule.action.vm) {
           throw new AppError("Cloud routes must target a workspace in this organization", 400, "CLOUD_ROUTE_TARGET_INVALID");
         }
-        workspaces.add(rule.action.workspace);
+        workspaces.add(rule.action.vm);
       }
       await Promise.all([...workspaces].map(requireWorkspace));
       return admin.routes.set(normalized, input);

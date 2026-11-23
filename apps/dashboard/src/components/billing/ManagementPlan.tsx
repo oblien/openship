@@ -15,6 +15,7 @@ import { PlanChangeModal } from "./PlanChangeModal";
 import { ManagementServers } from "./ManagementServers";
 import { managementMoney as money } from "./management-presentation";
 import { ManagementServerSlots } from "./ManagementServerSlots";
+import { ManagementPlanStatus } from "./ManagementPlanStatus";
 import { subscriptionNeedsPayment } from "@/lib/billing-presentation";
 import { getApiErrorMessage } from "@/lib/api/client";
 
@@ -115,7 +116,7 @@ export function ManagementPlan({
   embedded?: boolean;
   onBusyChange?: (busy: boolean) => void;
 }) {
-  const { data, error, loading, refresh } = resource;
+  const { data, error, loading, refreshing, refresh } = resource;
   const { t } = useI18n();
   const copy = t.billing.managementPlans;
   const supportChoiceId = useId();
@@ -216,19 +217,8 @@ export function ManagementPlan({
   useEffect(() => {
     if (data?.change && !action.busy) setEditing(null);
   }, [data?.change, action.busy]);
-  if (loading)
-    return (
-      <p role="status" className="text-muted-foreground">
-        Loading your management plan…
-      </p>
-    );
-  if (!data)
-    return (
-      <div role="alert" className="space-y-3 rounded-2xl bg-card p-5">
-        <p>{error || "Could not load your management plan."}</p>
-        <Button onClick={refresh}>Try again</Button>
-      </div>
-    );
+  if (loading || !data)
+    return <ManagementPlanStatus pending={loading || refreshing} error={error} onRetry={refresh} />;
   const showingDetails = detailView && Boolean(data.subscription || data.pendingCheckout);
   const count =
     servers ??

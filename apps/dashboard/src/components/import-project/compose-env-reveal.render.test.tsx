@@ -12,7 +12,9 @@ const h = vi.hoisted(() => ({
   config: {} as DeploymentConfig,
   update: vi.fn(),
   editors: [] as EditorProps[],
-  stored: vi.fn(), demoMode: false,
+  stored: vi.fn(),
+  shared: vi.fn(),
+  demoMode: false,
 }));
 vi.mock("@/context/DeploymentContext", () => ({
   useDeployment: () => ({ config: h.config, updateConfig: h.update }),
@@ -20,6 +22,13 @@ vi.mock("@/context/DeploymentContext", () => ({
 }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: "test.invalid" }) }));
 vi.mock("@/lib/api/services", () => ({ servicesApi: { revealEnv: h.stored } }));
+vi.mock("@/lib/api/projects", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/api/projects")>();
+  return {
+    ...original,
+    projectsApi: { ...original.projectsApi, revealEnv: h.shared },
+  };
+});
 vi.mock("@/lib/demo-mode", () => ({ useDemoMode: () => h.demoMode }));
 // Mount modal contents during server rendering; the real editor and the card's
 // callback wiring run unchanged. Browser interaction is checked separately.
@@ -180,4 +189,63 @@ describe("shared Compose environment editor", () => {
     expect(h.config.services[0]!.environment.POSTGRES_PASSWORD).toBe(MASK);
     expect(h.update).not.toHaveBeenCalled();
   });
+
+  it("reveals saved shared environment secrets from the project-level store", async () => {
+    h.config.projectId = "project-id";
+    h.config.services[0]!.serviceId = "service-id";
+    h.config.envVars = [
+      {
+        key: "SHARED_TOKEN",
+        value: MASK,
+        visible: false,
+        isSecret: true,
+        preserveValue: true,
+      },
+    ];
+    h.shared.mockResolvedValue({
+      environment: { SHARED_TOKEN: "shared-secret-value" },
+    });
+
+    renderToStaticMarkup(
+      <I18nProvider>
+        <ComposeServices />
+      </I18nProvider>,
+    );
+
+    const sharedEditor = h.editors.find((props) =>
+      props.envVars?.some((row) => row.key === "SHARED_TOKEN"),
+    );
+    expect(sharedEditor).toBeDefined();
+    expect(sharedEditor?.onReveal).toBeDefined();
+    expect(await sharedEditor!.onReveal!(["SHARED_TOKEN"])).toEqual({
+      SHARED_TOKEN: "shared-secret-value",
+    });
+    // Shared rows live in the project-level env store — the service-scoped
+    // reveal can never see them, no matter which service id is borrowed.
+    expect(h.shared).toHaveBeenCalledWith("project-id", ["SHARED_TOKEN"], "production");
+    expect(h.stored).not.toHaveBeenCalled();
+  });
+
+  it("leaves onReveal undefined in shared environment editor when project is not yet saved", () => {
+    h.config.envVars = [
+      {
+        key: "SHARED_TOKEN",
+        value: "initial-value",
+        visible: true,
+      },
+    ];
+
+    renderToStaticMarkup(
+      <I18nProvider>
+        <ComposeServices />
+      </I18nProvider>,
+    );
+
+    const sharedEditor = h.editors.find((props) =>
+      props.envVars?.some((row) => row.key === "SHARED_TOKEN"),
+    );
+    expect(sharedEditor).toBeDefined();
+    expect(sharedEditor?.onReveal).toBeUndefined();
+  });
 });
+

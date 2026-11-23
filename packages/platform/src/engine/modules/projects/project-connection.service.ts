@@ -87,6 +87,8 @@ export async function listConnectionCandidates(ctx: RequestContext, projectId: s
       name: project.name,
       description: project.environmentName,
       appTemplateId: project.appTemplateId,
+      iconUrl: project.iconUrl,
+      framework: project.framework,
       clusterId: project.clusterId,
     });
   }

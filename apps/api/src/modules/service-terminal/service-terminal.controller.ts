@@ -257,7 +257,7 @@ async function resolveServiceForOrg(
 export async function issueTicket(c: Context) {
   const ctx = getRequestContext(c);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/service-terminal/service-terminal.controller"); return ({} as Record<string, unknown>); });
+  const body = await c.req.json();
   const serviceId = typeof (body as { serviceId?: unknown }).serviceId === "string"
     ? ((body as { serviceId: string }).serviceId)
     : "";

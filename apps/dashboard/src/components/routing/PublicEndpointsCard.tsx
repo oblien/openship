@@ -45,6 +45,10 @@ interface PublicEndpointsCardProps {
    * caller opts in where it applies. Opt in only when the destination preserves the complete request URL.
    */
   allowRedirects?: boolean;
+  /** Saved routes outside this editor's domain pair, still owned by this project. */
+  redirectTargets?: string[];
+  /** Container ports available to a saved service route. */
+  ports?: string[];
   /**
    * Hostnames already known to sit behind external ingress (TLS terminates
    * upstream, e.g. a Cloudflare Tunnel). Password protection can never apply
@@ -72,6 +76,8 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   allowRemoveAll = false,
   allowWww = false,
   allowRedirects = false,
+  redirectTargets: additionalRedirectTargets = [],
+  ports,
   externalIngressHostnames,
 }) => {
   const { t } = useI18n();
@@ -236,10 +242,10 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     // redirect can never point off-site; an endpoint with no hostname yet (freshly
     // added row) isn't offerable as a target.
     const redirectTargets = allowRedirects
-      ? endpoints
-          .filter((other) => other.id !== endpoint.id && !other.redirectTo)
-          .map((other) => endpointHostname(other))
-          .filter((hostname): hostname is string => !!hostname)
+      ? [...new Set([
+          ...endpoints.filter((other) => other.id !== endpoint.id && !other.redirectTo).map(endpointHostname),
+          ...additionalRedirectTargets,
+        ])].filter((host) => host && host !== endpointHostname(endpoint) && !host.startsWith("*."))
       : [];
 
     return (
@@ -251,6 +257,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         targetMode={hasServer ? "proxy" : "static"}
         targetPath={hasServer ? undefined : endpoint.targetPath}
         exposedPort={hasServer ? endpoint.port : undefined}
+        ports={ports}
         readOnlyTarget={readOnlyTarget}
         liveUrl={resolvedUrl}
         actionSlot={<>{!hasMultipleEndpoints && renderProtection(endpoint)}{actionSlot}</>}

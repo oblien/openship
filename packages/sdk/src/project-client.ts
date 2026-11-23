@@ -67,6 +67,8 @@ export function createRemoteProjectOperations(
         path: (id) => path(id) + "/server-logs/stream-token",
       },
       recentServerLogs: { method: "GET", path: (id) => path(id) + "/server-logs/recent" },
+      getEdgePages: { method: "GET", path: (id) => path(id) + "/edge-pages" },
+      updateEdgePages: { method: "PUT", path: (id) => path(id) + "/edge-pages" },
       listRouteProtection: { method: "GET", path: (id) => path(id) + "/route-protection", envelope: "data" },
       changeRouteProtection: { method: "PUT", path: (id) => path(id) + "/route-protection", envelope: "data" },
       listRouteRules: { method: "GET", path: (id) => path(id) + "/route-rules", envelope: "rules" },
@@ -179,6 +181,7 @@ export function createRemoteProjectOperations(
       },
       listEnvVars: { method: "GET", path: (id) => path(id) + "/env", envelope: "data" },
       mergeEnvVars: { method: "PATCH", path: (id) => path(id) + "/env" },
+      revealEnv: { method: "POST", path: (id) => path(id) + "/env-reveal", envelope: "environment" },
       getResources: { method: "GET", path: (id) => path(id) + "/resources", envelope: "data" },
       getClusterWorkload: { method: "GET", path: (id) => path(id) + "/cluster", envelope: "data" },
       listClusterDatabases: {

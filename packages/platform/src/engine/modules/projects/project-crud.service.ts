@@ -13,8 +13,7 @@ import {
   type Project,
   type Server,
 } from "@repo/db";
-import {
-  slugify,
+import { DEFAULT_GIT_PROVIDER, isImageUrl, slugify,
   runtimeProjectUpdate,
   assertRuntimeVersionTarget,
   AppError,
@@ -34,6 +33,7 @@ import {
   isBehind,
   digestSha,
   GITHUB_REPO,
+  gitRepositoryUrl,
   normalizeRollbackWindow,
   normalizeAliasStrict,
   aliasConflictsWithSiblings,
@@ -60,18 +60,9 @@ import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { env } from "../../config/index";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import {
-  resolveDefaultBranch,
-  getBranch,
-  compareCommits,
-  getLatestCommit,
-  getWebhookStrategy,
-  resolveWebhookStrategy,
-} from "../github/github.service";
-import { resolveProjectChangeImpact } from "../github/project-change-impact";
-import { getInstallationIdByOrg, resolveInstallUrl } from "../github/github.auth";
-import { hasActiveGitHubSource, resolveGitHubWebBaseUrl } from "../github/github-source.service";
-import { domainWebhookUrl } from "../../lib/public-url";
+import { getGitProvider, requireGitCapability, hasProjectRepository, gitRepository, projectGitProvider, projectRepository } from "../git/provider";
+import type { GitWebhookStrategy } from "../git/capabilities";
+import { resolveProjectChangeImpact } from "../git/project-change-impact";
 import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
 import {
   deriveNextProjectRouteState,
@@ -153,13 +144,20 @@ async function assertBuildCommandUpdate(
  * increase/pin must not race a sweep operating on the previous policy. */
 async function persistProjectFields(projectId: string, update: Record<string, unknown>) {
   const save = async () => {
+    if ("routingConfig" in update) {
+      // Source/wizard/proxy edits do not own maintenance intent. Read under the
+      // same lock as the pages writer so a stale form cannot turn it off.
+      const current = await repos.project.findById(projectId);
+      if (current?.routingConfig?.edgePages)
+        update.routingConfig = { ...(update.routingConfig as object | null), edgePages: current.routingConfig.edgePages };
+    }
     await repos.project.update(projectId, update);
     if (update.rollbackWindow !== undefined) {
       const { reconcileProjectRetentionSafe } = await import("../deployments/rollback/rollback-orchestrator");
       await reconcileProjectRetentionSafe(projectId);
     }
   };
-  return update.rollbackWindow !== undefined ? withProjectRuntimeLock(projectId, save) : save();
+  return update.rollbackWindow !== undefined || "routingConfig" in update ? withProjectRuntimeLock(projectId, save) : save();
 }
 
 /**
@@ -441,9 +439,6 @@ export async function enrichProjectsBatch(
   });
 }
 
-function projectGitUrl(owner?: string | null, repo?: string | null) {
-  return owner && repo ? `https://github.com/${owner}/${repo}.git` : undefined;
-}
 
 /** Validate and normalize one complete release source before it can become a
  * project's source identity. Keeping this at the service boundary means create,
@@ -621,8 +616,8 @@ function resolveProjectSource(data: TCreateProjectBody) {
     safeLocalPath,
     gitOwner,
     gitRepo,
-    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
-    gitUrl: projectGitUrl(gitOwner, gitRepo),
+    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? DEFAULT_GIT_PROVIDER),
+    gitUrl: gitRepositoryUrl(data.gitProvider, gitOwner, gitRepo),
     releaseSource,
   };
 }
@@ -783,7 +778,7 @@ function buildProductionProjectInput(
     gitUrl: source.gitUrl,
     releaseSource: source.releaseSource,
     installationId: data.installationId,
-    autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
+    autoDeploy: !!(env.CLOUD_MODE && data.installationId && source.gitOwner && source.gitRepo),
     githubChecks: data.githubChecks,
     autoDeployCancelBuilds: data.autoDeployCancelBuilds,
     framework: normalizeFramework(data.framework),
@@ -1036,15 +1031,16 @@ async function createProductionProject(
   // force-enables autoDeploy. Same shape as every other gate we have had to move:
   // put it where the row is written, not on one of the roads leading there.
   // (linkProjectRepo resolves it server-side on its own path.)
-  if (
-    env.CLOUD_MODE ||
-    getWebhookStrategy() === "app" ||
-    (await hasActiveGitHubSource(organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return false; }))
-  ) {
-    const owner = data.gitOwner?.trim();
-    data.installationId = owner
-      ? ((await getInstallationIdByOrg(organizationId, owner)) ?? undefined)
-      : undefined;
+  if (hasProjectRepository(data)) {
+    const provider = getGitProvider(data.gitProvider ?? DEFAULT_GIT_PROVIDER);
+    if (await provider.connections.managesInstallations(organizationId)) {
+      data.installationId =
+        (await provider.connections.installation(organizationId, data.gitOwner!.trim())) ?? undefined;
+    } else if (env.CLOUD_MODE) {
+      data.installationId = undefined;
+    }
+  } else {
+    data.installationId = undefined;
   }
 
   // Atomic free-domain gate — same rule and shape as updateProject. When the
@@ -1139,7 +1135,7 @@ export async function createServicesProjectWithId(opts: {
       gitProvider: opts.gitProvider ?? undefined,
       gitOwner: opts.gitOwner ?? undefined,
       gitRepo: opts.gitRepo ?? undefined,
-      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      gitUrl: gitRepositoryUrl(opts.gitProvider, opts.gitOwner, opts.gitRepo),
     });
     return { group, slug };
   });
@@ -1155,11 +1151,11 @@ export async function createServicesProjectWithId(opts: {
       environmentName: "Production",
       environmentSlug: "production",
       environmentType: "production",
-      gitProvider: opts.gitProvider ?? "github",
+      gitProvider: opts.gitProvider ?? DEFAULT_GIT_PROVIDER,
       gitOwner: opts.gitOwner ?? undefined,
       gitRepo: opts.gitRepo ?? undefined,
       gitBranch: opts.gitBranch ?? "main",
-      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      gitUrl: gitRepositoryUrl(opts.gitProvider, opts.gitOwner, opts.gitRepo),
       autoDeploy: !!opts.autoDeploy,
       framework: "unknown", // services project — the stack lives on each service row
       packageManager: "npm",
@@ -1181,7 +1177,7 @@ export async function createServicesProjectWithId(opts: {
 }
 
 /**
- * Link a GitHub repo to a project — the reusable core of the `linkRepo`
+ * Link a Git repository to a project — the reusable core of the `linkRepo`
  * controller, callable WITHOUT a Hono Context (the migration orchestrator links
  * a repo to a freshly-adopted project, and it only has a RequestContext). Sets
  * the project's git fields, resolves the default branch, registers a push
@@ -1199,7 +1195,7 @@ export type LinkProjectRepoOutcome =
 export async function linkProjectRepo(
   ctx: RequestContext,
   projectId: string,
-  input: { owner: string; repo: string; branch?: string; installationId?: number },
+  input: { owner: string; repo: string; branch?: string; installationId?: number; provider?: string },
 ): Promise<LinkProjectRepoOutcome> {
   const { organizationId } = ctx;
   const owner = input.owner?.trim();
@@ -1217,13 +1213,21 @@ export async function linkProjectRepo(
         return { ok: false, code: "not_found" } as const;
       }
 
-      const sourceWebBaseUrl = await resolveGitHubWebBaseUrl(organizationId, owner).catch(
-        (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; },
-      );
-      const gitUrl = sourceWebBaseUrl
-        ? `${sourceWebBaseUrl.replace(/\/+$/, "")}/${owner}/${repo}.git`
-        : projectGitUrl(owner, repo);
-      const defaultBranch = await resolveDefaultBranch(ctx, owner, repo, input.branch);
+      const provider = getGitProvider(input.provider ?? DEFAULT_GIT_PROVIDER);
+      const ref = { provider: provider.id, namespace: owner, name: repo };
+      const repository = gitRepository(ctx, ref);
+      await repository.assertAccess("read");
+      const strategy = await provider.connections.strategy(project!, organizationId);
+      const installationId = strategy === "app"
+        ? await provider.connections.installation(organizationId, owner)
+        : null;
+      if (strategy === "app" && !installationId) {
+        const install = await provider.connections.installUrl(ctx);
+        return { ok: false, code: "app_not_installed", owner, installUrl: install.url };
+      }
+      const info = await repository.info();
+      const gitUrl = await provider.cloneUrl(organizationId, ref) ?? info.clone_url;
+      const defaultBranch = input.branch?.trim() || info.default_branch;
       // A project_app is one source identity even if an old/partial write left its
       // environments inconsistent. Linking Git converges the whole group, so clear
       // release-only class overrides when ANY sibling still carries that source.
@@ -1234,7 +1238,7 @@ export async function linkProjectRepo(
         : isReleaseProvider(project!.gitProvider);
 
       const gitFields: Record<string, unknown> = {
-        gitProvider: "github",
+        gitProvider: provider.id,
         gitOwner: owner,
         gitRepo: repo,
         gitBranch: defaultBranch,
@@ -1257,15 +1261,8 @@ export async function linkProjectRepo(
         autoDeploy: false,
       };
 
-      const strategy = await resolveWebhookStrategy(project!, organizationId);
-
       if (strategy === "app") {
-        const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
-        if (!resolvedInstId) {
-          const install = await resolveInstallUrl(ctx);
-          return { ok: false, code: "app_not_installed", owner, installUrl: install.url };
-        }
-        gitFields.installationId = resolvedInstId;
+        gitFields.installationId = installationId;
         gitFields.autoDeploy = true;
       } else if (strategy === "domain" || strategy === "repo") {
         // Register/reuse the repo webhook via the SHARED reconciler (org+repo scoped,
@@ -1274,8 +1271,10 @@ export async function linkProjectRepo(
         // A failure just means no auto-deploy yet; the link still succeeds and the
         // user can enable it later.
         const webhookUrl =
-          strategy === "domain" ? domainWebhookUrl(project!.webhookDomain!) : undefined;
-        const hookId = await ensureSharedWebhook(ctx, project!, owner, repo, webhookUrl).catch(
+          strategy === "domain"
+            ? await requireGitCapability(provider.connections.domainWebhookUrl, "domain webhooks")(project!.webhookDomain!)
+            : undefined;
+        const hookId = await ensureSharedWebhook(ctx, project!, ref, webhookUrl).catch(
           (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; },
         );
         if (hookId) {
@@ -1286,25 +1285,25 @@ export async function linkProjectRepo(
 
       if (project!.groupId) {
         const sharedGitFields = {
-          gitProvider: "github",
+          gitProvider: provider.id,
           gitOwner: owner,
           gitRepo: repo,
           gitUrl,
           installationId:
             typeof gitFields.installationId === "number"
               ? gitFields.installationId
-              : (input.installationId ?? null),
+              : null,
           releaseSource: null,
           localPath: null,
           sourceKind: null,
           ...(leavingReleaseSource
             ? { buildKind: null, hasBuild: true, runtimeMode: null, startCommand: null }
             : {}),
-          webhookId: typeof gitFields.webhookId === "number" ? gitFields.webhookId : null,
+          webhookId: typeof gitFields.webhookId === "string" ? gitFields.webhookId : null,
           autoDeploy: Boolean(gitFields.autoDeploy),
         };
         await repos.project.updateSourceByApp(project!.groupId, sharedGitFields, {
-          gitProvider: "github",
+          gitProvider: provider.id,
           gitOwner: owner,
           gitRepo: repo,
           gitUrl,
@@ -1902,6 +1901,11 @@ async function updateProjectUnlocked(
     if (PROJECT_IDENTITY_KEYS.has(key)) continue;
     if (raw[key] !== undefined) update[key] = raw[key];
   }
+  if (data.iconUrl !== undefined) {
+    const iconUrl = typeof data.iconUrl === "string" ? data.iconUrl.trim() || null : data.iconUrl;
+    if (iconUrl !== null && !isImageUrl(iconUrl)) throw new ValidationError("Icon URL must be an HTTP or HTTPS URL without credentials.");
+    update.iconUrl = iconUrl;
+  }
   Object.assign(update, runtimeProjectUpdate(p, update));
   assertRuntimeVersionTarget({ ...p, ...update });
   await assertBuildCommandUpdate(p, update);
@@ -2174,7 +2178,7 @@ export async function createProjectEnvironment(
   if (!productionBranch && environmentType === "production" && base.gitOwner && base.gitRepo) {
     // userId here is the actor who triggered the action — used to authorize
     // the GitHub call against their installation token.
-    productionBranch = await resolveDefaultBranch(ctx, base.gitOwner, base.gitRepo);
+    productionBranch = (await projectRepository(ctx, base).info()).default_branch;
   }
 
   const gitBranch =
@@ -2182,7 +2186,7 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branch = await getBranch(ctx, base.gitOwner, base.gitRepo, gitBranch);
+    const branch = await projectRepository(ctx, base).branch(gitBranch);
     if (!branch) {
       throw new ValidationError(
         `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
@@ -2498,7 +2502,7 @@ export async function resolveUpstreamDrift(
   }
 
   const head = ctx
-    ? await getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; })
+    ? await projectRepository(ctx, p).latestCommit(projectBranch(p)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; })
     : null;
   return {
     supported: true,
@@ -2599,7 +2603,7 @@ export async function evaluateDrift(
     // `1eeaf76` is available, forever. See compareCommitSha.
     let behind = compareCommitSha(latestSha, deployedSha) === "different";
     if (behind && ctx) {
-      const compare = await compareCommits(ctx, p.gitOwner!, p.gitRepo!, deployedSha!, latestSha!);
+      const compare = await projectRepository(ctx, p).compare(deployedSha!, latestSha!);
       if (compare && !compare.truncated) {
         behind = (await resolveProjectChangeImpact(ctx, p, compare.files, latestSha)).affected;
       }
@@ -2737,38 +2741,42 @@ export async function getGitInfo(projectId: string, organizationId: string) {
  * column), while this answers whether GitHub has somewhere to deliver it.
  */
 export type ProjectWebhookState = {
-  strategy: Awaited<ReturnType<typeof resolveWebhookStrategy>>;
+  strategy: GitWebhookStrategy;
   webhookActive: boolean;
   installationInstalled: boolean;
-  sharedWebhookId: number | null;
+  sharedWebhookId: string | null;
 };
 
 export async function resolveProjectWebhookState(
   organizationId: string,
   project: {
+    gitProvider?: string | null;
     gitOwner?: string | null;
     gitRepo?: string | null;
-    webhookId?: number | null;
+    webhookId?: string | null;
     webhookDomain?: string | null;
     autoDeploy?: boolean | null;
     deployTarget?: string | null;
   },
 ): Promise<ProjectWebhookState> {
-  const strategy = await resolveWebhookStrategy(project, organizationId);
+  if (!project.gitOwner || !project.gitRepo)
+    return { strategy: "none", webhookActive: false, installationInstalled: false, sharedWebhookId: null };
+  const provider = projectGitProvider(project);
+  const strategy = await provider.connections.strategy(project, organizationId);
 
   // A native App strategy delivers pushes for every target through this
   // instance's App webhook. In cloud-proxy mode (non-App base strategy), only a
   // cloud-target project receives pushes through the SaaS App.
   let installationInstalled = false;
   if (project.gitOwner && (strategy === "app" || project.deployTarget === "cloud")) {
-    installationInstalled = !!(await getInstallationIdByOrg(organizationId, project.gitOwner));
+    installationInstalled = !!(await provider.connections.installation(organizationId, project.gitOwner));
   }
 
   // A webhook belongs to (owner, repo), so a sibling project in the org may own
   // the row that carries its id.
   let sharedWebhookId = project.webhookId ?? null;
   if (!sharedWebhookId && project.gitOwner && project.gitRepo) {
-    sharedWebhookId = await findSharedWebhookId(organizationId, project.gitOwner, project.gitRepo);
+    sharedWebhookId = await findSharedWebhookId(organizationId, { provider: provider.id, namespace: project.gitOwner, name: project.gitRepo });
   }
 
   const webhookActive =

@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useCallback, useId, useState } from "react";
 import Link from "next/link";
 import { Value } from "@sinclair/typebox/value";
@@ -223,7 +224,7 @@ function ActivationReview({ request, disabled, onContinue }: Props) {
                       : ""}
                   </p>
                   <details className="mt-2 text-muted-foreground">
-                    <summary className="cursor-pointer">Agent & instructions</summary>
+                    <DisclosureSummary className="cursor-pointer">Agent & instructions</DisclosureSummary>
                     <p className="mt-2">
                       {ASSISTANT_PROVIDER_LABELS[flow.provider]} · {flow.model || "Default model"}
                       {flow.readRepository ? " · Repository read access" : ""}

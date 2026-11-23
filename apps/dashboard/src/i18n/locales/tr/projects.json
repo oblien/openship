@@ -415,15 +415,24 @@
     "fixStep2": "Servis portu için bir rota veya özel alan adı ekleyin.",
     "fixStep3": "Alan adını doğrulayın ve dağıtın.",
     "composeReview": {
-      "title": "Compose değişti",
+      "title": "Compose değişikliklerini incele",
       "addedTitle": "Yeni hizmetlerin yapılandırılması gerekiyor",
-      "description": "Compose dosyası son yapılandırmadan bu yana değişti. Yeniden dağıtmadan önce güncel hizmetleri ve ayarları gözden geçirin.",
+      "description": "Compose dosyanızdaki değişiklikleri inceleyin. Şimdi uygulayıp dağıtın veya önce hizmetleri yapılandırın.",
       "configure": "Yapılandır",
       "cancel": "İptal",
       "added": "Eklenen",
       "changed": "Değişen",
       "removed": "Kaldırılan",
-      "reviewHint": "Bu Compose değişikliklerini gözden geçirin, ardından uygulamak için dağıtın. Kaldırılan hizmetler dağıtım sırasında durdurulur; kalıcı verileri korunur."
+      "reviewHint": "Bu Compose değişikliklerini gözden geçirin, ardından uygulamak için dağıtın. Kaldırılan hizmetler dağıtım sırasında durdurulur; kalıcı verileri korunur.",
+      "apply": "Uygula ve dağıt",
+      "applying": "Dağıtım başlatılıyor…",
+      "before": "Önceki",
+      "after": "Yeni",
+      "secretsHidden": "Ortam değişkenlerinin değerleri gizlidir",
+      "preservationHint": "Kaydedilen özel ayarlar korunur. Kaldırılan hizmetler dağıtım sırasında durdurulur; birimleri korunur.",
+      "changedAgain": "Compose dosyası yeniden değişti. Dağıtımdan önce güncellenen farkları inceleyin.",
+      "applyFailed": "Dağıtım başlatılamadı. Hatayı inceleyin veya hizmetleri yapılandırın.",
+      "settingsChanged": "Hizmet ayarları değişti."
     }
   },
   "incomingWebhooks": {

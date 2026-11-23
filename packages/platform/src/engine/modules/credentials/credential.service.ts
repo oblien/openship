@@ -12,10 +12,9 @@
  *    out is {@link resolveCredentialSecrets}, which is server-internal and takes an
  *    organization id.
  *
- * 2. A CREDENTIAL IS VERIFIED BEFORE IT IS STORED. The DNS slice set that precedent and
- *    its reasoning generalizes: an unverified credential silently owns the lookup for
- *    every consumer that matches it, so storing a broken registry login turns a working
- *    anonymous pull into a failing authenticated one.
+ * 2. CHECK CREDENTIALS BEFORE STORING THEM. Registries can allow an anonymous probe
+ *    while requiring a login for private repositories. Save those credentials with no
+ *    verification date until a check can confirm the login.
  */
 
 import { repos, type Credential } from "@repo/db";
@@ -23,6 +22,7 @@ import {
   CREDENTIAL_MASK,
   getCredentialProvider,
   normalizeCredentialSelector,
+  supportsConnectionOAuth,
   splitCredentialValues,
   validateCredentialValues,
   type CredentialProvider,
@@ -139,8 +139,7 @@ export async function getCredential(
 function requireProvider(providerId: string): CredentialProvider {
   const provider = getCredentialProvider(providerId);
   if (!provider) throw new ValidationError(`Unknown credential provider "${providerId}".`);
-  // A provider Openship cannot check must not be storable: rule 2 above would be
-  // unenforceable for it, and the operator would get a credential that looks fine.
+  // Every provider must have a check before we can store its credentials.
   if (!hasVerifier(provider.id)) {
     throw new ValidationError(`Openship cannot verify ${provider.label} credentials yet.`);
   }
@@ -153,6 +152,17 @@ export interface CredentialInput {
   selector?: string | null;
   /** Field key → value, mixing readable and secret; the registry decides which is which. */
   values: Record<string, string | undefined>;
+}
+
+async function verifyBeforeSaving(
+  provider: CredentialProvider,
+  values: Parameters<typeof verifyCredentialValues>[1],
+): Promise<Date | null> {
+  const verdict = await verifyCredentialValues(provider, values);
+  if (!verdict.ok) {
+    throw new ValidationError(verdict.reason ?? "The provider rejected this credential.");
+  }
+  return verdict.unverifiedReason ? null : new Date();
 }
 
 export async function createCredential(
@@ -178,8 +188,7 @@ export async function createCredential(
   }
 
   const { publicFields, secrets } = splitCredentialValues(provider, input.values);
-  const verdict = await verifyCredentialValues(provider, { selector, publicFields, secrets });
-  if (!verdict.ok) throw new ValidationError(verdict.reason ?? "The provider rejected this credential.");
+  const lastVerifiedAt = await verifyBeforeSaving(provider, { selector, publicFields, secrets });
 
   const row = await repos.credential.create({
     organizationId,
@@ -189,7 +198,7 @@ export async function createCredential(
     publicFields,
     secretsEnc: writeCredentialSecrets(secrets),
     status: "active",
-    lastVerifiedAt: new Date(),
+    lastVerifiedAt,
   });
   return sanitizeCredential(row);
 }
@@ -213,10 +222,10 @@ async function updateCredentialUnlocked(
   if (!row) throw new NotFoundError("Credential", id);
   const provider = requireProvider(row.provider);
 
-  if (row.publicFields.authorization === "oauth") {
+  if (row.publicFields.authorization === "oauth" || row.publicFields.authorization === "host-cli") {
     if (input.values && Object.values(input.values).some((value) => !!value))
       throw new ValidationError(
-        "Reconnect this authorized account to change its access. Tokens cannot replace an OAuth grant.",
+        "Reconnect this authorized account to change its access. Use the original connection method.",
       );
     const name = input.name?.trim() || row.name;
     if (await repos.credential.nameTaken(organizationId, row.provider, row.selector, name, id))
@@ -265,11 +274,8 @@ async function updateCredentialUnlocked(
   const publicFields = { ...row.publicFields, ...split.publicFields };
   const secrets = mayReuseHeldSecrets ? { ...held, ...split.secrets } : split.secrets;
 
-  // Re-verified on every update: a changed username, registry host or secret can each
-  // invalidate the pair, and the point of verifying at all is that a stored credential
-  // was known good at the moment it was stored.
-  const verdict = await verifyCredentialValues(provider, { selector, publicFields, secrets });
-  if (!verdict.ok) throw new ValidationError(verdict.reason ?? "The provider rejected this credential.");
+  // A change to the username, destination or secret requires a fresh check.
+  const lastVerifiedAt = await verifyBeforeSaving(provider, { selector, publicFields, secrets });
 
   const updated = await repos.credential.update(organizationId, id, {
     name,
@@ -277,7 +283,7 @@ async function updateCredentialUnlocked(
     publicFields,
     secretsEnc: writeCredentialSecrets(secrets),
     status: "active",
-    lastVerifiedAt: new Date(),
+    lastVerifiedAt,
     lastError: null,
   });
   if (!updated) throw new NotFoundError("Credential", id);
@@ -316,19 +322,47 @@ export async function verifyCredential(
 ): Promise<SanitizedCredential> {
   const row = await repos.credential.findById(organizationId, id);
   if (!row) throw new NotFoundError("Credential", id);
+  const inconclusive = await checkStoredCredential(row);
+  if (inconclusive) throw new ValidationError(inconclusive);
+  const fresh = await repos.credential.findById(organizationId, id);
+  return sanitizeCredential(fresh ?? row);
+}
+
+/**
+ * A denied image may mean a missing package grant, not an expired token. Recheck
+ * the registry login before changing its status, using only this org's saved
+ * registry destination. Network failures leave the credential usable.
+ */
+export async function recheckRejectedRegistryCredential(
+  organizationId: string,
+  registry: string,
+): Promise<void> {
+  const selector = normalizeCredentialSelector(getCredentialProvider("docker-registry")!, registry);
+  const row = await repos.credential.findActive(organizationId, "docker-registry", selector);
+  if (row) await checkStoredCredential(row);
+}
+
+/** Return the reason for an inconclusive check without changing the saved observation. */
+async function checkStoredCredential(row: Credential): Promise<string | void> {
   const provider = getCredentialProvider(row.provider);
   if (!provider) throw new ValidationError(`Unknown credential provider "${row.provider}".`);
 
   let secrets = readCredentialSecrets(row);
   if (row.publicFields.authorization === "oauth") {
-    const { getProviderAccess } = await import("./connection-authorization");
-    secrets = (await getProviderAccess(organizationId, id, { allowInvalid: true })).secrets;
+    const { getConnectionAccess } = await import("./connection-authorization");
+    await getConnectionAccess(row.organizationId, row.id, supportsConnectionOAuth, { allowInvalid: true });
+    // Refresh may replace the stored token. Check and record the same snapshot,
+    // including a concurrent rotation, rather than the token read before refresh.
+    const refreshed = await repos.credential.findById(row.organizationId, row.id);
+    if (!refreshed) return;
+    row = refreshed;
+    secrets = readCredentialSecrets(row);
   }
   if (Object.keys(secrets).length === 0) {
     // The restore case: the row survived a cross-instance move but its secret could not.
     const reason = "The stored secret is empty — re-enter it.";
-    await repos.credential.markInvalid(organizationId, id, reason);
-    return sanitizeCredential({ ...row, status: "invalid", lastError: reason });
+    await repos.credential.recordVerification(row, { ok: false, reason });
+    return;
   }
 
   const verdict = await verifyCredentialValues(provider, {
@@ -336,11 +370,11 @@ export async function verifyCredential(
     publicFields: row.publicFields ?? {},
     secrets,
   });
-  if (verdict.ok) await repos.credential.markVerified(organizationId, id);
-  else await repos.credential.markInvalid(organizationId, id, verdict.reason ?? "Rejected by the provider.");
-
-  const fresh = await repos.credential.findById(organizationId, id);
-  return sanitizeCredential(fresh ?? row);
+  if (verdict.ok && verdict.unverifiedReason) return verdict.unverifiedReason;
+  if (row.provider === "docker-registry" && !verdict.ok && !verdict.credentialRejected) {
+    return verdict.reason ?? "Could not verify the registry login.";
+  }
+  await repos.credential.recordVerification(row, verdict);
 }
 
 // ─── The consumer accessor ───────────────────────────────────────────────────

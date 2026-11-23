@@ -1,96 +1,98 @@
 ---
 title: Architecture overview
-description: A high-level map of how Openship fits together — the interfaces you drive, the API that runs everything, the platform adapters, and the shared packages.
+description: How the interfaces, shared engine, runtime adapters, and infrastructure work together.
 ---
 
-Openship is one codebase that plays several parts. Think of it like a restaurant: there's the counter where you place an order (the things you click and type), the kitchen that actually cooks (the API), and the appliances the kitchen uses to do the work (the platform layer). This page is the map. The other architecture pages zoom into one area each.
+OpenShip separates the **control plane** that manages configuration and operations from the **runtimes**
+that build and run applications. The web dashboard, CLI, SDK, and MCP use shared platform operations.
+Desktop is an optional host for the control plane and dashboard.
 
-Here's the whole thing on one screen:
-
-```
-   You drive Openship three ways
-   ┌───────────┐   ┌───────────┐   ┌───────────┐
-   │ Dashboard │   │    CLI    │   │  Desktop  │
-   │ (Next.js) │   │ (openship)│   │ (Electron)│
-   └─────┬─────┘   └─────┬─────┘   └─────┬─────┘
-         └───────────────┼───────────────┘
-                         │  HTTP, under /api/*
-                   ┌─────▼─────┐
-                   │    API    │   the control plane
-                   │  (Hono)   │   projects · deployments · domains · env · auth
-                   └─────┬─────┘
-                         │  getPlatform()
-                   ┌─────▼──────┐
-                   │  Adapters  │   runtime · routing · SSL · system checks
-                   └─────┬──────┘
-              ┌──────────┼──────────┐
-         ┌────▼───┐  ┌───▼────┐  ┌──▼──────┐
-         │ local  │  │ server │  │  cloud  │   where your app ends up
-         └────────┘  └────────┘  └─────────┘
+```text
+Dashboard · CLI · HTTP SDK · MCP
+               │
+        API and authorization
+               │
+        Shared platform engine ← Native SDK (explicit local context)
+               │
+          Runtime adapters
+               │
+   Local host · SSH servers · Cloud · Supported clusters
 ```
 
 ## The control plane: the API
 
-The **API** is the brain. It's a [Hono](https://hono.dev) app (a small, fast web framework) that owns everything that matters — projects, deployments, domains, environment variables, backups, and the permission model — and it stores that data in a database (see [Data ownership](/docs/architecture/data-ownership)).
+The Hono API handles HTTP transport, authentication, request validation, and access checks. Shared platform
+operations manage projects, deployments, domains, services, backups, and other resources.
 
-Everything else in the picture is a way to *talk to* this API, or a tool the API *uses*. Nothing writes to the database directly except the API, and every piece of the UI reaches it over plain HTTP under `/api/*`. That single front door is why the dashboard, the CLI, and the desktop app always agree with each other: they're all reading and writing the same source.
-
-<Callout title="One door, many keys">
-The API accepts a browser session cookie (from the dashboard) or a bearer token (from the CLI and scripts). Same endpoints, same rules, whichever you use. See the [API overview](/docs/api) for the auth model.
-</Callout>
+Browser sessions and bearer tokens reach the same authorized operations. The SDK can use HTTP or an
+explicitly configured native context; native mode calls the engine directly and must supply the required
+identity, authorization, and lifecycle dependencies. See [SDK modes](/docs/api/sdk).
 
 ## The three ways you drive it
 
-All three interfaces are thin — they render screens and send requests. The real work happens behind the API.
+| Interface | Role |
+| --- | --- |
+| Web dashboard | Graphical management for Cloud or a self-hosted instance. |
+| CLI | Remote API operations, local installation, and automation. Native mode is explicit. |
+| Desktop | The dashboard with a local control plane, or a connection to a remote instance. |
+| SDK | JavaScript/TypeScript integration through HTTP or native engine mode. |
+| MCP | Agent tools backed by the same operation and permission boundaries. |
 
-- **Dashboard** — a [Next.js](https://nextjs.org) web app. This is the full graphical UI, built for teams, and what you see in most screenshots in these docs.
-- **CLI** — the `openship` command you install from npm. It wears two hats: `openship up` can stand up a whole self-hosted instance on your machine — it bundles the API and fetches the dashboard for you — while everyday commands like `openship deploy` are a thin HTTP client that calls the same API endpoints the dashboard does. Great for self-hosting, scripting, and CI.
-- **Desktop app** — an [Electron](https://www.electronjs.org) wrapper that shows the same dashboard and runs its own local copy of the API on your machine (only while it's open). You manage everything from a laptop with no always-on server; deploys go out to a server you connect over SSH, or to Openship Cloud.
-
-Because they share the API, you can start a deploy in the dashboard and check on it from the CLI — it's one system, not three.
+For shared team operations, an always-on instance can receive webhooks and run scheduled work independently
+of an individual computer. Remote application workloads do not require the Desktop window to stay open.
 
 ## The platform layer: adapters
 
-When the API needs to *do* something to the outside world — build an image, start a container, wire up a domain, get an SSL certificate — it doesn't do it directly. It asks the **platform layer** (the `@repo/adapters` package). This is the "appliances" in the kitchen analogy, and it has three parts behind a single entry point:
+| Layer | Responsibility |
+| --- | --- |
+| Platform operations | Configuration, authorization requirements, deployment orchestration, lifecycle, and recovery. |
+| Runtime adapters | Build artifacts and manage supported Docker, bare, Cloud, Swarm, or Kubernetes workloads. |
+| Infrastructure adapters | Routing, certificates, system checks, and component preparation. |
+| State and repositories | Persist configuration and operation records; retrieve the selected installation's data. |
 
-- **Runtime** — builds and runs your app. There are three runtimes: **Docker** (your app runs in a container), **Bare** (your app runs as a plain process, lighter for small machines and the desktop), and **Cloud** (the work is handed off to Openship Cloud).
-- **Infra** — routing and certificates. On self-hosted instances this is an OpenResty edge (an nginx-based server) for routing plus certbot for automatic Let's Encrypt HTTPS; in the Docker/Compose install the edge runs as a container on :80/:443 that the API drives. On cloud, Openship Cloud's edge handles it.
-- **System** — prerequisite checks and setup (is Docker installed? is git present?). Self-hosted only.
-
-At startup the API picks the right combination of these once, and the rest of the code just calls `getPlatform()`. For the full story of how a deploy resolves to a concrete runtime, see [Runtime model](/docs/architecture/runtime-model).
+Runtime selection depends on the project, destination, workload type, and installed capabilities.
+See [runtime model](/docs/architecture/runtime-model) for supported combinations and limitations.
 
 ## Where an app ends up
 
-A project deploys to one of three targets, and the platform layer above is what makes each one work:
+The deployment resolves a destination and records the configuration needed to manage that release.
+The destination may be local, reached over SSH, or managed by Cloud. Supported cluster workflows use the
+selected cluster and placement settings.
 
-- **local** — the instance's own machine.
-- **server** — a server you've connected over SSH.
-- **cloud** — Openship Cloud compute.
+**Build placement is a separate decision.** Supported build paths can prepare artifacts away from a live
+server; other paths build on the destination. The deployment log identifies the actual build environment.
 
-The target is chosen once per deploy and snapshotted, so the build, the routing, and any later rollback can never disagree about where the app lives.
+Routing sends application traffic to the deployed workload. It does not require a dashboard request or
+control-plane database lookup for every application request.
 
 ## Shared packages
 
-Openship is a monorepo. Common logic lives in `@repo/*` packages that every app reuses, so there's one implementation of each thing rather than four copies that drift apart.
-
-| Package | What it holds |
-|---|---|
-| `@repo/core` | Pure shared logic — types, stack detection, constants, error classes. No side effects. |
-| `@repo/db` | All database access, via [Drizzle ORM](https://orm.drizzle.team) over Postgres (or an embedded PGlite for zero-setup installs). Every query goes through typed repositories. |
-| `@repo/adapters` | The platform layer described above: runtime, infra, and system. |
-| `@repo/ui` | The shared React component library used by the dashboard and the marketing/docs site. |
-| `@repo/onboarding` | The setup and first-run flow shared by the CLI, dashboard, and desktop. |
+| Package | Responsibility |
+| --- | --- |
+| `@repo/contracts` | Shared operation contracts and input/output schemas. |
+| `@repo/platform` | Platform operations, engine orchestration, and shared authorization requirements. |
+| `@repo/adapters` | Runtime, routing, TLS, system, and provider implementations. |
+| `@repo/db` | Database schema and repositories. |
+| `@repo/sdk` | HTTP and native client implementation. |
+| `@repo/commands` | Shared command definitions used by the CLI. |
+| `@repo/core` | Shared types, detection, constants, errors, and utilities. |
+| `@repo/ui` | Shared application interface components. |
+| `@repo/onboarding` | Installation and onboarding workflows. |
+| `openship` | Published SDK/CLI package assembled from the shared implementation. |
 
 ## One codebase, three roles
 
-The same code runs as **Openship Cloud** (the managed SaaS), as a **self-hosted** instance on your own server, or as the **desktop** app. Configuration at startup decides which role an instance plays and which runtime it uses (for self-hosted, `DEPLOY_MODE=docker` or `bare`). Nothing is forked — the cloud and the version you self-host are literally the same source.
+Self-hosted web, managed Cloud, and Desktop share the codebase. Deployment mode and capabilities determine
+which administrative operations are available. Cloud manages its own control plane; customer cluster and
+host administration are exposed only in supported contexts.
 
-The one thing that changes with the role is *where data is canonical*. Local and server projects live entirely in your own instance's database; cloud projects are owned by Openship Cloud and your instance acts as a gateway in front of them. That split is the subject of the next two pages.
+Data ownership is also explicit: local resources remain in the instance's data store, while Cloud-owned
+resources are authoritative upstream. A connected local instance can act as a gateway to Cloud operations.
+See [Cloud as source](/docs/architecture/cloud-as-source) and [data ownership](/docs/architecture/data-ownership).
 
 ## Related guides
 
 <Cards>
-  <Card title="Runtime model" href="/docs/architecture/runtime-model" description="How a deployment resolves to Docker, a bare process, or cloud — and how routing and SSL are handled." />
-  <Card title="Cloud-as-source" href="/docs/architecture/cloud-as-source" description="Why cloud projects are owned by the SaaS and your instance is a gateway, not a mirror." />
-  <Card title="Data ownership" href="/docs/architecture/data-ownership" description="Exactly what lives where, and how projects move between self-hosted and cloud." />
+  <Card title="Runtime model" href="/docs/architecture/runtime-model" description="Build placement, Docker, Compose, Swarm, Kubernetes, and edge routing." />
+  <Card title="Production readiness" href="/docs/guides/production-readiness" description="Turn architecture choices into an operational checklist." />
 </Cards>

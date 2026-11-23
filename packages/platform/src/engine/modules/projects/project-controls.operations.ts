@@ -4,6 +4,7 @@ import { presentProject, type ProjectDependencies } from "../../../projects";
 import type { ResourceServices } from "../../../resource-operations";
 import { authorization } from "../../lib/authorization";
 import { encrypt } from "../../lib/encryption";
+import { parseRevealKeys, pickRevealed } from "../../lib/env-reveal";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { createProjectLifecycleOperations } from "./project-lifecycle.operations";
 import { createProjectGitOperations } from "./project-git.operations";
@@ -98,6 +99,20 @@ export function createProjectControls(
         deletedNames: input.deletes,
       });
       return data;
+    },
+    async revealEnv(ctx, id, input) {
+      const keys = parseRevealKeys(input.keys);
+      const stored = await (
+        await service()
+      ).revealEnvVars(id, ctx.organizationId, input.environment);
+      const result = pickRevealed(stored, keys);
+      // Names only: values must never enter audit history, including non-secrets.
+      updated(ctx, id, {
+        action: "envVars.reveal",
+        environment: input.environment ?? null,
+        revealedEnvKeys: Object.keys(result),
+      });
+      return result;
     },
     async migrateCommandEnvironment(ctx, id, input) {
       if (input.serviceId)

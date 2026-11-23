@@ -32,9 +32,6 @@ vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
   notification: { emit: vi.fn() },
 }));
 vi.mock("../../../src/lib/audit", () => ({ audit: { recordAsync: vi.fn(), record: vi.fn() } }));
-vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({
-  detectAndStoreFavicon: vi.fn(async () => {}),
-}));
 vi.mock("@repo/platform/engine/modules/projects/cleanup-keep-set", () => ({
   computeCleanupKeepSet: vi.fn(async () => ({ containers: new Set<string>() })),
 }));

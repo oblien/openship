@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -241,7 +242,7 @@ export const ProxySettingsSection: React.FC<{
           )}
         </div>
       )}
-      <div className="grid items-start gap-4 @3xl:grid-cols-2">
+      <div className="space-y-4">
         {GROUP_ORDER.map((group) => {
           const specs = PROXY_DIRECTIVES.filter((s) => s.group === group);
           if (specs.length === 0) return null;
@@ -254,12 +255,14 @@ export const ProxySettingsSection: React.FC<{
               <h4 id={`${fieldId}-${group}`} className="mb-4 text-sm font-medium text-foreground">
                 {w.proxyGroups[group]}
               </h4>
-              <div className="grid gap-4 @sm:grid-cols-2">{specs.map(field)}</div>
+              <div className="grid items-start gap-x-6 gap-y-5 @xl:grid-cols-2">
+                {specs.map(field)}
+              </div>
               <details className="mt-4 text-xs text-muted-foreground">
-                <summary className="w-fit cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-ring">
+                <DisclosureSummary className="w-fit cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-ring">
                   {w.technicalDetails}
-                </summary>
-                <dl className="mt-2 space-y-2">
+                </DisclosureSummary>
+                <dl className="mt-3 grid gap-x-6 gap-y-3 @xl:grid-cols-2">
                   {specs.map((spec) => (
                     <div key={spec.key}>
                       <dt>{labelFor(spec)}</dt>

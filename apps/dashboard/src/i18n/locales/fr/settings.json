@@ -1581,12 +1581,23 @@
     "connect": "Ajouter un identifiant",
     "delete": "Supprimer",
     "verify": "Revérifier auprès du fournisseur",
-    "badgeActive": "Fonctionne",
+    "badgeActive": "Dernière vérification réussie",
+    "badgeSaved": "Enregistrée",
+    "lastVerified": "Dernière vérification : {date}",
     "badgeInvalid": "À vérifier",
     "fieldName": "Libellé",
     "namePlaceholder": "ex. GHCR lecture seule",
     "secretKeptPlaceholder": "•••••••• (enregistré — laisser vide pour conserver)",
     "selectPlaceholder": "Choisir…",
+    "gitlab": {
+      "continue": "Continuer avec GitLab",
+      "useToken": "Utiliser un jeton d’accès",
+      "useCli": "Utiliser la CLI GitLab",
+      "createToken": "Créer un jeton sur GitLab",
+      "oauthHelp": "Autorisez OpenShip à lire vos dépôts et à gérer les webhooks de déploiement avec votre compte GitLab.",
+      "cliHelp": "Connectez-vous sur la machine qui exécute OpenShip. Cet espace de travail pourra utiliser le compte de la CLI pour accéder aux dépôts et lancer des builds sur cette machine.",
+      "connectionName": "Nom de la connexion (facultatif)"
+    },
     "verifyNote": "OpenShip vérifie l'identifiant auprès du fournisseur avant de l'enregistrer.",
     "confirmDelete": "Supprimer « {name} » ? Tout ce qui en dépend cessera de fonctionner.",
     "toast": {
@@ -1600,6 +1611,14 @@
       "verifyFailed": "Le fournisseur a refusé l'identifiant"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Jeton d’accès",
+            "help": "Utilisez read_api et read_repository pour parcourir et cloner les dépôts. Pour déployer à chaque push, sélectionnez aussi api et utilisez un compte autorisé à gérer les webhooks du projet."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Registre de conteneurs",
         "summary": "Télécharger des images privées depuis un registre lors des déploiements.",
@@ -1791,5 +1810,22 @@
     "confirmCta": "Cesser de servir",
     "cancel": "Annuler",
     "noReverseProxy": "Aucun proxy inverse détecté sur cette machine."
+  },
+  "imageUrl": {
+    "preview": "Aperçu de l’image",
+    "invalid": "Saisissez une URL HTTP ou HTTPS sans identifiants.",
+    "failed": "Impossible d’enregistrer l’URL de l’image.",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré",
+    "previewFailed": "Aperçu indisponible. Vérifiez que l’URL pointe directement vers une image."
+  },
+  "profile": {
+    "change": "Changer l’avatar",
+    "title": "Profil",
+    "description": "L’image de votre compte personnel.",
+    "label": "URL de l’avatar",
+    "hint": "Utilisez une URL directe d’image. Laissez vide pour afficher votre initiale.",
+    "reset": "Utiliser l’initiale"
   }
 }

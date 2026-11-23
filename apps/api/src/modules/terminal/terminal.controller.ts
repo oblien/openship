@@ -119,7 +119,7 @@ type ErrorCode =
 export async function issueTicket(c: Context) {
   const ctx = getRequestContext(c);
 
-  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/terminal/terminal.controller"); return ({}); });
+  const body = await c.req.json();
   const serverId = typeof body?.serverId === "string" ? body.serverId : "";
   if (!serverId) return c.json({ error: "serverId required" }, 400);
   const cloud = await prepareCloudTerminal(ctx, "server", serverId);

@@ -115,7 +115,8 @@ export async function currentPlanTier(organizationId: string, workspaceId?: Clou
   return (await planFor(organizationId, workspaceId)).tier;
 }
 
-/** Existing paid snapshots without a build cap retain their saved terms. */
+/** Concurrent project build jobs per workspace, not individual Compose images.
+ * Existing paid snapshots without a build cap retain their saved terms. */
 export async function planBuildConcurrency(organizationId: string, workspaceId: string): Promise<number | null> {
   if (!env.CLOUD_MODE) return null;
   return (await planFor(organizationId, workspaceId)).limits.concurrentBuilds ?? null;

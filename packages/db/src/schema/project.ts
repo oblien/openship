@@ -1,3 +1,4 @@
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import {
   pgTable,
   text,
@@ -63,15 +64,11 @@ export const projectGroup = pgTable("project_app", {
   slug: text("slug").notNull(),
 
   /** Shared source identity */
-  gitProvider: text("git_provider").default("github"),
+  gitProvider: text("git_provider").default(DEFAULT_GIT_PROVIDER),
   gitOwner: text("git_owner"),
   gitRepo: text("git_repo"),
   gitUrl: text("git_url"),
   installationId: integer("installation_id"),
-
-  /** Shared favicon cache */
-  favicon: text("favicon"),
-  faviconCheckedAt: timestamp("favicon_checked_at"),
 
   deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -140,7 +137,7 @@ export const project = pgTable(
      *                Redeploys track a VERSION, not a commit. Config lives in
      *                `releaseSource`.
      */
-    gitProvider: text("git_provider").default("github"),
+    gitProvider: text("git_provider").default(DEFAULT_GIT_PROVIDER),
     /** Owner/org on the git provider */
     gitOwner: text("git_owner"),
     /** Repo name on the git provider */
@@ -349,7 +346,7 @@ export const project = pgTable(
     workloadType: text("workload_type"),
     /**
      * How many past releases stay restorable. Explicit operator override;
-     * NULL inherits `instance_settings.default_rollback_window` (default 5).
+     * NULL inherits the default for this installation.
      * Active and pinned releases are excluded from the count. Resolved in one
      * place: `resolveRollbackWindow` (modules/deployments/release-retention.ts).
      */
@@ -467,7 +464,7 @@ export const project = pgTable(
     /** Currently active deployment ID */
     activeDeploymentId: text("active_deployment_id"),
     /** GitHub webhook ID registered on the repo */
-    webhookId: integer("webhook_id"),
+    webhookId: text("webhook_id"),
     /** Domain hostname used for receiving GitHub webhooks (null = edge relay or none) */
     webhookDomain: text("webhook_domain"),
     /**
@@ -499,10 +496,8 @@ export const project = pgTable(
      * nobody opted into paying for this, so nobody keeps paying for it silently.
      */
     collectPaths: boolean("collect_paths").notNull().default(false),
-    /** Auto-detected favicon URL from the deployed site */
-    favicon: text("favicon"),
-    /** Last time favicon detection was attempted for this project */
-    faviconCheckedAt: timestamp("favicon_checked_at"),
+    /** Project display image, managed in project settings. */
+    iconUrl: text("icon_url"),
     /** Soft delete */
     deletedAt: timestamp("deleted_at"),
     /**

@@ -11,33 +11,61 @@ import {
   type WwwDomainMode,
 } from "@/lib/www-domain-routing";
 
-/** The same canonical-domain choice for project and Compose service routes. */
-export function WwwDomainControls({
-  endpoints,
-  onChange,
-  allowRedirects = true,
-  disabled = false,
-}: {
+interface WwwDomainControlsProps {
   endpoints: PublicEndpoint[];
   onChange: (next: PublicEndpoint[]) => void;
   allowRedirects?: boolean;
   disabled?: boolean;
-}) {
+}
+
+/** The same canonical-domain choice for project and Compose service routes. */
+export function WwwDomainControls(props: WwwDomainControlsProps) {
+  const pairs = new Map<string, string>();
+  for (const endpoint of props.endpoints) {
+    const pair = getWwwDomainRouting([endpoint]);
+    if (pair && !pairs.has(pair.apex)) pairs.set(pair.apex, endpoint.customDomain);
+  }
+  if (pairs.size === 0) return null;
+  return (
+    <div className="space-y-3">
+      {[...pairs].map(([apex, hostname]) => (
+        <WwwDomainPairControls
+          key={apex}
+          {...props}
+          hostname={hostname}
+          showHostname={pairs.size > 1}
+        />
+      ))}
+    </div>
+  );
+}
+
+function WwwDomainPairControls({
+  endpoints,
+  onChange,
+  allowRedirects = true,
+  disabled = false,
+  hostname,
+  showHostname,
+}: WwwDomainControlsProps & { hostname: string; showHostname: boolean }) {
   const { t } = useI18n();
   const w = t.widgets.routing.publicEndpoints;
-  const www = getWwwDomainRouting(endpoints);
+  const www = getWwwDomainRouting(endpoints, hostname);
+  const label = showHostname
+    ? `${t.projectSettings.domains.add.includeWww} · ${www?.apex}`
+    : t.projectSettings.domains.add.includeWww;
   return (
-    <fieldset disabled={disabled}>
+    <fieldset className="min-w-0" disabled={disabled}>
       {www && (
         <div className="space-y-3 rounded-xl bg-muted/30 px-4 py-3">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-[13px] font-medium text-foreground">
-              {t.projectSettings.domains.add.includeWww}
-            </span>
+            <span className="text-[13px] font-medium text-foreground">{label}</span>
             <Switch
               checked={www.included}
-              onChange={(next) => onChange(toggleWwwDomainRouting(endpoints, next, allowRedirects))}
-              ariaLabel={t.projectSettings.domains.add.includeWww}
+              onChange={(next) =>
+                onChange(toggleWwwDomainRouting(endpoints, next, allowRedirects, hostname))
+              }
+              ariaLabel={label}
             />
           </div>
           {www.included && www.apex && (
@@ -51,7 +79,7 @@ export function WwwDomainControls({
                   value={www.mode ?? ""}
                   placeholder={w.customRouting}
                   onChange={(mode) => {
-                    if (mode) onChange(setWwwDomainRouting(endpoints, mode));
+                    if (mode) onChange(setWwwDomainRouting(endpoints, mode, hostname));
                   }}
                   options={[
                     {
@@ -78,7 +106,7 @@ export function WwwDomainControls({
               ) : (
                 <button
                   type="button"
-                  onClick={() => onChange(setWwwDomainRouting(endpoints, "both"))}
+                  onClick={() => onChange(setWwwDomainRouting(endpoints, "both", hostname))}
                   className="rounded-xl bg-muted px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/80"
                 >
                   {w.serveBoth}

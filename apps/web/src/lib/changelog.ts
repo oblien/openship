@@ -1,5 +1,6 @@
 import { reportCaughtError } from "@repo/core/diagnostics";
-import { parseChangelog } from "@repo/core";
+import { unstable_cache } from "next/cache";
+import { loadPublishedChangelog, CHANGELOG_REVALIDATE } from "./changelog-source";
 import { cache } from "react";
 import { marked } from "marked";
 
@@ -12,12 +13,6 @@ import { marked } from "marked";
  * release but doesn't always publish a matching Release, so tags are the complete,
  * reliable signal.
  */
-
-const REPO = "oblien/openship";
-const RAW_URL = `https://raw.githubusercontent.com/${REPO}/main/CHANGELOG.md`;
-const TAGS_URL = `https://api.github.com/repos/${REPO}/tags?per_page=100`;
-const commitUrl = (ref: string) => `https://api.github.com/repos/${REPO}/commits/${ref}`;
-const REVALIDATE = 600; // 10 minutes
 
 /** One bullet from the changelog, split into a headline and the prose under it. */
 export interface ChangelogItem {
@@ -59,16 +54,6 @@ export interface ChangelogEntry {
 }
 
 marked.setOptions({ gfm: true });
-
-function ghHeaders(): Record<string, string> {
-  const h: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "openship-web",
-  };
-  // Optional — lifts the 60/hr unauth limit; not required given the short cache.
-  if (process.env.GITHUB_TOKEN) h.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  return h;
-}
 
 /** Plain text of the first real paragraph, with light markdown stripped. */
 function firstParagraph(body: string): string {
@@ -241,71 +226,37 @@ function inferTags(body: string): string[] {
   return tags;
 }
 
-/** Set of released versions (bare semver) taken from the repo's git tags. */
-async function fetchTaggedVersions(): Promise<Set<string>> {
-  const res = await fetch(TAGS_URL, { headers: ghHeaders(), next: { revalidate: REVALIDATE } });
-  if (!res.ok) return new Set();
-  const tags = (await res.json()) as { name?: string }[];
-  return new Set(
-    tags.map((t) => t.name?.replace(/^v/, "")).filter((v): v is string => Boolean(v)),
-  );
-}
+/** Preserve the complete last successful catalog when upstream revalidation fails. */
+export const getChangelog = cache(
+  unstable_cache(
+    async (): Promise<ChangelogEntry[]> => {
+      try {
+        const dated = await loadPublishedChangelog();
 
-/** ISO date of the commit a version's tag points to, or null. */
-async function fetchTagDate(version: string): Promise<string | null> {
-  const res = await fetch(commitUrl(`v${version}`), {
-    headers: ghHeaders(),
-    next: { revalidate: REVALIDATE },
-  });
-  if (!res.ok) return null;
-  const j = (await res.json()) as {
-    commit?: { committer?: { date?: string }; author?: { date?: string } };
-  };
-  return j.commit?.committer?.date ?? j.commit?.author?.date ?? null;
-}
-
-/**
- * Load the changelog. Cached per-request via `React.cache` (the list and the
- * deep-link pages share one fetch); each `fetch` is additionally cached for
- * {@link REVALIDATE} seconds. Returns `[]` on any failure — Next serves the last
- * good copy across a failed revalidation, and the page renders an empty state.
- */
-export const getChangelog = cache(async (): Promise<ChangelogEntry[]> => {
-  try {
-    const [mdRes, tagged] = await Promise.all([
-      fetch(RAW_URL, { next: { revalidate: REVALIDATE } }),
-      fetchTaggedVersions(),
-    ]);
-    if (!mdRes.ok) return [];
-    const md = await mdRes.text();
-
-    // Gate to tagged (released) versions, then date each from its tag commit.
-    const gated = parseChangelog(md).filter((e) => tagged.has(e.version));
-    const dated = await Promise.all(
-      gated.map(async (e) => ({ ...e, date: await fetchTagDate(e.version) })),
-    );
-
-    const entries: ChangelogEntry[] = [];
-    for (const { version, body, date } of dated) {
-      if (!date) continue; // a tagged version we couldn't date — skip rather than guess
-      const { leadHtml, sections } = await renderBody(body);
-      entries.push({
-        version,
-        displayVersion: `v${version}`,
-        slug: `v${version.replace(/\./g, "-")}`,
-        date,
-        tags: inferTags(body),
-        summary: firstParagraph(body),
-        html: await marked.parse(body),
-        leadHtml,
-        sections,
-        itemCount: sections.reduce((n, s) => n + s.items.length, 0),
-      });
-    }
-    entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return entries;
-  } catch (error) {
-    reportCaughtError(error, "web/lib/changelog");
-    return [];
-  }
-});
+        const entries: ChangelogEntry[] = [];
+        for (const { version, body, date } of dated) {
+          const { leadHtml, sections } = await renderBody(body);
+          entries.push({
+            version,
+            displayVersion: `v${version}`,
+            slug: `v${version.replace(/\./g, "-")}`,
+            date,
+            tags: inferTags(body),
+            summary: firstParagraph(body),
+            html: await marked.parse(body),
+            leadHtml,
+            sections,
+            itemCount: sections.reduce((n, s) => n + s.items.length, 0),
+          });
+        }
+        entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return entries;
+      } catch (error) {
+        reportCaughtError(error, "web/lib/changelog");
+        throw error;
+      }
+    },
+    ["published-changelog-v2"],
+    { revalidate: CHANGELOG_REVALIDATE },
+  ),
+);

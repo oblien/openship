@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   CLOUD_DOCKER_IMAGE,
   CloudWorkspaceExecutor,
+  OblienError,
   type Oblien,
   cloudCpus,
   cloudWorkspaceCreationFailure,
@@ -21,6 +22,7 @@ import { AppError, deploymentBelongsToProject } from "@repo/core";
 import { cloudWorkspaceResourcesFromLimits } from "./resources";
 import { env } from "../config/env";
 import { getNamespaceClient } from "./openship-cloud";
+import { getOblienClient } from "./oblien-client";
 import { ensureLinkedCloudServer } from "./cloud/server-connection";
 import { createProvisionLock } from "./provision-lock";
 import {
@@ -42,10 +44,10 @@ export async function findOwnedDockerWorkspace(
   ownerWorkspaceId: string,
   namespace: string,
 ) {
-  let found: Awaited<ReturnType<typeof client.workspaces.get>> | undefined;
+  let found: Awaited<ReturnType<typeof client.vms.get>> | undefined;
   for (let page = 1; ; page++) {
-    const result = await client.workspaces.list({ page, limit: 100 });
-    const matches = result.workspaces.filter(
+    const result = await client.vms.list({ page, limit: 100 });
+    const matches = result.vms.filter(
       (item) => item.slug === workspaceSlug(ownerWorkspaceId) && item.namespace === namespace,
     );
     for (const workspace of matches) {
@@ -55,7 +57,7 @@ export async function findOwnedDockerWorkspace(
         );
       found = workspace;
     }
-    if (!result.workspaces.length || page * result.limit >= result.total) return found;
+    if (!result.vms.length || page * result.limit >= result.total) return found;
   }
 }
 
@@ -78,7 +80,7 @@ export async function resizeDockerWorkspace(input: {
     save(workloads: NonNullable<CloudWorkspaceOperation["restartWorkloads"]>): Promise<void>;
   };
 }) {
-  const ws = input.client.workspace(input.workspaceId);
+  const ws = input.client.vm(input.workspaceId);
   const executor = new CloudWorkspaceExecutor(options => ws.runtime(options), input.workspaceId);
   try {
     const inspect = () =>
@@ -331,7 +333,7 @@ async function ensureDockerHost(
           );
         input.signal.throwIfAborted();
       }
-      const workspace = await client.workspaces
+      const workspace = await client.vms
         .create({
           name: managed.name,
           slug: workspaceSlug(ownerId),
@@ -349,13 +351,16 @@ async function ensureDockerHost(
             ttl: "1h",
             ttl_action: "remove",
             remove_on_exit: false,
-            network_config: { allow_internet: true, public_ingress: false },
+            // Oblien's host ingress gate admits the managed Edge to configured ports.
+            network_config: { allow_internet: true, public_ingress: true },
           },
         })
         .catch(async (error) => {
           const failure = cloudWorkspaceCreationFailure(error);
+          const replayConflict = error instanceof OblienError && error.status === 409 &&
+            error.code?.toLowerCase() === "idempotency_conflict";
           if (failure.workspaceId) {
-            const created = await client.workspaces.get(failure.workspaceId);
+            const created = await client.vms.get(failure.workspaceId);
             if (
               created.id !== failure.workspaceId ||
               created.namespace !== namespace ||
@@ -369,7 +374,7 @@ async function ensureDockerHost(
               namespace,
               failure.workspaceId,
             );
-          } else if (failure.capacityRejected && existing) {
+          } else if (existing && (failure.capacityRejected || replayConflict)) {
             const recovered = await findOwnedDockerWorkspace(client, ownerId, namespace);
             if (recovered) return recovered;
           } else if (failure.rejected && !existing) {
@@ -387,7 +392,7 @@ async function ensureDockerHost(
       // Complete this even after cancellation: retries must know which disk exists.
       await repos.cloudDockerWorkspace.attach(owner, input.organizationId, namespace, workspaceId);
     }
-    const ws = client.workspace(workspaceId);
+    const ws = client.vm(workspaceId);
     const current = await ws.get();
     if (current.namespace !== namespace) throw new Error("Cloud workspace namespace changed");
     input.signal?.throwIfAborted();
@@ -397,7 +402,7 @@ async function ensureDockerHost(
       input.onProgress?.(
         "Retrying the managed server's initial provisioning with its existing disk.\n",
       );
-      const retried = await client.workspaces.retryCreation(workspaceId);
+      const retried = await client.vms.retryCreation(workspaceId);
       if (retried.id !== workspaceId || retried.namespace !== namespace)
         throw new Error("Cloud provisioning retry returned an unexpected workspace");
     } else if (status === "stopped") await ws.start();
@@ -406,6 +411,20 @@ async function ensureDockerHost(
       signal: input.signal,
     });
     await ws.lifecycle.makePermanent();
+    if (binding.state === "provisioning") {
+      input.signal?.throwIfAborted();
+      // A VM created before a retried provisioning request may have the old ingress default.
+      const needsEdgeIngress = existing && (await ws.network.get()).public_access === false;
+      const { enabled } = await ws.apiAccess.status();
+      if (needsEdgeIngress || !enabled) {
+        const ownerVm = getOblienClient().vm(ready.id);
+        if (needsEdgeIngress && !(await ownerVm.network.update({ public_access: true })).success)
+          throw new AppError("Could not enable Cloud Edge ingress", 503, "CLOUD_EDGE_INGRESS_UNAVAILABLE");
+        if (!enabled) await ownerVm.apiAccess.enable();
+      }
+      // Check the actual gateway with the same credential that will run deployments.
+      await (await ws.runtime()).info();
+    }
     await repos.cloudDockerWorkspace.markReady(owner, input.organizationId, workspaceId);
     return workspaceId;
   }, input.signal);

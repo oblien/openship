@@ -44,6 +44,7 @@ import {
   DnsRecordConflictError,
   OPENSHIP_RECORD_COMMENT,
   isOpenshipManaged,
+  selectDnsRecord,
 } from "../types";
 
 /** DigitalOcean rejects a TTL below 30 seconds. */
@@ -402,12 +403,9 @@ export const digitaloceanDnsProvider: DnsProvider = {
 
     const existing = await listOwned(token, zoneId, { name: fqdn, type: input.type });
 
-    // Same rule as Cloudflare: more than one record at this name+type is a set the
-    // operator maintains. Ours-if-present, otherwise refuse and say so.
-    const target = existing.length > 1 ? existing.find(isOpenshipManaged) : existing[0];
-    if (existing.length > 1 && !target) {
-      throw new DnsRecordConflictError(fqdn, input.type, existing.length);
-    }
+    const { target, conflict } = selectDnsRecord(existing, data, input.append === true);
+    if (conflict) throw new DnsRecordConflictError(fqdn, input.type, existing.length);
+    if (target && input.append) return target;
 
     const ttl = Math.max(MIN_TTL, input.ttl ?? target?.ttl ?? DEFAULT_TTL);
     const body = {

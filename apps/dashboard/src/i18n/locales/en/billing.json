@@ -334,7 +334,7 @@
     "upgradeDescription": "Choose a plan with enough capacity, or adjust your project and try again.",
     "manageBilling": "Manage billing",
     "topups": "Add usage",
-    "checkoutOpened": "Checkout is ready in a separate tab. If it did not open, use the link below.",
+    "checkoutOpened": "Complete your payment in secure checkout. If it did not open, use the button below.",
     "continueCheckout": "Continue to checkout",
     "reasons": {
       "static-only": "Your plan does not include this type of app. Choose a plan that supports it to deploy.",
@@ -546,6 +546,7 @@
     "diskGrowth": "Storage can grow. Reducing it requires moving your data to a new destination.",
     "range": "{min}–{max} {unit}",
     "monthlyTotal": "Monthly total",
+    "yearlyTotal": "Yearly total",
     "choose": "Choose Custom",
     "updating": "Updating price",
     "invalid": "Enter a valid amount within each resource range.",
@@ -557,6 +558,7 @@
     "extraMemory": "Additional memory",
     "extraDisk": "Additional storage",
     "rates": "Monthly extras: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB storage. Charged only above the selected bundle.",
+    "yearlyRates": "Yearly extras: {cpu}/vCPU, {memory}/GB RAM, {disk}/GB storage. Charged only above the selected bundle.",
     "applyNotice": "Upgrades apply after payment. Lower-cost changes start at renewal.",
     "resizeTitle": "Apply your subscribed resources",
     "resizeDescription": "Your plan has changed. Review the new capacity and affected projects before applying.",
@@ -806,6 +808,9 @@
     }
   },
   "managementPlans": {
+    "checkingAccess": "Checking management access…",
+    "accessUnavailable": "Couldn’t check management access",
+    "checkingAccessHint": "You can enter your SSH details while we check this workspace.",
     "label": "Support plan",
     "basic": "Basic",
     "priority": "Priority",

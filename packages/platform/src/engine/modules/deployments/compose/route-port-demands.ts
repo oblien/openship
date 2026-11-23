@@ -1,10 +1,7 @@
 import type { Domain, Project, Service, ServiceDeployment } from "@repo/db";
 
 import { resolveServicePort } from "../../../lib/deployable-service";
-import {
-  pickProjectPortOwner,
-  type UpstreamCandidateRow,
-} from "../../../lib/project-service-upstream";
+import { pickProjectPortOwner } from "../../../lib/project-service-upstream";
 import { buildProjectRouteDomains, buildServiceRouteDomains } from "../../../lib/routing-domains";
 import { planCompositeRoute, resolveDomainFanoutRoutes } from "./composite-route";
 
@@ -63,25 +60,7 @@ export function collectComposeRoutePortDemands(opts: {
     }
   }
 
-  // `pickProjectPortOwner` deliberately requires a container-backed candidate on
-  // live route paths. During planning the new containers do not exist yet, so a
-  // sentinel marks every enabled definition as available while the previous row
-  // contributes any durable host-side mapping the operator may have selected.
   const previousByService = new Map(previousRows.map((row) => [row.serviceId, row]));
-  const plannedRows = new Map<string, UpstreamCandidateRow>(
-    services.map((service) => {
-      const previous = previousByService.get(service.id);
-      return [
-        service.id,
-        {
-          serviceId: service.id,
-          containerId: previous?.containerId ?? `planned:${service.id}`,
-          hostPort: previous?.hostPort,
-          hostPorts: previous?.hostPorts,
-        },
-      ];
-    }),
-  );
   const projectRoutes = buildProjectRouteDomains({
     project,
     projectDomains: domainRows,
@@ -93,7 +72,8 @@ export function collectComposeRoutePortDemands(opts: {
     const owner = pickProjectPortOwner({
       port: route.targetPort,
       services,
-      rowByService: plannedRows,
+      rowByService: previousByService,
+      includeUnstarted: true,
       domainRows,
     });
     if (owner) add(owner.serviceId, owner.containerPort);

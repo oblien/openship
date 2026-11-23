@@ -185,7 +185,7 @@
     "standalone": "Eigenständig",
     "standaloneHint": "Eigenes YAML manuell, nach Zeitplan oder per authentifiziertem Webhook ausführen. Kein Repository erforderlich.",
     "chooseRepo": "Repository wählen",
-    "connectRepo": "GitHub in den Git-Einstellungen verbinden, um Repositories anzuzeigen.",
+    "connectRepo": "{provider} in den Git-Einstellungen verbinden, um Repositories anzuzeigen.",
     "useCopy": "YAML in OpenShip speichern",
     "noFiles": "Keine Workflows gefunden. Wähle ein anderes Repository oder starte einen eigenständigen Workflow.",
     "loading": "Workflow wird geladen…",

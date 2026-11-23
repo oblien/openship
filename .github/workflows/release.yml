@@ -411,7 +411,9 @@ jobs:
             label: Windows x64
             find: "-name *.zip"
             asset: Openship-win32-x64.zip
-          - os: ubuntu-latest
+          # Keep the installer toolchain stable. Ubuntu 26.04's RPM 6 changes
+          # the build directory layout expected by electron-installer-redhat.
+          - os: ubuntu-24.04
             label: Linux x64
             find: "-name *.AppImage -o -name *.deb -o -name *.rpm"
             asset: Openship.AppImage

@@ -316,20 +316,16 @@ const envSchema = z.object({
   GITHUB_PRIVATE_KEY_BASE64: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
-  /* ---------- Email (SMTP) ---------- */
+  /* ---------- System email ---------- */
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default("Openship <noreply@openship.io>"),
-  /** Optional Cloud customer aliases authorized by the same SMTP credentials.
-   * Unset/blank aliases use the transport's configured sender. */
-  SMTP_SUPPORT_FROM: z.string().trim().optional(),
   /** Public contact intake fails closed until a production Turnstile widget is configured. */
   CONTACT_TURNSTILE_SECRET: z.string().trim().optional(),
   CONTACT_TURNSTILE_HOSTNAMES: z.string().default("openship.io,www.openship.io"),
   CONTACT_EMAIL: z.string().email().default("contact@openship.io"),
-  SMTP_BILLING_FROM: z.string().trim().optional(),
 
   /* ---------- Network (self-hosted) ---------- */
   /**
@@ -375,8 +371,8 @@ const envSchema = z.object({
   OBLIEN_CLIENT_ID: z.string().optional(),
   OBLIEN_CLIENT_SECRET: z.string().optional(),
   /** Control-plane endpoint. Override only for an Oblien staging installation. */
-  OBLIEN_API_URL: z.url().default("https://api.oblien.com"),
-  OBLIEN_RUNTIME_URL: z.url().default("https://workspace.oblien.com"),
+  OBLIEN_API_URL: z.url().optional(),
+  OBLIEN_RUNTIME_URL: z.url().default("https://vm.oblien.com"),
   /** Optional published software preset for NEW managed Docker workspaces. */
   OBLIEN_DOCKER_PRESET: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional(),
   /**

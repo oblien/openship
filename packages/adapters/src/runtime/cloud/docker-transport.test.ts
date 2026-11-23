@@ -126,7 +126,7 @@ describe("Oblien Docker byte transport", () => {
   function guest(): Runtime {
     const base = bridgeUrl.slice(0, -"/docker".length);
     return { proxy: () => ({
-      ws: (path: string) => new WebSocket(base + path),
+      ws: async (path: string) => new WebSocket(base + path),
       fetch: (path: string, init: RequestInit) => fetch(base.replace("ws:", "http:") + path, init),
     }) } as unknown as Runtime;
   }
@@ -212,7 +212,7 @@ describe("Oblien Docker byte transport", () => {
   it("tombstones an unacknowledged handshake so a delayed request cannot start", async () => {
     const id = randomUUID();
     await recoverCloudDockerRequest(guest(), identity(id));
-    const socket = guest().proxy(CLOUD_DOCKER_BRIDGE_PORT).ws("/docker/" + id);
+    const socket = await guest().proxy(CLOUD_DOCKER_BRIDGE_PORT).ws("/docker/" + id);
     await expect(dockerWebSocketStream(socket)).rejects.toThrow("connection failed");
   });
 

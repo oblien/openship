@@ -14,6 +14,7 @@
 
 import { Hono } from "hono";
 import {
+  UpdateProjectEdgePagesSchema,
   WebhookPageInputSchema,
   RecentServerLogsInputSchema,
   ListProjectsSchema,
@@ -129,6 +130,15 @@ r.get(
   edgeConfig.getEdgeConfig,
 );
 
+r.get("/:id/edge-pages", {
+  tag: "project:read", localOnly: true,
+  mcp: { description: "Read saved project and hostname maintenance/error pages, their revision, and whether the self-hosted edge has applied them." },
+}, routeRules.getEdgePages);
+r.put("/:id/edge-pages", {
+  tag: "project:write", localOnly: true, body: UpdateProjectEdgePagesSchema, auditHandledByOperation: true,
+  mcp: { description: "Update maintenance and custom error HTML for a self-hosted project or its hostnames. Read edge-pages first and supply expectedRevision to avoid overwriting concurrent edits. Inspect the returned apply status before reporting success." },
+}, routeRules.updateEdgePages);
+
 r.get("/:id/route-protection", {
   tag: "project:read", localOnly: true,
   mcp: { description: "List saved hostname password protection and whether the self-hosted edge acknowledged it. Never returns passwords or signing keys." },
@@ -216,6 +226,7 @@ r.post(
     collectionProject: true,
     auditHandledByOperation: true,
     body: FolderSessionBody,
+    bodyValidatedByOperation: true,
     mcp: {
       description:
         "Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = { url, absoluteUrl, method, headers, requiresAuth }. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access.",
@@ -231,6 +242,7 @@ r.post(
     collectionProject: true,
     auditHandledByOperation: true,
     body: SourceScanOptionsSchema,
+    bodyValidatedByOperation: true,
     mcp: {
       description:
         "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",
@@ -574,6 +586,20 @@ r.patch(
     },
   },
   ctrl.mergeEnvVars,
+);
+r.post(
+  // GH-1836: real env for the SHARED (project-level) store, named keys only —
+  // the project-level counterpart of services/:serviceId/env-reveal. Same
+  // write-gated bar as PATCH /:id/env; POST keeps key names out of URLs.
+  // No mcp block: revealing secrets stays a dashboard action, off automation.
+  "/:id/env-reveal",
+  {
+    tag: "project:write",
+    auditHandledByOperation: true,
+    mcpExcluded:
+      "Explicit dashboard secret reveal. MCP reads masked project environment and saves named merges without retrieving plaintext.",
+  },
+  ctrl.revealEnv,
 );
 
 /* ─── Per-project clone token (git credential override) ────────────────── */

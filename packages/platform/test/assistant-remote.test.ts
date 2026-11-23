@@ -41,7 +41,7 @@ vi.mock("../src/engine/lib/cloud-workspace-host", () => ({
     return {
       binding: { workspaceId: "owned-provider-vm" },
       client: {
-        workspace: (id: string) => {
+        vm: (id: string) => {
           expect(id).toBe("owned-provider-vm");
           return {
             runtime: async (options?: { force?: boolean }) => {

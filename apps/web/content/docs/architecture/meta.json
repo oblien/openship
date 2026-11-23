@@ -1,4 +1,5 @@
 {
   "title": "Architecture",
+  "icon": "network",
   "pages": ["overview", "runtime-model", "modules-overview", "cloud-as-source", "data-ownership"]
 }

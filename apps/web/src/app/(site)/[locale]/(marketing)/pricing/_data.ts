@@ -1,7 +1,7 @@
 import type { Copy } from "@/i18n/copy";
 import { UI, money, paidLadder, type CloudPricing } from "@/lib/pricing";
 import { cloudPlanHref } from "@/lib/cloud-links";
-import { CLOUD_SLA } from "@/lib/cloud-service";
+import { cloudSlaPlanSummary } from "@/lib/cloud-service";
 
 export interface FaqItem {
   q: string;
@@ -22,9 +22,7 @@ export function faq(pricing: CloudPricing, copy: Copy): FaqItem[] {
             })
           : copy("See your dashboard for current Cloud plans and availability."),
         pricing.annual.enabled
-          ? copy(
-              "Yearly billing is also available; the cards show the monthly equivalent and full yearly charge.",
-            )
+          ? copy("Choose Yearly to see the full annual price, paid once a year.")
           : null,
         copy(
           "Each subscription includes one Cloud Space for your projects, with no per-seat fees. Share the included CPU, RAM and storage across your projects and builds.",
@@ -44,13 +42,12 @@ export function faq(pricing: CloudPricing, copy: Copy): FaqItem[] {
     },
     {
       q: copy("Do all Cloud plans include an uptime SLA and support?"),
-      a: copy(
-        "Yes. Every paid OpenShip Cloud plan includes a {value0}% monthly uptime guarantee for OpenShip-managed infrastructure, whether billed monthly or annually. If we miss it, you can request service credits under the Cloud SLA in our Terms of Service. Maintenance announced at least {value1} days in advance is excluded only within its announced window. Contact support by email, through the app, or from our public support page. The guarantee does not cover servers you host yourself, free trials, or preview and beta features.",
-        {
-          value0: String(CLOUD_SLA.monthlyUptimePercent),
-          value1: String(CLOUD_SLA.maintenanceNoticeDays),
-        },
-      ),
+      a: [
+        cloudSlaPlanSummary(copy),
+        copy(
+          "Every paid Cloud Space includes support and service credits under the Cloud SLA, with monthly or annual billing. The SLA covers OpenShip-managed infrastructure.",
+        ),
+      ].join(" "),
     },
     {
       q: copy("How is capacity shared?"),
@@ -90,7 +87,7 @@ export function faq(pricing: CloudPricing, copy: Copy): FaqItem[] {
     {
       q: copy("Is managed email included?"),
       a: copy(
-        "Cloud resource pools host your applications; they do not provision a mail server. Managed email is coming soon. Self-hosted mail is available on your own server.",
+        "Eligible paid compute plans include a mailbox. You can also choose a standalone email plan or host mail on your own server.",
       ),
     },
     {

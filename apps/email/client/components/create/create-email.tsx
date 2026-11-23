@@ -1,15 +1,14 @@
-import { useUndoSend, type EmailData, deserializeFiles } from '@/hooks/use-undo-send';
+import { undoStorageKey } from '@/lib/undo-storage';
+import { useUndoSend, type EmailData } from '@/hooks/use-undo-send';
 import { useActiveConnection } from '@/hooks/use-connections';
 import { Dialog, DialogClose } from '@/components/ui/dialog';
-import { useEmailAliases } from '@/hooks/use-email-aliases';
 import { cleanEmailAddresses } from '@/lib/email-utils';
 
-import { useTRPC } from '@/providers/query-provider';
-import { useMutation } from '@tanstack/react-query';
+import { useSendMail } from '@/hooks/use-send-mail';
 import { useSettings } from '@/hooks/use-settings';
 import { EmailComposer } from './email-composer';
 import { useSession } from '@/lib/auth-client';
-import { serializeFiles } from '@/lib/schemas';
+import { serializeFiles, deserializeFiles } from '@/lib/schemas';
 import { useDraft } from '@/hooks/use-drafts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -47,7 +46,6 @@ export function CreateEmail({
 }) {
   const { data: session } = useSession();
 
-  const { data: aliases } = useEmailAliases();
   const [draftId, setDraftId] = useQueryState('draftId');
   const {
     data: draft,
@@ -56,8 +54,7 @@ export function CreateEmail({
   } = useDraft(draftId ?? propDraftId ?? null);
 
   const [, setIsDraftFailed] = useState(false);
-  const trpc = useTRPC();
-  const { mutateAsync: sendEmail } = useMutation(trpc.mail.send.mutationOptions());
+  const sendEmail = useSendMail();
   const [isComposeOpen, setIsComposeOpen] = useQueryState('isComposeOpen');
   const [, setThreadId] = useQueryState('threadId');
   const [, setActiveReplyId] = useQueryState('activeReplyId');
@@ -73,11 +70,6 @@ export function CreateEmail({
     }
   }, [draftError]);
 
-  const { data: activeAccount } = useActiveConnection();
-
-  const userEmail = activeAccount?.email || activeConnection?.email || session?.user?.email || '';
-  const userName = activeAccount?.name || activeConnection?.name || session?.user?.name || '';
-
   const handleSendEmail = async (data: {
     to: string[];
     cc?: string[];
@@ -85,11 +77,8 @@ export function CreateEmail({
     subject: string;
     message: string;
     attachments: File[];
-    fromEmail?: string;
     scheduleAt?: string;
   }) => {
-    const fromEmail = data.fromEmail || aliases?.[0]?.email || userEmail;
-
     const result = await sendEmail({
       to: data.to.map((email) => ({ email, name: email.split('@')[0] || email })),
       cc: data.cc?.map((email) => ({ email, name: email.split('@')[0] || email })),
@@ -97,7 +86,7 @@ export function CreateEmail({
       subject: data.subject,
       message: data.message,
       attachments: await serializeFiles(data.attachments),
-      fromEmail: userName.trim() ? `${userName.replace(/[<>]/g, '')} <${fromEmail}>` : fromEmail,
+      fromEmail: activeConnection?.email ?? session?.user.email,
       draftId: draftId ?? undefined,
       scheduleAt: data.scheduleAt,
     });
@@ -105,14 +94,13 @@ export function CreateEmail({
     setDraftId(null);
     clearUndoData();
 
-    handleUndoSend(result, settings, {
+    handleUndoSend(result, {
       to: data.to,
       cc: data.cc,
       bcc: data.bcc,
       subject: data.subject,
       message: data.message,
       attachments: data.attachments,
-      fromEmail: data.fromEmail,
       scheduleAt: data.scheduleAt,
     });
   };
@@ -132,7 +120,8 @@ export function CreateEmail({
 
   const clearUndoData = () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('undoEmailData');
+      const key = undoStorageKey();
+      if (key) sessionStorage.removeItem(key);
     }
   };
 
@@ -140,7 +129,8 @@ export function CreateEmail({
     if (isComposeOpen !== 'true') return null;
     if (typeof window === 'undefined') return null;
     
-    const storedData = localStorage.getItem('undoEmailData');
+    const key = undoStorageKey();
+    const storedData = key ? sessionStorage.getItem(key) : null;
     if (!storedData) return null;
     
     try {
@@ -155,7 +145,7 @@ export function CreateEmail({
       console.error('Failed to parse undo email data:', error);
       return null;
     }
-  }, [isComposeOpen]);
+  }, [isComposeOpen, activeConnection?.id]);
 
   // Cast draft to our extended type that includes CC and BCC
   const typedDraft = draft as unknown as DraftType;

@@ -98,6 +98,8 @@ beforeEach(async () => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
+      if (url.origin === "https://vm.oblien.com" && url.pathname === "/runtime")
+        return Response.json({ os: "linux" });
       if (url.origin !== "https://provider.openship.test") {
         // Catalog overlay refresh is advisory. Keep this test on the bundled
         // Supabase catalog and never allow external network access.
@@ -105,7 +107,7 @@ beforeEach(async () => {
       }
       const method = init?.method ?? "GET";
       requests.push(`${method} ${url.pathname}`);
-      if (url.pathname === "/workspace" && method === "POST") {
+      if (url.pathname === "/vms" && method === "POST") {
         if (createMode === "quota" || createMode === "legacy-quota") {
           return Response.json(
             { success: false, code: "NAMESPACE_LIMIT_REACHED" },
@@ -133,36 +135,46 @@ beforeEach(async () => {
         return Response.json(
           {
             code: "CREATE_FAILED",
-            details: { workspace_id: workspace.id },
+            details: { vm_id: workspace.id },
           },
           { status: 422 },
         );
       }
-      if (url.pathname === "/workspace" && method === "GET") {
+      if (url.pathname === "/vms" && method === "GET") {
         return Response.json({
           success: true,
-          workspaces: [...workspaces.values()],
+          vms: [...workspaces.values()],
           total: workspaces.size,
           limit: 100,
           page: 1,
         });
       }
-      const workspaceId = url.pathname.match(/^\/workspace\/([^/]+)$/)?.[1];
-      const retryId = url.pathname.match(/^\/workspace\/([^/]+)\/provisioning\/retry$/)?.[1];
+      const workspaceId = url.pathname.match(/^\/vms\/([^/]+)$/)?.[1];
+      const retryId = url.pathname.match(/^\/vms\/([^/]+)\/provisioning\/retry$/)?.[1];
       if (retryId && method === "POST") {
         const workspace = workspaces.get(retryId)!;
         workspace.status = "running";
         workspace.provisioning.state = "ready";
-        return Response.json({ success: true, workspace });
+        return Response.json({ success: true, vm: workspace });
       }
       if (url.pathname.endsWith("/lifecycle/permanent") && method === "POST")
         return Response.json({ success: true });
+      if (url.pathname.endsWith("/network") && method === "GET")
+        return Response.json({ public_access: true });
+      if (url.pathname.endsWith("/runtime-api-access") && method === "GET")
+        return Response.json({ enabled: true });
+      if (url.pathname.endsWith("/runtime-api-access/token") && method === "GET")
+        return Response.json({
+          success: true,
+          token: "scoped-runtime-token",
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        });
       if (workspaceId && method === "GET") {
         // Async deletion is only complete once a subsequent read confirms absent.
         if (deleting.has(workspaceId)) workspaces.delete(workspaceId);
         const workspace = workspaces.get(workspaceId);
         return workspace
-          ? Response.json({ success: true, workspace })
+          ? Response.json({ success: true, vm: workspace })
           : Response.json({ code: "NOT_FOUND" }, { status: 404 });
       }
       if (workspaceId && method === "DELETE") {

@@ -33,6 +33,7 @@
  * doors — `checkPermission` or `canUseGitHubRepo`.
  */
 
+import { GIT_PROVIDERS } from "./git-providers";
 import type { Capability } from "./access-capabilities";
 
 /**
@@ -55,6 +56,13 @@ export type GrantPermission = Permission | Capability;
  * because a grant can key on them. Runtime validators and the TypeScript union
  * derive from this same list.
  */
+const providerRoots = GIT_PROVIDERS.map(({ grantTypes }) => grantTypes.root);
+const repositoryGrantTypes = GIT_PROVIDERS.flatMap(({ grantTypes }) => [
+  grantTypes.namespace,
+  grantTypes.repository,
+]);
+type RepositoryGrantType = (typeof repositoryGrantTypes)[number];
+
 export const RESOURCE_TYPES = [
   "project",
   "server",
@@ -63,13 +71,9 @@ export const RESOURCE_TYPES = [
   "billing",
   "audit",
   "analytics",
-  "github",
-  // GitHub access control is default-deny and owner-granted. "github"
-  // (resourceId "*") = all GitHub; "github_installation" (resourceId = the
-  // account LOGIN, not an installation id) = every repo under one account;
-  // "github_repository" (resourceId = "owner/repo") = a single repo.
-  "github_installation",
-  "github_repository",
+  ...providerRoots,
+  "git",
+  ...repositoryGrantTypes,
   "permissions",
   "domain",
   "settings",
@@ -98,7 +102,7 @@ export const ORG_SINGLETON_RESOURCE_TYPES: readonly ResourceType[] = [
   "billing",
   "audit",
   "analytics",
-  "github",
+  ...providerRoots,
   "permissions",
   "settings",
   "job",
@@ -122,30 +126,7 @@ export function isOrgSingletonResourceType(type: string): boolean {
  * MCP tool layer hard-denies the `tokens` module. `terminal` is withheld because
  * its only routes are WebSocket upgrades, so no grant can produce a usable
  * capability.
- */
-export type GrantableResourceType = Extract<
-  ResourceType,
-  | "project"
-  | "server"
-  | "mail_server"
-  | "backup_destination"
-  | "billing"
-  | "audit"
-  | "github_installation"
-  | "github_repository"
-  // Platform features. Enforcement for these already worked — the wildcard arm of
-  // `checkPermission` authorizes a `{type,"*",[verb]}` grant — but no UI or API
-  // could produce the grant, so ~59 MCP tools were reachable only by an unscoped
-  // "full account access" binding. There was no middle setting.
-  | "job"
-  | "notifications"
-  | "analytics"
-  | "settings"
-  | "updates"
-  | "cloud"
->;
-
-/**
+ *
  * Grantable types in canonical DISPLAY order — resources first (most-used first),
  * then the platform features. Order is load-bearing: the picker's tab strip, the
  * consent screen's offering, and the summary panel's grouping all read it, so one
@@ -153,11 +134,10 @@ export type GrantableResourceType = Extract<
  * the first. Every membership check goes through the derived Set, so callers that
  * only care about "is this grantable" are unaffected by reordering.
  */
-export const GRANTABLE_RESOURCE_TYPES: readonly GrantableResourceType[] = [
+export const GRANTABLE_RESOURCE_TYPES = [
   "project",
-  // Authorized by canUseGitHubRepo, NOT by checkPermission — see github-access.ts.
-  "github_installation",
-  "github_repository",
+  // Namespace and repository grants are authorized by their provider adapter.
+  ...repositoryGrantTypes,
   "server",
   "mail_server",
   "backup_destination",
@@ -170,7 +150,9 @@ export const GRANTABLE_RESOURCE_TYPES: readonly GrantableResourceType[] = [
   "cloud",
   "audit",
   "billing",
-];
+] as const satisfies readonly ResourceType[];
+
+export type GrantableResourceType = (typeof GRANTABLE_RESOURCE_TYPES)[number];
 
 const GRANTABLE_SET: ReadonlySet<string> = new Set(GRANTABLE_RESOURCE_TYPES);
 
@@ -198,8 +180,7 @@ export const PLATFORM_GRANT_TYPES: readonly GrantableResourceType[] =
  */
 export const PRIMARY_GRANT_TYPES: readonly GrantableResourceType[] = [
   "project",
-  "github_installation",
-  "github_repository",
+  ...repositoryGrantTypes,
 ];
 
 const PRIMARY_SET: ReadonlySet<string> = new Set(PRIMARY_GRANT_TYPES);
@@ -259,6 +240,13 @@ export function grantableTypesForMode(selfHosted: boolean): GrantableResourceTyp
   );
 }
 
+function repositoryGrantLabels(plural: boolean) {
+  return Object.fromEntries(GIT_PROVIDERS.flatMap(({ name, grantTypes, namespaceLabel }) => [
+    [grantTypes.namespace, `${name} ${namespaceLabel}${plural ? "s" : ""}`],
+    [grantTypes.repository, `${name} repo${plural ? "s" : ""}`],
+  ])) as Record<RepositoryGrantType, string>;
+}
+
 /** Plural label for a picker tab or a summary group heading. */
 export const RESOURCE_TYPE_LABELS: Record<GrantableResourceType, string> = {
   project: "Projects",
@@ -267,8 +255,7 @@ export const RESOURCE_TYPE_LABELS: Record<GrantableResourceType, string> = {
   backup_destination: "Backup destinations",
   billing: "Billing",
   audit: "Audit log",
-  github_installation: "GitHub orgs",
-  github_repository: "GitHub repos",
+  ...repositoryGrantLabels(true),
   job: "Jobs",
   notifications: "Notifications",
   analytics: "Analytics",
@@ -289,8 +276,7 @@ export const RESOURCE_TYPE_LABELS_SINGULAR: Record<GrantableResourceType, string
   backup_destination: "Backup destination",
   billing: "Billing",
   audit: "Audit log",
-  github_installation: "GitHub org",
-  github_repository: "GitHub repo",
+  ...repositoryGrantLabels(false),
   job: "Jobs",
   notifications: "Notifications",
   analytics: "Analytics",

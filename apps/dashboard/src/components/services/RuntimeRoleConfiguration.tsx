@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
@@ -230,7 +231,7 @@ function RoleConfigurationEditor({ projectId }: { projectId: string }) {
                       />
                     </label>
                     <details className="text-xs text-muted-foreground">
-                      <summary className="cursor-pointer py-1">{c.advanced}</summary>
+                      <DisclosureSummary className="cursor-pointer py-1">{c.advanced}</DisclosureSummary>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         <label className="space-y-1.5">
                           {c.healthCommand}

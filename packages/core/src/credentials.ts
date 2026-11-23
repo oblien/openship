@@ -31,7 +31,15 @@
 import { normalizeRegistryHost } from "./image-ref";
 
 /** What a credential is FOR. Consumers ask by capability, never by provider id. */
-export type CredentialCapability = "image-pull" | "dns" | "migration";
+export type CredentialCapability = "image-pull" | "dns" | "migration" | "git";
+
+export const CONNECTION_OAUTH_PROVIDERS = ["railway", "vercel", "gitlab"] as const;
+export type ConnectionOAuthProvider = (typeof CONNECTION_OAUTH_PROVIDERS)[number];
+export const CONNECTION_OAUTH_TTL_SECONDS = 600;
+
+export function supportsConnectionOAuth(provider: string): provider is ConnectionOAuthProvider {
+  return CONNECTION_OAUTH_PROVIDERS.some((id) => id === provider);
+}
 
 export type CredentialFieldType = "text" | "secret" | "select";
 
@@ -83,8 +91,8 @@ export interface CredentialProvider {
   readonly fields: readonly CredentialField[];
   /** One sentence in the picker: what holding this lets Openship do. */
   readonly summary: string;
-/** Advertised by the instance only when its OAuth application is configured. */
-  readonly authorization?: { readonly available: boolean };
+  /** Connection methods available to this caller on this controller. */
+  readonly authorization?: { readonly available: boolean; readonly hostCli?: boolean };
 }
 
 /**
@@ -95,6 +103,18 @@ export interface CredentialProvider {
  * compile error too.
  */
 export const CREDENTIAL_PROVIDERS = [
+  {
+    id: "gitlab",
+    label: "GitLab",
+    capability: "git",
+    icon: "gitlab",
+    summary: "Deploy repositories from GitLab.com, including projects in subgroups.",
+    selector: null,
+    fields: [{
+      key: "apiToken", label: "Access token", type: "secret", required: true, placeholder: "glpat-…",
+      help: "Use read_api and read_repository for browsing and cloning. Automatic deployments require api scope and permission to manage project webhooks.",
+    }],
+  },
   {
     id: "railway",
     label: "Railway",

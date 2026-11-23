@@ -212,11 +212,13 @@ root-equivalent access to this server, not project-scoped access. Direct SSH/SDK
 clients run outside Openship's deployment queue; administrators must coordinate
 their own commands with application work.
 
-The provider Runtime endpoint defaults to `https://workspace.oblien.com` and can
-be overridden with `OBLIEN_RUNTIME_URL`. All provider methods used here are in
-Oblien SDK 2.10.0; no new provider SDK release is required. Deploy the Openship API
-and dashboard from the same release to use the new controls. Existing server
-response shapes are unchanged. Detailed network reads opt in with
+The provider Runtime endpoint defaults to `https://vm.oblien.com` and can
+be overridden with `OBLIEN_RUNTIME_URL`. These controls use Oblien SDK 3.0.2 and
+require the matching native VM API/gateway and fresh scoped credentials. Follow
+the [SDK 3 cutover instructions](openship-cloud-launch.md#oblien-sdk-3-and-versioned-api-activation),
+including the Desktop/self-hosted client rollout. Deploy the Openship API and
+dashboard from the same release. Existing OpenShip server response shapes are
+unchanged. Detailed network reads opt in with
 `getNetworkSettings(id, { details: true })` / `?details=true`; writes return
 diagnostics only when the caller supplies `expectedRevision`, preserving the
 original internet-only contract for older clients.

@@ -202,6 +202,20 @@
     "confirm": "Roll back",
     "cancel": "Cancel"
   },
+  "registryAccess": {
+    "title": "Image access denied",
+    "description": "Check that this image exists. In Settings → Connections → Container registry, add or update the credential for its registry and grant it permission to pull this image.",
+    "githubHint": "GitHub clone credentials and container registry credentials are separate. For GHCR, use a classic token with read:packages and access to the package; authorize SSO if your organization requires it.",
+    "retryHint": "After saving, use Refresh images & redeploy to fetch the latest image.",
+    "manageAccess": "Manage registry access"
+  },
+  "containerConflict": {
+    "title": "Resolve duplicate containers",
+    "description": "Inspect the containers and their mounts on the target server. Keep the intended container and its data, remove only a confirmed unused duplicate, then redeploy. If you are unsure which to keep, contact support with this deployment reference.",
+    "containers": "Matching containers",
+    "reviewServer": "Review server",
+    "reference": "Deployment reference"
+  },
   "resourceGuidance": {
     "label": "Deployment resource guidance",
     "reviewCapacity": "Review capacity",

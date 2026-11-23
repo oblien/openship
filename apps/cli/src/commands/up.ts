@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
-import { installAndStart } from "../lib/service";
+import { installAndStart, serviceHeldPorts } from "../lib/service";
 import {
   composeUp,
   composePrefetch,
@@ -44,6 +44,7 @@ import { LocalExecutor } from "@repo/adapters";
 import {
   resolveInstallInputs,
   headlessProvision,
+  provisionInstanceDomain,
   HeadlessInputError,
 } from "../lib/instance-provision";
 import { mintBareInternalToken } from "../lib/internal-token";
@@ -284,6 +285,26 @@ export const upCommand = new Command("up")
     if (opts.fromSource || opts.source) return runFromSource(opts);
     if (opts.foreground) return runForeground(opts);
     const headless = !!(opts.nonInteractive || opts.yes);
+    // Validate requested provisioning before pulling images or stopping services.
+    if (headless || opts.managedEdge) {
+      try {
+        if (opts.managedEdge) {
+          opts.publicUrl = effectivePublicUrl(opts.publicUrl);
+          if (!opts.publicUrl || new URL(opts.publicUrl).protocol !== "https:")
+            throw new HeadlessInputError("--managed-edge requires --public-url https://your-domain (or an existing saved HTTPS URL).");
+          if (opts.domainKind && opts.domainKind !== "custom")
+            throw new HeadlessInputError("--managed-edge requires --domain-kind custom.");
+          if (opts.hostname && opts.hostname !== new URL(opts.publicUrl).hostname)
+            throw new HeadlessInputError("--hostname must match --public-url when using --managed-edge.");
+          opts.trustProxy = true;
+        }
+        if (headless) upInstallInputs(opts);
+      } catch (error) {
+        reportCliMessage("error", (error as Error).message);
+        process.exit(1);
+      }
+    }
+
     // Install method: Compose is the default when it can actually work (Docker on
     // Linux — the edge container needs host networking); else bare. `planMethod`
     // owns the decision so `--dry-run` predicts the same one.
@@ -319,9 +340,10 @@ export const upCommand = new Command("up")
         if (!token) {
           reportCliMessage("warn",
             chalk.yellow(
-              "\n  Couldn't read the stack's internal token (compose/.env) — create the admin from the dashboard.\n",
+              "\n  Couldn't read the stack's internal token (compose/.env). Run this command as the installation owner (or sudo) to finish admin setup.\n",
             ),
           );
+          process.exit(1);
         } else {
           await runHeadlessProvision(
             opts,
@@ -329,12 +351,39 @@ export const upCommand = new Command("up")
             { token, method: "compose" },
           );
         }
+      } else if (opts.managedEdge) {
+        const result = await provisionInstanceDomain({
+          port: started.apiPort, dashPort: started.dashPort, token: composeInternalToken() ?? undefined,
+          domain: { kind: "custom", hostname: new URL(opts.publicUrl!).hostname, acmeEmail: opts.acmeEmail,
+            edge: opts.edge === "takeover" || opts.edge === "migrate" ? opts.edge : "cancel" },
+          onLog: message => console.log(chalk.dim(`  ${message}`)),
+        });
+        for (const warning of result.warnings) reportCliMessage("warn", warning);
+        if (!result.domainRegistered) {
+          reportCliMessage("error", "Managed domain registration did not complete. If this is a new install, run `openship` and choose Create first admin, then retry this command.");
+          process.exit(1);
+        }
       }
       return;
     }
     const started = await startService(opts);
     if (headless) await runHeadlessProvision(opts, started, { method: "bare" });
   });
+
+/** Flags and preflight share one provisioning interpretation. */
+function upInstallInputs(opts: UpOpts) {
+  return resolveInstallInputs({
+    adminName: opts.adminName,
+    adminEmail: opts.adminEmail,
+    adminPassword: opts.adminPassword,
+    domainKind: opts.domainKind ?? (opts.managedEdge ? "custom" : undefined),
+    hostname: opts.hostname,
+    slug: opts.slug,
+    publicUrl: opts.publicUrl,
+    acmeEmail: opts.acmeEmail,
+    edge: opts.edge,
+  });
+}
 
 /**
  * Headless install (bare service): after `startService` installs + supervises
@@ -349,17 +398,7 @@ export async function runHeadlessProvision(
 ): Promise<void> {
   let inputs;
   try {
-    inputs = resolveInstallInputs({
-      adminName: opts.adminName,
-      adminEmail: opts.adminEmail,
-      adminPassword: opts.adminPassword,
-      domainKind: opts.domainKind,
-      hostname: opts.hostname,
-      slug: opts.slug,
-      publicUrl: opts.publicUrl,
-      acmeEmail: opts.acmeEmail,
-      edge: opts.edge,
-    });
+    inputs = upInstallInputs(opts);
   } catch (err) {
     if (err instanceof HeadlessInputError) {
       reportCliMessage("error", chalk.red(`\n  ${err.message}\n`));
@@ -377,8 +416,10 @@ export async function runHeadlessProvision(
       method: extra?.method,
       onLog: (m) => console.log(chalk.dim(`  ${m}`)),
     });
-    console.log(chalk.green(`\n  ✓ Openship provisioned${result.liveUrl ? `: ${result.liveUrl}` : "."}`));
     for (const w of result.warnings) reportCliMessage("warn", chalk.yellow(`  ⚠ ${w}`));
+    if (opts.managedEdge && !result.domainRegistered)
+      throw new Error("Managed domain registration did not complete. Retry after resolving the domain warning above.");
+    console.log(chalk.green(`\n  ✓ Openship provisioned${result.liveUrl ? `: ${result.liveUrl}` : "."}`));
   } catch (err) {
     observeCaughtError(err, "cli/commands/up");
     reportCliMessage("error", chalk.red(`\n  Headless provisioning failed: ${(err as Error).message}\n`));
@@ -641,7 +682,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
       chalk.dim("  Images:    api + dashboard + edge (OpenResty on :80/:443)\n") +
       chalk.dim("  Manage:    openship stop · openship update · openship status\n") +
       // In headless mode the admin is bootstrapped below — don't tell the user to do it by hand.
-      (headless ? "" : chalk.dim("  Create an admin: open the dashboard and register the first account.\n")),
+      (headless ? "" : chalk.dim("  Admin setup: run `openship` → Create first admin, or use `openship up --non-interactive --admin-email <email>` with OPENSHIP_ADMIN_PASSWORD set.\n")),
   );
   return { apiPort: res.apiPort, dashPort: res.dashPort };
 }
@@ -688,9 +729,13 @@ export async function startService(
 
   // No permanent port: switch off any occupied default / flag / remembered port
   // BEFORE writing the service unit, so the chosen ports are baked into its args.
+  // A re-run finds our own running service on its ports. installAndStart replaces
+  // that instance, so they're reclaimable rather than busy; otherwise every re-run
+  // waited out waitPortFree and then moved the install to new ports (#1570).
   const resolved = await resolvePorts({
     api: opts.port ? Number(opts.port) : undefined,
     dashboard: opts.dashboardPort ? Number(opts.dashboardPort) : undefined,
+    reclaimable: await serviceHeldPorts(),
   });
   const port = String(resolved.api);
   const dashPort = String(resolved.dashboard);
@@ -892,46 +937,6 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     child.stdout.on("data", (d) => instanceLog.write(d));
     child.stderr.on("data", (d) => instanceLog.write(d));
 
-    // Buffer output until healthy; on early exit, surface the tail.
-    let buffered = "";
-    const buffer = (d: Buffer) => {
-      buffered += d.toString();
-    };
-    child.stdout.on("data", buffer);
-    child.stderr.on("data", buffer);
-    child.on("exit", (code) => {
-      if (code && code !== 0) {
-        spinner.fail(`Openship server exited (code ${code})`);
-        process.stderr.write(buffered.slice(-2000));
-        process.exit(code);
-      }
-    });
-
-    const healthUrl = `http://127.0.0.1:${port}/api/health`;
-    let healthy = false;
-    for (let i = 0; i < 60 && child.exitCode === null; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      try {
-        const res = await fetch(healthUrl, { signal: AbortSignal.timeout(2000) });
-        if (res.ok) {
-          healthy = true;
-          break;
-        }
-      } catch (diagnosticFailure) {
-        observeCaughtError(diagnosticFailure, "cli/commands/up");
-        // not up yet
-      }
-    }
-
-    if (!healthy) {
-      spinner.fail("Openship did not become healthy in time");
-      process.stderr.write(buffered.slice(-2000));
-      child.kill("SIGTERM");
-      process.exit(1);
-    }
-
-    spinner.succeed(`Openship API running at http://localhost:${port}`);
-
     // Track every child so Ctrl-C / a fatal exit / `openship stop` tears them all
     // down together. The API + dashboard hold keep-alive sockets to EACH OTHER,
     // so SIGTERM alone can hang their graceful shutdown (mutual wait) — we MUST
@@ -966,6 +971,57 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
         process.exit(exitCode);
       }, 1500);
     };
+    // Handle stop signals from the moment the API exists, not once startup is
+    // done. The API is in its own process group, so launchd stopping this
+    // process or a Ctrl-C in the terminal never reaches it: if we died on the
+    // signal while it was still starting, it kept the port and the PGlite lock.
+    // stopAll owns the exit (it force-kills after a grace, THEN process.exit).
+    // Calling process.exit() here would kill that timer and orphan the tree.
+    process.on("SIGINT", () => stopAll(0));
+    process.on("SIGTERM", () => stopAll(0));
+
+    // Buffer output until healthy; on early exit, surface the tail.
+    let buffered = "";
+    const buffer = (d: Buffer) => {
+      buffered += d.toString();
+    };
+    child.stdout.on("data", buffer);
+    child.stderr.on("data", buffer);
+    child.on("exit", (code) => {
+      if (code && code !== 0 && !stopping) {
+        spinner.fail(`Openship server exited (code ${code})`);
+        process.stderr.write(buffered.slice(-2000));
+        process.exit(code);
+      }
+    });
+
+    const healthUrl = `http://127.0.0.1:${port}/api/health`;
+    let healthy = false;
+    for (let i = 0; i < 60 && child.exitCode === null && !stopping; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const res = await fetch(healthUrl, { signal: AbortSignal.timeout(2000) });
+        if (res.ok) {
+          healthy = true;
+          break;
+        }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "cli/commands/up");
+        // not up yet
+      }
+    }
+
+    // Stopped while starting: stopAll is already taking the API down and exits.
+    if (stopping) return;
+
+    if (!healthy) {
+      spinner.fail("Openship did not become healthy in time");
+      process.stderr.write(buffered.slice(-2000));
+      child.kill("SIGTERM");
+      process.exit(1);
+    }
+
+    spinner.succeed(`Openship API running at http://localhost:${port}`);
 
     // Dashboard (unless --no-ui): lazy-downloaded from GitHub releases, then run
     // alongside the API. A UI failure is non-fatal — the API keeps serving.
@@ -1087,10 +1143,6 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     child.stdout.on("data", (d) => process.stdout.write(d));
     child.stderr.on("data", (d) => process.stderr.write(d));
 
-    // stopAll owns the exit (it force-kills after a grace, THEN process.exit).
-    // Calling process.exit() here would kill that timer and orphan the tree.
-    process.on("SIGINT", () => stopAll(0));
-    process.on("SIGTERM", () => stopAll(0));
     // If the API dies, bring the dashboard down with it and exit with its code.
     child.on("exit", (code) => stopAll(code ?? 0));
 }

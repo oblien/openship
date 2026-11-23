@@ -34,6 +34,10 @@ export function createCredentialOperations(
           await deps.requireAdmin(ctx);
           return deps.collection.create(ctx, input);
         },
+        async connectCli(ctx, input) {
+          await deps.requireAdmin(ctx);
+          return deps.collection.connectCli(ctx, input);
+        },
         async authorize(ctx, input) {
           await deps.requireAdmin(ctx);
           return deps.collection.authorize(ctx, input);

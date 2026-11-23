@@ -4,6 +4,7 @@ import { useCopy } from "@/i18n/use-copy";
 import { reportCaughtError } from "@repo/core/diagnostics";
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { CLOUD_API_URL } from "@repo/core";
 import Script from "next/script";
 import { Check } from "lucide-react";
@@ -87,8 +88,10 @@ export function ContactForm({ siteKey }: { siteKey: string }) {
   }, [ready, siteKey, showForm]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
+  const query = useSearchParams();
+  const mailQuote = query.get("topic") === "mail";
+  const [subject, setSubject] = useState(mailQuote ? copy("OpenShip Mail quote") : "");
+  const [message, setMessage] = useState(mailQuote ? query.get("configuration")?.slice(0, 600) ?? "" : "");
   const [errorText, setErrorText] = useState("");
   const [receipt, setReceipt] = useState<CloudSupportReceipt | null>(null);
   const attempt = useRef<{ content: string; requestId: string } | null>(null);

@@ -144,7 +144,7 @@ export async function revealEnv(c: Context) {
       operationContext(c),
       param(c, "id"),
       param(c, "serviceId"),
-      await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/services/service.controller"); return ({}); }),
+      await c.req.json(),
     ),
   );
   return c.json({ success: true, environment: data });

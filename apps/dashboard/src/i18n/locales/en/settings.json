@@ -1667,12 +1667,23 @@
     "connect": "Add connection",
     "delete": "Delete",
     "verify": "Re-check with the provider",
-    "badgeActive": "Working",
+    "badgeActive": "Last check passed",
+    "badgeSaved": "Saved",
+    "lastVerified": "Last verified: {date}",
     "badgeInvalid": "Needs attention",
     "fieldName": "Label",
     "namePlaceholder": "e.g. GHCR read-only",
     "secretKeptPlaceholder": "•••••••• (saved — leave blank to keep)",
     "selectPlaceholder": "Choose…",
+    "gitlab": {
+      "continue": "Continue with GitLab",
+      "useToken": "Use an access token",
+      "useCli": "Use GitLab CLI",
+      "createToken": "Create token on GitLab",
+      "oauthHelp": "Authorize OpenShip to read your repositories and manage deployment webhooks with your GitLab account.",
+      "cliHelp": "Sign in on the machine running OpenShip. Connecting shares that CLI account with this workspace for repository access and builds on this machine.",
+      "connectionName": "Connection name (optional)"
+    },
     "verifyNote": "OpenShip checks the connection with the provider before saving it.",
     "confirmDelete": "Delete \"{name}\"? Anything relying on it stops working.",
     "toast": {
@@ -1686,6 +1697,14 @@
       "verifyFailed": "The provider rejected this credential"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Access token",
+            "help": "Use read_api and read_repository for browsing and cloning. For deploys on push, also select api and use an account that can manage project webhooks."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Container registry",
         "summary": "Pull private images from a registry during deploys.",
@@ -1791,5 +1810,22 @@
       "title": "Demo mode",
       "description": "Blur IP addresses, hosts, and environment values during screen-shares and recordings."
     }
+  },
+  "imageUrl": {
+    "preview": "Image preview",
+    "invalid": "Enter an HTTP or HTTPS image URL without embedded credentials.",
+    "failed": "Could not save the image URL.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "previewFailed": "Preview unavailable. Check that the URL points directly to an image."
+  },
+  "profile": {
+    "change": "Change avatar",
+    "title": "Profile",
+    "description": "Your personal account image.",
+    "label": "Avatar URL",
+    "hint": "Use a direct image URL. Leave empty to use your initial.",
+    "reset": "Use initial"
   }
 }

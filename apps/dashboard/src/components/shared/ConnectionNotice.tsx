@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon } from "@repo/ui/icons";
 import type { ReactNode } from "react";
 import { useI18n } from "@/components/i18n-provider";
@@ -41,7 +42,7 @@ export function ConnectionNotice({
           <p className={`${compact ? "mt-0.5 text-xs" : "mt-1 text-sm"} text-muted-foreground`}>{message}</p>
           {detail && (
             <details className="mt-2 text-xs text-muted-foreground">
-              <summary className="cursor-pointer">{t.issues.connectivity.details}</summary>
+              <DisclosureSummary className="cursor-pointer">{t.issues.connectivity.details}</DisclosureSummary>
               <p className="mt-1 break-words whitespace-pre-wrap">{detail}</p>
             </details>
           )}

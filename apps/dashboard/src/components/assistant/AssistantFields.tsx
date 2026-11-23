@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { useId } from "react";
 import { resolveAssistantFields, type AssistantField } from "@repo/contracts";
 import { Input } from "@/components/ui/input";
@@ -92,9 +93,9 @@ export function AssistantFields({
       {visible.filter((f) => !f.advanced).map(render)}
       {visible.some((f) => f.advanced) && (
         <details>
-          <summary className="cursor-pointer text-sm text-muted-foreground">
+          <DisclosureSummary className="cursor-pointer text-sm text-muted-foreground">
             Advanced options
-          </summary>
+          </DisclosureSummary>
           <div className="mt-4 space-y-5">{visible.filter((f) => f.advanced).map(render)}</div>
         </details>
       )}

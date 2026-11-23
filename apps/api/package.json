@@ -1,6 +1,6 @@
 {
   "name": "@repo/api",
-  "version": "0.9.12",
+  "version": "1.0.1",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -54,6 +54,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.668.0",
     "@repo/sdk": "workspace:*",
     "@types/node": "^22.13.0",
     "@types/ws": "^8.18.1",

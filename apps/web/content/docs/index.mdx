@@ -1,36 +1,56 @@
 ---
-title: Openship documentation
-description: Deploy applications, operate your infrastructure, and build integrations with Openship.
+title: OpenShip documentation
+description: Deploy your first application, connect your infrastructure, and keep production running.
+full: true
 ---
 
-Openship builds and deploys applications from Git repositories, local folders, generated files, and app
-templates. Run workloads on your machine, a connected server, or Openship Cloud.
+import { Icon } from '@repo/ui/icons';
 
-## Start here
+## Get started
+
+Choose where to run your dashboard. Use the same platform with your own servers or managed infrastructure.
+
+<div className="docs-setup-grid">
+  <Card icon={<Icon name="server" />} title="Self-hosted" href="/docs/getting-started/installation#run-openship" description="Run the web dashboard on your infrastructure. Manage this server or connect others over SSH." />
+  <Card icon={<Icon name="cloud" />} title="OpenShip Cloud" href="/docs/getting-started/installation#openship-cloud" description="Use the managed dashboard and Cloud capacity, or connect your own servers with a management plan." />
+  <Card icon={<Icon name="monitor" />} title="Desktop" href="/docs/getting-started/installation#desktop-app" description="An optional local control plane. Deploy to remote infrastructure without publishing a dashboard." />
+</div>
+
+## Build and operate
 
 <Cards>
-  <Card title="Deploy your first app" href="/docs/getting-started/quickstart" description="Choose an installation, connect your code, and follow a deployment." />
-  <Card title="Install Openship" href="/docs/getting-started/installation" description="Set up the desktop app, a server, or a development checkout." />
-  <Card title="Use the CLI" href="/docs/cli" description="Deploy and manage projects from a terminal or CI job." />
-  <Card title="Use Ship SDK" href="/docs/api/sdk" description="Deploy from JavaScript or TypeScript; connect to an existing API or embed the engine." />
+  <Card icon={<Icon name="git-branch" />} title="Deploy your code" href="/docs/guides#deploy" description="Git repositories, local folders, Docker images, Compose stacks, previews, and automatic deployments." />
+  <Card icon={<Icon name="layers" />} title="Configure your application" href="/docs/guides#configure" description="Domains, environment variables, routes, persistent storage, and resource limits." />
+  <Card icon={<Icon name="database" />} title="Operate and recover" href="/docs/guides#operate" description="Logs, metrics, scheduled backups, restores, jobs, and server maintenance." />
+  <Card icon={<Icon name="migration" />} title="Move to OpenShip" href="/docs/guides#move" description="Import existing projects, move workloads between servers, and plan a controlled cutover." />
+  <Card icon={<Icon name="dashboard" />} title="Use the dashboard" href="/docs/dashboard" description="Find your way around projects, services, servers, backups, and workspace settings." />
+  <Card icon={<Icon name="help-circle" />} title="Resolve an issue" href="/docs/troubleshooting" description="Diagnose deployment, networking, access, and server problems." />
 </Cards>
 
-## Find a task
+## Developer reference
 
-| Task | Read |
-| --- | --- |
-| Deploy from Git or a folder | [Deployment guides](/docs/guides#deploy) |
-| Configure domains, secrets, and storage | [Application configuration](/docs/guides#configure) |
-| Inspect logs, back up data, or fix a failure | [Operations](/docs/guides#operate) |
-| Move projects or an installation | [Migration guides](/docs/guides#move) |
-| Learn the dashboard | [Dashboard guide](/docs/dashboard) |
-| Call HTTP endpoints | [API reference](/docs/api) |
-| Connect an AI tool | [MCP guide](/docs/mcp) |
+<Cards>
+  <Card icon={<Icon name="code" />} title="API and TypeScript SDK" href="/docs/api" description="Authentication, requests, events, and complete endpoint reference." />
+  <Card icon={<Icon name="terminal" />} title="Command line" href="/docs/cli" description="Deploy from your terminal, automate workflows, and manage infrastructure." />
+  <Card icon={<Icon name="bot" />} title="MCP and AI tools" href="/docs/mcp" description="Connect agents to OpenShip with scoped access to your resources." />
+  <Card icon={<Icon name="book" />} title="Configuration reference" href="/docs/reference/openship-json" description="Project configuration, environment variables, deployment stages, and resource limits." />
+  <Card icon={<Icon name="network" />} title="Architecture" href="/docs/architecture/overview" description="How control planes, runtimes, data ownership, and Cloud boundaries work." />
+  <Card icon={<Icon name="shield-check" />} title="Security" href="/docs/security/permissions" description="Permissions, secrets, isolation, and the responsibilities of each deployment model." />
+</Cards>
+
+<div className="docs-callout-strip">
+  <Icon name="shield-check" size={24} aria-hidden="true" />
+  <div>
+    <p><strong>Taking a project to production?</strong></p>
+    <p>Review access, secrets, backups, capacity, and recovery before sending customer traffic.</p>
+    <a href="/docs/guides/production-readiness">Follow the production checklist →</a>
+  </div>
+</div>
 
 ## Key concepts
 
-An **organization** owns projects and grants access to its members. A **project** holds source and
-configuration. A **deployment** is one build and release of that project. A **service** is a workload
-inside a project, such as an application or database.
+A **project** connects source, configuration, and deployment history. Its **services** are the running
+applications, workers, and databases. A **deployment** releases a version to a selected destination.
 
-See [core concepts](/docs/getting-started/core-concepts) for environments, runtimes, servers, and domains.
+[Read the core concepts](/docs/getting-started/core-concepts) for organizations, environments,
+control planes, runtimes, and domains.

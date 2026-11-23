@@ -1,3 +1,4 @@
+import { ProjectEdgePagesSchema } from "./edge-pages";
 /**
  * Project validation schemas - Shared TypeBox operation contracts.
  * Framework & PackageManager enums are derived from the STACKS registry
@@ -7,7 +8,9 @@
 import { Type, type Static, type TLiteral } from "@sinclair/typebox";
 import { GitHubDeploymentChecksSchema } from "./deployment-checks";
 import {
+  DEFAULT_GIT_PROVIDER,
   STACK_IDS,
+  MAX_IMAGE_URL_LENGTH,
   RUNTIME_VERSION_PATTERN,
   RUNTIME_VERSION_MAX_LENGTH,
   ALL_PACKAGE_MANAGERS,
@@ -313,6 +316,7 @@ const ProxySettingsSchema = Type.Object(
 );
 
 const RoutingConfigSchema = Type.Object({
+  edgePages: Type.Optional(ProjectEdgePagesSchema),
   rewrites: Type.Optional(Type.Array(RoutingRuleSchema, { maxItems: 200 })),
   redirects: Type.Optional(
     Type.Array(
@@ -402,7 +406,7 @@ export const CreateProjectBody = Type.Object({
   // Local source
   localPath: Type.Optional(Type.String({ maxLength: 1000 })),
   // Git source
-  gitProvider: Type.Optional(Type.String({ default: "github" })),
+  gitProvider: Type.Optional(Type.String({ default: DEFAULT_GIT_PROVIDER })),
   gitOwner: Type.Optional(Type.String({ maxLength: 100 })),
   gitRepo: Type.Optional(Type.String({ maxLength: 100 })),
   gitBranch: Type.Optional(Type.String({ default: "main" })),
@@ -559,7 +563,10 @@ export const CreateProjectBody = Type.Object({
 
 // `serverId` is create/ensure-only. Keeping it out of the generic PATCH body is
 // also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
-export const UpdateProjectBody = Type.Partial(Type.Omit(CreateProjectBody, ["serverId"]));
+export const UpdateProjectBody = Type.Object({
+  ...Type.Partial(Type.Omit(CreateProjectBody, ["serverId"])).properties,
+  iconUrl: Type.Optional(Type.Union([Type.String({ maxLength: MAX_IMAGE_URL_LENGTH }), Type.Null()])),
+});
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to
@@ -678,6 +685,7 @@ export const UpdateResourcesBody = Type.Object({
 
 /** POST /:id/git/link — link a git repository to the project. */
 export const LinkRepoBody = Type.Object({
+  provider: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   owner: Type.String({ minLength: 1, description: "GitHub repo owner." }),
   repo: Type.String({ minLength: 1, description: "GitHub repo name." }),
   branch: Type.Optional(

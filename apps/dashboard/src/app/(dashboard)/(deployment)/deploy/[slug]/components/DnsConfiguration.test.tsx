@@ -49,6 +49,22 @@ describe("DnsConfiguration", () => {
     expect(out).toContain("203.0.113.10");
   });
 
+  it("shows the routing record without prompting for a TXT that is already verified", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ModalProvider>
+          <DnsConfiguration
+            domain="www.example.com"
+            mode="cloud"
+            records={[{ type: "CNAME", host: "www", name: "www.example.com", value: "edge.example.com" }]}
+          />
+        </ModalProvider>
+      </I18nProvider>,
+    );
+    expect(text(html)).toContain("edge.example.com");
+    expect(text(html)).not.toContain("TXT record");
+  });
+
   it("keeps an unpersisted pre-deploy preview read-only", () => {
     const html = renderToStaticMarkup(
       <I18nProvider>

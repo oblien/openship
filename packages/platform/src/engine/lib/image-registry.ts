@@ -18,6 +18,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { env } from "../config/env";
+import { readRegistryToken } from "./registry-auth";
 import { safeFetch, type SafeFetchResponse } from "./safe-fetch";
 
 interface ParsedRef {
@@ -103,8 +104,7 @@ async function fetchToken(challenge: string): Promise<string | null> {
       maxRedirects: 3,
     });
     if (!res.ok) return null;
-    const body = (await res.json()) as { token?: string; access_token?: string };
-    return body.token ?? body.access_token ?? null;
+    return readRegistryToken(await res.text());
   } catch (diagnosticFailure) {
     observeCaughtError(diagnosticFailure, "platform/engine/lib/image-registry");
     return null;

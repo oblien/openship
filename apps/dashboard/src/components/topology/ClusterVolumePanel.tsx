@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -271,9 +272,9 @@ export function ClusterVolumePanel({
           </form>
           {backups.length > 0 && (
             <details className="space-y-3 text-sm" open={!!restoreSource}>
-              <summary className="cursor-pointer text-muted-foreground">
+              <DisclosureSummary className="cursor-pointer text-muted-foreground">
                 Restore saved files
-              </summary>
+              </DisclosureSummary>
               <p className="text-xs text-muted-foreground">
                 Backups remain available after their original volume is deleted.
               </p>
@@ -400,7 +401,7 @@ export function ClusterVolumePanel({
             </div>
           </section>
           <details className="text-sm">
-            <summary className="cursor-pointer text-muted-foreground">Increase space</summary>
+            <DisclosureSummary className="cursor-pointer text-muted-foreground">Increase space</DisclosureSummary>
             <form
               className="mt-3 space-y-3"
               onSubmit={(event) => {
@@ -475,7 +476,7 @@ export function ClusterVolumePanel({
               together. Databases use their own backup tools.
             </p>
             <details className="space-y-3 text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Automatic backups</summary>
+              <DisclosureSummary className="cursor-pointer text-muted-foreground">Automatic backups</DisclosureSummary>
               <CustomSelect
                 variant="filled"
                 aria-label="File backup frequency"

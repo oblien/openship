@@ -130,7 +130,11 @@ describe.each(["card", "page"] as const)("%s update progress", (surface) => {
     expect(h.apply).toHaveBeenCalledTimes(1);
     h.status.mockResolvedValue(ready);
     await tick();
-    expect(h.toast).toHaveBeenCalledExactlyOnceWith("success", "Done", "Monitoring");
+    expect(h.toast).toHaveBeenCalledExactlyOnceWith(
+      "success",
+      "Update finished: MongoDB",
+      "Monitoring",
+    );
     expect(h.feed).toHaveBeenCalledTimes(1);
     expect(button()).toBeNull();
     const reads = h.status.mock.calls.length;
@@ -175,7 +179,7 @@ it("allows another project to update while keeping each project's action locked"
     ...issue,
     id: "update:proj_other",
     title: "Other app",
-    target: { ...issue.target, id: "proj_other" },
+    target: { ...issue.target, id: "proj_other", name: "Other app" },
     resolveWith: [{ ...issue.resolveWith[0]!, path: "/api/updates/proj_other/apply" }],
   };
   h.apply.mockImplementation(async (fix) => ({
@@ -204,12 +208,17 @@ it("allows another project to update while keeping each project's action locked"
   h.feed.mockResolvedValue([{ ...other, details: { inProgressDeploymentId: "dep_other" } }]);
   await tick();
   expect(actions.busyIds).toEqual(new Set([other.id]));
-  expect(h.toast).toHaveBeenCalledExactlyOnceWith("success", "Done", "Monitoring");
+  expect(h.toast).toHaveBeenCalledExactlyOnceWith(
+    "success",
+    "Update finished: MongoDB",
+    "Monitoring",
+  );
   h.status.mockResolvedValue(ready);
   h.feed.mockResolvedValue([]);
   await tick();
   expect(actions.busyIds.size).toBe(0);
   expect(h.toast).toHaveBeenCalledTimes(2);
+  expect(h.toast).toHaveBeenLastCalledWith("success", "Update finished: Other app", "Monitoring");
 });
 
 it("keeps the clicked row visible through an older or incomplete feed response", async () => {
@@ -223,6 +232,41 @@ it("keeps the clicked row visible through an older or incomplete feed response",
   await tick();
   expect(button()).toBeNull();
 });
+
+it.each(["update_available", "deploy_blocked"] as const)(
+  "keeps update names when a concurrent %s action finishes",
+  async (kind) => {
+    const other: SystemIssue = {
+      ...issue,
+      id: "other",
+      kind,
+      target: { ...issue.target, id: "proj_other", name: "Other app" },
+    };
+    h.apply.mockResolvedValueOnce(accepted).mockResolvedValueOnce({
+      data: { deployment_id: "dep_z", project_id: "proj_other" },
+    });
+    await render("page", [issue, other]);
+    await act(async () => {
+      await actions.resolve(issue);
+      await actions.resolve(other);
+    });
+    h.status.mockResolvedValue(ready);
+    await tick();
+
+    if (kind === "update_available") {
+      expect(h.toast).toHaveBeenCalledExactlyOnceWith(
+        "success",
+        "Updates finished (2): MongoDB, Other app",
+        "Monitoring",
+      );
+    } else {
+      expect(h.toast.mock.calls).toEqual([
+        ["success", "Done", "Monitoring"],
+        ["success", "Update finished: MongoDB", "Monitoring"],
+      ]);
+    }
+  },
+);
 
 it.each([
   { status: "failed", deploymentStatus: "failed", errorMessage: "Image pull failed" },
@@ -270,7 +314,11 @@ it("backs off failed status reads without re-enabling or replaying the mutation"
   h.status.mockResolvedValue(ready);
   await tick(1);
   expect(h.apply).toHaveBeenCalledTimes(1);
-  expect(h.toast).toHaveBeenCalledExactlyOnceWith("success", "Done", "Monitoring");
+  expect(h.toast).toHaveBeenCalledExactlyOnceWith(
+    "success",
+    "Update finished: MongoDB",
+    "Monitoring",
+  );
 });
 
 it("pauses status reads while offline and resumes without sending another update", async () => {
@@ -299,7 +347,11 @@ it("does not duplicate a completion toast when refreshing the feed fails", async
   expect(button()!.disabled).toBe(true);
   h.feed.mockResolvedValue([]);
   await tick(10_000);
-  expect(h.toast).toHaveBeenCalledExactlyOnceWith("success", "Done", "Monitoring");
+  expect(h.toast).toHaveBeenCalledExactlyOnceWith(
+    "success",
+    "Update finished: MongoDB",
+    "Monitoring",
+  );
   expect(button()).toBeNull();
 });
 

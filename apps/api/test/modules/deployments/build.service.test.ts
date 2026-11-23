@@ -657,6 +657,36 @@ describe("buildConfigSnapshot: roles", () => {
 });
 
 describe("triggerDeployment", () => {
+  it("reviews a source edit then deploys only the exact revision accepted in the modal", async () => {
+    repos.project.findById.mockResolvedValue(baseProject({
+      composePath: "compose.yml", localPath: null,
+      gitProvider: "github", gitUrl: "https://github.com/acme/app.git", gitOwner: "acme", gitRepo: "app",
+    }));
+    const original = composeServices[0]!;
+    repos.service.listByProject.mockResolvedValue([
+      { ...original, projectId: "project-1", importedSpec: toComposeSpec(original) },
+    ]);
+    const source = [{ ...original, image: "ghcr.io/acme/review:2" }];
+    resolveProjectInfo.mockResolvedValue({ services: source });
+    let review: any;
+    try { await triggerDeployment(ctx, { projectId: "project-1", smartRoute: true }); }
+    catch (error) { review = error; }
+    expect(review).toMatchObject({ code: "COMPOSE_REVIEW_REQUIRED", details: {
+      composeRevision: composeSourceRevision("project-1", source),
+      composeChanges: { changed: [original.name] },
+      composeDiff: [expect.objectContaining({ name: original.name, fields: expect.arrayContaining([
+        expect.objectContaining({ path: "image", after: "ghcr.io/acme/review:2" }),
+      ]) })],
+    } });
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+    await expect(triggerDeployment(ctx, { projectId: "project-1", composeRevision: "f".repeat(64) })).rejects.toMatchObject({ code: "COMPOSE_REVIEW_REQUIRED" });
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    await triggerDeployment(ctx, { projectId: "project-1", smartRoute: true, composeRevision: review.details.composeRevision });
+    expect(repos.service.reconcileFromCompose).toHaveBeenCalledExactlyOnceWith("project-1", source);
+    expect(repos.deployment.create).toHaveBeenCalledOnce();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     queueActionDeployment.mockReset().mockResolvedValue(undefined);
@@ -1515,7 +1545,8 @@ describe("triggerDeployment", () => {
 
     expect(resolveProjectInfo).toHaveBeenCalledWith(
       expect.objectContaining({
-        source: "github",
+        source: "git",
+        provider: "github",
         owner: "acme",
         repo: "app",
         branch: commitSha,
@@ -1704,7 +1735,8 @@ describe("triggerDeployment", () => {
       expect(resolveProjectInfo).toHaveBeenCalledOnce();
       expect(resolveProjectInfo).toHaveBeenCalledWith(
         expect.objectContaining({
-          source: "github",
+          source: "git",
+          provider: "github",
           rootDirectory,
         }),
       );
@@ -1903,7 +1935,7 @@ describe("triggerDeployment", () => {
       commitSha: "1eeaf76",
     });
 
-    expect(getCommitByRef).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76");
+    expect(getCommitByRef).toHaveBeenCalledWith(ctx, "acme", "app", "1eeaf76", {});
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({ commitSha: full }),
     );
@@ -2356,6 +2388,7 @@ describe("redeployBuildSession environment snapshot", () => {
       id: "project-1",
       organizationId: "org-1",
       activeDeploymentId: "dep-old",
+      gitProvider: "github",
       gitOwner: "oblien",
       gitRepo: "openship",
       gitBranch: "main",

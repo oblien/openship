@@ -124,4 +124,12 @@ describe("project.repo env writes (PGlite)", () => {
     const rows = await prodProjectLevel(ctx.db);
     expect(rows).toHaveLength(0);
   });
+
+  it("listEnvVars with serviceId=null reads only the shared (project-level) scope", async () => {
+    const rows = await ctx.repo.listEnvVars("p1", "production", null);
+    expect(rows.map((r) => r.key).sort()).toEqual(["DELETEME", "KEEP", "SECRET"]);
+    expect(rows.every((r) => r.serviceId === null)).toBe(true);
+    // The same-named service row is a different scope — never read back.
+    expect(rows.find((r) => r.value === "svc-val")).toBeUndefined();
+  });
 });

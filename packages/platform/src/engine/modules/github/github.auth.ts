@@ -687,6 +687,11 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
   if (opts.installationPermissions && (!opts.owner || !opts.repo || opts.authorizeAs !== "write"))
     throw new AppError("A permission probe requires repository write authority", 400);
   const readOnly = method === "GET" && (opts.authorizeAs ?? "read") === "read";
+  const customApiBase = opts.owner
+    ? await resolveGitHubApiBaseUrl(opts.ctx.organizationId, opts.owner, opts.installationId).catch(
+        (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.auth"); return null; },
+      )
+    : null;
   // Bind the borrowed identity to the repository actually authorized, including
   // its API origin. Read-tier POSTs and account/other-repository URLs cannot use it.
   const repositoryUrl = opts.owner && opts.repo
@@ -695,17 +700,13 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
   // WHATWG URL normalization removes plain and percent-encoded dot segments.
   // Compare what fetch will send, rather than a prefix that traversal can escape.
   const requestUrl = new URL(opts.url).href;
-  const serverRead = readOnly && repositoryUrl !== null &&
+  const serverRead = readOnly &&
+    (!customApiBase || customApiBase === "https://api.github.com") && repositoryUrl !== null &&
     (requestUrl === repositoryUrl || requestUrl.startsWith(`${repositoryUrl}/`));
   const rejectedSources: GitHubTokenSource[] = serverRead ? [] : ["server-token"];
   let authError: unknown;
   const rejectedCredential = (error: unknown) =>
     error instanceof Error && "credentialRejected" in error && error.credentialRejected === true;
-  const customApiBase = opts.owner
-    ? await resolveGitHubApiBaseUrl(opts.ctx.organizationId, opts.owner, opts.installationId).catch(
-        (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.auth"); return null; },
-      )
-    : null;
 
   // gh-first for local reads unless this owner is explicitly backed by a
   // workspace custom App. A github.com CLI credential cannot authenticate to a
@@ -733,15 +734,21 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     owner: opts.owner,
     repo: opts.repo,
     installationId: opts.installationId,
-    ...(serverRead && !customApiBase
-      ? { serverId: opts.serverId } : {}),
+    ...(serverRead ? { serverId: opts.serverId } : {}),
     // A GET is a read; anything else mutates unless the caller declared its tier
     // explicitly. Threading the op means a mutating GitHub call can only mint a
     // token when the caller holds a WRITE grant on THIS repo — closing
     // GHSA-hp2g-hw7g-f3vm at the single funnel every mint passes through,
     // independent of whatever the route-level role check allowed.
     op: opts.authorizeAs ?? (method === "GET" ? "read" : "write"),
-    only: customApiBase ? ["app-installation"] : opts.credential,
+    // A github.com App can coexist with a server PAT for the same repository.
+    // Reuse the authorized server-token fallback after the App. Enterprise sources,
+    // explicit credential pins, writes, and non-repository reads stay App-only.
+    only: customApiBase
+      ? serverRead && !opts.credential?.length
+        ? ["app-installation", "server-token"]
+        : ["app-installation"]
+      : opts.credential,
   };
   // A rejected local credential must not be selected again by the normal
   // chain. Each retry narrows that chain; its repo/tenant gates still run.
@@ -1255,6 +1262,11 @@ export type GitHubAuthMode = "app" | "oauth" | "cli" | "token" | "cloud-app";
  * cloud, which is the canonical self-hosted path.
  */
 export function getGitHubAuthMode(): GitHubAuthMode {
+  return configuredGitHubAuthMode() ?? "cli";
+}
+
+/** A fixed local authority takes precedence over any linked Cloud identity. */
+export function configuredGitHubAuthMode(): GitHubAuthMode | undefined {
   // SaaS owns one canonical GitHub integration. No environment override may
   // route a multi-tenant cloud process into OAuth-only, CLI, or PAT behavior.
   if (env.CLOUD_MODE) return "app";
@@ -1263,7 +1275,7 @@ export function getGitHubAuthMode(): GitHubAuthMode {
   if (explicit !== "auto") return explicit as GitHubAuthMode;
 
   if (localGitHubAppConfiguration.configured) return "app";
-  return "cli";
+  return undefined;
 }
 
 /**
@@ -1299,11 +1311,8 @@ export async function resolveGitHubAuthMode(ctx: RequestContext): Promise<GitHub
 
 /** Resolve the pre-custom-source mode for an owner not backed by a custom App. */
 async function resolveGitHubFallbackAuthMode(ctx: RequestContext): Promise<GitHubAuthMode> {
-  if (env.CLOUD_MODE) return "app";
-
-  const explicit = env.GITHUB_AUTH_MODE;
-  if (explicit !== "auto") return explicit as GitHubAuthMode;
-  if (localGitHubAppConfiguration.configured) return "app";
+  const configured = configuredGitHubAuthMode();
+  if (configured) return configured;
 
   // Cloud connection is OWNED BY THE ORG OWNER, not the asking user. A
   // member never carries the org's cloud identity — so "cloud-app" must
@@ -1336,12 +1345,8 @@ async function resolveGitHubFallbackAuthMode(ctx: RequestContext): Promise<GitHu
  * `resolveGitHubAuthMode`.
  */
 async function resolveAuthModeForUserId(userId: string): Promise<GitHubAuthMode> {
-  if (env.CLOUD_MODE) return "app";
-
-  const explicit = env.GITHUB_AUTH_MODE;
-  if (explicit !== "auto") return explicit as GitHubAuthMode;
-
-  if (localGitHubAppConfiguration.configured) return "app";
+  const configured = configuredGitHubAuthMode();
+  if (configured) return configured;
 
   try {
     const { isCloudConnected } = await import("../../lib/cloud/session");

@@ -1,0 +1,3 @@
+[install]
+# Keep the shared workspace dependencies and their TypeScript identities unified.
+linker = "hoisted"

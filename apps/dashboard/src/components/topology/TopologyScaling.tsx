@@ -5,6 +5,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import {
   MIN_CPU_CORES,
+  clusterWorkloadNeedsOperator,
   MIN_MEMORY_MB,
   UNKNOWN_CAPACITY,
   formatCpuCores,
@@ -76,16 +77,34 @@ export function TopologyScaling({
   }, [project.id, service?.id, revision]);
 
   const canPlace =
-    project.deployTarget === "server" &&
+    (project.deployTarget === "server" || project.deployTarget === "cloud") &&
     !!project.serverId &&
     project.appTemplateId !== "openship" &&
     !!project.activeDeploymentId;
+  const databaseService =
+    !!service && clusterWorkloadNeedsOperator(service.framework, service.image);
   const staticApplication =
     !service &&
     resolveWorkload(project.options?.workloadType, project.options?.hasServer) === "static";
   return (
     <div className="space-y-5">
-      {!service && !staticApplication && project.appTemplateId !== "openship" && (
+      {service && !databaseService && (
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Instance settings apply to the environment. A separate count for each service is not
+          available yet.
+        </p>
+      )}
+      {databaseService && (
+        <section className="space-y-2 rounded-xl bg-muted/30 p-4">
+          <h3 className="text-sm font-medium">Database replication</h3>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            More application instances do not replicate this database. Use the managed PostgreSQL or
+            Redis flow for synchronized replicas and failover. Duplicating below creates an
+            independent snapshot.
+          </p>
+        </section>
+      )}
+      {!databaseService && !staticApplication && project.appTemplateId !== "openship" && (
         <TopologyClusterScaling
           project={project}
           resources={view?.production}
@@ -117,12 +136,13 @@ export function TopologyScaling({
               >
                 <span className="flex items-center gap-2">
                   <UiIcon name="copy" />
-                  {service ? "Clone service" : "Clone environment"}
+                  {service ? "Duplicate service" : "Duplicate environment"}
                 </span>
                 <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
               </Button>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Independent copy on another server. Data does not stay in sync.
+                Create a separate copy on this server or another one. It has its own data and does
+                not share traffic or stay in sync.
               </p>
               {placementDisabled && (
                 <p className="text-xs text-warning">Apply or discard pending changes first.</p>

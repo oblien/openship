@@ -313,6 +313,14 @@ const cases: Array<{
     input: { environment: "production", upserts: [], deletes: ["TOKEN"] },
     output: { upserted: 0, deleted: 1 },
   },
+  {
+    name: "revealEnv",
+    method: "POST",
+    path: "/env-reveal",
+    input: { keys: ["TOKEN"], environment: "production" },
+    output: { TOKEN: "shared-secret" },
+    envelope: "environment",
+  },
   { name: "getResources", method: "GET", path: "/resources", output: resources, envelope: "data" },
   {
     name: "updateResources",

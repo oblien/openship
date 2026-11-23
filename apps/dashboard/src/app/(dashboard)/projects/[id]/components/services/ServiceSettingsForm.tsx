@@ -323,7 +323,7 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
       >
         {enableAutomationActions && projectContext?.projectData?.gitOwner && <div className="mb-4 space-y-2">
           <p className="text-sm text-muted-foreground">{t.projectSettings.sourceImageUpdate.hint}</p>
-          <RuntimeSourceUpdate projectId={projectContext.id} serviceId={service.id} initialPath={projectContext.buildData.composePath || "docker-compose.yml"} />
+          <RuntimeSourceUpdate projectId={projectContext.id} serviceId={service.id} />
         </div>}
         {isMonorepo ? (
           <>

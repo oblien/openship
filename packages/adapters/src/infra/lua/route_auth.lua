@@ -6,10 +6,11 @@ local cache = require("resty.lrucache").new(1024)
 local M = {}
 local endpoint = "/_openship/access"
 local cookie_name = "__Host-openship_route"
+local basic_cache = require("resty.lrucache").new(1024)
 
 local function policy()
     local raw = ngx.var.openship_route_auth
-    if not raw or #raw > 2048 then return nil end
+    if not raw or #raw > 530000 then return nil end
     local p = cache:get(raw)
     if p then return p end
     p = json.decode(ngx.decode_base64(raw) or "")
@@ -20,12 +21,21 @@ local function policy()
     for _, key in ipairs({ "salt", "verifier", "signingKey" }) do
         if type(p[key]) ~= "string" or #p[key] ~= 64 or p[key]:find("[^0-9a-f]") then return nil end
     end
+    if p.mode ~= nil and p.mode ~= "page" and p.mode ~= "basic" then return nil end
+    if p.username ~= nil and (type(p.username) ~= "string" or #p.username < 1
+        or #p.username > 64 or p.username:find("[^A-Za-z0-9._-]")) then return nil end
+    if p.loginHtml ~= nil then
+        if type(p.loginHtml) ~= "string" or #p.loginHtml > 65536 then return nil end
+        local _, count = p.loginHtml:gsub("{{form}}", "")
+        if count ~= 1 then return nil end
+    end
     p.key = crypto.unhex(p.signingKey)
     cache:set(raw, p)
     return p
 end
 
 local function fail(status, message)
+    ngx.ctx.openship_auth_response = true
     ngx.status = status
     ngx.header["Content-Type"] = "text/plain; charset=utf-8"
     ngx.say(message)
@@ -64,6 +74,7 @@ local function form(p, path, error_message)
     if not safe_path(path) then path = "/" end
     local expires = tostring(ngx.time() + 600)
     local csrf = expires .. "." .. signature(p, "form", expires .. "\n" .. path)
+    ngx.ctx.openship_auth_response = true
     ngx.status = 401
     ngx.header["Content-Type"] = "text/html; charset=utf-8"
     ngx.header["X-Frame-Options"] = "DENY"
@@ -71,21 +82,24 @@ local function form(p, path, error_message)
     -- Preserve Origin on same-origin form POSTs; external referrers stay hidden.
     ngx.header["Referrer-Policy"] = "same-origin"
     ngx.header["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
-    ngx.print([[<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    local default_header = [[<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Private site</title><style>
 *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#111;color:#eee;font:16px system-ui,sans-serif}
 main{width:min(420px,calc(100% - 40px));padding:32px;border-radius:24px;background:#1d1d1d}svg{width:28px;height:28px}
 h1{font-size:24px;margin:20px 0 8px}p{color:#aaa;line-height:1.5}label{display:block;margin:24px 0 8px}
 input,button{width:100%;font:inherit;padding:14px 16px;border-radius:12px}input{background:#111;border:1px solid #444;color:#fff}
-input:focus{outline:2px solid #c9ee89;outline-offset:2px}button{margin-top:16px;background:#d0f38a;color:#111;border:0;font-weight:600;cursor:pointer}
+input:focus{outline:2px solid #eee;outline-offset:2px}button{margin-top:16px;background:#fff;color:#111;border:0;font-weight:600;cursor:pointer}
 .error{color:#ffb4a9}small{display:block;color:#999;margin-top:20px}
 </style><main><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg>
-<h1>This site is private</h1><p>Enter the password shared by the site owner.</p>]])
+<h1>This site is private</h1><p>Enter the password shared by the site owner.</p>]]
+    local before, after = default_header, "<small>Protected by Openship</small></main></html>"
+    if p.loginHtml then before, after = p.loginHtml:match("^(.-){{form}}(.*)$") end
+    ngx.print(before)
     if error_message then ngx.print('<p class="error" role="alert">', escape(error_message), '</p>') end
     ngx.print('<form method="post" action="', endpoint, '"><input type="hidden" name="return" value="', escape(path),
         '"><input type="hidden" name="csrf" value="', csrf,
         '"><label for="password">Site password</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256" autofocus>',
-        '<button type="submit">Continue</button></form><small>Protected by Openship</small></main></html>')
+        '<button type="submit">Continue</button></form>', after)
     return ngx.exit(401)
 end
 
@@ -100,6 +114,57 @@ local function secure_policy()
     return p
 end
 
+local function count(dict, key, limit)
+    local ok, err = dict:safe_add(key, 0, 60)
+    if not ok and err ~= "exists" then return false end
+    local value = dict:incr(key, 1)
+    return value and value <= limit
+end
+
+local function verify_password(p, password)
+    local limits = ngx.shared.route_auth_limits
+    if not limits then return nil, fail(503, "Site protection is temporarily unavailable.") end
+    local bucket = tostring(math.floor(ngx.time() / 60))
+    -- safe_add never evicts another counter. Exhaustion denies sign-in.
+    if not count(limits, "all:" .. bucket, 30)
+        or not count(limits, "ip:" .. ngx.var.remote_addr .. ":" .. p.version .. ":" .. bucket, 5) then
+        ngx.header["Retry-After"] = "60"
+        return nil, fail(429, "Too many sign-in attempts. Try again in a minute.")
+    end
+    -- Two expensive verifications at a time across ALL nginx workers. A short
+    -- lease recovers after a worker dies. The thread pool also has a bounded queue.
+    local slot
+    for i = 1, 2 do
+        local key = "busy:" .. i
+        if limits:safe_add(key, true, 60) then slot = key; break end
+    end
+    if not slot then
+        ngx.header["Retry-After"] = "2"
+        return nil, fail(429, "Sign-in is busy. Try again shortly.")
+    end
+    local ok, verified = ngx.run_worker_thread("openship_password", "openship.route_auth_crypto",
+        "verify_password", password, p.salt, p.verifier)
+    limits:delete(slot)
+    if not ok then return nil, fail(503, "Site protection is temporarily unavailable.") end
+    return verified
+end
+
+local function session_cookie()
+    local found, duplicate
+    local keep = {}
+    for part in (ngx.var.http_cookie or ""):gmatch("[^;]+") do
+        local key, value = part:match("^%s*([^= ]+)=([^;]*)$")
+        if key == cookie_name then
+            if found then duplicate = true end
+            found = value
+        else keep[#keep + 1] = part end
+    end
+    -- Our cookie belongs only to the edge, including after switching to Basic.
+    if #keep == 0 then ngx.req.clear_header("Cookie")
+    else ngx.req.set_header("Cookie", table.concat(keep, ";")) end
+    return found, duplicate
+end
+
 function M.guard()
     -- Verification tokens do not serve project content. Login has its own exact
     -- location. No prefix exemption for hooks, static assets, APIs or WebSockets.
@@ -111,21 +176,34 @@ function M.guard()
     if not p then return end
     -- Internal redirects cannot reset the decision or pass our cookie upstream.
     if ngx.var.openship_route_authorized == p.version then return end
-    local found, duplicate
-    local keep = {}
-    for part in (ngx.var.http_cookie or ""):gmatch("[^;]+") do
-        local key, value = part:match("^%s*([^= ]+)=([^;]*)$")
-        if key == cookie_name then
-            if found then duplicate = true end
-            found = value
-        else
-            keep[#keep + 1] = part
+    local found, duplicate = session_cookie()
+    if p.mode == "basic" then
+        local authorization = ngx.var.http_authorization or ""
+        local encoded = #authorization <= 512 and authorization:match("^[Bb][Aa][Ss][Ii][Cc] +([A-Za-z0-9+/=]+)$")
+        local credentials = encoded and ngx.decode_base64(encoded)
+        local username, password
+        if credentials then username, password = credentials:match("^([^:]+):(.*)$") end
+        if username == (p.username or "visitor") and password and #password <= 256 then
+            -- Cache only a keyed digest, scoped to this host and policy revision.
+            -- Rotation invalidates every entry without storing plaintext credentials.
+            local key = signature(p, "basic", credentials)
+            local verified = basic_cache:get(key)
+            if not verified then
+                verified = verify_password(p, password)
+                if verified == nil then return end
+                if verified then basic_cache:set(key, true, 300) end
+            end
+            if verified then
+                ngx.var.openship_route_authorized = p.version
+                ngx.req.clear_header("Authorization")
+                return
+            end
         end
+        ngx.header["WWW-Authenticate"] = 'Basic realm="Private site", charset="UTF-8"'
+        return fail(401, "Authentication required.")
     end
     if not duplicate and valid_token(p, "session", found, nil, p.sessionSeconds) then
         ngx.var.openship_route_authorized = p.version
-        if #keep == 0 then ngx.req.clear_header("Cookie")
-        else ngx.req.set_header("Cookie", table.concat(keep, ";")) end
         return
     end
     local method = ngx.req.get_method()
@@ -136,16 +214,14 @@ function M.guard()
     return fail(401, "This site requires a password. Open it in a browser to sign in.")
 end
 
-local function count(dict, key, limit)
-    local ok, err = dict:safe_add(key, 0, 60)
-    if not ok and err ~= "exists" then return false end
-    local value = dict:incr(key, 1)
-    return value and value <= limit
-end
 
 function M.login()
     local p = secure_policy()
     if not p then return end
+    if p.mode == "basic" then
+        ngx.header["WWW-Authenticate"] = 'Basic realm="Private site", charset="UTF-8"'
+        return fail(401, "Use browser authentication to access this site.")
+    end
     if ngx.req.get_method() ~= "POST" then return form(p, "/") end
     if ngx.var.http_origin ~= "https://" .. ngx.var.host
         and ngx.var.http_origin ~= "https://" .. ngx.var.host .. ":" .. ngx.var.server_port then
@@ -162,31 +238,9 @@ function M.login()
         or not valid_token(p, "form", args.csrf, "\n" .. args["return"], 600) then
         return fail(400, "The sign-in form expired. Reload this page.")
     end
-    local limits = ngx.shared.route_auth_limits
-    if not limits then return fail(503, "Site protection is temporarily unavailable.") end
-    local bucket = tostring(math.floor(ngx.time() / 60))
-    -- safe_add never evicts another counter. Exhaustion denies sign-in.
-    if not count(limits, "all:" .. bucket, 30)
-        or not count(limits, "ip:" .. ngx.var.remote_addr .. ":" .. p.version .. ":" .. bucket, 5) then
-        ngx.header["Retry-After"] = "60"
-        return fail(429, "Too many sign-in attempts. Try again in a minute.")
-    end
-    -- Two expensive verifications at a time across ALL nginx workers. A short
-    -- lease recovers after a worker dies. The thread pool also has a bounded queue.
-    local slot
-    for i = 1, 2 do
-        local key = "busy:" .. i
-        if limits:safe_add(key, true, 60) then slot = key; break end
-    end
-    if not slot then
-        ngx.header["Retry-After"] = "2"
-        return fail(429, "Sign-in is busy. Try again shortly.")
-    end
-    local ok, verified = ngx.run_worker_thread("openship_password", "openship.route_auth_crypto",
-        "verify_password", args.password, p.salt, p.verifier)
+    local verified = verify_password(p, args.password)
     args.password = nil
-    limits:delete(slot)
-    if not ok then return fail(503, "Site protection is temporarily unavailable.") end
+    if verified == nil then return end
     if not verified then return form(p, args["return"], "That password is incorrect. Please try again.") end
     local expires = tostring(ngx.time() + p.sessionSeconds)
     ngx.header["Set-Cookie"] = cookie_name .. "=" .. token(p, "session", expires)

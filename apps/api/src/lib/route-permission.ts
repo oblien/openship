@@ -25,18 +25,15 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next, MiddlewareHandler } from "hono";
 import type { TSchema } from "@sinclair/typebox";
-import { NotFoundError, capabilityFor, capabilityRoot, normalizeRepoPath } from "@repo/core";
+import { GIT_PROVIDERS, gitProviderForRoot, NotFoundError, capabilityFor, capabilityRoot, normalizeRepoPath } from "@repo/core";
 import { permission, ORG_SINGLETON_RESOURCES, isCheckedResourceType, type CheckedResourceType } from "./permission";
 import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
 import { repos } from "@repo/db";
 import { audit, auditContextFrom } from "./audit";
 import { resolveTrustedCallSource } from "./call-source";
-import {
-  canUseGitHubRepo,
-  checkSourceTier,
-  type SourceTier,
-} from "@repo/platform/engine/modules/github/github-access";
+import { getGitProvider } from "@repo/platform/engine/modules/git/provider";
+import type { GitSourceTier } from "@repo/platform/engine/modules/git/capabilities";
 import type { PolicyId } from "./rate-limit/policies";
 import { resolveResourceAuthority, type CloudResourceType } from "@repo/platform/engine/lib/cloud/resource-authority";
 import { assertCloudProxyScope } from "@repo/platform/engine/lib/cloud/scope";
@@ -104,7 +101,8 @@ const ROOT_RESOURCES = new Set<string>([
   "billing",
   "audit",
   "analytics",
-  "github",
+  ...GIT_PROVIDERS.map(({ grantTypes }) => grantTypes.root),
+  "git",
   "permissions",
   "domain",
   "settings",
@@ -276,6 +274,8 @@ export interface McpRouteMeta {
   description: string;
   /** Override the inferred hint for actions such as destructive migration cutover. */
   destructive?: boolean;
+  /** Whether this tool may interact with external systems; defaults to true. */
+  openWorld?: boolean;
 }
 
 export interface PermissionSpec {
@@ -299,7 +299,7 @@ export interface PermissionSpec {
    * `test/lib/github-source-tier.test.ts` is the ratchet: add a content-serving
    * github route without a tier and it fails.
    */
-  source?: SourceTier;
+  source?: GitSourceTier;
   /**
    * Per-route rate-limit policy. When set, the rate-limit middleware
    * uses this policy instead of `default-authed`. See
@@ -474,13 +474,10 @@ export function isPublicSpec(spec: RouteSpec): spec is PublicSpec {
  * Be precise about what that org-wide check buys, because it is easy to misread as
  * a defense it is not: it is strict only for a RESTRICTED principal (a scoped
  * token), which needs an all-GitHub grant to pass. For a session-authenticated
- * owner/admin/**member** it is satisfied by bare membership —
- * `roleAllowsResourceType` (permission.ts) ignores the action level for those
- * roles, so `github:admin` is no higher a bar than `github:read`. The per-repo,
- * read-vs-write authority for those principals is enforced ONLY by
- * `github-access.ts` at the token funnel and at the mutating service helpers.
- * Reading this comment as "the route layer already gates writes" is what let
- * GHSA-hp2g-hw7g-f3vm sit behind a `github:admin` tag.
+ * owner/admin it is satisfied by broad membership authority. Ordinary members
+ * cannot satisfy an admin action. Per-repo read/write authority still belongs
+ * to `github-access.ts` at the token funnel and mutating service helpers; an
+ * org-wide tag never substitutes for that repository-specific check.
  * Paramless GitHub routes (/home, /status, /repos) also stay on the org-wide
  * path: `filterToolsForPrincipal` already hides them from a scoped token via
  * `perm.wildcard`, and their handlers narrow results through
@@ -488,17 +485,18 @@ export function isPublicSpec(spec: RouteSpec): spec is PublicSpec {
  *
  * Exported for the regression test that pins this invariant.
  */
-export function githubReadTarget(
+export function repositoryReadTarget(
   parsed: ParsedTag,
   c: Context,
-): { owner: string; repo: string | null; key: string } | null {
-  if (parsed.leaf !== "github") return null;
+): { provider: string; owner: string; repo: string | null; key: string } | null {
+  const provider = gitProviderForRoot(parsed.leaf);
+  if (!provider) return null;
   if (parsed.action !== "read" && parsed.action !== "list") return null;
   // ":owner" on /repos/:owner/:repo…, ":org" on /orgs/:org/repos.
   const owner = c.req.param("owner") ?? c.req.param("org");
   if (!owner) return null;
   const repo = c.req.param("repo") ?? null;
-  return { owner, repo, key: repo ? `${owner}/${repo}` : owner };
+  return { provider: provider.id, owner, repo, key: repo ? `${owner}/${repo}` : owner };
 }
 
 /* ------------------------------------------------------------------ */
@@ -534,28 +532,29 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     let leafId: string | undefined;
 
-    const ghTarget = githubReadTarget(parsed, c);
+    const repoTarget = repositoryReadTarget(parsed, c);
 
     if (spec.authorizationHandledByOperation) {
       // The operation receives the authenticated context and performs the same
       // target authorization as a native call, before invoking retained services.
       leafId = "*";
-    } else if (ghTarget) {
+    } else if (repoTarget) {
       // Authorize against the caller's ACTUAL GitHub grant width instead of
-      // the unsatisfiable {github,"*"} singleton check — see githubReadTarget.
+      // the unsatisfiable {github,"*"} singleton check — see repositoryReadTarget.
       // `canUseGitHubRepo` gates membership itself and short-circuits to allow
       // for a non-scoped owner, so relative to the old path this narrows
       // (an ungranted member is now stopped at the gate rather than opaquely
       // downstream in tokenFor) and never widens.
-      const allowed = await canUseGitHubRepo(
+      const { access } = getGitProvider(repoTarget.provider);
+      const allowed = await access.canUse(
         getRequestContext(c),
-        { owner: ghTarget.owner, repo: ghTarget.repo },
+        { owner: repoTarget.owner, repo: repoTarget.repo },
         parsed.action === "list" ? "list" : "read",
       );
       // NotFoundError over 403 to match the IDOR-safe convention used
       // throughout this middleware — and it names the repo actually
       // requested rather than a bare "*".
-      if (!allowed) throw new NotFoundError("github", ghTarget.key);
+      if (!allowed) throw new NotFoundError(repoTarget.provider, repoTarget.key);
 
       // Second gate: may they reach this SURFACE of the repo? Passing the check
       // above only means "may use this repo at all" (deploy, branches, detect).
@@ -577,19 +576,19 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
         // null ⇒ traversal / NUL / backslash / over-length: refuse, never resolve.
         const path = normalizeRepoPath(rawPath);
         if (path === null) {
-          throw new NotFoundError("github", `${ghTarget.key}/${rawPath}`);
+          throw new NotFoundError(repoTarget.provider, `${repoTarget.key}/${rawPath}`);
         }
 
-        const { ok, readPaths } = await checkSourceTier(
+        const { ok, readPaths } = await access.checkSource(
           getRequestContext(c),
-          { owner: ghTarget.owner, repo: ghTarget.repo },
+          { owner: repoTarget.owner, repo: repoTarget.repo },
           spec.source,
           path,
         );
         if (!ok) {
           // Name the path, not just the repo — the caller may legitimately hold
           // the repo and only be missing this subtree.
-          throw new NotFoundError("github", path ? `${ghTarget.key}/${path}` : ghTarget.key);
+          throw new NotFoundError(repoTarget.provider, path ? `${repoTarget.key}/${path}` : repoTarget.key);
         }
         // Hand the allow-list to the handler so a tree listing can filter its
         // entries without resolving the grant a second time, and the authorised
@@ -598,7 +597,7 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
         c.set("sourcePath", path);
       }
 
-      leafId = ghTarget.key;
+      leafId = repoTarget.key;
     } else if (spec.collectionProject) {
       if (spec.collectionProject === "query" || spec.collectionProject === "optional-query") {
         // GET collections carry the same explicit project scope in the query.

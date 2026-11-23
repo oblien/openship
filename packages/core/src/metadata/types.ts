@@ -13,6 +13,7 @@
  */
 
 import type { ProxySettings } from "../proxy-settings";
+import type { ProjectEdgePages } from "../edge-pages";
 
 export type DeploymentMetadataSource =
   | "openship"
@@ -52,6 +53,8 @@ export interface DeploymentHeaderRule {
  * project and compiled to the reverse-proxy (OpenResty) at deploy time.
  */
 export interface RoutingConfig {
+  /** Saved independently of repository routing hints; HTML is served by our edge. */
+  edgePages?: ProjectEdgePages;
   rewrites?: DeploymentRewrite[];
   redirects?: DeploymentRedirect[];
   headers?: DeploymentHeaderRule[];

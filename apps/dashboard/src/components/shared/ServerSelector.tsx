@@ -18,6 +18,7 @@ import { dockerMigrationApi } from "@/lib/api/server-migration";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { matchesServer } from "@/lib/server-reference";
 import { sortForGpu } from "@/lib/server-gpu";
+import type { DeployDestination } from "@repo/core";
 
 export interface ServerOption {
   id: string;
@@ -53,6 +54,8 @@ export interface ServerSelectorProps {
    */
   needsGpu?: boolean;
   selfHostedOnly?: boolean;
+  /** Explicit destination choice from the public deploy button; never a saved project's binding. */
+  destinationKind?: DeployDestination;
 }
 
 function option(server: ServerDetail | ServerInfo): ServerOption {
@@ -92,20 +95,28 @@ export function useServerSelection({
   migrationSource = false,
   needsGpu = false,
   selfHostedOnly = false,
+  destinationKind,
 }: ServerSelectorProps, enabled = true) {
   const { selfHosted, deployMode } = usePlatform();
   const restrictedSource = migrationSource && !selfHosted;
+  const connectedOnly = selfHostedOnly || requiredCapability === "ssh" || restrictedSource || destinationKind === "server";
+  const requiresExplicitChoice = forDeployment && destinationKind === "server";
+  const shouldUseSavedDefault = useSavedDefault && !requiresExplicitChoice;
   const { data, loading: destinationsLoading, error, refresh, contextKey, resourceKey } = useServerDestinations(enabled && !readOnly, restrictedSource ? "migration-source" : "deployment");
   const [linking, setLinking] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [preference, setPreference] = useState<{ contextKey: string; serverId: string | null } | null>(null);
-  const loadingPreference = useSavedDefault && !readOnly && preference?.contextKey !== contextKey;
+  const loadingPreference = shouldUseSavedDefault && !readOnly && preference?.contextKey !== contextKey;
   const loading = destinationsLoading || loadingPreference || linking;
   const [internalId, setInternalId] = useState<string | null>(null);
   const autoSelected = useRef(false);
   const canAddServer = true;
-  const openAddServer = useAddServerModal({ connectedOnly: selfHostedOnly || requiredCapability === "ssh" || restrictedSource, migrationSource: restrictedSource });
+  const openAddServer = useAddServerModal({
+    connectedOnly,
+    migrationSource: restrictedSource,
+    initialMode: destinationKind === "server" ? "connected" : destinationKind === "cloud" ? "managed" : undefined,
+  });
   const requestedId = value === undefined ? internalId : value;
   const selectedId = data?.servers.find(server => matchesServer(server, requestedId))?.id ?? requestedId;
   const onSelectRef = useRef(onSelect);
@@ -151,7 +162,7 @@ export function useServerSelection({
   }
 
   useEffect(() => {
-    if (!enabled || readOnly || !useSavedDefault) return;
+    if (!enabled || readOnly || !shouldUseSavedDefault) return;
     let active = true;
     void settingsApi.get().then(
       (settings) => { if (active) setPreference({ contextKey, serverId: settings.defaultServerId }); },
@@ -160,9 +171,11 @@ export function useServerSelection({
  if (active) setPreference({ contextKey, serverId: null }); },
     );
     return () => { active = false; };
-  }, [enabled, readOnly, useSavedDefault, contextKey]);
+  }, [enabled, readOnly, shouldUseSavedDefault, contextKey]);
 
   const rows = sortForGpu(data?.servers ?? [], needsGpu).filter((server) => {
+    if (destinationKind === "cloud" && !server.managed) return false;
+    if (destinationKind === "server" && server.managed) return false;
     if (selfHostedOnly && server.managed) return false;
     if (!restrictedSource && requiredCapability && !server.capabilities?.[requiredCapability]) return false;
     if (excludeIds?.includes(server.id)) return false;
@@ -175,10 +188,11 @@ export function useServerSelection({
   });
   const ids = rows.map((row) => row.id).join(",");
   const automaticCloud =
-    !selfHostedOnly && !selfHosted && forDeployment && data?.servers.length === 0 && !selectedId;
+    destinationKind !== "server" && !selfHostedOnly && !selfHosted && forDeployment &&
+    (destinationKind === "cloud" ? rows.length === 0 : data?.servers.length === 0) && !selectedId;
   useEffect(() => {
     if (
-      !enabled || disabled || readOnly || loading || error ||
+      !enabled || disabled || readOnly || loading || error || requiresExplicitChoice ||
       selectedId ||
       (!autoSelectFirst && value === null) ||
       autoSelected.current
@@ -189,16 +203,22 @@ export function useServerSelection({
       onSelectRef.current(null);
     } else if (rows.length === 1 || (autoSelectFirst && rows.length > 0)) {
       autoSelected.current = true;
-      const remembered = useSavedDefault ? serverPreference(contextKey).read() : null;
-      const preferred = rows.find(row => row.id === preference?.serverId)
-        ?? rows.find(row => row.id === remembered)
-        ?? (useSavedDefault ? rows.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
-        ?? rows[0]!;
+      const remembered = shouldUseSavedDefault ? serverPreference(contextKey).read() : null;
+      // A checkout can leave a Cloud space in the inventory before it can host
+      // projects. Keep it available for manual selection and first-plan setup.
+      const hasDeploymentServer = !selfHosted && forDeployment && rows.some(({ connection, managed }) =>
+        connection === "ssh" || (managed && !managed.connectionIssue && ["ready", "running", "active"].includes(managed.state)),
+      );
+      const defaults = hasDeploymentServer ? rows.filter(row => row.managed?.state !== "needs_plan") : rows;
+      const preferred = defaults.find(row => row.id === preference?.serverId)
+        ?? defaults.find(row => row.id === remembered)
+        ?? (shouldUseSavedDefault ? defaults.find(row => deployMode === "desktop" && !DESKTOP_LOCAL_DEPLOY_ENABLED ? !row.isLocal : row.isLocal) : undefined)
+        ?? defaults[0]!;
       void selectServer(preferred);
     }
-  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, useSavedDefault, preference, deployMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, enabled, disabled, readOnly, loading, error, selectedId, autoSelectFirst, value, contextKey, automaticCloud, shouldUseSavedDefault, preference, deployMode, requiresExplicitChoice]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && (
+  const selectionReady = enabled && (readOnly ? Boolean(selectedId) : !loading && !error && !(forDeployment && actionError) && (
     automaticCloud || rows.some((server) => server.id === selectedId && server.managed?.state !== "deleting")
   ));
   useEffect(() => {
@@ -215,6 +235,7 @@ export function useServerSelection({
         return;
       }
       autoSelected.current = true;
+      setActionError(null);
       setInternalId(server.id);
       onSelectRef.current(option(server));
       refresh();
@@ -243,7 +264,8 @@ export function useServerSelection({
     rows, selectedId, selected: rows.find(server => server.id === selectedId),
     loading, error, refresh, automaticCloud, ready: selectionReady,
     disabled, readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
-    restrictedSource, removeSource, removing, actionError,
+    restrictedSource, connectedOnly, removeSource, removing, actionError,
+    requiresExplicitChoice, resourceKey,
     remember: () => { if (selectionReady && selectedId) serverPreference(contextKey).write(selectedId); },
   };
 }
@@ -256,7 +278,8 @@ export function ServerSelectorView({
   label,
   compact = false,
   emptyHint,
-}: Pick<ServerSelectorProps, "label" | "compact" | "emptyHint"> & { selection: ServerSelection }) {
+  deploymentReview = false,
+}: Pick<ServerSelectorProps, "label" | "compact" | "emptyHint"> & { selection: ServerSelection; deploymentReview?: boolean }) {
   const { t } = useI18n();
   const copy = t.widgets.shared.serverSelector;
   const managedCopy = t.billing.workspaces;
@@ -264,11 +287,11 @@ export function ServerSelectorView({
   const {
     rows, selectedId, loading, error, refresh, automaticCloud, disabled,
     readOnly, selectedName, disabledReason, forDeployment, canAddServer, addServer, select,
-    restrictedSource, removeSource, removing, actionError,
+    restrictedSource, connectedOnly, removeSource, removing, actionError,
   } = selection;
   const effective = selectedId ?? "";
-  const fieldLabel = label ?? (!selfHosted && !restrictedSource ? "Deployment destination" : copy.serverLabel);
-  const addLabel = restrictedSource ? t.migration.sources.connect : !selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer;
+  const fieldLabel = label ?? (!selfHosted && !connectedOnly ? "Deployment destination" : copy.serverLabel);
+  const addLabel = restrictedSource ? t.migration.sources.connect : !selfHosted && forDeployment && !connectedOnly ? managedCopy.newProjectServer : copy.addNewServer;
   return (
     <div className={compact ? "space-y-2" : "mb-5 space-y-2"}>
       {!compact && (
@@ -302,6 +325,8 @@ export function ServerSelectorView({
           showLabel={false}
           selectedId={effective}
           servers={rows}
+          details={deploymentReview ? "plan" : "capacity"}
+          showStatus={deploymentReview}
           disabled={disabled}
           onSelect={server => select(server.id)}
           onAddServer={canAddServer && !disabled && !disabledReason ? addServer : undefined}
@@ -310,7 +335,7 @@ export function ServerSelectorView({
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/30 p-4">
           <p className="min-w-0 text-sm text-muted-foreground">
-            {emptyHint ?? (restrictedSource ? t.migration.sources.empty : selfHosted ? copy.noServerConnected : managedCopy.noneAvailable)}
+            {emptyHint ?? (restrictedSource ? t.migration.sources.empty : selfHosted || connectedOnly ? copy.noServerConnected : managedCopy.noneAvailable)}
           </p>
           <Button
             type="button"
@@ -329,7 +354,7 @@ export function ServerSelectorView({
           <p className="text-xs text-muted-foreground">{disabledReason}</p>
         ) : !disabled && (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            {!selfHosted && (
+            {!deploymentReview && !selfHosted && !connectedOnly && (
               <p className="text-xs text-muted-foreground">
                 {restrictedSource ? t.migration.sources.hint : forDeployment && !automaticCloud ? managedCopy.existingServerHint : managedCopy.subscriptionHint}
               </p>

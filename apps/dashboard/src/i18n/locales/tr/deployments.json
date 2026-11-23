@@ -202,6 +202,20 @@
     "pageOf": "Sayfa {page} / {total}",
     "range": "{total} dağıtımdan {from}–{to}"
   },
+  "registryAccess": {
+    "title": "İmaja erişim reddedildi",
+    "description": "Bu imajın var olduğunu doğrulayın. Ayarlar → Bağlantılar → Konteyner kayıt deposu bölümünde kayıt deposu kimlik bilgisini ekleyin veya güncelleyin ve bu imajı çekme izni verin.",
+    "githubHint": "GitHub klonlama ve konteyner kayıt deposu kimlik bilgileri ayrıdır. GHCR için read:packages ve paket erişimi olan klasik bir token kullanın; kuruluşunuz gerektiriyorsa SSO yetkisi verin.",
+    "retryHint": "Kaydettikten sonra en güncel imajı almak için imajları yenileyip yeniden dağıtın.",
+    "manageAccess": "Kayıt deposu erişimini yönet"
+  },
+  "containerConflict": {
+    "title": "Yinelenen kapsayıcıları çözün",
+    "description": "Hedef sunucudaki kapsayıcıları ve bağlı birimlerini inceleyin. Kullanılacak kapsayıcıyı ve verilerini koruyun, yalnızca kullanılmadığını doğruladığınız kopyayı kaldırın ve yeniden dağıtın. Hangisini koruyacağınızdan emin değilseniz bu dağıtım referansıyla destek ekibine ulaşın.",
+    "containers": "Eşleşen kapsayıcılar",
+    "reviewServer": "Sunucuyu incele",
+    "reference": "Dağıtım referansı"
+  },
   "resourceGuidance": {
     "label": "Dağıtım kaynak rehberi",
     "reviewCapacity": "Kapasiteyi incele",

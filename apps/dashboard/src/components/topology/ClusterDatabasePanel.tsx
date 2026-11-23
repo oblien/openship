@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useRef, useState, type ComponentProps } from "react";
@@ -497,7 +498,7 @@ function ClusterDatabasePanelContent({
             )}
             {!database && config.engine === "postgres" && (
               <details className="text-sm">
-                <summary className="cursor-pointer text-muted-foreground">Database version</summary>
+                <DisclosureSummary className="cursor-pointer text-muted-foreground">Database version</DisclosureSummary>
                 <div className="mt-3">
                   <CustomSelect
                     variant="filled"
@@ -1086,7 +1087,7 @@ function ClusterDatabasePanelContent({
               sourceDatabaseId={database.id}
             />
             <details className="rounded-xl bg-muted/30 p-3 text-sm">
-              <summary className="cursor-pointer">Connection and storage details</summary>
+              <DisclosureSummary className="cursor-pointer">Connection and storage details</DisclosureSummary>
               <dl className="mt-3 space-y-3 text-xs">
                 <div>
                   <dt className="text-muted-foreground">Private host</dt>
@@ -1113,7 +1114,7 @@ function ClusterDatabasePanelContent({
               </dl>
             </details>
             <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Setup history</summary>
+              <DisclosureSummary className="cursor-pointer text-muted-foreground">Setup history</DisclosureSummary>
               <div className="mt-3 max-h-64 space-y-2 overflow-y-auto text-xs">
                 {database.progress.logs.map((entry, index) => (
                   <p

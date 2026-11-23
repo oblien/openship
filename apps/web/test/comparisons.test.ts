@@ -1,0 +1,130 @@
+import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { resolvePlan } from "@repo/core";
+import { APP_LOCALES } from "@repo/core/locale";
+import { createTranslator } from "next-intl";
+import {
+  COMPARISONS,
+  COMPARISON_GROUPS,
+  comparisonName,
+  getComparison,
+} from "../src/lib/comparisons";
+import { MIGRATION_SOURCES } from "../src/lib/migration-sources";
+import { createCopy, messageKey } from "../src/i18n/copy";
+import { isLocalizedPath, languageAlternates, localizedHref } from "../src/i18n/routing";
+import { CLOUD_SLA, cloudSlaPlanSummary, cloudSlaUptimePercent } from "../src/lib/cloud-service";
+
+describe("comparison and policy publishing", () => {
+  test("comparison URLs are unique, explicit and reject unknown providers", () => {
+    const slugs = COMPARISONS.map((item) => item.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    expect(slugs).toContain("vercel");
+    expect(slugs).toContain("railway");
+    expect(slugs).toContain("coolify");
+    expect(slugs).toContain("self-managed-vps");
+    for (const item of COMPARISONS) {
+      expect(item.slug).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      expect(getComparison(item.slug)).toBe(item);
+      expect(COMPARISON_GROUPS.some((group) => group.id === item.group)).toBe(true);
+      expect(item.sources.length).toBeGreaterThan(0);
+      for (const source of item.sources) expect(new URL(source.href).protocol).toBe("https:");
+    }
+    expect(getComparison("unknown-provider")).toBeUndefined();
+    expect(getComparison("../coolify")).toBeUndefined();
+  });
+
+  test("every migration action has an existing guide, including manual migrations", () => {
+    for (const { migration } of COMPARISONS) {
+      if (migration.href.startsWith("/docs/")) {
+        expect(existsSync(new URL(`../content${migration.href}.mdx`, import.meta.url))).toBe(true);
+      } else if (migration.href === "/migrate/from-git") {
+        expect(
+          existsSync(
+            new URL(
+              "../src/app/(site)/[locale]/(marketing)/migrate/from-git/page.tsx",
+              import.meta.url,
+            ),
+          ),
+        ).toBe(true);
+      } else {
+        expect(
+          MIGRATION_SOURCES.some((source) => `/migrate/${source.slug}` === migration.href),
+        ).toBe(true);
+      }
+    }
+    for (const slug of [
+      "render",
+      "heroku",
+      "netlify",
+      "fly-io",
+      "digitalocean-app-platform",
+      "caprover",
+    ]) {
+      expect(getComparison(slug)?.migration.href).toBe("/migrate/from-git");
+    }
+  });
+
+  for (const locale of APP_LOCALES) {
+    test(`${locale} has translated provider guidance and working language alternates`, () => {
+      const messages = JSON.parse(
+        readFileSync(new URL(`../src/i18n/messages/${locale}.json`, import.meta.url), "utf8"),
+      );
+      const copy = createCopy(createTranslator({ locale, messages, namespace: "Copy" }));
+      const paths = ["/compare", "/sla", "/migrate/from-git"];
+      for (const item of COMPARISONS) {
+        paths.push(`/compare/${item.slug}`);
+        const texts = [
+          item.summary,
+          item.strength,
+          item.reason,
+          item.runtime,
+          item.migration.method,
+          item.migration.preparation,
+        ];
+        for (const source of texts) {
+          expect(messages.Copy[messageKey(source)]).toBeTruthy();
+          if (locale !== "en") expect(copy(source)).not.toBe(source);
+        }
+        const title = copy("OpenShip vs {name}", { name: comparisonName(item, copy) });
+        expect(title).not.toContain("{name}");
+        expect(title).toContain("OpenShip");
+      }
+      for (const path of paths) {
+        expect(isLocalizedPath(path)).toBe(true);
+        const alternates = languageAlternates(path);
+        expect(alternates[locale]).toBe(`https://openship.io${localizedHref(path, locale)}`);
+        expect(alternates["x-default"]).toBe(`https://openship.io${path}`);
+        expect(Object.keys(alternates)).toHaveLength(APP_LOCALES.length + 1);
+      }
+    });
+  }
+
+  test("the public SLA assigns uptime by plan and improves credit coverage", () => {
+    expect(CLOUD_SLA.termsHref).toBe("/sla");
+    expect(cloudSlaUptimePercent("hobby")).toBe(99);
+    expect(cloudSlaUptimePercent("starter")).toBe(99);
+    expect(cloudSlaUptimePercent("pro")).toBe(99.9);
+    expect(cloudSlaUptimePercent("team")).toBe(99.9);
+    expect(cloudSlaUptimePercent("enterprise")).toBe(99);
+    expect(CLOUD_SLA.creditTiers).toEqual([
+      { minimumUptimePercent: 98.5, creditPercent: 10 },
+      { minimumUptimePercent: 95, creditPercent: 25 },
+      { minimumUptimePercent: 0, creditPercent: 100 },
+    ]);
+    expect(CLOUD_SLA.claimWindowDays).toBe(30);
+  });
+
+  test("every marketing locale renders the plan commitments without unresolved placeholders", () => {
+    for (const locale of APP_LOCALES) {
+      const { Copy: messages } = JSON.parse(
+        readFileSync(new URL(`../src/i18n/messages/${locale}.json`, import.meta.url), "utf8"),
+      );
+      const copy = createCopy(createTranslator({ locale, messages }));
+      const summary = cloudSlaPlanSummary(copy);
+      expect(summary).not.toContain("{");
+      for (const id of ["hobby", "starter", "pro", "team"] as const) {
+        expect(summary).toContain(resolvePlan(id, locale).name);
+      }
+    }
+  });
+});

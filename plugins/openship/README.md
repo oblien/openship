@@ -108,3 +108,9 @@ These are repository-distributed plugins, not public directory listings. Public 
 submission and browser OAuth testing in each target client remain separate steps. See the
 [Codex packaging guide](https://developers.openai.com/plugins/build/plugins) and
 [Claude Code plugin reference](https://code.claude.com/docs/en/plugins-reference).
+
+For the public ChatGPT/Codex directory, upload a ZIP of this folder at
+[OpenAI Platform → Plugins](https://platform.openai.com/plugins) and choose **With MCP**.
+The package includes the Cloud endpoint, OAuth settings, listing links, icon, and skills.
+Uploading creates a draft; directory publication follows verification, review, and approval.
+See [SUBMISSION.md](SUBMISSION.md) for the remaining account-specific steps and test scenarios.

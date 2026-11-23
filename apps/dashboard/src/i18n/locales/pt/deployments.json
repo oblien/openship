@@ -202,6 +202,20 @@
     "pageOf": "Página {page} de {total}",
     "range": "Implantações {from}–{to} de {total}"
   },
+  "registryAccess": {
+    "title": "Acesso à imagem negado",
+    "description": "Verifique se esta imagem existe. Em Configurações → Conexões → Registro de contêineres, adicione ou atualize a credencial do registro e conceda permissão para baixar esta imagem.",
+    "githubHint": "As credenciais de clonagem do GitHub são separadas das credenciais do registro de contêineres. No GHCR, use um token clássico com read:packages e acesso ao pacote; autorize o SSO se sua organização exigir.",
+    "retryHint": "Após salvar, use Atualizar imagens e reimplantar para baixar a imagem mais recente.",
+    "manageAccess": "Gerenciar acesso ao registro"
+  },
+  "containerConflict": {
+    "title": "Resolver contêineres duplicados",
+    "description": "Inspecione os contêineres e seus volumes montados no servidor de destino. Mantenha o contêiner correto e seus dados, remova apenas uma duplicata confirmada como não utilizada e implante novamente. Em caso de dúvida sobre qual manter, contate o suporte com esta referência da implantação.",
+    "containers": "Contêineres correspondentes",
+    "reviewServer": "Revisar servidor",
+    "reference": "Referência da implantação"
+  },
   "resourceGuidance": {
     "label": "Orientações sobre recursos da implantação",
     "reviewCapacity": "Revisar capacidade",

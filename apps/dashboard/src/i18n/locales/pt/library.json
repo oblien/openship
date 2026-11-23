@@ -12,6 +12,7 @@
     "title": "Novo Projeto",
     "subtitle": "Implante um app ou importe seu próprio projeto.",
     "tabs": {
+      "repositories": "Repositórios",
       "folder": "Pasta",
       "github": "GitHub",
       "templates": "Modelos",
@@ -36,7 +37,7 @@
       "copyCode": "Clique para copiar"
     },
     "default": {
-      "title": "Conecte o GitHub para implantar",
+      "title": "Conecte o {provider} para implantar",
       "descSelfHosted": "Escolha como o OpenShip acessa seus repositórios.",
       "descSaas": "Vincule sua conta do GitHub para navegar pelos repositórios e implantar a cada push.",
       "recommended": "Recomendado",
@@ -144,7 +145,7 @@
       "name": "Nome",
       "stars": "Estrelas"
     },
-    "addAccount": "Adicionar conta do GitHub",
+    "addAccount": "Adicionar conta do {provider}",
     "installTitle": "Instalar o GitHub App",
     "installDesc": "Instale o GitHub App na sua conta ou organização para conceder acesso aos seus repositórios.",
     "installButton": "Instalar o GitHub App",
@@ -174,8 +175,6 @@
     "total": "Total",
     "public": "Públicos",
     "private": "Privados",
-    "quickTip": "Dica Rápida",
-    "quickTipDesc": "Selecione qualquer repositório para implantá-lo instantaneamente. Configure implantações automáticas a cada push.",
     "connection": "Conexão",
     "openshipGithubApp": "OpenShip GitHub App",
     "connected": "Conectado",
@@ -187,14 +186,13 @@
     "notConnectedManage": "Não conectado — gerencie nas Configurações",
     "optional": "Opcional",
     "footnote": "Gerencie as conexões do GitHub usadas para navegar e implantar repositórios.",
-    "manageGithubSettings": "gerenciar o GitHub nas Configurações",
     "methodToken": "Token do GitHub",
     "methodDevice": "Entrar com GitHub"
   },
   "urlImport": {
-    "invalidUrl": "Insira uma URL válida de repositório do GitHub",
+    "invalidUrl": "Insira uma URL válida de repositório do {providers}",
     "title": "Importar de uma URL do Git",
-    "description": "Cole a URL de um repositório público para importar. Nenhuma conexão com o GitHub é necessária.",
+    "description": "Cole a URL de um repositório público para importar. Nenhuma conexão com o {providers} é necessária.",
     "importButton": "Importar Repositório"
   },
   "customAppModal": {

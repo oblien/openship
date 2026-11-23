@@ -2,6 +2,7 @@ import { reportCaughtError } from "@repo/core/diagnostics";
 import { cache } from "react";
 import { CLOUD_API_URL, pricingUi, resolveStandard, type AppLocale } from "@repo/core";
 import { BillingPlansSchema, parseInput, type BillingPlans } from "@repo/contracts";
+import { z } from "zod";
 import type { Copy } from "@/i18n/copy";
 
 export const UI = pricingUi("en");
@@ -9,12 +10,35 @@ export const STANDARD = resolveStandard("en");
 export const CURRENCY_LD = "USD";
 export type CloudPlan = BillingPlans["plans"][number];
 export type PricedPlan = CloudPlan & { price: { monthly: number; annual: number | null } };
+
+const paidMailPlan = z.enum(["solo", "team", "business"]);
+const count = z.number().int().positive();
+const cents = z.number().int().nonnegative();
+// The public catalog can omit mail pricing until the mail API is deployed.
+const mailPricingSchema = z.object({
+  tiers: z.array(z.object({
+    id: paidMailPlan.or(z.literal("scale")),
+    name: z.string(),
+    description: z.string(),
+    checkoutPlan: paidMailPlan.nullable(),
+    monthlyCents: cents,
+    sendingMonthlyCents: cents,
+    domains: count,
+    mailboxes: count,
+    storageMB: count,
+    recipients: count,
+  })).min(1),
+  dedicatedStorage: z.array(z.object({ gb: count, monthlyCents: cents })).min(1),
+});
+export type MailPricing = z.infer<typeof mailPricingSchema>;
+
 export interface CloudPricing {
   available: boolean;
   annual: BillingPlans["annual"];
   tiers: PricedPlan[];
   customTiers: CloudPlan[];
   management?: BillingPlans["management"];
+  mail?: MailPricing;
 }
 
 /** A single public catalog feeds checkout, the dashboard, and marketing.
@@ -43,6 +67,7 @@ export const getCloudPricing = cache(async (locale: AppLocale = "en"): Promise<C
       available: tiers.length > 0,
       annual: data.annual,
       management: data.management,
+      mail: mailPricingSchema.safeParse(body.data?.mail).data,
       tiers,
       customTiers: data.plans.filter((plan) => plan.price.monthly === null),
     };
@@ -85,23 +110,24 @@ export function cloudPlanSummary(plan: CloudPlan, copy: Copy): string {
 export function priceParts(plan: CloudPlan, interval: "monthly" | "annual" = "monthly") {
   const price = plan.price[interval];
   return {
-    amount:
-      price === null
-        ? UI.custom
-        : price === 0
-          ? UI.free
-          : money(interval === "annual" ? price / 12 : price),
-    per: price !== null && price > 0 ? UI.perMonth : null,
+    amount: price === null ? UI.custom : price === 0 ? UI.free : money(price),
+    per: price !== null && price > 0 ? (interval === "annual" ? UI.perYear : UI.perMonth) : null,
   };
 }
 export function cloudFrom(pricing: CloudPricing): string | null {
   const plan = startingCloudPlan(pricing);
   return plan ? money(plan.price.monthly) : null;
 }
-export function startingCloudPlan(pricing: CloudPricing): PricedPlan | null {
+export function startingCloudPlan(
+  pricing: CloudPricing,
+  interval: "monthly" | "annual" = "monthly",
+): PricedPlan | null {
   if (!pricing.available) return null;
   return pricing.tiers.reduce<PricedPlan | null>(
-    (lowest, plan) => (!lowest || plan.price.monthly < lowest.price.monthly ? plan : lowest),
+    (lowest, plan) =>
+      plan.price[interval] != null && (!lowest || plan.price[interval]! < lowest.price[interval]!)
+        ? plan
+        : lowest,
     null,
   );
 }

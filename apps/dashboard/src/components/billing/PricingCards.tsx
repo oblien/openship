@@ -115,6 +115,7 @@ interface PricingCardsProps {
   subscribingPlan?: string | null;
   purchasesDisabled?: boolean;
   interval?: "monthly" | "annual";
+  annualSavings?: string;
   workspaceScoped?: boolean;
   selectionLabel?: string;
   referralOffer?: ReferralPublicOffer;
@@ -131,11 +132,10 @@ function formatPrice(
 ): { label: string; suffix: string | null } {
   if (cents === null) return { label: ui.custom, suffix: null };
   if (cents === 0) return { label: ui.free, suffix: null };
-  const monthlyCents = interval === "annual" ? cents / 12 : cents;
   // Whole dollars stay whole ($39, not $39.00); a cents-precise price keeps them.
   return {
-    label: `$${(monthlyCents / 100).toFixed(monthlyCents % 100 === 0 ? 0 : 2)}`,
-    suffix: ui.perMonth,
+    label: `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`,
+    suffix: interval === "annual" ? ui.perYear : ui.perMonth,
   };
 }
 
@@ -193,6 +193,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   subscribingPlan,
   purchasesDisabled = false,
   interval = "monthly",
+  annualSavings,
   workspaceScoped = false,
   selectionLabel,
   referralOffer,
@@ -218,7 +219,6 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
           const referral = referralOffer && referralPlans([plan], referralOffer, interval).length
             ? referralOffer : null;
           const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval, referral);
-          // Compare monthly equivalents; annual cards disclose the full charge below.
           const { label, suffix } = formatPrice(
             discounted ? chargedCents : listCents,
             ui,
@@ -307,7 +307,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
               <p className="mt-1 min-h-5 text-xs text-muted-foreground">
                 {isPaid
                   ? interval === "annual"
-                    ? interpolate(t.billing.pricing.annualTotal, { price: `$${(chargedCents! / 100).toFixed(chargedCents! % 100 === 0 ? 0 : 2)}` })
+                    ? annualSavings ?? t.billing.pricing.billedAnnually
                     : ui.billedMonthly
                   : ""}
               </p>

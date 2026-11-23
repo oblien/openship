@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import React from "react";
 import { useI18n } from "@/components/i18n-provider";
 import DnsRecordCard from "@/components/domains/DnsRecordCard";
@@ -50,34 +51,26 @@ const DnsConfiguration: React.FC<DnsConfigurationProps> = ({
 
   const manual = displayRecords.length > 0 && (
     <details className="rounded-xl bg-muted/30" open={!domainId}>
-      <summary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-primary">
+      <DisclosureSummary className="cursor-pointer rounded-xl px-4 py-3 text-sm font-medium text-foreground focus-visible:outline-primary">
         {t.autoDns.manualSetup}
-      </summary>
+      </DisclosureSummary>
 
       <div className="space-y-2.5 p-4">
         {displayRecords.map((record, i) => (
           <DnsRecordCard key={`${record.type}-${record.host}-${i}`} record={record} />
         ))}
 
-        <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
-          {mode === "selfhosted" && domain.startsWith("*.") ? (
-            t.projectSettings.domains.wildcard.notice
-          ) : mode === "selfhosted" ? (
-            <>
-              {d.selfInfoPre}
-              <span className="font-medium text-foreground">{d.recordA}</span>
-              {d.selfInfoMid}
-            </>
-          ) : (
-            <>
-              {d.cloudInfoPre}
-              <span className="font-medium text-foreground">{d.recordCname}</span>
-              {d.cloudInfoMid}
-              <span className="font-medium text-foreground">{d.recordTxt}</span>
-              {d.verifySuffix}
-            </>
-          )}
-        </p>
+        {mode === "selfhosted" && (
+          <p className="px-0.5 text-xs leading-relaxed text-muted-foreground">
+            {domain.startsWith("*.") ? t.projectSettings.domains.wildcard.notice : (
+              <>
+                {d.selfInfoPre}
+                <span className="font-medium text-foreground">{d.recordA}</span>
+                {d.selfInfoMid}
+              </>
+            )}
+          </p>
+        )}
       </div>
     </details>
   );

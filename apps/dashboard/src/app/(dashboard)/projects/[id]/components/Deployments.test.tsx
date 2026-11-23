@@ -250,7 +250,7 @@ it("makes a detected image update actionable through the shared update operation
   expect(container.textContent).toContain("redis (redis:7)");
   expect(container.textContent).not.toContain("db (postgres:16)");
   await act(async () => button(baseDictionary.projectSettings.appSource.update).click());
-  expect(mocks.applyUpdate).toHaveBeenCalledExactlyOnceWith("project");
+  expect(mocks.applyUpdate).toHaveBeenCalledExactlyOnceWith("project", undefined);
   expect(mocks.trigger).not.toHaveBeenCalled();
   expect(mocks.openBuild).toHaveBeenCalledWith(
     expect.anything(), { data: { deployment: { id: "image-update" } } }, "project",
@@ -302,12 +302,29 @@ it.each(["cancel", "configure"] as const)("reviews new Compose services before r
   await redeploy();
   expect(mocks.openBuild).not.toHaveBeenCalled();
   const modal = mocks.showModal.mock.calls.at(-1)![0];
-  await act(async () => root.render(modal.customContent));
+  await act(async () => root.render(<><Deployments />{modal.customContent}</>));
   const copy = baseDictionary.projects.redeploy.composeReview;
-  expect(container.textContent).toContain(copy.addedTitle);
+  expect(container.textContent).toContain(copy.title);
   expect(container.textContent).toContain("old-worker");
   await act(async () => button(copy[action]).click());
   expect(mocks.trigger).toHaveBeenCalledTimes(1);
   if (action === "cancel") expect(mocks.push).not.toHaveBeenCalled();
   else expect(mocks.push).toHaveBeenCalledWith(expect.stringMatching(/^\/deploy\/.+\?reviewCompose=1$/));
+});
+
+it("applies the reviewed Compose revision through the original smart redeploy", async () => {
+  context.hasMultipleServices = false;
+  mocks.trigger.mockRejectedValueOnce({ body: {
+    code: "COMPOSE_REVIEW_REQUIRED", projectId: "project", composeRevision: "a".repeat(64),
+    composeChanges: { added: [], changed: ["worker"], removed: [] },
+    composeDiff: [{ name: "worker", kind: "changed", fields: [{ path: "image", before: "worker:1", after: "worker:2" }] }],
+  } });
+  await redeploy();
+  const modal = mocks.showModal.mock.calls.at(-1)![0];
+  await act(async () => root.render(<><Deployments />{modal.customContent}</>));
+  await act(async () => button(baseDictionary.projects.redeploy.composeReview.apply).click());
+  expect(mocks.trigger).toHaveBeenLastCalledWith({ projectId: "project", smartRoute: true, composeRevision: "a".repeat(64) });
+  expect(mocks.trigger).toHaveBeenCalledTimes(2);
+  expect(mocks.openBuild).toHaveBeenCalledOnce();
+  expect(mocks.push).not.toHaveBeenCalled();
 });

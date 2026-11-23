@@ -183,7 +183,8 @@ async function assertServersWritable(
  */
 export async function repoCompose(c: Context) {
   const ctx = getRequestContext(c);
-  const { owner, repo, branch } = await c.req.json<{
+  const { owner, repo, branch, provider } = await c.req.json<{
+    provider?: string;
     owner?: string;
     repo?: string;
     branch?: string;
@@ -197,6 +198,7 @@ export async function repoCompose(c: Context) {
       owner.trim(),
       repo.trim(),
       branch?.trim() || undefined,
+      provider,
     );
     // Template expressions stay server-side; they may contain secret defaults.
     const display = services.map(({ environmentTemplates: _templates, ...service }) => service);
@@ -299,7 +301,7 @@ export async function scanServerStream(c: Context) {
  */
 export async function revealServiceEnv(c: Context) {
   type RevealBody = { serverId?: string; containerId?: string; keys?: unknown };
-  const body = await c.req.json<RevealBody>().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/migration/migration.controller"); return {} as RevealBody; });
+  const body = await c.req.json<RevealBody>();
   const { serverId, containerId } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
   if (!containerId) return c.json({ error: "containerId is required" }, 400);

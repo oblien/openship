@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { credential } from "../schema";
@@ -7,6 +7,7 @@ import { credential } from "../schema";
 
 export type Credential = typeof credential.$inferSelect;
 export type NewCredential = typeof credential.$inferInsert;
+type VerificationVerdict = { ok: boolean; reason?: string };
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
@@ -20,6 +21,27 @@ export type NewCredential = typeof credential.$inferInsert;
  * tenant's secret to another.
  */
 export function createCredentialRepo(db: Database) {
+  async function writeVerification(
+    organizationId: string,
+    id: string,
+    verdict: VerificationVerdict,
+    snapshot?: SQL,
+  ): Promise<void> {
+    const now = new Date();
+    await db
+      .update(credential)
+      .set(
+        verdict.ok
+          ? { status: "active", lastVerifiedAt: now, lastError: null, updatedAt: now }
+          : {
+              status: "invalid",
+              lastError: (verdict.reason ?? "Rejected by the provider.").slice(0, 500),
+              updatedAt: now,
+            },
+      )
+      .where(and(eq(credential.organizationId, organizationId), eq(credential.id, id), snapshot));
+  }
+
   return {
     /** Every credential for an org, newest first. */
     async listByOrg(organizationId: string): Promise<Credential[]> {
@@ -117,25 +139,27 @@ export function createCredentialRepo(db: Database) {
       });
     },
 
-    /**
-     * Record the outcome of a verify or a real use.
-     *
-     * The `invalid` half is the point: a credential revoked upstream otherwise fails every
-     * deploy or domain provision forever with nothing in the UI to explain it. `reason`
-     * must already be redacted by the caller — this layer does not inspect it.
-     */
-    async markVerified(organizationId: string, id: string): Promise<void> {
-      await db
-        .update(credential)
-        .set({ status: "active", lastVerifiedAt: new Date(), lastError: null, updatedAt: new Date() })
-        .where(and(eq(credential.organizationId, organizationId), eq(credential.id, id)));
+    /** DNS reports an authorization failure by org and credential ID. */
+    async markInvalid(organizationId: string, id: string, reason: string): Promise<void> {
+      await writeVerification(organizationId, id, { ok: false, reason });
     },
 
-    async markInvalid(organizationId: string, id: string, reason: string): Promise<void> {
-      await db
-        .update(credential)
-        .set({ status: "invalid", lastError: reason.slice(0, 500), updatedAt: new Date() })
-        .where(and(eq(credential.organizationId, organizationId), eq(credential.id, id)));
+    /** Record a redacted result against the same secret and destination that were checked. */
+    async recordVerification(expected: Credential, verdict: VerificationVerdict): Promise<void> {
+      await writeVerification(
+        expected.organizationId,
+        expected.id,
+        verdict,
+        and(
+          eq(credential.provider, expected.provider),
+          expected.selector === null
+            ? isNull(credential.selector)
+            : eq(credential.selector, expected.selector),
+          eq(credential.publicFields, expected.publicFields),
+          eq(credential.secretsEnc, expected.secretsEnc),
+          eq(credential.status, expected.status),
+        ),
+      );
     },
 
     async remove(organizationId: string, id: string): Promise<void> {

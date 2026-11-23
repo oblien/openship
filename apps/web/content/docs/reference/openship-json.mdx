@@ -39,6 +39,29 @@ openship config validate   # check it against the schema
 
 It's **JSON, not JSONC** — no comments, no trailing commas.
 
+## Display
+
+Optional branding for the public [Deploy with OpenShip page](/docs/guides/deploy-button).
+These fields do not affect build detection or deployment settings.
+
+```json
+{
+  "display": {
+    "name": "My app",
+    "logo": "public/logo.svg"
+  }
+}
+```
+
+| Field | Value |
+| --- | --- |
+| `display.name` | App name, 1–80 characters. Surrounding whitespace is trimmed; control characters are rejected. |
+| `display.logo` | Path from the repository root to a PNG, JPEG, WebP or SVG, up to 512 characters. URLs, absolute paths, `..`, encoded paths and inline image data are rejected. |
+
+Both fields are optional. The public page reads the root manifest from the selected branch
+without credentials, loads branding after the page renders, and caches it. Private repositories
+retain the repository name and GitHub icon; they still use the normal authenticated deployment flow.
+
 ## Build
 
 <TypeTable

@@ -14,6 +14,7 @@ import {
   type CheckedResourceType,
 } from "../../lib/permission";
 import type { Permission } from "@repo/db";
+import { GIT_PROVIDERS, gitProviderForRoot } from "@repo/core";
 import { capabilityFor, type Capability, type GrantPermission } from "@repo/core";
 import { Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -42,7 +43,7 @@ export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  annotations: { readOnlyHint: boolean; destructiveHint: boolean };
+  annotations: { readOnlyHint: boolean; destructiveHint: boolean; openWorldHint: boolean };
   // Dispatch metadata (not sent to the client):
   method: string;
   path: string; // full path with :params, e.g. /api/projects/:id
@@ -76,6 +77,8 @@ export interface McpPrincipal {
   /** Resolved with the same persisted instance-authority policy as HTTP calls. */
   instanceAdmin?: boolean;
   role: "owner" | "admin" | "member" | "restricted";
+  /** For scoped tokens, the current membership in their bound organization. */
+  membershipRole?: "owner" | "admin" | "member" | "restricted";
   readOnly: boolean;
   /** Resource types the token holds grants on — only consulted when role === "restricted". */
   grantedRootTypes: ReadonlySet<string>;
@@ -184,9 +187,12 @@ function inputSchema(
 function annotationsFor(route: RegisteredRoute): {
   readOnlyHint: boolean;
   destructiveHint: boolean;
+  openWorldHint: boolean;
 } {
   const spec = route.spec;
-  if (isPublicSpec(spec)) return { readOnlyHint: true, destructiveHint: false };
+  if (isPublicSpec(spec)) {
+    return { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
+  }
   const parsed = parsePermissionTag(spec.tag);
   const readOnlyHint = route.method === "GET" || spec.readOnly === true;
   const destructiveHint =
@@ -195,7 +201,7 @@ function annotationsFor(route: RegisteredRoute): {
       (route.method === "DELETE" ||
         parsed.action === "admin" ||
         /delete|teardown|destroy|remove|wipe|revoke/i.test(route.path)));
-  return { readOnlyHint, destructiveHint };
+  return { readOnlyHint, destructiveHint, openWorldHint: spec.mcp?.openWorld ?? true };
 }
 
 let cached: McpToolDef[] | null = null;
@@ -245,8 +251,8 @@ export function getMcpTools(): McpToolDef[] {
       const pathParams = extractPathParams(route.path);
       const leafParam =
         (isPublicSpec(spec) ? undefined : spec.ids?.[leaf]) ?? DEFAULT_ID_PARAMS[leaf] ?? "id";
-      const namedGithubTarget =
-        leaf === "github" && (pathParams.includes("owner") || pathParams.includes("org"));
+      const namedGitTarget = leaf === "git" ||
+        (gitProviderForRoot(leaf) && (pathParams.includes("owner") || pathParams.includes("org")));
       const bodySchema = isPublicSpec(spec) ? undefined : spec.body;
       const hasBody = !!bodySchema && route.method !== "GET";
       return {
@@ -281,7 +287,7 @@ export function getMcpTools(): McpToolDef[] {
             !collectionProject &&
             ((collection && parsed?.root === parsed?.leaf) ||
               ((ORG_SINGLETON_RESOURCES.has(leaf) || (parsed?.isList && parsed.root === leaf)) &&
-                !namedGithubTarget) ||
+                !namedGitTarget) ||
               (CONDITIONAL_SINGLETON_RESOURCES.has(leaf) && !pathParams.includes(leafParam))),
           grantRoot: PROJECT_ROOTED.has(leaf as CheckedResourceType)
             ? "project"
@@ -306,12 +312,6 @@ export function getMcpTools(): McpToolDef[] {
  * `github_repository`) would advertise ZERO github tools even though it can
  * call the per-repo ones.
  */
-const GITHUB_GRANT_FAMILY: ReadonlySet<string> = new Set([
-  "github",
-  "github_installation",
-  "github_repository",
-]);
-
 /**
  * The action the route layer actually asserts for a tag.
  *
@@ -326,10 +326,8 @@ function assertedAction(tagAction: string): Permission {
 
 /** Does the principal hold a grant whose root type enables this tool? */
 function principalHasGrantFor(granted: ReadonlySet<string>, grantRoot: string): boolean {
-  if (grantRoot === "github") {
-    for (const t of GITHUB_GRANT_FAMILY) if (granted.has(t)) return true;
-    return false;
-  }
+  const providers = GIT_PROVIDERS.filter(provider => grantRoot === "git" || provider.grantTypes.root === grantRoot);
+  if (providers.length) return providers.some(provider => Object.values(provider.grantTypes).some(type => granted.has(type)));
   return granted.has(grantRoot);
 }
 
@@ -350,6 +348,10 @@ export function filterToolsForPrincipal(
   principal: McpPrincipal,
 ): McpToolDef[] {
   return tools.filter((t) => {
+    const action = assertedAction(t.perm.action);
+    const role = principal.membershipRole ?? principal.role;
+    if (role !== "restricted" &&
+      !roleAllowsResourceType(role, t.perm.leaf as CheckedResourceType, action)) return false;
     // Read-only tokens can only call GET — the runtime gate rejects mutations by
     // HTTP method, so mirror that exactly rather than guessing from the tag.
     if (principal.readOnly && t.method !== "GET") return false;
@@ -373,9 +375,7 @@ export function filterToolsForPrincipal(
       if (principal.role === "restricted" && !caps?.has(needed)) return false;
     }
 
-    if (principal.role !== "restricted") {
-      return roleAllowsResourceType(principal.role, t.perm.leaf as CheckedResourceType);
-    }
+    if (principal.role !== "restricted") return true;
     // "Own projects" scope: the create-capable project wildcard grant reaches the
     // dedicated create routes (POST /projects, POST /apps) and the project list
     // (which the caller filters to its self-created projects). Checked before the
@@ -401,11 +401,11 @@ export function filterToolsForPrincipal(
       // A per-id grant still fails here, correctly: `wildcardGrants` holds only
       // resourceId "*" rows.
       const held = principal.wildcardGrants.get(t.perm.leaf);
-      return held ? permitsAction(held, assertedAction(t.perm.action)) : false;
+      return held ? permitsAction(held, action) : false;
     }
     if (principalHasGrantFor(principal.grantedRootTypes, t.perm.grantRoot)) return true;
     // Same mapping the permission check uses: `domain:admin` ⇒ `domains:delete`.
-    const capability = capabilityFor(t.perm.leaf, assertedAction(t.perm.action));
+    const capability = capabilityFor(t.perm.leaf, action);
     return !!capability && !!principal.grantedCapabilities?.has(capability);
   });
 }
@@ -419,6 +419,7 @@ export function toClientTool(t: McpToolDef) {
     annotations: {
       readOnlyHint: t.annotations.readOnlyHint,
       destructiveHint: t.annotations.destructiveHint,
+      openWorldHint: t.annotations.openWorldHint,
     },
   };
 }

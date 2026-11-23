@@ -1,251 +1,116 @@
 ---
 title: Backups & restore
-description: Keep safe copies of your app's data, back it up on a schedule, and roll it back when something goes wrong — from the dashboard or the terminal.
+description: Configure backup destinations and retention, verify scheduled copies, and test recovery.
 ---
 
-import { Step, Steps } from 'fumadocs-ui/components/steps';
+**Before you start:** identify the service or project data to protect, choose a backup destination, and
+confirm that you have permission to manage both. Prefer a destination that survives loss of the workload host.
 
-A backup is just a spare copy of your data, kept somewhere else, so that if today's copy gets lost or broken
-you can go back to a good one. Think of it like photocopying an important document and leaving the copy in a
-safe at another address — if the original burns, you still have the copy.
-
-Openship does two jobs here. First, it copies your data to a storage place you choose (a **destination**).
-Second, it does that on a schedule you set (a **policy**) so you never have to remember. And when you need it,
-it puts a copy back (a **restore**).
-
-<Callout title="What you need first">
-- Openship up and running, and a project with at least one **service** that holds data (like a database).
-- Somewhere to keep the copies — an S3 bucket, an SFTP server, an existing server, or a folder on disk. We set
-  this up in the first step below.
-</Callout>
+A **destination** stores the archive. A **policy** defines the scope, schedule, and retention.
+A **restore** replaces current data with a selected archive.
 
 ## Step 1 — Add a place to keep backups
 
-Before Openship can back anything up, it needs to know **where** to put the copies. That place is called a
-destination. You add destinations once, on the **Backups** page, and every project can then use them.
-
-<Steps>
-
-<Step>
-
 ### Open the Backups page
 
-In the left sidebar, click **Backups**. If you have no destinations yet, you'll see a "No backup destinations
-yet" screen with an **Add Your First Destination** button. Otherwise, press **Add Destination** in the top
-right.
-
-</Step>
-
-<Step>
+Open **Backups → Add Destination**. Destinations are reusable across project backup policies.
 
 ### Pick the kind of storage
 
-Openship asks which type of destination this is. Pick the one that matches what you have:
-
-- **S3-compatible** — any S3-style bucket (AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO).
-- **SFTP** — push copies over SSH to any host, using new credentials you provide.
-- **Existing server** — reuse the SSH login from a server you've already added to Openship.
-- **Local disk** — write to a folder on the machine running Openship. (Not available in cloud mode.)
-
-</Step>
-
-<Step>
+| Destination | Required configuration |
+| --- | --- |
+| S3-compatible | Bucket, region, credentials, and endpoint for non-AWS providers. Optional path prefix. |
+| SFTP | Host, port, user, key or password, and optional remote path. |
+| Existing server | A connected server and optional remote path; reuses its SSH credentials. |
+| Local disk | Absolute path on the control-plane machine. Unavailable in Cloud mode. |
 
 ### Fill in the details
 
-The fields change depending on the kind you picked. Fill in what applies:
+Give the destination a recognizable name and configure its connection. Save it before creating a policy.
+Secrets are encrypted at rest. When editing a saved destination, leave unchanged secret fields blank to
+retain their stored values.
 
-<Tabs items={['S3-compatible', 'SFTP', 'Existing server', 'Local disk']}>
-<Tab value="S3-compatible">
-
-- **Name** — a label for you, like "Production R2".
-- **Endpoint** — leave empty for AWS S3. For Cloudflare R2 it looks like
-  `https://<account>.r2.cloudflarestorage.com`.
-- **Region**, **Bucket**, and an optional **Path prefix** (a folder inside the bucket).
-- **Access key ID** and **Secret access key** — the credentials for the bucket.
-
-</Tab>
-<Tab value="SFTP">
-
-- **Name**, **Host**, **Port** (default `22`), and **User**.
-- An optional **Path prefix** — the folder on the remote host to write into.
-- Authenticate with either a **Password** or a **Private key (PEM)** (paste the key). Leave the password blank
-  when you use a key.
-
-</Tab>
-<Tab value="Existing server">
-
-- **Name** and the **Server** to reuse — pick one of the servers already saved under **Servers**. Openship
-  reuses that server's SSH credentials, so there's nothing new to enter.
-- An optional **Remote path** for where to store the copies.
-
-</Tab>
-<Tab value="Local disk">
-
-- **Name** and an **Absolute path** — a filesystem path on the machine running Openship, like
-  `/var/backups/openship`.
-
-This kind is disabled when Openship runs in cloud mode.
-
-</Tab>
-</Tabs>
-
-<Callout title="Your secrets are safe" type="info">
-Keys and passwords are **encrypted at rest** — Openship stores them scrambled, not in plain text. When you
-edit a destination later, secret fields show up blank; leave them blank to keep the stored value.
-</Callout>
-
-Press **Save destination**.
-
-</Step>
-
-<Step>
+A local copy on the same host is useful for convenience but does not protect against loss of that host.
 
 ### Check that it works
 
-Back on the list, each destination has a **Verify connection** button (the circular arrows icon). Click it —
-Openship writes a tiny test file, reads it back, and deletes it. A green **Verified** badge means the login and
-address are correct. Do this now, before you rely on it.
-
-</Step>
-
-</Steps>
-
-<Callout title="Tip" type="info">
-You can mark one destination as the **default** (the star / **Set as default** action). It's a handy label for
-"the one I usually use" — you still pick a destination explicitly when you create a policy.
-</Callout>
+Select **Verify connection**. OpenShip writes, reads, and removes a test file. Resolve any failure before
+using the destination in a scheduled policy. Marking a destination as default does not replace selecting
+the destination for a policy.
 
 ## Step 2 — Set a backup schedule
 
-A **policy** is the rule that says "back this up, to that destination, on this schedule, and keep this many
-copies." You set policies **per service**, inside the project.
-
-<Steps>
-
-<Step>
-
 ### Open the project's Backup tab
 
-Open your project and go to the **Backup** tab. You'll see your destinations, a list of the project's
-**services**, and the recent backup runs.
-
-</Step>
-
-<Step>
+Open the project and select **Backup**. Choose the service to protect and select **Create policy**.
 
 ### Create a policy for a service
 
-Find the service you want to protect and press **Create policy**. (If that button is greyed out, you don't have
-a destination yet — hovering it shows "Add a destination first." Go back and finish Step 1.) A panel opens with
-these choices:
+| Setting | Purpose |
+| --- | --- |
+| Destination | Where the archive is stored. |
+| Schedule | Preset or five-field cron expression. **Manual only** disables scheduled runs. |
+| Retain count / days | Bound the number or age of retained copies. |
+| Pre-deploy trigger | Take a backup before a new deployment goes live. |
+| Pre-hook | Prepare consistent data; a failed hook aborts the backup. |
+| Post-hook | Cleanup after upload. |
+| Webhook trigger | Private trigger URL for an external scheduler or CI system. |
 
-- **Destination** — where the copies go.
-- **Schedule** — pick a preset (**Hourly**, **Daily**, **Weekly**, **Monthly**, or **Manual only**), or type
-  your own five-field cron expression. "Manual only" means it never runs on its own — you trigger it by hand.
-- **Retain count** — keep the N most recent successful backups (older ones are pruned automatically).
-- **Retain days** — drop backups older than N days.
-- **Pre-deploy trigger** — when ticked, Openship also backs up automatically right before each new deploy goes
-  live. This is your safety net for bad deploys.
-- **Pre-hook / Post-hook** — optional shell commands. A pre-hook runs *before* the copy is taken (databases
-  often use `pg_dump` here); if it fails, the run is aborted. A post-hook runs *after* upload for cleanup.
-- **Webhook trigger** *(optional, advanced)* — generates a private URL you can `POST` to from an outside
-  scheduler or CI so something else can kick off this backup.
+For a database, verify that the backup method captures consistent data. Use the appropriate database dump
+or application-aware procedure; copying live database files is not automatically a valid logical backup.
+Protect webhook URLs and hook credentials as secrets.
 
-Press **Create policy**.
+Retention runs after successful backups, independently for each service in a project policy. Protected
+copies are exempt. Cleanup failures retain records for retry without invalidating the new backup. The
+**Backup retention prune** system job provides a scheduled fallback; inspect its schedule under **Jobs**.
 
-Retention runs after each successful backup, independently for each service in a project policy.
-Protected copies remain exempt. A cleanup failure keeps the affected records for retry and does
-not invalidate the new backup. The **Backup retention prune** system job provides a fallback;
-new installations schedule it hourly at minute 29. Existing schedules remain editable in **Jobs**.
-
-</Step>
-
-</Steps>
-
-<Callout title="Per service or whole project" type="info">
-The dashboard sets a policy **per service**. From the terminal you can also make a **project-level** policy that
-covers the whole project — just leave off `--service` when you run `openship backup policy create` (see below).
-</Callout>
+Dashboard policies are per service. The CLI also supports a project-wide policy when `--service` is omitted.
+Scheduled runs require the relevant controller and destination to be available.
 
 ## Step 3 — Run a backup now
 
-You don't have to wait for the schedule. On the **Backup** tab, any service that has a policy shows a **Backup
-now** button — press it and the copy starts immediately.
+Select **Backup now** for a service with a policy. Follow progress and confirm the completed run, archive
+size, and destination. Closing the browser does not cancel the server-side operation.
 
-A **Live backup** card appears at the top with real-time progress. The backup itself runs on the server, so it
-keeps going even if you close the tab. When it finishes, the run shows up in **Recent backups** with a green
-status and its size.
+Do not rely on the success badge alone: periodically restore an archive to a safe target and validate the
+application data. Record the test result and recovery time.
 
 ## Step 4 — Protect a copy from being deleted
 
-Retention (the "keep N copies" rule) automatically prunes old backups to save space. If you have one copy you
-never want deleted — say, the last known-good state before a big change — you can **protect** it.
-
-In **Recent backups**, each successful run has a small lock icon. Click it to **Protect from retention**; the run
-gets a **Protected** badge and pruning will skip it. Click again to **Allow retention to prune** and release it.
+Select **Protect from retention** on a successful run to keep it from automatic pruning. The **Protected**
+badge identifies the exception. Release protection when normal retention should apply again.
 
 ## Step 5 — Restore a backup
 
-Restoring puts a saved copy back in place of the current data. It's the whole point of having backups — but it
-**overwrites** what's there now, so Openship walks you through it carefully.
-
-<Steps>
-
-<Step>
+<Callout title="Restore replaces current data" type="warn">
+Take a fresh backup of the current state first if you may need it. The restore flow does not automatically
+capture that state. Protecting the selected archive only prevents retention from pruning it.
+</Callout>
 
 ### Start the restore
 
-In **Recent backups**, find a successful run and click its **Restore** icon (the circular counter-clockwise
-arrow). The **Restore backup** wizard opens.
-
-</Step>
-
-<Step>
+Choose a successful run in **Recent backups** and select **Restore**. Confirm that it belongs to the intended
+service, environment, and destination.
 
 ### Review
 
-The first screen shows which backup you're restoring and warns that current data will be overwritten. Leave
-**Protect the latest backup from retention prune** ticked (it's on by default) — this keeps the backup you're
-restoring from safe from automatic pruning, so that known-good copy stays around. Press **Continue → Prepare**.
-
-<Callout title="Want a copy of the data as it is right now?" type="info">
-Restoring **overwrites** the current data, and Openship does **not** take a fresh backup of the live state for
-you first — the "protect" tick above only shields the backup you're restoring *from*. If you might want today's
-data back, run **Backup now** (Step 3) *before* you start the restore.
-</Callout>
-
-</Step>
-
-<Step>
+Review the archive and overwrite warning. Keep protection enabled if the selected archive must survive
+retention, then continue to **Prepare**.
 
 ### Prepare (a safe check)
 
-Openship downloads and verifies the backup at the destination to make sure it's actually usable. Nothing
-destructive happens yet — your service keeps running normally during this step.
-
-</Step>
-
-<Step>
+OpenShip retrieves and verifies the backup. Preparation does not yet replace the running data.
+Resolve verification failures before continuing.
 
 ### Confirm
 
-Once verified, you're asked to **type the service's name exactly** to confirm. This is the "are you really
-sure?" gate, because the next step permanently replaces the current data. Type the name and press **Apply
-restore**.
-
-</Step>
-
-<Step>
+Type the service name exactly when prompted. Only continue when the overwrite and interruption are acceptable.
 
 ### Apply
 
-The service stops briefly, the data is swapped in, and it restarts. Keep the window open until it says **Restore
-complete**.
-
-</Step>
-
-</Steps>
+Select **Apply restore**. The service is stopped, its data is replaced, and it restarts. Wait for completion,
+then verify logs, database access, and an application operation. A failed restore needs investigation before
+another attempt; it has no automatic one-click undo.
 
 ## CLI
 
@@ -291,28 +156,14 @@ anything yet. You must run `backup restore apply` with that token to actually sw
 
 ## Troubleshooting
 
-<Callout title="A destination won't verify" type="error">
-Click **Verify connection** and read the reason it shows. The usual causes are a wrong access key or password, a
-bucket or path that doesn't exist, or a host/port that isn't reachable. Fix the field and verify again — a
-destination that can't verify can't back anything up.
-</Callout>
-
-<Callout title="The “Create policy” button is greyed out" type="warn">
-That service has no destination to send backups to yet. Add and verify at least one destination on the
-**Backups** page first (Step 1), then come back to the project's **Backup** tab.
-</Callout>
-
-<Callout title="A backup run failed" type="error">
-Open the run in **Recent backups** — a failed run shows its error message inline. If you set a **pre-hook**, a
-common cause is that command failing (for example a `pg_dump` that can't connect); a failing pre-hook aborts the
-whole run on purpose, so the copy is never half-made.
-</Callout>
-
-<Callout title="I need to undo a restore" type="warn">
-There's no one-click undo — a restore overwrites the data in place, and Openship doesn't auto-capture the live
-state beforehand. Your safety net is a backup taken *before* the restore: if you ran **Backup now** first (or an
-earlier run still holds the state you want), open that run in **Recent backups** and **Restore** from it.
-</Callout>
+| Problem | Check |
+| --- | --- |
+| Destination verification fails | Credentials, bucket/path existence, permissions, and network reachability. |
+| Policy cannot be created | Add and verify a destination first. |
+| Run fails before upload | Inspect the run log and any pre-hook exit status. |
+| Retention leaves an old archive | Check protection and cleanup failures; inspect the retention job. |
+| Restored service fails | Confirm archive scope, application version, schema compatibility, and service logs. |
+| Restore must be reversed | Use a backup containing the desired prior state; the overwrite itself is not reversible. |
 
 ## Related guides
 

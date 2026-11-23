@@ -38,10 +38,11 @@ export function useScopedResource<T>(
   const [state, setState] = useState<{
     owner: string;
     source: typeof fetcher;
+    revision: number;
     data: T | null;
     error: string | null;
     loading: boolean;
-  }>({ owner: scope, source: fetcher, data: null, error: null, loading: true });
+  }>({ owner: scope, source: fetcher, revision: 0, data: null, error: null, loading: true });
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
@@ -52,12 +53,13 @@ export function useScopedResource<T>(
       try {
         const data = await fetcher();
         delay = typeof interval === "number" ? interval : interval(data);
-        if (active) setState({ owner: scope, source: fetcher, data, error: null, loading: false });
+        if (active) setState({ owner: scope, source: fetcher, revision, data, error: null, loading: false });
       } catch (error) {
         if (active)
           setState((previous) => ({
             owner: scope,
             source: fetcher,
+            revision,
             data: previous.owner === scope && previous.source === fetcher ? previous.data : null,
             error: getApiErrorMessage(error),
             loading: false,
@@ -82,6 +84,7 @@ export function useScopedResource<T>(
     data: current ? state.data : null,
     error: current ? state.error : null,
     loading: !current || state.loading,
+    refreshing: current && state.revision !== revision,
     refresh,
   };
 }

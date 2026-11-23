@@ -7,7 +7,7 @@ import { persistRouteProtectionDrafts, clearRouteProtectionDrafts } from "./rout
 import { actionsApi } from "@/lib/api/actions";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { IconName } from "@repo/ui/icons";
-import type { DeploymentVerification } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, hasProjectRepository, type DeploymentVerification } from "@repo/core";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
@@ -16,7 +16,7 @@ import { useCloud } from "@/context/CloudContext";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
-import { useGitHub } from "@/context/GitHubContext";
+import { useGit } from "@/context/GitContext";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi, servicesApi } from "@/lib/api";
@@ -27,8 +27,6 @@ import { redirectPayloadFields } from "@/lib/public-endpoint-payload";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { refreshSecurityAfterDeployment } from "@/components/updates/useUpdates";
 import { ApiError, getActiveOrganizationId, getApiErrorMessage } from "@/lib/api/client";
-import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
-import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
 import type { DeploymentConfig, DeploymentState, DeploymentStatus, ServiceDeployStatus } from "./types";
 import { syncActiveModeSnapshot } from "./mode-config";
 import {
@@ -261,8 +259,12 @@ export function useDeploymentBuild(
   const cloudScope = useCloudResourceKey();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
   const { showModal, hideModal } = useModal();
-  const openGithubConnect = useServerGitHubConnectModal();
-  const { installUrl, state: githubState } = useGitHub();
+  const { credentialRecovery } = useGit(
+    config.owner !== "local" && !config.isApp && !config.localPath && !config.uploadSessionId &&
+    hasProjectRepository({ gitProvider: config.gitProvider, gitOwner: config.owner, gitRepo: config.repo })
+      ? config.gitProvider ?? DEFAULT_GIT_PROVIDER
+      : undefined,
+  );
   const [state, setState] = useState<DeploymentState>(INITIAL_STATE);
   const showComposeReview = useComposeReview(state.projectId || config.projectId);
   useEffect(() => {
@@ -625,68 +627,31 @@ export function useDeploymentBuild(
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-  // Single place that turns a github-credential error CODE into the
-  // DeployCredentialModal. Shared by every deploy entry point (startDeployment,
-  // redeploy) so "any required GitHub → the modal, never a bare toast" holds
-  // everywhere, and the choice→action wiring lives in ONE spot. Returns true
-  // when it opened the modal (caller then skips the toast).
+  // One shared recovery entry point; the selected provider owns credential UX.
   const maybeOpenCredentialModal = useCallback(
-    (
-      errorCode: string | null | undefined,
-      opts?: { trigger?: "preflight-fail" | "build-fail"; onResolved?: () => void },
-    ): boolean => {
-      const isCredential =
-        errorCode === "GITHUB_REMOTE_TOKEN_REQUIRED" ||
-        errorCode === "GITHUB_APP_INSTALLATION_REQUIRED" ||
-        errorCode === "GITHUB_CLI_REMOTE_BUILD_REJECTED" ||
-        errorCode === "GITHUB_TOKEN_REQUIRED";
-      if (!isCredential || !config.owner) return false;
-      // onResolved lets a caller retry the deploy after the user picks a fix
-      // (the build-progress page auto-redeploys); the pre-deploy gate leaves it
-      // undefined so the user re-clicks Deploy themselves.
-      const onResolved = opts?.onResolved;
+    (errorCode: string | null | undefined, opts?: { trigger?: "preflight-fail" | "build-fail"; onResolved?: () => void }): boolean => {
+      if (!errorCode || !credentialRecovery?.matches(errorCode) || !config.owner) return false;
       let modalId = "";
       modalId = showModal({
-        customContent: (
-          <DeployCredentialModal
-            trigger={opts?.trigger ?? "preflight-fail"}
-            owner={config.owner}
-            installUrl={installUrl ?? null}
-            projectId={config.projectId ?? null}
-            serverId={config.serverId ?? null}
-            deployTarget={config.deployTarget}
-            buildStrategy={config.buildStrategy}
-            selfHosted={selfHosted}
-            ghCliAvailable={!!githubState?.sources.ghCli.available}
-            onChoice={(choice) => {
-              hideModal(modalId);
-              if (choice.kind === "build-local") {
-                setConfig((prev) => ({ ...prev, buildStrategy: "local" }));
-                onResolved?.();
-              } else if (choice.kind === "install-app") {
-                onResolved?.();
-              } else if (choice.kind === "connect-server-github" && config.serverId) {
-                openGithubConnect(config.serverId, {
-                  onConnected:
-                    onResolved ??
-                    (() => showToast("GitHub connected — deploy again to continue.", "success", "GitHub")),
-                });
-              }
-            }}
-            onDismiss={() => hideModal(modalId)}
-          />
-        ),
+        customContent: credentialRecovery.render({
+          owner: config.owner, projectId: config.projectId, serverId: config.serverId,
+          deployTarget: config.deployTarget, buildStrategy: config.buildStrategy,
+          trigger: opts?.trigger ?? "preflight-fail", onResolved: opts?.onResolved,
+          onBuildLocal: () => setConfig(prev => ({ ...prev, buildStrategy: "local" })),
+          onDismiss: () => hideModal(modalId),
+        }),
         maxWidth: "640px",
       });
       return true;
     },
-    [config, installUrl, selfHosted, githubState, showModal, hideModal, openGithubConnect, setConfig, showToast],
+    [config, credentialRecovery, showModal, hideModal, setConfig],
   );
 
   const startDeployment = useCallback(async (
     overrides?: {
       /** Reuse the draft already created before a capacity refusal. */
       projectId?: string;
+      composeRevision?: string;
       runtimeMode?: DeploymentConfig["runtimeMode"];
       // Applied to THIS deploy's payload directly, bypassing async React state
       // — lets the clone-strategy gate flip build-local for the in-flight
@@ -883,7 +848,7 @@ export function useDeploymentBuild(
         localPath: config.localPath || undefined,
         // Folder-upload projects: mark the source so it renders correctly and
         // can later be switched to a GitHub repo (Source tab / linkRepo).
-        gitProvider: isUpload ? "upload" : undefined,
+        gitProvider: isUpload ? "upload" : isSourceless ? undefined : config.gitProvider,
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,
@@ -990,7 +955,7 @@ export function useDeploymentBuild(
       // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
-        composeRevision: config.composeRevision,
+        composeRevision: overrides?.composeRevision ?? config.composeRevision,
         branch: config.branch || undefined,
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
@@ -1068,7 +1033,15 @@ export function useDeploymentBuild(
       errorDiagnostics.error("dashboard/context/deployment/useDeploymentBuild", "Deployment error:", err);
       const message = getApiErrorMessage(err, "Failed to start deployment");
       const errorCode = extractErrorCode(err);
-      if (showComposeReview(err)) {
+      if (overrides?.composeRevision) {
+        setState((prev) => ({ ...prev, isDeploying: false }));
+        throw err;
+      }
+      if (showComposeReview(err, async (composeRevision) => {
+        const id = await startDeployment({ ...overrides, projectId: ensuredProjectId ?? undefined, composeRevision });
+        if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
+        return id;
+      })) {
         setState((prev) => ({ ...prev, isDeploying: false }));
         return null;
       }
@@ -1101,7 +1074,7 @@ export function useDeploymentBuild(
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showCloudPricing, showComposeReview, showModal, showToast]);
+  }, [baseDomain, cloudConnected, cloudScope, config, deployMode, hideModal, maybeOpenCredentialModal, requireCloud, selfHosted, setConfig, showCloudPricing, showComposeReview, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -1601,7 +1574,7 @@ export function useDeploymentBuild(
   ]);
 
   const redeploy = useCallback(
-    async (deploymentId: string, options?: { reuseBuild?: boolean }): Promise<string | null> => {
+    async function redeploy(deploymentId: string, options?: { reuseBuild?: boolean; composeRevision?: string }): Promise<string | null> {
       if (!deploymentId) {
         showToast("Deployment ID not provided", "error", "Error");
         return null;
@@ -1655,8 +1628,13 @@ export function useDeploymentBuild(
         const msg = getApiErrorMessage(error, "Failed to start redeployment");
         // A missing GitHub credential surfaces the SAME modal as the deploy
         // wizard (never a bare toast) — one shared handler, one source of truth.
+        if (options?.composeRevision) throw error;
         const openedModal =
-          showComposeReview(error) || showCloudPricing(error, async () => {
+          showComposeReview(error, async (composeRevision) => {
+            const id = await redeploy(deploymentId, { ...options, composeRevision });
+            if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
+            return id;
+          }) || showCloudPricing(error, async () => {
             const id = await redeploy(deploymentId, options);
             if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
           }) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);

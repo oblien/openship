@@ -135,6 +135,7 @@ function principal(
   const granted = new Set([...(p.grantedRootTypes ?? []), ...Object.keys(wildcards)]);
   return {
     role: p.role ?? "restricted",
+    membershipRole: p.membershipRole,
     readOnly: p.readOnly ?? false,
     grantedRootTypes: granted,
     wildcardGrants: p.wildcardGrants ?? new Map(Object.entries(wildcards)),
@@ -147,6 +148,16 @@ function principal(
 const RWA: Permission[] = ["read", "write", "admin"];
 
 describe("filterToolsForPrincipal", () => {
+  it("hides server administration from members and their existing scoped tokens", () => {
+    const read = tool({ name: "server_read", method: "GET", perm: { root: "server", leaf: "server", grantRoot: "server", action: "read", wildcard: false } });
+    const exec = tool({ name: "server_exec", method: "POST", perm: { root: "server", leaf: "server", grantRoot: "server", action: "admin", wildcard: false } });
+    for (const caller of [
+      principal({ role: "member" }),
+      principal({ role: "restricted", membershipRole: "member", grantedRootTypes: new Set(["server"]), wildcards: { server: RWA } }),
+    ]) expect(names(filterToolsForPrincipal([read, exec], caller))).toEqual(["server_read"]);
+    expect(names(filterToolsForPrincipal([read, exec], principal({ role: "admin" })))).toEqual(["server_exec", "server_read"]);
+  });
+
   it("owner sees everything", () => {
     const out = filterToolsForPrincipal(ALL, principal({ role: "owner" }));
     expect(out.length).toBe(ALL.length);
@@ -334,3 +345,21 @@ describe("filterToolsForPrincipal", () => {
   });
 });
 
+
+
+describe("provider-neutral Git tools", () => {
+  const metadata = tool({ name: "git_metadata", method: "GET", perm: { root: "git", leaf: "git", action: "read", wildcard: false, grantRoot: "git" } });
+  const content = tool({ name: "git_file", method: "GET", perm: { ...metadata.perm, source: "content" } });
+  const write = tool({ name: "git_publish", method: "POST", perm: { ...metadata.perm, action: "write", source: "write" } });
+  const tools = [metadata, content, write];
+
+  it("uses existing provider grants without granting source content or writes", () => {
+    expect(names(filterToolsForPrincipal(tools, principal({ grantedRootTypes: new Set(["github_repository"]) })))).toEqual(["git_metadata"]);
+    expect(names(filterToolsForPrincipal(tools, principal({ grantedRootTypes: new Set(["project"]), sourceCapabilities: new Set(["content"]) })))).toEqual([]);
+  });
+  it("retains separate source capabilities and the read-only restriction", () => {
+    const grant = { grantedRootTypes: new Set(["github_repository"]), sourceCapabilities: new Set(["content", "write"] as const) };
+    expect(names(filterToolsForPrincipal(tools, principal(grant)))).toEqual(["git_file", "git_metadata", "git_publish"]);
+    expect(names(filterToolsForPrincipal(tools, principal({ ...grant, readOnly: true })))).toEqual(["git_file", "git_metadata"]);
+  });
+});

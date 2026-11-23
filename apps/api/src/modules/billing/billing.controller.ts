@@ -3,9 +3,9 @@ import type { Context } from "hono";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { publicBillingOperations } from "@repo/platform/engine/modules/billing/billing.operations";
 import { operationContext, operationData } from "../../lib/operation-context";
+import { readOptionalJsonBody } from "../../lib/request-body";
 
 const billingScope = (c: Context) => ({ workspaceId: c.req.query("workspaceId") });
-const optionalBody = (c: Context) => c.req.raw.body ? c.req.json() : Promise.resolve({});
 
 export async function listPlans(c: Context) {
   const data = await publicBillingOperations.listPlans({ locale: c.req.query("locale") ?? c.req.header("accept-language") });
@@ -66,11 +66,11 @@ export async function cancelSubscriptionChange(c: Context) {
   c.header("Cache-Control", "no-store");
   return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelSubscriptionChange(operationContext(c), await c.req.json())) });
 }
-export async function cancelSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelSubscription(operationContext(c), await optionalBody(c))) }); }
-export async function resumeSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.resumeSubscription(operationContext(c), await optionalBody(c))) }); }
+export async function cancelSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.cancelSubscription(operationContext(c), await readOptionalJsonBody(c))) }); }
+export async function resumeSubscription(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.resumeSubscription(operationContext(c), await readOptionalJsonBody(c))) }); }
 export async function createTopup(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.createTopup(operationContext(c), await c.req.json())) }, 201); }
 export async function listTopupPacks(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.listTopupPacks(operationContext(c))) }); }
-export async function createPortal(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.createPortal(operationContext(c), await optionalBody(c))) }); }
+export async function createPortal(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.createPortal(operationContext(c), await readOptionalJsonBody(c))) }); }
 export async function getUsage(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.getUsage(operationContext(c), { ...billingScope(c), from: c.req.query("from"), to: c.req.query("to"), groupBy: c.req.query("groupBy") as "hour" | "day" | undefined })) }); }
 export async function listAllowanceDetail(c: Context) { return c.json({ data: await operationData(c, getPlatformKernel().billing.listAllowanceDetail(operationContext(c), billingScope(c))) }); }
 

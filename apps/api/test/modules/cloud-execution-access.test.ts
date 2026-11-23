@@ -120,7 +120,7 @@ describe("Cloud relays cannot substitute Cloud feature access for host administr
     expect(await response.json()).toMatchObject({ data: { token: "provider-secret" } });
   });
 
-  it.each(["owner", "admin", "member"])(
+  it.each(["owner", "admin"])(
     "preserves existing full host access for the %s role",
     async (role) => {
       await db.update(schema.member).set({ role }).where(eq(schema.member.id, memberId));
@@ -128,6 +128,17 @@ describe("Cloud relays cannot substitute Cloud feature access for host administr
       expect(h.token).toHaveBeenCalledWith(actor.orgId, workspaceId);
     },
   );
+
+  it("denies members host credentials through both Cloud relay selectors", async () => {
+    await db.update(schema.member).set({ role: "member" }).where(eq(schema.member.id, memberId));
+    for (const path of ["token", `token?serverId=${serverId}`, "resource-proxy", `resource-proxy?serverId=${serverId}`]) {
+      const response = await post(path, { operation: "list" });
+      expect(response.status, await response.clone().text()).toBe(404);
+    }
+    expect(h.token).not.toHaveBeenCalled();
+    expect(h.namespace).not.toHaveBeenCalled();
+    expect(h.pages).not.toHaveBeenCalled();
+  });
 
   it("does not bootstrap a server or credentials for an empty organization without host authority", async () => {
     actor = await seedOwner();
@@ -211,7 +222,7 @@ describe("Cloud relays cannot substitute Cloud feature access for host administr
 
   it.each([
     ["preflight", {}],
-    ["pages", { workspace_id: "vm-own", path: "/private", name: "export", slug: "export" }],
+    ["pages", { vm_id: "vm-own", path: "/private", name: "export", slug: "export" }],
     ["pages/enable", { slug: "own-page" }],
     ["pages/disable", { slug: "own-page" }],
     ["pages/delete", { slug: "own-page" }],

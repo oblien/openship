@@ -13,6 +13,8 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 import { useSetupStream } from "@/hooks/useSetupStream";
+import { useResourceScope } from "@/hooks/use-scoped-resource";
+import { getApiRequestScopeVersion } from "@/lib/api/client";
 import { ServerForm } from "@/components/servers/server-form";
 import { AutoSetupFlow } from "./_components/auto-setup-flow";
 import { CheckingState } from "./_components/checking-state";
@@ -87,8 +89,9 @@ function ServerSetupLayout({ choice, guidance, children }: {
 
 export default function AddServerPage() {
   const { t } = useI18n();
+  const scope = useResourceScope();
   const addManagedServer = useAddServerModal({ initialMode: "managed" });
-  return <ConnectedServerSetup choice={
+  return <ConnectedServerSetup key={scope} choice={
     <Button type="button" variant="secondary" className="w-full" onClick={() => addManagedServer()}>
       <UiIcon name="cloud" className="size-4" />
       {t.servers.acquire.managed.label}
@@ -122,18 +125,21 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
   // SSE streaming for installs
   const setupStream = useSetupStream({
     onComplete: (event) => {
+      const scope = getApiRequestScopeVersion();
       // After streaming finishes, run a final health check
       void (async () => {
         try {
           const currentServerId = existingServerId ?? initialServer?.id ?? null;
           if (!currentServerId) return;
           const result = await systemApi.checkServer(currentServerId);
+          if (scope !== getApiRequestScopeVersion()) return;
           setComponents((current) => buildComponentStates(result.components, current));
           setOverallReady(result.ready);
         } catch (diagnosticFailure) {
           observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page");
           // Keep whatever we have from the stream
         }
+        if (scope !== getApiRequestScopeVersion()) return;
         if (event.status === "completed") {
           showToast(t.servers.setup.toastSetupCompleted, "success", t.servers.toastTitles.serverSetup);
         } else {
@@ -149,6 +155,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
     initialServer?.sshHost || initialServer?.name || t.servers.setup.yourServer;
 
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         // /servers/new is ADD-ONLY. Editing an existing server happens SOLELY
@@ -171,6 +178,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
           /* no active session */
         }
 
+        if (!active) return;
         let existing: ServerInfo | null = null;
         if (editId) {
           existing = await systemApi.getServerById(editId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page"); return null; });
@@ -178,7 +186,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
           existing = await systemApi.getServerById(session.serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page"); return null; });
         }
 
-        if (existing) {
+        if (existing && active) {
           setHasExistingServer(true);
           setExistingServerId(existing.id);
           setInitialServer(existing);
@@ -198,9 +206,13 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
         observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page");
         /* fresh form */
       } finally {
-        setLoaded(true);
+        if (active) setLoaded(true);
       }
     })();
+    return () => {
+      active = false;
+      setupStream.disconnect();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function resetSetup() {
@@ -230,12 +242,14 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
       return;
     }
 
+    const scope = getApiRequestScopeVersion();
     setMode(selectedMode);
     setSetupError(null);
     setStep("checking");
 
     try {
       const result = await systemApi.checkServer(activeServerId);
+      if (scope !== getApiRequestScopeVersion()) return;
       let newComponents: ComponentState[] = [];
       setComponents((current) => {
         newComponents = buildComponentStates(result.components, current);
@@ -254,6 +268,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
 
       setStep("results");
     } catch (err) {
+      if (scope !== getApiRequestScopeVersion()) return;
       const message = getApiErrorMessage(err, t.servers.setup.toastHealthCheckFailed);
       setOverallReady(false);
       setSetupError(message);
@@ -277,12 +292,14 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
       return;
     }
 
+    const scope = getApiRequestScopeVersion();
     setSetupError(null);
     setStep("installing");
 
     try {
       await setupStream.startInstall(activeServerId, names);
     } catch (err) {
+      if (scope !== getApiRequestScopeVersion()) return;
       const message = getApiErrorMessage(err, t.servers.setup.toastFailedStartInstall);
       setSetupError(message);
       showToast(message, "error", t.servers.toastTitles.serverSetup);

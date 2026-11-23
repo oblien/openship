@@ -424,7 +424,8 @@ describe("platform import flow", () => {
     const popup = {
       closed: false,
       close: vi.fn(),
-      location: { replace: vi.fn() },
+      focus: vi.fn(),
+      location: { href: "about:blank" },
     } as unknown as Window;
     vi.spyOn(window, "open").mockReturnValue(popup);
     h.authorize.mockResolvedValue({
@@ -434,7 +435,7 @@ describe("platform import flow", () => {
     await render("vercel");
     // One tab chooses authorization and the submit button starts it.
     await act(async () => host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click());
-    expect(popup.location.replace).toHaveBeenCalledWith("https://vercel.com/oauth/authorize");
+    expect(popup.location.href).toBe("https://vercel.com/oauth/authorize");
     const finish = (origin: string, source: Window) =>
       window.dispatchEvent(
         new MessageEvent("message", {
@@ -533,7 +534,9 @@ describe("platform import flow", () => {
     await render();
     await click("Choose services");
     expect(button("Check import").disabled).toBe(true);
-    expect(host.textContent).toContain("Services stay together in one project");
+    expect(host.textContent).toContain(
+      "Services with different Git sources import into separate projects",
+    );
     await fill(host.querySelector<HTMLInputElement>('input[type="password"]')!, "fixture-secret");
     await click("Check import");
     expect(h.review).toHaveBeenCalledWith(
@@ -568,6 +571,25 @@ describe("platform import flow", () => {
     });
     await act(async () => resolve({ migrationId: "run", confirmationToken: "confirmation" }));
     expect(h.push).toHaveBeenCalledWith("/migrations/run");
+  });
+
+  it("shows separate destination projects before approving a multi-repository import", async () => {
+    h.review.mockResolvedValueOnce({
+      ...plan,
+      projects: [
+        { name: "production-database", serviceIds: ["db"] },
+        { name: "production-website", serviceIds: ["web"] },
+      ],
+    });
+    await render();
+    await selectServices();
+    await click("Check import");
+    expect(host.textContent).toContain("2 projects · 2 services");
+    expect(host.textContent).toContain("Project: production-database");
+    expect(host.textContent).toContain("Project: production-website");
+    expect(host.textContent).toContain("Dependencies use private connections");
+    expect(button("Import project").disabled).toBe(true);
+    expect(h.start).not.toHaveBeenCalled();
   });
 
   it("keeps blocked reviews in the editor and requires a fresh review after changing destination", async () => {

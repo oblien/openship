@@ -198,6 +198,9 @@
     "domain": {
       "internalService": "Interner Service",
       "noPublicPorts": "Keine öffentlichen Ports erkannt",
+      "exposedPortsNotPublished": "Container-Port(s) {ports} werden nicht auf dem Host veröffentlicht.",
+      "publishPortHint": "Veröffentlichen Sie einen davon (zum Beispiel 127.0.0.1:{port}:{port}), damit dieser Dienst eine öffentliche Domain erhält.",
+      "tcpPortRequiredHint": "Um eine öffentliche Web-Domain zu verwenden, fügen Sie in den Port-Einstellungen des Dienstes einen TCP-Port hinzu.",
       "publicDomain": "Öffentliche Domain",
       "internetEnabled": "Internetverkehr aktiviert",
       "privateByDefault": "Standardmäßig privat",

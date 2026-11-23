@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildMailRunCommand,
@@ -401,7 +401,8 @@ describe("ensureContainerMail swap", () => {
       if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
       return "";
     });
-    const executor = { exec, streamExec, writeFile: vi.fn(async () => {}) } as never;
+    const readFile = vi.fn(async () => "FIRST_DOMAIN=mail.example.com\n");
+    const executor = { exec, streamExec, writeFile: vi.fn(async () => {}), readFile } as never;
 
     await ensureContainerMail(executor, {
       domain: "example.com",
@@ -413,6 +414,123 @@ describe("ensureContainerMail swap", () => {
     // Swapped in place — a new engine `docker run`, and no pull (tag already present).
     expect(cmds.some((c) => c.includes("docker run") && c.includes("--network host"))).toBe(true);
     expect(cmds.some((c) => c.startsWith("docker pull"))).toBe(false);
+  });
+});
+
+/** Update fixtures retain the installed credentials and run the whole swap. */
+function swapBox(engineEnv: string) {
+  const streamExec = vi.fn(async (_cmd: string) => ({ code: 0, output: "" }));
+  const writeFile = vi.fn(async (_path: string, _content: string, _opts?: { mode?: number }) => {});
+  const readFile = vi.fn(async (path: string) => {
+    if (path.endsWith("engine.env")) return engineEnv;
+    throw new Error("ENOENT");
+  });
+  const exec = vi.fn(async (cmd: string) => {
+    if (cmd.includes("opsh_uid=")) return "opsh_uid=0\nopsh_user=root\nopsh_sudo=n\n";
+    if (cmd.includes("{{json .Mounts}}"))
+      return `${"a".repeat(64)}\ttrue\t${JSON.stringify(
+        MAIL_CONTAINER_MOUNTS.map((m) => ({
+          Type: "bind",
+          Source: m.host,
+          Destination: m.container,
+        })),
+      )}`;
+    if (cmd.includes(STATE_PROBE)) return stateLine("ghcr.io/x/openship-mail:old");
+    if (cmd.includes("docker image inspect")) return "sha256:present\n";
+    if (cmd.includes("/proc/net/tcp")) return PROC_LISTENING;
+    return "";
+  });
+  const onLog = vi.fn();
+  return {
+    exec, readFile, writeFile, streamExec, onLog,
+    update: () => ensureContainerMail({ exec, streamExec, writeFile, readFile } as never, {
+      domain: "mail.example.com", secrets: {}, onLog,
+    }),
+    engineEnvWrites: () => writeFile.mock.calls.filter(([path]) => path.endsWith("engine.env")),
+  };
+}
+
+describe("ensureContainerMail carries explicit ignore-ip overrides across an update (GH-1768)", () => {
+  const KEY = "OPENSHIP_MAIL_F2B_IGNOREIP";
+  const ENV_BODY = "FIRST_DOMAIN=mail.example.com\nOPENSHIP_MAIL_DB_PORT=5433\nPGSQL_ROOT_PASSWD=  retained#secret=one  \n";
+
+  beforeEach(() => {
+    setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+    vi.stubEnv(KEY, undefined);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(["", `${KEY}=192.0.2.9\n`])("sets the override before replacement and retains credentials (previous=%s)", async previous => {
+    vi.stubEnv(KEY, "203.0.113.5 198.51.100.0/24");
+    const box = swapBox(`${ENV_BODY}${previous}`);
+    expect(await box.update()).toMatchObject({ updated: true, mailDown: false });
+    expect(box.engineEnvWrites()).toEqual([[
+      `${MAIL_HOST_STATE_DIR}/engine.env`,
+      `${ENV_BODY}${KEY}=203.0.113.5 198.51.100.0/24\n`,
+      { mode: 0o600 },
+    ]]);
+    expect(box.writeFile.mock.invocationCallOrder[0]).toBeLessThan(box.streamExec.mock.invocationCallOrder[0]!);
+  });
+
+  it("preserves each server's list without reading or rewriting credentials when the API variable is unset", async () => {
+    for (const addresses of ["192.0.2.9", "198.51.100.0/24"]) {
+      const box = swapBox(`${ENV_BODY}${KEY}=${addresses}\n`);
+      expect(await box.update()).toMatchObject({ updated: true });
+      expect(box.readFile).not.toHaveBeenCalled();
+      expect(box.writeFile).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(["", "   "])("removes only the override when the API explicitly clears it (%j)", async configured => {
+    vi.stubEnv(KEY, configured);
+    const box = swapBox(`${ENV_BODY}${KEY}=192.0.2.9\n`);
+    expect(await box.update()).toMatchObject({ updated: true });
+    expect(box.engineEnvWrites()).toEqual([[`${MAIL_HOST_STATE_DIR}/engine.env`, ENV_BODY, { mode: 0o600 }]]);
+  });
+
+  it.each([
+    ["192.0.2.9", `${KEY}=192.0.2.9\n`],
+    ["", ""],
+  ])("does not rewrite the secret file when the override already agrees (%j)", async (configured, record) => {
+    vi.stubEnv(KEY, configured);
+    const box = swapBox(`${ENV_BODY}${record}`);
+    expect(await box.update()).toMatchObject({ updated: true });
+    expect(box.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed read and never replaces unknown credentials with an incomplete file", async () => {
+    vi.stubEnv(KEY, "192.0.2.9");
+    const box = swapBox(ENV_BODY);
+    box.readFile.mockRejectedValue(new Error("permission denied"));
+    expect(await box.update()).toMatchObject({ updated: true });
+    expect(box.writeFile).not.toHaveBeenCalled();
+    expect(box.onLog).toHaveBeenCalledWith(expect.objectContaining({ level: "warn", message: expect.stringMatching(/Could not update OPENSHIP_MAIL_F2B_IGNOREIP:.*permission denied/) }));
+  });
+
+  it("reports a failed write without silently claiming the exclusions were applied", async () => {
+    vi.stubEnv(KEY, "192.0.2.9");
+    const box = swapBox(ENV_BODY);
+    box.writeFile.mockRejectedValue(new Error("read-only filesystem"));
+    expect(await box.update()).toMatchObject({ updated: true });
+    expect(box.onLog).toHaveBeenCalledWith(expect.objectContaining({ level: "warn", message: expect.stringMatching(/Could not update OPENSHIP_MAIL_F2B_IGNOREIP:.*read-only filesystem/) }));
+  });
+
+  it("does not replace an empty retained file with missing database credentials", async () => {
+    vi.stubEnv(KEY, "192.0.2.9");
+    const box = swapBox("");
+    expect(await box.update()).toMatchObject({ updated: true });
+    expect(box.writeFile).not.toHaveBeenCalled();
+    expect(box.onLog).toHaveBeenCalledWith(expect.objectContaining({ level: "warn", message: expect.stringContaining("restore its credentials") }));
+  });
+
+  it("rejects injected environment records before writing and reports the validation failure", async () => {
+    vi.stubEnv(KEY, "192.0.2.9\nPGSQL_ROOT_PASSWD=injected");
+    const box = swapBox(ENV_BODY);
+    expect(await box.update()).toMatchObject({ updated: true });
+    expect(box.writeFile).not.toHaveBeenCalled();
+    expect(box.onLog).toHaveBeenCalledWith(expect.objectContaining({ level: "warn", message: expect.stringContaining("spans multiple lines") }));
+    expect(JSON.stringify(box.onLog.mock.calls)).not.toContain("retained#secret");
+    expect(JSON.stringify(box.onLog.mock.calls)).not.toContain("PGSQL_ROOT_PASSWD=injected");
   });
 });
 

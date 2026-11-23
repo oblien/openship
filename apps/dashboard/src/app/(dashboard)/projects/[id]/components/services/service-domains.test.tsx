@@ -9,6 +9,7 @@ import type { Service, ServiceInput } from "@/lib/api/services";
 import { DomainSettings } from "../DomainSettings";
 
 const mocks = vi.hoisted(() => ({
+  selfHosted: true,
   get: vi.fn(), update: vi.fn(), remove: vi.fn(), verify: vi.fn(), records: vi.fn(),
   refreshServices: vi.fn(), invalidate: vi.fn(), toast: vi.fn(), changed: vi.fn(),
   updateProject: vi.fn(), edge: vi.fn(), retry: vi.fn(), verifyModal: vi.fn(), cloud: vi.fn(),
@@ -18,7 +19,7 @@ let context: ReturnType<typeof import("@/context/ProjectSettingsContext").usePro
 vi.mock("@/context/ProjectSettingsContext", () => ({ useProjectSettings: () => context }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.toast }) }));
-vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: "opsh.test", selfHosted: true }) }));
+vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ baseDomain: "opsh.test", selfHosted: mocks.selfHosted }) }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: true, requireCloud: mocks.cloud }), useDefaultDomainType: () => "custom" }));
 vi.mock("@/hooks/useSystemPrepareModal", () => ({ useEdgeModal: () => mocks.edge, useVerifyModal: () => mocks.verifyModal, useRoutingRetryModal: () => mocks.retry }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: mocks.invalidate }));
@@ -58,6 +59,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.selfHosted = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const rows = [
     { id: "dom-app", hostname: primary.customDomain, serviceId: service.id, port: 3000 },
@@ -484,6 +486,159 @@ it("edits an existing service domain into a redirect without changing its siblin
   ]);
 });
 
+describe("www on saved routes", () => {
+  const apex = { ...primary, customDomain: "example.com" };
+  const www = { ...apex, customDomain: "www.example.com", redirectTo: "example.com", redirectStatus: 301 };
+
+  function savedRoutes(routes: NonNullable<Service["publicEndpoints"]>, target: "cloud" | "server" = "cloud") {
+    mocks.selfHosted = target !== "cloud";
+    context.projectData.deployTarget = target;
+    context.servicesData.services = [{ ...service, publicEndpoints: routes, customDomain: routes[0].customDomain ?? null }, other];
+    const rows = routes.map((route, i) => ({
+      id: `dom-saved-${i}`, hostname: route.customDomain ?? "", domain: route.customDomain ?? "", domainType: "custom" as const, serviceId: service.id,
+      port: route.port, redirectTo: route.redirectTo, redirectStatus: route.redirectStatus,
+      verified: true, status: "active", sslStatus: "active", isPrimary: i === 0,
+    }));
+    context.domainsData.domains = rows;
+    context.projectData.domains = rows;
+  }
+
+  async function edit(hostname = apex.customDomain) {
+    await click(`${copy.manage} ${hostname}`);
+    await click(domains.menu.editRoute);
+  }
+
+  it.each(["cloud", "server"] as const)("adds www to a running %s service in one routing update and starts HTTPS verification", async target => {
+    savedRoutes([apex, secondary], target);
+    await render();
+    await edit();
+    await click(domains.add.includeWww);
+    expect(mocks.update).not.toHaveBeenCalled();
+    await click(domains.editRoute.save);
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith("project-stack", service.id, expect.objectContaining({
+      publicEndpoints: [{ ...apex, redirectTo: "" }, www, secondary], exposed: true, exposedPort: "3000", customDomain: apex.customDomain,
+    }));
+    expect(context.servicesData.services.find(item => item.id === other.id)).toEqual(other);
+    expect(mocks.retry).toHaveBeenCalledOnce();
+    expect(mocks.updateProject).not.toHaveBeenCalled();
+  });
+
+  it.each(["cloud", "server"] as const)("removes only the www alias from a running %s service", async target => {
+    savedRoutes([apex, www, secondary], target);
+    await render();
+    await edit();
+    expect(button(domains.add.includeWww).getAttribute("aria-checked")).toBe("true");
+    await click(domains.add.includeWww);
+    await click(domains.editRoute.save);
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({ publicEndpoints: [{ ...apex, redirectTo: "" }, secondary], customDomain: apex.customDomain });
+    expect(mocks.remove).not.toHaveBeenCalled();
+    expect(mocks.retry).not.toHaveBeenCalled();
+  });
+
+  it("changes the canonical hostname and preserves unrelated ports in one save", async () => {
+    savedRoutes([apex, www, secondary]);
+    await render();
+    await edit();
+    await click(baseDictionary.widgets.routing.publicEndpoints.domainBehavior);
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find(item => item.textContent?.includes("www.example.com as primary"));
+    expect(option).toBeDefined();
+    await act(async () => option!.click());
+    await click(domains.editRoute.save);
+    expect(mocks.update.mock.calls[0][2]).toMatchObject({
+      publicEndpoints: [
+        { ...apex, customDomain: "www.example.com", redirectTo: "" },
+        { ...apex, redirectTo: "www.example.com", redirectStatus: 301 }, secondary,
+      ], customDomain: "www.example.com", exposedPort: "3000",
+    });
+  });
+
+  it.each(["app.example.com", "*.example.com"])("does not offer www for %s", async hostname => {
+    savedRoutes([{ ...apex, customDomain: hostname }]);
+    await render();
+    await edit(hostname);
+    expect(host.querySelector(`[aria-label="${domains.add.includeWww}"]`)).toBeNull();
+  });
+
+  it("keeps fresh changes to an unrelated hostname when saving www", async () => {
+    savedRoutes([apex, secondary]);
+    await render();
+    await edit();
+    const latest = { ...secondary, port: 9100 };
+    context.servicesData.services[0].publicEndpoints = [apex, latest];
+    await click(domains.add.includeWww);
+    await click(domains.editRoute.save);
+    expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([{ ...apex, redirectTo: "" }, www, latest]);
+  });
+
+  it("loads legacy domain-row redirects and explicitly clears them when serving both hosts", async () => {
+    savedRoutes([apex, { ...apex, customDomain: www.customDomain }, secondary]);
+    Object.assign(context.domainsData.domains[1], { redirectTo: apex.customDomain, redirectStatus: 308 });
+    await render();
+    await edit();
+    const routing = baseDictionary.widgets.routing.publicEndpoints;
+    expect(button(routing.domainBehavior).textContent).toContain("example.com as primary");
+    expect(button(domains.editRoute.save).disabled).toBe(true);
+    await click(routing.domainBehavior);
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find(item => item.textContent?.includes(routing.serveBoth));
+    expect(option).toBeDefined();
+    await act(async () => option!.click());
+    await click(domains.editRoute.save);
+    expect(mocks.update.mock.calls[0][2].publicEndpoints).toEqual([
+      { ...apex, redirectTo: "" },
+      { ...apex, customDomain: www.customDomain, redirectTo: "" },
+      secondary,
+    ]);
+  });
+
+  it.each(["changed", "claimed"])("refuses a stale save if the edited pair was %s while the editor was open", async change => {
+    savedRoutes([apex, secondary]);
+    await render();
+    await edit();
+    context.servicesData.services[0].publicEndpoints = change === "changed"
+      ? [{ ...apex, port: 4040 }, secondary]
+      : [apex, secondary, { ...apex, customDomain: "www.example.com", port: 8080 }];
+    await click(domains.add.includeWww);
+    await click(domains.editRoute.save);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.retry).not.toHaveBeenCalled();
+    expect(mocks.toast.mock.calls.at(-1)?.[1]).toBe("error");
+    expect(button(domains.add.includeWww).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("keeps the draft after the backend rejects a domain conflict", async () => {
+    savedRoutes([apex, secondary]);
+    mocks.update.mockRejectedValueOnce(new Error("Hostname is already in use"));
+    await render();
+    await edit();
+    await click(domains.add.includeWww);
+    await click(domains.editRoute.save);
+    expect(mocks.retry).not.toHaveBeenCalled();
+    expect(mocks.toast.mock.calls.at(-1)?.[1]).toBe("error");
+    expect(button(domains.add.includeWww).getAttribute("aria-checked")).toBe("true");
+    expect(context.servicesData.services[0].publicEndpoints).toEqual([apex, secondary]);
+  });
+
+  it.each(["cloud", "server"] as const)("adds www to saved %s project routes through the existing project update", async target => {
+    savedRoutes([apex], target);
+    context.projectData.framework = "nextjs";
+    context.projectData.serviceCount = 0;
+    context.projectData.publicEndpoints = [apex];
+    context.servicesData.services = [];
+    context.domainsData.domains = context.domainsData.domains.map(row => ({ ...row, serviceId: undefined }));
+    await render(null, true);
+    await click(`${copy.manage} ${apex.customDomain}`);
+    await click(domains.menu.editRoute);
+    await click(domains.add.includeWww);
+    expect(mocks.updateProject).not.toHaveBeenCalled();
+    await click(domains.edit.save);
+    expect(mocks.updateProject).toHaveBeenCalledExactlyOnceWith("project-stack", expect.objectContaining({ publicEndpoints: [apex, www] }));
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.retry).toHaveBeenCalledOnce();
+  });
+});
+
 
 describe("application domain ownership", () => {
   it.each([false, true])("keeps project routing policy outside the app with backing service=%s", async (backing) => {
@@ -499,11 +654,11 @@ describe("application domain ownership", () => {
     expect(host.querySelector('[aria-label="Project route rules"]')).toBeNull();
   });
 
-  it("keeps project routing policy and route rules in project Domains", async () => {
+  it("keeps project Domains focused on hostnames with routing and access in their own tabs", async () => {
     context.projectData.deployTarget = "server";
     await render(null);
-    expect(host.querySelectorAll('[aria-label="Project routing policy"]')).toHaveLength(1);
-    expect(host.querySelectorAll('[aria-label="Project route rules"]')).toHaveLength(1);
+    expect(host.querySelector('[aria-label="Project routing policy"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Project route rules"]')).toBeNull();
     expect(host.textContent).toContain("other.example.com");
     expect(host.textContent).toContain("app.example.com");
   });

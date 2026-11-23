@@ -100,7 +100,10 @@ describe("managed project cache cleanup", () => {
           ),
         );
       }
-      if (command.startsWith("docker buildx rm")) attached = false;
+      if (command.includes("OPENSHIP_BUILD_WORKERS_STOPPED")) {
+        attached = false;
+        return "OPENSHIP_BUILD_WORKERS_STOPPED\n";
+      }
       if (command.includes("df -Pk"))
         return "OPENSHIP_STORAGE 104857600 52428800\nOPENSHIP_INODES 100000\n";
       if (command.startsWith("du ")) return "1024\t/cache/state\n";

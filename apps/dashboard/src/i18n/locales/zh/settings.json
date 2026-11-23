@@ -1581,12 +1581,23 @@
     "connect": "添加凭据",
     "delete": "删除",
     "verify": "向提供方重新校验",
-    "badgeActive": "正常",
+    "badgeActive": "上次检查通过",
+    "badgeSaved": "已保存",
+    "lastVerified": "上次验证：{date}",
     "badgeInvalid": "需要处理",
     "fieldName": "名称",
     "namePlaceholder": "例如：GHCR 只读",
     "secretKeptPlaceholder": "••••••••（已保存——留空即保持不变）",
     "selectPlaceholder": "请选择…",
+    "gitlab": {
+      "continue": "使用 GitLab 继续",
+      "useToken": "使用访问令牌",
+      "useCli": "使用 GitLab CLI",
+      "createToken": "在 GitLab 上创建令牌",
+      "oauthHelp": "授权 OpenShip 使用你的 GitLab 账户读取仓库并管理部署 Webhook。",
+      "cliHelp": "请在运行 OpenShip 的机器上登录。连接后，此工作区可以使用该 CLI 账户访问仓库，并在这台机器上执行构建。",
+      "connectionName": "连接名称（可选）"
+    },
     "verifyNote": "保存前，OpenShip 会向提供方校验该凭据。",
     "confirmDelete": "删除“{name}”？依赖它的功能将停止工作。",
     "toast": {
@@ -1600,6 +1611,14 @@
       "verifyFailed": "提供方拒绝了该凭据"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "访问令牌",
+            "help": "浏览和克隆仓库需要 read_api 和 read_repository。如需在推送时部署，请同时选择 api 权限，并使用可以管理项目 Webhook 的账户。"
+          }
+        }
+      },
       "docker-registry": {
         "label": "容器镜像仓库",
         "summary": "在部署期间从镜像仓库拉取私有镜像。",
@@ -1791,5 +1810,22 @@
     "confirmCta": "停止服务",
     "cancel": "取消",
     "noReverseProxy": "在此机器上未检测到反向代理。"
+  },
+  "imageUrl": {
+    "preview": "图片预览",
+    "invalid": "请输入不含凭据的 HTTP 或 HTTPS 图片 URL。",
+    "failed": "无法保存图片 URL。",
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "已保存",
+    "previewFailed": "无法预览。请检查 URL 是否直接指向图片。"
+  },
+  "profile": {
+    "change": "更改头像",
+    "title": "个人资料",
+    "description": "你的个人账户图片。",
+    "label": "头像 URL",
+    "hint": "使用图片的直接 URL。留空则显示姓名首字母。",
+    "reset": "使用首字母"
   }
 }

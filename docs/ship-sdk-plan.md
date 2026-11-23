@@ -202,7 +202,7 @@ Existing patterns can support the main embedding models:
 
 - One organization per customer: a stable external customer mapping selects the organization; every operation stays within it.
 - One personal organization per user: personal project spaces use the existing organization/membership model.
-- Several users in one customer organization: restricted roles and project grants provide project-level access. Ordinary membership may be broader, so use the appropriate policy deliberately.
+- Several users in one customer organization: restricted roles and project grants provide project-level access. Ordinary members have read/write access but cannot satisfy admin operations; token grants respect the user's current built-in role.
 - Automated project creation: reuse the create-and-grant semantics of scoped tokens, and extend them deliberately for verified native principals. Project creation and the associated access grant must have defined transactional behavior.
 - Namespace-oriented products: first map external namespace keys to an existing tenant or appropriate grouping. If nested namespace isolation is required, add a tenant-owned namespace model, grant semantics, scoped queries, and migrations. A string prefix or renamed project group is insufficient.
 

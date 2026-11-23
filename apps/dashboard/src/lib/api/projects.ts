@@ -1,3 +1,5 @@
+import type { ProjectEdgePagesStatus } from "@repo/contracts";
+import type { ProjectEdgePages } from "@repo/core";
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
 import type { BranchPageResponse } from "./github";
@@ -67,7 +69,7 @@ export interface PendingAction {
   resolveWith: PendingActionResolution[];
 }
 
-/** Fixed rollback limit: project override, otherwise the instance default (5). */
+/** Fixed rollback limit: project override or the default for this installation. */
 export type RollbackCapacityUI = RollbackCapacity;
 
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
@@ -557,6 +559,9 @@ export const projectsApi = {
     api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
+  getEdgePages: (id: string) => api.get<ProjectEdgePagesStatus>(`/projects/${id}/edge-pages`),
+  updateEdgePages: (id: string, config: ProjectEdgePages, expectedRevision: string) =>
+    api.put<ProjectEdgePagesStatus>(`/projects/${id}/edge-pages`, { config, expectedRevision }),
   listRouteProtection: (id: string | number) =>
     api.get<{ data: RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
   changeRouteProtection: (id: string | number, body: RouteProtectionInput) =>
@@ -600,6 +605,17 @@ export const projectsApi = {
     },
   ) => api.patch<{ upserted: number; deleted: number; warnings?: string[] }>(endpoints.projects.env(id), body),
 
+  /** Real values for named keys in the shared (project-level) env store only. */
+  revealEnv: (
+    id: string | number,
+    keys: string[],
+    environment?: "production" | "preview" | "development",
+  ) =>
+    api.post<{ success: boolean; environment: Record<string, string> }>(
+      endpoints.projects.envReveal(id),
+      { keys, ...(environment ? { environment } : {}) },
+    ),
+
   /** Get environment variables (secret values returned masked) */
   getEnv: (id: string | number) =>
     api.get<{
@@ -613,12 +629,15 @@ export const projectsApi = {
     }>(endpoints.projects.env(id)),
 
   /** Get git settings */
-  getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
+  getGit: (id: string | number) =>
+    api.get<Awaited<ReturnType<ProjectControlOperations["getGitInfo"]>>>(
+      endpoints.projects.git(id),
+    ),
 
   /** Link a GitHub repo to an existing project + register webhook */
   linkRepo: (
     id: string | number,
-    body: { owner: string; repo: string; branch?: string; installationId?: number },
+    body: { provider?: string; owner: string; repo: string; branch?: string; installationId?: number },
   ) => api.post<any>(endpoints.projects.gitLink(id), body),
 
   /** Atomically transition a single-app project to a tracked prebuilt image. */

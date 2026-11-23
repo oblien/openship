@@ -184,7 +184,7 @@ export default function AppsPage() {
             </div>
             <div className="divide-y divide-border/50 rounded-2xl bg-card">
               {filteredApps.length > 0 ? filteredApps.map(app => (
-                <ProjectCard key={app.id} project={app} preferAppLogo updateAvailable={updatesBehind.has(app.id)} onChanged={() => removeProject(app.id)} />
+                <ProjectCard key={app.id} project={app} updateAvailable={updatesBehind.has(app.id)} onChanged={() => removeProject(app.id)} />
               )) : (
                 <p className="px-5 py-12 text-center text-sm text-muted-foreground">{copy.catalogNoResults}</p>
               )}

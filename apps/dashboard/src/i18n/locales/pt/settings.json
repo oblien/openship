@@ -1581,12 +1581,23 @@
     "connect": "Adicionar credencial",
     "delete": "Eliminar",
     "verify": "Verificar novamente com o fornecedor",
-    "badgeActive": "A funcionar",
+    "badgeActive": "Última verificação aprovada",
+    "badgeSaved": "Guardada",
+    "lastVerified": "Última verificação: {date}",
     "badgeInvalid": "Requer atenção",
     "fieldName": "Etiqueta",
     "namePlaceholder": "ex.: GHCR só leitura",
     "secretKeptPlaceholder": "•••••••• (guardado — deixe vazio para manter)",
     "selectPlaceholder": "Escolher…",
+    "gitlab": {
+      "continue": "Continuar com o GitLab",
+      "useToken": "Usar um token de acesso",
+      "useCli": "Usar a CLI do GitLab",
+      "createToken": "Criar token no GitLab",
+      "oauthHelp": "Autorize o OpenShip a ler os seus repositórios e a gerir os webhooks de deploy com a sua conta do GitLab.",
+      "cliHelp": "Inicie sessão na máquina onde o OpenShip é executado. Ao ligar, esta área de trabalho poderá usar a conta da CLI para aceder aos repositórios e executar builds nessa máquina.",
+      "connectionName": "Nome da ligação (opcional)"
+    },
     "verifyNote": "O OpenShip verifica a credencial com o fornecedor antes de a guardar.",
     "confirmDelete": "Eliminar \"{name}\"? Tudo o que depende dela deixa de funcionar.",
     "toast": {
@@ -1600,6 +1611,14 @@
       "verifyFailed": "O fornecedor rejeitou a credencial"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Token de acesso",
+            "help": "Use read_api e read_repository para consultar e clonar repositórios. Para fazer deploy a cada push, selecione também api e use uma conta que possa gerir os webhooks do projeto."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Registro de contêineres",
         "summary": "Baixe imagens privadas de um registro durante os deploys.",
@@ -1791,5 +1810,22 @@
     "confirmCta": "Parar de servir",
     "cancel": "Cancelar",
     "noReverseProxy": "Nenhum proxy reverso detectado nesta máquina."
+  },
+  "imageUrl": {
+    "preview": "Prévia da imagem",
+    "invalid": "Insira uma URL HTTP ou HTTPS sem credenciais.",
+    "failed": "Não foi possível salvar a URL da imagem.",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "saved": "Salvo",
+    "previewFailed": "Prévia indisponível. Verifique se a URL aponta diretamente para uma imagem."
+  },
+  "profile": {
+    "change": "Alterar avatar",
+    "title": "Perfil",
+    "description": "A imagem da sua conta pessoal.",
+    "label": "URL do avatar",
+    "hint": "Use uma URL direta de imagem. Deixe em branco para usar sua inicial.",
+    "reset": "Usar inicial"
   }
 }

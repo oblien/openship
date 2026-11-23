@@ -308,3 +308,24 @@ describe("durable preview identity", () => {
     expect((await previews.list("p", "org"))[0]!.headSha).toBe(input.commitSha);
   });
 });
+
+
+describe("provider-bound automatic deployment admission", () => {
+  it.each([undefined, "github", "other-provider"])("rechecks the frozen push provider %s inside the deployment transaction", async (provider) => {
+    await db.update(schema.project).set({ gitProvider: "github", gitOwner: "acme", gitRepo: "app", gitBranch: "main", autoDeploy: true }).where(eq(schema.project.id, "p"));
+    await db.insert(schema.actionDeployment).values({
+      id: "request", organizationId: "org", projectId: "p", revision: "revision", ref: "refs/heads/main",
+      requirements: {}, intent: { kind: "push", repository: "acme/app", gitProvider: provider },
+      authority: { version: 1, userId: "user", organizationId: "org", token: null, restrictions: null },
+      status: "deploying", leaseOwner: "worker", leaseUntil: new Date(Date.now() + 60_000),
+    });
+    const create = deployments.create({ projectId: "p", organizationId: "org", branch: "main", status: "queued", commitSha: "revision", actionRequestId: "request" }, undefined, "worker");
+    if (provider === "other-provider") {
+      await expect(create).rejects.toMatchObject({ code: "ACTIONS_DEPLOYMENT_CHANGED" });
+      expect(await db.select().from(schema.deployment)).toHaveLength(0);
+      expect(await db.select().from(schema.buildSession)).toHaveLength(0);
+    } else {
+      expect((await create)?.actionRequestId).toBe("request");
+    }
+  });
+});

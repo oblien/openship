@@ -24,6 +24,7 @@ export function CustomPlanConfigurator({
   allocatedDiskGb,
   actionLabel,
   interval = "monthly",
+  annualSavings,
 }: {
   catalog: NonNullable<BillingPlans["custom"]>;
   plans: ApiPlan[];
@@ -36,6 +37,7 @@ export function CustomPlanConfigurator({
   allocatedDiskGb?: number | null;
   actionLabel?: string;
   interval?: "monthly" | "annual";
+  annualSavings?: string;
   onSelect: (quote: BillingCustomQuote) => void;
 }) {
   const { t } = useI18n();
@@ -68,9 +70,7 @@ export function CustomPlanConfigurator({
         currentOffer?.price[interval] === quote.priceCents &&
         currentOffer.monthlyCredits === quote.monthlyCredits)),
   );
-  const annualRates = interval === "annual" ? catalog.extraAnnualCents : undefined;
-  const rates = annualRates ?? catalog.extraMonthlyCents;
-  const rateMonths = annualRates ? 12 : 1;
+  const rates = interval === "annual" ? catalog.extraAnnualCents : catalog.extraMonthlyCents;
   const bundle = plans.find((plan) => plan.id === quote?.basePlanTierId);
   const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
 
@@ -102,7 +102,9 @@ export function CustomPlanConfigurator({
 
         <aside className="min-w-0 space-y-4 rounded-2xl bg-card p-5">
           <div>
-            <p className="text-sm font-medium">{copy.monthlyTotal}</p>
+            <p className="text-sm font-medium">
+              {interval === "annual" ? copy.yearlyTotal : copy.monthlyTotal}
+            </p>
             <div
               aria-live="polite"
               aria-busy={!quote && valid && !error}
@@ -110,7 +112,7 @@ export function CustomPlanConfigurator({
             >
               {quote ? (
                 <span className="text-3xl font-semibold tracking-tight tabular-nums">
-                  {money(interval === "annual" ? quote.priceCents / 12 : quote.priceCents)}
+                  {money(quote.priceCents)}
                 </span>
               ) : (
                 <span
@@ -118,11 +120,15 @@ export function CustomPlanConfigurator({
                   aria-label={valid ? copy.updating : copy.invalid}
                 />
               )}
-              <span className="text-sm text-muted-foreground">{ui.perMonth}</span>
+              <span className="text-sm text-muted-foreground">
+                {interval === "annual" ? ui.perYear : ui.perMonth}
+              </span>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{interval === "annual" && quote
-              ? interpolate(t.billing.pricing.annualTotal, { price: money(quote.priceCents) })
-              : ui.billedMonthly}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {interval === "annual"
+                ? annualSavings ?? t.billing.pricing.billedAnnually
+                : ui.billedMonthly}
+            </p>
           </div>
           <Button type="submit" className="w-full" disabled={!quote || disabled || busy || current}>
             {busy ? (
@@ -165,7 +171,7 @@ export function CustomPlanConfigurator({
                 ].map(([label, cents]) => (
                   <div key={label} className="flex items-baseline justify-between gap-3">
                     <dt className="text-muted-foreground">{label}</dt>
-                    <dd className="shrink-0 tabular-nums">{money(Number(cents) / (interval === "annual" ? 12 : 1))}</dd>
+                    <dd className="shrink-0 tabular-nums">{money(Number(cents))}</dd>
                   </div>
                 ))}
               </dl>
@@ -179,13 +185,15 @@ export function CustomPlanConfigurator({
                 ))}
               </div>
             )}
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              {interpolate(copy.rates, {
-                cpu: money(rates.cpuCore / rateMonths),
-                memory: money(rates.memoryGb / rateMonths),
-                disk: money(rates.diskGb / rateMonths),
-              })}
-            </p>
+            {rates && (
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                {interpolate(interval === "annual" ? copy.yearlyRates : copy.rates, {
+                  cpu: money(rates.cpuCore),
+                  memory: money(rates.memoryGb),
+                  disk: money(rates.diskGb),
+                })}
+              </p>
+            )}
           </details>
           {subscription && <p className="text-xs text-muted-foreground">{copy.applyNotice}</p>}
         </aside>

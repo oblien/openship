@@ -98,6 +98,14 @@ describe("referral HTTP authority", () => {
     );
   });
 
+  it("accepts an empty request stream for referral enrollment", async () => {
+    const response = await app.request("/api/referral-program/enroll", {
+      method: "POST", headers: { "x-user": "alice" }, body: "",
+    });
+    expect(response.status).toBe(200);
+    expect(h.collection).toHaveBeenCalledWith(expect.objectContaining({ userId: "alice" }), undefined);
+  });
+
   it("denies scoped credentials and read-only payout requests before provider access", async () => {
     expect(
       (await request("", undefined, { "x-user": "alice", "x-project-token": "1" })).status,

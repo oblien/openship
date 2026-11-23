@@ -234,9 +234,16 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
   private async network(kind: "overlay" | "bridge") {
     const docker = await this.client();
     const name = `${this.prefix}-${kind}`;
+    const inspect = (id: string, signal = this.lifetime.signal) =>
+      swarmRequest<Dockerode.NetworkInspectInfo>(
+        docker,
+        "GET",
+        `/networks/${encodeURIComponent(id)}`,
+        { signal },
+      );
     let network: Dockerode.NetworkInspectInfo;
     try {
-      network = await docker.getNetwork(name).inspect();
+      network = await inspect(name);
     } catch (error) {
       if (!swarmNotFound(error)) throw error;
       try {
@@ -250,9 +257,20 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       } catch (creation) {
         if ((creation as { statusCode?: number })?.statusCode !== 409) throw creation;
       }
-      network = await docker.getNetwork(name).inspect();
+      network = await inspect(name);
     }
     this.assertOwned(network.Labels);
+    // Swarm exposes the network specification before allocating its driver.
+    // Poll the same owned network until encryption can be verified.
+    if (kind === "overlay" && network.Driver === "") {
+      const id = network.Id;
+      const signal = AbortSignal.any([this.signal, AbortSignal.timeout(5_000)]);
+      while (network.Scope === "swarm" && network.Attachable && network.Driver === "") {
+        await swarmDelay(250, signal);
+        network = await inspect(id, signal);
+        this.assertOwned(network.Labels);
+      }
+    }
     if (
       network.Driver !== kind ||
       (kind === "overlay" && (!network.Attachable || network.Options?.encrypted === undefined))

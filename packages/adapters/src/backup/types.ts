@@ -130,8 +130,6 @@ export interface ExecuteCommandOpts {
 
 export interface StreamPathOpts {
   compression?: PayloadCompression;
-  /** A migration may intentionally copy an empty source; backups stay strict. */
-  allowEmpty?: boolean;
   /** Glob-ish patterns to exclude (passed to tar `--exclude`). */
   exclude?: string[];
   /**

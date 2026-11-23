@@ -33,9 +33,11 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   const emailParam = searchParams.get("email") ?? "";
+  const fromSignup = searchParams.get("signup") === "1";
   const { toast } = useToast();
   const { t } = useI18n();
   const loginHref = buildAuthPageHref("/login", searchParams);
+  const resetHref = buildAuthPageHref("/forgot-password", searchParams);
 
   const [status, setStatus] = useState<"pending" | "verifying" | "verified" | "error">(
     token ? "verifying" : "pending",
@@ -221,11 +223,14 @@ function VerifyEmailContent() {
           <UiIcon name="mail" className="size-6 text-foreground" />
         </div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          {t.auth.verifyEmail.pendingTitle}
+          {fromSignup ? t.auth.verifyEmail.signupTitle : t.auth.verifyEmail.pendingTitle}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {emailParam
-            ? interpolate(t.auth.verifyEmail.pendingSentTo, { email: emailParam })
+            ? interpolate(
+                fromSignup ? t.auth.verifyEmail.signupSentTo : t.auth.verifyEmail.pendingSentTo,
+                { email: emailParam },
+              )
             : t.auth.verifyEmail.pendingGeneric}
         </p>
 
@@ -264,10 +269,17 @@ function VerifyEmailContent() {
         </p>
 
         <p className="mt-6 text-sm text-muted-foreground">
+          {t.auth.register.hasAccount}{" "}
           <Link href={loginHref} className="font-medium text-foreground transition-colors hover:underline">
-            {t.auth.verifyEmail.backToSignIn}
+            {t.auth.register.signIn}
           </Link>
         </p>
+        <Link
+          href={resetHref}
+          className="mt-2 inline-block text-sm text-muted-foreground transition-colors hover:text-foreground hover:underline"
+        >
+          {t.auth.forgotPassword.title}
+        </Link>
       </div>
     </AuthShell>
   );

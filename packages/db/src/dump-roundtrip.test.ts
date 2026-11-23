@@ -274,6 +274,35 @@ describe("whole-instance dump → restore round trip", () => {
     },
   );
 
+  it.each(["legacy", "group", "custom", "cleared"] as const)(
+    "restores %s project images into the single iconUrl field",
+    async (mode) => {
+      const original = await dumpSubgraph({ kind: "instance" });
+      const archive = JSON.parse(JSON.stringify(original)) as typeof original;
+      const project = archive.tables.project![0]!;
+      project.favicon = "https://old.example.test/favicon.ico";
+      project.faviconCheckedAt = "2026-11-01T12:00:00Z";
+      const group = archive.tables.project_app!.find((row) => row.id === project.groupId)!;
+      group.favicon = "https://cdn.example.test/group.svg";
+      if (mode === "custom") project.iconUrl = "https://cdn.example.test/custom.svg";
+      else if (mode === "cleared") project.iconUrl = null;
+      else delete project.iconUrl;
+      if (mode === "group") project.favicon = null;
+      const expected = mode === "custom" ? project.iconUrl : mode === "cleared" ? null : mode === "group" ? group.favicon : project.favicon;
+      try {
+        await restoreSubgraph(archive, { mode: "wipe" });
+        const restored = await dumpSubgraph({ kind: "instance" });
+        expect(restored.tables.project![0]!.iconUrl).toBe(expected);
+        expect(restored.tables.project![0]).not.toHaveProperty("favicon");
+        expect(restored.tables.project![0]).not.toHaveProperty("faviconCheckedAt");
+        expect(restored.tables.project_app![0]).not.toHaveProperty("favicon");
+        expect(project.faviconCheckedAt).toBe("2026-11-01T12:00:00Z");
+      } finally {
+        await restoreSubgraph(original, { mode: "wipe" });
+      }
+    },
+  );
+
   it("lets callers include follow-up work in the same atomic restore transaction", async () => {
     const projectSpec = topoOrderedTables().find((s) => s.sqlName === "project")!;
     const [before] = (await db.select().from(projectSpec.table)) as Array<Record<string, unknown>>;

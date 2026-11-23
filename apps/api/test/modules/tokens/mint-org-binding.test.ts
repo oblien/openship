@@ -188,6 +188,16 @@ beforeEach(() => {
 });
 
 describe("finding 1: grant width is checked in the org the binding is written to", () => {
+  it("refuses server administration grants for an ordinary member", async () => {
+    const grants = [{ resourceType: "server", resourceId: "*", permissions: ["admin"] }];
+    const refused = await authorize(OWNER_ORG, { clientId: "cli", organizationId: VICTIM_ORG, grants });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe("GRANT_EXCEEDS_ACCESS");
+    expect(upsertOAuthBindingWithGrants).not.toHaveBeenCalled();
+    const allowed = await authorize(OWNER_ORG, { clientId: "cli", organizationId: OWNER_ORG, grants });
+    expect(allowed.status).toBe(200);
+  });
+
   /**
    * `billing` and `audit` are the two types `roleAllowsResourceType` denies a
    * member, and both are grantable — so they isolate "authority comes from the

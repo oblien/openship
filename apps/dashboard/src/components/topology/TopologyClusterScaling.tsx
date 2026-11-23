@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import {
   observedAllSettled,
   reportCaughtError as observeCaughtError,
@@ -467,6 +468,13 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                     </p>
                   )}
                   <p>Instances are placed automatically on available servers.</p>
+                  <p>The count stays fixed until you change it. Failed instances are replaced automatically.</p>
+                  {selected?.serverIds.length === 1 && <p>
+                    All instances share one server. To keep serving during a server outage, use multiple servers.
+                  </p>}
+                  {selected?.scaling?.provider === "swarm" && <p>
+                    This count applies to each stateless service. Services with local volumes keep one instance on their data server.
+                  </p>}
                   {resources && resources.cpuCores > 0 && resources.memoryMb > 0 && (
                     <p>
                       Per instance: {formatCpuCores(resources.cpuCores)} ·{" "}
@@ -484,9 +492,9 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
               )}
               {imageRequired && (
                 <details className="text-xs" open={!view.config?.imageRepository || undefined}>
-                  <summary className="cursor-pointer text-muted-foreground">
+                  <DisclosureSummary className="cursor-pointer text-muted-foreground">
                     Build delivery{!repository.trim() ? " · Required" : ""}
-                  </summary>
+                  </DisclosureSummary>
                   <div className="mt-3 space-y-2">
                     <label className="block space-y-1.5 text-muted-foreground">
                       <span>Image repository</span>
@@ -569,7 +577,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
           )}
           {(view.activeClusterId || view.internalHost) && (
             <details className="text-xs">
-              <summary className="cursor-pointer text-muted-foreground">Technical details</summary>
+              <DisclosureSummary className="cursor-pointer text-muted-foreground">Technical details</DisclosureSummary>
               <div className="mt-3 space-y-3 text-muted-foreground">
                 <p>
                   {selected?.scaling?.provider === "swarm" ? "Docker Swarm" : "Kubernetes (K3s)"}{" "}

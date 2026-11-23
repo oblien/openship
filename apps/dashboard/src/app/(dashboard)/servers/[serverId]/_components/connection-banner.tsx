@@ -1,3 +1,4 @@
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { Icon as UiIcon } from "@repo/ui/icons";
 import { useRouter } from "next/navigation";
 import {
@@ -282,9 +283,9 @@ export function ConnectionBanner(props: {
           </div>
           {message && kind !== "unknown" && (
             <details className="mt-2.5">
-              <summary className="text-[11px] text-muted-foreground/70 cursor-pointer hover:text-muted-foreground">
+              <DisclosureSummary className="text-[11px] text-muted-foreground/70 cursor-pointer hover:text-muted-foreground">
                 {t.servers.banner.showRawError}
-              </summary>
+              </DisclosureSummary>
               <pre className="text-[11px] font-mono mt-1.5 p-2 rounded-lg bg-foreground/[0.04] text-muted-foreground/80 whitespace-pre-wrap break-all">
                 {message}
               </pre>

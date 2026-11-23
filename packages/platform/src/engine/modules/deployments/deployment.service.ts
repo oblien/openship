@@ -20,7 +20,7 @@ import {
 } from "../../lib/deployment-runtime";
 import { assertNotControlPlane, assertNotControlPlaneById, assertResourceInOrg } from "../../lib/resource-access";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
-import { assertGitHubRepoAccess } from "../github/github-access";
+import { assertProjectRepositoryAccess } from "../git/provider";
 import { maskDeploymentEnv } from "../../lib/secret-env";
 import {
   rollback,
@@ -65,10 +65,7 @@ export async function assertGitHubAccessForDeployment(
   const dep = await getDeployment(deploymentId, organizationId);
   const project = await repos.project.findById(dep.projectId);
   if (!project) return;
-  await assertGitHubRepoAccess(ctx, {
-    owner: project.gitOwner,
-    repo: project.gitRepo,
-  });
+  await assertProjectRepositoryAccess(ctx, project);
 }
 
 export async function listDeployments(
@@ -89,9 +86,7 @@ export async function listDeployments(
         ...d,
         isActive: d.id === activeId,
         projectName: project.name,
-        // Project favicon → the dashboard uses it as the row's logo instead
-        // of the framework/Docker glyph.
-        favicon: project.favicon ?? null,
+        iconUrl: project.iconUrl ?? null,
       })),
     };
   }
@@ -110,8 +105,7 @@ export async function listDeployments(
       ...d,
       projectName: proj?.name ?? "Unknown",
       isActive: proj?.activeDeploymentId === d.id,
-      // Project favicon → dashboard row logo (see listByProject above).
-      favicon: proj?.favicon ?? null,
+      iconUrl: proj?.iconUrl ?? null,
     };
   });
 

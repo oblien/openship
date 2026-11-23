@@ -46,11 +46,11 @@ import { pinDockerfileBaseImages } from "./docker-base-images";
 import type { BaseImageReceipt } from "@repo/core";
 import {
   DEFAULT_BUILD_CACHE_KEEP_BYTES, DOCKER_BUILD_STORAGE_COMMAND, parseBuildStorage,
-  assertBuildStorage, buildKitCacheConfig,
+  assertBuildStorage, buildKitCacheConfig, BUILD_STORAGE_GC_FREE_FRACTION,
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
   type BuildStorage,
 } from "./docker-build-cache";
-import { AppError, withKeyedMutex, parseVolumeMount, formatVolumeMount, mapConcurrent } from "@repo/core";
+import { AppError, assertLocalHostExecutionAllowed, withKeyedMutex, parseVolumeMount, formatVolumeMount, mapConcurrent } from "@repo/core";
 import { readServerStats } from "../system/server-stats";
 import { CUTOVER_SHARED_VOLUMES_ENV, decideCutover, newcomerName, parseSharedVolumeOptIn } from "./cutover";
 import { dockerServiceCutover, type DockerServiceCutover } from "./docker-service-cutover";
@@ -79,7 +79,7 @@ import type {
   ProvisionLock,
 } from "../types";
 import type { PortProbeExecutor } from "../system/port-listen";
-import { PassThrough, Writable, type Readable } from "node:stream";
+import { addAbortSignal, PassThrough, Writable, type Readable } from "node:stream";
 import { relative, sep } from "node:path";
 import { resolveDockerBuildArgs } from "./docker-build-args";
 import { imageStartCommand, nodeOutputOptions } from "./node-output";
@@ -145,7 +145,7 @@ import { isRuntimeNotFoundError } from "../system/errors";
 import { OPENSHIP_LABEL } from "../system/port-owner";
 import { dirOf, ensureOwnedDir } from "../system/elevated-executor";
 import { dockerConfigJsonFor, registryForImage, resolveDockerAuth } from "./docker-auth";
-import { pullWithAnonymousFallback } from "./registry-pull";
+import { pullWithAnonymousFallback, registryAccessError } from "./registry-pull";
 
 import type {
   RuntimeAdapter,
@@ -154,6 +154,7 @@ import type {
   MultiServiceGroupHandle,
   MultiServiceDeployConfig,
   MultiServiceDeployResult,
+  MultiServiceRuntimeAdapter,
   DeploymentRef,
   DockerContainerSummary,
   DockerContainerDetail,
@@ -1800,6 +1801,21 @@ export class DockerRuntime implements RuntimeAdapter {
     return buildKitCacheConfig(storage, await this.configuredBuildCacheBudget());
   }
 
+  /** Routine cache accounting belongs to the scheduled sweep. Only storage
+   * pressure justifies walking idle caches on the deployment path.
+   * Called under the same host lock as worker creation and cache collection. */
+  private async checkManagedBuildStorage(executor: CommandExecutor, log?: BuildLogger): Promise<BuildStorage> {
+    const host = await this.buildCacheHostExecutor(executor);
+    let storage = parseBuildStorage(await host.exec(DOCKER_BUILD_STORAGE_COMMAND));
+    if (storage.freeBytes < Math.ceil(storage.totalBytes * BUILD_STORAGE_GC_FREE_FRACTION) || storage.freeInodes === 0) {
+      const cleaned = await this.pruneManagedBuildState(executor);
+      if (cleaned.spaceReclaimed) log?.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
+      storage = parseBuildStorage(await host.exec(DOCKER_BUILD_STORAGE_COMMAND));
+    }
+    assertBuildStorage(storage);
+    return storage;
+  }
+
   /** A failed settings read falls back to the automatic budget rather than failing a build. */
   private async configuredBuildCacheBudget(): Promise<number | null> {
     try {
@@ -1926,10 +1942,7 @@ export class DockerRuntime implements RuntimeAdapter {
       signal?.throwIfAborted();
       await removeProjectBuildKitWorker(executor, config.projectId);
       await this.assertBuildCacheCommandsStopped(config.projectId);
-      const cleaned = await this.pruneManagedBuildState(executor);
-      if (cleaned.spaceReclaimed) log.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
-      const storage = parseBuildStorage(await cacheHost.exec(DOCKER_BUILD_STORAGE_COMMAND));
-      assertBuildStorage(storage);
+      const storage = await this.checkManagedBuildStorage(executor, log);
       const reused = await ensureProjectBuildCache(this.docker, config.projectId);
       const configPath = `/tmp/openship-buildkit-${randomUUID()}.toml`;
       try {
@@ -1958,8 +1971,7 @@ export class DockerRuntime implements RuntimeAdapter {
     await removeProjectBuildKitWorker(executor, projectId);
     await this.assertBuildCacheCommandsStopped(projectId);
     await this.withBuildCacheLock(async () => {
-      await this.pruneManagedBuildState(executor);
-      assertBuildStorage(parseBuildStorage(await (await this.buildCacheHostExecutor(executor)).exec(DOCKER_BUILD_STORAGE_COMMAND)));
+      await this.checkManagedBuildStorage(executor);
     });
   }
 
@@ -3218,6 +3230,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       if (sshExecutor) {
         await this.extractDocRootOverSsh(sshExecutor, tag, docRoot, hostOutDir);
       } else {
+        assertLocalHostExecutionAllowed();
         // A local daemon shares our disk, so let it copy in place. It reports back
         // false when it can't — VM-backed daemon, or a builder image with no shell —
         // and that's also the remote-daemon case, where the archive has to come over
@@ -3657,6 +3670,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       onResult?: (result: BuildResult) => void;
     }>,
     prepareLogger: BuildLogger,
+    options?: Parameters<NonNullable<MultiServiceRuntimeAdapter["buildImages"]>>[2],
   ): Promise<Array<{ serviceName: string; result: BuildResult }>> {
     if (specs.length === 0) return [];
     for (const spec of specs) spec.logger.protectBuild(spec.config);
@@ -3720,6 +3734,14 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     let tree: Awaited<ReturnType<typeof prepareSourceTree>> | null = null;
     let sharedWorker = false;
     let protectedBatch = false;
+    let imagePreparation: Promise<PromiseSettledResult<void>[]> | undefined;
+    const prepareImages = () => {
+      if (options?.prepareImages && !imagePreparation && !allCancelled()) {
+        imagePreparation = Promise.allSettled([
+          Promise.resolve().then(() => options.prepareImages!(sourceAbort.signal)),
+        ]);
+      }
+    };
     try {
       // Cancelled while these controllers were being registered. Bail BEFORE the
       // clone: it is the most expensive thing this method does on the host, and a
@@ -3861,6 +3883,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         if (protectedBatch) await this.startProtectedBuildWorker(source, prepareLogger, sourceAbort.signal);
       }
       prepareLogger.log(`Building ${specs.length} images with up to ${concurrency} concurrent builds; startup dependencies apply after images are ready.\n`);
+      // Cloud worker setup checks for unsettled host commands. Start pulls only
+      // after setup, and drain them before cleanup makes the same safety check.
+      // Separate per-service workers (different budgets) keep their serial setup.
+      if (sharedWorker || !isSsh) prepareImages();
       const results = await mapConcurrent(resolvedList, concurrency, async ({
 
         spec,
@@ -4005,11 +4031,16 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
           return { serviceName: spec.serviceName, result };
         }
       });
+      prepareImages();
+      const preparation = (await imagePreparation)?.[0];
+      if (preparation?.status === "rejected") throw preparation.reason;
       return results;
     } catch (error) {
+      sourceAbort.abort();
       if (allCancelled()) return cancelledBatch();
       throw error;
     } finally {
+      await imagePreparation;
       try {
         if (sharedWorker) {
           if (protectedBatch) await this.cleanupProtectedBuildWorker(source.projectId);
@@ -5265,10 +5296,6 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     // force → skip the present-check and always pull the tag, so a moved
     // mutable tag (:latest/:1) rolls forward on an "update" deploy.
     const executor = this.connectionOptions?.executor;
-    if (executor) {
-      await this.runRemoteRegistryCommand("pull", ref, opts?.signal, opts?.logger);
-      return;
-    }
     // dockerode does not read `~/.docker/config.json` the way the CLI does, so this pull
     // went out anonymous on a `docker login`-ed host and every private-image deploy failed
     // with an unauthorized manifest fetch (#581). Resolved per pull rather than cached: a
@@ -5278,21 +5305,39 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     // every install shape and every target. The host config is the fallback, and only when
     // no resolver was supplied at all: an org that manages its registries in Openship
     // should not have a stray `docker login` on the box quietly override it.
-    const authconfig = this.connectionOptions?.resolveRegistryAuth
+    const authconfig = executor ? undefined : this.connectionOptions?.resolveRegistryAuth
       ? await this.connectionOptions.resolveRegistryAuth(ref)
       : await resolveDockerAuth(ref);
     try {
+      if (executor) {
+        await this.runRemoteRegistryCommand("pull", ref, opts?.signal, opts?.logger);
+        return;
+      }
       const pull = async (anonymous: boolean) => {
-        opts?.signal?.throwIfAborted();
-        const stream = await this.docker.pull(ref, !anonymous && authconfig ? { authconfig } : {});
-        await new Promise<void>((resolve, reject) => {
-          this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
+        const signal = opts?.signal;
+        signal?.throwIfAborted();
+        const stream = await this.docker.pull(ref, {
+          ...(!anonymous && authconfig ? { authconfig } : {}),
+          ...(signal ? { abortSignal: signal } : {}),
         });
+        // Dockerode passes the signal to the request. Its streaming response
+        // also needs to be destroyed when a pull is cancelled after headers.
+        await new Promise<void>((resolve, reject) => {
+          this.docker.modem.followProgress(
+            signal ? addAbortSignal(signal, stream as Readable) : stream,
+            (err) => (err ? reject(err) : resolve()),
+          );
+        });
+        signal?.throwIfAborted();
       };
       if (authconfig) await pullWithAnonymousFallback(pull,
         () => opts?.logger?.log("Registry login was rejected; retrying public image access without credentials.\n", "warn"), opts?.signal);
       else await pull(true);
     } catch (err) {
+      if (opts?.signal?.aborted) throw err;
+      const accessError = registryAccessError(ref, err);
+      if (accessError) throw accessError;
+      if (executor) throw err;
       observeCaughtError(err, "adapters/runtime/docker");
       // Name the registry and KEEP the daemon's reason. The credential we sent is
       // never echoed back in a pull error, while the reason is the only thing that

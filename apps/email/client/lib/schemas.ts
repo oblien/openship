@@ -12,8 +12,9 @@ export const serializeFiles = async (files: File[]) => {
   return await Promise.all(
     files.map(async (file) => {
       const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve) => {
-        reader.onloadend = () => {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onerror = reject;
+        reader.onload = () => {
           const base64String = reader.result as string;
           resolve(base64String.split(',')[1]!); // Remove the data URL prefix
         };
@@ -31,18 +32,16 @@ export const serializeFiles = async (files: File[]) => {
   );
 };
 
-export const deserializeFiles = async (serializedFiles: z.infer<typeof serializedFileSchema>[]) => {
-  return await Promise.all(
-    serializedFiles.map((data) => {
-      const file = Buffer.from(data.base64, 'base64');
-      const blob = new Blob([file], { type: data.type });
-      const newFile = new File([blob], data.name, {
-        type: data.type,
-        lastModified: data.lastModified,
-      });
-      return newFile;
-    }),
-  );
+export const deserializeFiles = (serializedFiles: z.infer<typeof serializedFileSchema>[]) => {
+  return serializedFiles.map((data) => {
+    const file = Uint8Array.from(atob(data.base64), (char) => char.charCodeAt(0));
+    const blob = new Blob([file], { type: data.type });
+    const newFile = new File([blob], data.name, {
+      type: data.type,
+      lastModified: data.lastModified,
+    });
+    return newFile;
+  });
 };
 
 export const createDraftData = z.object({

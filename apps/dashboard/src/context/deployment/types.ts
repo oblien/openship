@@ -1,4 +1,5 @@
 import type { IconName } from "@repo/ui/icons";
+import type { ComposeChanges } from "@repo/contracts";
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { RouteProtectionDraft } from "@/components/routing/RouteProtectionButton";
@@ -110,6 +111,8 @@ export type RawComposeService = {
   dockerfile?: string | null;
   buildArgs?: Record<string, string | null> | null;
   ports?: string[] | null;
+  /** Container ports from the compose file's `expose:` — not published to the host. */
+  expose?: string[] | null;
   dependsOn?: string[] | null;
   environment?: Record<string, string> | null;
   volumes?: string[] | null;
@@ -170,6 +173,7 @@ export function normalizeComposeService(raw: RawComposeService): ComposeServiceI
     dockerfile: raw.dockerfile ?? undefined,
     buildArgs: raw.buildArgs ?? undefined,
     ports: raw.ports ?? [],
+    expose: raw.expose ?? [],
     dependsOn: raw.dependsOn ?? [],
     environment: raw.environment ?? {},
     volumes: raw.volumes ?? [],
@@ -386,6 +390,7 @@ export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
+  gitProvider?: string;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
   localPath?: string;
   /**
@@ -397,7 +402,7 @@ export interface DeploymentConfig {
    */
   composePath?: string;
   composeRevision?: string;
-  composeChanges?: { added: string[]; changed: string[]; removed: string[] };
+  composeChanges?: ComposeChanges;
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
@@ -973,6 +978,7 @@ export interface DeploymentContextType {
     repo: string,
     force?: string,
     context?: {
+      provider?: string;
       branch?: string;
       serverId?: string;
       projectId?: string;

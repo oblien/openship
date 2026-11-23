@@ -116,14 +116,24 @@ describe("Oblien-managed entitlements", () => {
     h.balance.mockResolvedValue({ ...state.balance, billingMode: "payg" });
     await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ code: "CLOUD_BILLING_BLOCKED" });
   });
-  it("allows billing recovery after an unpaid renewal without granting compute or credits", async () => {
+  it.each(["active", "past_due"] as const)("allows billing recovery during a %s unpaid renewal without granting compute or credits", async status => {
     const state = unpaidMonthlyCloudBilling();
+    state.subscription.status = status;
     h.entitlement.mockResolvedValue(state.entitlement);
     h.subscription.mockResolvedValue({ namespace: state.entitlement.namespace, subscription: state.subscription });
     h.balance.mockResolvedValue(state.balance);
     const result = await syncOblienEntitlement("org_1", { syncResourceLimits: false });
-    expect(result).toMatchObject({ tier: "pro", subscription: { status: "past_due" }, entitlement: { status: "canceled", computeCovered: false } });
+    expect(result).toMatchObject({ tier: "pro", subscription: { status }, entitlement: { status: "canceled", computeCovered: false } });
     await expect(assertNamespaceHasQuota("org_1")).resolves.toBeUndefined();
+    await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ statusCode: 402, code: "CLOUD_BILLING_BLOCKED" });
+    expect(h.mirror).toHaveBeenCalledWith("workspace_1", "org_1", "os-customer", {
+      planTierId: "pro", subscriptionStatus: "canceled",
+      currentPeriodStart: new Date(state.entitlement.periodStart!),
+      currentPeriodEnd: new Date(state.entitlement.periodEnd!),
+    });
+    // A newer balance response alone must not turn old, uncovered capacity into
+    // paid compute. Both authoritative reads must confirm the funded month.
+    h.balance.mockResolvedValue({ ...state.balance, blocking: false, computeCovered: true });
     await expect(assertCloudCanSpend("org_1")).rejects.toMatchObject({ statusCode: 402, code: "CLOUD_BILLING_BLOCKED" });
     expect(h.limits).not.toHaveBeenCalled();
     expect(h.setQuota).not.toHaveBeenCalled();

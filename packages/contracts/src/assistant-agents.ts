@@ -1,9 +1,10 @@
+import { GIT_PROVIDERS } from "@repo/core";
 import { Type, type Static } from "@sinclair/typebox";
 import { TokenGrantSchema } from "./token-inputs";
 import type { AssistantConversation, AssistantProvider } from "./assistant";
 
 /** Specialists work on named resources. Workspace administration stays with the general assistant. */
-export const ASSISTANT_AGENT_RESOURCE_TYPES = ["project", "server", "github_repository"] as const;
+export const ASSISTANT_AGENT_RESOURCE_TYPES = ["project", "server", ...GIT_PROVIDERS.map(({ grantTypes }) => grantTypes.repository)] as const;
 /** Stable avatar IDs, resolved to bundled bot artwork. No user-supplied URLs or markup. */
 export const ASSISTANT_AGENT_ICONS = [
   // The default is resolved from the agent's stable ID, so unnamed choices vary too.

@@ -14,7 +14,7 @@ import { registerProjectRoute, createProjectRouteRegistrar } from "@repo/platfor
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment, findProjectDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
-import { deploymentForcesImagePull, deploymentImagePullPolicy, isMutableImageRef } from "../image-pull-policy";
+import { deploymentForcesImagePull, isMutableImageRef } from "../image-pull-policy";
 import type { DeploymentConfigSnapshot } from "../build.service";
 import { assertSecurityUpdateEnvironment } from "../../updates/security-refresh-guard";
 import { assertDeployVolumePolicy } from "../host-mount-policy";
@@ -53,6 +53,7 @@ import {
 import { getTemplateForOrg } from "../../apps/catalog-source";
 import { runAppPrepareCommand } from "./app-prepare";
 import { ServiceCutoverRecoveryError } from "./cutover-recovery";
+import { ComposeImagePreparation } from "./image-preparation";
 import { attachLinkedNetworks } from "../attach-linked-networks";
 import {
   auditStaticOutput,
@@ -887,6 +888,7 @@ async function prepareServiceRoutes(opts: {
 
 export interface ComposeDeployOptions {
   builtImages?: Map<string, string>;
+  imagePreparation?: ComposeImagePreparation;
   /** Internal strict-refresh proof; image reuse does not need a build machine. */
   retainedImages?: Readonly<Record<string, string>>;
   /** Exact service/image pairs known to be present locally because this
@@ -1421,8 +1423,18 @@ async function deployComposeServicesCore(
         continue;
       }
       if ((match?.duplicates.length ?? 0) > 0) {
-        throw new Error(
-          `Deployment preflight found more than one container matching active service "${row.serviceName ?? row.serviceId}" (${[liveSummary.names[0] ?? liveSummary.id.slice(0, 12), ...match!.duplicates].join(", ")}), so no service activation was started. Remove or reconcile the duplicate container before redeploying.`,
+        const containerNames = [liveSummary.names[0] ?? liveSummary.id.slice(0, 12), ...match!.duplicates];
+        throw new DeployError(
+          `Deployment preflight found more than one container matching active service "${row.serviceName ?? row.serviceId}" (${containerNames.join(", ")}), so no service activation was started. Inspect the containers and their mounts on the target server. Keep the intended container and its data, remove only a confirmed unused duplicate, then redeploy. If ownership is unclear, contact support with deployment ${dep.id}.`,
+          "SERVICE_CONTAINER_CONFLICT",
+          {
+            projectId: project.id,
+            serviceId: row.serviceId,
+            serviceName: row.serviceName ?? row.serviceId,
+            containerNames,
+            serverId: opts?.serverId ?? null,
+            workspaceId: project.workspaceId ?? null,
+          },
         );
       }
 
@@ -1553,8 +1565,9 @@ async function deployComposeServicesCore(
         retained: !!retainRunning || reusingBuild || isPreparedLocalImage(service, image, opts?.preparedLocalImages),
         refresh: !outsideScope });
     }
-    const byRef = new Map<string, Promise<Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>>>>();
-    const startedAtByRef = new Map<string, Date>();
+    const preparation = opts?.imagePreparation ?? new ComposeImagePreparation(
+      runtime, dep, logger, opts?.forcePullImages, opts?.signal,
+    );
     // Freeze all retained artifacts before refreshing mutable tags. Within each
     // phase distinct images can pull together; a shared ref has exactly one pull.
     let preparationFailed = false;
@@ -1563,28 +1576,10 @@ async function deployComposeServicesCore(
         await mapConcurrent(candidates.filter(candidate => candidate.retained === retainedPhase), 4,
           async ({ service, image, requestedRef, retained, refresh }) => {
             throwIfDeploymentCancelled(opts?.signal);
-            const key = `${retained ? "retained" : refresh ? "registry" : "existing"}\0${image}`;
-            const startedAt = startedAtByRef.get(key) ?? new Date();
-            startedAtByRef.set(key, startedAt);
+            const { promise, startedAt } = preparation.prepare(image, { retained, refresh });
             imagePreparationStartedAt.set(service.id, startedAt);
-            let pending = byRef.get(key);
             try {
-              if (!pending) {
-                pending = (async () => {
-                  logger.log(`Preparing image ${image} before service cutover...\n`);
-                  const started = Date.now();
-                  const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
-                    : { force: false, refreshMutableTag: false };
-                  const prepared = await withDeploymentProgress(logger, `image ${image}`, () =>
-                    runtime.prepareDeploymentImage(image, {
-                      ...policy, requirePresent: retained, signal: opts?.signal, logger,
-                    }));
-                  logger.log(`Image ${image} is ready (${Math.floor((Date.now() - started) / 1000)}s).\n`);
-                  return prepared;
-                })();
-                byRef.set(key, pending);
-              }
-              const prepared = await pending;
+              const prepared = await promise;
               throwIfDeploymentCancelled(opts?.signal);
               preparedImages.set(service.id, { ...prepared, requestedRef });
             } catch (error) {

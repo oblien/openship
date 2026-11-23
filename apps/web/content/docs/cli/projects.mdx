@@ -86,10 +86,16 @@ command, build settings, routing, ports and enabled state.
 
 ```bash
 openship domain add app.example.com --project proj_123
+# Multi-service project: choose a service and its container port.
+openship domain add api.example.com --project proj_123 --service api --port 3000
 openship domain records dom_123
 openship domain verify dom_123
 openship domain verify-ssl dom_123
 ```
+
+Target validation happens before the hostname is claimed. The selected project or service keeps its
+existing endpoints; the new domain becomes routable on the next deployment. A multi-service project
+requires `--service`; services with several ports also require `--port`.
 
 Follow the returned DNS instructions before verification. See [domain options](/docs/cli/reference/domain)
 and the [custom-domain guide](/docs/guides/custom-domains) for DNS providers, TLS, and primary domains.

@@ -2,19 +2,19 @@ import {
   PersistQueryClientProvider,
   type PersistedClient,
   type Persister,
-} from '@tanstack/react-query-persist-client';
-import { QueryCache, QueryClient, hashKey } from '@tanstack/react-query';
-import { createTRPCContext } from '@trpc/tanstack-react-query';
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import { useMemo, type PropsWithChildren } from 'react';
-import type { AppRouter } from '@zero/server/trpc';
-import { CACHE_BURST_KEY } from '@/lib/constants';
-import { signOut } from '@/lib/auth-client';
-import { get, set, del } from 'idb-keyval';
-import superjson from 'superjson';
-import { shouldPersistQuery } from '@/lib/query-persistence';
+} from "@tanstack/react-query-persist-client";
+import { QueryCache, QueryClient, hashKey } from "@tanstack/react-query";
+import { createTRPCContext } from "@trpc/tanstack-react-query";
+import { createTRPCClient, httpBatchLink, httpBatchStreamLink, splitLink } from "@trpc/client";
+import { useMemo, type PropsWithChildren } from "react";
+import type { AppRouter } from "@zero/server/trpc";
+import { CACHE_BURST_KEY } from "@/lib/constants";
+import { signOut } from "@/lib/auth-client";
+import { get, set, del } from "idb-keyval";
+import superjson from "superjson";
+import { shouldPersistQuery } from "@/lib/query-persistence";
 
-function createIDBPersister(idbValidKey: IDBValidKey = 'zero-query-cache') {
+function createIDBPersister(idbValidKey: IDBValidKey = "zero-query-cache") {
   return {
     persistClient: async (client: PersistedClient) => {
       await set(idbValidKey, client);
@@ -33,20 +33,20 @@ export const makeQueryClient = (connectionId: string | null) =>
     queryCache: new QueryCache({
       onError: (err, { meta }) => {
         if (meta && meta.noGlobalError === true) return;
-        if (meta && typeof meta.customError === 'string') console.error(meta.customError);
+        if (meta && typeof meta.customError === "string") console.error(meta.customError);
         else if (
-          err.message === 'Required scopes missing' ||
-          err.message.includes('Invalid connection')
+          err.message === "Required scopes missing" ||
+          err.message.includes("Invalid connection")
         ) {
           signOut({
             fetchOptions: {
               onSuccess: () => {
-                if (window.location.href.includes('/login')) return;
-                window.location.href = '/login?error=required_scopes_missing';
+                if (window.location.href.includes("/login")) return;
+                window.location.href = "/login?error=required_scopes_missing";
               },
             },
           });
-        } else console.error(err.message || 'Something went wrong');
+        } else console.error(err.message || "Something went wrong");
       },
     }),
     defaultOptions: {
@@ -71,7 +71,7 @@ let browserQueryClient = {
 };
 
 const getQueryClient = (connectionId: string | null) => {
-  if (typeof window === 'undefined') {
+  if (typeof window === "undefined") {
     return makeQueryClient(connectionId);
   } else {
     if (!browserQueryClient.queryClient || browserQueryClient.activeConnectionId !== connectionId) {
@@ -82,30 +82,39 @@ const getQueryClient = (connectionId: string | null) => {
   }
 };
 
-import { TRPC_URL } from '@/lib/backend-url';
+import { TRPC_URL } from "@/lib/backend-url";
 
 const getUrl = () => TRPC_URL;
 
 export const { TRPCProvider, useTRPC, useTRPCClient } = createTRPCContext<AppRouter>();
 
+const authenticatedFetch: NonNullable<
+  Parameters<typeof httpBatchLink<AppRouter>>[0]["fetch"]
+> = async (url, options) => {
+  const response = await fetch(url, { ...options, credentials: "include" });
+  const redirectPath = response.headers.get("X-Zero-Redirect");
+  if (redirectPath && redirectPath !== new URL(window.location.href).pathname) {
+    window.location.href = redirectPath;
+  }
+  return response;
+};
+
 export const trpcClient = createTRPCClient<AppRouter>({
   links: [
-    // loggerLink({ enabled: () => true }),
-    httpBatchLink({
-      transformer: superjson,
-      url: getUrl(),
-      methodOverride: 'POST',
-      maxItems: 1,
-      fetch: (url, options) =>
-        fetch(url, { ...options, credentials: 'include' }).then((res) => {
-          const currentPath = new URL(window.location.href).pathname;
-          const redirectPath = res.headers.get('X-Zero-Redirect');
-          if (!!redirectPath && redirectPath !== currentPath) {
-            window.location.href = redirectPath;
-            res.headers.delete('X-Zero-Redirect');
-          }
-          return res;
-        }),
+    splitLink({
+      condition: (operation) => operation.path === "assistant.stream",
+      true: httpBatchStreamLink({
+        transformer: superjson,
+        url: getUrl(),
+        fetch: authenticatedFetch,
+      }),
+      false: httpBatchLink({
+        transformer: superjson,
+        url: getUrl(),
+        methodOverride: "POST",
+        maxItems: 1,
+        fetch: authenticatedFetch,
+      }),
     }),
   ],
 });
@@ -116,7 +125,7 @@ export function QueryProvider({
   connectionId,
 }: PropsWithChildren<{ connectionId: string | null }>) {
   const persister = useMemo(
-    () => createIDBPersister(`zero-query-cache-${connectionId ?? 'default'}`),
+    () => createIDBPersister(`zero-query-cache-${connectionId ?? "default"}`),
     [connectionId],
   );
   const queryClient = useMemo(() => getQueryClient(connectionId), [connectionId]);

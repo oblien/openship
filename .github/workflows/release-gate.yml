@@ -34,6 +34,10 @@ permissions:
   actions: read
 
 jobs:
+  website-image:
+    name: Website image
+    uses: ./.github/workflows/website-image.yml
+
   geoip:
     name: GeoIP freshness
     uses: ./.github/workflows/geoip.yml
@@ -96,6 +100,12 @@ jobs:
 
       # The API network tests spawn Bun directly. Test the runtime shipped by
       # the API image and release bundle, including its TLS and WebSocket paths.
+      - name: Setup native test runtime
+        if: steps.resume.outputs.reused != 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
       - name: Setup Bun
         if: steps.resume.outputs.reused != 'true'
         uses: oven-sh/setup-bun@v2

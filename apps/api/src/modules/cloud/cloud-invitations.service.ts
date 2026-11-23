@@ -3,7 +3,7 @@
  * for self-hosted instances through the SaaS's own mail infrastructure.
  *
  * The SaaS receives an authenticated cloud-session call from a local
- * instance and sends the message from its own platform/env transport.
+ * instance and sends the message from the Openship Cloud no-reply address.
  * Local instances can flip `invitationMailSource=cloud` to take this
  * path without provisioning their own mail server.
  *
@@ -50,15 +50,13 @@ export async function sendCloudInvitation(
   }
 
   try {
-    // preferSource is intentionally omitted so the SaaS's own auto-select
-    // (platform mailbox preferred, env-SMTP fallback) decides delivery.
-    // The SaaS IS the cloud — there is nobody to relay to from here.
-    await sendMail({
+    const delivered = await sendMail({
       to: input.to,
       subject: input.subject,
       html: input.html,
       text: input.text,
     });
+    if (!delivered) return { ok: false, status: 502, error: "Cloud email is unavailable" };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown mail error";
     errorDiagnostics.error("api/modules/cloud/cloud-invitations.service",

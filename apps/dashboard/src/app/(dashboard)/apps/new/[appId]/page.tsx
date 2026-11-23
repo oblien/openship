@@ -1,4 +1,5 @@
 "use client";
+import { parseDeployDestination } from "@repo/core";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
@@ -1889,6 +1890,9 @@ export default function AppInstallPage() {
                 <AppDestinationPicker
                   needsGpu={useGpu}
                   selfHostedOnly={template.supportsCloud === false}
+                  destinationKind={!targetDraftId && !projectId
+                    ? template.supportsCloud === false ? "server" : parseDeployDestination(searchParams.get("destination"))
+                    : undefined}
                   value={destination}
                   onChange={setDestination}
                   onReadyChange={setDestinationReady}

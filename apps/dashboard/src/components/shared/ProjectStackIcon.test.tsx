@@ -67,10 +67,10 @@ describe("project and deployment icon identity", () => {
     expect(html).not.toContain("html5");
   });
 
-  it("keeps favicons ahead of the service-group fallback", () => {
+  it("keeps project icons ahead of the service-group fallback", () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
-        <DeploymentCard deployment={deployment({ favicon: "/site.ico" })} />
+        <DeploymentCard deployment={deployment({ iconUrl: "/site.ico" })} />
       </I18nProvider>,
     );
     expect(html).toContain('src="/site.ico"');

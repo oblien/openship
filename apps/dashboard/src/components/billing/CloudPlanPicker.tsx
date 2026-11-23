@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { ReferralCode, useReferralCode } from "@/components/referrals/ReferralCode";
 import { Button } from "@/components/ui/button";
 import { BillingPlansSkeleton } from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
@@ -13,7 +14,7 @@ import { useI18n } from "@/components/i18n-provider";
 import type { BillingSubscription } from "@repo/contracts";
 import type { BillingState } from "@/lib/api/billing";
 import { needsCloudPlan } from "@/lib/billing-presentation";
-import { useCloudCheckout, useCloudPlans } from "./useCloudBilling";
+import { useCloudCheckout, useCloudPlans, type PreparedCheckoutWorkspace } from "./useCloudBilling";
 import { useBillingWorkspace } from "./BillingWorkspaceContext";
 import { CustomPlanConfigurator } from "./CustomPlanConfigurator";
 import type { ApiPlan } from "./PricingCards";
@@ -86,13 +87,14 @@ function PlanPicker({
   preserveProject?: boolean;
   onCheckoutStarted?: (checkoutUrl?: string) => void;
   /** New server acquisition resolves its identity only after choosing a plan. */
-  prepareWorkspace?: () => Promise<string>;
+  prepareWorkspace?: () => Promise<PreparedCheckoutWorkspace>;
   onWorkspaceRemoved?: (workspaceId: string) => void;
   purchaseDetails?: ReactNode;
   purchaseDisabled?: boolean;
 }) {
   const { t } = useI18n();
-  const referral = useReferralCode(initialReferralCode);
+  const searchParams = useSearchParams();
+  const referral = useReferralCode(initialReferralCode ?? searchParams.get("ref") ?? undefined);
   const purchase = useCloudPurchase();
   const billingWorkspaceId = useBillingWorkspace();
   const selectedWorkspaceId = workspaceId ?? billingWorkspaceId;
@@ -101,8 +103,9 @@ function PlanPicker({
     Boolean(workspaceId ?? billingWorkspaceId) ||
     (currentPlan === "free" && !subscription && !complimentary);
   const { payload, loading, error, retry } = useCloudPlans();
-  // Preserve the website choice. Older links without an interval advertised monthly billing.
-  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? (autoCheckout ? "monthly" : "annual"));
+  // Preserve an explicit website choice; new purchases start with monthly billing.
+  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? "monthly");
+  const annualSavings = payload && payload.annual.monthsFree > 0 ? payload.ui.monthsFree : undefined;
   const interval =
     subscription && subscription.status !== "canceled" ? subscription.interval : !complimentary && payload?.annual.enabled ? purchaseInterval : "monthly";
   const hasPlan = !needsCloudPlan({ tier: currentPlan, subscription, complimentary });
@@ -427,13 +430,14 @@ function PlanPicker({
               <CustomPlanConfigurator
                 key={`${selectedWorkspaceId}:${currentOffer?.offerReference ?? currentPlan}`}
                 interval={interval}
+                annualSavings={annualSavings}
                 catalog={payload.custom}
                 plans={payload.plans}
                 ui={payload.ui}
                 currentOffer={currentOffer}
                 subscription={subscription}
                 allocatedDiskGb={allocatedDiskGb}
-                disabled={!selectable || purchaseDisabled || managing || (canPurchase && !referral.ready)}
+                disabled={!selectable || purchaseDisabled || managing || Boolean(checkoutUrl) || (canPurchase && !referral.ready)}
                 busy={busy}
                 actionLabel={canModify ? t.billing.planChange.review : undefined}
                 quoteRevision={quoteRevision}
@@ -452,9 +456,10 @@ function PlanPicker({
                 currentPlan={selectedCurrentPlan}
                 onSelectPlan={handleSelectPlan}
                 subscribingPlan={subscribing}
-                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || managing || (canPurchase && !referral.ready)}
+                purchasesDisabled={!selectable || changes.busy || purchaseDisabled || managing || Boolean(checkoutUrl) || (canPurchase && !referral.ready)}
                 selectionLabel={canModify ? t.billing.planChange.review : undefined}
                 interval={interval}
+                annualSavings={annualSavings}
                 workspaceScoped={workspaceScoped}
               />
             ) : (
@@ -485,16 +490,13 @@ function PlanPicker({
 export function CloudCheckoutNotice({ checkoutUrl }: { checkoutUrl: string }) {
   const { t } = useI18n();
   return (
-    <div role="status" className="rounded-xl bg-muted/40 p-3 text-sm">
-      <p>{t.billing.deployGate.checkoutOpened}</p>
-      <a
-        href={checkoutUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-flex font-medium text-primary hover:underline"
-      >
-        {t.billing.deployGate.continueCheckout}
-      </a>
+    <div role="status" className="space-y-3 rounded-xl bg-muted/40 p-4 text-sm">
+      <p className="text-muted-foreground">{t.billing.deployGate.checkoutOpened}</p>
+      <Button asChild className="w-full">
+        <a href={checkoutUrl} target="_blank" rel="noopener noreferrer">
+          {t.billing.deployGate.continueCheckout}
+        </a>
+      </Button>
     </div>
   );
 }

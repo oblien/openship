@@ -171,6 +171,7 @@ export {
   type AlternativeHostPort,
   type SuggestAlternativeHostPort,
   probeListeningPort,
+  probeListeningPortOwners,
   isDockerHostPortAvailable,
   ensurePortAvailable,
 } from "./runtime/port-conflict";
@@ -605,7 +606,9 @@ export {
 
 // ─── Oblien SDK (re-export for single source of truth) ───────────────────────
 export { Oblien, OblienError, cloudWorkspaceCreationFailure } from "./oblien";
+export { oblienApiBaseUrl, oblienApiUrl, toOblienVmLimits, toOblienVmCapacity, toOblienVmPolicy, toOblienVmOffer, cloudBillingContract } from "./oblien-contract";
 export type {
+  NamespaceResourceLimits,
   NamespaceUsageUnits,
   NamespaceUsageUnitBucket,
   NamespaceUsageUnitsParams,
@@ -648,6 +651,7 @@ export {
 } from "./runtime/cloud/server-connection";
 
 export { resolveSshAuthSock } from "./system/ssh-support";
+export { readLocalGlabToken } from "./system/local-gitlab";
 export { probeLocalGitHubToken } from "./system/local-github";
 export {
   ActionsWorker,

@@ -1,5 +1,7 @@
 import { loadCatalog } from "@/i18n/catalogs";
+import { clientMessages } from "@/i18n/client-messages";
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations } from "next-intl/server";
 import { routing, localizedHref } from "@/i18n/routing";
@@ -150,14 +152,6 @@ const websiteLd = {
   name: SITE_NAME,
   url: SITE_URL,
   publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
-  potentialAction: {
-    "@type": "SearchAction",
-    target: {
-      "@type": "EntryPoint",
-      urlTemplate: `${SITE_URL}/docs?q={search_term_string}`,
-    },
-    "query-input": "required name=search_term_string",
-  },
   inLanguage: "en-US",
 };
 
@@ -202,6 +196,7 @@ export default async function RootLayout({
   return (
     <html lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} suppressHydrationWarning>
       <head>
+        <link rel="describedby" href="/llms.txt" type="text/plain" />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="preconnect" href="https://cdn.oblien.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://cdn.oblien.com" />
@@ -215,9 +210,19 @@ export default async function RootLayout({
         />
       </head>
       <body className="min-h-screen antialiased">
-        <NextIntlClientProvider locale={locale} messages={{ Copy: messages.Copy }} timeZone="UTC">
+        <NextIntlClientProvider locale={locale} messages={clientMessages(messages)} timeZone="UTC">
           {children}
         </NextIntlClientProvider>
+        <Script id="google-tag-manager-init" strategy="afterInteractive">{`
+          window.dataLayer = window.dataLayer || [];
+          function gtag() { window.dataLayer.push(arguments); }
+          gtag('js', new Date());
+        `}</Script>
+        <Script
+          async
+          src="https://www.googletagmanager.com/gtm.js?id=GTM-N5SBDZKV"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );

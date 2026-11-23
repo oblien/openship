@@ -1,10 +1,12 @@
 "use client";
 
+import { paginateRepoList } from "@repo/contracts/git-repo-list";
+import { DEFAULT_GIT_PROVIDER } from "@repo/core";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import type { GitHubRepo } from "@/context/GitHubContext";
+import type { RepositorySummary as GitHubRepo } from "@/lib/git-types";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import type { VisibilityFilter, SortBy } from "../types";
 import { LANG_COLORS } from "@/constants/lang-colors";
@@ -68,6 +70,7 @@ export interface RepoServerPagination {
 }
 
 interface RepositoryListProps {
+  provider?: string;
   repos: GitHubRepo[];
   accounts: Account[];
   selectedOwner: string;
@@ -88,6 +91,7 @@ interface RepositoryListProps {
 }
 
 export function RepositoryList({
+  provider = DEFAULT_GIT_PROVIDER,
   repos,
   accounts,
   selectedOwner,
@@ -121,31 +125,13 @@ export function RepositoryList({
     // Server mode: `repos` is already the searched/sorted/sliced page.
     if (server) return repos;
     // Home can merge repositories from several App, CLI and personal-token owners.
-    let list = selectedOwner
+    const rows = selectedOwner
       ? repos.filter((repo) =>
           getOwnerLogin(repo.owner).toLowerCase() === selectedOwner.toLowerCase(),
         )
       : repos;
 
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (r) =>
-          r.name?.toLowerCase().includes(q) ||
-          r.description?.toLowerCase().includes(q)
-      );
-    }
-    if (visibility === "public") list = list.filter((r) => !r.private);
-    if (visibility === "private") list = list.filter((r) => r.private);
-
-    list = [...list].sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name);
-      if (sortBy === "stars")
-        return (b.stars ?? b.stargazers_count ?? 0) - (a.stars ?? a.stargazers_count ?? 0);
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-
-    return list;
+    return paginateRepoList(rows, { search, visibility, sort: sortBy }).data;
   }, [repos, selectedOwner, search, visibility, sortBy, server]);
 
   // Footer count: authoritative server count (search/visibility-scoped) in
@@ -153,7 +139,7 @@ export function RepositoryList({
   const footerCount = server ? server.count : filtered.length;
 
   const handleDeploy = (ownerLogin: string, repoName: string) => {
-    const slug = encodeRepoSlug(ownerLogin, repoName);
+    const slug = encodeRepoSlug(ownerLogin, repoName, provider);
     router.push(`/deploy/${slug}`);
   };
 
@@ -164,6 +150,7 @@ export function RepositoryList({
         {/* ── Accounts row ──────────────────────────────── */}
         <div className="mb-4">
           <RepositoryAccounts
+            provider={provider}
             accounts={accounts}
             selectedOwner={selectedOwner}
             onSelectOwner={setSelectedOwner}

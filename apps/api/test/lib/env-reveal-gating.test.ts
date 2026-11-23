@@ -43,6 +43,20 @@ describe("#336 env reveal is write-gated; masked reads need only read", () => {
       ),
     ).toBe("project:write");
 
+    // Project-level reveal for the shared environment — same write bar as the
+    // service reveal; the masked GET /:id/env stays read-only.
+    expect(
+      tagOf(
+        (r) =>
+          r.method === "POST" &&
+          r.path.endsWith("/env-reveal") &&
+          r.path.startsWith("/api/projects/") &&
+          !r.path.includes("/services/") &&
+          !r.path.includes("/folder/"),
+        "project env-reveal",
+      ),
+    ).toBe("project:write");
+
     expect(
       tagOf(
         (r) => r.method === "POST" && r.path === "/api/deployments/prepare",

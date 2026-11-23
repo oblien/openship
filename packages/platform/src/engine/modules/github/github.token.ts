@@ -244,31 +244,30 @@ function borrowableForOp(c: ChainCtx): boolean {
   return c.targetAuthorized;
 }
 
-/** Default server for the server-token fallback when the caller names none:
- * the organization's canonical local server first; when it has none, the
- * only connected deployment server the caller can write to that holds a token.
- * Multiple candidates require explicit selection, not an arbitrary identity.
- * Never leaves the caller's organization, and never picks a server the
- * caller cannot deploy to, so borrowing still requires both repository
- * access (checked by the caller of serverReadTarget) and server authority. */
+async function canWriteServer(ctx: RequestContext, serverId: string): Promise<boolean> {
+  const { authorization } = await import("../../lib/authorization");
+  return authorization.checkPermissionOnResource(ctx, {
+    resourceType: "server",
+    resourceId: serverId,
+    action: "write",
+  });
+}
+
+/** Prefer the organization's local server when the caller can write to it
+ * and it holds a token. Otherwise use the sole eligible connected server or
+ * require explicit selection when several qualify. */
 async function resolveDefaultServerTarget(c: ChainCtx): Promise<string | null> {
   const organizationId = c.organizationId!;
-  const local = await repos.server.findLocal(organizationId);
-  if (local) return local.id;
-  const { authorization } = await import("../../lib/authorization");
   const { canResolveServerGitCredential } = await import("./server-github.service");
+  const isEligible = async (serverId: string) =>
+    (await canWriteServer(c.ctx, serverId)) &&
+    (await canResolveServerGitCredential(serverId, { tokenOnly: true }));
+
+  const local = await repos.server.findLocal(organizationId);
+  if (local && (await isEligible(local.id))) return local.id;
   let candidate: string | null = null;
   for (const server of await repos.server.listByOrganization(organizationId)) {
-    if (server.isLocal) continue;
-    if (
-      !(await authorization.checkPermissionOnResource(c.ctx, {
-        resourceType: "server",
-        resourceId: server.id,
-        action: "write",
-      }))
-    )
-      continue;
-    if (!(await canResolveServerGitCredential(server.id, { tokenOnly: true }))) continue;
+    if (server.isLocal || !(await isEligible(server.id))) continue;
     if (candidate) {
       throw new AppError(
         "Several servers have stored GitHub tokens. Select the server to use for this repository and retry.",
@@ -289,14 +288,14 @@ async function serverReadTarget(c: ChainCtx): Promise<{ serverId: string; owner:
   const { owner, repo } = c.tokenCtx;
   if (env.CLOUD_MODE || c.purpose !== "local" || (c.tokenCtx.op ?? "read") !== "read" ||
       !c.organizationId || !owner || !repo || !c.targetAuthorized) return null;
-  const serverId = c.tokenCtx.serverId ?? (await resolveDefaultServerTarget(c));
+  const selectedServerId = c.tokenCtx.serverId;
+  const serverId = selectedServerId ?? (await resolveDefaultServerTarget(c));
   if (!serverId) return null;
   const { requireOrgServer } = await import("../../lib/server-target");
   await requireOrgServer(serverId, c.organizationId);
-  const { authorization } = await import("../../lib/authorization");
-  return await authorization.checkPermissionOnResource(c.ctx, {
-    resourceType: "server", resourceId: serverId, action: "write",
-  }) ? { serverId, owner, repo } : null;
+  // Default candidates already passed the server-write check during selection.
+  if (selectedServerId && !(await canWriteServer(c.ctx, serverId))) return null;
+  return { serverId, owner, repo };
 }
 
 export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {

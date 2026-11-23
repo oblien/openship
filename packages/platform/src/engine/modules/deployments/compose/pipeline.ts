@@ -379,7 +379,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   }
   if (composeBuild.buildFailures.size > 0) {
     logger.log(
-      `Build phase completed with ${composeBuild.buildFailures.size} failed service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Deploying available services...\n`,
+      `Image preparation failed for ${composeBuild.buildFailures.size} service image${composeBuild.buildFailures.size === 1 ? "" : "s"}. Checking deployment readiness before activation...\n`,
       "warn",
     );
   } else {
@@ -396,13 +396,23 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   if (composeBuild.buildFailures.size === 0) {
     try {
       const services = await getCurrentServices();
-      const images = [...composeBuild.imageRefs]
-        .filter(([serviceId]) => !targetServiceIds || targetServiceIds.has(serviceId))
-        .map(([serviceId, imageRef]) => ({
-          serviceId,
-          serviceName: services.find(service => service.id === serviceId)?.name ?? "",
-          imageRef,
-        }));
+      const images = await Promise.all(
+        [...composeBuild.imageRefs]
+          .filter(([serviceId]) => !targetServiceIds || targetServiceIds.has(serviceId))
+          .map(async ([serviceId, imageRef]) => {
+            // A failed preparation has no retry artifact. Inspect the original
+            // ref only when no background preparation ran for this image.
+            const prepared = await composeBuild.imagePreparation?.receipt(imageRef, {
+              retained: composeBuild.preparedLocalImages?.get(serviceId) === imageRef,
+              refresh: true,
+            });
+            return {
+              serviceId,
+              serviceName: services.find(service => service.id === serviceId)?.name ?? "",
+              imageRef: prepared?.imageId ?? imageRef,
+            };
+          }),
+      );
       if (images.every(image => image.serviceName)) await recordDeploymentArtifacts(dep, runtime, images);
     } catch (error) {
       observeCaughtError(error, "platform/engine/modules/deployments/compose/pipeline");
@@ -416,6 +426,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   try {
     composeResult = await deployComposeServices(project, dep, runtime, logger, {
       builtImages: composeBuild.imageRefs,
+      imagePreparation: composeBuild.imagePreparation,
       preparedLocalImages: composeBuild.preparedLocalImages,
       staticArtifactRefs: composeBuild.staticArtifactRefs,
       staticServiceIds: composeBuild.staticServiceIds,

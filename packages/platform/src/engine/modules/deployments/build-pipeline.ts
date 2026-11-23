@@ -32,8 +32,10 @@ import { assertDeployVolumePolicy } from "./host-mount-policy";
 import { deploymentResourceFailure } from "./resource-failure";
 import { recordRuntimeImageReceipts, runtimeImageTrackingRef } from "../../lib/runtime-image-receipts";
 import {
+  DEFAULT_GIT_PROVIDER,
   BUILD_ENV_VARS,
   AppError,
+  DeployError,
   safeErrorMessage,
   sanitizeProxySettings,
   normalizeServiceLabel,
@@ -113,9 +115,8 @@ import {
 } from "../../lib/routing-domains";
 import { normalizeTargetPath } from "../../lib/public-endpoints";
 import { resolveRuntimeResources, resolveBuildResources } from "../../lib/resources";
-import { cloneOnServerAvailable, resolveBuildGitToken } from "../github/clone-auth";
-import { resolveGitHubWebBaseUrl } from "../github/github-source.service";
-import { openDeployRelay } from "../../lib/git-forwarding/index";
+import { cloneOnServerAvailable, resolveBuildGitCredentials } from "../git/clone-credentials";
+import { getGitProvider, requireGitCapability, projectGitProvider, projectRepositoryRef } from "../git/provider";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import { resolveEdgeProviderOptions } from "../../lib/edge-provider-options";
 import { pinnedEdgeImage } from "../../lib/edge-image";
@@ -1117,21 +1118,6 @@ async function executeBuildAndDeploy(
     const orgOwner = await resolveOrgOwner(dep.organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return null; });
     const actorUserId = orgOwner?.userId ?? "";
 
-    // Projects created before a GitHub Enterprise source was connected may
-    // still carry github.com's clone origin. The installation is the durable
-    // source selector, so normalize the frozen snapshot at execution time too;
-    // this covers old projects and source rebindings without a data rewrite.
-    if (project.gitOwner && project.gitRepo) {
-      const webBaseUrl = await resolveGitHubWebBaseUrl(
-        dep.organizationId,
-        project.gitOwner,
-        project.installationId ?? undefined,
-      ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return null; });
-      if (webBaseUrl) {
-        snapshot.repoUrl = `${webBaseUrl.replace(/\/+$/, "")}/${project.gitOwner}/${project.gitRepo}.git`;
-      }
-    }
-
     // Resolved up front so the relay-fallback gate below can exclude
     // multi-service builds (whose clone path differs).
     const { useServicePipeline, servicePreflightServices, primaryApp } = await resolveServicePipelineMode(
@@ -1144,6 +1130,23 @@ async function executeBuildAndDeploy(
     if (primaryApp) {
       snapshot.attachedInfrastructureServiceIds = primaryApp.infrastructure.map(service => service.id);
       await repos.deployment.updateStatus(dep.id, "building", { meta: snapshot });
+    }
+
+    // Pinned artifacts, image-only stacks and local uploads have no Git credential path.
+    const needsGitSource = snapshotNeedsGitSource(snapshot, servicePreflightServices);
+    const gitProvider = needsGitSource ? projectGitProvider(project) : null;
+
+    // Projects created before a GitHub Enterprise source was connected may
+    // still carry github.com's clone origin. The installation is the durable
+    // source selector, so normalize the frozen snapshot at execution time too;
+    // this covers old projects and source rebindings without a data rewrite.
+    if (gitProvider && project.gitOwner && project.gitRepo) {
+      const cloneUrl = await gitProvider.cloneUrl(
+        dep.organizationId,
+        projectRepositoryRef(project),
+        project.installationId,
+      ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return null; });
+      if (cloneUrl) snapshot.repoUrl = cloneUrl;
     }
 
     // "Clone on the server" — clone the repo directly on the remote build host
@@ -1166,7 +1169,7 @@ async function executeBuildAndDeploy(
       buildStrategy,
       isDesktop: plat.target === "desktop",
       forwardGitCredentials: snapshot.forwardGitCredentials,
-      repoIsGithub: !!project.gitOwner,
+      preferTargetClone: !!project.gitOwner && !!gitProvider?.preferTargetClone,
       dockerTransport: runtime instanceof DockerRuntime ? runtime.transport.kind : undefined,
     });
     const cloneOnTarget = clonePlan.cloneRunsOnTarget;
@@ -1196,10 +1199,10 @@ async function executeBuildAndDeploy(
     // adopted-Docker-created snapshot may leave set even though every service runs
     // a registry image. Same arguments preflight passes (preflight.ts) — the two
     // must agree or a rollback resolves a git token it has no use for.
-    const needsGitSource = snapshotNeedsGitSource(snapshot, servicePreflightServices);
 
-    const gitCred: Awaited<ReturnType<typeof resolveBuildGitToken>> = needsGitSource
-      ? await resolveBuildGitToken({
+
+    const gitCred: Awaited<ReturnType<typeof resolveBuildGitCredentials>> = needsGitSource
+      ? await resolveBuildGitCredentials(project.gitProvider ?? DEFAULT_GIT_PROVIDER, {
           ctx: buildBackgroundContext({
             userId: actorUserId,
             organizationId: dep.organizationId,
@@ -1244,9 +1247,9 @@ async function executeBuildAndDeploy(
     if (!env.CLOUD_MODE && cloneOnTarget && runtime.name !== "bare" && !cloneCredentialAvailable) {
       logger.log(
         "Clone-on-server was requested, but nothing can authenticate the clone on the build host — " +
-          "the server has no GitHub identity of its own, no App/PAT token is available, and no git " +
+          "the server has no Git identity of its own, no App/PAT token is available, and no git " +
           "identity could be forwarded. Falling back to cloning on the API host and transferring the " +
-          "build context. To clone directly on the server, connect it under Servers → GitHub " +
+          "build context. To clone directly on the server, connect it under Servers → Connections " +
           "(a read-only per-repo deploy key is the narrowest option), or install the Openship App / " +
           "add a per-project clone token.",
         "warn",
@@ -1305,7 +1308,7 @@ async function executeBuildAndDeploy(
           "Git credential forwarding is enabled, but no SSH executor is available for this server.",
         );
       }
-      const relay = await openDeployRelay({
+      const relay = await requireGitCapability(getGitProvider(project.gitProvider ?? DEFAULT_GIT_PROVIDER).openCloneRelay, "credential forwarding")({
         serverId: resolved.serverId,
         executor: targetExecutor,
         sessionId: buildSessionId,
@@ -1757,9 +1760,17 @@ async function executeBuildAndDeploy(
     // outcome was recorded is bookkeeping: reporting it as a failure would
     // invert a working deploy and tear its containers down.
     const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery, project.workspaceId);
-    await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
-      ? { errorCode: capacityError.code, errorDetails: capacityError.details }
-      : deploymentResourceFailure({ project, message, cause: err }));
+    await reportPipelineError(
+      ctx, capacityError?.message ?? message, logger,
+      capacityError
+        ? { errorCode: capacityError.code, errorDetails: capacityError.details }
+        : deploymentResourceFailure({
+            project, message, cause: err,
+            meta: err instanceof DeployError
+              ? { errorCode: err.code, errorDetails: err.details }
+              : undefined,
+          }),
+    );
   } finally {
     await finishBuildCancellation?.();
     // The deploy is over either way — release the loopback bridges it opened.

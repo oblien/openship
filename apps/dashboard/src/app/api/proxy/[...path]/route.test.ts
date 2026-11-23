@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { errorReporter, consoleErrorSink, type ErrorEvent } from "@repo/core/diagnostics";
 
@@ -25,6 +26,21 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   upstreamFetch.mockReset();
+});
+
+it("streams folder uploads larger than the middleware default without changing their bytes", async () => {
+  const bytes = new Uint8Array(12 * 1024 * 1024).fill(117);
+  upstreamFetch.mockImplementationOnce(async (_url, init) => {
+    const received = new Uint8Array(await new Response(init?.body).arrayBuffer());
+    expect(createHash("sha256").update(received).digest("hex")).toBe(createHash("sha256").update(bytes).digest("hex"));
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer upload-test");
+    return Response.json({ received: received.length });
+  });
+  const response = await POST(new NextRequest("https://ops.example.com/api/proxy/api/projects/folder/upload/session", {
+    method: "POST", headers: { authorization: "Bearer upload-test", "Content-Type": "application/gzip" }, body: bytes,
+  }), { params: Promise.resolve({ path: ["api", "projects", "folder", "upload", "session"] }) });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ received: bytes.length });
 });
 
 it("correlates proxy network failures without logging credentials or request contents", async () => {

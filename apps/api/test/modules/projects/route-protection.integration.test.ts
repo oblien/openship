@@ -56,13 +56,25 @@ it("shares pending protection through real native/HTTP operations without leakin
   };
 
   const pending = await native.projects.changeRouteProtection(project.id, input);
-  expect(pending).toEqual({ hostname: input.hostname, enabled: true, status: "pending" });
+  expect(pending).toEqual({ hostname: input.hostname, enabled: true, status: "pending", options: { mode: "page", username: "visitor", sessionSeconds: 86400 } });
   expect(await client.listRouteProtection(project.id)).toEqual([pending]);
   expect(JSON.stringify(pending)).not.toContain(input.password);
   expect(
     await client.changeRouteProtection(project.id, { hostname: input.hostname, action: "retry" }),
   ).toEqual(pending);
+  const configured = await client.changeRouteProtection(project.id, {
+    hostname: input.hostname, action: "configure",
+    options: { mode: "page", sessionSeconds: 3600, loginHtml: "<main>{{form}}</main>" },
+  });
+  expect(configured.options?.loginHtml).toBe("<main>{{form}}</main>");
+  const browser = await client.changeRouteProtection(project.id, {
+    hostname: input.hostname, action: "configure", options: { mode: "basic", username: "viewer", sessionSeconds: 3600 },
+  });
+  expect(browser.options).toEqual({ mode: "basic", username: "viewer", sessionSeconds: 3600 });
+  expect((await client.listRouteProtection(project.id))[0].options).toEqual(browser.options);
   const policy = (await repos.routeProtection.readPrivate(project.id, input.hostname))!.secret!;
+  expect(JSON.parse(policy).loginHtml).toBeUndefined();
+  for (const key of ["verifier", "signingKey", "salt"]) expect(JSON.stringify(browser)).not.toContain(key);
 
   const other = await seedOwner();
   const stranger = remote(other.token, other.orgId);

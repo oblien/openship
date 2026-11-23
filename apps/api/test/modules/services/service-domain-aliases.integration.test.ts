@@ -31,7 +31,7 @@ beforeEach(() => {
   h.freeGate.mockReset().mockResolvedValue(undefined);
 });
 
-async function seed() {
+async function seed(apex = false) {
   const actor = await seedOwner();
   const group = await repos.projectGroup.create({
     organizationId: actor.orgId,
@@ -45,8 +45,8 @@ async function seed() {
     slug: actor.orgId,
   });
   const label = project.id.replace(/[^a-z0-9]/gi, "").toLowerCase();
-  const primary = `${label}.example.com`;
-  const alias = `alias-${label}.example.com`;
+  const primary = apex ? `${label}.com` : `${label}.example.com`;
+  const alias = apex ? `www.${primary}` : `alias-${label}.example.com`;
   const endpoints: ServicePublicEndpoint[] = [
     { port: 4000, domainType: "custom", customDomain: primary },
   ];
@@ -86,6 +86,62 @@ async function seed() {
 }
 
 describe("same-port service domains with real persistence", () => {
+  it("enables www, changes its direction and disables it without resetting the root certificate", async () => {
+    const s = await seed(true);
+    const bare = { ...s.endpoints[0]!, redirectTo: "" };
+    const www = { ...bare, customDomain: s.alias, redirectTo: s.primary, redirectStatus: 301 };
+    await updateService(s.ctx, s.project.id, s.service.id, { publicEndpoints: [bare, www] });
+    expect(await repos.domain.findById(s.domain.id)).toEqual({
+      ...s.domain,
+      updatedAt: expect.any(Date),
+    });
+    expect(await repos.domain.findByHostname(s.alias)).toMatchObject({
+      verified: false,
+      redirectTo: s.primary,
+      redirectStatus: 301,
+    });
+    expect(h.edge.mock.calls.at(-1)?.[1].registers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hostname: s.alias,
+          redirectHost: { target: s.primary, statusCode: 301 },
+        }),
+      ]),
+    );
+
+    // Reverse the pair in one write: the newly serving hostname must explicitly
+    // clear its previous redirect before the root can redirect to it.
+    await updateService(s.ctx, s.project.id, s.service.id, {
+      publicEndpoints: [
+        { ...bare, customDomain: s.alias },
+        { ...bare, redirectTo: s.alias, redirectStatus: 301 },
+      ],
+    });
+    expect(await repos.domain.findByHostname(s.alias)).toMatchObject({ redirectTo: null });
+    expect(await repos.domain.findById(s.domain.id)).toMatchObject({
+      redirectTo: s.alias,
+      verified: true,
+      sslStatus: "active",
+    });
+
+    await updateService(s.ctx, s.project.id, s.service.id, { publicEndpoints: [bare, www] });
+    await updateService(s.ctx, s.project.id, s.service.id, { publicEndpoints: [bare] });
+    expect(await repos.domain.findByHostname(s.alias)).toBeUndefined();
+    expect(await repos.domain.findById(s.domain.id)).toMatchObject({
+      hostname: s.primary,
+      redirectTo: null,
+      verified: true,
+      status: "active",
+      sslStatus: "active",
+    });
+    expect(h.edge.mock.calls.at(-1)?.[1].removes).toEqual([
+      { hostname: s.alias, isCustomDomain: true },
+    ]);
+    expect(
+      h.edge.mock.calls.at(-1)?.[1].registers.map((route: { hostname: string }) => route.hostname),
+    ).toEqual([s.primary]);
+  });
+
   it("adds an alias without removing the verified primary and removes only the chosen alias", async () => {
     const s = await seed();
     const routes: ServicePublicEndpoint[] = [

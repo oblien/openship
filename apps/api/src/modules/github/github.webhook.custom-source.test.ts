@@ -12,7 +12,7 @@ vi.mock("@repo/db", () => ({
     project: { findByGitRepo: h.findProjects },
     cloudWebhookBinding: { findByRepo: h.findBindings },
     webhookDelivery: {
-      claimGithub: vi.fn(),
+      claimProviderDelivery: vi.fn(),
       markProcessed: vi.fn(),
     },
   },
@@ -38,7 +38,7 @@ describe("custom GitHub App webhook verification", () => {
     vi.clearAllMocks();
     h.findProjects.mockResolvedValue([]);
     h.findBindings.mockResolvedValue([]);
-    h.collectSourceSecrets.mockResolvedValue(["workspace-app-secret"]);
+    h.collectSourceSecrets.mockResolvedValue([{ secret: "workspace-app-secret", organizationId: "org", sourceId: "source" }]);
   });
 
   it("resolves the source from installation metadata and accepts its direct webhook secret", async () => {
@@ -49,7 +49,7 @@ describe("custom GitHub App webhook verification", () => {
         "x-github-event": "installation",
         "x-hub-signature-256": signature(payload, "workspace-app-secret"),
       }),
-    ).resolves.toEqual({ valid: true, githubApp: true });
+    ).resolves.toEqual({ valid: true, githubApp: true, organizationIds: ["org"], sourceIds: ["source"] });
     expect(h.collectSourceSecrets).toHaveBeenCalledWith({
       installationId: 42,
       appId: 12345,
@@ -66,6 +66,15 @@ describe("custom GitHub App webhook verification", () => {
         "x-hub-signature-256": signature(payload, "legacy-app-secret"),
       }),
     ).resolves.toEqual({ valid: false, error: "Invalid signature" });
+  });
+
+  it("keeps an unreadable custom App key scoped to its source", async () => {
+    h.collectSourceSecrets.mockResolvedValue([{ secret: null, organizationId: "org", sourceId: "source" }]);
+    const payload = JSON.stringify({ installation: { id: 42, app_id: 12345 } });
+    await expect(githubWebhookProvider.verify(payload, {
+      "x-github-event": "installation",
+      "x-hub-signature-256": signature(payload, "legacy-app-secret"),
+    })).resolves.toEqual({ valid: false, error: "Invalid signature" });
   });
 
   it("allows ping to try active source secrets when GitHub omits installation metadata", async () => {

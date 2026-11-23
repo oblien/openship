@@ -56,6 +56,7 @@ vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/lib/api/settings", () => ({ settingsApi: { get: async () => ({}) } }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getBranchPage: api.getBranchPage } }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { listBranches: api.getBranchPage } }));
+vi.mock("@/lib/api/git", () => ({ gitApi: () => ({ listBranches: api.getBranchPage }) }));
 vi.mock("@/context/CloudContext", () => ({
   useDefaultDomainType: () => "custom",
   useCloud: () => ({ requireCloud: async () => true }),
@@ -77,7 +78,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: api.push }),
   useSearchParams: () => new URLSearchParams(api.query),
 }));
-vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ state: {} }) }));
+vi.mock("@/context/GitContext", () => ({ useGit: () => ({ icon: "github", definition: { id: "github", webBaseUrl: "https://github.com" } }) }));
 vi.mock("@/hooks/useSSEConnection", () => ({
   useBuildStream: () => ({ isConnected: true, connect: vi.fn(), disconnect: vi.fn() }),
 }));

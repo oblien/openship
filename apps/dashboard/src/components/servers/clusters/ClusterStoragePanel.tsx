@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/DisclosureSummary";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -361,7 +362,7 @@ function NativeClusterStoragePanel({
               </div>
             </div>
             <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Disk options</summary>
+              <DisclosureSummary className="cursor-pointer text-muted-foreground">Disk options</DisclosureSummary>
               <div className="mt-4 space-y-4">
                 <p className="text-sm text-muted-foreground">
                   OpenShip uses a dedicated folder on each selected server. A mounted data disk can
@@ -508,9 +509,9 @@ function NativeClusterStoragePanel({
             </Link>
             {!storage.config.backupDestinationId && canManage && (
               <details className="text-sm">
-                <summary className="cursor-pointer text-muted-foreground">
+                <DisclosureSummary className="cursor-pointer text-muted-foreground">
                   Set up file backups
-                </summary>
+                </DisclosureSummary>
                 <div className="mt-3 max-w-md space-y-3">
                   <BackupDestinationSelect
                     value={backup}
@@ -532,7 +533,7 @@ function NativeClusterStoragePanel({
         )}
         {storage && !available && (
           <details className="mt-5 text-sm">
-            <summary className="cursor-pointer text-muted-foreground">Technical details</summary>
+            <DisclosureSummary className="cursor-pointer text-muted-foreground">Technical details</DisclosureSummary>
             <div className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
               <p>
                 Longhorn provides replicated disks and shared file access inside this cluster.
@@ -551,7 +552,7 @@ function NativeClusterStoragePanel({
       </div>
       {storage && !available && (
         <details open={storage.status !== "ready"} className="rounded-2xl bg-card p-5">
-          <summary className="cursor-pointer text-sm font-medium">Setup progress</summary>
+          <DisclosureSummary className="cursor-pointer text-sm font-medium">Setup progress</DisclosureSummary>
           <div className="mt-4">
             <NetworkSetupProgress
               running={running}

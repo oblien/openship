@@ -1,5 +1,5 @@
 /** HTTP paths and legacy envelopes over the shared permission operations. */
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { readOptionalJsonBody } from "../../lib/request-body";
 import type { Context } from "hono";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { operationContext, operationData } from "../../lib/operation-context";
@@ -31,7 +31,7 @@ export async function materializeInvitation(c: Context) { return c.json({ data: 
 export async function acceptInvitation(c: Context) { return c.json({ data: await operationData(c, operations().acceptInvitation(operationContext(c), param(c, "id"))) }); }
 export async function rejectInvitation(c: Context) { return c.json({ data: await operationData(c, operations().rejectInvitation(operationContext(c), param(c, "id"))) }); }
 export async function cancelInvitation(c: Context) { return c.json({ data: await operationData(c, operations().cancelInvitation(operationContext(c), param(c, "id"))) }); }
-export async function resendInvitation(c: Context) { return c.json({ data: await operationData(c, operations().resendInvitation(operationContext(c), param(c, "id"), await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/permissions/permissions.controller"); return ({}); }))) }); }
+export async function resendInvitation(c: Context) { return c.json({ data: await operationData(c, operations().resendInvitation(operationContext(c), param(c, "id"), await readOptionalJsonBody(c))) }); }
 export async function listMembers(c: Context) { return c.json({ data: await operationData(c, operations().listMembers(operationContext(c))) }); }
 export async function setMemberRole(c: Context) { return c.json({ data: await operationData(c, operations().setMemberRole(operationContext(c), param(c, "id"), await c.req.json())) }); }
 export async function removeMember(c: Context) { return c.json({ data: await operationData(c, operations().removeMember(operationContext(c), param(c, "id"))) }); }

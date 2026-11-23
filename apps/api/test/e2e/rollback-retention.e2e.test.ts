@@ -42,7 +42,7 @@ describeDockerE2E("rollback retention matches rows and real artifacts", () => {
     await runtime.pullImage(BASE_IMAGE);
     contextDir = await mkdtemp(join(tmpdir(), "openship-retention-e2e-"));
     await writeFile(join(contextDir, "Dockerfile"), `FROM ${BASE_IMAGE}\nCMD ["sleep", "3600"]\n`);
-    await repos.instanceSettings.upsert({ defaultRollbackWindow: 5 });
+    await repos.instanceSettings.upsert({ authMode: "local" });
   });
 
   afterEach(async () => {
@@ -129,12 +129,12 @@ describeDockerE2E("rollback retention matches rows and real artifacts", () => {
       .filter((row) => row.id !== project.activeDeploymentId && !row.pinned && row.artifactRetainedAt);
   }
 
-  it("keeps exactly five past snapshots after a deploy and removes expired tags", async () => {
+  it("keeps two past releases by default and removes expired tags after a deploy", async () => {
     const f = await fixture();
     await onDeploymentReady({ newDeployment: f.rows.at(-1)!, previousActive: f.rows.at(-2)! });
-    expect(await snapshots(f.project.id)).toHaveLength(5);
+    expect(await snapshots(f.project.id)).toHaveLength(2);
     for (let index = 0; index < f.tags.length; index += 1) {
-      const kept = index >= f.tags.length - 6;
+      const kept = index >= f.tags.length - 3;
       expect(Boolean((await repos.deployment.findById(f.rows[index]!.id))!.artifactRetainedAt)).toBe(kept);
       expect(await runtime.imageExistsLocally(f.tags[index]!)).toBe(kept);
     }
@@ -157,7 +157,7 @@ describeDockerE2E("rollback retention matches rows and real artifacts", () => {
   it("counts multi-service releases once and protects carried images and live containers", async () => {
     const f = await fixture({ compose: true });
     await reconcileProjectRetention(f.project.id);
-    expect(await snapshots(f.project.id)).toHaveLength(5);
+    expect(await snapshots(f.project.id)).toHaveLength(2);
     expect((await repos.deployment.findById(f.rows[0]!.id))!.artifactRetainedAt).toBeNull();
     expect(await runtime.imageExistsLocally(f.tags[0]!)).toBe(true); // carried worker
     expect(await runtime.imageExistsLocally(f.tags[1]!)).toBe(false); // expired partial release

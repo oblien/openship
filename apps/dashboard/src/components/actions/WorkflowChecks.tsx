@@ -15,6 +15,7 @@ import { WorkflowRepositoryChecks } from "./WorkflowRepositoryChecks";
 
 interface WorkflowChecksProps {
   repository: string | null;
+  gitProvider?: string;
   github: boolean;
   independent: boolean;
   value: ActionWorkflowNotifications | null;
@@ -28,6 +29,7 @@ export function WorkflowChecks(props: WorkflowChecksProps) {
 
 function ScopedWorkflowChecks({
   repository,
+  gitProvider,
   github,
   independent,
   value,
@@ -75,10 +77,11 @@ function ScopedWorkflowChecks({
       {repository ? (
         <>
           {github && (
-            <WorkflowRepositoryChecks key={`${repository}:github`} repository={repository} github />
+            <WorkflowRepositoryChecks gitProvider={gitProvider} key={`${repository}:github`} repository={repository} github />
           )}
           {independent && (
             <WorkflowRepositoryChecks
+              gitProvider={gitProvider}
               key={`${repository}:openship`}
               repository={repository}
               github={false}

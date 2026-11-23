@@ -1,5 +1,6 @@
 "use client";
 
+import { gitProviderDefinition, gitRepositoryLink } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { useCloudResourceKey } from "./CloudResourceContext";
 import type { IconName } from "@repo/ui/icons";
@@ -13,7 +14,7 @@ import React, {
   useRef,
   useMemo,
 } from "react";
-import type { ReleaseSource, WorkloadType } from "@repo/core";
+import type { ProjectGitSource, ReleaseSource, WorkloadType } from "@repo/core";
 import type { ProjectRoutingClaim, ProjectRoutingRetry } from "@repo/contracts";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
@@ -71,7 +72,7 @@ interface ProjectOptions {
   [key: string]: any;
 }
 
-interface BasicProjectData {
+interface BasicProjectData extends ProjectGitSource {
   environmentType?: "production" | "preview" | "development";
   id: string;
   slug: string;
@@ -738,8 +739,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
             // auto-deploy switch gates on; without it that control was hidden
             // for every git project.
             full_name: `${response.owner}/${response.repo}`,
-            provider: "GitHub",
-            url: `https://github.com/${response.owner}/${response.repo}`,
+            provider: gitProviderDefinition(response.provider)?.name ?? response.provider,
+            url: gitRepositoryLink(response.provider, response.owner, response.repo) ?? "",
           },
           branch: response.branch || "main",
           recentCommits: mappedCommits,
@@ -755,7 +756,8 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
           verifiedDomains: response.verified_domains,
           installationInstalled: response.installation_installed,
           installUrl: response.install_url,
-          defaultRollbackStrategy: response.default_rollback_strategy,
+          defaultRollbackStrategy:
+            response.default_rollback_strategy === "snapshot" ? "snapshot" : "git",
         });
       } else {
         // "No repository connected" is the NORMAL state for upload/local
@@ -1061,7 +1063,15 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
       { id: "overview", label: tl.overview, icon: "chart-pie" },
       { id: "topology", label: tl.topology, icon: "topology" },
       { id: "services", label: tl.services, icon: "layers" },
-      { id: "domains", label: tl.domains, icon: "globe" },
+      { id: "domains", label: tl.domains, icon: "globe", sections: [
+        { id: "domains", label: tl.domains },
+        { id: "routing", label: t.widgets.routing.pages.tabs.routing },
+        ...(projectData.deployTarget !== "cloud" && projectData.deployTarget !== "cluster" && !projectData.workspaceId && !projectData.clusterId ? [
+          { id: "access", label: t.widgets.routing.pages.tabs.access },
+          { id: "edge-pages", label: t.widgets.routing.pages.tabs.pages },
+          { id: "proxy", label: t.widgets.routing.pages.tabs.proxy },
+        ] : []),
+      ] },
       { id: "deployments", label: tl.deployments, icon: "rocket" },
       // Shown on cloud AND self-hosted, deliberately: both halves of the tab work
       // in both modes through adapters that already exist — resource usage via

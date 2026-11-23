@@ -9,6 +9,12 @@ import dns from 'node:dns';
 import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { sendMail } from '../src/lib/smtp';
+import * as imap from '../src/lib/imap';
+import { runOutboxPass, readJob } from '../src/mail/outbox';
+import { db, schema } from '../src/db';
+import { mailboxAuth } from '../src/mail/identity';
+import { mailRouter } from '../src/trpc/routes/mail';
+import { simpleParser } from 'mailparser';
 
 let dir: string;
 let cert: Buffer;
@@ -120,6 +126,73 @@ async function waitForClose(server: Awaited<ReturnType<typeof localSmtp>>) {
 }
 
 describe('webmail submission over real local SMTP sockets', () => {
+  it('accepts the mailbox address, formats its display name, and sends the scheduled message once', async () => {
+    db.delete(schema.mailJob).run();
+    const server = await localSmtp('starttls');
+    const saved: Buffer[] = [];
+    spyOn(imap, 'withImap').mockImplementation(async (_auth, use) =>
+      use({
+        append: async (_folder: string, body: Buffer) => {
+          saved.push(body);
+          return { uid: 1 };
+        },
+      } as never),
+    );
+    const mailbox = {
+      email: 'user@example.test',
+      name: 'Sender, Example',
+      password: 'test-only-password',
+      imapHost: 'localhost',
+      imapPort: 993,
+      smtpHost: 'localhost',
+      smtpPort: 587,
+    };
+    try {
+      routeTo(server.port);
+      const caller = mailRouter.createCaller({
+        session: { ...mailbox, sessionId: 'smtp-fixture', expiresAt: new Date(Date.now() + 3600_000) },
+        ...mailboxAuth(mailbox),
+        hono: null,
+      });
+      const { to, subject, text } = message;
+      for (const displayName of [mailbox.name, mailbox.email]) {
+        await expect(
+          caller.send({ to, subject, text, fromEmail: `${displayName} <${mailbox.email}>` }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining('fromEmail') });
+      }
+      await expect(
+        caller.send({ to, subject, text, fromEmail: 'other@example.test' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+      const queued = await caller.send({
+        to,
+        subject,
+        text,
+        fromEmail: mailbox.email,
+        attachments: [{
+          name: 'report.txt',
+          type: 'text/plain',
+          base64: Buffer.from('report').toString('base64'),
+        }],
+        scheduleAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      await runOutboxPass();
+      expect(server.deliveries).toHaveLength(0);
+      await runOutboxPass(Date.now() + 120_000);
+      await runOutboxPass(Date.now() + 180_000);
+      await waitForClose(server);
+      expect(server.deliveries).toEqual([{ delivered: true, secure: true }]);
+      expect(readJob(mailbox, queued.messageId).state).toBe('done');
+      expect(saved).toHaveLength(1);
+      const sent = await simpleParser(saved[0]!);
+      expect(sent.messageId).toBe(`<${queued.messageId}@example.test>`);
+      expect(sent.from?.value).toEqual([{ address: mailbox.email, name: mailbox.name }]);
+      expect(sent.attachments[0].content.toString()).toBe('report');
+    } finally {
+      db.delete(schema.mailJob).run();
+      await server.close();
+    }
+  });
   it.each(['tls', 'starttls'] as const)(
     'sends with verified %s through the OS hostname resolver',
     async (mode) => {

@@ -8,21 +8,11 @@ import type {
 } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import { assertNotControlPlane, assertResourceInOrg } from "../../lib/resource-access";
-import { assertGitHubRepoAccess } from "../github/github-access";
-import { getRawFile } from "../github/github-application.service";
-import { getBranch } from "../github/github.service";
-import { publishChange } from "../github/repository-changes";
-import {
-  getRepositoryChangeAccess,
-  isRepositoryCredentialFailure,
-  repositoryCredentialError,
-  REPOSITORY_PR_PERMISSIONS,
-} from "../github/repository-change-access";
-import { GitHubApiError } from "../github/github.error";
+import { gitRepository, projectGitProvider, projectRepository, requireGitCapability } from "../git/provider";
 import { authorization } from "../../lib/authorization";
 import { inspectRuntimeSource, replaceRuntimeSourceImage } from "./runtime-source-images";
 
-async function readSourceUnchecked(
+async function readSource(
   ctx: ExecutionContext,
   projectId: string,
   input: RuntimeSourceInput,
@@ -32,15 +22,18 @@ async function readSourceUnchecked(
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   assertNotControlPlane(project);
   if (
-    project.gitProvider !== "github" ||
     !project.gitOwner ||
     !project.gitRepo ||
     !project.gitBranch
   )
     throw new ValidationError(
-      "Connect a GitHub repository and deployment branch to propose a source update. Otherwise edit the image in its source.",
+      "Connect a repository and deployment branch to propose a source update. Otherwise edit the image in its source.",
     );
   const { gitOwner: owner, gitRepo: repo, gitBranch: branch } = project;
+  const provider = projectGitProvider(project);
+  const repository = projectRepository(ctx, project);
+  const changes = requireGitCapability(repository.changes, "source updates");
+  try {
   let serviceName: string | undefined;
   if (input.serviceId) {
     const service = await repos.service.findById(input.serviceId);
@@ -55,16 +48,30 @@ async function readSourceUnchecked(
     path.split("/").some((p) => p.toLowerCase() === ".git" || /[\x00-\x1f\x7f]/.test(p))
   )
     throw new ValidationError("Select a file inside the repository.");
-  await assertGitHubRepoAccess(ctx, { owner, repo }, "read");
-  const head = await getBranch(ctx, owner, repo, branch);
+  await repository.assertAccess("read");
+  const head = await repository.branch(branch);
   if (!head) throw new ValidationError("The deployment branch no longer exists.");
-  if (baseSha && head.commit.sha !== baseSha)
+  if (baseSha && head.sha !== baseSha)
     throw new AppError(
       "The deployment branch changed. Reload the file and review the new diff.",
       409,
       "RUNTIME_SOURCE_CHANGED",
     );
-  const file = await getRawFile(ctx, { owner, repo, branch: head.commit.sha, file: path });
+  const file = await repository.readFile(path, head.sha).catch(
+    async (error: unknown) => {
+      if (
+        await provider.errors.isMissingFile(error)
+      ) {
+        throw new AppError(
+          "This file could not be found on the deployment branch. Choose another file.",
+          404,
+          "RUNTIME_SOURCE_FILE_NOT_FOUND",
+        );
+      }
+      throw error;
+    },
+  );
+  if (!Number.isFinite(file.size)) throw new ValidationError("Select a file, not a directory.");
   if (file.size > 64000) throw new ValidationError("Choose a source file smaller than 64 KB.");
   const inspected = inspectRuntimeSource(file.content, input.format, serviceName);
   const canWriteProject = await authorization.checkPermissionOnResource(ctx, {
@@ -73,18 +80,19 @@ async function readSourceUnchecked(
     action: "write",
   });
   const publishAccess = canWriteProject
-    ? await getRepositoryChangeAccess(ctx, owner, repo, [path])
+    ? await changes.access([path])
     : ("workspace_access_required" as const);
   return {
     content: file.content,
     serviceName,
     source: {
+      provider: provider.id,
       owner,
       repo,
       branch,
-      baseSha: head.commit.sha,
+      baseSha: head.sha,
       path,
-      url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/blob/${head.commit.sha}/${path.split("/").map(encodeURIComponent).join("/")}`,
+      url: await repository.fileUrl(path, head.sha),
       references: inspected.references.map(({ id, label, image, line }) => ({
         id,
         label,
@@ -95,18 +103,16 @@ async function readSourceUnchecked(
       publishAccess,
     },
   };
-}
-
-async function readSource(...args: Parameters<typeof readSourceUnchecked>) {
-  try {
-    return await readSourceUnchecked(...args);
   } catch (error) {
-    // A missing source file is not evidence that the connection needs changing.
-    if (
-      !(error instanceof GitHubApiError && error.status === 404) &&
-      isRepositoryCredentialFailure(error)
-    )
-      throw repositoryCredentialError();
+    if (await provider.errors.isCredentialFailure(error)) throw await provider.errors.credentialError();
+    if (await provider.errors.isTransient(error)) {
+      const unavailable = new AppError(
+        `${provider.name} is temporarily unavailable. Try reading the source again shortly.`,
+        503, "RUNTIME_SOURCE_UNAVAILABLE",
+      );
+      unavailable.cause = error;
+      throw unavailable;
+    }
     throw error;
   }
 }
@@ -142,6 +148,7 @@ export async function previewRuntimeSource(
         ctx.organizationId,
         projectId,
         input.serviceId ?? null,
+        source.provider,
         source.owner,
         source.repo,
         source.branch,
@@ -172,11 +179,11 @@ export async function publishRuntimeSource(
       409,
       "RUNTIME_SOURCE_CHANGED",
     );
-  return publishChange(
-    ctx,
+  const changes = requireGitCapability(gitRepository(ctx, {
+    provider: preview.provider, namespace: preview.owner, name: preview.repo,
+  }).changes, "source updates");
+  return changes.publish(
     {
-      owner: preview.owner,
-      repo: preview.repo,
       requestId: input.requestId,
       pullRequest: true,
       patch: {
@@ -187,6 +194,5 @@ export async function publishRuntimeSource(
         files: [{ path: preview.path, content: preview.after }],
       },
     },
-    { installationPermissions: REPOSITORY_PR_PERMISSIONS },
   );
 }

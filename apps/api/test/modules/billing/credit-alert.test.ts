@@ -23,13 +23,19 @@ const input = {
   eventType: "namespace.quota.threshold",
   eventId: "evt1",
   timestamp: "2026-09-28T00:00:00Z",
-  data: { namespace: "tenant", service: "workspace_vm", threshold: 95, alert: { limit: 4000 } },
+  data: { namespace: "tenant", service: "vm_compute", threshold: 95, alert: { limit: 4000 } },
   organizationId: "org-a",
   dashboardUrl: "https://app.openship.io",
   entitlement: state(),
 };
 
 describe("provider credit alerts", () => {
+  it("accepts a pre-cutover delivery without changing its idempotency key", () => {
+    const result = creditAlertNotification({
+      ...input, data: { ...input.data, service: "workspace_vm" },
+    });
+    expect(result).toEqual(creditAlertNotification(input));
+  });
   it("uses current provider numbers and an organization-bound billing link", () => {
     const result = creditAlertNotification(input)!;
     expect(result.payload.message).toContain("95%");

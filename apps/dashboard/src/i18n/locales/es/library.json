@@ -12,6 +12,7 @@
     "title": "Nuevo proyecto",
     "subtitle": "Despliega una aplicación o importa tu propio proyecto.",
     "tabs": {
+      "repositories": "Repositorios",
       "folder": "Carpeta",
       "github": "GitHub",
       "templates": "Plantillas",
@@ -36,7 +37,7 @@
       "copyCode": "Haz clic para copiar"
     },
     "default": {
-      "title": "Conecta GitHub para desplegar",
+      "title": "Conecta {provider} para desplegar",
       "descSelfHosted": "Elige cómo accede OpenShip a tus repositorios.",
       "descSaas": "Vincula tu cuenta de GitHub para explorar repos y desplegar en cada push.",
       "recommended": "Recomendado",
@@ -144,7 +145,7 @@
       "name": "Nombre",
       "stars": "Estrellas"
     },
-    "addAccount": "Añadir cuenta de GitHub",
+    "addAccount": "Añadir cuenta de {provider}",
     "installTitle": "Instala la GitHub App",
     "installDesc": "Instala la GitHub App en tu cuenta u organización para conceder acceso a tus repositorios.",
     "installButton": "Instalar GitHub App",
@@ -174,8 +175,6 @@
     "total": "Total",
     "public": "Públicos",
     "private": "Privados",
-    "quickTip": "Consejo rápido",
-    "quickTipDesc": "Selecciona cualquier repositorio para desplegarlo al instante. Configura despliegues automáticos en cada push.",
     "connection": "Conexión",
     "openshipGithubApp": "OpenShip GitHub App",
     "connected": "Conectado",
@@ -187,14 +186,13 @@
     "notConnectedManage": "No conectado — gestiona en Ajustes",
     "optional": "Opcional",
     "footnote": "Gestiona las conexiones de GitHub para explorar y desplegar repositorios.",
-    "manageGithubSettings": "gestionar GitHub en Ajustes",
     "methodToken": "Token de GitHub",
     "methodDevice": "Iniciar sesión con GitHub"
   },
   "urlImport": {
-    "invalidUrl": "Introduce una URL válida de repositorio de GitHub",
+    "invalidUrl": "Introduce una URL válida de repositorio de {providers}",
     "title": "Importar desde URL de Git",
-    "description": "Pega la URL de un repositorio público para importarlo. No requiere conexión con GitHub.",
+    "description": "Pega la URL de un repositorio público para importarlo. No requiere conexión con {providers}.",
     "importButton": "Importar repositorio"
   },
   "customAppModal": {

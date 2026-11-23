@@ -7,6 +7,8 @@ const h = vi.hoisted(() => ({
   token: vi.fn(), spend: vi.fn(), create: vi.fn(), retry: vi.fn(), get: vi.fn(), start: vi.fn(), resume: vi.fn(),
   env: { CLOUD_MODE: true, OBLIEN_API_URL: "https://staging.oblien.test", OBLIEN_DOCKER_PRESET: undefined as string | undefined },
   permanent: vi.fn(), resize: vi.fn(), wait: vi.fn(), credentials: [] as unknown[],
+  runtimeStatus: vi.fn(), runtimeInfo: vi.fn(), ownerVm: vi.fn(), enableRuntime: vi.fn(),
+  networkStatus: vi.fn(), ownerNetworkUpdate: vi.fn(),
   inFlight: vi.fn(), discard: vi.fn(), list: vi.fn(), exec: vi.fn(), invalidate: vi.fn(), dispose: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
@@ -25,15 +27,18 @@ vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
   },
 }));
 vi.mock("@repo/platform/engine/lib/cloud/client", () => ({ getOrgCloudToken: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient: () => ({ vm: h.ownerVm }) }));
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", () => ({ assertCloudCanSpend: h.spend, syncOblienEntitlement: h.entitlement }));
 vi.mock("@repo/adapters", async (original) => ({
   ...await original<typeof import("@repo/adapters")>(),
   Oblien: class {
     constructor(credentials: unknown) { h.credentials.push(credentials); }
-    workspaces = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
-    workspace = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
+    vms = { create: h.create, retryCreation: h.retry, get: h.get, list: h.list };
+    vm = (id: string) => ({ id, get: h.get, start: h.start, resume: h.resume,
       lifecycle: { makePermanent: h.permanent }, resources: { update: h.resize },
-      runtime: async () => ({ exec: { run: h.exec } }), invalidateRuntime: h.invalidate });
+      apiAccess: { status: h.runtimeStatus },
+      network: { get: h.networkStatus },
+      runtime: async () => ({ exec: { run: h.exec }, info: h.runtimeInfo }), invalidateRuntime: h.invalidate });
   },
   waitForCloudDockerWorkspace: h.wait,
   CloudWorkspaceExecutor: class {
@@ -44,6 +49,7 @@ vi.mock("@repo/adapters", async (original) => ({
 }));
 
 import { cloudDockerWorkspaceForCleanup, ensureCloudDockerWorkspace, ensureCloudWorkspaceHost } from "@repo/platform/engine/lib/cloud-docker-workspace";
+import { OblienError } from "@repo/adapters";
 
 const project = { id: "project-a", organizationId: "org-a", activeDeploymentId: null, workspaceId: "owner-a", serverId: "server-a" } as Project;
 const resources = { cpuCores: 2, memoryMb: 4096, diskMb: 32768 };
@@ -75,6 +81,14 @@ beforeEach(() => {
     resources: { cpus: 2, memory_mb: 4096, disk_size_mb: 32768 },
   });
   h.wait.mockImplementation(async () => h.get());
+  h.runtimeStatus.mockResolvedValue({ enabled: true });
+  h.runtimeInfo.mockResolvedValue({ os: "linux" });
+  h.networkStatus.mockResolvedValue({ public_access: true });
+  h.ownerNetworkUpdate.mockResolvedValue({ success: true });
+  h.ownerVm.mockReturnValue({
+    apiAccess: { enable: h.enableRuntime },
+    network: { update: h.ownerNetworkUpdate },
+  });
   h.exec.mockResolvedValue("");
   h.resize.mockImplementation(async (resources) => {
     const workspace = await h.get();
@@ -86,7 +100,7 @@ beforeEach(() => {
     return { success: true, relaunched: true };
   });
   h.inFlight.mockResolvedValue([]);
-  h.list.mockResolvedValue({ workspaces: [], total: 0, limit: 100, page: 1 });
+  h.list.mockResolvedValue({ vms: [], total: 0, limit: 100, page: 1 });
   h.discard.mockImplementation(async () => {
     binding = undefined;
   });
@@ -110,9 +124,43 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     });
     expect(await ensureCloudDockerWorkspace(input)).toEqual({ projectId: "project-a", workspaceId: "workspace-a", ownerWorkspaceId: "owner-a" });
     expect(h.credentials).toEqual([{ token: "short-lived-tenant-token", baseUrl: "https://staging.oblien.test" }]);
-    expect(h.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: "namespace-a", image: "oblien/docker:29", wait_ready: false, idempotency_key: "stable-key" }));
+    expect(h.create).toHaveBeenCalledWith(expect.objectContaining({
+      namespace: "namespace-a",
+      image: "oblien/docker:29",
+      wait_ready: false,
+      idempotency_key: "stable-key",
+      config: expect.objectContaining({
+        network_config: { allow_internet: true, public_ingress: true },
+      }),
+    }));
     expect(binding?.state).toBe("ready");
     expect(h.permanent).toHaveBeenCalledOnce();
+    expect(h.ownerVm).not.toHaveBeenCalled();
+  });
+  it("initializes a disabled runtime and waits for scoped access before marking the paid server ready", async () => {
+    let runtimeEnabled = false;
+    h.runtimeStatus.mockImplementation(async () => ({ enabled: runtimeEnabled }));
+    h.enableRuntime.mockImplementation(async () => { runtimeEnabled = true; });
+    h.runtimeInfo
+      .mockRejectedValueOnce(new Error("gateway unavailable"))
+      .mockImplementation(async () => {
+        if (!runtimeEnabled) throw new Error("runtime disabled");
+        return { os: "linux" };
+      });
+
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("gateway unavailable");
+    expect(binding).toMatchObject({ state: "provisioning", workspaceId: "workspace-a" });
+    expect(h.ownerVm).toHaveBeenCalledWith("workspace-a");
+
+    await ensureCloudDockerWorkspace(input);
+    expect(binding?.state).toBe("ready");
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.enableRuntime).toHaveBeenCalledOnce();
+
+    h.runtimeStatus.mockResolvedValue({ enabled: false });
+    await ensureCloudDockerWorkspace(input);
+    expect(h.runtimeStatus).toHaveBeenCalledTimes(2);
+    expect(h.enableRuntime).toHaveBeenCalledOnce();
   });
   it("deduplicates simultaneous deployments through the subscribed server lock", async () => {
     const result = await Promise.all([ensureCloudDockerWorkspace(input), ensureCloudDockerWorkspace(input)]);
@@ -127,6 +175,23 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     await ensureCloudDockerWorkspace(input);
     expect(h.create.mock.calls[1]![0]).toEqual(h.create.mock.calls[0]![0]);
     expect(h.resize).not.toHaveBeenCalled();
+  });
+  it("recovers a VM created with the old network settings and enables Edge ingress before readiness", async () => {
+    binding = { ...ownerRef, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
+    h.create.mockRejectedValue(new OblienError("different creation options", 409, "IDEMPOTENCY_CONFLICT"));
+    h.list.mockResolvedValue({ vms: [await h.get()], total: 1, limit: 100, page: 1 });
+    h.networkStatus.mockResolvedValue({ public_access: false });
+    h.ownerNetworkUpdate.mockResolvedValueOnce({ success: false });
+
+    await expect(ensureCloudDockerWorkspace(input)).rejects.toMatchObject({ code: "CLOUD_EDGE_INGRESS_UNAVAILABLE" });
+    expect(binding).toMatchObject({ workspaceId: "workspace-a", state: "provisioning" });
+    await ensureCloudDockerWorkspace(input);
+    expect(binding.state).toBe("ready");
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.ownerNetworkUpdate).toHaveBeenLastCalledWith({ public_access: true });
+
+    await ensureCloudDockerWorkspace(input);
+    expect(h.ownerNetworkUpdate).toHaveBeenCalledTimes(2);
   });
   it("retains the binding on readiness failure and reconnects without creating another disk", async () => {
     h.wait.mockRejectedValueOnce(new Error("still starting"));
@@ -190,7 +255,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
   it("adopts an earlier workspace discovered after a quota refusal instead of creating another", async () => {
     binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
     h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
-    h.list.mockResolvedValue({ workspaces: [await h.get()], total: 1, limit: 100, page: 1 });
+    h.list.mockResolvedValue({ vms: [await h.get()], total: 1, limit: 100, page: 1 });
     await expect(ensureCloudDockerWorkspace(input)).resolves.toEqual({ projectId: project.id, workspaceId: "workspace-a", ownerWorkspaceId: "owner-a" });
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.discard).not.toHaveBeenCalled();
@@ -209,8 +274,8 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
     h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
     const workspace = await h.get();
-    h.list.mockResolvedValueOnce({ workspaces: [{ ...workspace, namespace: "other-namespace", id: "foreign-vm" }], total: 2, limit: 1, page: 1 });
-    h.list.mockResolvedValueOnce({ workspaces: [workspace], total: 2, limit: 1, page: 2 });
+    h.list.mockResolvedValueOnce({ vms: [{ ...workspace, namespace: "other-namespace", id: "foreign-vm" }], total: 2, limit: 1, page: 1 });
+    h.list.mockResolvedValueOnce({ vms: [workspace], total: 2, limit: 1, page: 2 });
     await expect(ensureCloudDockerWorkspace(input)).resolves.toMatchObject({ workspaceId: "workspace-a" });
     expect(h.list).toHaveBeenNthCalledWith(2, { page: 2, limit: 100 });
     expect(h.attach).toHaveBeenCalledExactlyOnceWith(ownerRef, project.organizationId, "namespace-a", "workspace-a");
@@ -219,7 +284,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     binding = { ...input, namespace: "namespace-a", provisionKey: "legacy-key", workspaceId: null, state: "provisioning" };
     h.create.mockRejectedValue(Object.assign(new Error("namespace workspace limit"), { status: 409, code: "NAMESPACE_LIMIT_REACHED" }));
     const workspace = await h.get();
-    h.list.mockResolvedValue({ workspaces: [workspace, { ...workspace, id: "duplicate-vm" }], total: 2, limit: 100, page: 1 });
+    h.list.mockResolvedValue({ vms: [workspace, { ...workspace, id: "duplicate-vm" }], total: 2, limit: 100, page: 1 });
     await expect(ensureCloudDockerWorkspace(input)).rejects.toThrow("Multiple Cloud servers");
     expect(h.attach).not.toHaveBeenCalled();
     expect(h.discard).not.toHaveBeenCalled();
@@ -288,7 +353,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     const error = Object.assign(new Error("initial provisioning failed"), {
       status: 422,
       code: "CREATE_FAILED",
-      details: { workspace_id: "workspace-a" },
+      details: { vm_id: "workspace-a" },
     });
     h.create.mockRejectedValueOnce(error);
     await expect(ensureCloudDockerWorkspace(input)).rejects.toBe(error);
@@ -328,7 +393,7 @@ describe("Subscribed Cloud server provisioning and retry", () => {
     h.create.mockRejectedValueOnce(
       Object.assign(new Error("creation failed"), {
         status: 422,
-        details: { workspace_id: "workspace-a" },
+        details: { vm_id: "workspace-a" },
       }),
     );
     const created = await h.get();

@@ -94,26 +94,24 @@ export function supportEmail(input: {
   };
 }
 
-/* ------------------------------------------------------------------ */
-/*  Verify email                                                       */
-/* ------------------------------------------------------------------ */
-
-export function verifyEmailTemplate(user: { name?: string | null; email: string }, url: string) {
-  const html = layout(`
-    ${greeting(user.name)}
-    <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 4px">
-      Please verify your email address to get started with ${BRAND}.
-    </p>
-    ${ctaButton(url, "Verify email")}
-    <p style="color:#9ca3af;font-size:13px;margin:0">
-      If you didn't create an account, you can ignore this email.
-    </p>
-  `);
-
+/** A signup retry must not disclose account existence in the HTTP response. */
+export function existingAccountEmail(
+  user: { name?: string | null; email: string },
+  dashboardUrl: string,
+) {
+  const login = new URL("/login", dashboardUrl).href;
+  const reset = new URL("/forgot-password", dashboardUrl).href;
   return {
-    subject: "Verify your Openship email",
-    html,
-    text: `Hi ${user.name || "there"},\n\nVerify your email: ${url}\n\nIf you didn't create an account, ignore this email.`,
+    subject: "Sign in to your OpenShip account",
+    html: layout(`
+      ${greeting(user.name)}
+      <p style="color:#374151;font-size:14px;line-height:1.6">You already have an OpenShip account. This signup attempt did not create another account or change your password.</p>
+      <p style="color:#374151;font-size:14px;line-height:1.6">Sign in with your existing password, or use Google or GitHub if that is how you registered.</p>
+      ${ctaButton(htmlEscape(login), "Sign in")}
+      <p style="color:#374151;font-size:14px;line-height:1.6">To set or reset a password, <a href="${htmlEscape(reset)}" style="color:#111">request a password reset code</a>.</p>
+      <p style="color:#6b7280;font-size:13px">If you did not request this email, you can ignore it. Your account has not changed.</p>
+    `),
+    text: `Hi ${user.name || "there"},\n\nYou already have an OpenShip account. This signup attempt did not create another account or change your password.\n\nSign in with your existing password, or use Google or GitHub if that is how you registered: ${login}\n\nTo set or reset a password, request a reset code: ${reset}\n\nIf you did not request this email, you can ignore it. Your account has not changed.`,
   };
 }
 

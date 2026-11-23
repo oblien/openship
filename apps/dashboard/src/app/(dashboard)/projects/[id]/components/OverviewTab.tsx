@@ -3,6 +3,7 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import React from "react";
+import { gitRepositoryLink } from "@repo/core";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
@@ -102,68 +103,41 @@ export const OverviewTab = () => {
     value: string;
     icon: React.ReactNode;
     subtext?: string;
-    loading?: boolean;
   };
-  const stats: Stat[] = showStatsSkeleton
-    ? [
-        {
-          label: t.projects.stats.serverRequests,
-          value: "",
-          icon: <UiIcon name="server" className="size-4" />,
-          loading: true,
-        },
-        {
-          label: t.projects.stats.uniqueIPs,
-          value: "",
-          icon: <UiIcon name="users" className="size-4" />,
-          loading: true,
-        },
-        {
-          label: t.projects.stats.avgResponse,
-          value: "",
-          icon: <UiIcon name="gauge" className="size-4" />,
-          loading: true,
-        },
-        {
-          label: t.projects.stats.bandwidthOut,
-          value: "",
-          icon: <UiIcon name="arrows-up-down" className="size-4" />,
-          loading: true,
-        },
-      ]
-    : [
-        {
-          label: t.projects.stats.serverRequests,
-          value: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
-          icon: <UiIcon name="server" className="size-4" />,
-          subtext: interpolate(t.projects.stats.requestsSubtext, {
-            total: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
-            avg: String(analyticsData?.summary?.avgRequestsPerHour ?? 0),
-          }),
-        },
-        {
-          label: t.projects.stats.uniqueIPs,
-          value: formatNumber(analyticsData?.summary?.uniqueIPs ?? 0),
-          icon: <UiIcon name="users" className="size-4" />,
-          subtext: interpolate(t.projects.stats.uniqueIPsSubtext, {
-            pct: String(analyticsData?.summary?.uniqueIPsPercentage ?? 0),
-          }),
-        },
-        {
-          label: t.projects.stats.avgResponse,
-          value: `${analyticsData?.performance?.avgResponseTimeMs?.toFixed(2) || "N/A "}ms`,
-          icon: <UiIcon name="gauge" className="size-4" />,
-          subtext: t.projects.stats.responseTime,
-        },
-        {
-          label: t.projects.stats.bandwidthOut,
-          value: analyticsData?.bandwidth?.totalOutFormatted || "N/A",
-          icon: <UiIcon name="arrows-up-down" className="size-4" />,
-          subtext: interpolate(t.projects.stats.bandwidthInSubtext, {
-            value: analyticsData?.bandwidth?.totalInFormatted ?? "0 B",
-          }),
-        },
-      ];
+  const detailedTraffic = deployTarget !== "cloud";
+  const stats: Stat[] = [
+    {
+      label: t.projects.stats.serverRequests,
+      value: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
+      icon: <UiIcon name="server" className="size-4" />,
+      subtext: interpolate(t.projects.stats.requestsSubtext, {
+        total: formatNumber(analyticsData?.summary?.totalRequests ?? 0),
+        avg: String(analyticsData?.summary?.avgRequestsPerHour ?? 0),
+      }),
+    },
+    ...(detailedTraffic ? [{
+      label: t.projects.stats.uniqueIPs,
+      value: formatNumber(analyticsData?.summary?.uniqueIPs ?? 0),
+      icon: <UiIcon name="users" className="size-4" />,
+      subtext: interpolate(t.projects.stats.uniqueIPsSubtext, {
+        pct: String(analyticsData?.summary?.uniqueIPsPercentage ?? 0),
+      }),
+    }] : []),
+    {
+      label: t.projects.stats.avgResponse,
+      value: `${analyticsData?.performance?.avgResponseTimeMs?.toFixed(2) || "N/A "}ms`,
+      icon: <UiIcon name="gauge" className="size-4" />,
+      subtext: t.projects.stats.responseTime,
+    },
+    {
+      label: t.projects.stats.bandwidthOut,
+      value: analyticsData?.bandwidth?.totalOutFormatted || "N/A",
+      icon: <UiIcon name="arrows-up-down" className="size-4" />,
+      subtext: interpolate(t.projects.stats.bandwidthInSubtext, {
+        value: analyticsData?.bandwidth?.totalInFormatted ?? "0 B",
+      }),
+    },
+  ];
 
   const trafficData = analyticsData?.trafficByHour || [];
   const topPaths = analyticsData?.topPaths || [];
@@ -247,7 +221,7 @@ export const OverviewTab = () => {
               <div className="h-[14px] w-28 rounded bg-muted-foreground/20 animate-pulse" />
             ) : hasGit ? (
               <a
-                href={`https://github.com/${projectData.gitOwner}/${projectData.gitRepo}`}
+                href={gitRepositoryLink(projectData.gitProvider, projectData.gitOwner, projectData.gitRepo)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex min-w-0 items-center gap-1.5 truncate sm:max-w-[180px]"
@@ -302,14 +276,14 @@ export const OverviewTab = () => {
       {hasDeployedDomain && (!showAnalyticsError || analyticsData) && (
         <>
       {/* Compact stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className={detailedTraffic ? "grid grid-cols-2 lg:grid-cols-4 gap-3" : "grid grid-cols-1 sm:grid-cols-3 gap-3"}>
         {stats.map((s) => (
           <div key={s.label} className="bg-card rounded-xl border border-border/50 px-3.5 py-3">
             <div className="flex items-center gap-1.5 mb-1">
               <span className="text-primary [&>svg]:size-3.5">{s.icon}</span>
               <span className="text-[11px] text-muted-foreground font-medium">{s.label}</span>
             </div>
-            {s.loading ? (
+            {showStatsSkeleton ? (
               <>
                 {/* Skeleton bars roughly matching the value (large) and
                     subtext (small) line heights so the card doesn't
@@ -396,7 +370,7 @@ export const OverviewTab = () => {
       </button>
 
       {/* Top paths (compact) */}
-      {hasDomain && topPaths.length > 0 && (
+      {detailedTraffic && hasDomain && topPaths.length > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
           <div className="flex items-center gap-2 mb-3">
             <UiIcon name="chart-bar" className="size-3.5 text-primary" />

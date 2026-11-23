@@ -31,6 +31,8 @@ export interface SafeFetchOptions {
   /** Max redirects to follow (each hop re-validated). Default 0 (a 3xx is
    *  returned as-is; callers that treat non-2xx as failure thus reject it). */
   maxRedirects?: number;
+  /** Return a cross-origin redirect without following it. */
+  sameOriginRedirectsOnly?: boolean;
   /** Cap the buffered response body. Default 5 MiB. */
   maxBodyBytes?: number;
 }
@@ -175,8 +177,9 @@ async function fetchHop(
     if (location) {
       const nextUrl = new URL(location, url);
       // Never carry credentials across a scheme, hostname, or port boundary.
-      const nextHeaders =
-        nextUrl.origin === url.origin ? opts.headers : stripCredentialHeaders(opts.headers);
+      const sameOrigin = nextUrl.origin === url.origin;
+      if (!sameOrigin && opts.sameOriginRedirectsOnly) return res;
+      const nextHeaders = sameOrigin ? opts.headers : stripCredentialHeaders(opts.headers);
       return fetchHop(
         nextUrl.toString(),
         {

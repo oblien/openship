@@ -1581,12 +1581,23 @@
     "connect": "Zugangsdaten hinzufügen",
     "delete": "Löschen",
     "verify": "Beim Anbieter erneut prüfen",
-    "badgeActive": "Funktioniert",
+    "badgeActive": "Letzte Prüfung erfolgreich",
+    "badgeSaved": "Gespeichert",
+    "lastVerified": "Zuletzt geprüft: {date}",
     "badgeInvalid": "Erfordert Aufmerksamkeit",
     "fieldName": "Bezeichnung",
     "namePlaceholder": "z. B. GHCR nur lesen",
     "secretKeptPlaceholder": "•••••••• (gespeichert — leer lassen zum Beibehalten)",
     "selectPlaceholder": "Auswählen…",
+    "gitlab": {
+      "continue": "Weiter mit GitLab",
+      "useToken": "Zugriffstoken verwenden",
+      "useCli": "GitLab CLI verwenden",
+      "createToken": "Token auf GitLab erstellen",
+      "oauthHelp": "Erlaube OpenShip, mit deinem GitLab-Konto deine Repositorys zu lesen und Deployment-Webhooks zu verwalten.",
+      "cliHelp": "Melde dich auf dem Rechner an, auf dem OpenShip läuft. Durch die Verbindung kann dieser Arbeitsbereich das CLI-Konto für Repositoryzugriffe und Builds auf diesem Rechner verwenden.",
+      "connectionName": "Verbindungsname (optional)"
+    },
     "verifyNote": "OpenShip prüft die Zugangsdaten beim Anbieter, bevor sie gespeichert werden.",
     "confirmDelete": "\"{name}\" löschen? Alles, was darauf angewiesen ist, funktioniert nicht mehr.",
     "toast": {
@@ -1600,6 +1611,14 @@
       "verifyFailed": "Der Anbieter hat die Zugangsdaten abgelehnt"
     },
     "providers": {
+      "gitlab": {
+        "fields": {
+          "apiToken": {
+            "label": "Zugriffstoken",
+            "help": "Verwende read_api und read_repository zum Durchsuchen und Klonen. Für Deployments bei einem Push wähle zusätzlich api und verwende ein Konto, das Projekt-Webhooks verwalten darf."
+          }
+        }
+      },
       "docker-registry": {
         "label": "Container-Registry",
         "summary": "Private Images während des Deployments aus einer Registry laden.",
@@ -1791,5 +1810,22 @@
     "confirmCta": "Bereitstellung stoppen",
     "cancel": "Abbrechen",
     "noReverseProxy": "Auf dieser Maschine wurde kein Reverse-Proxy erkannt."
+  },
+  "imageUrl": {
+    "preview": "Bildvorschau",
+    "invalid": "Gib eine HTTP- oder HTTPS-Bild-URL ohne Zugangsdaten ein.",
+    "failed": "Die Bild-URL konnte nicht gespeichert werden.",
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "Gespeichert",
+    "previewFailed": "Keine Vorschau verfügbar. Prüfe, ob die URL direkt auf ein Bild verweist."
+  },
+  "profile": {
+    "change": "Profilbild ändern",
+    "title": "Profil",
+    "description": "Das Bild deines persönlichen Kontos.",
+    "label": "Avatar-URL",
+    "hint": "Verwende eine direkte Bild-URL. Leer lassen, um deinen Anfangsbuchstaben anzuzeigen.",
+    "reset": "Anfangsbuchstaben verwenden"
   }
 }

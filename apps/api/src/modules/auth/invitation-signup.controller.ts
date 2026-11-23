@@ -1,4 +1,3 @@
-import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { hashPassword } from "better-auth/crypto";
@@ -38,7 +37,7 @@ export async function inviteSignup(c: Context) {
   // router, so a future remount cannot accidentally expose it on SaaS.
   if (isSaasDeployment) return c.notFound();
 
-  const body = (await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/auth/invitation-signup.controller"); return ({}); })) as {
+  const body = (await c.req.json()) as {
     invitationId?: unknown;
     name?: unknown;
     password?: unknown;

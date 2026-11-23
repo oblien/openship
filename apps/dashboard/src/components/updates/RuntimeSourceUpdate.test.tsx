@@ -9,8 +9,13 @@ import { RuntimeSourceUpdate } from "./RuntimeSourceUpdate";
 import { SecurityProjectReview } from "./SecurityProjectReview";
 import type { ProjectSecurityResult } from "@repo/contracts";
 
-const api = vi.hoisted(() => ({ git: vi.fn(), read: vi.fn(), preview: vi.fn(), publish: vi.fn() }));
-vi.mock("@/lib/api/projects", () => ({ projectsApi: { getGit: api.git } }));
+const api = vi.hoisted(() => ({
+  info: vi.fn(),
+  read: vi.fn(),
+  preview: vi.fn(),
+  publish: vi.fn(),
+}));
+vi.mock("@/lib/api/projects", () => ({ projectsApi: { getInfo: api.info } }));
 vi.mock("@/lib/api/updates", () => ({
   updatesApi: {
     runtimeSource: api.read,
@@ -18,11 +23,18 @@ vi.mock("@/lib/api/updates", () => ({
     publishRuntimeSource: api.publish,
   },
 }));
-vi.mock("@/components/github/RepositoryPathBrowser", () => ({ RepositoryPathBrowser: () => null }));
+vi.mock("@/components/github/RepositoryPathBrowser", () => ({
+  RepositoryPathBrowser: ({ onChange }: { onChange: (path: string) => void }) => (
+    <button type="button" onClick={() => onChange("apps/api/Dockerfile")}>
+      apps/api/Dockerfile
+    </button>
+  ),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock("@/hooks/useRuntimeUpdate", () => ({ useRuntimeUpdate: () => ({ updating: false }) }));
 let root: Root, host: HTMLDivElement;
+const project = { gitProvider: "github", gitOwner: "acme", gitRepo: "app", gitBranch: "main" };
 const source = {
   owner: "acme",
   repo: "app",
@@ -38,12 +50,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   setApiResourceScope("source-test");
   vi.resetAllMocks();
-  api.git.mockResolvedValue({
-    gitProvider: "github",
-    gitOwner: "acme",
-    gitRepo: "app",
-    gitBranch: "main",
-  });
+  api.info.mockResolvedValue({ success: true, data: { project } });
   api.read.mockResolvedValue({ data: source });
   api.preview.mockResolvedValue({
     data: {
@@ -90,6 +97,8 @@ async function setImage(value: string) {
 it("requires a reviewed diff, invalidates it on edit, and creates a PR without triggering a deployment", async () => {
   await render();
   await click("Propose image update");
+  expect(api.read).toHaveBeenCalledWith("project", { path: "Dockerfile", format: "dockerfile" });
+  expect(document.body.textContent).toContain("acme/app · main");
   await setImage("node:24");
   expect(document.body.textContent).not.toContain("Create draft PR");
   await click("Review change");
@@ -108,6 +117,68 @@ it("requires a reviewed diff, invalidates it on edit, and creates a PR without t
     expect.objectContaining({ image: "node:24", reviewId: "b".repeat(64) }),
   );
   expect(document.body.textContent).toContain("Recheck the deployed runtime");
+});
+it.each([{ gitProvider: "local" }, { gitBranch: "" }])(
+  "does not load or publish source without a supported repository and branch: %j",
+  async (git) => {
+    api.info.mockResolvedValue({ success: true, data: { project: { ...project, ...git } } });
+    await render();
+    await click("Propose image update");
+    expect(document.body.textContent).toContain(
+      "This project needs a connected GitHub repository and deployment branch.",
+    );
+    expect(api.read).not.toHaveBeenCalled();
+    expect(api.publish).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  [{ projectType: "services" }, "docker-compose.yml", "compose"],
+  [{ composePath: "deploy/stack.yaml" }, "deploy/stack.yaml", "compose"],
+  [{ rootDirectory: "apps/api" }, "apps/api/Dockerfile", "dockerfile"],
+])("opens the saved deployment's source file for %j", async (config, path, format) => {
+  api.info.mockResolvedValue({ success: true, data: { project: { ...project, ...config } } });
+  await render();
+  await click("Propose image update");
+  expect(api.read).toHaveBeenCalledExactlyOnceWith("project", { path, format });
+  expect(document.body.textContent).not.toContain("Read images");
+  expect(document.body.textContent).not.toContain("File format");
+});
+
+it("opens the browser after a missing file and loads the chosen file without an extra click", async () => {
+  api.read.mockRejectedValueOnce(
+    new ApiError(404, "Not Found", {
+      code: "RUNTIME_SOURCE_FILE_NOT_FOUND",
+      error: "Choose another source file.",
+    }),
+  );
+  api.read.mockResolvedValueOnce({ data: { ...source, path: "apps/api/Dockerfile" } });
+  await render();
+  await click("Propose image update");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Choose another source file.");
+  await click("apps/api/Dockerfile");
+  expect(api.read).toHaveBeenLastCalledWith("project", {
+    path: "apps/api/Dockerfile",
+    format: "dockerfile",
+  });
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+  expect(document.body.textContent).toContain("Replacement image");
+});
+
+it("resets the draft when switching to a file with the same reference id", async () => {
+  api.read.mockResolvedValueOnce({ data: source }).mockResolvedValueOnce({
+    data: { ...source, path: "apps/api/Dockerfile" },
+  });
+  await render();
+  await click("Propose image update");
+  await setImage("node:24");
+  await click("Browse repository");
+  await click("apps/api/Dockerfile");
+  const replacement = [...document.querySelectorAll("label")]
+    .find((label) => label.textContent?.includes("Replacement image"))
+    ?.querySelector("input");
+  expect(replacement?.value).toBe("");
+  expect(replacement?.placeholder).toBe("node:22");
 });
 it("discards source and pending responses after an account/workspace switch", async () => {
   let resolve!: (value: unknown) => void;
@@ -214,6 +285,24 @@ it("keeps a blocked preview unpublishable and distinguishes workspace permission
   )!;
   expect(publish.disabled).toBe(true);
   expect(api.publish).not.toHaveBeenCalled();
+});
+
+it("requires a fresh source read and review after the deployment branch moves", async () => {
+  api.publish.mockRejectedValueOnce(
+    new ApiError(409, "Conflict", {
+      code: "RUNTIME_SOURCE_CHANGED",
+      error: "Reload the file and review the new diff.",
+    }),
+  );
+  await render();
+  await click("Propose image update");
+  await setImage("node:24");
+  await click("Review change");
+  await click("Create draft PR");
+  expect(document.body.textContent).not.toContain("Create draft PR");
+  await click("Read images");
+  expect(api.read).toHaveBeenCalledTimes(2);
+  expect(document.body.textContent).toContain("Review change");
 });
 
 it("offers branch recovery instead of publishing twice when PR permission is revoked", async () => {

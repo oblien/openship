@@ -1,5 +1,5 @@
 import type { RepositorySource } from "@/components/github/RepositoryPathBrowser";
-import { normalizeProjectRootDirectory } from "@repo/core";
+import { DEFAULT_GIT_PROVIDER, normalizeProjectRootDirectory, gitProviderDefinition } from "@repo/core";
 
 export interface ServiceRepositorySource extends RepositorySource {
   /** Existing Compose contexts are relative to this project directory. */
@@ -19,10 +19,11 @@ export function serviceRepositorySource(project: {
     !project.gitOwner ||
     !project.gitRepo ||
     project.gitOwner === "local" ||
-    (project.gitProvider && project.gitProvider !== "github")
+    !gitProviderDefinition(project.gitProvider)
   )
     return null;
   return {
+    provider: project.gitProvider ?? DEFAULT_GIT_PROVIDER,
     owner: project.gitOwner,
     repo: project.gitRepo,
     branch: project.gitBranch || undefined,

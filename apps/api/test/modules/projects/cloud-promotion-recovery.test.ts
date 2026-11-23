@@ -465,8 +465,9 @@ describe("project promotion recovery", () => {
     const dump = await dumpSubgraph({ kind: "project", projectId });
     const changed = structuredClone(dump);
     changed.tables.resource_usage.push({ id: "another-sample", projectId, cpu: 42 });
-    changed.tables.project[0].favicon = "new favicon";
     expect(projectPromotionDigest(changed)).toBe(projectPromotionDigest(dump));
+    changed.tables.project[0].iconUrl = "https://cdn.example.test/new-icon.png";
+    expect(projectPromotionDigest(changed)).not.toBe(projectPromotionDigest(dump));
     changed.tables.project[0].localPath = "/another-source";
     expect(projectPromotionDigest(changed)).not.toBe(projectPromotionDigest(dump));
   });

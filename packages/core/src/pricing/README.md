@@ -14,8 +14,8 @@ payment settlement, resource admission, metering and paid coverage.
 | Pro | $47 | $468 | $39 | 4 | 16 GiB | 250 GiB | 1 |
 | Scale | $119 | $1,188 | $99 | 8 | 32 GiB | 600 GiB | 1 |
 
-Annual is charged in full upfront. The dashboard displays the monthly equivalent
-and full annual charge together; the selected interval is sent through checkout.
+Annual is charged in full upfront. The dashboard and website display the full annual
+price per year with the free-month savings below; the selected interval is sent through checkout.
 Manage remains monthly, separately from Cloud compute. Annual purchases require
 Oblien's `resellerSubscriptionIntervals` capability to include `yearly`.
 

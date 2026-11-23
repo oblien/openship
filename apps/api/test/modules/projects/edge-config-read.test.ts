@@ -44,12 +44,17 @@ const project = (over: Partial<Project> = {}) =>
   ({ id: "p1", slug: "app", routingConfig: null, ...over }) as Project;
 
 /** A live vhost as the nginx parser would hand it back. */
+const managedHeaderBuffers = {
+  proxyBufferSize: "32k", proxyBuffers: "8 32k", proxyBusyBuffersSize: "64k",
+  largeClientHeaderBuffers: "4 32k",
+};
 const site = (over: Partial<ImportedSite> = {}): ImportedSite =>
   ({
     serverNames: ["app.example.com"],
     ssl: true,
     target: { kind: "proxy", url: "http://127.0.0.1:3000" },
     ...over,
+    proxy: { ...managedHeaderBuffers, ...over.proxy },
   }) as ImportedSite;
 
 /**
@@ -152,7 +157,20 @@ describe("readProjectEdgeConfig — agreement", () => {
     const r = await readProjectEdgeConfig(
       project({ routingConfig: { proxy: { clientMaxBodySize: "50m" } } }),
     );
-    expect(r.hosts[0]!.directives.map((d) => d.key)).toEqual(["clientMaxBodySize"]);
+    expect(r.hosts[0]!.directives.map((d) => d.key).sort()).toEqual([
+      "clientMaxBodySize", ...Object.keys(managedHeaderBuffers),
+    ].sort());
+  });
+
+  it("flags an older vhost until its new managed header defaults are applied", async () => {
+    box({ sites: { "app.example.com": site({ proxy: {
+      proxyBufferSize: undefined, proxyBuffers: undefined, proxyBusyBuffersSize: undefined,
+      largeClientHeaderBuffers: undefined,
+    } }) } });
+    const report = await readProjectEdgeConfig(project());
+    expect(report.hosts[0]!.driftCount).toBe(4);
+    expect(byKey(report, "proxyBufferSize")).toMatchObject({ expected: "32k", drift: true });
+    expect(report.hosts[0]!.adoptable).toEqual({});
   });
 
   it("passes the box's nginx version through, since the floor depends on it", async () => {

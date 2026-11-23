@@ -58,7 +58,7 @@ export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: bo
   const roleDeploymentFromUrl = searchParams.get("deploymentId");
   const rolesRuntime = useRuntimeRoles(id, projectData?.activeDeploymentId);
   const roleTargets = useMemo(() => runtimeRoleLogTargets(rolesRuntime.data), [rolesRuntime.data]);
-  const [activeTab, setActiveTab] = useState<LogsTab>("server");
+  const [selectedTab, setActiveTab] = useState<LogsTab>("server");
   const hasSelectedTabRef = useRef(false);
   const [copied, setCopied] = useState(false);
   const [currentLogs, setCurrentLogs] = useState<string[]>([]);
@@ -114,8 +114,10 @@ export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: bo
   // this gate said no.
   const deployTarget = projectData?.deployTarget as string | null | undefined;
   const hasDomain = (projectData?.domains?.length ?? 0) > 0;
-  const canShowRequestLogs = deployTarget === "cloud" || hasDomain;
+  const canShowRequestLogs = deployTarget !== "cloud" && hasDomain;
+  const activeTab = canShowRequestLogs ? selectedTab : "terminal";
   const canShowRuntimeLogs = effectiveHasServer || hasServices;
+  const hasLogTabs = canShowRuntimeLogs && canShowRequestLogs;
   const canShowLogs = canShowRuntimeLogs || canShowRequestLogs;
   // Terminal (container stdout) still requires an actual runtime —
   // no terminal output exists for static pages.
@@ -217,11 +219,11 @@ export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: bo
   const switchTab = useCallback(
     (tab: LogsTab) => {
       if (!canShowLogs) return;
-      if (tab === "terminal" && !canShowTerminal) return;
+      if (tab === "terminal" ? !canShowTerminal : !canShowRequestLogs) return;
       hasSelectedTabRef.current = true;
       setActiveTab((current) => (current === tab ? current : tab));
     },
-    [canShowLogs, canShowTerminal],
+    [canShowLogs, canShowTerminal, canShowRequestLogs],
   );
 
   useEffect(() => {
@@ -398,7 +400,7 @@ export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: bo
     <div className="flex min-w-0 flex-col h-full gap-4">
       {/* Tabs + Actions */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        {canShowTerminal && (
+        {hasLogTabs && (
           <Tabs<LogsTab>
             idPrefix={tabsId}
             ariaLabel={t.projectDetail.services.detail.tabs.logs}
@@ -427,8 +429,9 @@ export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: bo
       <div className="min-w-0 flex-1 min-h-[460px]">
         <div
           id={`${tabsId}-panel-terminal`}
-          role={canShowTerminal ? "tabpanel" : undefined}
-          aria-labelledby={canShowTerminal ? `${tabsId}-tab-terminal` : undefined}
+          role={hasLogTabs ? "tabpanel" : canShowTerminal ? "region" : undefined}
+          aria-label={canShowTerminal && !hasLogTabs ? t.projectSettings.logs.terminal : undefined}
+          aria-labelledby={hasLogTabs ? `${tabsId}-tab-terminal` : undefined}
           hidden={activeTab !== "terminal" || !canShowTerminal}
         >
           {activeTab === "terminal" &&
@@ -477,8 +480,8 @@ export const LogsSettings = ({ applicationOnly = false }: { applicationOnly?: bo
         </div>
         <div
           id={`${tabsId}-panel-server`}
-          role={canShowTerminal ? "tabpanel" : "region"}
-          aria-labelledby={canShowTerminal ? `${tabsId}-tab-server` : undefined}
+          role={hasLogTabs ? "tabpanel" : "region"}
+          aria-labelledby={hasLogTabs ? `${tabsId}-tab-server` : undefined}
           aria-label={!canShowTerminal ? t.projectSettings.logs.requests : undefined}
           hidden={activeTab !== "server"}
         >

@@ -38,6 +38,9 @@ import { Modal } from "@/components/ui/Modal";
 import { SourceAccessModal } from "./SourceAccessModal";
 import {
   GRANTABLE_RESOURCE_TYPES,
+  gitProviderForGrant,
+  gitGrantTarget,
+  type RegisteredGitProvider,
   CAPABILITY_AREAS,
   capabilitiesForRoot,
   capabilitiesImpliedBy,
@@ -59,27 +62,15 @@ const capsOf = (perms: readonly Permission[]) => perms.filter(isCapability) as C
 
 const DEFAULT_TYPES: readonly ResourceType[] = GRANTABLE_RESOURCE_TYPES;
 
-/** A tab collapses the two GitHub resource types into one "github" tab. */
-type TabId = ResourceType | "github";
+/** Use the namespace type as the tab key for both widths of a provider grant. */
+type TabId = ResourceType;
 
 function toTabs(types: readonly ResourceType[]): TabId[] {
-  const out: TabId[] = [];
-  let github = false;
-  for (const t of types) {
-    if (t === "github_installation" || t === "github_repository") {
-      if (!github) {
-        out.push("github");
-        github = true;
-      }
-    } else {
-      out.push(t);
-    }
-  }
-  return out;
+  return [...new Set(types.map(type => gitProviderForGrant(type)?.grantTypes.namespace ?? type))];
 }
 
 function tabLabel(tab: TabId): string {
-  return tab === "github" ? "GitHub" : RESOURCE_TYPE_LABELS[tab];
+  return gitProviderForGrant(tab)?.name ?? RESOURCE_TYPE_LABELS[tab];
 }
 
 // ── Pure grant helpers (shared by the flat list + the GitHub tree) ──────────
@@ -184,10 +175,8 @@ export function ResourcePicker({
   const { t } = useI18n();
   const w = t.widgets.permissions.resourcePicker;
 
-  const tabs = useMemo<TabId[]>(() => {
-    if (fixedType) return toTabs([fixedType]);
-    return toTabs(availableTypes ?? DEFAULT_TYPES);
-  }, [fixedType, availableTypes]);
+  const types = useMemo(() => fixedType ? [fixedType] : availableTypes ?? DEFAULT_TYPES, [fixedType, availableTypes]);
+  const tabs = useMemo(() => toTabs(types), [types]);
 
   const [activeTab, setActiveTab] = useState<TabId>(tabs[0] ?? "project");
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
@@ -199,13 +188,13 @@ export function ResourcePicker({
     if (!tabs.includes(activeTab)) setActiveTab(tabs[0] ?? "project");
   }, [tabs, activeTab]);
 
-  const isGithub = activeTab === "github";
+  const provider = gitProviderForGrant(activeTab);
   // A platform feature has exactly one row ("*"), so there is nothing to search and
   // no "All X" row to offer — the single row IS "all of it". Derived from the shared
   // set so a newly grantable feature renders correctly without an edit here.
-  const isSingleton = !isGithub && isOrgSingletonResourceType(activeTab);
+  const isSingleton = !provider && isOrgSingletonResourceType(activeTab);
   const wildcardSuppressed =
-    !isGithub && !!suppressWildcardTypes?.includes(activeTab as ResourceType);
+    !provider && !!suppressWildcardTypes?.includes(activeTab as ResourceType);
   const showWildcardRow = !isSingleton && !wildcardSuppressed;
 
   const loadCatalog = useCallback(
@@ -227,8 +216,8 @@ export function ResourcePicker({
 
   useEffect(() => {
     setSearch("");
-    if (!isGithub) void loadCatalog(activeTab as ResourceType);
-  }, [activeTab, isGithub, loadCatalog]);
+    if (!provider) void loadCatalog(activeTab as ResourceType);
+  }, [activeTab, provider, loadCatalog]);
 
   const toggleResource = (resourceType: ResourceType, resourceId: string) => {
     const existing = findGrantIn(value, resourceType, resourceId);
@@ -278,16 +267,10 @@ export function ResourcePicker({
   // the wildcard row is suppressed: its checkbox is the only way to clear it, so
   // an unclearable "covered by All X" would disable the whole list for good.
   const wildcardActive =
-    showWildcardRow && !isGithub && !!findGrantIn(value, activeTab as ResourceType, "*");
+    showWildcardRow && !provider && !!findGrantIn(value, activeTab as ResourceType, "*");
 
   const countForTab = (tab: TabId) =>
-    tab === "github"
-      ? value.filter(
-          (g) =>
-            g.resourceType === "github_installation" ||
-            g.resourceType === "github_repository",
-        ).length
-      : value.filter((g) => g.resourceType === tab).length;
+    value.filter(g => (gitProviderForGrant(g.resourceType)?.grantTypes.namespace ?? g.resourceType) === tab).length;
 
   return (
     <div className="space-y-4">
@@ -320,8 +303,11 @@ export function ResourcePicker({
         </div>
       )}
 
-      {isGithub ? (
-        <GitHubTree
+      {provider ? (
+        <RepositoryGrantTree
+          key={provider.id}
+          provider={provider}
+          types={types}
           value={value}
           onChange={onChange}
           defaultPermissions={defaultPermissions}
@@ -728,7 +714,9 @@ function SourceAccessButton({
 /** Segment id for the single-option source-access switch. */
 const SOURCE_SEGMENT = "source";
 
-function GitHubTree({
+function RepositoryGrantTree({
+  provider,
+  types,
   value,
   onChange,
   defaultPermissions,
@@ -736,6 +724,8 @@ function GitHubTree({
   onCatalogLoaded,
   disabled,
 }: {
+  provider: RegisteredGitProvider;
+  types: readonly ResourceType[];
   value: PickerGrant[];
   onChange: (v: PickerGrant[]) => void;
   defaultPermissions: Permission[];
@@ -758,9 +748,8 @@ function GitHubTree({
    * the org-wide grant", so a repo-only entry point would be unreachable.
    */
   const [sourceTarget, setSourceTarget] = useState<{
-    type: "github_installation" | "github_repository";
+    type: ResourceType;
     id: string;
-    label: string;
   } | null>(null);
   const [orgs, setOrgs] = useState<CatalogEntry[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
@@ -773,11 +762,11 @@ function GitHubTree({
     let cancelled = false;
     setLoadingOrgs(true);
     permissionsApi
-      .listResources("github_installation")
+      .listResources(provider.grantTypes.namespace)
       .then((res) => {
         if (cancelled) return;
         setOrgs(res.data ?? []);
-        onCatalogLoaded?.("github_installation", res.data ?? []);
+        onCatalogLoaded?.(provider.grantTypes.namespace, res.data ?? []);
       })
       .catch((err) => {
         if (!cancelled) showToast(getApiErrorMessage(err, w.failedLoadOrgs), "error", "Picker");
@@ -788,22 +777,24 @@ function GitHubTree({
     return () => {
       cancelled = true;
     };
-  }, [showToast]);
+  }, [provider, showToast]);
 
-  const orgGrant = (login: string) => findGrantIn(value, "github_installation", login);
-  const repoGrant = (fullName: string) => findGrantIn(value, "github_repository", fullName);
+  const allowNamespace = types.includes(provider.grantTypes.namespace);
+  const allowRepository = types.includes(provider.grantTypes.repository);
+  const orgGrant = (login: string) => findGrantIn(value, provider.grantTypes.namespace, login);
+  const repoGrant = (fullName: string) => findGrantIn(value, provider.grantTypes.repository, fullName);
 
   const toggleOrg = (login: string) => {
     const existing = orgGrant(login);
-    let next = writeGrant(value, "github_installation", login, existing ? [] : defaultPermissions);
+    let next = writeGrant(value, provider.grantTypes.namespace, login, existing ? [] : defaultPermissions);
     if (!existing) {
       // Whole-org supersedes any specific repo grants under it.
       const lower = login.toLowerCase();
       next = next.filter(
         (g) =>
           !(
-            g.resourceType === "github_repository" &&
-            g.resourceId.split("/")[0]?.toLowerCase() === lower
+            g.resourceType === provider.grantTypes.repository &&
+            gitGrantTarget(provider, g.resourceType, g.resourceId).owner.toLowerCase() === lower
           ),
       );
     }
@@ -815,7 +806,7 @@ function GitHubTree({
       if (reposByOwner[login]) return;
       setLoadingRepos((prev) => new Set(prev).add(login));
       try {
-        const res = await permissionsApi.listResources("github_repository", login);
+        const res = await permissionsApi.listResources(provider.grantTypes.repository, login);
         setReposByOwner((prev) => ({ ...prev, [login]: res.data ?? [] }));
       } catch (err) {
         showToast(getApiErrorMessage(err, interpolate(w.failedLoadRepos, { login })), "error", "Picker");
@@ -828,7 +819,7 @@ function GitHubTree({
         });
       }
     },
-    [reposByOwner, showToast],
+    [provider, reposByOwner, showToast],
   );
 
   const toggleExpand = (login: string) => {
@@ -872,8 +863,8 @@ function GitHubTree({
         const shownRepos = q ? repos.filter((r) => r.label.toLowerCase().includes(q)) : repos;
         const repoCount = value.filter(
           (g) =>
-            g.resourceType === "github_repository" &&
-            g.resourceId.split("/")[0]?.toLowerCase() === login.toLowerCase(),
+            g.resourceType === provider.grantTypes.repository &&
+            gitGrantTarget(provider, g.resourceType, g.resourceId).owner.toLowerCase() === login.toLowerCase(),
         ).length;
 
         return (
@@ -881,7 +872,7 @@ function GitHubTree({
             {/* Org row */}
             <div className={`px-3 py-2.5 ${wholeOrg ? "bg-primary/5" : "hover:bg-muted/20"} transition-colors`}>
               <div className="flex items-center gap-2">
-                <button
+                {allowRepository && <button
                   type="button"
                   onClick={() => toggleExpand(login)}
                   disabled={disabled}
@@ -889,9 +880,9 @@ function GitHubTree({
                   aria-label={isOpen ? w.collapse : w.expand}
                 >
                   {isOpen ? <UiIcon name="chevron-down" className="size-4" /> : <UiIcon name="chevron-right" className="size-4 rtl:rotate-180" />}
-                </button>
-                <Checkbox checked={wholeOrg} disabled={disabled} onClick={() => toggleOrg(login)} />
-                <ResourceAvatar resourceType="github_installation" resourceId={login} className="size-5" />
+                </button>}
+                {allowNamespace && <Checkbox checked={wholeOrg} disabled={disabled} onClick={() => toggleOrg(login)} />}
+                <ResourceAvatar resourceType={provider.grantTypes.namespace} resourceId={login} className="size-5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">
                     {org.label}
@@ -912,9 +903,8 @@ function GitHubTree({
                     disabled={disabled}
                     onClick={() =>
                       setSourceTarget({
-                        type: "github_installation",
+                        type: provider.grantTypes.namespace,
                         id: login,
-                        label: org.label,
                       })
                     }
                   />
@@ -928,14 +918,14 @@ function GitHubTree({
                       onChange(
                         writeGrant(
                           value,
-                          "github_installation",
+                          provider.grantTypes.namespace,
                           login,
                           cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
                         ),
                       );
                     }}
                     onSet={(perms) =>
-                      onChange(writeGrant(value, "github_installation", login, perms))
+                      onChange(writeGrant(value, provider.grantTypes.namespace, login, perms))
                     }
                     disabled={disabled}
                   />
@@ -944,7 +934,7 @@ function GitHubTree({
             </div>
 
             {/* Repos under this org */}
-            {isOpen && (
+            {allowRepository && isOpen && (
               <div className="bg-muted/[0.03] border-t border-border/20">
                 {wholeOrg ? (
                   <p className="px-12 py-3 text-xs text-muted-foreground italic">
@@ -986,7 +976,7 @@ function GitHubTree({
                                 onChange(
                                   writeGrant(
                                     value,
-                                    "github_repository",
+                                    provider.grantTypes.repository,
                                     repo.id,
                                     checked ? [] : defaultPermissions,
                                   ),
@@ -995,7 +985,7 @@ function GitHubTree({
                             />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm text-foreground truncate">
-                                {repo.label.split("/")[1] ?? repo.label}
+                                {repo.label.split("/").at(-1) ?? repo.label}
                               </p>
                             </div>
                             {checked && (
@@ -1006,9 +996,8 @@ function GitHubTree({
                                 disabled={disabled}
                                 onClick={() =>
                                   setSourceTarget({
-                                    type: "github_repository",
+                                    type: provider.grantTypes.repository,
                                     id: repo.id,
-                                    label: repo.label,
                                   })
                                 }
                               />
@@ -1022,14 +1011,14 @@ function GitHubTree({
                                   onChange(
                                     writeGrant(
                                       value,
-                                      "github_repository",
+                                      provider.grantTypes.repository,
                                       repo.id,
                                       cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
                                     ),
                                   );
                                 }}
                                 onSet={(perms) =>
-                                  onChange(writeGrant(value, "github_repository", repo.id, perms))
+                                  onChange(writeGrant(value, provider.grantTypes.repository, repo.id, perms))
                                 }
                                 disabled={disabled}
                               />
@@ -1072,8 +1061,9 @@ function GitHubTree({
           <SourceAccessModal
             open
             onClose={() => setSourceTarget(null)}
-            targetLabel={sourceTarget.label}
-            wholeAccount={sourceTarget.type === "github_installation"}
+            provider={provider}
+            targetLabel={sourceTarget.id}
+            wholeAccount={sourceTarget.type === provider.grantTypes.namespace}
             permissions={current?.permissions ?? []}
             scope={current?.scope}
             onApply={(scope) =>

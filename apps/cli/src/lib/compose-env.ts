@@ -39,7 +39,14 @@ export interface ComposeEnvRead {
   unreadable: string | null;
 }
 
-/** Parse the stack's `.env` into KEY=value pairs. Pure — callers own the reporting. */
+/**
+ * Parse the stack's `.env` into KEY=value pairs. Pure — callers own the reporting.
+ *
+ * Reads what Docker Compose reads, since Compose is what the stack runs with: CRLF line
+ * endings (a file saved by a Windows editor) and lowercase keys (`http_proxy`,
+ * `no_proxy`). Skipping either made `up` treat a working install as half-configured,
+ * deleting the lowercase keys and, for a CRLF file, reading no secrets at all.
+ */
 export function readComposeEnvFile(): ComposeEnvRead {
   let text: string;
   try {
@@ -50,8 +57,8 @@ export function readComposeEnvFile(): ComposeEnvRead {
     return { env: {}, unreadable: code === "ENOENT" ? null : (err as Error).message };
   }
   const env: Record<string, string> = {};
-  for (const line of text.split("\n")) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^([A-Za-z0-9_]+)=(.*)$/);
     if (m) env[m[1]] = m[2];
   }
   return { env, unreadable: null };

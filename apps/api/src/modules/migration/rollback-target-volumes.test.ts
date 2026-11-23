@@ -131,6 +131,19 @@ describe("migration rollback and cleanup", () => {
     expect(source.dispose).toHaveBeenCalledOnce();
     expect(target.dispose).toHaveBeenCalledOnce();
   });
+  it("keeps stateless copies running and records no originals to restart", async () => {
+    await engine.moveData("project", "source", "source", "org",
+      { web: "old-container" }, true, { web: "copy" }, [], [], {}, {}, () => {}, undefined, "run", true);
+    expect(source.stop).not.toHaveBeenCalled();
+    expect(run.recovery.sourceRunningContainerIds).toEqual({});
+  });
+  it("still quiesces a stateful same-server copy and never starts originally stopped services", async () => {
+    h.plan.mockResolvedValue({ items: [{ key: "data" }], createdVolumes: ["copy"], managedPaths: [] });
+    await engine.moveData("project", "source", "source", "org",
+      { web: "old-container", worker: "asleep" }, true, { web: "copy" }, [], [], {}, {}, () => {}, undefined, "run", true);
+    expect(source.stop).toHaveBeenCalledExactlyOnceWith("old-container");
+    expect(run.recovery.sourceRunningContainerIds).toEqual({ web: "old-container" });
+  });
   it("fails before stopping a source when volume reservation fails", async () => {
     h.prepare.mockRejectedValueOnce(new Error("reservation conflict"));
     await expect(move()).rejects.toThrow("reservation conflict");

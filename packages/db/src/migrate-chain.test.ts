@@ -268,6 +268,47 @@ describe("migration chain applies to an existing, populated database", () => {
     expect(await appliedMigrations(client)).toBe(total);
   });
 
+  test("consolidates saved images into icon_url and preserves explicit icons and resets on retry", async () => {
+    const cutoff = journal.entries.findIndex((entry) => entry.tag === "0232_project_icon_cleanup");
+    expect(journal.entries[cutoff - 1]?.tag).toBe("0231_project_icon_url");
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec(`
+        INSERT INTO organization (id, name) VALUES ('org', 'Existing organization');
+        INSERT INTO project_app (id, organization_id, name, slug, favicon) VALUES
+          ('group', 'org', 'Apps', 'apps', NULL),
+          ('group-icon', 'org', 'Group image', 'group-image', 'https://cdn.example.test/group.svg');
+        INSERT INTO project (id, organization_id, app_id, environment_slug, name, slug, favicon, icon_url) VALUES
+          ('legacy', 'org', 'group', 'legacy', 'Legacy', 'legacy', 'https://app.example.test/favicon.ico', NULL),
+          ('custom', 'org', 'group', 'custom', 'Custom', 'custom', 'https://old.example.test/favicon.ico', 'https://cdn.example.test/custom.svg'),
+          ('empty', 'org', 'group', 'empty', 'Empty', 'empty', NULL, NULL),
+          ('inherited', 'org', 'group-icon', 'inherited', 'Inherited', 'inherited', NULL, NULL);
+      `);
+      const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project ORDER BY id")).rows;
+      const groups = (await client.query<Record<string, unknown>>("SELECT * FROM project_app ORDER BY id")).rows;
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect((await client.query("SELECT * FROM project ORDER BY id")).rows).toEqual(
+        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({
+          ...project,
+          icon_url: project.icon_url ?? favicon ?? (project.app_id === "group-icon" ? "https://cdn.example.test/group.svg" : null),
+        })),
+      );
+      expect((await client.query("SELECT * FROM project_app ORDER BY id")).rows).toEqual(
+        groups.map(({ favicon: _, favicon_checked_at: _checked, ...group }) => group),
+      );
+      await client.exec("UPDATE project SET icon_url = NULL WHERE id = 'legacy'");
+      const customized = (await client.query("SELECT * FROM project ORDER BY id")).rows;
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect((await client.query("SELECT * FROM project ORDER BY id")).rows).toEqual(customized);
+      expect(await appliedMigrations(client)).toBe(total);
+    } finally {
+      await client.close();
+      rmSync(legacy, { recursive: true, force: true });
+    }
+  });
+
   test("adds runtime roles after the applied lifecycle migration without changing existing releases", async () => {
     const cutoff = journal.entries.findIndex((entry) => entry.tag === "0192_runtime_roles");
     expect(journal.entries[cutoff - 1]?.tag).toBe("0191_project_lifecycle_operation");
@@ -286,7 +327,7 @@ describe("migration chain applies to an existing, populated database", () => {
 
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false })),
+        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: favicon })),
       );
       expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
         deployments.map((deployment) => ({
@@ -332,7 +373,7 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false })),
+        projects.map(({ favicon, favicon_checked_at: _, ...project }) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, auto_deploy_cancel_builds: false, icon_url: favicon })),
       );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
@@ -530,11 +571,12 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(managed).toHaveLength(2);
       for (const row of (await selectProjects()).rows) {
         const old = original.find((project) => project.id === row.id)!;
-        const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, ...previous } = old as typeof old & Record<string, unknown>;
+        const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, favicon, favicon_checked_at: _checked, ...previous } = old as typeof old & Record<string, unknown>;
         expect(row).toEqual({
           ...previous,
           runtime_version: null, runtime_image: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null,
           auto_deploy_cancel_builds: false,
+          icon_url: favicon,
           cloud_promotion: null,
           lifecycle_operation: null,
           cloud_static_hosting: "pages",

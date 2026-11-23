@@ -10,6 +10,8 @@ const h = vi.hoisted(() => ({
   deployTarget: "server",
   framework: "node",
   isApp: false,
+  gitProvider: "github",
+  selectGit: vi.fn(),
   setBranch: vi.fn(),
   getBranchPage: vi.fn(),
   listBranches: vi.fn(),
@@ -23,6 +25,7 @@ const projectsApi = vi.hoisted(() => ({
   getBranchPage: h.getBranchPage,
   getCloneToken: async () => ({ hasToken: false }),
 }));
+vi.mock("@/lib/api/git", () => ({ gitApi: () => ({ listBranches: h.listBranches }), gitSourcesChangedEvent: (provider: string) => `openship:${provider}-sources-changed` }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi }));
 vi.mock("@/lib/api", () => ({ projectsApi }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { listBranches: h.listBranches } }));
@@ -34,7 +37,13 @@ vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast
 vi.mock("@/context/PlatformContext", () => ({
   usePlatform: () => ({ selfHosted: h.deployTarget !== "cloud" }),
 }));
-vi.mock("@/context/GitHubContext", () => ({ useGitHub: () => ({ connected: true }) }));
+vi.mock("@/context/GitContext", () => ({
+  useGit: (provider?: string) => {
+    h.selectGit(provider);
+    if (provider && provider !== "github") throw new Error(`Unsupported Git provider: ${provider}`);
+    return { connected: true, definition: { id: "github", name: "GitHub", capabilities: { checks: true, webhooks: true, pullRequests: true } } };
+  },
+}));
 vi.mock("@/context/ProjectSettingsContext", () => ({
   useProjectSettings: () => ({
     id: h.id,
@@ -42,6 +51,8 @@ vi.mock("@/context/ProjectSettingsContext", () => ({
       id: h.id,
       gitOwner: "acme",
       gitRepo: "app",
+      gitProvider: h.gitProvider,
+      releaseSource: h.gitProvider === "release" ? { mode: "url", artifactKind: "image", imageTemplate: "acme/app:{version}", pinnedVersion: "1.0.0" } : null,
       gitBranch: h.branch,
       environmentType: "preview",
       deployTarget: h.deployTarget,
@@ -69,7 +80,11 @@ vi.mock("@/components/project-settings/GitHubChecksSettings", () => ({
 }));
 vi.mock("../../../library/components/RepositoryList", () => ({ RepositoryList: () => null }));
 vi.mock("./AppSource", () => ({ AppSource: () => null }));
-vi.mock("./ReleaseImageSourceSettings", () => ({ ReleaseImageSourceSettings: () => null }));
+vi.mock("./ReleaseImageSourceSettings", () => ({
+  ReleaseImageSourceSettings: ({ onSwitchToGit }: { onSwitchToGit(): void }) => (
+    <button onClick={onSwitchToGit}>Switch to Git</button>
+  ),
+}));
 
 let host: HTMLDivElement;
 let root: Root;
@@ -81,6 +96,7 @@ beforeEach(() => {
   h.deployTarget = "server";
   h.framework = "node";
   h.isApp = false;
+  h.gitProvider = "github";
   h.getBranchPage.mockResolvedValue({
     data: [{ name: "main" }, { name: "dev" }, { name: "release/stable" }],
     pagination: { page: 1, perPage: 100, hasMore: false },
@@ -123,6 +139,19 @@ async function save() {
 }
 
 describe("deployment branch in Source settings", () => {
+  it.each(["release", "local", "upload"])(
+    "opens Git setup for a %s project without treating retained repository metadata as its provider",
+    async (provider) => {
+      h.gitProvider = provider;
+      await render();
+      if (provider === "release") {
+        expect(h.selectGit).not.toHaveBeenCalled();
+        await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+      }
+      expect(h.selectGit).toHaveBeenCalledWith(undefined);
+      expect(h.selectGit).not.toHaveBeenCalledWith(provider);
+    },
+  );
   it.each([
     ["server", "node"],
     ["cloud", "docker-compose"],

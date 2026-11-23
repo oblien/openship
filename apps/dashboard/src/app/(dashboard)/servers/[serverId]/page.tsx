@@ -36,12 +36,13 @@ import {
   type ConnectionErrorKind,
 } from "./_components/connection-banner";
 
+import { EdgePagesPanel } from "@/components/routing/EdgePagesPanel";
 import { RateLimitSettings } from "./_components/rate-limit-settings";
 import { GpuCard } from "./_components/gpu-card";
 import { BuildCacheCard } from "./_components/build-cache-card";
 import { ExposedPortsCard } from "./_components/exposed-ports-card";
 import { PortForwardingCard } from "./_components/port-forwarding-card";
-import { ServerGitHubConnect } from "@/components/github/ServerGitHubConnect";
+import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
 import { MigrationsTab } from "@/components/migration/MigrationsTab";
 import { ServerConnectionCard } from "./_components/connection-card";
 import { ServerDeletionModal } from "@/components/servers/ServerDeletionModal";
@@ -49,7 +50,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { ServerInfrastructure } from "@/components/servers/ServerInfrastructure";
 import { ServerSwarm } from "@/components/servers/ServerSwarm";
 import { Button } from "@/components/ui/button";
-import DropdownMenu from "@/components/ui/DropdownMenu";
+import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { ServerUsage } from "@/components/servers/ServerUsage";
 import { SERVER_TABS as TABS, type ServerTab as Tab } from "./_components/server-tabs";
 import { ManagedResourceDetail } from "@/components/resources/ManagedResourcesPage";
@@ -75,9 +76,10 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const { t } = useI18n();
+  const openServerGitHub = useServerGitHubConnectModal();
   // Port forwarding is meaningful only in desktop mode (the orchestrator IS
   // the user's machine). Backend routes are independently gated by assertDesktop.
-  const { deployMode } = usePlatform();
+  const { deployMode, selfHosted } = usePlatform();
   const isDesktop = deployMode === "desktop";
   const [server, setServer] = useState<ServerInfo | null>(null);
   // Single source of truth for saved port-forwards: drives the "Ports" tab
@@ -126,6 +128,12 @@ function ServerDetail({ serverId }: { serverId: string }) {
     const tab = searchParams.get("tab");
     setActiveTab(tab && TABS.some(td => td.key === tab) ? tab as Tab : "overview");
   }, [searchParams]);
+  // Bookmarks from before Git setup moved to Settings still lead to a working connection flow.
+  useEffect(() => {
+    if (server && !server.managed && searchParams.get("tab") === "github") {
+      router.replace("/settings?tab=git");
+    }
+  }, [server, searchParams, router]);
   // Switch tab AND persist it in the URL (?tab=), so a reload / "service restart"
   // reopens the same tab. Shallow replace (no scroll) preserves other params.
   const changeTab = useCallback(
@@ -613,6 +621,25 @@ function ServerDetail({ serverId }: { serverId: string }) {
     );
   }
 
+  const serverActions: MenuAction[] = [];
+  if (selfHosted && hostConfiguration) {
+    serverActions.push({
+      id: "git-credentials",
+      label: t.servers.github.title,
+      icon: <UiIcon name="git-branch" className="size-4" />,
+      onClick: () => openServerGitHub(serverId),
+    });
+  }
+  if (!server.isLocal && !connectionIssue) {
+    serverActions.push({
+      id: "remove",
+      label: t.servers.detail.removeServer,
+      icon: <UiIcon name="trash" className="size-4" />,
+      variant: "danger",
+      onClick: handleDelete,
+    });
+  }
+
   const allHealthy =
     components.length > 0 && components.every((c) => c.healthy);
   const actionBusy = setupStream.isConnected || setupStream.isConnecting || isRemoving;
@@ -662,7 +689,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
               <span className="hidden sm:inline">{t.servers.detail.edit}</span>
             </button>
             <Button variant="ghost" size="icon" disabled={refreshing || checking} aria-label={t.servers.networks.refresh} onClick={() => { void fetchData(); void runHealthCheck(); monitor.reconnect(); }}><UiIcon name="refresh" className={`size-4 ${refreshing || checking ? "animate-spin" : ""}`} /></Button>
-            {!server.isLocal && !connectionIssue && <DropdownMenu triggerLabel={t.servers.detail.removeServer} actions={[{ id: "remove", label: t.servers.detail.removeServer, icon: <UiIcon name="trash" className="size-4" />, variant: "danger", onClick: handleDelete }]} />}
+            {serverActions.length > 0 && <DropdownMenu triggerLabel={t.actions.title} actions={serverActions} />}
           </div>
           <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-center gap-2 [.is-desktop_&]:col-start-1">
             <>
@@ -770,10 +797,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
               </>
             )}
 
-            {activeTab === "github" && serverId && (
-              <ServerGitHubConnect serverId={serverId} variant="card" />
-            )}
-
+            {activeTab === "pages" && hostConfiguration && <EdgePagesPanel serverId={serverId} />}
             {activeTab === "security" && (
               <div className="space-y-6">
                 {hostConfiguration && <ServerIngressCard serverId={serverId} />}

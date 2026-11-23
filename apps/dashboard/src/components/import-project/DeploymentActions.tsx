@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { hasProjectRepository } from "@repo/core";
 
 import { useId, useRef, useState } from "react";
 import Link from "next/link";
@@ -222,8 +223,8 @@ export function DeploymentConfigurationAction({ className }: { className?: strin
 
   const slug = config.localPath
     ? encodeLocalSlug(config.localPath)
-    : config.owner && config.repo
-      ? encodeRepoSlug(config.owner, config.repo)
+    : config.owner && config.repo && hasProjectRepository({ gitProvider: config.gitProvider, gitOwner: config.owner, gitRepo: config.repo })
+      ? encodeRepoSlug(config.owner, config.repo, config.gitProvider)
       : encodeProjectSlug(projectId);
   const params = new URLSearchParams({ projectId, mode: "config" });
 

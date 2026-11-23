@@ -1,5 +1,5 @@
 import { api, type RequestOptions } from "./client";
-import type { DeploymentPage, ListDeploymentsInput } from "@repo/contracts";
+import type { ComposeChanges, DeploymentPage, ListDeploymentsInput } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type {
   StackId,
@@ -60,7 +60,8 @@ export interface RestorePlanUI {
 
 export type PrepareProjectSource = { projectId?: string; includeEnv?: boolean; rootDirectory?: string } & (
   | {
-      source?: "github";
+      source?: "git" | "github";
+      provider?: string;
       serverId?: string;
       owner: string;
       repo: string;
@@ -90,6 +91,8 @@ export interface PrepareComposeService {
   dockerfile?: string;
   buildArgs?: Record<string, string | null>;
   ports: string[];
+  /** Container ports from the compose file's `expose:` — not published to the host. */
+  expose?: string[];
   dependsOn: string[];
   environment: Record<string, string>;
   /** Parser-owned expressions; preview values are not a replacement for their source. */
@@ -186,7 +189,7 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
    *  declared). Absent when the root was detected normally. */
   composePath?: string;
   composeRevision?: string;
-  composeChanges?: { added: string[]; changed: string[]; removed: string[] };
+  composeChanges?: ComposeChanges;
   services?: PrepareComposeService[];
   monorepoApps?: PrepareMonorepoApp[];
   monorepoWorkspace?: PrepareMonorepoWorkspace;
@@ -307,7 +310,7 @@ export const deployApi = {
    *  rollback artifact has been pruned). Omitting it (or passing false)
    *  rebuilds against the latest commit on the branch — the default
    *  "redeploy" semantic. */
-  redeploy: (id: string, opts?: { useExistingCommit?: boolean }) =>
+  redeploy: (id: string, opts?: { useExistingCommit?: boolean; composeRevision?: string }) =>
     api.post<any>(`deployments/${id}/redeploy`, opts ?? {}),
 
   /**
@@ -331,6 +334,7 @@ export const deployApi = {
      *  pull, no rebuild. Recreates env-changed services from their existing
      *  images. */
     refresh?: boolean;
+    composeRevision?: string;
   }) =>
     // Longer timeout than the 15s default: the trigger does synchronous git/DNS
     // pre-work (and proxies to the SaaS for cloud projects) before returning the
@@ -399,7 +403,7 @@ export const deployApi = {
   buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
   /** Re-deploy an existing deployment */
-  buildRedeploy: (deployment_id: string, options?: { reuseBuild?: boolean }) =>
+  buildRedeploy: (deployment_id: string, options?: { reuseBuild?: boolean; composeRevision?: string }) =>
     api.post<any>(endpoints.deploy.buildRedeploy(deployment_id), options),
 
   /** Check SSL certificate status for a domain */

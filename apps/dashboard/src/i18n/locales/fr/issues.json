@@ -98,6 +98,8 @@
     "rescanPartial": "Analyse terminée, {n} vérification(s) avec une couverture incomplète",
     "rescanFailed": "Échec de l'analyse",
     "resolved": "Terminé",
+    "updateResolved": "Mise à jour terminée : {name}",
+    "updatesResolved": "Mises à jour terminées ({count}) : {names}",
     "resolveFailed": "Impossible d'appliquer cette correction",
     "confirmDestructive": "Cette action a un effet de bord irréversible. Continuer ?"
   },

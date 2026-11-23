@@ -225,7 +225,7 @@ describe("Cloud Docker project teardown", () => {
         slug,
         domain: "opsh.io",
         namespace: fixture.namespace,
-        source_workspace_id: fixture.scope.workspaceId,
+        source_vm_id: fixture.scope.workspaceId,
         exported_path: `${cloudDockerProjectPaths(owner).routes}/${slug}`,
       });
     return { ...fixture, addPage };
