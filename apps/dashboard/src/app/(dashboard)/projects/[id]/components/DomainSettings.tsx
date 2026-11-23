@@ -527,7 +527,7 @@ export const DomainSettings = ({ applicationScope = false, serviceScope, onRoute
   const retryRouting = () =>
     openRoutingRetry(String(id), {
       onSession: rememberRoutingSession,
-      onSettled: () => void checkEdge(),
+      onDone: () => void checkEdge(),
     });
 
   // Install/own OpenResty + apply routes reload-free (no redeploy), surfacing the
