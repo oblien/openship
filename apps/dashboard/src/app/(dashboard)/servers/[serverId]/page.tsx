@@ -630,6 +630,14 @@ function ServerDetail({ serverId }: { serverId: string }) {
       onClick: () => openServerGitHub(serverId),
     });
   }
+  if (isDesktop && hostConfiguration && !server.isLocal && !connectionIssue) {
+    serverActions.push({
+      id: "recover-project",
+      label: t.migration.entry.tab,
+      icon: <UiIcon name="folder" className="size-4" />,
+      onClick: () => changeTab("migrations"),
+    });
+  }
   if (!server.isLocal && !connectionIssue) {
     serverActions.push({
       id: "remove",
