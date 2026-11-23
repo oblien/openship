@@ -264,6 +264,30 @@ describe("GitHub on a customer-connected SSH server", () => {
   });
 });
 
+it("opens project recovery from a connected Desktop server", async () => {
+  await mountOfflineServer({ status: 200, body: { ok: true, components: [] } }, {
+    ...OFFLINE_SERVER,
+    connection: "ssh",
+  }, "desktop");
+
+  const actions = container.querySelector<HTMLButtonElement>(
+    `button[aria-label="${baseDictionary.actions.title}"]`,
+  )!;
+  await act(async () => actions.click());
+  const recover = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent?.trim() === baseDictionary.migration.entry.tab,
+  );
+  expect(recover).toBeDefined();
+
+  const requestCount = vi.mocked(fetch).mock.calls.length;
+  await act(async () => recover!.click());
+  expect(router.replace).toHaveBeenCalledWith("/servers/srv_1?tab=migrations", { scroll: false });
+  expect(vi.mocked(fetch).mock.calls.slice(requestCount).some(([url, init]) =>
+    String(url).includes("/reimport") && init?.method === "POST",
+  )).toBe(false);
+  expect(errors).toEqual([]);
+});
+
 describe("managed resources on retained server links", () => {
   it.each(["desktop", "docker"])("shows the named plan instead of a requested host terminal in %s", async deployMode => {
     searchParams = new URLSearchParams({ tab: "terminal" });

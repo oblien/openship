@@ -22,6 +22,18 @@ For a single operator this is the best model: the control plane lives **locally*
   - **This Machine** — manage the local box.
   - **Another Server** — add a remote server over SSH (host, user, key). Test Connection, then manage it.
 
+### Recover projects after reinstalling Desktop
+
+If you have an instance export, import it from **Settings → Data transfer** to restore
+the controller's saved configuration. If you no longer have the local data, reconnect
+the VPS over SSH. Open its **Actions → Import existing project**, select **Scan server**,
+and choose **Recover project** for the running OpenShip project. If the server already
+has migration history, select **New migration** to reach the scan.
+
+Review each project before re-importing it. OpenShip reattaches the live containers and
+preserves their volumes. It restores the saved project snapshot when one is available
+and otherwise reconstructs the project from the running containers.
+
 ---
 
 ## Team / always-on → install Openship on a server
