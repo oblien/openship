@@ -50,7 +50,7 @@ import {
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
   type BuildStorage,
 } from "./docker-build-cache";
-import { AppError, withKeyedMutex, parseVolumeMount, formatVolumeMount, mapConcurrent } from "@repo/core";
+import { AppError, assertLocalHostExecutionAllowed, withKeyedMutex, parseVolumeMount, formatVolumeMount, mapConcurrent } from "@repo/core";
 import { readServerStats } from "../system/server-stats";
 import { CUTOVER_SHARED_VOLUMES_ENV, decideCutover, newcomerName, parseSharedVolumeOptIn } from "./cutover";
 import { dockerServiceCutover, type DockerServiceCutover } from "./docker-service-cutover";
@@ -3230,6 +3230,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       if (sshExecutor) {
         await this.extractDocRootOverSsh(sshExecutor, tag, docRoot, hostOutDir);
       } else {
+        assertLocalHostExecutionAllowed();
         // A local daemon shares our disk, so let it copy in place. It reports back
         // false when it can't — VM-backed daemon, or a builder image with no shell —
         // and that's also the remote-daemon case, where the archive has to come over
