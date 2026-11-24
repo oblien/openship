@@ -1,0 +1,224 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "openproject",
+  "name": "OpenProject",
+  "description": "Project management, tasks, Gantt charts, wikis and time tracking for teams, with a private PostgreSQL database and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "openproject",
+  "category": "other",
+  "repository": "https://github.com/opf/openproject",
+  "tags": [
+    "project-management",
+    "gantt",
+    "tasks",
+    "collaboration"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "openproject-db",
+      "image": "postgres:17-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "openproject",
+        "POSTGRES_DB": "openproject"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "openproject_db_data:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "20s"
+      }
+    },
+    {
+      "name": "openproject",
+      "image": "openproject/openproject:17.9.6",
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "openproject-db"
+      ],
+      "ports": [
+        "8233:80"
+      ],
+      "exposed": true,
+      "exposedPort": 80,
+      "routes": [
+        {
+          "port": 80
+        }
+      ],
+      "entrypointArgv": [
+        "sh",
+        "-c",
+        "case \"$PUBLIC_URL\" in https://*) export OPENPROJECT_HTTPS=true;; *) export OPENPROJECT_HTTPS=false;; esac; h=\"${PUBLIC_URL#*://}\"; export OPENPROJECT_HOST__NAME=\"${h%%/*}\"; exec ./docker/prod/entrypoint.sh ./docker/prod/supervisord"
+      ],
+      "volumes": [
+        "openproject_assets:/var/openproject/assets"
+      ],
+      "environment": {
+        "PUBLIC_URL": "{{publicUrl:openproject}}",
+        "DATABASE_URL": "postgres://openproject:{{config:DB_PASSWORD}}@openproject-db:5432/openproject",
+        "OPENPROJECT_SEED_ADMIN_USER_NAME": "OpenProject Admin",
+        "OPENPROJECT_SEED_ADMIN_USER_PASSWORD_RESET": "false"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "SECRET_KEY_BASE",
+        "OPENPROJECT_SEED_ADMIN_USER_PASSWORD"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -o /dev/null http://127.0.0.1/health_checks/default || exit 1"
+        ],
+        "interval": "20s",
+        "timeout": "10s",
+        "retries": 15,
+        "startPeriod": "240s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "openproject-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "openproject-db"
+    },
+    {
+      "key": "DB_PASSWORD",
+      "service": "openproject",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "openproject-db"
+    },
+    {
+      "key": "SECRET_KEY_BASE",
+      "service": "openproject",
+      "label": "Application secret",
+      "help": "Auto-generated. Signs sessions and encrypts stored values; changing it logs everyone out.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "OPENPROJECT_SEED_ADMIN_USER_PASSWORD",
+      "service": "openproject",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "setup",
+      "label": "Initial account",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "OPENPROJECT_SEED_ADMIN_USER_MAIL",
+          "service": "openproject",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator (login name: admin). Manage accounts in the app."
+        }
+      ]
+    }
+  ],
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "endpoints": [
+    {
+      "service": "openproject",
+      "port": 80,
+      "label": "OpenProject",
+      "kind": "http",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "openproject-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ],
+  "minResources": {
+    "cpuCores": 2,
+    "memoryMb": 4096
+  },
+  "connection": {
+    "title": "Sign in to OpenProject",
+    "description": "Sign in with the username admin and the generated password below. The administrator is created on first start.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "OpenProject",
+        "source": "publicUrl:openproject",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Username",
+        "source": "template:admin",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:openproject:OPENPROJECT_SEED_ADMIN_USER_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "The administrator's login name is admin. Account changes made in the app (a password change, new users) are preserved on redeployment. Outgoing email is not configured; add your SMTP server in the app under Administration > Emails and notifications. The first start runs database migrations and seeds demo data, so allow a few minutes."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Plan and track work",
+        "description": "Work packages, boards, Gantt charts, roadmaps and time tracking in one place."
+      },
+      {
+        "title": "Private database",
+        "description": "Your data lives in a dedicated, project-scoped PostgreSQL instance."
+      },
+      {
+        "title": "Wikis and documents",
+        "description": "Project wikis, news and file attachments stored on a persistent volume."
+      }
+    ]
+  }
+}
