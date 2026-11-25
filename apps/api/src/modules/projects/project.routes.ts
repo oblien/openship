@@ -169,6 +169,7 @@ r.post(
     mcp: {
       description:
         "Create an edge traffic rule for this project, optionally scoped to a domain or path. A rule can block live traffic; read the existing rules before changing access.",
+      destructive: true,
     },
   },
   routeRules.createRouteRule,
@@ -180,7 +181,8 @@ r.patch(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Update this project’s edge traffic rule. Supply the complete replacement rule spec when changing it; omitted top-level fields are preserved.",
+        "Update this project’s edge traffic rule. Changes can block live traffic or remove access restrictions. Supply the complete replacement rule spec when changing it; omitted top-level fields are preserved.",
+      destructive: true,
     },
     body: RouteRuleInputSchema,
   },
@@ -544,7 +546,7 @@ r.post(
 /* ─── Environment variables ────────────────────────────────────────────── */
 r.get("/:id/previews", { tag: "project:read", mcp: { description: "List managed pull request previews, URLs, lifecycle state, and configuration." } }, ctrl.listPreviews);
 r.post("/:id/previews", { tag: "project:write", body: ProjectControlSchemas.configurePreviews.input,
-  mcp: { description: "Enable or disable isolated same-repository pull request previews. Preview Environment values are used; disabling cleans up managed previews." },
+  mcp: { description: "Enable or disable isolated same-repository pull request previews. Preview Environment values are used; disabling schedules deletion of managed preview projects, their runtime resources and persistent volumes.", destructive: true },
 }, ctrl.configurePreviews);
 r.post("/:id/build-cache/migration", {
   tag: "project:write", body: ProjectControlSchemas.buildCacheMigration.input,
@@ -582,7 +584,8 @@ r.patch(
     // is a 400, not a 500 in the service's data.upserts.map. #231
     body: MergeEnvVarsBody,
     mcp: {
-      description: "Merge env var changes (upserts + deletes); untouched vars are preserved.",
+      description: "Merge project environment changes: upserts overwrite existing values and deletes remove named variables, including secrets. Untouched variables are preserved.",
+      destructive: true,
     },
   },
   ctrl.mergeEnvVars,
@@ -753,7 +756,7 @@ r.post(
   {
     tag: "project:write",
     auditHandledByOperation: true,
-    mcp: { description: "Rotate an incoming webhook's token / HMAC secret." },
+    mcp: { description: "Rotate an incoming webhook's token / HMAC secret, immediately invalidating its previous credentials. Update webhook senders to use the returned credentials.", destructive: true },
   },
   incomingWebhooks.rotate,
 );

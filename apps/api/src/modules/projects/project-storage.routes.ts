@@ -36,7 +36,8 @@ r.post(
     body: BindObjectStorageBody,
     mcp: {
       description:
-        "Bind an S3 bucket to this project — either an installed MinIO app or an external provider. Verifies the bucket, then injects the framework's storage env vars.",
+        "Bind an S3 bucket from an installed MinIO app or an external provider to this project. Verifies bucket access, replaces any existing binding and its injected environment variables, and attempts a redeploy if the project has an active deployment. Read the current binding first; changing buckets changes where the app reads and writes objects and does not migrate existing objects.",
+      destructive: true,
     },
   },
   ctrl.bind,
