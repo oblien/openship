@@ -4,6 +4,7 @@ import { join, delimiter } from "node:path";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { Mindwire, local, type NativeAuthSource, type TargetHandle } from "mindwire";
+import { configureMindwireReleaseBaseUrl } from "./mindwire-release";
 import {
   assistantEnvironment,
   HARNESS,
@@ -196,6 +197,7 @@ export async function createAssistantClient(
         if (stopped) throw new Error("Assistant host is closed.");
         if (!profileSupported) throw new Error(updateMessage);
         try {
+          configureMindwireReleaseBaseUrl();
           handle = await target.connect(spec);
           return handle;
         } catch (error) {
