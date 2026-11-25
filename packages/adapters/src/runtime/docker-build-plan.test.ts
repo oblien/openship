@@ -141,6 +141,18 @@ describe("generateDockerfile — PHP branch", () => {
     expect(df).toContain("USER www-data");
   });
 
+  it("aligns PHP upload limits with the edge default in the runtime stage", () => {
+    expect(df).toContain(
+      'RUN printf \'upload_max_filesize = 50M\\npost_max_size = 50M\\n\' > "$PHP_INI_DIR/conf.d/zz-openship.ini"',
+    );
+    const lines = df.split("\n");
+    const iniIdx = lines.findIndex((l) => l.includes("zz-openship.ini"));
+    const runtimeIdx = lines.findIndex((l) => l.includes("AS runtime"));
+    const copyIdx = lines.findIndex((l) => l.startsWith("COPY --from=builder --chown=www-data"));
+    expect(iniIdx).toBeGreaterThan(runtimeIdx);
+    expect(iniIdx).toBeLessThan(copyIdx);
+  });
+
   it("serves the project's output directory as the docroot", () => {
     expect(df).toContain("ENV SERVER_ROOT=public/");
     const renamed = generateDockerfile(
