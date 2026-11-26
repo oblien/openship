@@ -61,7 +61,7 @@ export async function connectLinkedSending(
       else await linkedWebmailSending(c, serviceId, domain.domain, { apiOrigin, ...credential });
     } catch (error) {
       // A timeout may follow a committed install. Read back before revoking.
-      if ((await read().catch(() => null))?.keyId !== key.id) {
+      if ((await read())?.keyId !== key.id) {
         await remote("keys/" + encodeURIComponent(key.id), "DELETE");
         throw error;
       }

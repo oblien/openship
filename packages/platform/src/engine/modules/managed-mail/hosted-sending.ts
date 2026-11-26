@@ -90,7 +90,7 @@ export async function connectHostedSending(
           409,
         );
     } catch (error) {
-      const observed = await read().catch(() => null);
+      const observed = await read();
       if (!installed(observed, key.id)) {
         // Webmail can already be using the key while Postfix still has its old
         // route. Preserve a confirmed installation until the next successful retry.

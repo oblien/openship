@@ -1,4 +1,4 @@
-import { mailRoutePath, mailAccountStatus, mailRequestDomains } from "../mail/account-path";
+import { mailRoutePath, mailAccountStatus, mailRequestDomains, readMailRequestBody } from "../mail/account-path";
 import type { Context } from "hono";
 import {
   engineRequest,
@@ -45,7 +45,7 @@ export async function managedAccount(c: Context, pattern: string, engine: MailTa
   const suffix = query.size ? "?" + query : "";
   const body =
     ["POST", "PATCH"].includes(method) && c.req.header("content-type")?.includes("application/json")
-      ? await c.req.json<Record<string, unknown>>().catch(() => undefined)
+      ? await readMailRequestBody(c)
       : undefined;
   const requestedDomains = mailRequestDomains(c, body);
   if (requestedDomains.includes(primary) || new Set(requestedDomains).size > 1) notFound();

@@ -52,8 +52,9 @@ beforeEach(() => {
   h.domain.mockResolvedValue({ active: true });
 });
 
-it("installs the Cloud API key without a provider namespace and reuses it after reload", async () => {
+it.each([false, true])("reuses the installed Cloud key on retry (lost install response and readback: %s)", async lostResponse => {
   let installed: { keyId: string; apiOrigin: string } | null = null;
+  let readbackUnavailable = false;
   h.cloud.mockImplementation(async (path: string) => {
     if (path === "/sending/domains/domain") return { domain: "example.net", state: "ready" };
     if (path === "/sending/keys")
@@ -63,6 +64,10 @@ it("installs the Cloud API key without a provider namespace and reuses it after 
     throw new Error("Unexpected request");
   });
   h.webmail.mockImplementation(async (_ctx, _server, _domain, settings) => {
+    if (!settings && readbackUnavailable) {
+      readbackUnavailable = false;
+      throw new Error("Webmail unavailable");
+    }
     if (!settings) return { sending: installed };
     expect(settings).toEqual({
       apiOrigin: "https://cloud.example",
@@ -70,8 +75,16 @@ it("installs the Cloud API key without a provider namespace and reuses it after 
       key: "opsh_send_fixture",
     });
     installed = { keyId: settings.keyId, apiOrigin: settings.apiOrigin };
+    if (lostResponse) {
+      readbackUnavailable = true;
+      throw new Error("Install acknowledgement lost");
+    }
     return { configured: true };
   });
+  if (lostResponse) {
+    await expect(connectLinkedSending(ctx, "vps", "domain")).rejects.toThrow("Webmail unavailable");
+    expect(h.cloud).not.toHaveBeenCalledWith("/sending/keys/pat_email", { method: "DELETE" });
+  }
   for (let i = 0; i < 2; i++)
     expect(await connectLinkedSending(ctx, "vps", "domain")).toEqual({ configured: true });
   expect(h.cloud.mock.calls.filter(([path]) => path.endsWith("/key"))).toHaveLength(1);

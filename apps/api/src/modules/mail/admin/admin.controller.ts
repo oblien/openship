@@ -506,8 +506,10 @@ export async function deleteOutboundRelayHandler(c: Context) {
             return c.json({ ok: true, cloudKeyRetained: true });
           await cloud("/sending/keys/" + encodeURIComponent(previous.credentialId), { method: "DELETE" });
         } catch (error) {
-          if (!(error instanceof AppError && error.statusCode === 404))
+          if (!(error instanceof AppError && error.statusCode === 404)) {
+            errorDiagnostics.warn("mail", "Detached SMTP relay retained its Cloud credential.");
             return c.json({ ok: true, cloudKeyRetained: true });
+          }
         }
       }
       return c.json({ ok: true });

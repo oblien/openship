@@ -44,6 +44,7 @@ export async function startManagedMail() {
         try {
           await reconcileSending(organizationId);
         } catch {
+          // diagnostics-ignore: aggregate per-workspace failures into the retry warning below.
           failed++;
         }
       }

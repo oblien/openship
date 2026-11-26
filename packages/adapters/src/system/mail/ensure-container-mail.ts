@@ -641,7 +641,7 @@ async function startComposeMail(
     );
     return result.code === 0;
   } finally {
-    await writer.rm(candidate).catch(() => undefined);
+    await writer.rm(candidate).catch(error => observeCaughtError(error, "adapters/mail/compose-manifest-cleanup"));
   }
 }
 

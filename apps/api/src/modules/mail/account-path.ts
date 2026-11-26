@@ -1,6 +1,16 @@
 import type { Context } from "hono";
 import { AppError } from "@repo/core";
 import { managedMailNamespacePattern } from "@repo/contracts/managed-mail";
+import { readOptionalJsonBody } from "../../lib/request-body";
+
+export async function readMailRequestBody(c: Context): Promise<Record<string, unknown>> {
+  const body = await readOptionalJsonBody(c).catch(() => {
+    throw new AppError("Invalid mail request body.", 400);
+  });
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new AppError("Invalid mail request body.", 400);
+  return body as Record<string, unknown>;
+}
 
 export function workerTenant(c: Context) {
   const value = c.req.param("mailTenant");

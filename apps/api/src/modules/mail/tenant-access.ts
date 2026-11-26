@@ -11,7 +11,7 @@ import {
   MAIL_TENANT_TOKEN_PREFIX,
   managedMailNamespacePattern,
 } from "@repo/contracts/managed-mail";
-import { mailRequestDomains, workerTenant } from "./account-path";
+import { mailRequestDomains, readMailRequestBody, workerTenant } from "./account-path";
 import { bindWebmailHosting } from "./webmail/sending-settings";
 import type { Context } from "hono";
 import { AppError } from "@repo/core";
@@ -40,7 +40,7 @@ export async function issueTenantAccess(c: Context) {
   const parent = parseBearerToken(c);
   if (ctx.principalKind !== "pat" || !ctx.sessionId.startsWith("pat:") || !parent)
     throw new AppError("Worker enrollment requires an operator access token.", 403);
-  const input = binding.safeParse(await c.req.json().catch(() => null));
+  const input = binding.safeParse(await readMailRequestBody(c));
   if (!input.success) throw new AppError("Invalid shared mail binding.", 400);
   const { namespace, serviceId, imapHost } = input.data;
   const token =
@@ -105,7 +105,7 @@ export async function authorizeTenantAccount(c: Context, path: string) {
     await assertTenantDomain(server, namespace, alias.domain);
     return;
   }
-  const body = method === "POST" || method === "PATCH" ? await c.req.json().catch(() => ({})) : {};
+  const body = method === "POST" || method === "PATCH" ? await readMailRequestBody(c) : {};
   const domains = mailRequestDomains(c, body);
   if (!domains[0] || new Set(domains).size !== 1)
     throw new AppError("Mail resource not found.", 404);

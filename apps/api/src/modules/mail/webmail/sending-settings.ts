@@ -60,6 +60,9 @@ async function authorizedWebmail(c: Context, serverId: string, requireLocal = fa
   if (url.protocol !== "https:") throw new AppError("Managed webmail requires HTTPS.", 409);
   const token = decrypt(secrets.OPENSHIP_SENDING_ADMIN_TOKEN);
   return async <T>(path: string, schema: z.ZodType<T>, body?: object): Promise<T> => {
+    const unavailable = () => new AppError(
+      "The linked webmail could not confirm its managed sending configuration.", 502,
+    );
     const response = await fetch(new URL(path, url), {
       method: body ? "PUT" : "GET",
       redirect: "error",
@@ -69,15 +72,12 @@ async function authorizedWebmail(c: Context, serverId: string, requireLocal = fa
         "x-openship-sending-token": token,
       },
       body: body ? JSON.stringify(body) : undefined,
-    }).catch(() => null);
-    if (response?.ok) {
-      const result = schema.safeParse(await response.json().catch(() => null));
+    }).catch(() => { throw unavailable(); });
+    if (response.ok) {
+      const result = schema.safeParse(await response.json().catch(() => { throw unavailable(); }));
       if (result.success) return result.data;
     }
-    throw new AppError(
-      "The linked webmail could not confirm its managed sending configuration.",
-      502,
-    );
+    throw unavailable();
   };
 }
 
