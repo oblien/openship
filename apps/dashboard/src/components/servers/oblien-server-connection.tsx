@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { reportCaughtError } from "@repo/core/diagnostics";
 import { FeatureIllustration } from "@repo/ui/illustrations";
 import { Icon } from "@repo/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,9 @@ export function OblienServerConnection({
         if (active)
           setSaved(result.data.filter((c) => c.provider === "oblien" && c.status === "active"));
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (active) reportCaughtError(error, "dashboard/components/servers/oblien-server-connection");
+      });
     return () => {
       active = false;
       operation.current?.abort();

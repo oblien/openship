@@ -255,6 +255,7 @@ const VERIFIERS: Record<string, Verifier> = {
     } catch (error) {
       if (error instanceof OblienError && [401, 403, 404].includes(error.status ?? 0))
         return { ok: false, reason: "Access to the authorized VM is unavailable. Reconnect in Oblien." };
+      observeCaughtError(error, "platform/engine/modules/credentials/verify");
       return { ok: true, unverifiedReason: "Oblien could not be reached. Retry verification." };
     }
   },

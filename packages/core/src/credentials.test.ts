@@ -7,6 +7,7 @@ import {
   credentialProvidersFor,
   getCredentialProvider,
   normalizeCredentialSelector,
+  supportsConnectionOAuth,
   splitCredentialValues,
   validateCredentialValues,
 } from "./credentials";
@@ -36,11 +37,12 @@ describe("the provider catalogue", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("gives every provider at least one secret field", () => {
-    // A "credential" with nothing secret is configuration, and belongs elsewhere.
+  it("requires a secret for manual setup and OAuth for providers with no manual fields", () => {
     for (const p of CREDENTIAL_PROVIDERS) {
-      expect(p.fields.some((f) => f.type === "secret"), p.id).toBe(true);
+      if (p.fields.length) expect(p.fields.some((f) => f.type === "secret"), p.id).toBe(true);
+      else expect(supportsConnectionOAuth(p.id), p.id).toBe(true);
     }
+    expect(getCredentialProvider("oblien")?.fields).toEqual([]);
   });
 
   it("declares unique field keys within a provider", () => {

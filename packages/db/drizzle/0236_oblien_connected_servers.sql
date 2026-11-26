@@ -2,7 +2,9 @@ CREATE UNIQUE INDEX "uq_credential_org_id" ON "credential" ("organization_id","i
 --> statement-breakpoint
 ALTER TABLE "servers"
   ADD COLUMN "oblien_credential_id" text,
-  ADD COLUMN "oblien_vm_id" text,
+  ADD COLUMN "oblien_vm_id" text;
+--> statement-breakpoint
+ALTER TABLE "servers"
   ADD CONSTRAINT "servers_oblien_credential_owner_fk" FOREIGN KEY ("organization_id","oblien_credential_id")
     REFERENCES "credential" ("organization_id","id") ON DELETE RESTRICT,
   ADD CONSTRAINT "servers_oblien_binding_check" CHECK (
