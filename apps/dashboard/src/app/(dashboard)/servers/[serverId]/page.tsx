@@ -122,7 +122,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
     return tab.key === "overview" || hostConfiguration;
   });
   const activeTab = visibleTabs.some(tab => tab.key === requestedTab) ? requestedTab : "overview";
-  const fullWidth = activeTab === "migrations" || activeTab === "runs";
+  const fullWidth = activeTab === "migrations" || activeTab === "runs" || server?.connection === "oblien";
   // Follow real tab links and browser navigation as well as the initial URL.
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -701,7 +701,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
           </div>
           <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-center gap-2 [.is-desktop_&]:col-start-1">
             <>
-              <p className="min-w-0 break-all text-sm text-muted-foreground font-mono">{server.sshUser ?? "root"}@<BlurIp>{server.sshHost ?? ""}</BlurIp></p>
+              <p className="min-w-0 break-all text-sm text-muted-foreground font-mono">{server.connection === "oblien" ? "Connected through Oblien" : <>{server.sshUser ?? "root"}@<BlurIp>{server.sshHost ?? ""}</BlurIp></>}</p>
               {allHealthy ? <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs font-medium text-success">{t.servers.detail.healthy}</span> : components.length > 0 ? <span className="rounded-full bg-warning/10 text-xs px-2 py-0.5 text-warning">{t.servers.detail.issues}</span> : null}
             </>
           </div>

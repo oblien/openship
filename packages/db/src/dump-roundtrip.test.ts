@@ -154,6 +154,9 @@ async function seedOneRowPerTable(): Promise<Map<string, Record<string, unknown>
 
     // A project chooses exactly one execution target. Other instance parents
     // still get their own rows and are independently round-tripped.
+    // This managed server is a parent of workspace-bound resources.
+    // The customer-owned server binding is exercised separately below.
+    if (spec.sqlName === "servers") row.oblienCredentialId = null;
     if (spec.sqlName === "project") { row.clusterId = null; }
     if (spec.sqlName === "project_security") { row.autoRefresh = true; }
     // A standalone workflow has nullable repository fields but must carry its YAML.
@@ -190,6 +193,25 @@ describe("whole-instance dump → restore round trip", () => {
     expect(counts.project).toBe(1);
     expect(counts.servers).toBe(1);
     expect(counts.resource_usage).toBe(1);
+  });
+
+  it("round-trips a customer-owned server with its organization's credential and VM", async () => {
+    const id = "disposable-connected-server";
+    const organizationId = String(seeded.get("organization")!.id);
+    const credentialId = String(seeded.get("credential")!.id);
+    const vmId = "disposable-connected-vm";
+    await db.execute(sql`INSERT INTO servers (id, organization_id, oblien_credential_id, oblien_vm_id)
+      VALUES (${id}, ${organizationId}, ${credentialId}, ${vmId})`);
+    try {
+      const original = await dumpSubgraph({ kind: "instance" });
+      await restoreSubgraph(JSON.parse(JSON.stringify(original)), { mode: "wipe" });
+      const restored = await dumpSubgraph({ kind: "instance" });
+      expect(restored.tables.servers?.find((s) => s.id === id)).toMatchObject({
+        organizationId, oblienCredentialId: credentialId, oblienVmId: vmId, workspaceId: null,
+      });
+    } finally {
+      await db.execute(sql`DELETE FROM servers WHERE id = ${id}`);
+    }
   });
 
   it("restores a fully FK-populated instance through the JSON envelope", async () => {

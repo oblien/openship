@@ -4,6 +4,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { OblienServerConnection } from "@/components/servers/oblien-server-connection";
 import { useRouter } from "next/navigation";
 import { useAddServerModal } from "@/components/servers/add-server-modal";
 import { Button } from "@/components/ui/button";
@@ -473,6 +474,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
               </div>
             </div>
         }>
+          {!hasExistingServer && <OblienServerConnection onConnected={server => router.push(`/servers/${server.id}`)} />}
           <ServerForm
             key={initialServer?.id ?? "new"}
             server={initialServer}

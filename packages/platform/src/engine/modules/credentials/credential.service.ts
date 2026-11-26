@@ -169,6 +169,7 @@ export async function createCredential(
   organizationId: string,
   input: CredentialInput,
 ): Promise<SanitizedCredential> {
+  if (input.provider === "oblien") throw new ValidationError("Connect the VM through Oblien authorization.");
   const provider = requireProvider(input.provider);
   const name = input.name.trim();
   if (!name) throw new ValidationError("A name is required.");
@@ -305,6 +306,13 @@ export async function deleteCredential(organizationId: string, id: string): Prom
       throw new ConflictError(
         "Finish the migration and temporary access cleanup before removing this connection.",
       );
+    if (row.provider === "oblien") {
+      if (await repos.server.getByOblienCredential(organizationId, id))
+        throw new ConflictError("Remove the connected server before disconnecting its Oblien grant.");
+      const { revokeOblienConnection } = await import("./connection-authorization");
+      const token = readCredentialSecrets(row)._refreshToken;
+      if (token) await revokeOblienConnection(token);
+    }
     await repos.credential.remove(organizationId, id);
   });
 }

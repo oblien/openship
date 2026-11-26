@@ -18,6 +18,7 @@ import type { ServerDependencies } from "../../../servers";
 import {
   OperationError,
   type CreateServerInput,
+  type SshServerInput,
   type UpdateServerInput,
   type ServerOperations,
   type CloudWorkspaceSummary,
@@ -188,7 +189,7 @@ async function probeReachability(ctx: ExecutionContext, id: string) {
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
   if (env.CLOUD_MODE && server.isLocal) return failServer({ error: "Server not found" }, 404);
-  if (server.workspaceId) {
+  if (server.workspaceId || server.oblienCredentialId) {
     try {
       await withServerExecution(ctx.organizationId, id, executor => executor.exec("true", { timeout: 10_000 }));
       return { reachable: true, code: "ok", target: null, port: null, hint: null, rule: null, channel: null };
@@ -214,6 +215,25 @@ async function probeReachability(ctx: ExecutionContext, id: string) {
 
 /** POST /servers - create a new server */
 async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
+  if ("oblienCredentialId" in body) {
+    const { requireOrganizationAdmin } = await import("../../lib/organization-authorization");
+    await requireOrganizationAdmin(ctx);
+    const { inspectOblienVm } = await import("../../lib/connected-oblien-vm");
+    return withServerInventoryLock(ctx.organizationId, async () => {
+      const existing = await repos.server.getByOblienCredential(ctx.organizationId, body.oblienCredentialId);
+      if (env.CLOUD_MODE) await assertManagementAccess(ctx.organizationId, existing?.id);
+      if (existing) return serializeServer(existing);
+      const vm = await inspectOblienVm(ctx.organizationId, body.oblienCredentialId);
+      const { createProvisionLock } = await import("../../lib/provision-lock");
+      const server = await createProvisionLock(`connection:token:${ctx.organizationId}:${body.oblienCredentialId}`).run(async () => {
+        if (!await repos.credential.findById(ctx.organizationId, body.oblienCredentialId))
+          throw new AppError("Reconnect this VM through Oblien.", 409, "CONNECTION_RECONNECT_REQUIRED");
+        return repos.server.attachOblienVm(ctx.organizationId, body.oblienCredentialId, vm.id, vm.name || vm.id);
+      });
+      audit.recordAsync(operationAuditContext(ctx), { eventType: "server.added", resourceType: "server", resourceId: server.id, after: { vmId: vm.id } });
+      return serializeServer(server);
+    });
+  }
   if (!env.CLOUD_MODE) return createConnectedServer(ctx, body);
   return withServerInventoryLock(ctx.organizationId, async () => {
     await assertManagementAccess(ctx.organizationId);
@@ -222,7 +242,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
   });
 }
 
-async function createConnectedServer(ctx: ExecutionContext, body: CreateServerInput, sshHostKey?: string) {
+async function createConnectedServer(ctx: ExecutionContext, body: SshServerInput, sshHostKey?: string) {
 
   const host = (body.sshHost as string)?.trim();
   if (!host) return failServer({ error: "SSH host is required" }, 400);
@@ -351,6 +371,13 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   // Org-scoped: refuse to update a server outside the caller's org.
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return failServer({ error: "Server not found" }, 404);
+  if (existing.oblienCredentialId) {
+    if (!body.name?.trim() || Object.keys(body).some(key => key !== "name"))
+      throw new AppError("Only the display name can be changed for an Oblien connection.", 400, "OBLIEN_CONNECTION_IMMUTABLE");
+    const updated = await repos.server.update(id, { name: body.name.trim() });
+    audit.recordAsync(operationAuditContext(ctx), { eventType: "server:write", resourceType: "server", resourceId: id, after: { name: body.name.trim() } });
+    return serializeServer(updated);
+  }
   if (existing.workspaceId) {
     if (Object.keys(body).some(key => key !== "name") || !body.name?.trim())
       return failServer({ error: "Managed server connections are configured by Openship Cloud. Only the name can be edited.", code: "MANAGED_SERVER_CONNECTION" }, 400);

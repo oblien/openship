@@ -59,20 +59,20 @@ export function serializeServer(
     // ISO country for the row's flag; null for hostnames/private IPs or until
     // the geo DB is warmed (callers prime it via primeGeo before serializing).
     country: s.sshHost ? countryForIp(s.sshHost) : null,
-    connection: s.workspaceId ? "cloud" as const : s.isLocal ? "local" as const : "ssh" as const,
+    connection: s.oblienCredentialId ? "oblien" as const : s.workspaceId ? "cloud" as const : s.isLocal ? "local" as const : "ssh" as const,
     managed: cloud,
     // Managed (cloud) servers have no GPU model; everything else gets the annotation.
     ...(cloud || s.workspaceId ? {} : { gpu: serverGpu(s.gpuOverride, capacity) }),
     // Only remote deployment servers build in managed BuildKit workers; the local row builds
     // through the host daemon's native cache, so a budget there would have no effect.
     ...(supportsBuildCacheBudget(s) ? { buildCacheBudgetBytes: s.buildCacheBudgetBytes ?? null } : {}),
-    terminalSessionLimit: cloud ? 1 : env.TERMINAL_MAX_SESSIONS_PER_USER,
+    terminalSessionLimit: cloud || s.oblienCredentialId ? 1 : env.TERMINAL_MAX_SESSIONS_PER_USER,
     capabilities: {
       monitor: s.purpose !== "migration_source",
       terminal: s.purpose !== "migration_source",
       exec: s.purpose !== "migration_source",
-      hostConfiguration: !s.workspaceId && s.purpose !== "migration_source",
-      ssh: !s.workspaceId && !s.isLocal && s.purpose !== "migration_source",
+      hostConfiguration: !s.oblienCredentialId && !s.workspaceId && s.purpose !== "migration_source",
+      ssh: !s.oblienCredentialId && !s.workspaceId && !s.isLocal && s.purpose !== "migration_source",
       networkSettings: !!cloud,
     },
   };
@@ -80,7 +80,7 @@ export function serializeServer(
 
 /** Servers whose builds use managed BuildKit caches, so a per-server budget applies. */
 export function supportsBuildCacheBudget(
-  s: Pick<NonNullable<Awaited<ReturnType<typeof repos.server.get>>>, "isLocal" | "workspaceId" | "purpose">,
+  s: Pick<NonNullable<Awaited<ReturnType<typeof repos.server.get>>>, "isLocal" | "workspaceId" | "purpose"> & { oblienCredentialId?: string | null },
 ): boolean {
-  return !s.isLocal && !s.workspaceId && s.purpose !== "migration_source";
+  return !s.oblienCredentialId && !s.isLocal && !s.workspaceId && s.purpose !== "migration_source";
 }

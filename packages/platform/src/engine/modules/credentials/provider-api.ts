@@ -20,7 +20,9 @@ export async function providerJson<T>(
 ): Promise<T> {
   if (
     !["https://api.vercel.com", "https://backboard.railway.com"].includes(url.origin) &&
-    url.href !== "https://gitlab.com/oauth/token"
+    url.href !== "https://gitlab.com/oauth/token" &&
+    url.href !== "https://api.oblien.com/v2/oauth/token" &&
+    url.href !== "https://api.oblien.com/v2/oauth/revoke"
   )
     throw new AppError("Unsupported connection endpoint", 400, "CONNECTION_ENDPOINT_INVALID");
   let response;
@@ -63,6 +65,7 @@ export async function providerJson<T>(
       auth ? "CONNECTION_ACCESS_DENIED" : "CONNECTION_REQUEST_FAILED",
     );
   }
+  if (url.href === "https://api.oblien.com/v2/oauth/revoke") return undefined as T;
   try {
     return (await response.json()) as T;
   } catch {

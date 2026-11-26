@@ -176,13 +176,14 @@ export const LOCAL_HOST_PORT_TARGET: HostPortTargetIdentity = Object.freeze({
  * rows that reach the same machine share one lock and collision domain.
  */
 export async function resolveHostPortTargetIdentity(input: {
+  requireStable?: boolean;
   localHost: boolean;
   serverId: string | null;
   executor: CommandExecutor | null;
   connection: HostPortConnectionLocator | null;
 }): Promise<HostPortTargetIdentity> {
   if (input.localHost) return LOCAL_HOST_PORT_TARGET;
-  if (!input.serverId || !input.executor || !input.connection) {
+  if (!input.serverId || !input.executor || (!input.connection && !input.requireStable)) {
     throw new Error("Cannot resolve a remote host-port target without its server and executor");
   }
 
@@ -194,12 +195,18 @@ export async function resolveHostPortTargetIdentity(input: {
       stableTargetIds.set(input.executor, stableId);
     }
   }
-  const physicalFingerprint = stableId
-    ? fingerprint(stableId.source, stableId.value)
-    : connectionHostPortTargetKey(input.connection).slice("host:".length);
+  let targetKey: HostPortTargetKey;
+  if (stableId) {
+    targetKey = `host:${fingerprint(stableId.source, stableId.value)}`;
+  } else {
+    if (input.requireStable || !input.connection) {
+      throw new Error("Could not verify the connected server’s host identity.");
+    }
+    targetKey = connectionHostPortTargetKey(input.connection);
+  }
 
   return {
-    targetKey: `host:${physicalFingerprint}`,
+    targetKey,
     legacyTargetKeys: [`server:${input.serverId}`],
     stable: Boolean(stableId),
   };

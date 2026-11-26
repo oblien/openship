@@ -1,6 +1,6 @@
 /** HTTP adapters over shared server diagnostics, installers, prompts and streams. */
 import type { Context } from "hono";
-import { CreateServerInputSchema, OperationError, parseInput } from "@repo/contracts";
+import { SshServerInputSchema, OperationError, parseInput } from "@repo/contracts";
 import { env } from "@repo/platform/engine/config/index";
 import { repos } from "@repo/db";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -83,7 +83,7 @@ export async function onboardingTestConnection(c: Context) {
     return c.json({ ok: false, message: "This host is not allowed.", code: "blocked_host" }, 400);
   }
 
-  return connectionResponse(c, await runEphemeralConnectionTest(parseInput(CreateServerInputSchema, body), { localBootstrap: true }));
+  return connectionResponse(c, await runEphemeralConnectionTest(parseInput(SshServerInputSchema, body), { localBootstrap: true }));
 }
 
 /** Literal loopback / link-local / cloud-metadata / wildcard SSH targets. */

@@ -152,11 +152,11 @@ describe("resolveClonePlan", () => {
       expect(plan.cloneRunsOnTarget).toBe(false);
     });
 
-    it("remote SSH daemon: target source acquisition remains available", () => {
+    it.each(["ssh", "cloud"] as const)("remote %s daemon: target source acquisition remains available", (transport) => {
       const plan = resolveClonePlan({
         ...base,
         preferTargetClone: true,
-        dockerTransport: "ssh",
+        dockerTransport: transport,
       });
       expect(plan.sourceLocation).toBe("target");
       expect(plan.cloneRunsOnTarget).toBe(true);

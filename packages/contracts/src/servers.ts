@@ -86,13 +86,15 @@ const connectionFields = {
   sshTransport: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("cloudflare")])),
   sshArgs: Type.Optional(nullableString),
 };
-export const CreateServerInputSchema = Type.Object(
+export const SshServerInputSchema = Type.Object(
   {
     ...connectionFields,
     sshHost: Type.String({ minLength: 1 }),
   },
   { additionalProperties: false },
 );
+export const CreateServerInputSchema = Type.Union([SshServerInputSchema,
+  Type.Object({ oblienCredentialId: Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false })]);
 /** Manual GPU mark: "yes"/"no" override the probe, `null` goes back to following it. */
 export const GpuOverrideSchema = Type.Union([Type.Literal("yes"), Type.Literal("no"), Type.Null()]);
 /** Bounds shared with the `servers_build_cache_budget_check` database constraint. */
@@ -129,6 +131,7 @@ export const ServerGpuSchema = Type.Object(
   { additionalProperties: false },
 );
 export type ServerGpu = Static<typeof ServerGpuSchema>;
+export type SshServerInput = Static<typeof SshServerInputSchema>;
 export type CreateServerInput = Static<typeof CreateServerInputSchema>;
 export type UpdateServerInput = Static<typeof UpdateServerInputSchema>;
 
@@ -164,7 +167,7 @@ const serverFields = {
   createdAt: Type.String(),
   country: nullableString,
   sshTransport: Type.Union([Type.Literal("direct"), Type.Literal("cloudflare")]),
-  connection: Type.Optional(Type.Union([Type.Literal("local"), Type.Literal("ssh"), Type.Literal("cloud")])),
+  connection: Type.Optional(Type.Union([Type.Literal("local"), Type.Literal("ssh"), Type.Literal("cloud"), Type.Literal("oblien")])),
   managed: Type.Optional(Type.Union([CloudWorkspaceSchema, Type.Null()])),
   terminalSessionLimit: Type.Optional(Type.Integer({ minimum: 0 })),
   /** Absent on managed (cloud) servers, which have no GPU model. */
@@ -533,7 +536,7 @@ export const ServerCollectionSchemas = {
   connectManaged: { action: "admin", input: Type.Object({ serverId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }) }, { additionalProperties: false }), output: CloudWorkspaceSchema },
   testConnection: {
     action: "write",
-    input: CreateServerInputSchema,
+    input: SshServerInputSchema,
     output: ServerConnectionTestResultSchema,
   },
 } as const satisfies Record<string, ResourceOperationSchema>;

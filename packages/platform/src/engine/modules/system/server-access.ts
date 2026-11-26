@@ -30,7 +30,7 @@ export async function assertServerExecution(server: Server): Promise<void> {
     const { assertManagementAccess } = await import("../billing/management.service");
     await assertManagementAccess(server.organizationId!, server.id);
   }
-  if (process.env.OPENSHIP_NATIVE !== "true") return;
+  if (server.oblienCredentialId || process.env.OPENSHIP_NATIVE !== "true") return;
   // Match SSH target selection, including founding-org loopback rows that have
   // not yet been adopted as the canonical local server.
   if (await isLocalHostRow(server)) assertNativeHostExecution();
@@ -41,6 +41,7 @@ export async function assertServerExecution(server: Server): Promise<void> {
  * and removable after access expires. Execution still checks the current plan. */
 export async function assertServerExecutionTarget(server: Server): Promise<void> {
   assertDeploymentServer(server);
+  if (server.oblienCredentialId && server.oblienVmId && server.organizationId && !server.isLocal && !server.sshHost && !server.workspaceId) return;
   if (env.CLOUD_MODE && !server.workspaceId &&
       (!server.organizationId || server.isLocal || !server.sshHost || await isLocalHostRow(server)))
     throw new AppError("The Cloud control plane cannot be used as a deployment server", 403, "LOCAL_HOST_ACCESS_DENIED");

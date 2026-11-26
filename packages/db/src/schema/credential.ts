@@ -80,6 +80,7 @@ export const credential = pgTable(
     // that pulls and every domain that provisions. The org-wide and per-provider listings
     // ride this as prefixes, so it is the only lookup index needed; `status` is filtered
     // in code because there are a handful of rows per org.
+    uniqueIndex("uq_credential_org_id").on(table.organizationId, table.id),
     index("idx_credential_org_provider_selector").on(
       table.organizationId,
       table.provider,

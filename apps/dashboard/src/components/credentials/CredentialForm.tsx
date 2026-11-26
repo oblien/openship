@@ -67,7 +67,7 @@ export function CredentialForm({
   const methods: { id: "oauth" | "token" | "host-cli"; label: string }[] = [];
   const oauthLabel = gitLabSetup ? copy.gitlab.continue : `Connect ${provider.label}`;
   if (provider.authorization?.available) methods.push({ id: "oauth", label: oauthLabel });
-  methods.push({
+  if (provider.fields.length) methods.push({
     id: "token",
     label: gitLabSetup ? copy.gitlab.useToken : "API token",
   });
@@ -158,6 +158,11 @@ export function CredentialForm({
       {t.settings.common.cancel}
     </Button>
   );
+  if (!existing && methods.length === 0) {
+    return <div className="space-y-3"><p role="status" className="text-sm text-muted-foreground">
+      {provider.label} authorization is unavailable on this installation.
+    </p>{cancelButton}</div>;
+  }
   const nameField = (
     <Input
       id={`${id}-name`}

@@ -16,6 +16,7 @@ import { CloudPurchaseProvider } from "@/components/billing/CloudPurchaseContext
 import { useI18n } from "@/components/i18n-provider";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useModal } from "@/context/ModalContext";
+import { OblienServerConnection } from "./oblien-server-connection";
 import { ServerForm } from "./server-form";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@repo/ui/icons";
@@ -77,6 +78,7 @@ function AddServerDialog({
             <ServerAcquisitionAction value={mode} onChange={setMode} />
           </div>
         )}
+        {!managed && !migrationSource && <OblienServerConnection onConnected={onConnected} />}
         {managed ? (
           <ManagedServerSetup onReady={onManaged} preserveProject />
         ) : (

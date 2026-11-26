@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { AppError, ConflictError, DESKTOP_CONNECTION_STATE_PREFIX, CONNECTION_OAUTH_TTL_SECONDS, NotFoundError, type ConnectionOAuthProvider } from "@repo/core";
+import { AppError, ConflictError, DESKTOP_CONNECTION_STATE_PREFIX, connectionAuthorizationLifetime, NotFoundError, type ConnectionOAuthProvider } from "@repo/core";
 import { repos } from "@repo/db";
 import type { ConnectionAuthorizationInput, CompleteConnectionAuthorizationInput } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
@@ -21,6 +21,7 @@ import {
 
 const CALLBACK = "/connections/callback";
 const tokenEndpoints: Record<ConnectionOAuthProvider, string> = {
+  oblien: "https://api.oblien.com/v2/oauth/token",
   gitlab: "https://gitlab.com/oauth/token",
   railway: "https://backboard.railway.com/oauth/token",
   vercel: "https://api.vercel.com/v2/oauth/access_token",
@@ -36,6 +37,8 @@ interface AuthorizationState {
   redirectUri: string;
 }
 interface TokenResponse {
+  vm_id?: string;
+  scope?: string;
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
@@ -93,9 +96,11 @@ export async function beginConnectionAuthorization(
     redirectUri,
   };
   const store = await cacheStore<string>("connection-authorization", { maxSize: 1000 });
-  await store.set(digest(state), encrypt(JSON.stringify(binding)), CONNECTION_OAUTH_TTL_SECONDS);
+  await store.set(digest(state), encrypt(JSON.stringify(binding)), connectionAuthorizationLifetime(input.provider));
   const url =
-    input.provider === "railway"
+    input.provider === "oblien"
+      ? new URL("https://api.oblien.com/v2/oauth/authorize")
+      : input.provider === "railway"
       ? new URL("https://backboard.railway.com/oauth/auth")
       : input.provider === "gitlab"
         ? new URL("https://gitlab.com/oauth/authorize")
@@ -106,7 +111,9 @@ export async function beginConnectionAuthorization(
       response_type: "code",
       client_id: app.clientId,
       redirect_uri: redirectUri,
-      ...(input.provider === "railway"
+      ...(input.provider === "oblien"
+        ? { resource: "https://api.oblien.com/v2", scope: "vm.read vm.runtime", ...(input.setup === "new" && { setup: "new" }) }
+        : input.provider === "railway"
         ? { scope: "openid email profile offline_access workspace:member", prompt: "consent" }
         : { scope: "api read_repository" }),
       code_challenge: digest(verifier),
@@ -130,6 +137,7 @@ async function exchange(
     );
   const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
   const body = new URLSearchParams(fields);
+  if (provider === "oblien") body.set("resource", "https://api.oblien.com/v2");
   if (provider === "railway")
     headers.Authorization = `Basic ${Buffer.from(`${app.clientId}:${app.clientSecret}`).toString("base64")}`;
   else {
@@ -153,7 +161,7 @@ async function exchange(
     );
   if (
     provider !== "vercel" &&
-    ((provider === "gitlab" && !result.refresh_token) ||
+    (((provider === "gitlab" || provider === "oblien") && !result.refresh_token) ||
       !Number.isFinite(result.expires_in) ||
       result.expires_in! <= 0 ||
       result.expires_in! > 31_536_000 ||
@@ -167,6 +175,9 @@ async function exchange(
       502,
       "CONNECTION_TOKEN_INVALID",
     );
+  if (provider === "oblien" && (typeof result.vm_id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(result.vm_id) ||
+    typeof result.scope !== "string" || !result.scope.split(" ").includes("vm.runtime")))
+    throw new AppError("Select a VM and approve runtime access to connect it as a server.", 403, "SERVER_RUNTIME_CONSENT_REQUIRED");
   return result;
 }
 
@@ -229,7 +240,15 @@ export async function completeConnectionAuthorization(
       token,
       state.provider === "gitlab" ? { _redirectUri: state.redirectUri } : {},
     );
-    if (state.provider === "gitlab") {
+    if (state.provider === "oblien") {
+      const { Oblien } = await import("@repo/adapters");
+      const client = new Oblien({ token: secrets.apiToken, baseUrl: "https://api.oblien.com/v2" });
+      const vm = await client.vm(token.vm_id!).get();
+      if (vm.id !== token.vm_id) throw new ConflictError("The authorized VM changed. Connect again.");
+      publicFields.vmId = vm.id;
+      publicFields.vmName = vm.name || vm.id;
+      publicFields.namespace = vm.namespace ?? "";
+    } else if (state.provider === "gitlab") {
       const { verifyGitLabToken } = await import("../gitlab/client");
       await verifyGitLabToken(secrets.apiToken);
     } else {
@@ -279,20 +298,29 @@ export async function getConnectionAccess<P extends ConnectionOAuthProvider>(
           409,
           "CONNECTION_RECONNECT_REQUIRED",
         );
-      secrets = tokenSecrets(
-        await exchange(row.provider, {
+      const next = await exchange(row.provider, {
           grant_type: "refresh_token",
           refresh_token: secrets._refreshToken,
           ...(row.provider === "gitlab" && { redirect_uri: secrets._redirectUri }),
-        }),
-        secrets,
-      );
+        });
+      if (row.provider === "oblien" && next.vm_id !== row.publicFields.vmId)
+        throw new ConflictError("The authorized VM changed. Reconnect this server.");
+      secrets = tokenSecrets(next, secrets);
       const updated = await repos.credential.update(organizationId, row.id, {
         secretsEnc: writeCredentialSecrets(secrets),
       });
       if (!updated) throw new NotFoundError("Connection", connectionId);
     }
     return { provider: row.provider, publicFields: row.publicFields, secrets };
+  });
+}
+
+export async function revokeOblienConnection(token: string) {
+  const app = application("oblien");
+  if (!app) throw new AppError("Configure the registered Oblien application to disconnect this grant.", 503, "CONNECTION_OAUTH_UNAVAILABLE");
+  await providerJson(new URL("https://api.oblien.com/v2/oauth/revoke"), {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token, token_type_hint: "refresh_token", client_id: app.clientId, client_secret: app.clientSecret }).toString(),
   });
 }
 

@@ -1,4 +1,4 @@
-import { CONNECTION_OAUTH_TTL_SECONDS, type ConnectionOAuthProvider } from "@repo/core";
+import { connectionAuthorizationLifetime, type ConnectionOAuthProvider } from "@repo/core";
 import { credentialsApi } from "./api/credentials";
 import { connectionResultType, openConnectionResultChannel } from "./connection-popup";
 import { openAuthWindow, type AuthWindowHandle } from "@/utils/authWindow";
@@ -10,6 +10,7 @@ async function waitForProviderReturn(
   grant: { state: string; url: string },
   signal: AbortSignal,
   expiredMessage: string,
+  lifetime: number,
   onDesktopReturn: DesktopBridge["onConnectionCallback"],
 ): Promise<string | undefined> {
   const channel = handle.popup ? openConnectionResultChannel() : null;
@@ -22,7 +23,7 @@ async function waitForProviderReturn(
       signal.addEventListener("abort", onAbort, { once: true, signal: listeners.signal });
       timer = window.setTimeout(
         () => reject(new Error(expiredMessage)),
-        CONNECTION_OAUTH_TTL_SECONDS * 1000,
+        lifetime * 1000,
       );
       if (handle.popup) {
         const completed = ({ data }: MessageEvent) => {
@@ -63,6 +64,7 @@ export async function authorizeConnection(
   name: string,
   signal: AbortSignal,
   expiredMessage: string,
+  setup?: "new",
 ) {
   const desktop = window.desktop?.isDesktop;
   const onDesktopReturn = window.desktop?.onConnectionCallback;
@@ -76,6 +78,7 @@ export async function authorizeConnection(
     const grant = await credentialsApi.authorize({
       provider,
       name,
+      setup,
       ...(desktop && { desktop: true }),
     });
     signal.throwIfAborted();
@@ -85,6 +88,7 @@ export async function authorizeConnection(
       grant,
       signal,
       expiredMessage,
+      connectionAuthorizationLifetime(provider),
       onDesktopReturn,
     );
     signal.throwIfAborted();

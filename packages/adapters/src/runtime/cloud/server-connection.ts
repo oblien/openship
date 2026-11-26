@@ -21,9 +21,9 @@ export const CLOUD_SERVER_IMAGE = "oblien/docker:29";
 const BRIDGE_SCRIPT = "/opt/openship/cloud-docker/bridge-v1.py";
 const BRIDGE_WORKLOAD = "openship-docker-api-v1";
 
-export interface CloudServerConnectionOptions {
+export type CloudServerConnectionOptions = ({ customerOwned?: false; namespace: string } |
+  { customerOwned: true; namespace: string | null }) & {
   workspaceId: string;
-  namespace: string;
   beforeProvision?: () => Promise<void>;
   bridgeLock?: ProvisionLock;
   provisionLock?: ProvisionLock;
@@ -140,7 +140,7 @@ export class CloudServerConnection {
     private readonly client: Oblien,
     private readonly options: CloudServerConnectionOptions,
   ) {
-    if (!options.namespace || !options.workspaceId)
+    if ((!options.customerOwned && !options.namespace) || !options.workspaceId)
       throw new Error("Managed server requires a workspace and organization scope");
     this.workspaceId = options.workspaceId;
     this.executor = new CloudWorkspaceExecutor(options => this.runtime(options), this.workspaceId);
@@ -155,9 +155,14 @@ export class CloudServerConnection {
     return options ? this.workspace().runtime(options) : this.workspace().runtime();
   }
 
-  async state(): Promise<ContainerStatus> {
+  async inspect() {
     const data = await this.workspace().get();
     assertDockerWorkspaceOwner(data, this.options.namespace, this.workspaceId);
+    return data;
+  }
+
+  async state(): Promise<ContainerStatus> {
+    const data = await this.inspect();
     if (isDockerWorkspaceRunning(data)) return "running";
     const status = cloudWorkspaceStatus(data);
     if (["failed", "error"].includes(status)) return "failed";

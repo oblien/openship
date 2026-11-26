@@ -2,8 +2,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Oblien, VMData } from "oblien";
 import { AppError } from "@repo/core";
 
-export function assertDockerWorkspaceOwner(workspace: VMData, namespace: string, workspaceId: string): void {
-  if (workspace.namespace !== namespace || workspace.id !== workspaceId)
+export function assertDockerWorkspaceOwner(workspace: VMData, namespace: string | null, workspaceId: string): void {
+  if ((workspace.namespace ?? null) !== namespace || workspace.id !== workspaceId)
     throw new AppError("Cloud workspace identity does not match its server", 502, "CLOUD_SERVER_IDENTITY_MISMATCH");
 }
 
@@ -45,7 +45,7 @@ export async function waitForCloudWorkspaceStopped(client: Oblien, workspaceId: 
 
 /** Creation/start may outlive a request. Waiting never creates a replacement disk. */
 export async function waitForCloudDockerWorkspace(
-  client: Oblien, workspaceId: string, namespace: string,
+  client: Oblien, workspaceId: string, namespace: string | null,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<VMData> {
   const deadline = Date.now() + (options.timeoutMs ?? 600_000);

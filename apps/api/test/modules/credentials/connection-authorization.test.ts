@@ -7,7 +7,9 @@ const h = vi.hoisted(() => ({
   rows: new Map<string, any>(),
   exchange: vi.fn(),
   verify: vi.fn(),
+  vm: vi.fn(),
 }));
+vi.mock("@repo/adapters", () => ({ Oblien: class { vm = h.vm; } }));
 vi.mock("@repo/db", () => ({
   repos: {
     credential: {
@@ -69,6 +71,7 @@ import {
   beginConnectionAuthorization,
   completeConnectionAuthorization,
   getProviderAccess,
+  getConnectionAccess,
 } from "@repo/platform/engine/modules/credentials/connection-authorization";
 
 const ctx = { organizationId: "org", userId: "user", sessionId: "session" } as ExecutionContext;
@@ -76,7 +79,7 @@ beforeEach(() => {
   h.stores.clear();
   h.rows.clear();
   vi.clearAllMocks();
-  for (const provider of ["RAILWAY", "VERCEL"]) {
+  for (const provider of ["RAILWAY", "VERCEL", "OBLIEN"]) {
     vi.stubEnv(`OPENSHIP_CONNECTION_${provider}_CLIENT_ID`, "client");
     vi.stubEnv(`OPENSHIP_CONNECTION_${provider}_CLIENT_SECRET`, "client-secret");
   }
@@ -176,4 +179,40 @@ describe("organization platform authorization", () => {
     expect(form.get("grant_type")).toBe("refresh_token");
     expect(form.get("refresh_token")).toBe("old-refresh");
   });
+});
+
+it("binds a purchased VM to its initiating organization, locks its identity across refresh, and exposes no account token", async () => {
+  const started = await beginConnectionAuthorization(ctx, { provider: "oblien", name: "Disposable server", setup: "new" });
+  const url = new URL(started.url);
+  expect(url.origin + url.pathname).toBe("https://api.oblien.com/v2/oauth/authorize");
+  expect(url.searchParams.get("setup")).toBe("new");
+  expect(url.searchParams.get("scope")).toBe("vm.read vm.runtime");
+  expect(url.searchParams.get("resource")).toBe("https://api.oblien.com/v2");
+  const token = { access_token: "disposable-access", refresh_token: "disposable-refresh", expires_in: 30, vm_id: "vm-a", scope: "vm.read vm.runtime" };
+  h.exchange.mockResolvedValue(token);
+  h.vm.mockReturnValue({ get: async () => ({ id: "vm-a", name: "Server A", namespace: null }) });
+  const input = { state: started.state, code: "one-time" };
+  await expect(completeConnectionAuthorization({ ...ctx, organizationId: "other" }, input)).rejects.toMatchObject({ code: "CONNECTION_STATE_MISMATCH" });
+  const saved = await completeConnectionAuthorization(ctx, input);
+  expect(saved.publicFields).toEqual({ authorization: "oauth", vmId: "vm-a", vmName: "Server A", namespace: "" });
+  expect(JSON.stringify(saved)).not.toContain("disposable-access");
+  expect(h.vm).toHaveBeenCalledWith("vm-a");
+  const accepts = (provider: string): provider is "oblien" => provider === "oblien";
+  await expect(getConnectionAccess("other", saved.id, accepts)).rejects.toThrow();
+  h.exchange.mockResolvedValueOnce({ ...token, vm_id: "vm-b" });
+  await expect(getConnectionAccess(ctx.organizationId, saved.id, accepts)).rejects.toThrow(/authorized VM changed/);
+  expect(JSON.parse(h.rows.get(saved.id).secretsEnc)._refreshToken).toBe(token.refresh_token);
+  h.exchange.mockResolvedValue({ ...token, access_token: "new-access", expires_in: 900 });
+  const [first, second] = await Promise.all([getConnectionAccess(ctx.organizationId, saved.id, accepts), getConnectionAccess(ctx.organizationId, saved.id, accepts)]);
+  expect(first.secrets.apiToken).toBe("new-access");
+  expect(second.secrets.apiToken).toBe("new-access");
+  expect(h.exchange).toHaveBeenCalledTimes(3);
+});
+
+it("requires runtime consent before attaching an Oblien grant", async () => {
+  const started = await beginConnectionAuthorization(ctx, { provider: "oblien", name: "Read only" });
+  h.exchange.mockResolvedValue({ access_token: "read", refresh_token: "refresh", expires_in: 900, vm_id: "vm-a", scope: "vm.read" });
+  await expect(completeConnectionAuthorization(ctx, { state: started.state, code: "read-code" })).rejects.toMatchObject({ code: "SERVER_RUNTIME_CONSENT_REQUIRED" });
+  expect(h.vm).not.toHaveBeenCalled();
+  expect(h.rows.size).toBe(0);
 });
