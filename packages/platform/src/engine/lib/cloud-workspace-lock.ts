@@ -1,7 +1,7 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, cloudServiceTerminalId, isCloudTerminalActivity, safeErrorMessage } from "@repo/core";
 import { repos, type CloudWorkspace, type CloudWorkspaceActivity } from "@repo/db";
 import { withManagedCommandTracking } from "@repo/adapters";
 import { createProvisionLock, tryWithProvisionLock } from "./provision-lock";
@@ -38,7 +38,7 @@ async function recoverCommands(row: CloudWorkspace) {
 /** An acquired advisory lock proves no local replica still owns the session.
  * Never expire another controller's claim, or release before remote exit. */
 export async function recoverOrphanedCloudTerminal(row: CloudWorkspace): Promise<boolean> {
-  if (row.activity?.controllerId !== activityController(row) || row.activity.scope !== "terminal")
+  if (row.activity?.controllerId !== activityController(row) || !isCloudTerminalActivity(row.activity.scope))
     return false;
   if (held.getStore()?.get(row.id)?.active) return false;
   return (
@@ -50,24 +50,29 @@ export async function recoverOrphanedCloudTerminal(row: CloudWorkspace): Promise
         JSON.stringify(current.remote) !== JSON.stringify(row.remote) ||
         current.activity?.id !== row.activity!.id ||
         current.activity.controllerId !== activityController(current) ||
-        current.activity.scope !== "terminal"
+        current.activity.scope !== row.activity!.scope
       )
         return false;
-      await recoverCommands(current);
-      if (current.remote) {
-        await repos.cloudWorkspace.settleActivity(current.id, current.activity.id);
-        await reconcileSettledCloudActivity((await repos.cloudWorkspace.findById(current.id))!);
-      } else {
-        await repos.cloudWorkspace.finishTerminalRecovery(
-          current.id,
-          current.organizationId,
-          current.activity.id,
-        );
-      }
-      return true;
+      return recoverTerminalActivity(current, current.activity);
     })) ?? false
   );
 }
+async function recoverTerminalActivity(row: CloudWorkspace, activity: CloudWorkspaceActivity): Promise<boolean> {
+  await recoverCommands(row);
+  const serviceId = cloudServiceTerminalId(activity.scope);
+  if (serviceId && !activity.settled) {
+    const { cloudServiceTerminalHasExited } = await import("./cloud-workspace-host");
+    if (!await cloudServiceTerminalHasExited(row.organizationId, row.id, serviceId)) return false;
+  }
+  if (row.remote) {
+    await repos.cloudWorkspace.settleActivity(row.id, activity.id);
+    await reconcileSettledCloudActivity((await repos.cloudWorkspace.findById(row.id))!);
+  } else {
+    await repos.cloudWorkspace.finishTerminalRecovery(row.id, row.organizationId, activity.id);
+  }
+  return true;
+}
+
 /** Interactive sessions retain the same admission until their final close. */
 export async function holdCloudWorkspaceActivity(workspaceId: string | null, scope: string) {
   if (!workspaceId) return { run: <T>(work: () => Promise<T>) => work(), release: async () => {} };
@@ -102,7 +107,7 @@ export async function reconcileSettledCloudActivity(row: CloudWorkspace) {
   const activity = row.activity;
   if (!row.remote || !activity?.settled) return;
   await remoteActivity(row, activity, true);
-  if (activity.scope === "terminal" && activity.controllerId === activityController(row))
+  if (isCloudTerminalActivity(activity.scope) && activity.controllerId === activityController(row))
     await repos.cloudWorkspace.finishTerminalRecovery(row.id, row.organizationId, activity.id);
   else
     await repos.cloudWorkspace.releaseActivity(row.id, row.organizationId, activity.id, activity.controllerId);
@@ -160,6 +165,11 @@ async function runCloudWorkspaceActivity<T>(
   }
   const controllerId = activityController(row);
   const scope = options.scope ?? "server";
+  if (row.activity?.controllerId === controllerId && row.activity.scope === scope && cloudServiceTerminalId(scope)) {
+    if (!await recoverTerminalActivity(row, row.activity))
+      throw new AppError("Docker has not confirmed that the previous service terminal exited.", 409, "CLOUD_WORKSPACE_ACTIVITY_BUSY");
+    row = (await repos.cloudWorkspace.findById(workspaceId))!;
+  }
   const previous = row.activity;
   // The advisory lock fences local callers, not remote children. Recover any
   // recorded commands before the interrupted scope can resume after a crash.

@@ -9,6 +9,9 @@ const h = vi.hoisted(() => ({
   binding: vi.fn(),
   runtimeStatus: vi.fn(),
   projects: vi.fn(),
+  project: vi.fn(),
+  service: vi.fn(),
+  deployment: vi.fn(),
   verifyLink: vi.fn(),
 }));
 vi.mock("@repo/platform/engine/config/env", async (original) => {
@@ -19,7 +22,9 @@ vi.mock("@repo/db", () => ({
   repos: {
     cloudWorkspace: { findByIdInOrganization: h.owner },
     cloudDockerWorkspace: { find: h.binding },
-    project: { listByWorkspace: h.projects },
+    project: { listByWorkspace: h.projects, findByIdInOrganization: h.project },
+    service: { findById: h.service },
+    deployment: { findById: h.deployment },
   },
 }));
 vi.mock("@repo/platform/engine/lib/cloud-capacity", () => ({
@@ -46,6 +51,7 @@ vi.mock("@repo/adapters", async (original) => ({
   },
 }));
 import {
+  cloudServiceTerminalHasExited,
   measureCloudWorkspace,
   sampleCloudWorkspaceResources,
   workspaceBuildResources,
@@ -230,5 +236,40 @@ describe("builds inside the subscribed host", () => {
     expect(() => workspaceBuildResources(capacity, { ...usage, memoryAvailableMb: 500 }, { cpuCores: 1, memoryMb: 128 })).toThrow(
       "too little free memory",
     );
+  });
+});
+
+describe("Cloud service terminal exit confirmation", () => {
+  beforeEach(() => {
+    h.service.mockResolvedValue({ id: "svc-a", projectId: "project-a" });
+    h.project.mockResolvedValue({
+      id: "project-a", organizationId: "org-test", workspaceId: "cws-test", activeDeploymentId: "dep-a",
+    });
+    h.deployment.mockResolvedValue({
+      id: "dep-a", projectId: "project-a", organizationId: "org-test",
+      meta: {
+        managedWorkspaceId: "cws-test",
+        managedServer: { projectId: "project-a", ownerWorkspaceId: "cws-test", workspaceId: "vm-test" },
+      },
+    });
+  });
+
+  it.each([
+    ["idle\nidle\n", true],
+    ["idle\nbusy\n", false],
+    ["", false],
+  ])("requires a confirmed idle daemon for %j", async (output, idle) => {
+    h.exec.mockResolvedValue(output);
+    await expect(cloudServiceTerminalHasExited("org-test", "cws-test", "svc-a")).resolves.toBe(idle);
+    expect(h.exec).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("--filter 'label=openship.project=project-a'"), { timeout: 10_000 },
+    );
+    expect(h.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("does not inspect another VM when the active release's binding has changed", async () => {
+    h.binding.mockResolvedValue({ workspaceId: "vm-replacement", namespace: "ns-test", state: "ready" });
+    await expect(cloudServiceTerminalHasExited("org-test", "cws-test", "svc-a")).resolves.toBe(false);
+    expect(h.exec).not.toHaveBeenCalled();
   });
 });

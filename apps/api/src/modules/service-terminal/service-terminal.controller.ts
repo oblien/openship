@@ -41,7 +41,7 @@ import type { ShellSession } from "@repo/adapters";
 import type { TerminalExitReason } from "@repo/db";
 import { disposeRuntime, resolveDeploymentRuntime } from "@repo/platform/engine/lib/deployment-runtime";
 import { holdCloudWorkspaceActivity } from "@repo/platform/engine/lib/cloud-workspace-lock";
-import { safeErrorMessage } from "@repo/core";
+import { CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX, safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveTerminalContext, watchTerminalAuthorization } from "../../lib/terminal-authorization";
 import { authorization } from "@repo/platform/engine/lib/authorization";
@@ -175,7 +175,7 @@ async function resolveServiceForOrg(
   let activity: Awaited<ReturnType<typeof holdCloudWorkspaceActivity>> | undefined;
   try {
     if (forShell && project.workspaceId)
-      activity = await holdCloudWorkspaceActivity(project.workspaceId, "service-terminal:" + serviceId);
+      activity = await holdCloudWorkspaceActivity(project.workspaceId, CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX + serviceId);
     const resolve = () => resolveDeploymentRuntime({
       // A service is a CONTAINER, never the app's bare host process — pin the
       // docker runtime so the terminal targets the real service runtime (as

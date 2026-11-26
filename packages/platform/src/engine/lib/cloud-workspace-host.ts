@@ -20,6 +20,8 @@ import { requireCloudWorkspace } from "./cloud-workspace-scope";
 import { getNamespaceClient } from "./openship-cloud";
 import { readCloudWorkspaceAllocation } from "./cloud-capacity";
 import { createProvisionLock } from "./provision-lock";
+import { findActiveDeployment } from "./active-deployment";
+import type { DeploymentMeta } from "./deployment-runtime";
 import { cacheStore } from "./cache-store/index";
 import { decideCloudBuildResources } from "./cloud-build-resources";
 import { sampleServerUsage, unavailableServerUsage } from "./server-usage";
@@ -86,11 +88,50 @@ async function runningConnection(organizationId: string, id: string) {
   return connection;
 }
 
+function workspaceExecutor({ client, binding }: Awaited<ReturnType<typeof runningConnection>>) {
+  return new CloudWorkspaceExecutor(options => client.vm(binding.workspaceId!).runtime(options), binding.workspaceId!);
+}
+
 /** Commands use the same owned provider connection as Docker, without starting
  * a host or installing the Docker API bridge just to read metrics/open a shell. */
 export async function openCloudWorkspaceExecutor(organizationId: string, id: string) {
-  const { client, binding } = await runningConnection(organizationId, id);
-  return new CloudWorkspaceExecutor(options => client.vm(binding.workspaceId!).runtime(options), binding.workspaceId!);
+  return workspaceExecutor(await runningConnection(organizationId, id));
+}
+
+/** The Docker shell uses a hijacked exec stream. After losing the controller,
+ * check the daemon for remaining execs without modifying the workload. */
+export async function cloudServiceTerminalHasExited(organizationId: string, id: string, serviceId: string) {
+  const service = await repos.service.findById(serviceId);
+  if (!service) return false;
+  const project = await repos.project.findByIdInOrganization(service.projectId, organizationId);
+  if (project?.workspaceId !== id) return false;
+  const deployment = await findActiveDeployment(project);
+  const snapshot = deployment?.meta as DeploymentMeta | null | undefined;
+  const target = snapshot?.managedServer;
+  // Active releases can stay on their old server after a project is moved.
+  if (target?.projectId !== project.id || snapshot?.managedWorkspaceId !== id ||
+      (target.ownerWorkspaceId && target.ownerWorkspaceId !== id))
+    return false;
+
+  const connection = await runningConnection(organizationId, id);
+  if (target.workspaceId !== connection.binding.workspaceId) return false;
+  const executor = workspaceExecutor(connection);
+  try {
+    // Inspect all containers owned by the project, including retained releases
+    // and replacements, since the service record may point to a stale ID.
+    const result = await executor.exec([
+      "set -eu",
+      `ids=$(docker container ls -q --no-trunc --filter ${sq("label=openship.project=" + project.id)})`,
+      'if [ -n "$ids" ]; then',
+      "  docker container inspect --format '{{if .ExecIDs}}busy{{else}}idle{{end}}' $ids",
+      "else",
+      "  printf '%s\\n' idle",
+      "fi",
+    ].join("\n"), { timeout: 10_000 });
+    return result.trim().split(/\r?\n/).every(state => state === "idle");
+  } finally {
+    await executor.dispose();
+  }
 }
 
 /** Server-authorized Docker operations (inventory and migration). Applications

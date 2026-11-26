@@ -1,6 +1,12 @@
 import { assertNoCloudBuildActivities } from "./cloud-build-activity.repo";
-import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { AppError, generateId } from "@repo/core";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  AppError,
+  CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX,
+  cloudServiceTerminalId,
+  generateId,
+  isCloudTerminalActivity,
+} from "@repo/core";
 import type { Database, DatabaseTransaction } from "../client";
 import {
   cloudDockerWorkspace,
@@ -8,6 +14,8 @@ import {
   cloudServerDeletion,
   project,
   servers,
+  service,
+  serviceTerminalSessions,
   terminalSessions,
   dockerMigrationRun,
   type CloudWorkspaceOperation,
@@ -78,7 +86,7 @@ async function updatedLinkedProjects(
 
 export function createCloudWorkspaceRepo(db: Database) {
   return {
-    /** Only this control plane may recover its own interrupted host terminals. */
+    /** Only this control plane may recover its own interrupted terminals. */
     async listLocalTerminalActivities(limit = 50) {
       return db
         .select()
@@ -86,14 +94,18 @@ export function createCloudWorkspaceRepo(db: Database) {
         .where(
           and(
             sql`${cloudWorkspace.activity}->>'controllerId' = case when ${cloudWorkspace.remote} is null then 'saas' else 'installation:' || ${cloudWorkspace.id} end`,
-            sql`${cloudWorkspace.activity}->>'scope' = 'terminal'`,
+            or(
+              sql`${cloudWorkspace.activity}->>'scope' = 'terminal'`,
+              sql`starts_with(${cloudWorkspace.activity}->>'scope', ${CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX})
+                and length(${cloudWorkspace.activity}->>'scope') > ${CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX.length}`,
+            ),
           ),
         )
         .orderBy(asc(cloudWorkspace.updatedAt))
         .limit(limit);
     },
     /** Runtime exit has already been proved under this workspace's advisory
-     * lock. Close only audit rows predating that exact terminal admission. */
+     * lock. Finalize the matching audit rows in the same transaction. */
     async finishTerminalRecovery(id: string, organizationId: string, activityId: string) {
       return db.transaction(async (tx) => {
         const [row] = await tx
@@ -105,7 +117,7 @@ export function createCloudWorkspaceRepo(db: Database) {
           !row ||
           row.activity?.id !== activityId ||
           row.activity.controllerId !== (row.remote ? `installation:${row.id}` : "saas") ||
-          row.activity.scope !== "terminal" ||
+          !isCloudTerminalActivity(row.activity.scope) ||
           row.activity.commands?.length ||
           (row.remote && !row.activity.settled)
         )
@@ -115,20 +127,35 @@ export function createCloudWorkspaceRepo(db: Database) {
             "CLOUD_WORKSPACE_ACTIVITY_CHANGED",
           );
         await assertNoCloudBuildActivities(tx, id);
-        const hostIds = tx
-          .select({ id: servers.id })
-          .from(servers)
-          .where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
-        await tx
-          .update(terminalSessions)
-          .set({ endedAt: new Date(), exitReason: "server_error" })
-          .where(
-            and(
-              isNull(terminalSessions.endedAt),
-              inArray(terminalSessions.serverId, hostIds),
-              lte(terminalSessions.startedAt, new Date(row.activity.startedAt)),
-            ),
-          );
+        const serviceId = cloudServiceTerminalId(row.activity.scope);
+        if (serviceId) {
+          const ownedService = tx.select({ id: service.id }).from(service)
+            .innerJoin(project, eq(project.id, service.projectId))
+            .where(and(eq(service.id, serviceId), eq(project.workspaceId, id), eq(project.organizationId, organizationId)));
+          // The service audit row is created after acquiring admission and opening the shell.
+          await tx.update(serviceTerminalSessions)
+            .set({ endedAt: new Date(), exitReason: "server_error" })
+            .where(and(
+              isNull(serviceTerminalSessions.endedAt),
+              inArray(serviceTerminalSessions.serviceId, ownedService),
+              gte(serviceTerminalSessions.startedAt, new Date(row.activity.startedAt)),
+            ));
+        } else {
+          const hostIds = tx
+            .select({ id: servers.id })
+            .from(servers)
+            .where(and(eq(servers.workspaceId, id), eq(servers.organizationId, organizationId)));
+          await tx
+            .update(terminalSessions)
+            .set({ endedAt: new Date(), exitReason: "server_error" })
+            .where(
+              and(
+                isNull(terminalSessions.endedAt),
+                inArray(terminalSessions.serverId, hostIds),
+                lte(terminalSessions.startedAt, new Date(row.activity.startedAt)),
+              ),
+            );
+        }
         await tx.update(cloudWorkspace).set({ activity: null }).where(eq(cloudWorkspace.id, id));
       });
     },

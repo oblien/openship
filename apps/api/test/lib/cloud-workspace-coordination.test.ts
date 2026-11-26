@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   bindings: new Map<string, string>(),
   remote: vi.fn(),
   recover: vi.fn(),
+  serviceTerminalExited: vi.fn(),
   dispose: vi.fn(),
   tryLock: vi.fn(),
 }));
@@ -42,6 +43,7 @@ vi.mock("@repo/platform/engine/lib/cloud/server-link", () => ({
 }));
 vi.mock("@repo/platform/engine/lib/cloud-workspace-host", () => ({
   openCloudWorkspaceExecutor: async () => ({ recoverCommand: h.recover, dispose: h.dispose }),
+  cloudServiceTerminalHasExited: h.serviceTerminalExited,
 }));
 import {
   withCloudWorkspaceActivity,
@@ -74,6 +76,7 @@ beforeEach(async () => {
   h.repositories.clear();
   h.bindings.clear();
   for (const { db } of databases) {
+    await db.delete(schema.project);
     await db.delete(schema.servers);
     await db.delete(schema.cloudWorkspace);
     await db.delete(schema.organization);
@@ -91,6 +94,7 @@ beforeEach(async () => {
     h.bindings.set(row.id, command.workspaceId);
   }
   h.recover.mockResolvedValue(undefined);
+  h.serviceTerminalExited.mockResolvedValue(true);
   h.dispose.mockResolvedValue(undefined);
   h.tryLock.mockResolvedValue({ release: async () => {} });
   h.remote.mockImplementation(async (_org: string, path: string, input: RequestInit) => {
@@ -120,6 +124,58 @@ describe("managed server admission across independent installations", () => {
     expect(await recoverOrphanedCloudTerminal(stale)).toBe(true);
     expect(h.recover).toHaveBeenLastCalledWith(command);
     expect((await cloud.findById(host.id))!.activity).toBeNull();
+  });
+
+  it("recovers a service terminal and closes only its own audit after Docker confirms exit", async () => {
+    const db = databases[0]!.db;
+    const serverId = (await db.query.servers.findMany()).find(server => server.workspaceId === host.id)!.id;
+    const projectId = randomUUID();
+    const serviceId = randomUUID();
+    const siblingId = randomUUID();
+    const userId = randomUUID();
+    const startedAt = new Date(Date.now() - 1000);
+    const activity = { id: randomUUID(), controllerId: "saas", scope: "service-terminal:" + serviceId, startedAt: startedAt.toISOString() };
+    await db.insert(schema.user).values({ id: userId, name: "User", email: `${userId}@test.invalid` });
+    const groupId = randomUUID();
+    await db.insert(schema.projectGroup).values({ id: groupId, name: "Project", slug: projectId, organizationId: "org" });
+    await db.insert(schema.project).values({
+      id: projectId, groupId, name: "Project", slug: projectId,
+      organizationId: "org", workspaceId: host.id, serverId,
+    });
+    await db.insert(schema.service).values([
+      { id: serviceId, projectId, name: "app" },
+      { id: siblingId, projectId, name: "other" },
+    ]);
+    await db.insert(schema.serviceTerminalSessions).values([
+      { id: "orphaned-service-terminal", serviceId, userId },
+      { id: "earlier-service-terminal", serviceId, userId, startedAt: new Date(startedAt.getTime() - 1000) },
+      { id: "sibling-service-terminal", serviceId: siblingId, userId },
+    ]);
+    await cloud.claimActivity(host.id, "org", activity);
+    const [stale] = await cloud.listLocalTerminalActivities();
+    expect(stale?.id).toBe(host.id);
+
+    h.tryLock.mockResolvedValueOnce(null);
+    expect(await recoverOrphanedCloudTerminal(stale!)).toBe(false);
+    expect(h.serviceTerminalExited).not.toHaveBeenCalled();
+
+    h.serviceTerminalExited.mockResolvedValue(false);
+    expect(await recoverOrphanedCloudTerminal(stale!)).toBe(false);
+    const newShell = vi.fn();
+    await expect(withCloudWorkspaceActivity(host.id, newShell, undefined, { scope: activity.scope }))
+      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_ACTIVITY_BUSY" });
+    expect(newShell).not.toHaveBeenCalled();
+    expect((await cloud.findById(host.id))!.activity?.id).toBe(activity.id);
+    expect((await db.query.serviceTerminalSessions.findMany()).every(row => row.endedAt === null)).toBe(true);
+
+    h.serviceTerminalExited.mockResolvedValue(true);
+    expect(await recoverOrphanedCloudTerminal(stale!)).toBe(true);
+    expect(h.serviceTerminalExited).toHaveBeenLastCalledWith("org", host.id, serviceId);
+    expect((await cloud.findById(host.id))!.activity).toBeNull();
+    const sessions = new Map((await db.query.serviceTerminalSessions.findMany()).map(row => [row.id, row]));
+    expect(sessions.get("orphaned-service-terminal")).toMatchObject({ endedAt: expect.any(Date), exitReason: "server_error" });
+    expect(sessions.get("earlier-service-terminal")?.endedAt).toBeNull();
+    expect(sessions.get("sibling-service-terminal")?.endedAt).toBeNull();
   });
 
   it("leaves a live replica's terminal and another controller's ownership intact", async () => {

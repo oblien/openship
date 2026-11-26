@@ -59,6 +59,7 @@ export * from "./url-credentials";
 export * from "./workspaces";
 export * from "./connectivity";
 export * from "./cloud-capability";
+export * from "./cloud-terminal-activity";
 export * from "./languages";
 export * from "./metadata";
 export * from "./openship-config";
