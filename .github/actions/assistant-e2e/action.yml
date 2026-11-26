@@ -1,0 +1,12 @@
+name: Test scoped assistant agents
+description: Run the local and SSH assistant tests against the released Mindwire daemon.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        OPENSHIP_ASSISTANT_E2E: "1"
+        MINDWIRE_RELEASE_BASE_URL: https://github.com/oblien/mindwire-dist/releases/download
+      run: >-
+        bun run --cwd packages/platform test
+        test/assistant-agents.e2e.test.ts test/assistant-remote.test.ts

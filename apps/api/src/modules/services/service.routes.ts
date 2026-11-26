@@ -71,7 +71,8 @@ r.post(
     collection: true,
     body: SyncServicesBody,
     mcp: {
-      description: "Sync services from the project's docker-compose file into the service table.",
+      description: "Sync the complete service list from the project's docker-compose file into the service table. Overwrites Compose-owned configuration and removes services absent from the supplied list, including associated saved configuration. Read existing services first and supply the full intended list.",
+      destructive: true,
     },
   },
   ctrl.syncFromCompose,
@@ -123,7 +124,8 @@ r.post(
     body: AgentExecBody,
     mcp: {
       description:
-        "Run a shell command inside this service's running container and return its exit code and combined output. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter.",
+        "Run a shell command inside this service's running container and return its exit code and combined output. Commands can modify or delete application data, including mounted volumes, and interrupt service. Interpreted by `sh -c`; stderr is merged in. Times out (default 30s, max 120s) and truncates large output. Requires a Docker runtime — a bare or cloud-hosted service has no container to enter.",
+      destructive: true,
     },
   },
   ctrl.execInService,
@@ -136,6 +138,7 @@ r.patch(
     mcp: {
       description:
         "Update a service's configuration. Partial: an omitted field is left alone. `environment` and `advanced` are MERGED onto the stored values rather than replacing them — omit a key to keep it, set a key to null to remove it, send null for the whole field to clear it. Env values read back masked as `••••••••`; echo the sentinel to keep one unchanged. Every other field (`ports`, `volumes`, `dependsOn`, `publicEndpoints`, …) REPLACES its stored value wholesale, so send the complete list.",
+      destructive: true,
     },
   },
   ctrl.update,
@@ -194,7 +197,8 @@ r.patch(
     body: MergeServiceEnvVarsBody,
     mcp: {
       description:
-        "Save named service environment changes. By default edits are service overrides. To update inherited project values, review with env/review and supply its shared keys and revision. Project write access is required. Saving does not restart containers or edit repository files.",
+        "Save named service environment changes, overwriting or deleting selected variables, including secrets. By default edits are service overrides. To update inherited project values, review with env/review and supply its shared keys and revision. Project write access is required. Saving does not restart containers or edit repository files.",
+      destructive: true,
     },
   },
   ctrl.mergeEnvVars,
@@ -222,8 +226,10 @@ r.put(
   {
     tag: "project:service:write", auditHandledByOperation: true,
     body: SetServiceEnvVarsBody,
-     mcp: { description: "Replace a service's environment variables.",
-   },
+    mcp: {
+      description: "Replace all saved environment variables for this service in the selected environment. Variables omitted from vars are deleted, including secrets. Read the current variables first and send the complete intended set; use PATCH for named changes.",
+      destructive: true,
+    },
   },
   ctrl.setEnvVars,
 );

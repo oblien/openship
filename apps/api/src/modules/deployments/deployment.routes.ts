@@ -165,7 +165,7 @@ r.post(
   ctrl.rollback,
 );
 r.post("/:id/pin", { tag: "deployment:write", auditHandledByOperation: true, mcp: { description: "Pin or unpin a retained deployment image for rollback using body.pinned. Read restore-plan to confirm whether that image is still available." }, body: PinSchema, bodyValidatedByOperation: true }, ctrl.pin);
-r.post("/:id/reject", { tag: "deployment:write", mcp: { description: "Reject a partial-failure deployment awaiting a decision (roll back the changed services)." }, auditHandledByOperation: true }, ctrl.reject);
+r.post("/:id/reject", { tag: "deployment:write", mcp: { description: "Reject a completed or partial-failure deployment. Restores the previous deployment when available and tears down the rejected deployment's runtime resources, including containers and routes; this can interrupt service. Keeps its deployment record and logs.", destructive: true }, auditHandledByOperation: true }, ctrl.reject);
 r.post("/:id/keep", { tag: "deployment:write", mcp: { description: "Keep a partial-failure deployment awaiting a decision (accept the succeeded services)." }, auditHandledByOperation: true }, ctrl.keep);
 r.post(
   "/:id/skip-port-check",
@@ -189,7 +189,8 @@ r.post(
     body: BuildRespondBody,
     mcp: {
       description:
-        "Answer a decision the deploy is HELD on, unblocking the pipeline. `action` must be one of the ids the prompt itself offers (e.g. free_port / abort for a port conflict) — read them from the pending-actions or build-status tool rather than guessing; do not invent an id. The deploy aborts on its own if nobody answers before the prompt's `expiresAt`.",
+        "Answer a decision the deploy is HELD on, unblocking the pipeline. The selected action can stop a conflicting workload, take over edge ports, or abort the deployment. `action` must be one of the ids the prompt itself offers (e.g. free_port / abort for a port conflict) — read them from the pending-actions or build-status tool rather than guessing; do not invent an id. The deploy aborts on its own if nobody answers before the prompt's `expiresAt`.",
+      destructive: true,
     }, auditHandledByOperation: true },
   ctrl.buildRespond,
 );
