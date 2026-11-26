@@ -1,0 +1,260 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.9.2",
+  "id": "rallly",
+  "name": "Rallly",
+  "description": "Self-hosted meeting scheduler: propose dates, let people vote on the times that work, and book the winner. Includes a private PostgreSQL database.",
+  "kind": "template",
+  "logo": "rallly",
+  "category": "other",
+  "repository": "https://github.com/lukevella/rallly",
+  "tags": [
+    "scheduling",
+    "polls",
+    "meetings",
+    "doodle-alternative"
+  ],
+  "framework": "docker-compose",
+  "settings": [
+    {
+      "id": "email",
+      "label": "Email and administrator",
+      "description": "Rallly has no passwords: people sign in with a code sent by email, so it needs an SMTP server to let anyone in, including you.",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "SMTP_HOST",
+          "service": "rallly",
+          "label": "SMTP host",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text",
+          "required": true,
+          "placeholder": "smtp.example.com"
+        },
+        {
+          "key": "SMTP_PORT",
+          "service": "rallly",
+          "label": "SMTP port",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "number",
+          "default": "587",
+          "required": true,
+          "integer": true,
+          "min": 1,
+          "max": 65535,
+          "help": "587 with SMTP secure off (STARTTLS), or 465 with it on."
+        },
+        {
+          "key": "SMTP_SECURE",
+          "service": "rallly",
+          "label": "SMTP secure (implicit TLS)",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "boolean",
+          "default": "false"
+        },
+        {
+          "key": "SMTP_USER",
+          "service": "rallly",
+          "label": "SMTP username",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text",
+          "help": "Leave empty for a relay that needs no login."
+        },
+        {
+          "key": "SMTP_PWD",
+          "service": "rallly",
+          "label": "SMTP password",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "password",
+          "secret": true
+        },
+        {
+          "key": "SUPPORT_EMAIL",
+          "service": "rallly",
+          "label": "From and support address",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text",
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "placeholder": "polls@example.com",
+          "help": "Sender of the sign-in codes, and the contact address shown to users.",
+          "fullWidth": true
+        },
+        {
+          "key": "INITIAL_ADMIN_EMAIL",
+          "service": "rallly",
+          "label": "Administrator email",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "type": "text",
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "placeholder": "you@example.com",
+          "help": "Sign in with this address, then open /admin-setup and choose Make me admin to unlock the control panel.",
+          "fullWidth": true
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "name": "rallly-db",
+      "image": "postgres:16-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "rallly",
+        "POSTGRES_DB": "rallly"
+      },
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "rallly_db_data:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U rallly -d rallly"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      }
+    },
+    {
+      "name": "rallly",
+      "image": "lukevella/rallly:4.16.4",
+      "exposed": true,
+      "ports": [
+        "8239:3000"
+      ],
+      "exposedPort": 3000,
+      "routes": [
+        {
+          "port": 3000
+        }
+      ],
+      "restart": "unless-stopped",
+      "dependsOn": [
+        "rallly-db"
+      ],
+      "environment": {
+        "NEXT_PUBLIC_BASE_URL": "{{publicUrl:rallly}}",
+        "SMTP_PORT": "587",
+        "SMTP_SECURE": "false",
+        "DATABASE_URL": "postgres://rallly:{{config:RALLLY_DB_PASSWORD}}@rallly-db:5432/rallly"
+      },
+      "secretEnv": [
+        "DATABASE_URL",
+        "SECRET_PASSWORD",
+        "SMTP_PWD"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS -o /dev/null http://127.0.0.1:3000/api/status || exit 1"
+        ],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "60s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "rallly-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "rallly-db"
+    },
+    {
+      "key": "RALLLY_DB_PASSWORD",
+      "service": "rallly",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "rallly-db"
+    },
+    {
+      "key": "SECRET_PASSWORD",
+      "service": "rallly",
+      "label": "Session encryption secret",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "rallly",
+      "port": 3000,
+      "label": "Rallly",
+      "kind": "http",
+      "defaultMode": "domain",
+      "help": "Sign-in codes link back to this address, so use the one people will actually open."
+    },
+    {
+      "service": "rallly-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": [
+        "internal"
+      ]
+    }
+  ],
+  "connection": {
+    "title": "Open Rallly",
+    "description": "Open Rallly and sign in with the administrator email you entered; the code arrives by email. Then open /admin-setup and choose Make me admin.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Rallly",
+        "source": "publicUrl:rallly",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "admin",
+        "label": "Administrator email",
+        "source": "env:rallly:INITIAL_ADMIN_EMAIL"
+      }
+    ],
+    "firstLogin": {
+      "note": "Anyone with an email address can create polls and sign in by default. If the sign-in email never arrives, check the SMTP settings first."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Find a time that works",
+        "description": "Propose several dates, share a link, and see everyone's availability at a glance."
+      },
+      {
+        "title": "No account needed to vote",
+        "description": "Participants answer from the link, without signing up."
+      },
+      {
+        "title": "Private database",
+        "description": "Polls and responses live in a dedicated, project-scoped Postgres instance."
+      }
+    ]
+  }
+}
