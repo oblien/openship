@@ -1,3 +1,4 @@
+import type { ManagedMailSummary } from "@repo/contracts/managed-mail";
 import type { ApiPlan } from "./PricingCards";
 
 /** Offer choices use the saved purchase, not today's tier name or price.
@@ -44,4 +45,12 @@ export function planCapacity(plan: ApiPlan) {
   if (cpu === null || ram === null || disk === null || ![cpu, ram, disk].every(Number.isFinite))
     return null;
   return { cpu, memoryGb: ram / 1024, diskGb: disk };
+}
+
+export function mailPlanLabel(name: ManagedMailSummary["plan"] | undefined, included: string) {
+  return name === "included"
+    ? included
+    : name
+      ? name[0]!.toUpperCase() + name.slice(1)
+      : "OpenShip Mail";
 }

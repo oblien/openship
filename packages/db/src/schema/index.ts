@@ -132,3 +132,5 @@ export * from "./assistant-automations";
 export * from "./assistant-agents";
 
 export * from "./oauth-provider";
+
+export { managedMailService, managedMailAccount, managedMailHost, mailTenantAccess } from "./managed-mail";

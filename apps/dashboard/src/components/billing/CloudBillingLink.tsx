@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { BillingHeader } from "@/app/(dashboard)/billing/_components/BillingHeader";
 import BillingTabSkeleton from "@/app/(dashboard)/billing/_components/BillingTabSkeleton";
+import { changeMailPlanHref, emailPlansHref, parseMailProduct } from "@repo/core/managed-mail";
 import { newServerBillingHref, scopedBillingHref } from "@/lib/billing-links";
 import type { BillingTab } from "@/app/(dashboard)/billing/_components/billing-tabs";
 import { cloudSpaceHref, type CloudPlanTab } from "@/lib/cloud-spaces";
@@ -92,7 +93,9 @@ export function CloudBillingLink({
           window.location.assign(cloudSpaceHref(serverId, planTab, query));
         } else
           window.location.assign(
-            newServer
+            newServer && returnQuery?.product === "email"
+              ? typeof returnQuery.changeMail === "string" ? changeMailPlanHref(returnQuery.changeMail, organizationId) : emailPlansHref(typeof returnQuery.mailPlan === "string" ? returnQuery.mailPlan : null, organizationId, parseMailProduct(returnQuery.mailProduct), Number(returnQuery.storageGB) || undefined)
+              : newServer
               ? newServerBillingHref(organizationId, purchase)
               : scopedBillingHref(`${path}?${query}`, { workspaceId, organizationId }),
           );

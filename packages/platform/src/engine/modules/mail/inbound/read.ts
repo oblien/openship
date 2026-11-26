@@ -24,6 +24,7 @@ import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostic
 import { safeErrorMessage, shellQuote } from "@repo/core";
 import { repos, type MailInboundRule } from "@repo/db";
 import { mailEngineCommand, runMailCommand } from "@repo/platform/engine/modules/mail/mail-engine";
+import { queryRows, q } from "@repo/platform/engine/modules/mail/admin/psql-runner";
 import { collectorFolderPath, readArmedState, ruleDomain, tokenFromBcc } from "@repo/platform/engine/modules/mail/inbound/capture";
 import { loopGuard, matchesRule, parseHeaderBlock, spamGate, type ParsedHeaders } from "@repo/platform/engine/modules/mail/inbound/filter";
 
@@ -322,7 +323,6 @@ export const MAIL_INBOUND_EVENT = "mail.inbound_received";
 
 /** Domains the ENGINE currently has one of our BCC rows on. */
 async function armedDomains(serverId: string): Promise<string[]> {
-  const { queryRows, q } = await import("@repo/platform/engine/modules/mail/admin/psql-runner");
   const rows = await queryRows<{ domain: string; bcc_address: string }>(
     serverId,
     `SELECT domain, bcc_address FROM recipient_bcc_domain WHERE active = 1 AND bcc_address LIKE ${q("openship-hook+%")}`,

@@ -1,11 +1,12 @@
 import { useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/providers/query-provider";
 import { readActiveConnectionId } from "@/lib/auth-client";
 
 /** Keep the same request id when a send acknowledgement is lost and the user retries. */
 export function useSendMail() {
   const trpc = useTRPC();
+  const cache = useQueryClient();
   const mutation = useMutation(trpc.mail.send.mutationOptions());
   const pending = useRef<{ key: string; id: string } | null>(null);
   return async (input: Omit<Parameters<typeof mutation.mutateAsync>[0], "requestId">) => {
@@ -22,6 +23,8 @@ export function useSendMail() {
     const requestId = pending.current.id;
     const result = await mutation.mutateAsync({ ...input, requestId });
     if (pending.current?.id === requestId) pending.current = null;
+    void cache.invalidateQueries({ queryKey: trpc.mail.listThreads.infiniteQueryKey({ folder: "sent" }) });
+    void cache.invalidateQueries({ queryKey: trpc.outbox.pathKey() });
     return result;
   };
 }

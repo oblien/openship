@@ -22,6 +22,8 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
 import { validateMailDomain } from "./mail-domain";
+import { configureMailCertificate } from "./mail-certificate-probe";
+import { createProvisionLock } from "../../lib/provision-lock";
 import type { CommandExecutor, SystemLogCallback, SystemLog } from "@repo/adapters";
 import { checkMailHealth, requiresMailComponent } from "./mail-health.service";
 import {
@@ -231,6 +233,7 @@ export type StepLogger = (
 // ─── iRedMail config ─────────────────────────────────────────────────────────
 
 export interface IRedMailConfig {
+  compose?: boolean;
   /** Admin password for the postmaster account. Generated if absent. */
   adminPassword?: string;
   /** Storage backend: mariadb | postgresql (default: postgresql) */
@@ -637,6 +640,7 @@ export async function stepDeployEngine(
   let engine: { image: string; container: string };
   try {
     const result = await ensureContainerMail(exec, {
+      compose: config?.compose,
       domain,
       secrets,
       onLog: bridgeToSystemLog(stepId, log),
@@ -1052,8 +1056,7 @@ export async function stepRequestSSL(
   }
   log(stepId, "info", `Requesting SSL certificate for ${mailDomain}...`);
 
-  // Dynamic import: deployment-runtime pulls in the platform/runtime graph, and
-  // the mail module is imported from it — a static import would be a cycle.
+  // Only certificate issuance needs the deployment runtime and its SSL provider.
   const { resolveTargetPlatform, disposePlatform } = await import("../../lib/deployment-runtime");
 
   let platform: Awaited<ReturnType<typeof resolveTargetPlatform>> | undefined;
@@ -1064,8 +1067,7 @@ export async function stepRequestSSL(
       target.serverId,
       target.organizationId,
     );
-    const { createProvisionLock } = await import("../../lib/provision-lock");
-    const { sslIssueLockKey, acmeIssueLockKey, certComfortablyValid } = await import("../../lib/domain-ssl");
+    const { sslIssueLockKey, acmeIssueLockKey, certComfortablyValid, recordMailCertDomain } = await import("../../lib/domain-ssl");
     const result = await createProvisionLock(sslIssueLockKey(mailDomain)).run(() =>
       createProvisionLock(acmeIssueLockKey(target.serverId)).run(async () => {
         const existing = await platform!.ssl.verifyCert(mailDomain).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/mail/mail.service"); return null; });
@@ -1087,7 +1089,6 @@ export async function stepRequestSSL(
     // Register the host so the ssl:renew sweep can see it. Without this the cert is
     // real, works, and then expires ~90 days later with nothing renewing it — the
     // renewer reads the `domain` table and a mail server has no project row.
-    const { recordMailCertDomain } = await import("../../lib/domain-ssl");
     await recordMailCertDomain(mailDomain, result);
 
     log(stepId, "info", "SSL certificate obtained (the edge stayed up — apps unaffected)");
@@ -1124,7 +1125,6 @@ export async function stepConfigureSSL(
   const mailDomain = mailHostname(domain);
 
   try {
-    const { configureMailCertificate } = await import("./mail-certificate-probe");
     log(stepId, "info", "Linking the certificate and reloading Postfix and Dovecot...");
     await configureMailCertificate(exec, mailDomain);
   } catch (error) {

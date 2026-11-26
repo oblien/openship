@@ -3,7 +3,8 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { DesktopTitleBar } from "@repo/ui/desktop-titlebar";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { useHelpMenuActions } from "@/components/HelpMenu";
 import { useI18n } from "@/components/i18n-provider";
@@ -101,14 +102,6 @@ export function DesktopChrome() {
     };
   }, []);
 
-  /* macOS zooms the window on a double-click anywhere in a drag region, so an
-   * accidental double-click near the top used to throw the app fullscreen. Own
-   * the gesture instead of letting the OS have it: one deliberate toggle. */
-  const onDoubleClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    void bridge()?.window?.toggleMaximize();
-  }, []);
-
   if (!ready) return null;
 
   const w = t.chrome.window;
@@ -133,91 +126,27 @@ export function DesktopChrome() {
     ...helpActions,
   ];
 
+  const controls = bridge()?.window;
   return (
-    <header className="app-titlebar" onDoubleClick={onDoubleClick}>
-      {/* Start — navigation, after the macOS traffic-light inset. No brand: the
-          sidebar header renders the mark + "Openship" directly below, and having
-          both read as the same logo twice within ~40px. */}
-      <nav className="app-titlebar-nav" aria-label={w.navigation}>
-        <button
-          type="button"
-          className="app-titlebar-btn"
-          onClick={() => void bridge()?.window?.back()}
-          disabled={!nav.canGoBack}
-          aria-label={w.back}
-          title={w.back}
-        >
-          <UiIcon name="chevron-left" className="size-[21px]" />
-        </button>
-        <button
-          type="button"
-          className="app-titlebar-btn"
-          onClick={() => void bridge()?.window?.forward()}
-          disabled={!nav.canGoForward}
-          aria-label={w.forward}
-          title={w.forward}
-        >
-          <UiIcon name="chevron-right" className="size-[21px]" />
-        </button>
-      </nav>
-
-      {/* Middle — pure drag surface. */}
-      <div className="app-titlebar-drag" />
-
-      {/* End — Windows/Linux only. macOS leaves this empty: its native menu holds
-          Reload / DevTools / Help (including the GitHub and X links), and the
-          traffic lights are the window controls. */}
-      <div className="app-titlebar-end">
-
-        {/* Windows/Linux only. Those run `frame: false`, so no menu bar renders
-            and this is the only way to reach Reload / DevTools / Help. macOS has
-            the real application menu (see main/menu.ts) and needs no duplicate. */}
-        {!isMac && (
-          <DropdownMenu
-            actions={menuActions}
-            align="right"
-            className="app-titlebar-menu"
-            trigger={<UiIcon name="more" className="size-[17px]" />}
-          />
-        )}
-
-        {!isMac && (
-          <div className="app-titlebar-controls">
-            <button
-              type="button"
-              className="app-titlebar-btn"
-              onClick={() => void bridge()?.window?.minimize()}
-              aria-label={w.minimize}
-              title={w.minimize}
-            >
-              <UiIcon name="minus" className="app-titlebar-wc" />
-            </button>
-            <button
-              type="button"
-              className="app-titlebar-btn"
-              onClick={() => void bridge()?.window?.toggleMaximize()}
-              aria-label={maximized ? w.restore : w.maximize}
-              title={maximized ? w.restore : w.maximize}
-            >
-              {maximized ? (
-                /* Overlapping squares = restore down, the standard Windows glyph. */
-                <UiIcon name="copy" className="app-titlebar-wc" />
-              ) : (
-                <UiIcon name="square" className="app-titlebar-wc" />
-              )}
-            </button>
-            <button
-              type="button"
-              className="app-titlebar-btn app-titlebar-btn--close"
-              onClick={() => void bridge()?.window?.close()}
-              aria-label={w.close}
-              title={w.close}
-            >
-              <UiIcon name="close" className="app-titlebar-wc" />
-            </button>
-          </div>
-        )}
-      </div>
-    </header>
+    <DesktopTitleBar
+      labels={w}
+      mac={isMac}
+      maximized={maximized}
+      canGoBack={nav.canGoBack}
+      canGoForward={nav.canGoForward}
+      onBack={() => void controls?.back()}
+      onForward={() => void controls?.forward()}
+      onMinimize={() => void controls?.minimize()}
+      onToggleMaximize={() => void controls?.toggleMaximize()}
+      onClose={() => void controls?.close()}
+      menu={
+        <DropdownMenu
+          actions={menuActions}
+          align="right"
+          className="app-titlebar-menu"
+          trigger={<UiIcon name="more" size={17} />}
+        />
+      }
+    />
   );
 }

@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "Gemeinsame Postfächer",
+      "description": "Postfächer für dein Team, gehostet von OpenShip."
+    },
+    "dedicated": {
+      "name": "Dedizierter Mailserver",
+      "description": "Eine neue private VM für deine Postfächer, inklusive verwaltetem Versand."
+    },
+    "sending": {
+      "name": "Versand-API",
+      "description": "Sende Transaktionsmails aus deiner App über eine verifizierte Domain."
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "Solo",
+      "tagline": "Für persönliche Projekte."
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "Für kleine Teams."
+    },
+    "business": {
+      "name": "Business",
+      "tagline": "Für Teams mit mehreren Marken."
+    },
+    "scale": {
+      "name": "Scale",
+      "tagline": "Für Plattformen mit eigenen Kunden."
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

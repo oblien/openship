@@ -190,7 +190,7 @@
   },
   "domains": {
     "heading": "Domínios",
-    "description": "Cada linha corresponde a uma linha em vmail.domain no VPS de e-mail. Domínios adicionais aceitam e-mail assim que o registro MX apontar para cá.",
+    "description": "Receba e-mails em endereços dos seus próprios domínios.",
     "addDomain": "Adicionar domínio",
     "editAction": "Editar",
     "deleteAction": "Excluir",
@@ -213,7 +213,7 @@
     "loadFailed": "Falha ao carregar domínios",
     "create": {
       "title": "Adicionar domínio",
-      "description": "Adiciona uma nova entrada em vmail.domain no VPS de e-mail. Verifique se o registro MX deste domínio aponta para o servidor de e-mail antes de enviar mensagens por ele.",
+      "description": "Adicione o domínio que deseja usar para e-mail.",
       "submit": "Criar domínio",
       "submitting": "Criando…",
       "domainLabel": "Domínio",
@@ -279,7 +279,7 @@
   },
   "mailboxes": {
     "heading": "Caixas de correio",
-    "description": "Cada linha é uma conta IMAP/SMTP no servidor de e-mail. As senhas são criptografadas com doveadm SSHA512 antes do armazenamento.",
+    "description": "Gerencie os endereços usados para enviar e receber e-mails.",
     "addMailbox": "Adicionar caixa de correio",
     "domainLabel": "Domínio",
     "loading": "Carregando…",
@@ -299,6 +299,9 @@
     "rotateSubmitting": "A reparar…",
     "rotateFailed": "Não foi possível reparar a caixa da plataforma",
     "rotateNote": "As caixas dos utilizadores e as mensagens guardadas não são alteradas.",
+    "readOnlyServer": "Este servidor de e-mail é somente leitura. Para gerenciar as contas, é necessário um servidor OpenShip Mail.",
+    "manageAction": "Gerenciar",
+    "changePassword": "Alterar senha",
     "editAction": "Editar",
     "deleteAction": "Excluir",
     "loadDomainsFailed": "Falha ao carregar domínios",
@@ -307,7 +310,7 @@
     "emptyDesc": "Crie a primeira caixa de correio para {domain}. As senhas são criptografadas com doveadm SSHA512 - apenas o hash é armazenado no disco.",
     "create": {
       "title": "Nova caixa de correio · {domain}",
-      "description": "Cria uma conta IMAP/SMTP no servidor de e-mail. A senha é criptografada com doveadm SSHA512 no VPS - apenas o hash é armazenado.",
+      "description": "Escolha um endereço e uma senha para esta caixa de e-mail.",
       "submit": "Criar caixa de correio",
       "submitting": "Criando…",
       "localPartLabel": "Parte local",
@@ -338,13 +341,13 @@
     },
     "deleteForm": {
       "title": "Excluir {username}?",
-      "descHard": "Exclusão definitiva: remove as linhas do BD E o Maildir no disco. Não pode ser desfeita.",
-      "descSoft": "Exclusão suave: define active = 0 e insere uma linha em vmail.deleted_mailboxes. O cron de limpeza do servidor de e-mail a processa mais tarde. O Maildir permanece no disco até então.",
-      "submitHard": "Excluir definitivamente a caixa de correio",
-      "submitSoft": "Excluir suavemente a caixa de correio",
+      "descHard": "A caixa de correio e todas as mensagens serão excluídas permanentemente.",
+      "descSoft": "O acesso e a entrega de mensagens param imediatamente. As mensagens ficam armazenadas até a limpeza do servidor.",
+      "submitHard": "Excluir permanentemente",
+      "submitSoft": "Excluir caixa de correio",
       "submitting": "Excluindo…",
-      "hardDeleteLabel": "Exclusão definitiva",
-      "hardDeleteDesc": "Remove as linhas do BD e os arquivos Maildir imediatamente. Não pode ser desfeita.",
+      "hardDeleteLabel": "Excluir agora as mensagens armazenadas",
+      "hardDeleteDesc": "Isso remove permanentemente a caixa de correio e suas mensagens do servidor.",
       "postmasterNote": "A caixa de correio do postmaster é protegida contra exclusão definitiva - apenas a exclusão suave está disponível, para que a conta de inicialização do servidor de e-mail permaneça intacta."
     }
   },

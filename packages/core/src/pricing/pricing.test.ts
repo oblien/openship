@@ -617,7 +617,7 @@ describe("pricing copy (locales/*.json)", () => {
     // every competitor's German or French pricing page does, so an identical
     // plans.*.name is the intended state there — not pasted copy. A locale that
     // does localize the name (ar) still passes; this only stops the false alarm.
-    const isPlanName = (key: string) => /^plans\.[^.]+\.name$/.test(key);
+    const isPlanName = (key: string) => /^(?:plans|mailPlans)\.[^.]+\.name$/.test(key);
     const flat = (obj: unknown, prefix = ""): Record<string, string> => {
       if (obj === null || typeof obj !== "object") return prefix ? { [prefix]: String(obj) } : {};
       return Object.entries(obj as Record<string, unknown>).reduce<Record<string, string>>((acc, [k, v]) => {

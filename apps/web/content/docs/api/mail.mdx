@@ -1,19 +1,47 @@
 ---
 title: Mail
-description: Set up and operate a self-hosted mail server.
+description: Send email from a verified domain in OpenShip Cloud and manage your mail servers.
 ---
 
 import { TypeTable } from 'fumadocs-ui/components/type-table';
 
-The Mail API drives Openship's self-hosted email feature: it installs an [iRedMail](https://www.iredmail.org)
-stack on one of your servers over SSH, tracks the wizard's progress, then exposes an admin panel for the
-running server — domains, mailboxes, stats, backups, DNS health, and per-component control — plus a one-click
-webmail deploy. In the dashboard this is the **Emails** page.
+## Send email
 
-<Callout title="Self-hosted only">
-Every route here is gated by `localOnly` and is **never mounted in Openship Cloud** — the module is
-dynamically imported only on self-hosted instances. On a cloud instance these paths return `404`.
-</Callout>
+In OpenShip Cloud, open **Emails → Sending**, select a verified domain and choose **Create API key**. Copy the key to your app’s server-side secrets. This is an OpenShip personal access token (PAT) with a single grant, `mail_sender:write`, for that exact domain. OpenShip resolves the workspace automatically. Revoke the key at any time from the same screen.
+
+```sh
+curl https://api.openship.io/api/mail/send \
+  -H "Authorization: Bearer $OPENSHIP_MAIL_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"hello@example.com","to":["reader@example.org"],"subject":"Welcome","text":"Your inbox is ready.","idempotencyKey":"welcome-user-123"}'
+```
+
+Supply `text`, `html`, or both. Each recipient in `to`, `cc` and `bcc` counts toward your sending allowance, with up to 50 recipients per request. Use a distinct `idempotencyKey` per message. Reuse the same key and payload when retrying. Changing the payload with the same key returns HTTP 409.
+
+HTTP 202 returns a receipt such as `{"id":"msg_…","state":"queued","reason":null}`. A queued receipt means OpenShip has accepted the submission for processing. Delivery can occur later.
+
+### SDK example
+
+```ts
+import { OpenshipClient } from "openship/client";
+
+const client = new OpenshipClient({
+  baseUrl: "https://api.openship.io",
+  token: process.env.OPENSHIP_MAIL_API_KEY,
+});
+
+await client.mail.send({
+  from: "hello@example.com",
+  to: ["reader@example.org"],
+  subject: "Welcome",
+  text: "Your inbox is ready.",
+  idempotencyKey: "welcome-user-123",
+});
+```
+
+## Mail server administration
+
+The **Emails** dashboard also manages domains, mailboxes, DNS health and webmail. Self-hosted setup installs iRedMail on your server over SSH. These operations use a dashboard session or a management credential with the appropriate permissions.
 
 <Callout title="Every route is server-scoped" type="info">
 Most paths carry a `:serverId` (or take one in the body / `?serverId=`). Openship checks that the server
@@ -312,8 +340,7 @@ state, omits `engine`, and includes `observationError`. Treat engine health as u
 </Callout>
 
 <Callout title="404 — Not available" type="error">
-You're calling a cloud instance. The Mail API is self-hosted only; run it on an instance where `CLOUD_MODE`
-is off.
+Self-hosted installation routes require an instance with `CLOUD_MODE` off. OpenShip Cloud customers provision mail through **Emails**.
 </Callout>
 
 <Callout title="404 — Server not found" type="error">

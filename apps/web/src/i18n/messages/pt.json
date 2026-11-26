@@ -2902,10 +2902,6 @@
     "mlhqabe": "Armazenamento de e-mail",
     "m1t7t2wk": "Compartilhado",
     "my14yjr": "API",
-    "myu51jo": "Para projetos pessoais.",
-    "m12ifwwp": "Para equipes pequenas.",
-    "m15ti3x2": "Para equipes com várias marcas.",
-    "m1waezfd": "Para plataformas que atendem clientes.",
     "m116lozf": "Comparar recursos",
     "m178xhu3": "Enviar pelo aplicativo via API",
     "mzxuq4l": "Chaves somente de envio por domínio",
@@ -2919,7 +2915,14 @@
     "m1r414ct": "Chaves de API",
     "mfm9g8": "Por domínio",
     "m12hv6lv": "Exemplos de preços mensais em dólares.",
-    "mhi9qfg": "Ver planos no painel"
+    "mhi9qfg": "Ver planos no painel",
+    "m1934rwj": "Relatórios de uso",
+    "mukpq5o": "Execute o OpenShip Mail na sua VM",
+    "m1shnxdq": "Instale caixas de e-mail em uma VM Cloud existente ou escolha um novo plano de computação. O envio utiliza sua cota da API de e-mail.",
+    "m1cnf92t": "Usar uma VM existente",
+    "m7xi513": "Escolher um novo plano Cloud",
+    "m1qf703d": "API de e-mail incluída",
+    "mzhhs8b": "Usar uma VM Cloud"
   },
   "ReleaseNotes": {
     "m1005a3f": "- o assistente costumava inventar um nome de host a partir do nome do projeto sempre que uma etapa não tinha uma rota escolhida, rotulando campos de porta, visualizando hosts de subaplicativos monorepo e até mesmo conectando o botão \"Visitar Site\" a um host que nunca existiria. Agora ele mostra apenas os nomes reais dos hosts de sua configuração e oculta totalmente \"Visitar o site\" quando a implantação não tem domínio público.",

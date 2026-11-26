@@ -3,36 +3,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
-/**
- * Overview tab - what an operator wants on day one.
- *
- * Order (top → bottom, left column):
- *   1. Mail server card   - combined identity + webmail CTA. Big hostname,
- *                            "Open webmail" primary action, "Protocol
- *                            details →" link to the Advanced tab. Webmail
- *                            is bundled with openship, so it's always
- *                            available - no deploy gate needed.
- *   2. Calendar & contacts - optional Radicale app using mailbox accounts.
- *   3. Setup guides       - 4-up banner that deep-links to the public
- *                            walkthroughs on /mail/setup-guide/<client> in
- *                            a new tab. Server settings stay in this tab
- *                            (Postmaster credentials / Advanced); the
- *                            guides are pure content.
- *
- * Right column (340px, sticky):
- *   1. Mail stats         - domain/mailbox/alias/storage/message counts.
- *   2. Quick actions      - links into other tabs.
- *
- * The postmaster account is just another row in `vmail.mailbox`. The
- * operator manages its password the same way they manage every other
- * mailbox - Mailboxes tab → edit row → set password. There's no separate
- * credentials card here on purpose: one place for one operation.
- *
- * Protocol details (host:port + encryption) live in the Advanced tab -
- * useful when wiring a client by hand but noise on the overview.
- */
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   getApiErrorMessage,
@@ -44,38 +15,78 @@ import {
 } from "@/lib/api";
 import { getMarketingOrigin } from "@/lib/api/urls";
 import { webmailCta } from "../../_lib/webmail-cta";
-import { Skeleton } from "./_shared/skeleton";
-import { useI18n, interpolate } from "@/components/i18n-provider";
+import { MailStatsCard } from "./mail-stats-card";
+import { useSendingLimits } from "./sending-limits";
+import { useResourceScope } from "@/hooks/use-scoped-resource";
+import { SendingQuotaCard, useSendingUsage } from "./sending-usage";
+import { MailboxActivity, type MailActivitySidebar } from "./mailbox-activity";
+import { FeatureIllustration } from "@repo/ui/illustrations";
+import type { MailTabKey } from "@/lib/mail-tabs";
+import type { ManagedMailSummary } from "@repo/contracts/managed-mail";
+import { useI18n } from "@/components/i18n-provider";
 import { mailHostname } from "@repo/core";
 
+import { SenderDomainsSummary, type SenderDomainsSetupProps } from "./sender-domains-workspace";
+
+export type MailSetupPanels = { hostingStatus: ReactNode; mailboxes: ReactNode; senderDomains: SenderDomainsSetupProps };
+
 interface OverviewTabProps {
-  status: MailSetupStatus;
-  serverId: string;
-  onRefresh: () => void;
+  managed?: boolean;
+  sendingConfigured?: boolean;
+  onSendingActivated?: () => void;
+  limits?: ManagedMailSummary["limits"];
+  sectionHref: (tab: MailTabKey, domain?: string | null) => string;
+  status?: MailSetupStatus;
+  serverId?: string;
+  setup?: MailSetupPanels;
 }
 
-export function OverviewTab({ status, serverId }: OverviewTabProps) {
-  const domain = status.domain ?? "";
-  const mailHost = domain ? mailHostname(domain) : "";
-
+export function OverviewTab(props: OverviewTabProps) {
+  const { managed, serverId, status, sectionHref, setup } = props;
+  const mailHost = status?.domain ? mailHostname(status.domain) : "";
+  const scope = useResourceScope();
+  const renderSidebar: MailActivitySidebar = domainSwitch => (
+    <aside className={`flex min-w-0 flex-col gap-4 @min-[44rem]/mail-overview:col-start-2 @min-[44rem]/mail-overview:row-start-2 ${managed ? "row-start-2" : ""}`}>
+      {serverId ? <MailServerCard managed={managed} mailHost={mailHost} serverId={serverId} webmail={status?.webmail} /> : setup && <SenderDomainsSummary {...setup.senderDomains} />}
+      {!managed && <QuickActionsCard sectionHref={sectionHref} />}
+      {domainSwitch}
+    </aside>
+  );
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
-      <div className="space-y-5 min-w-0">
-        <MailServerCard
-          mailHost={mailHost}
-          serverId={serverId}
-          webmail={status.webmail}
-        />
-        <CalendarContactsCard />
-        <SetupGuidesBanner />
+    <div className="@container/mail-overview space-y-5">
+      <div className="grid min-w-0 items-start gap-4 @min-[44rem]/mail-overview:grid-cols-[minmax(0,1fr)_clamp(16rem,32%,22rem)]">
+        <LiveMailActivity key={scope + ":" + serverId} {...props} renderSidebar={renderSidebar} />
       </div>
-
-      <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-        <MailStatsCard serverId={serverId} />
-        <QuickActionsCard />
-      </div>
+      {!managed && <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(245px,1fr)]">
+        <SetupGuidesBanner /><CalendarContactsCard />
+      </div>}
     </div>
   );
+}
+
+type SectionHref = OverviewTabProps["sectionHref"];
+
+function LiveMailActivity({ renderSidebar, managed, serverId, limits, sendingConfigured, onSendingActivated, sectionHref, setup }: OverviewTabProps & { renderSidebar: MailActivitySidebar }) {
+  const { stats, loading, blocked, error, refresh } = useOverviewStats(serverId);
+  const { t } = useI18n();
+  const caps = useSendingLimits("senders", !!managed && !!serverId, limits?.recipients, onSendingActivated);
+  const configured = !!sendingConfigured || caps.configured;
+  const usage = useSendingUsage(!!managed && configured);
+  function reload() {
+    refresh();
+    caps.refresh();
+    usage.refresh();
+  }
+  return <>
+    <MailStatsCard stats={stats} managed={managed} limits={limits} loading={loading}
+      sending={managed && <SendingQuotaCard compact usage={usage.data} allowance={limits?.recipients} inactive={!configured && sendingConfigured === false}
+        loading={configured && usage.loading} onRetry={usage.error ? usage.refresh : undefined} />} />
+    <MailboxActivity renderSidebar={renderSidebar} setup={setup?.hostingStatus} inbox={stats?.inbox} loading={loading} refresh={reload}
+      sending={managed ? caps.limits : undefined}
+      mailboxHref={domain => sectionHref("mailboxes", domain)} domainsHref={sectionHref("domains", null)}
+      error={blocked ? t.emailsAdmin.engine.cardBlocked : error || caps.error} />
+    {caps.editor}
+  </>;
 }
 
 function CalendarContactsCard() {
@@ -124,10 +135,12 @@ const CTA_CLASS =
  * replaced, which is offered as a line under the hostname.
  */
 function MailServerCard({
+  managed,
   mailHost,
   serverId,
   webmail,
 }: {
+  managed?: boolean;
   mailHost: string;
   serverId: string;
   webmail?: MailWebmailSummary;
@@ -147,10 +160,27 @@ function MailServerCard({
     }
   };
 
+  if (managed) return (
+    <section className="rounded-2xl bg-card p-4">
+      <div className="flex items-center gap-2.5">
+        <FeatureIllustration name="mail" className="illustration-color w-10 shrink-0" />
+        <h2 className="text-base font-medium">{t.emailsAdmin.overview.mailServer}</h2>
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">{t.emailsAdmin.overview.hostname}</p>
+      <button type="button" onClick={copy} className="mt-1 flex max-w-full items-center gap-2 text-start text-sm font-medium hover:underline">
+        <bdi className="break-all">{mailHost}</bdi><UiIcon name={copied ? "check" : "copy"} className="size-4 shrink-0 text-muted-foreground" />
+      </button>
+      <dl className="mt-4 grid grid-cols-2 gap-2 border-t border-border/60 pt-3 text-sm">
+        <div><dt className="font-medium">IMAP 993</dt><dd className="text-xs text-muted-foreground">TLS</dd></div>
+        <div><dt className="font-medium">SMTP 587</dt><dd className="text-xs text-muted-foreground">STARTTLS</dd></div>
+      </dl>
+    </section>
+  );
+
   const cta = webmailCta(webmail);
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-5">
+    <div className="@container/mail-server bg-card rounded-2xl border border-border/50 p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <UiIcon name="inbox" className="size-4 text-muted-foreground" />
@@ -167,7 +197,7 @@ function MailServerCard({
       </div>
 
       {/* Give the hostname and webmail action separate rows on phones. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="flex flex-col gap-3 @min-[28rem]/mail-server:flex-row @min-[28rem]/mail-server:items-center @min-[28rem]/mail-server:justify-between @min-[28rem]/mail-server:gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground mb-1.5">
             {t.emailsAdmin.overview.hostname}
@@ -322,8 +352,9 @@ function GuideCard({
 
 // ─── Right sidebar ───────────────────────────────────────────────────────────
 
-function MailStatsCard({ serverId }: { serverId: string }) {
+function useOverviewStats(serverId?: string) {
   const { t } = useI18n();
+  const [revision, setRevision] = useState(0);
   const [stats, setStats] = useState<MailServerStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The failure was "the engine isn't serving" — stated, not alarmed about. */
@@ -331,13 +362,15 @@ function MailStatsCard({ serverId }: { serverId: string }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!serverId) return;
     let cancelled = false;
     setLoading(true);
     mailAdminApi.stats
-      .get(serverId)
+      .get(serverId, { inbox: true })
       .then((s) => {
         if (cancelled) return;
         setStats(s);
+        setBlocked(false);
         setError(null);
       })
       .catch((err) => {
@@ -355,127 +388,11 @@ function MailStatsCard({ serverId }: { serverId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [serverId]);
-
-  return (
-    <div className="bg-card rounded-2xl border border-border/50 p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <UiIcon name="activity" className="size-4 text-muted-foreground" />
-        <h3 className="font-semibold text-foreground text-sm">{t.emailsAdmin.overview.mailStats}</h3>
-      </div>
-
-      {loading ? (
-        <StatsSkeleton />
-      ) : blocked ? (
-        <p className="text-xs text-muted-foreground">{t.emailsAdmin.engine.cardBlocked}</p>
-      ) : error ? (
-        <p className="text-xs text-danger">{error}</p>
-      ) : stats ? (
-        <div className="space-y-3">
-          <StatRow
-            icon={"globe"}
-            iconBg="bg-primary/10"
-            iconColor="text-primary"
-            label={t.emailsAdmin.overview.domains}
-            value={stats.domains.active}
-            sub={stats.domains.total !== stats.domains.active ? interpolate(t.emailsAdmin.overview.totalSuffix, { count: String(stats.domains.total) }) : undefined}
-          />
-          <StatRow
-            icon={"user"}
-            iconBg="bg-orange-500/10"
-            iconColor="text-orange-500"
-            label={t.emailsAdmin.overview.mailboxes}
-            value={stats.mailboxes.active}
-            sub={stats.mailboxes.total !== stats.mailboxes.active ? interpolate(t.emailsAdmin.overview.totalSuffix, { count: String(stats.mailboxes.total) }) : undefined}
-          />
-          <StatRow
-            icon={"arrow-right"}
-            iconBg="bg-muted"
-            iconColor="text-muted-foreground"
-            label={t.emailsAdmin.overview.aliases}
-            value={stats.aliases.total}
-          />
-
-          <div className="h-px bg-border/60 my-2" />
-
-          <StatRow
-            icon={"hard-drive"}
-            iconBg="bg-muted"
-            iconColor="text-muted-foreground"
-            label={t.emailsAdmin.overview.storage}
-            value={formatBytes(stats.storageBytes)}
-          />
-          <StatRow
-            icon={"inbox"}
-            iconBg="bg-muted"
-            iconColor="text-muted-foreground"
-            label={t.emailsAdmin.overview.messages}
-            value={stats.messages.toLocaleString()}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
+  }, [serverId, revision, t.emailsAdmin.overview.statsFailed]);
+  return { stats, loading: !!serverId && loading, error, blocked, refresh: () => setRevision(n => n + 1) };
 }
 
-function StatsSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Skeleton className="w-8 h-8 rounded-lg" />
-            <Skeleton className="h-3 w-20" />
-          </div>
-          <Skeleton className="h-4 w-10" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatRow({
-  icon: Icon,
-  iconBg,
-  iconColor,
-  label,
-  value,
-  sub,
-}: {
-  icon: IconName;
-  iconBg: string;
-  iconColor: string;
-  label: string;
-  value: string | number;
-  sub?: string;
-}) {
-  const stringValue =
-    typeof value === "number" ? value.toLocaleString() : value;
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <div
-          className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center`}
-        >
-          <UiIcon name={Icon} className={`size-4 ${iconColor}`} />
-        </div>
-        <span className="text-sm text-muted-foreground">{label}</span>
-      </div>
-      <div className="text-end">
-        <p className="text-lg font-semibold text-foreground tabular-nums leading-none">
-          {stringValue}
-        </p>
-        {sub && (
-          <p className="text-[10.5px] text-muted-foreground/70 mt-0.5 leading-none">
-            {sub}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function QuickActionsCard() {
+function QuickActionsCard({ sectionHref }: { sectionHref: SectionHref }) {
   const { t } = useI18n();
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
@@ -485,17 +402,17 @@ function QuickActionsCard() {
       </div>
       <div className="space-y-2">
         <QuickActionLink
-          href="?tab=mailboxes"
+          href={sectionHref("mailboxes")}
           icon={"user-plus"}
           label={t.emailsAdmin.overview.addMailbox}
         />
         <QuickActionLink
-          href="?tab=domains"
+          href={sectionHref("domains")}
           icon={"globe"}
           label={t.emailsAdmin.overview.addDomain}
         />
         <QuickActionLink
-          href="?tab=dns"
+          href={sectionHref("dns")}
           icon={"mail"}
           label={t.emailsAdmin.overview.reviewDns}
         />
@@ -527,14 +444,4 @@ function QuickActionLink({
       <UiIcon name="arrow-right" className="size-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors rtl:rotate-180" />
     </Link>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 MB";
-  const KB = 1024;
-  const MB = KB * 1024;
-  const GB = MB * 1024;
-  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`;
-  if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
-  return `${(bytes / KB).toFixed(0)} KB`;
 }

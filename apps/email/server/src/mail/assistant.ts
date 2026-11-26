@@ -10,6 +10,8 @@ import { createGrant, revokeGrant, liveGrant } from "./grants";
 import { assistantTarget, assistantRuntime, type AssistantTarget } from "./assistant-targets";
 import { collectMailSources, type MailSource } from "./assistant-sources";
 import { assistantConnection } from "./assistant-connection-store";
+import { mailHostingPlacement } from "./sending-settings";
+import { mailboxAssistantPermitted } from "./assistant-hosting";
 
 export type MailAssistantTool = {
   id: string;
@@ -51,25 +53,39 @@ function history(owner: string, value?: Buffer) {
   return value ? (JSON.parse(decryptSecret(value, historyContext(owner))) as Message[]) : [];
 }
 
-function revokeIfLive(mailbox: MailboxCredentials, id?: string | null) {
-  if (id && liveGrant(id, mailboxId(mailbox))) revokeGrant(mailbox, id);
+function revokeIfPresent(mailbox: MailboxCredentials, id?: string | null) {
+  if (id) revokeGrant(mailbox, id, true);
+}
+
+export function assistantAvailability(mailbox: MailboxCredentials) {
+  const owner = mailboxId(mailbox);
+  const placement = mailHostingPlacement();
+  const permitted = mailboxAssistantPermitted(mailbox, placement);
+  let configured = false;
+  try {
+    configured = permitted && !!assistantTarget(owner, placement);
+  } catch {
+    /* Invalid operator configuration leaves AI unavailable. */
+  }
+  const consent = configured && db
+    .select({ enabled: schema.mailAssistant.enabled, grant: schema.mailAssistant.consentGrant })
+    .from(schema.mailAssistant)
+    .where(eq(schema.mailAssistant.mailboxId, owner))
+    .get();
+  const enabled = !!(consent && consent.enabled && consent.grant && liveGrant(consent.grant, owner));
+  return { placement, permitted, configured, enabled };
 }
 
 export function assistantState(mailbox: MailboxCredentials) {
   const owner = mailboxId(mailbox);
-  const row = rowFor(owner);
-  let configured = false;
-  try {
-    configured = !!assistantTarget(owner);
-  } catch {
-    /* Invalid operator configuration leaves AI unavailable. */
-  }
+  const availability = assistantAvailability(mailbox);
+  const { permitted } = availability;
+  const row = permitted ? rowFor(owner) : undefined;
   return {
     mailboxId: owner,
     email: mailbox.email,
-    configured,
-    connection: assistantConnection(owner) ?? null,
-    enabled: !!row?.enabled && !!row.consentGrant && !!liveGrant(row.consentGrant, owner),
+    ...availability,
+    connection: permitted ? assistantConnection(owner) ?? null : null,
     allowSend: row?.allowSend ?? false,
     busy: !!row?.activeUntil && row.activeUntil > Date.now(),
     messages: history(owner, row?.history),
@@ -176,8 +192,8 @@ export async function configureAssistant(
       })
       .where(eq(schema.mailAssistant.mailboxId, owner))
       .run();
-    revokeIfLive(mailbox, current?.activeGrant);
-    revokeIfLive(mailbox, current?.consentGrant);
+    revokeIfPresent(mailbox, current?.activeGrant);
+    revokeIfPresent(mailbox, current?.consentGrant);
     active.get(owner)?.controller.abort();
     return { ok: true };
   }
@@ -199,7 +215,7 @@ export async function configureAssistant(
     });
   }
   const assertActive = () => {
-    if (rowFor(owner)?.activeRequest !== requestId)
+    if (!mailboxAssistantPermitted(mailbox) || rowFor(owner)?.activeRequest !== requestId)
       throw new TRPCError({ code: "CONFLICT", message: "Assistant setup was cancelled." });
   };
   const heartbeat = setInterval(() => {
@@ -221,7 +237,7 @@ export async function configureAssistant(
     const chatId = claimed.chatId || randomUUID();
     if (!claimed.chatId) await mw.bots.createChat(bot.id, { chatId, title: "Mail assistant" });
     // Disabling while the host connects wins. It must never be undone by a late response.
-    if (rowFor(owner)?.activeRequest !== requestId) {
+    if (!mailboxAssistantPermitted(mailbox) || rowFor(owner)?.activeRequest !== requestId) {
       if (!claimed.chatId) await mw.deleteChat(chatId).catch(() => {});
       throw new TRPCError({ code: "CONFLICT", message: "Assistant setup was cancelled." });
     }
@@ -231,7 +247,7 @@ export async function configureAssistant(
       expiresInDays: 90,
       scopes: ["mail:read", "mail:draft", ...(allowSend ? ["mail:send" as const] : [])],
     });
-    revokeIfLive(mailbox, claimed.consentGrant);
+    revokeIfPresent(mailbox, claimed.consentGrant);
     db.update(schema.mailAssistant)
       .set({ enabled, allowSend, chatId, consentGrant: consent.id })
       .where(
@@ -373,7 +389,7 @@ export async function askAssistant(
   try {
     controller.signal.throwIfAborted();
     options.onProgress?.({ type: "started", requestId });
-    revokeIfLive(mailbox, claimed.activeGrant);
+    revokeIfPresent(mailbox, claimed.activeGrant);
     if (!claimed.consentGrant || !liveGrant(claimed.consentGrant, owner)) {
       throw new TRPCError({
         code: "FORBIDDEN",

@@ -1,0 +1,11 @@
+# Add this overlay after Emails setup has prepared mail on this Linux host.
+# Both services inherit the installer's image, credentials, mounts and DB port.
+services:
+  mail:
+    extends:
+      file: ${OPENSHIP_MAIL_MANIFEST:-/var/lib/openship/mail/compose.yaml}
+      service: mail
+  db:
+    extends:
+      file: ${OPENSHIP_MAIL_MANIFEST:-/var/lib/openship/mail/compose.yaml}
+      service: db

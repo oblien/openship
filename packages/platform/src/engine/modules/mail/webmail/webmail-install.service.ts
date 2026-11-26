@@ -61,6 +61,7 @@ import { workspaceForServer } from "../../../lib/cloud-workspace-scope";
 import { authorization } from "../../../lib/authorization";
 import { listProjectRouteRows } from "../../domains/project-route.service";
 import { MAIL_DOMAIN_OWNER } from "../../../lib/domain-ssl";
+import { resolveTargetPlatform, disposePlatform } from "../../../lib/deployment-runtime";
 import { updateService } from "../../services/service.service";
 import { mutateState, readState, type MailServerState } from "../mail-state";
 
@@ -160,6 +161,7 @@ export type WebmailDeployTarget =
 
 export interface StartWebmailDeployInput {
   mailServerId: string;
+  dedicatedAssistant?: boolean;
   /** Public hostname for the webmail UI. */
   hostname: string;
   target: WebmailDeployTarget;
@@ -287,7 +289,7 @@ interface WebmailInstallPlan {
   routeAfterLink?: boolean;
   /** Same-host mail daemons are reached through Docker's host gateway while
    * their certificate hostname remains unchanged. Remote backends use DNS. */
-  hostBackend?: { hostname: string; local: boolean };
+  hostBackend?: { hostname: string; local: boolean; dedicatedAssistant?: boolean };
 }
 
 async function runWebmailInstall(
@@ -353,14 +355,23 @@ async function runWebmailInstall(
       throw new AppError("The webmail service is missing. Refresh before deploying.", 409, "WEBMAIL_SERVICE_MISSING");
     }
     const previous = (service.advanced as ComposeAdvanced | null)?.extraHosts ?? {};
+    // An empty project-scoped volume reserves the VM-local opt-in socket. Webmail
+    // only reads it. The fleet operator installs the rootless engine separately.
+    const assistantMount = "mail_assistant_runtime:/run/openship-mail-assistants:ro";
+    const volumes = service.volumes ?? [];
+    const hasMount = volumes.includes(assistantMount);
+    const attachRuntime = plan.hostBackend.local && (plan.hostBackend.dedicatedAssistant ?? hasMount);
     const aliases = { ...previous };
     if (plan.hostBackend.local) aliases[plan.hostBackend.hostname] = "host-gateway";
     else if (aliases[plan.hostBackend.hostname] === "host-gateway") {
       delete aliases[plan.hostBackend.hostname];
     }
-    if (JSON.stringify(aliases) !== JSON.stringify(previous)) {
+    const hostsChanged = JSON.stringify(aliases) !== JSON.stringify(previous);
+    if (hostsChanged || hasMount !== attachRuntime) {
       await updateService(ctx, projectId, service.id, {
-        advanced: { extraHosts: Object.keys(aliases).length ? aliases : null },
+        ...(hostsChanged && { advanced: { extraHosts: Object.keys(aliases).length ? aliases : null } }),
+        ...(hasMount !== attachRuntime && { volumes: attachRuntime
+          ? [...volumes, assistantMount] : volumes.filter(volume => volume !== assistantMount) }),
       });
     }
   }
@@ -617,6 +628,7 @@ export async function startWebmailDeploy(
     hostBackend: {
       hostname: mailHost,
       local: target.deployTarget === "server" && target.serverId === input.mailServerId,
+      dedicatedAssistant: input.dedicatedAssistant,
     },
     beforeDeploy: async (projectId) => {
       if (reconnect) {
@@ -906,15 +918,13 @@ export async function cleanupWebmailInstall(project: Project): Promise<string | 
 /**
  * The mail VPS's own edge — the same OpenResty that fronts IMAP/SMTP for this
  * hostname — as a platform to route against. `resolveTargetPlatform` verifies the
- * server is in the org; the import is dynamic to keep the mail module out of the
- * deployment runtime's import cycle.
+ * server is in the org.
  */
 async function withMailVpsPlatform<T>(
   mailServerId: string,
   organizationId: string,
   work: (platform: Platform) => Promise<T>,
 ): Promise<T> {
-  const { resolveTargetPlatform, disposePlatform } = await import("../../../lib/deployment-runtime");
   const platform = await resolveTargetPlatform("server", "bare", mailServerId, organizationId);
   try {
     return await work(platform);

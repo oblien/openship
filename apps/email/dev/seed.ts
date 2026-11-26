@@ -6,7 +6,6 @@ import { createGrant } from "../server/src/mail/grants";
 import { enqueueSend } from "../server/src/mail/outbox";
 import { mailboxAuth } from "../server/src/mail/identity";
 import { env } from "../server/src/env";
-import { updateBranding } from "../server/src/lib/branding";
 
 export const sampleMailbox = (user: "alex" | "sam") => ({
   email: `${user}@openship.test`,
@@ -139,11 +138,6 @@ export async function seedSampleMail() {
       () => false,
     ))
   ) {
-    updateBranding({
-      siteTitle: "OpenShip Mail · Sample",
-      loginSubtext: "alex@openship.test or sam@openship.test · Password: sample-mail",
-      loginFooter: "Local sample mail. Messages stay inside this test environment.",
-    });
     const grant = createGrant(alex, {
       name: "Sample agent",
       scopes: ["mail:read", "mail:draft", "mail:send"],

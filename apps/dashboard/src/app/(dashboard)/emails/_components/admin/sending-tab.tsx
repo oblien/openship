@@ -49,6 +49,7 @@ import {
 } from "@repo/core";
 import { mailAdminApi, getApiErrorMessage } from "@/lib/api";
 import type { AdminDomain, ConfigureRelayPayload, OutboundRelayStatus } from "@/lib/api/mail-admin";
+import { Button } from "@/components/ui/button";
 import { MAIL_PROVIDERS, mailProvider, type MailProviderId } from "@/lib/mail-providers";
 import { AppLogo } from "@/components/AppLogo";
 import { useToast } from "@/context/ToastContext";
@@ -85,7 +86,9 @@ const presetForRelay = (relay: OutboundRelayStatus): MailProviderId =>
     ? "custom"
     : MAIL_PROVIDERS.find((p) => p.backendProvider === relay.provider)?.id ?? "custom";
 
-export function SendingTab({ serverId, primaryDomain }: { serverId: string; primaryDomain: string }) {
+export function SendingTab({ serverId, primaryDomain, relay: current, onChanged }: {
+  serverId: string; primaryDomain: string; relay: OutboundRelayStatus | null; onChanged(): void;
+}) {
   const { t } = useI18n();
   const s = t.emailsAdmin.sending;
   // The former Test tab's own strings, reused verbatim: same action, same words,
@@ -96,9 +99,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
   const hoisted = useMailRailOwnsTabs(serverId);
 
   const [testOpen, setTestOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [current, setCurrent] = useState<OutboundRelayStatus | null>(null);
   const [domainList, setDomainList] = useState<AdminDomain[]>([]);
 
   const [mode, setMode] = useState<Mode>("direct");
@@ -124,7 +125,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
 
   const seedFromStatus = useCallback(
     (relay: OutboundRelayStatus | null) => {
-      if (!relay) return;
+      if (!relay) { setMode("direct"); return; }
       setMode(relay.enabled ? "relay" : "direct");
       setProviderId(presetForRelay(relay));
       setScope(relay.scope === "selected" ? "selected" : "all");
@@ -155,21 +156,11 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
       .catch((diagnosticFailure) => {
         observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/sending-tab");
       });
-    mailAdminApi.relay
-      .get(serverId)
-      .then((r) => {
-        if (cancelled) return;
-        setCurrent(r.relay);
-        seedFromStatus(r.relay);
-      })
-      .catch((diagnosticFailure) => {
-        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/sending-tab");
-      })
-      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [serverId, seedFromStatus]);
+  }, [serverId]);
+  useEffect(() => { seedFromStatus(current); }, [current, seedFromStatus]);
 
   // Prefill from the REGISTRY, not the mailbox catalog: the send side's default
   // port is the STARTTLS one (a 465 default would be unusable for a scoped relay),
@@ -261,8 +252,8 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
         sesDkim: spec.providerDkim && primaryId ? dkimToArr(primaryId.dkim) : [],
         identities: Object.keys(identitiesPayload).length ? identitiesPayload : undefined,
       };
-      const res = await mailAdminApi.relay.save(serverId, payload);
-      setCurrent(res.relay);
+      await mailAdminApi.relay.save(serverId, payload);
+      onChanged();
       setPassword("");
       setMode("relay");
       showToast(effectiveInclude || spec.providerDkim ? `${s.saved} ${s.dnsHint}` : s.saved, "success", s.title);
@@ -276,11 +267,12 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
   const disable = async () => {
     setSaving(true);
     try {
-      await mailAdminApi.relay.disable(serverId);
-      setCurrent(null);
+      const result = await mailAdminApi.relay.disable(serverId);
+      onChanged();
       setPassword("");
       setMode("direct");
-      showToast(s.disabled, "success", s.title);
+      showToast(result.cloudKeyRetained ? t.emails.cloudClient.revokeSmtpKey : s.disabled,
+        result.cloudKeyRetained ? "info" : "success", s.title);
     } catch (err) {
       showToast(getApiErrorMessage(err, s.disableFailed), "error", s.title);
     } finally {
@@ -288,13 +280,12 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
     }
   };
 
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
-        <div className="h-64 animate-pulse rounded-2xl border border-border/50 bg-card" />
-        <div className="h-64 animate-pulse rounded-2xl border border-border/50 bg-card" />
-      </div>
-    );
+  if (current?.linkedInstallation) {
+    return <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><p className="text-sm font-medium">{t.emails.cloudClient.smtpRelay}</p>
+        <p className="text-sm text-muted-foreground">{current.domains?.join(", ")}</p></div>
+      <Button size="sm" variant="secondary" disabled={saving} onClick={disable}>{s.disable}</Button>
+    </div>;
   }
 
   return (
@@ -456,7 +447,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
                 <h4 className="text-sm font-semibold text-foreground">{s.credentialsTitle}</h4>
 
                 <div className="flex flex-wrap gap-2">
-                  {RELAY_PRESETS.map((p) => (
+                  {RELAY_PRESETS.filter(p => p.id !== "oblien" || current?.provider === p.id).map((p) => (
                     <button
                       key={p.id}
                       type="button"

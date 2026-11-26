@@ -12,12 +12,13 @@
  * have a bucket — but that path should never happen in production.
  */
 
+import { isIP } from 'node:net';
 import { getConnInfo } from 'hono/bun';
 import type { Context } from 'hono';
 
 export function clientIp(c: Context): string {
   const realIp = c.req.header('x-real-ip')?.trim();
-  if (realIp) return realIp;
+  if (realIp && isIP(realIp)) return realIp;
   try {
     const info = getConnInfo(c);
     return info.remote.address ?? 'unknown';

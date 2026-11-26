@@ -35,6 +35,8 @@ import { mailProvider } from "@/lib/mail-providers";
 import type { ServerOption } from "@/components/shared/ServerSelector";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
+import Link from "next/link";
+import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
@@ -68,7 +70,6 @@ const registrySignature = (servers: MailServerListItem[]) =>
  */
 export function MailConsole() {
   const platform = usePlatform();
-  if (!canManageMailServers(platform)) return <CloudMailClient />;
   return (
     <Suspense
       fallback={
@@ -77,12 +78,20 @@ export function MailConsole() {
         </PageContainer>
       }
     >
-      <MailConsoleInner />
+      {canManageMailServers(platform) ? <InstanceMailConsole /> : <CloudMailClient />}
     </Suspense>
   );
 }
 
-function MailConsoleInner() {
+function InstanceMailConsole() {
+  const { connected } = useCloud();
+  const params = useSearchParams();
+  const path = usePathname();
+  if (connected && params.get("hosting") === "cloud") return <CloudMailClient instanceHref={path} />;
+  return <MailConsoleInner hostedHref={connected ? path + "?hosting=cloud" : undefined} />;
+}
+
+function MailConsoleInner({ hostedHref }: { hostedHref?: string }) {
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1001,6 +1010,8 @@ function MailConsoleInner() {
             </div>
           </div>
 
+          {hostedHref && <Link href={hostedHref} className="text-sm font-medium text-muted-foreground hover:text-foreground">Cloud mail</Link>}
+
           {/* Add-server action while viewing a server (add a 2nd, etc.).
               The list view has its own Add button; the setup/progress views
               are already the add flow. `whitespace-nowrap` + `shrink-0` keep
@@ -1119,6 +1130,7 @@ function MailConsoleInner() {
               surface. */}
         {showAdmin && status && selectedServer?.id && (
           <MailAdminPanel
+            key={selectedServer.id}
             status={statusError ? { ...status, engine: undefined, observationError: undefined } : status}
             serverId={selectedServer.id}
             onRefresh={() => fetchStatusForServer(selectedServer.id)}

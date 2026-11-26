@@ -133,3 +133,5 @@ export * from "./compose-review";
 
 export type { GitRepositorySummary, GitRepositoryInfo } from "./git-types";
 export * from "./git";
+
+export * from "./managed-mail";

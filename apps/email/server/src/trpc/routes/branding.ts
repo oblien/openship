@@ -10,8 +10,21 @@
  */
 
 import { router, publicProcedure } from '../trpc';
-import { getBranding } from '../../lib/branding';
+import { defaultBranding, getBranding } from '../../lib/branding';
+import { hostedSendingNamespace } from '../../mail/sending-settings';
 
 export const brandingRouter = router({
-  get: publicProcedure.query(() => getBranding()),
+  get: publicProcedure.query(() => {
+    const branding = getBranding();
+    const cloudLogin = Boolean(hostedSendingNamespace());
+    return {
+      ...branding,
+      loginFooter:
+        cloudLogin && branding.loginFooter === defaultBranding.loginFooter
+          ? ''
+          : branding.loginFooter,
+      createAccountUrl:
+        cloudLogin && branding.showPoweredBy ? 'https://app.openship.io/emails' : null,
+    };
+  }),
 });

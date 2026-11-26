@@ -4336,6 +4336,9 @@
         {
           "name": "webmail",
           "image": "ghcr.io/oblien/openship-webmail:latest",
+          "secretEnv": [
+            "OPENSHIP_SENDING_KEY"
+          ],
           "exposedPort": 4080,
           "exposed": true,
           "volumes": [
@@ -4361,6 +4364,14 @@
           "service": "webmail",
           "label": "Branding admin token",
           "help": "Auto-generated. Lets Openship write this webmail's white-label login page (logo, name, colors) over its admin API. Nothing else accepts it.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "OPENSHIP_SENDING_ADMIN_TOKEN",
+          "service": "webmail",
+          "label": "Sending configuration token",
+          "help": "Authenticates managed sending configuration from the mail control plane.",
           "generate": "secret",
           "secret": true
         }
@@ -4417,6 +4428,25 @@
               "placeholder": "587",
               "advanced": true,
               "installStep": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "OPENSHIP_SENDING_NAMESPACE",
+              "service": "webmail",
+              "label": "Managed sending namespace",
+              "help": "From Emails → Sending. Pin the IMAP host above to the server that authenticates these mailboxes.",
+              "type": "text",
+              "advanced": true,
+              "requiresRedeploy": true
+            },
+            {
+              "key": "OPENSHIP_SENDING_KEY",
+              "service": "webmail",
+              "label": "Managed sending key",
+              "help": "Use the send-only key for your verified sender domain. Messages with attachments or threading headers use the mailbox submission server.",
+              "type": "password",
+              "secret": true,
+              "advanced": true,
               "requiresRedeploy": true
             }
           ]

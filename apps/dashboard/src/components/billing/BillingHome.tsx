@@ -5,6 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@repo/ui/icons";
 import { FeatureIllustration, type FeatureIllustrationName } from "@repo/ui/illustrations";
+import { emailPlansHref } from "@repo/core/managed-mail";
+import type { ManagedMailSummary } from "@repo/contracts/managed-mail";
+import { managedMailApi } from "@/lib/api/managed-mail";
+import { useScopedResource } from "@/hooks/use-scoped-resource";
+import { mailPlanLabel } from "./plan-presentation";
 import type { BillingPendingCheckout, ManagementState, ServerDetail } from "@repo/contracts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -34,6 +39,11 @@ function BillingHomeContent() {
   const inventory = useServerDestinations();
   const management = useManagementPlan({ refreshIdle: false });
   const pending = usePendingCheckouts()!;
+  const mail = useScopedResource(managedMailApi.summary);
+  const savedMail =
+    mail.data?.services?.length || mail.data?.plan || mail.data?.pendingPlan || mail.data?.hasBillingAccount || mail.data?.service
+      ? mail.data
+      : null;
   const spaces =
     inventory.data?.servers.filter(
       ({ managed }) => managed && (managed.planTierId !== "free" || managed.resources),
@@ -42,11 +52,12 @@ function BillingHomeContent() {
   const hasPlans =
     spaces.length > 0 ||
     Boolean(subscription) ||
+    Boolean(savedMail) ||
     pending.count > 0 ||
     Boolean(management.data?.pendingCheckout);
-  const loading = inventory.loading || management.loading || pending.loading;
+  const loading = inventory.loading || management.loading || pending.loading || mail.loading;
   const error = inventory.error || management.error || pending.error;
-  const openingPlans = !loading && !error && !hasPlans;
+  const openingPlans = !loading && !error && !mail.error && !hasPlans;
   const plansHref = newServerBillingHref(inventory.organizationId);
   useEffect(() => {
     if (openingPlans) router.replace(plansHref);
@@ -55,17 +66,18 @@ function BillingHomeContent() {
     inventory.refresh();
     management.refresh();
     void pending.refresh();
+    mail.refresh();
   };
 
   return (
     <PageContainer className="@container/billing-home space-y-6">
       <BillingHeader />
-      {error && (
+      {(error || mail.error) && (
         <div
           role="alert"
           className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-5 text-sm"
         >
-          <p className="text-danger">{error}</p>
+          <p className="text-danger">{error || mail.error}</p>
           <Button variant="secondary" size="sm" onClick={refresh}>
             {t.billing.plansRoute.tryAgain}
           </Button>
@@ -85,6 +97,7 @@ function BillingHomeContent() {
         <BillingPlanCards
           spaces={spaces}
           management={management.data}
+          mail={savedMail}
           pending={pending.items}
           organizationId={inventory.organizationId}
           showAddPlan={!error}
@@ -98,6 +111,7 @@ function BillingHomeContent() {
 export function BillingPlanCards({
   spaces,
   management,
+  mail,
   pending = [],
   organizationId,
   showAddPlan = true,
@@ -108,6 +122,7 @@ export function BillingPlanCards({
     "active" | "subscription" | "pendingCheckout" | "change"
   > | null;
   pending?: BillingPendingCheckout[];
+  mail?: ManagedMailSummary | null;
   organizationId?: string;
   showAddPlan?: boolean;
 }) {
@@ -239,6 +254,45 @@ export function BillingPlanCards({
           </div>
         </PlanCard>
       )}
+      {mail && (mail.plan || mail.pendingPlan || mail.hasBillingAccount || mail.service) && (
+        <PlanCard
+          href={emailPlansHref(mail.pendingPlan ?? null, organizationId, mail.pendingProduct ?? mail.product)}
+          illustration="mail"
+          kind="OpenShip Mail"
+          title={mailPlanLabel(mail.plan ?? mail.pendingPlan, t.emails.cloudClient.included)}
+          status={
+            <span className="text-xs text-muted-foreground">
+              {mail.pendingPlan
+                ? t.billing.hub.paymentPending
+                : mail.plan
+                  ? t.billing.hub.active
+                  : t.billing.hub.inactive}
+            </span>
+          }
+          footer={mail.pendingPlan ? t.emails.cloudClient.resumeCheckout : t.billing.hub.viewPlan}
+        >
+          <p className="text-sm leading-6 text-muted-foreground">
+            {(mail.pendingProduct ?? mail.product) === "sending" || (mail.mailboxPlan === null && mail.plan)
+              ? t.emails.cloudClient.apiTitle
+              : t.emails.cloudClient.mailboxesLabel}
+          </p>
+          {mail.limits && (
+            <p className="text-sm">
+              {t.emails.cloudClient.recipientsLabel} ·{" "}
+              {mail.limits.recipients.toLocaleString(locale)}
+            </p>
+          )}
+        </PlanCard>
+      )}
+      {mail?.services?.filter(item => item.plan).map(item => (
+        <PlanCard key={item.id} href={item.pendingCheckout ? emailPlansHref(item.plan, organizationId, "dedicated", item.storageGB) :
+          "/emails?" + new URLSearchParams({ hosting: "cloud", serviceId: item.id, ...(organizationId && { organizationId }) })}
+          illustration="mail" kind={t.emails.cloudClient.dedicatedTitle} title={mailPlanLabel(item.plan, t.emails.cloudClient.included)}
+          footer={item.pendingCheckout ? t.emails.cloudClient.resumeCheckout : t.emails.cloudClient.openDashboard}
+          status={item.pendingCheckout ? t.billing.hub.paymentPending : undefined}>
+          <p className="text-sm">{item.storageGB} GB · {t.emails.cloudClient.relayIncluded}</p>
+        </PlanCard>
+      ))}
       {showAddPlan && (
         <Link
           href={plansHref}

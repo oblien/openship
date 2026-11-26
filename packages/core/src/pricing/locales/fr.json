@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "Boîtes mail mutualisées",
+      "description": "Les boîtes de votre équipe hébergées par OpenShip."
+    },
+    "dedicated": {
+      "name": "Serveur mail dédié",
+      "description": "Une nouvelle VM privée pour vos boîtes mail, avec envoi géré inclus."
+    },
+    "sending": {
+      "name": "API d’envoi",
+      "description": "Envoyez des e-mails transactionnels depuis votre application avec un domaine vérifié."
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "Solo",
+      "tagline": "Pour les projets personnels."
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "Pour les petites équipes."
+    },
+    "business": {
+      "name": "Business",
+      "tagline": "Pour les équipes qui gèrent plusieurs marques."
+    },
+    "scale": {
+      "name": "Scale",
+      "tagline": "Pour les plateformes au service de leurs clients."
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

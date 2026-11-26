@@ -9,6 +9,7 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
 import { AnalyticsError } from "@/components/monitoring/AnalyticsError";
 import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { OverviewStatCard } from "@/components/shared/OverviewStatCard";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
@@ -277,33 +278,7 @@ export const OverviewTab = () => {
         <>
       {/* Compact stats row */}
       <div className={detailedTraffic ? "grid grid-cols-2 lg:grid-cols-4 gap-3" : "grid grid-cols-1 sm:grid-cols-3 gap-3"}>
-        {stats.map((s) => (
-          <div key={s.label} className="bg-card rounded-xl border border-border/50 px-3.5 py-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-primary [&>svg]:size-3.5">{s.icon}</span>
-              <span className="text-[11px] text-muted-foreground font-medium">{s.label}</span>
-            </div>
-            {showStatsSkeleton ? (
-              <>
-                {/* Skeleton bars roughly matching the value (large) and
-                    subtext (small) line heights so the card doesn't
-                    visibly jump when the data lands. Tuned to
-                    `bg-muted-foreground/*` instead of `bg-muted/*` -
-                    the latter is nearly identical to the card surface
-                    in this theme and renders almost invisible. */}
-                <div className="h-[18px] w-12 rounded bg-muted-foreground/25 animate-pulse" />
-                <div className="h-[10px] w-20 mt-1.5 rounded bg-muted-foreground/15 animate-pulse" />
-              </>
-            ) : (
-              <>
-                <p className="text-[18px] font-semibold text-foreground leading-tight">{s.value}</p>
-                {s.subtext && (
-                  <p className="text-[10px] text-muted-foreground/60 mt-0.5">{s.subtext}</p>
-                )}
-              </>
-            )}
-          </div>
-        ))}
+        {stats.map(stat => <OverviewStatCard key={stat.label} {...stat} loading={showStatsSkeleton} />)}
       </div>
 
       <TrafficChart

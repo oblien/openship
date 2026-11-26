@@ -8,6 +8,16 @@ import { ManagementBilling } from "@/components/billing/ManagementPlan";
 export function BillingPurchaseContent({ children }: { children: ReactNode }) {
   const purchase = useCloudPurchase();
   if (!purchase.management) return children;
+  if (purchase.mode === "email")
+    return (
+      <div
+        role="tabpanel"
+        id={purchase.id + "-panel-email"}
+        aria-labelledby={purchase.id + "-tab-email"}
+      >
+        {children}
+      </div>
+    );
   const managing = purchase.mode === "manage";
   return (
     <div className="space-y-6">

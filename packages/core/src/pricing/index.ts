@@ -18,6 +18,7 @@
  */
 
 import { pricingCatalogSchema, type PricingCatalogRaw, type PricingCreditPackRaw } from "./schema";
+import { PAID_MAIL_PLANS, type PaidMailPlan, type MailProduct } from "../mail-server/managed-mail";
 import type { WorkloadType } from "../deployment-class";
 import { RESOURCE_TIER_SPECS, type FixedResourceTier } from "../resources";
 
@@ -62,6 +63,8 @@ export type PricingLocale = (typeof PRICING_LOCALES)[number];
 type PricingCopy = typeof copyEn;
 /** A translation may omit any key; the omission falls back to English. */
 type PartialCopy = {
+  mailProducts?: PricingCopy["mailProducts"];
+  mailPlans?: Partial<PricingCopy["mailPlans"]>;
   plans?: Record<string, { name?: string; tagline?: string }>;
   features?: Record<string, string>;
   selfHosted?: Partial<PricingCopy["selfHosted"]>;
@@ -81,6 +84,34 @@ const COPY: Record<PricingLocale, PartialCopy> = {
   zh: copyZh,
   ru: copyRu,
 };
+
+/** Checkout and the public catalog use the same retail price. */
+export function mailMonthlyCents(tier: PaidMailPlan, product: Exclude<MailProduct, "dedicated">) {
+  const plan = PRICING.mail.plans[tier];
+  return product === "sending"
+    ? Math.round(plan.recipients * PRICING.mail.sendingCentsPerThousand / 1000)
+    : plan.monthlyCents;
+}
+
+export function resolveMailPricing(locale: PricingLocale = "en") {
+  const { plans, popularTier, features } = PRICING.mail;
+  return {
+    features,
+    products: COPY[locale].mailProducts ?? copyEn.mailProducts,
+    dedicatedStorage: PRICING.mail.dedicated.storage,
+    tiers: PAID_MAIL_PLANS.map(id => {
+      const plan = plans[id];
+      const copy = COPY[locale].mailPlans?.[id] ?? copyEn.mailPlans[id];
+      return {
+        id, name: copy.name, description: copy.tagline, popular: id === popularTier,
+        checkoutPlan: plan.checkoutAvailable ? id : null,
+        monthlyCents: mailMonthlyCents(id, "mailboxes"), domains: plan.domains, mailboxes: plan.mailboxes,
+        storageMB: plan.storageMB, recipients: plan.recipients,
+        sendingMonthlyCents: mailMonthlyCents(id, "sending"),
+      };
+    }),
+  };
+}
 
 /**
  * Narrow any locale-ish string to a supported pricing locale: an exact match,

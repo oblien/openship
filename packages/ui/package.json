@@ -10,6 +10,8 @@
       "import": "./src/index.tsx"
     },
     "./globals.css": "./src/globals.css",
+    "./desktop-titlebar": "./src/DesktopTitleBar.tsx",
+    "./desktop-titlebar.css": "./src/desktop-titlebar.css",
     "./icons": {
       "types": "./src/icons/index.ts",
       "import": "./src/icons/index.ts"

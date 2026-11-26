@@ -37,6 +37,7 @@ export type PolicyId =
   | "webhook-ingress"
   | "webhook-flood"
   | "billing-portal"
+  | "mail-test-send"
   | "support-contact"
   | "support-reply"
   | "support-contact-ip";
@@ -203,6 +204,13 @@ export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
     windowMs: MINUTE_MS,
     subject: "org",
     description: "Stripe portal / checkout creation — per-org.",
+  },
+  "mail-test-send": {
+    id: "mail-test-send",
+    limit: 5,
+    windowMs: MINUTE_MS,
+    subject: "org",
+    description: "Dashboard test emails per organization.",
   },
 };
 

@@ -2902,10 +2902,6 @@
     "mlhqabe": "Almacenamiento de correo",
     "m1t7t2wk": "Compartido",
     "my14yjr": "API",
-    "myu51jo": "Para proyectos personales.",
-    "m12ifwwp": "Para equipos pequeños.",
-    "m15ti3x2": "Para equipos con varias marcas.",
-    "m1waezfd": "Para plataformas que dan servicio a clientes.",
     "m116lozf": "Comparar funciones",
     "m178xhu3": "Enviar desde tu aplicación mediante la API",
     "mzxuq4l": "Claves de solo envío por dominio",
@@ -2919,7 +2915,14 @@
     "m1r414ct": "Claves de API",
     "mfm9g8": "Por dominio",
     "m12hv6lv": "Precios mensuales de ejemplo en USD.",
-    "mhi9qfg": "Ver planes en el panel"
+    "mhi9qfg": "Ver planes en el panel",
+    "m1934rwj": "Informes de uso",
+    "mukpq5o": "Ejecuta OpenShip Mail en tu máquina virtual",
+    "m1shnxdq": "Instala los buzones en una máquina virtual de Cloud que ya tengas o elige un nuevo plan de cómputo. El correo saliente usa tu cuota de la API de correo.",
+    "m1cnf92t": "Usar una máquina virtual existente",
+    "m7xi513": "Elegir un nuevo plan de Cloud",
+    "m1qf703d": "API de correo incluida",
+    "mzhhs8b": "Usar una máquina virtual de Cloud"
   },
   "ReleaseNotes": {
     "m1005a3f": "— el asistente solía inventar un nombre de host a partir del nombre del proyecto cada vez que un paso no tenía una ruta elegida, etiquetando campos de puerto, obteniendo una vista previa de los hosts de la sub-aplicación monorepo e incluso conectando el botón \"Visitar sitio\" a un host que nunca existiría. Ahora muestra solo los hosts con los nombres reales de su configuración y oculta \"Visitar sitio\" por completo cuando la implementación no tiene dominio público.",

@@ -302,3 +302,5 @@ export type { AssistantAutomationRow, AssistantAutomationRunRow } from "./repos/
 export type { ChatAppConnection, ChatAppIdentity, ChatAppThread, ChatAppReceipt } from "./repos/chat-apps.repo";
 
 export type { AssistantAgentRow } from "./repos/assistant-agents.repo";
+
+export type { MailChangeIntent, DedicatedMailOrder } from "./schema/managed-mail";

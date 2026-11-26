@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { db, schema } from "../db";
 import type { SessionContext } from "../lib/session";
 
@@ -13,7 +14,7 @@ db.insert(schema.mailInstance)
   .values({ id: "instance", value: randomUUID() })
   .onConflictDoNothing()
   .run();
-const instanceId = db.select().from(schema.mailInstance).get()!.value;
+const instanceId = db.select().from(schema.mailInstance).where(eq(schema.mailInstance.id, "instance")).get()!.value;
 
 export function mailboxId(mailbox: MailboxIdentity): string {
   return createHash("sha256")

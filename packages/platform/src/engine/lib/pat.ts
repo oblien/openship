@@ -9,6 +9,13 @@ import { createHash, randomBytes } from "node:crypto";
  * SHA-256 hash is persisted; the plaintext is shown to the user once.
  */
 export const PAT_PREFIX = "opsh_pat_";
+/** Accepted for existing mail installations. New credentials always use PAT_PREFIX. */
+export const LEGACY_MAIL_PAT_PREFIX = "opsh_send_";
+
+export function patPrefix(token: string): string | undefined {
+  if (token.startsWith(PAT_PREFIX)) return PAT_PREFIX;
+  if (token.startsWith(LEGACY_MAIL_PAT_PREFIX)) return LEGACY_MAIL_PAT_PREFIX;
+}
 
 /** SHA-256 hex of the full token — the DB lookup key. */
 export function hashPatToken(token: string): string {

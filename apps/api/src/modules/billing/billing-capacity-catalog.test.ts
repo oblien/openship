@@ -28,6 +28,14 @@ describe("funded Cloud offers and isolated capacity", () => {
       expect(catalog.plans.filter(plan => plan.availableForPurchase && plan.price.monthly! > 0).every(plan => plan.billingMode === "monthly")).toBe(true);
       expect(catalog.custom).toBeDefined();
       expect(catalog.management).toBeDefined();
+      const mail = catalog.mail!;
+      for (const tier of mail.tiers) {
+        const terms = PRICING.mail.plans[tier.id];
+        expect(tier).toMatchObject({ monthlyCents: terms.monthlyCents, recipients: terms.recipients, domains: terms.domains });
+        expect(tier.sendingMonthlyCents).toBe(Math.round(terms.recipients * PRICING.mail.sendingCentsPerThousand / 1000));
+      }
+      expect(mail.tiers.every(tier => tier.checkoutPlan === tier.id)).toBe(true);
+      expect(mail.tiers.filter(tier => tier.popular).map(tier => tier.id)).toEqual([PRICING.mail.popularTier]);
     },
   );
   it("sells the approved monthly prices with explicit pools and no credit policy", () => {

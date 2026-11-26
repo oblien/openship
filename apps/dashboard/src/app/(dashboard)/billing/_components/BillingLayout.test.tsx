@@ -5,8 +5,14 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { BillingLayout } from "./BillingLayout";
-const h = vi.hoisted(() => ({ path: "/billing/plans", query: "", billing: vi.fn() }));
+const h = vi.hoisted(() => ({
+  path: "/billing/plans",
+  query: "",
+  billing: vi.fn(),
+  push: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: h.push }),
   usePathname: () => h.path,
   useSearchParams: () => new URLSearchParams(h.query),
 }));
@@ -47,7 +53,7 @@ it("offers only new-plan purchase choices, with Support and no global payment or
   expect(host.textContent).not.toContain(baseDictionary.billing.tabs.payment);
   expect(host.textContent).not.toContain(baseDictionary.billing.tabs.usage);
   expect(host.querySelector('a[href*="/billing/payment"]')).toBeNull();
-  expect(host.querySelectorAll('[role="tab"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[role="tab"]')).toHaveLength(3);
   const manage = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
     (b) => b.textContent === baseDictionary.billing.purchase.manage,
   )!;
@@ -70,4 +76,20 @@ it("does not wrap a scoped plan link or checkout return with new-purchase UI", a
   h.query = "workspaceId=plan-a&newServer=1&checkout=success";
   await render();
   expect(host.textContent).toBe("Plan content");
+});
+
+it("opens the email product on regular pricing without carrying a compute checkout intent", async () => {
+  h.query = "organizationId=org-a&plan=starter&startCheckout=1";
+  await render();
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (b) => b.textContent === "Email plans",
+  )!;
+  await act(async () => tab.click());
+  expect(h.push).toHaveBeenCalledWith("/billing/plans?product=email&organizationId=org-a", {
+    scroll: false,
+  });
+  h.query = "product=email&mailPlan=team";
+  await render();
+  expect(host.querySelector("header h1")?.textContent).toBe("Email plans");
+  expect(host.querySelector('[role="tabpanel"]')?.textContent).toBe("Plan content");
 });

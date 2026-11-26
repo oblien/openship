@@ -2,7 +2,6 @@ import * as emailAddresses from 'email-addresses';
 import type { Sender } from '@/types';
 import DOMPurify from 'dompurify';
 import Color from 'color';
-import { z } from 'zod';
 
 export const fixNonReadableColors = (
   rootElement: HTMLElement,
@@ -220,31 +219,4 @@ export const cleanHtml = (html: string) => {
     console.warn('DOMPurify Failed or not Available, falling back to Default HTML ', error);
     return '<p><em>No email content available</em></p>';
   }
-};
-
-export const queuedSendEmailResultSchema = z.object({
-  queued: z.literal(true),
-  messageId: z.string(),
-  sendAt: z.number().optional(),
-});
-
-export const scheduledSendEmailResultSchema = z.object({
-  scheduled: z.literal(true),
-  messageId: z.string(),
-  sendAt: z.number().optional(),
-});
-
-export type QueuedSendEmailResult = z.infer<typeof queuedSendEmailResultSchema>;
-export type ScheduledSendEmailResult = z.infer<typeof scheduledSendEmailResultSchema>;
-
-export const isQueuedSendResult = (value: unknown): value is QueuedSendEmailResult => {
-  return queuedSendEmailResultSchema.safeParse(value).success;
-};
-
-export const isScheduledSendResult = (value: unknown): value is ScheduledSendEmailResult => {
-  return scheduledSendEmailResultSchema.safeParse(value).success;
-};
-
-export const isSendResult = (value: unknown): value is QueuedSendEmailResult | ScheduledSendEmailResult => {
-  return isQueuedSendResult(value) || isScheduledSendResult(value);
 };

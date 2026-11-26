@@ -1,3 +1,4 @@
+import { mailDatabaseTenant } from "./tenant-session";
 /**
  * The mail engine's topology matrix — and the ONLY place that knows it.
  *
@@ -514,6 +515,11 @@ function sq(value: string): string {
  */
 export function mailPsqlCommand(flavor: MailEngineFlavor, sql: string): string {
   const flags = `-d ${MAIL_DB_NAME} -A -t -v ON_ERROR_STOP=1 -c ${sq(sql)}`;
+  const tenant = mailDatabaseTenant();
+  if (tenant) {
+    if (flavor !== "container") throw new Error("Shared mail requires the container database.");
+    return `docker exec ${MAIL_DB_CONTAINER} psql -X -w -h /var/run/postgresql -U ${sq(tenant)} ${flags}`;
+  }
   // Container: connect as the sidecar's `postgres` superuser (the container-model
   // equivalent of `sudo -u postgres`, which is exactly what legacy boxes use).
   return flavor === "container"

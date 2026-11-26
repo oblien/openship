@@ -151,7 +151,7 @@ describe("createMaildirOnDisk transport + layout", () => {
 
     await createMaildirOnDisk(r.exec as never, generateMaildir("acme.com", "carol"));
 
-    expect(r.last()).toContain("chown -R vmail:vmail");
+    expect(r.last()).toContain("chown vmail:vmail");
     expect(r.last()).toMatch(/^docker exec openship-mail /);
   });
 
@@ -174,9 +174,21 @@ describe("removeMaildirOnDisk", () => {
 
     await removeMaildirOnDisk(r.exec as never, layout);
 
-    expect(r.last()).toBe(
-      `docker exec openship-mail rm -rf '/var/vmail/vmail1/${layout.maildir}'`,
-    );
+    expect(r.last()).toMatch(/^docker exec openship-mail sh -c /);
+    expect(r.last()).toContain("realpath -m --");
+    expect(r.last()).toContain("rm -rf --");
+    expect(r.last()).toContain(`/var/vmail/vmail1/${layout.maildir.slice(0, -1)}`);
+  });
+
+  it("confines a shared mailbox to its reserved domain and an individual home", async () => {
+    const r = recorder("");
+    const layout = generateMaildir("first.test", ".team");
+    expect(layout.maildir.split("/")).not.toContain(".");
+    for (const maildir of ["second.test/me/", "first.test/", "first.test/../me/", "first.test//me/"]) {
+      await expect(removeMaildirOnDisk(r.exec as never, { ...layout, maildir }, "first.test"))
+        .rejects.toThrow("outside");
+    }
+    expect(r.calls).toHaveLength(0);
   });
 
   it("still refuses a path outside /var/vmail before any command is built", async () => {
@@ -189,7 +201,7 @@ describe("removeMaildirOnDisk", () => {
         storagenode: "passwd",
         maildir: "",
       }),
-    ).rejects.toThrow(/Refusing to remove maildir outside/);
+    ).rejects.toThrow(/Refusing maildir outside/);
     expect(r.calls).toHaveLength(0);
   });
 });

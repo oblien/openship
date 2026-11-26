@@ -1,3 +1,5 @@
+import { parseMailProduct } from "@repo/core/managed-mail";
+import { EmailPlans } from "@/components/billing/EmailPlans";
 import { notFound, redirect } from "next/navigation";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import { BillingWorkspaceProvider } from "@/components/billing/BillingWorkspaceContext";
@@ -36,6 +38,7 @@ export default async function BillingTabPage({
     newServer: query.newServer === "1",
     checkoutReturn,
   });
+  const mailPlans = newServer && value("product") === "email";
   const requestedPlanId = value("plan");
   const requestedInterval =
     query.interval === "monthly" || query.interval === "annual" ? query.interval : undefined;
@@ -56,7 +59,7 @@ export default async function BillingTabPage({
         tab={activeTab}
         workspaceId={workspaceId}
         newServer={newServer}
-        returnQuery={checkoutReturn ? query : undefined}
+        returnQuery={checkoutReturn || mailPlans ? query : undefined}
         purchase={
           newServer
             ? {
@@ -73,6 +76,15 @@ export default async function BillingTabPage({
       />
     );
   }
+  if (mailPlans)
+    return (
+      <EmailPlans
+        changeTarget={value("changeMail")}
+        requestedStorage={Number(value("storageGB")) || undefined}
+        requestedPlan={value("mailPlan")}
+        requestedProduct={parseMailProduct(value("mailProduct"))}
+      />
+    );
   if (newServer)
     return (
       <BillingWorkspaceProvider organizationId={organizationId}>

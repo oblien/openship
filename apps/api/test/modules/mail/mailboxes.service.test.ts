@@ -38,9 +38,8 @@ vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domain-counts", () => ({
   recountDomain: mocks.recountDomain,
-  validateDomain: vi.fn(),
 }));
 
 vi.mock("@repo/platform/engine/modules/mail/admin/password", () => ({
@@ -97,7 +96,7 @@ describe("hardDeleteMailbox postmaster protection", () => {
 
     expect(mocks.transaction).toHaveBeenCalledOnce();
     expect(mocks.removeMaildirOnDisk).toHaveBeenCalledOnce();
-    expect(mocks.recountDomain).toHaveBeenCalledWith("srv_test", "additional.example");
+    expect(mocks.recountDomain).toHaveBeenCalledWith("srv_test", "additional.example", undefined);
   });
 
   test("refuses to hard-delete the postmaster mailbox of the install domain", async () => {

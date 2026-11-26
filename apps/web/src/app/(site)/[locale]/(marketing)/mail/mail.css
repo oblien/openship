@@ -64,60 +64,15 @@
   padding-top: clamp(32px, 4vw, 56px);
   border-top: 1px solid #323232;
 }
-.mail-hosting-picker { display: grid; min-width: 0; gap: 18px; max-width: 960px; margin: clamp(26px, 4vw, 46px) auto 28px; }
-.mail-hosting-picker label { position: relative; min-width: 0; cursor: pointer; }
-.mail-hosting-option { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; height: 100%; text-align: start; }
-.mail-hosting-option strong { padding: 7px 16px; border-radius: 999px; background: #222; color: #d4d4d4; font-size: .9375rem; font-weight: 550; }
-.mail-hosting-option > span { max-width: 36ch; color: #aaa; font-size: .875rem; line-height: 1.5; text-wrap: pretty; }
-.mail-hosting-picker label:hover strong { background: #333; color: #fff; }
-.mail-hosting-picker input:checked + .mail-hosting-option strong { background: #f5f5f5; color: #181818; }
-.mail-hosting-picker input:focus-visible + .mail-hosting-option strong,
-.mail-storage-range input:focus-visible { outline: 2px solid #e6d7fa; outline-offset: 3px; }
-@media (min-width: 640px) {
-  .mail-hosting-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 4vw, 60px); margin-bottom: 36px; }
-  .mail-hosting-option { align-items: center; text-align: center; }
+.mail-page .pp-plan:not(.pp-plan--highlight) {
+  --th-text-heading: #222;
+  --th-text-title: #242424;
+  --th-text-strong: #343434;
+  --th-clr-plum: #554476;
+  --th-bd-strong: #ccc;
+  color: #242424;
 }
-.mail-plan-grid { display: grid; gap: 16px; }
-.mail-plan-card {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: clamp(22px, 2vw, 30px);
-  overflow: hidden;
-  border-radius: 16px;
-  background: #191919;
-}
-.mail-plan-card[data-tier="business"]::before, .mail-plan-card[data-tier="business"]::after { content: ''; position: absolute; z-index: -1; pointer-events: none; inset: 0 0 auto; height: 150px; mask-image: linear-gradient(#000 18%, transparent); }
-.mail-plan-card[data-tier="business"]::before { background: url('/mail-pricing-glow.webp') center 39% / cover; opacity: .80; }
-.mail-plan-card[data-tier="business"]::after { background: url('/mail-pricing-pixels.webp') center top / cover; mix-blend-mode: screen; opacity: .62; }
-.mail-plan-name { font-size: 1.2rem; line-height: 1.3; font-weight: 500; }
-.mail-tier-description { margin-top: 5px; color: #c2bec6; font-size: .875rem; line-height: 1.45; }
-.mail-plan-price { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-block: 18px 28px; }
-.mail-plan-price strong { font-size: clamp(31px, 3.2vw, 46px); font-weight: 550; line-height: 1; letter-spacing: -.045em; }
-.mail-plan-price span { color: #bab5c2; font-size: .8rem; }
-.mail-plan-card dl { display: grid; align-content: start; gap: 12px; min-height: calc(4lh + 36px); margin-bottom: 28px; font-size: .85rem; line-height: 1.45; }
-.mail-plan-card dl div { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-.mail-plan-card dt { color: #aaa; }
-.mail-plan-card dd { max-width: 48%; text-align: end; font-variant-numeric: tabular-nums; }
-.mail-plan-action { margin-top: auto; display: block; text-align: center; border-radius: 9px; background: #303033; padding: 10px; font-size: .875rem; font-weight: 550; }
-.mail-plan-card[data-tier="business"] .mail-plan-action { background: #f4f2f5; color: #1c1a20; }
-.mail-plan-action:hover { filter: brightness(1.15); }
-@media (min-width: 640px) { .mail-plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 1100px) { .mail-plan-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.mail-plan-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 16px; min-height: 36px; margin-top: 24px; color: #c3c3c3; font-size: .875rem; }
-.mail-plan-tools button { color: #eee; font-weight: 500; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
-.mail-plan-tools button:hover { color: #fff; }
-.mail-storage-range { display: inline-flex; align-items: center; gap: 10px; }
-.mail-storage-range input { width: 112px; height: 32px; appearance: none; background: transparent; cursor: pointer; }
-.mail-storage-range input::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: #5a565e; }
-.mail-storage-range input::-moz-range-track { height: 4px; border-radius: 4px; background: #5a565e; }
-.mail-storage-range input::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: #ede4f6; }
-.mail-storage-range input::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #ede4f6; }
-.mail-storage-range span { min-width: 7ch; color: #eee; font-variant-numeric: tabular-nums; }
-.mail-pricing-note { margin-top: 14px; color: #aaa; font-size: .8125rem; text-align: center; }
-.mail-pricing-note a { color: #ddd; text-decoration: underline; text-underline-offset: 3px; }
+.mail-page .pp-billing-interval { background: #242424; --th-text-secondary: #ddd; --th-btn-bg: #eee; --th-btn-text: #242424; }
 .mail-feature-comparison { width: 100%; max-width: 960px; margin: clamp(38px, 5vw, 66px) auto 0; table-layout: fixed; border-collapse: collapse; font-size: .9375rem; }
 .mail-feature-comparison caption { margin-bottom: 20px; text-align: start; font-size: clamp(24px, 2.5vw, 34px); letter-spacing: -.035em; }
 .mail-feature-comparison th, .mail-feature-comparison td { padding: 10px 4px; text-align: center; overflow-wrap: anywhere; }

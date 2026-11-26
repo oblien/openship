@@ -71,6 +71,7 @@ import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
 import { preflightMailSetup } from "./mail-setup-preflight";
 import { applyRelayToState } from "@repo/platform/engine/modules/mail/admin/outbound-relay.service";
+import { ensureOpenshipPlatformMailbox } from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
 // The webmail is an ordinary project: its status is resolved from the DB, not
 // from this server's state file.
 import {
@@ -695,7 +696,7 @@ function validateSetupConfig(config: IRedMailConfig | undefined): string | null 
 /**
  * POST /mail/setup - start (or resume) the mail setup wizard.
  *
- * Body: { serverId: string, domain: string, startStep?: number, config?: IRedMailConfig }
+ * Body: { serverId, domain, startStep?, config?, outboundDelivery?: "direct" | "relay" }
  *
  * Returns an SSE stream with events:
  *   - step_start    { stepId, key, label }
@@ -715,6 +716,10 @@ export async function startSetup(c: Context) {
   const domain = body.domain as string | undefined;
   const startStep = Math.max(1, Math.min(TOTAL_STEPS, Number(body.startStep) || 1));
   const config = body.config as IRedMailConfig | undefined;
+  const outboundDelivery = body.outboundDelivery ?? "direct";
+  if (outboundDelivery !== "direct" && outboundDelivery !== "relay")
+    return c.json({ error: "Invalid outbound delivery mode" }, 400);
+
 
   if (!serverId) {
     return c.json({ error: "serverId is required" }, 400);
@@ -880,21 +885,10 @@ export async function startSetup(c: Context) {
       // as in-progress immediately, not "pending".
       await persist();
 
-      // ── PTR gate ──────────────────────────────────────────────────
-      //
-      // Runs BEFORE the loop, so it fires when the user resumes from step 7+
-      // (request_ssl) with DNS acknowledged but PTR not yet. The flow is:
-      //   1. Step 6 (dkim_keys) emits dns_pending → user clicks "I've set DNS" →
-      //      ack endpoint flips dnsAcknowledged → resume with startStep=7
-      //   2. Pre-loop check below: dnsAck=true, ptrAck=false → emit
-      //      ptr_pending → halt
-      //   3. User clicks "I've set PTRs" → ack flips ptrAck → resume with
-      //      startStep=7 → pre-loop check passes → loop runs request_ssl
-      //
-      // The `startStep > 6` guard prevents the gate from firing when the user
-      // resumes from an earlier step — the loop re-runs dkim_keys and re-issues
-      // dns_pending, which is the right order.
+      // Direct SMTP delivery uses this host's public IP. Managed workers use the
+      // relay's egress IP and can proceed to TLS without acknowledging a local PTR.
       if (
+        outboundDelivery === "direct" &&
         startStep > 6 &&
         state.dnsRecords &&
         state.dnsAcknowledged &&
@@ -1104,13 +1098,7 @@ export async function startSetup(c: Context) {
       // the wizard's terminal success state; the operator (or the first
       // sendTestEmail call) will trigger ensureOpenshipPlatformMailbox again
       // later via its on-demand backfill path.
-      //
-      // Dynamic import mirrors the pattern domains.service.ts uses to dodge a
-      // load-time cycle (mail-state ↔ mail.controller ↔ admin services).
       try {
-        const { ensureOpenshipPlatformMailbox } = await import(
-          "@repo/platform/engine/modules/mail/admin/platform-mailbox.service"
-        );
         // Clear any cached "platform mailbox unavailable" marker from BEFORE the
         // install finished — otherwise the send path keeps skipping this server
         // for the rest of the failure window right after a successful install.

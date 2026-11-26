@@ -23,6 +23,8 @@ import {
   recordDomainDns,
   deleteDomainDns,
 } from "./domain-dns.service";
+import { assertTenantDomain, ownedDomain, tenantDomainsSql } from "./tenant-domains";
+import { createMailbox, hardDeleteMailbox, listMailboxes } from "./mailboxes.service";
 import { relaySpfInclude } from "./outbound-relay.service";
 
 
@@ -41,6 +43,7 @@ export interface DomainRow {
 }
 
 export interface CreateDomainInput {
+  createPostmaster?: boolean;
   domain: string;
   description?: string;
   maxMailboxes?: number;
@@ -82,43 +85,45 @@ const SELECT_COLUMNS = `
  * `openship_meta` table on the mail VPS (NOT on openship's DB).
  */
 
+export { recountDomain } from "./domain-counts";
 export { validateMailDomain as validateDomain } from "../mail-domain";
 
-export async function listDomains(serverId: string): Promise<DomainRow[]> {
+export async function listDomains(serverId: string, namespace?: string): Promise<DomainRow[]> {
   return queryRows<DomainRow>(
     serverId,
-    `SELECT${SELECT_COLUMNS} FROM domain ORDER BY domain`,
+    `SELECT${SELECT_COLUMNS} FROM domain ${namespace !== undefined ? `WHERE domain IN (${tenantDomainsSql(namespace)})` : ""} ORDER BY domain`,
   );
 }
 
 export async function getDomain(
   serverId: string,
   domain: string,
+  namespace?: string,
 ): Promise<DomainRow | null> {
   validateDomain(domain);
   return queryOne<DomainRow>(
     serverId,
-    `SELECT${SELECT_COLUMNS} FROM domain WHERE domain = ${q(domain.toLowerCase())}`,
+    `SELECT${SELECT_COLUMNS} FROM domain WHERE domain = ${q(domain.toLowerCase())}${ownedDomain(namespace)}`,
   );
 }
 
 export async function createDomain(
   serverId: string,
   input: CreateDomainInput,
+  namespace?: string,
 ): Promise<{ row: DomainRow; dnsWarning?: string }> {
   validateDomain(input.domain);
   const domain = input.domain.toLowerCase();
 
   // Duplicate check is implicit (PRIMARY KEY) but we surface a friendlier
   // error than psql's `duplicate key value violates unique constraint`.
-  const existing = await getDomain(serverId, domain);
+  // A name is unique across this host. Only check availability here.
+  const existing = await queryOne(serverId, `SELECT 1 FROM domain WHERE domain = ${q(domain)}`);
   if (existing) {
     throw new DomainExistsError(domain);
   }
 
-  await execute(
-    serverId,
-    `INSERT INTO domain (
+  const insert = `INSERT INTO domain (
         domain, description,
         mailboxes, aliases, maxquota,
         active, created, modified
@@ -129,8 +134,10 @@ export async function createDomain(
         ${qInt(input.maxAliases ?? 0)},
         ${qInt(input.defaultQuotaMB ?? 0)},
         1, NOW(), NOW()
-      )`,
-  );
+      )`;
+  // On shared workers the DNS-verified, permanent reservation is a prerequisite
+  // for this INSERT. PostgreSQL checks it with the customer's own login.
+  await execute(serverId, insert);
 
   // After the SQL insert succeeds, provision DKIM for the new domain
   // (amavis keypair + 50-user config splice + reload), then record the
@@ -152,9 +159,6 @@ export async function createDomain(
   // domain, and read by the welcome test-email flow after the operator
   // acks the DNS banner.
   //
-  // Dynamic import: mailboxes.service imports `recountDomain` from us,
-  // so a static reverse-import would form a load-time cycle. Same
-  // pattern used in `deleteDomain` below.
   // Track the postmaster-creation outcome separately from `dnsWarning` so
   // the operator gets a precise message instead of a generic 535 at
   // welcome-send time. If postmaster creation failed AND a postmaster
@@ -167,14 +171,15 @@ export async function createDomain(
   let postmasterPassword: string | undefined;
   let postmasterWarning: string | undefined;
   try {
-    postmasterPassword = genSecret(18);
-    const { createMailbox } = await import("./mailboxes.service");
-    await createMailbox(serverId, {
-      localPart: "postmaster",
-      domain,
-      password: postmasterPassword,
-      name: "Postmaster",
-    });
+    if (input.createPostmaster !== false) {
+      postmasterPassword = genSecret(18);
+      await createMailbox(serverId, {
+        localPart: "postmaster",
+        domain,
+        password: postmasterPassword,
+        name: "Postmaster",
+      }, namespace);
+    }
   } catch (err) {
     const message = safeErrorMessage(err);
     errorDiagnostics.warn("platform/engine/modules/mail/admin/domains.service",
@@ -263,7 +268,7 @@ export async function createDomain(
     dnsWarning = `DNS record persistence failed for ${domain}: ${message}`;
   }
 
-  const row = await getDomain(serverId, domain);
+  const row = await getDomain(serverId, domain, namespace);
   if (!row) throw new Error(`createDomain: row not found after INSERT for ${domain}`);
   // Merge the postmaster-creation warning into the dnsWarning so the
   // operator sees both classes of issue at the same surface (the toast /
@@ -277,6 +282,7 @@ export async function updateDomain(
   serverId: string,
   domain: string,
   patch: UpdateDomainInput,
+  namespace?: string,
 ): Promise<DomainRow> {
   validateDomain(domain);
   const d = domain.toLowerCase();
@@ -300,17 +306,17 @@ export async function updateDomain(
 
   if (sets.length === 1) {
     // Nothing to update - return current row without an UPDATE.
-    const row = await getDomain(serverId, d);
+    const row = await getDomain(serverId, d, namespace);
     if (!row) throw new DomainNotFoundError(d);
     return row;
   }
 
   await execute(
     serverId,
-    `UPDATE domain SET ${sets.join(", ")} WHERE domain = ${q(d)}`,
+    `UPDATE domain SET ${sets.join(", ")} WHERE domain = ${q(d)}${ownedDomain(namespace)}`,
   );
 
-  const row = await getDomain(serverId, d);
+  const row = await getDomain(serverId, d, namespace);
   if (!row) throw new DomainNotFoundError(d);
   return row;
 }
@@ -322,14 +328,16 @@ export async function updateDomain(
 export async function countDomainDependents(
   serverId: string,
   domain: string,
+  namespace?: string,
 ): Promise<{ mailboxes: number; aliases: number }> {
   validateDomain(domain);
   const d = domain.toLowerCase();
+  const where = `domain = ${q(d)}${ownedDomain(namespace)}`;
   const row = await queryOne<{ mailboxes: number; aliases: number }>(
     serverId,
     `SELECT
-       (SELECT COUNT(*)::int FROM mailbox WHERE domain = ${q(d)}) AS mailboxes,
-       (SELECT COUNT(*)::int FROM forwardings WHERE domain = ${q(d)} AND is_alias = 1) AS aliases`,
+       (SELECT COUNT(*)::int FROM mailbox WHERE ${where}) AS mailboxes,
+       (SELECT COUNT(*)::int FROM forwardings WHERE ${where} AND is_alias = 1) AS aliases`,
   );
   return row ?? { mailboxes: 0, aliases: 0 };
 }
@@ -343,22 +351,23 @@ export async function countDomainDependents(
 export async function deleteDomain(
   serverId: string,
   domain: string,
-  options: { cascade?: boolean } = {},
+  options: { cascade?: boolean; namespace?: string } = {},
 ): Promise<void> {
   validateDomain(domain);
   const d = domain.toLowerCase();
 
-  const deps = await countDomainDependents(serverId, d);
+  const { namespace } = options;
+  if (namespace !== undefined) await assertTenantDomain(serverId, namespace, d);
+  const where = `domain = ${q(d)}${ownedDomain(namespace)}`;
+  const deps = await countDomainDependents(serverId, d, namespace);
   if ((deps.mailboxes > 0 || deps.aliases > 0) && !options.cascade) {
     throw new DomainHasDependentsError(d, deps);
   }
 
   if (options.cascade && (deps.mailboxes > 0 || deps.aliases > 0)) {
     // Cascade: hard-delete every mailbox (rows + Maildirs) and every alias
-    // forwarding row for the domain. We lazy-import to avoid a circular
-    // import with mailboxes.service (which imports recountDomain from us).
-    const { listMailboxes, hardDeleteMailbox } = await import("./mailboxes.service");
-    const mailboxes = await listMailboxes(serverId, d);
+    // forwarding row for the domain.
+    const mailboxes = await listMailboxes(serverId, d, namespace);
     for (const m of mailboxes) {
       // Postmaster of the install domain can't be hard-deleted, but the
       // install domain itself can't be dropped while it has a mailbox
@@ -366,7 +375,7 @@ export async function deleteDomain(
       // - we don't carry the install-domain guard here so let the lower
       // function decide.
       try {
-        await hardDeleteMailbox(serverId, m.username);
+        await hardDeleteMailbox(serverId, m.username, options.namespace);
       } catch (err) {
         observeCaughtError(err, "platform/engine/modules/mail/admin/domains.service");
         // Surface the first failure: leaving half-deleted state is worse
@@ -382,14 +391,14 @@ export async function deleteDomain(
     // dangling forwards that pointed into the domain).
     await execute(
       serverId,
-      `DELETE FROM forwardings WHERE domain = ${q(d)}`,
+      `DELETE FROM forwardings WHERE ${where}`,
     );
   }
 
   await execute(
     serverId,
-    `DELETE FROM domain_admins WHERE domain = ${q(d)};
-     DELETE FROM domain WHERE domain = ${q(d)};`,
+    `DELETE FROM domain_admins WHERE ${where};
+     DELETE FROM domain WHERE ${where};`,
   );
 
   // Best-effort: drop any persisted DNS-pending banner state so the
@@ -397,28 +406,6 @@ export async function deleteDomain(
   await deleteDomainDns(serverId, d).catch((diagnosticFailure) => {
     observeCaughtError(diagnosticFailure, "platform/engine/modules/mail/admin/domains.service");
   });
-}
-
-/**
- * Recalculate `vmail.domain.mailboxes` / `.aliases` from the source tables.
- * Called by mailbox/alias services after mutations so the counters stay
- * accurate even when iRedMail's own scripts touch the tables outside our
- * UI.
- */
-export async function recountDomain(
-  serverId: string,
-  domain: string,
-): Promise<void> {
-  validateDomain(domain);
-  const d = domain.toLowerCase();
-  await execute(
-    serverId,
-    `UPDATE domain SET
-       mailboxes = (SELECT COUNT(*) FROM mailbox WHERE domain = ${q(d)} AND active = 1),
-       aliases   = (SELECT COUNT(*) FROM forwardings WHERE domain = ${q(d)} AND is_alias = 1 AND active = 1),
-       modified  = NOW()
-     WHERE domain = ${q(d)}`,
-  );
 }
 
 // ─── Typed errors ────────────────────────────────────────────────────────────

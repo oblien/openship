@@ -612,6 +612,8 @@ describe("diagnostic privacy", () => {
     "ghp_12345678901234567890",
     "sk_12345678901234567890",
     "oblien_12345678901234567890",
+    "opsh_send_12345678901234567890",
+    "omk_12345678901234567890",
     "-----BEGIN OPENSSH PRIVATE KEY-----\nprivate\n-----END OPENSSH PRIVATE KEY-----",
     "-----BEGIN PRIVATE KEY-----\nprivate",
     "/accept-invite/private",

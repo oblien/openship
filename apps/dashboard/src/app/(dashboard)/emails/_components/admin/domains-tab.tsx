@@ -1,6 +1,9 @@
 "use client";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { isManagedMailId, managedMailDomainProof } from "@repo/contracts/managed-mail";
+import { isValidCustomHostname } from "@repo/core";
+import { DnsRecordCard } from "@/components/shared/DnsRecordsView";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -25,6 +28,7 @@ import {
   type DataTableColumn,
 } from "./_shared/data-table";
 import { StatusPill } from "./_shared/status-pill";
+import { DomainCell } from "./_shared/domain-cell";
 import {
   Field,
   FormModalContent,
@@ -32,6 +36,9 @@ import {
 } from "./_shared/form-modal-content";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import type { MailTabKey } from "@/lib/mail-tabs";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 import type { DnsRecords } from "@/lib/api";
@@ -44,6 +51,8 @@ import {
 import { WelcomeModal } from "./welcome-modal";
 
 interface DomainsTabProps {
+  managed?: boolean;
+  sectionHref?: (tab: MailTabKey, domain?: string | null) => string;
   serverId: string;
   primaryDomain: string;
   /**
@@ -55,10 +64,13 @@ interface DomainsTabProps {
 }
 
 export function DomainsTab({
+  managed = false,
+  sectionHref,
   serverId,
   primaryDomain,
   onDomainDeleted,
 }: DomainsTabProps) {
+  const router = useRouter();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const { t } = useI18n();
@@ -91,7 +103,7 @@ export function DomainsTab({
         // Seed the reputation warm-up clock for this domain right now -
         // ack is when the domain effectively starts sending. Banner picks
         // it up on next mount of <ReputationBanner /> for this domain.
-        if (typeof window !== "undefined" && domain !== primaryDomain) {
+        if (!managed && typeof window !== "undefined" && domain !== primaryDomain) {
           const key = reputationStorageKey(serverId, domain);
           if (!window.localStorage.getItem(key)) {
             window.localStorage.setItem(
@@ -107,7 +119,7 @@ export function DomainsTab({
         // Open the welcome / test-email modal AS the additional domain.
         // The primary install's welcome modal already fires from the
         // install flow at /emails - re-firing it here would be a dupe.
-        if (domain !== primaryDomain) {
+        if (!managed && domain !== primaryDomain) {
           setWelcomeFor(domain);
         }
       } catch (err) {
@@ -120,14 +132,14 @@ export function DomainsTab({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [serverId, primaryDomain, showToast],
+    [serverId, primaryDomain, showToast, managed],
   );
 
   // Scan localStorage once on mount to pick up any additional domains
   // that are still inside their warm-up window (e.g. acked in a previous
   // session). Filter out dismissed ones and any that have aged out.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (managed || typeof window === "undefined") return;
     const prefix = `${REPUTATION_STORAGE_PREFIX}${serverId}:`;
     const now = Date.now();
     const out: string[] = [];
@@ -153,7 +165,7 @@ export function DomainsTab({
       }
     }
     setWarmupDomains(out);
-  }, [serverId, primaryDomain]);
+  }, [serverId, primaryDomain, managed]);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -246,21 +258,9 @@ export function DomainsTab({
       header: t.emailsAdmin.domains.colDomain,
       width: "minmax(220px, 1.5fr)",
       cell: (r) => (
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
-            <UiIcon name="globe" className="size-4 text-muted-foreground" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">
-              {r.domain}
-            </p>
-            {r.description && (
-              <p className="text-xs text-muted-foreground truncate mt-0.5">
-                {r.description}
-              </p>
-            )}
-          </div>
-        </div>
+        <DomainCell domain={r.domain} href={sectionHref?.("mailboxes", r.domain)}>
+          {r.description && <p className="mt-0.5 truncate text-xs text-muted-foreground">{r.description}</p>}
+        </DomainCell>
       ),
     },
     {
@@ -275,18 +275,18 @@ export function DomainsTab({
         </span>
       ),
     },
-    {
+    ...(!managed ? [{
       key: "aliases",
       header: t.emailsAdmin.domains.colAliases,
       width: "110px",
-      align: "right",
-      hideBelow: "md",
-      cell: (r) => (
+      align: "right" as const,
+      hideBelow: "md" as const,
+      cell: (r: AdminDomain) => (
         <span className="text-sm text-foreground tabular-nums">
           {r.aliases}
         </span>
       ),
-    },
+    }] : []),
     {
       key: "quota",
       header: t.emailsAdmin.domains.colQuota,
@@ -304,7 +304,7 @@ export function DomainsTab({
     {
       key: "status",
       header: t.emailsAdmin.domains.colStatus,
-      width: "120px",
+      width: "96px",
       cell: (r) => (
         <div className="flex items-center gap-1.5 flex-wrap">
           {r.active ? (
@@ -334,18 +334,12 @@ export function DomainsTab({
             <h2 className="text-lg font-semibold text-foreground">
               {t.emailsAdmin.domains.heading}
             </h2>
-            <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">
-              {t.emailsAdmin.domains.description}
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{t.emailsAdmin.domains.description}</p>
           </div>
         )}
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 shrink-0"
-        >
-          <UiIcon name="plus" className="size-4" />
-          {t.emailsAdmin.domains.addDomain}
-        </button>
+        <Button size="sm" onClick={openCreate}>
+          <UiIcon name="plus" />{t.emailsAdmin.domains.addDomain}
+        </Button>
       </div>
 
       {error && (
@@ -378,7 +372,7 @@ export function DomainsTab({
         </div>
       )}
 
-      {warmupDomains.length > 0 && (
+      {!managed && warmupDomains.length > 0 && (
         <div className="space-y-3">
           {warmupDomains.map((d) => (
             <ReputationBanner key={d} serverId={serverId} domain={d} />
@@ -401,6 +395,12 @@ export function DomainsTab({
                 icon: <UiIcon name="edit" className="size-4" />,
                 onClick: () => openEdit(row),
               },
+              ...(managed && sectionHref ? [{
+                id: "dns",
+                label: t.emailsAdmin.overview.reviewDns,
+                icon: <UiIcon name="file-text" className="size-4" />,
+                onClick: () => router.push(sectionHref("dns", row.domain), { scroll: false }),
+              }] : []),
               { id: "sep", divider: true },
               {
                 id: "delete",
@@ -418,15 +418,6 @@ export function DomainsTab({
           icon: "globe",
           title: t.emailsAdmin.domains.emptyTitle,
           description: t.emailsAdmin.domains.emptyDesc,
-          action: (
-            <button
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors"
-            >
-              <UiIcon name="plus" className="size-4" />
-              {t.emailsAdmin.domains.addDomain}
-            </button>
-          ),
         }}
       />
 
@@ -457,10 +448,15 @@ function CreateDomainForm({
   const [domain, setDomain] = useState("");
   const [description, setDescription] = useState("");
   const [defaultQuotaGB, setDefaultQuotaGB] = useState("");
+  const hostname = domain.trim().toLowerCase();
+  const managed = isManagedMailId(serverId);
+  const proof = managed && !hostname.startsWith("*") && isValidCustomHostname(hostname)
+    ? managedMailDomainProof(serverId, hostname)
+    : null;
 
   const submit = async () => {
     const res = await mailAdminApi.domains.create(serverId, {
-      domain: domain.trim().toLowerCase(),
+      domain: hostname,
       description: description.trim() || undefined,
       defaultQuotaMB: defaultQuotaGB
         ? Math.round(Number(defaultQuotaGB) * 1024)
@@ -483,7 +479,7 @@ function CreateDomainForm({
       submittingLabel={t.emailsAdmin.domains.create.submitting}
       onSubmit={submit}
       onCancel={onCancel}
-      disabled={!domain.trim()}
+      disabled={managed ? !proof : !hostname}
     >
       <Field label={t.emailsAdmin.domains.create.domainLabel} hint={t.emailsAdmin.domains.create.domainHint}>
         <input
@@ -495,6 +491,12 @@ function CreateDomainForm({
           className={inputClassName}
         />
       </Field>
+      {proof && (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">{t.deploy.dns.addRecordsFor} <bdi>{hostname}</bdi></p>
+          <DnsRecordCard rec={{ type: "TXT", ...proof }} />
+        </div>
+      )}
       <Field label={t.emailsAdmin.domains.create.descLabel} hint={t.emailsAdmin.domains.create.descHint}>
         <input
           type="text"
@@ -506,7 +508,7 @@ function CreateDomainForm({
       </Field>
       <Field
         label={t.emailsAdmin.domains.create.quotaLabel}
-        hint={t.emailsAdmin.domains.create.quotaHint}
+        hint={managed ? undefined : t.emailsAdmin.domains.create.quotaHint}
       >
         <input
           type="number"
@@ -569,7 +571,7 @@ function EditDomainForm({
       </Field>
       <Field
         label={t.emailsAdmin.domains.editForm.quotaLabel}
-        hint={t.emailsAdmin.domains.editForm.quotaHint}
+        hint={isManagedMailId(serverId) ? undefined : t.emailsAdmin.domains.editForm.quotaHint}
       >
         <input
           type="number"

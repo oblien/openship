@@ -5,10 +5,11 @@ import { createPortal } from "react-dom";
 import { useI18n } from "@/components/i18n-provider";
 import { Tabs } from "@/components/ui/Tabs";
 
-type PurchaseMode = "monthly" | "manage";
+export type PurchaseMode = "monthly" | "manage" | "email";
 type PurchaseContext = {
   mode: PurchaseMode;
   management: boolean;
+  email: boolean;
   intro: { title: string; description: string };
   selectMode: (mode: PurchaseMode) => void;
   busy: boolean;
@@ -29,21 +30,26 @@ export function CloudPurchaseProvider({
   tabs = "inline",
   scopeKey = "",
   management = false,
+  product,
+  navigateProduct,
 }: {
   children: ReactNode;
   tabs?: PurchaseContext["tabs"];
   scopeKey?: string;
   /** Billing can also offer management of customer-owned servers. */
   management?: boolean;
+  product?: PurchaseMode;
+  navigateProduct?: (mode: PurchaseMode) => void;
 }) {
   const { t } = useI18n();
   const id = useId();
-  const [selection, setSelection] = useState({ scopeKey, mode: "monthly" as PurchaseMode });
+  const defaultMode = product ?? "monthly";
+  const [selection, setSelection] = useState({ scopeKey, mode: defaultMode });
   const [pending, setPending] = useState({ scopeKey, busy: false });
   const [detailsTarget, setDetailsTarget] = useState<HTMLDivElement | null>(null);
   const [controlsTarget, setControlsTarget] = useState<HTMLElement | null>(null);
-  const mode = tabs !== "none" && selection.scopeKey === scopeKey &&
-    (selection.mode !== "manage" || management) ? selection.mode : "monthly";
+  const canRestore = tabs !== "none" && selection.scopeKey === scopeKey && (selection.mode !== "manage" || management);
+  const mode = canRestore ? selection.mode : defaultMode;
   const busy = pending.scopeKey === scopeKey && pending.busy;
   const setBusy = useCallback(
     (busy: boolean) => {
@@ -59,8 +65,9 @@ export function CloudPurchaseProvider({
       value={{
         mode,
         management,
+        email: !!navigateProduct,
         intro:
-          mode === "manage"
+          mode === "email" ? { title: t.emails.cloudClient.plans, description: t.emails.cloudClient.pricingIntro } : mode === "manage"
             ? { title: t.billing.purchase.manage, description: t.billing.purchase.manageDescription }
             : {
                 title: t.billing.onboarding.compareTitle,
@@ -75,7 +82,9 @@ export function CloudPurchaseProvider({
         controlsTarget,
         setControlsTarget,
         selectMode: (mode) => {
-          if (!busy && (mode !== "manage" || management)) setSelection({ scopeKey, mode });
+          if (busy) return;
+          if (mode === "email" || product === "email") { navigateProduct?.(mode); return; }
+          if (mode !== "manage" || management) setSelection({ scopeKey, mode });
         },
       }}
     >
@@ -116,6 +125,7 @@ export function CloudPurchaseTabs({ children }: { children?: ReactNode }) {
             tabs={[
               { key: "monthly", label: t.billing.purchase.monthly },
               { key: "manage", label: t.billing.purchase.manage },
+              ...(purchase.email ? [{ key: "email" as const, label: t.emails.cloudClient.plans }] : []),
             ]}
             value={purchase.mode}
             onChange={purchase.selectMode}

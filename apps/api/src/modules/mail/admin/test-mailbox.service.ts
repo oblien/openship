@@ -63,7 +63,7 @@ import {
   createMaildirOnDisk,
   generateMaildir,
 } from "@repo/platform/engine/modules/mail/admin/maildir";
-import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domains.service";
+import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domain-counts";
 
 export interface EnsureOpenshipTestMailboxOptions {
   /** Force a fresh password even if cached creds exist. */

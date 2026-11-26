@@ -9,7 +9,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import type { AppContext } from '../ctx';
-import { env } from '../env';
+import { permitsBrowserOrigin } from '../lib/request-origin';
 
 const t = initTRPC.context<AppContext>().create({
   transformer: superjson,
@@ -26,13 +26,7 @@ const requireSession = t.middleware(({ ctx, next, type }) => {
   if (!ctx.session || !ctx.imap || !ctx.smtp) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sign in required' });
   }
-  const origin = ctx.hono?.req.header('Origin');
-  if (
-    type === 'mutation' &&
-    origin &&
-    origin !== new URL(ctx.hono!.req.url).origin &&
-    !env.TRUSTED_ORIGINS.includes(origin)
-  ) {
+  if (type === 'mutation' && ctx.hono && !permitsBrowserOrigin(ctx.hono)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Origin not allowed' });
   }
   return next({

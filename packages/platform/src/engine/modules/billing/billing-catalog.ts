@@ -7,6 +7,7 @@ import {
   planLimitsSchema,
   pricingUi,
   resolvePlan,
+  resolveMailPricing,
   toPricingLocale,
   type PlanLimits,
   type PlanTierId,
@@ -229,6 +230,7 @@ export function presentCloudPlans(requestedLocale?: string, capacityCatalog?: Ob
   return {
     provider: "oblien",
     management: PRICING.management,
+    mail: resolveMailPricing(locale),
     locale,
     annual: { enabled: annualEnabled, monthsFree: PRICING.annual.monthsFree },
     custom: { resources: PRICING.custom.resources, extraMonthlyCents: PRICING.custom.extraMonthlyCents, extraAnnualCents: PRICING.custom.extraAnnualCents },

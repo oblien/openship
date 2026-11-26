@@ -7,10 +7,13 @@ import { join } from "node:path";
 // its own process. It cannot reuse another test's DB or touch a local mailbox.
 describe("webmail sign-in", () => {
   for (const scenario of [
+    "browser-origin",
+    "hosted-session",
     "credentials",
     "unavailable",
     "session-refresh",
     "failed-reauth",
+    "account-switching",
     "blank-hosts",
     "rate-limit",
   ]) {

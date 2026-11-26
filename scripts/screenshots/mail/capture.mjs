@@ -11,6 +11,9 @@ const root = resolve(here, "../../..");
 const origin = process.env.SCREENSHOT_ORIGIN ?? "http://localhost:3012";
 const routeDir = resolve(root, "apps/dashboard/src/app/mail-capture");
 const output = process.env.SCREENSHOT_OUTPUT ?? resolve(root, "apps/web/public/screenshots");
+const theme = process.env.SCREENSHOT_THEME ?? "light";
+assert(["light", "dark"].includes(theme), "Use the light or dark mail theme");
+const filename = theme === "dark" ? "mail-control-panel-dark.webp" : "mail-control-panel.webp";
 const locales = process.env.SCREENSHOT_LOCALES?.split(",") ?? APP_LOCALES;
 const require = createRequire(import.meta.url);
 const { chromium } = await import(pathToFileURL(
@@ -48,23 +51,23 @@ try {
     assert(APP_LOCALES.includes(locale), `Unsupported locale: ${locale}`);
     const context = await browser.newContext({
       viewport: { width: 1200, height: 820 }, deviceScaleFactor: 2,
-      colorScheme: "light", reducedMotion: "reduce", locale,
+      colorScheme: theme, reducedMotion: "reduce", locale,
       timezoneId: "UTC", serviceWorkers: "block",
     });
     await context.addCookies([
       { name: "capture.session_token", value: "visual-fixture-only", url: origin },
-      { name: "openship-theme", value: "light:light", url: origin },
+      { name: "openship-theme", value: `${theme}:${theme}`, url: origin },
       { name: "openship-locale", value: locale, url: origin },
     ]);
-    await context.addInitScript((language) => {
-      localStorage.setItem("theme", "light");
+    await context.addInitScript(({ language, theme }) => {
+      localStorage.setItem("theme", theme);
       localStorage.setItem("openship-locale", language);
       localStorage.setItem("openship:mail:welcome-seen:mail-preview", "1");
       for (const domain of ["example.com", "studio.example.com", "shop.example.com"]) {
         localStorage.setItem(`openship:mail:reputation:mail-preview:${domain}`,
           JSON.stringify({ installedAt: 0, dismissed: true }));
       }
-    }, locale);
+    }, { language: locale, theme });
     const unexpected = [];
     await context.route("**/*", async (route) => {
       const request = route.request();
@@ -105,11 +108,11 @@ try {
     const bounds = await frame.boundingBox();
     assert(bounds && bounds.width === 1200 && bounds.height === 760, "Mail panel fits its frame");
     assert.equal(await page.locator("html").getAttribute("lang"), locale);
-    assert.equal(await page.locator("html").getAttribute("data-theme"), "light");
+    assert.equal(await page.locator("html").getAttribute("data-theme"), theme);
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
     await mkdir(resolve(output, locale), { recursive: true });
-    await sharp(await frame.screenshot()).webp({ quality: 90 }).toFile(resolve(output, locale, "mail-control-panel.webp"));
+    await sharp(await frame.screenshot()).webp({ quality: 90 }).toFile(resolve(output, locale, filename));
     console.log(`${locale}: ${bounds.width} × ${bounds.height}`);
     await context.close();
   }
