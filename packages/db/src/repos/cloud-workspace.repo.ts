@@ -1,5 +1,5 @@
 import { assertNoCloudBuildActivities } from "./cloud-build-activity.repo";
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import {
   AppError,
   CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX,
@@ -87,12 +87,13 @@ async function updatedLinkedProjects(
 export function createCloudWorkspaceRepo(db: Database) {
   return {
     /** Only this control plane may recover its own interrupted terminals. */
-    async listLocalTerminalActivities(limit = 50) {
+    async listLocalTerminalActivities(limit = 50, afterId?: string) {
       return db
         .select()
         .from(cloudWorkspace)
         .where(
           and(
+            afterId === undefined ? undefined : gt(cloudWorkspace.id, afterId),
             sql`${cloudWorkspace.activity}->>'controllerId' = case when ${cloudWorkspace.remote} is null then 'saas' else 'installation:' || ${cloudWorkspace.id} end`,
             or(
               sql`${cloudWorkspace.activity}->>'scope' = 'terminal'`,
@@ -101,7 +102,7 @@ export function createCloudWorkspaceRepo(db: Database) {
             ),
           ),
         )
-        .orderBy(asc(cloudWorkspace.updatedAt))
+        .orderBy(asc(cloudWorkspace.id))
         .limit(limit);
     },
     /** Runtime exit has already been proved under this workspace's advisory

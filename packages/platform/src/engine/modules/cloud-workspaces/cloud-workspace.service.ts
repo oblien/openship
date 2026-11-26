@@ -1,6 +1,6 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { createHash, randomUUID } from "node:crypto";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, mapConcurrent, safeErrorMessage } from "@repo/core";
 import { repos, type CloudWorkspace, type CloudWorkspaceOperation } from "@repo/db";
 import { cloudWorkspaceStatus, deleteCloudWorkspace } from "@repo/adapters";
 import type {
@@ -789,10 +789,22 @@ export async function retry(ctx: ExecutionContext, id: string) {
   return summary(updated);
 }
 
+const TERMINAL_RECOVERY_PAGE_SIZE = 50;
+let terminalRecoveryAfterId: string | undefined;
+
+async function recoverCloudTerminals() {
+  let rows = await repos.cloudWorkspace.listLocalTerminalActivities(TERMINAL_RECOVERY_PAGE_SIZE, terminalRecoveryAfterId);
+  if (rows.length === 0 && terminalRecoveryAfterId !== undefined)
+    rows = await repos.cloudWorkspace.listLocalTerminalActivities(TERMINAL_RECOVERY_PAGE_SIZE);
+  // Advance even when a controller is still live or the provider is unavailable.
+  // Revisit skipped claims after wrapping, without delaying this sweep indefinitely.
+  terminalRecoveryAfterId = rows.length === TERMINAL_RECOVERY_PAGE_SIZE ? rows.at(-1)?.id : undefined;
+  await mapConcurrent(rows, 4, row => recoverOrphanedCloudTerminal(row).catch(error =>
+    errorDiagnostics.warn("platform/engine/modules/cloud-workspaces/cloud-workspace.service", `[cloud-terminal-recovery] ${row.id}: ${safeErrorMessage(error)}`, error)));
+}
+
 export async function runCloudWorkspaceRecovery() {
-  for (const row of await repos.cloudWorkspace.listLocalTerminalActivities())
-    await recoverOrphanedCloudTerminal(row).catch(error =>
-      errorDiagnostics.warn("platform/engine/modules/cloud-workspaces/cloud-workspace.service", `[cloud-terminal-recovery] ${row.id}: ${safeErrorMessage(error)}`, error));
+  await recoverCloudTerminals();
   if (env.CLOUD_MODE) {
     const { reconcileWorkspaceSubscriptionChange } = await import("../billing/billing-plan-change");
     for (const row of await repos.cloudWorkspace.listPendingSubscriptionChanges())

@@ -178,6 +178,23 @@ describe("managed server admission across independent installations", () => {
     expect(sessions.get("sibling-service-terminal")?.endedAt).toBeNull();
   });
 
+  it("pages past a service terminal whose owner still holds admission", async () => {
+    const later = await cloud.create({ id: "z-managed-server", organizationId: "org", name: "Later" });
+    h.repositories.set(later.id, cloud);
+    const activity = { id: randomUUID(), controllerId: "saas", scope: "service-terminal:svc-a", startedAt: new Date().toISOString() };
+    await cloud.claimActivity(host.id, "org", activity);
+    await cloud.claimActivity(later.id, "org", { ...activity, id: randomUUID() });
+
+    const [first] = await cloud.listLocalTerminalActivities(1);
+    expect(first?.id).toBe(host.id);
+    h.tryLock.mockResolvedValueOnce(null);
+    expect(await recoverOrphanedCloudTerminal(first!)).toBe(false);
+    const [next] = await cloud.listLocalTerminalActivities(1, first!.id);
+    expect(next?.id).toBe(later.id);
+    expect(await recoverOrphanedCloudTerminal(next!)).toBe(true);
+    expect((await cloud.findById(host.id))?.activity?.id).toBe(activity.id);
+  });
+
   it("leaves a live replica's terminal and another controller's ownership intact", async () => {
     const live = await holdCloudWorkspaceActivity(host.id, "terminal");
     expect(await recoverOrphanedCloudTerminal((await cloud.findById(host.id))!)).toBe(false);
