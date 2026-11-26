@@ -42,6 +42,8 @@ Upload the current directory explicitly, including from a Git checkout:
 
 ```bash
 openship deploy --folder --name my-site --watch
+# Or upload a specific directory without changing into it:
+openship deploy ./my-site --name my-site --watch
 ```
 
 The CLI stages the directory through the shared SDK source workflow. Outside Git, `--name` also
@@ -49,8 +51,11 @@ opts into a folder upload for existing scripts. A project ID alone never opts in
 current directory. Use `--project <id>` to redeploy from outside the checkout; the stored branch is
 used unless `--branch` is supplied.
 
-`--branch`, `--commit`, `--smart-route`, and `--refresh` select the Git path and cannot be combined
-with `--folder`. `--service-ids` works for both paths. Archive staging must remain outside the source
+Passing a directory explicitly selects source upload, including inside Git repositories. It reads
+the project link from that directory unless `--project` is supplied. No Git provider connection is required.
+
+`--branch`, `--commit`, `--smart-route`, `--refresh`, and `--accept-compose-changes` select the Git path and cannot be combined
+with a directory argument or `--folder`. `--service-ids` works for both paths. Archive staging must remain outside the source
 tree: the system temporary directory and its ancestors are refused. Select your project directory,
 or set `TMPDIR` outside the source tree.
 

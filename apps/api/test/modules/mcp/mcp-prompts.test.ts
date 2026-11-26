@@ -27,12 +27,14 @@ describe("mcp prompts catalog", () => {
     }
   });
 
-  it("deploy-a-folder returns a user message describing the out-of-band upload", () => {
+  it("deploy-a-folder describes direct MCP source files and the archive alternative", () => {
     const res = getPrompt("deploy-a-folder", {});
     expect(res).not.toBeNull();
     const text = (res!.messages[0] as { content: { text: string } }).content.text;
     expect(text).toMatch(/out.of.band/i);
     expect(text).toContain("/api/projects/folder/session");
+    expect(text).toContain("/api/projects/folder/files");
+    expect(text).toContain("4MB");
     expect(text).toContain("/api/deployments/build/access");
   });
 

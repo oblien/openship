@@ -44,7 +44,7 @@ export function LibraryContent() {
   const libRepos = useLibraryRepos(selectedOwner, connected, provider, connection.catalog);
   const { selfHosted, deployMode } = usePlatform();
   // Only the desktop app can read the user's folder off disk (native picker +
-  // co-located API). A remote self-hosted browser uploads it instead.
+  // co-located API). Cloud and remote self-hosted browsers upload it instead.
   const isDesktop = deployMode === "desktop";
 
   // Cloud has a dedicated URL tab. Self-hosted instances keep its shortcut in
@@ -89,13 +89,14 @@ export function LibraryContent() {
     </div>
   );
 
-  // Folder import is available on self-hosted instances. Cloud offers a Git URL tab.
+  // Every installation accepts source folders without a Git connection.
   const tabs: TabItem[] = [
     { key: "apps", label: t.dashboard.pages.apps.title, icon: "grid" },
     { key: "repositories", label: connection.connections.length > 1 ? t.library.page.tabs.repositories : connection.definition.name, icon: connection.connections.length > 1 ? "git-branch" : connection.icon },
-    ...(selfHosted
-      ? [{ key: "folder" as const, label: t.library.page.tabs.folder, icon: "folder-out" as const }]
-      : [{ key: "url" as const, label: t.library.page.tabs.gitUrl, icon: "link" as const }]),
+    { key: "folder", label: t.library.page.tabs.folder, icon: "folder-out" },
+    ...(!selfHosted
+      ? [{ key: "url" as const, label: t.library.page.tabs.gitUrl, icon: "link" as const }]
+      : []),
     { key: "server", label: t.migration.entry.tab, icon: "migration" },
   ];
 
@@ -170,8 +171,8 @@ export function LibraryContent() {
         <div className="space-y-6 min-w-0">
           {activeTab === "apps" ? (
             <AppCatalog embedded />
-          ) : selfHosted && activeTab === "folder" ? (
-            // Desktop reads the folder off disk; remote self-hosted browsers upload it.
+          ) : activeTab === "folder" ? (
+            // Desktop reads the folder off disk; browsers use the shared upload flow.
             isDesktop ? (
               <LocalProjects />
             ) : (

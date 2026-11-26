@@ -15,7 +15,7 @@ import {
   deleteFolderSession,
   getFolderSession,
 } from "@repo/platform/engine/modules/projects/folder/session-store";
-import type { FolderSessionResult } from "@repo/contracts";
+import type { FolderSessionResult, StagedSource } from "@repo/contracts";
 import { repos } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 
@@ -140,6 +140,58 @@ describe.each([false, true])("authenticated folder upload over HTTP (Cloud: %s)"
     });
     expect(response.status, await response.clone().text()).toBe(200);
     expect(await response.json()).toMatchObject({ name: name ?? "app" });
+  });
+
+  it("stages JSON source files without Git and scans the same uploaded bytes", async () => {
+    const response = await fetch(`${origin}/api/projects/folder/files`, {
+      method: "POST",
+      headers: { ...owner.auth, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(cloudMode ? { serverId: managedServerId } : {}),
+        name: "generated-site",
+        files: { "index.html": "<h1>مرحبا</h1>", "assets/style.css": "body { margin: 0 }" },
+      }),
+    });
+    expect(response.status, await response.clone().text()).toBe(200);
+    const target = await response.json() as StagedSource;
+    sessions.push(target.sessionId);
+    const session = getFolderSession(target.sessionId)!;
+    expect(session.uploaded).toBe(true);
+    expect(session.serverId).toBe(cloudMode ? managedServerId : undefined);
+    expect(await readFile(join(session.stagingDir!, "index.html"), "utf8")).toBe("<h1>مرحبا</h1>");
+    expect(await readFile(join(session.stagingDir!, "assets/style.css"), "utf8")).toBe("body { margin: 0 }");
+    const scan = await fetch(`${origin}/api/projects/folder/scan/${target.sessionId}`, {
+      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" }, body: "{}",
+    });
+    expect(scan.status, await scan.clone().text()).toBe(200);
+    expect(await scan.json()).toMatchObject({ name: "generated-site", stack: "static" });
+    expect(await readdir(scratch)).toEqual([basename(session.stagingDir!)]);
+  });
+
+  it.each([
+    { files: {} },
+    { files: { "../escape": "secret" } },
+    { files: { "/absolute": "secret" } },
+    { files: { "a\\b": "secret" } },
+    { files: { "index.html": 42 } },
+    { files: { "index.html": "site" }, localPath: "/etc" },
+  ])("rejects malformed or unsafe JSON source without leaving staging files: %j", async (input) => {
+    const response = await fetch(`${origin}/api/projects/folder/files`, {
+      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...(cloudMode ? { serverId: managedServerId } : {}), ...input }),
+    });
+    expect(response.status, await response.clone().text()).toBe(400);
+    expect(await readdir(scratch)).toEqual([]);
+  });
+
+  it("rejects JSON source above its body limit before creating a session", async () => {
+    const response = await fetch(`${origin}/api/projects/folder/files`, {
+      method: "POST", headers: { ...owner.auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ files: { "index.html": "x".repeat(4_000_000) } }),
+    });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+    expect(await readdir(scratch)).toEqual([]);
   });
 
   it("returns the safe Compose refusal through the actual folder scan route", async () => {

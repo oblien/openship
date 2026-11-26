@@ -33,6 +33,8 @@ import {
   CreateProjectBody,
   EnsureProjectBody,
   FolderSessionBody,
+  SourceFilesBody,
+  MAX_SOURCE_FILES_BODY_BYTES,
   UpdateProjectBody,
   CreateProjectEnvironmentBody,
   MergeEnvVarsBody,
@@ -218,8 +220,28 @@ r.get(
  * Browser-based folder deploy for clients with no filesystem-shared API.
  * `session` returns an authenticated upload target for private source staging.
  * Builds transfer that source to the selected connected or managed server. The
- * binary /folder/upload route is excluded from MCP (see mcp-tools). */
+ * binary /folder/upload route is excluded from MCP; /folder/files accepts JSON. */
 // Session, upload and scan share the same path on SaaS and self-hosted installs.
+r.post(
+  "/folder/files",
+  {
+    tag: "project:write",
+    collection: true,
+    collectionProject: true,
+    auditHandledByOperation: true,
+    body: SourceFilesBody,
+    bodyValidatedByOperation: true,
+    mcp: {
+      description:
+        "Stage source code directly through MCP or HTTP without Git or a separate uploader. Send files as an object mapping relative POSIX paths to UTF-8 contents (4MB maximum JSON body). Returns an already-uploaded sessionId; continue with folder/scan, projects/ensure (gitProvider:'upload', uploadSessionId, explicit projectId), then deployments/build/access. A credential limited to its own projects must create the project first and pass projectId. For larger trees or binary files use folder/session and an authenticated archive upload. No controller filesystem paths are accepted.",
+    },
+  },
+  bodyLimit({
+    maxSize: MAX_SOURCE_FILES_BODY_BYTES,
+    onError: (c) => c.json({ error: "Source files exceed the 4MB JSON limit. Use an archive upload.", code: "PAYLOAD_TOO_LARGE" }, 413),
+  }),
+  folder.stageFiles,
+);
 r.post(
   "/folder/session",
   {
@@ -231,7 +253,7 @@ r.post(
     bodyValidatedByOperation: true,
     mcp: {
       description:
-        "Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = { url, absoluteUrl, method, headers, requiresAuth }. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access.",
+        "Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = { url, absoluteUrl, method, headers, requiresAuth }. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. To send UTF-8 source files directly through MCP, use folder/files instead. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access.",
     },
   },
   folder.createSession,
@@ -247,7 +269,7 @@ r.post(
     bodyValidatedByOperation: true,
     mcp: {
       description:
-        "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",
+        "Folder-upload deploy — STEP 2/4. Run AFTER staging source with folder/files or uploading the tarball. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",
     },
   },
   folder.scanSession,
