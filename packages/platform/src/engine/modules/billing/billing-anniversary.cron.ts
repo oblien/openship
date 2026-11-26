@@ -78,6 +78,19 @@ export async function scheduleBillingAnniversary(): Promise<void> {
     },
   });
   await runner.scheduleRecurring({
+    jobId: "billing:checkout-drafts",
+    cronExpression: "7,22,37,52 * * * *",
+    onTick: async () => {
+      try {
+        const { runCheckoutDraftCleanup } = await import("./checkout-draft-cleanup");
+        const stats = await runCheckoutDraftCleanup();
+        if (stats.removed || stats.errors) console.log("[billing-checkout-drafts]", stats);
+      } catch (error) {
+        observeCaughtError(error, "platform/engine/modules/billing/billing-anniversary.cron");
+      }
+    },
+  });
+  await runner.scheduleRecurring({
     jobId: "billing:actions-payments",
     cronExpression: "* * * * *",
     onTick: async () => {

@@ -211,6 +211,8 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
     ).toBe(1);
   }, 30_000);
 
+  // The full two-node journey includes sequential Docker rollouts and remote
+  // storage checks. Readiness and command deadlines still bound individual steps.
   it("deploys across nodes, uses shared rollback, preserves data and deletes only owned resources", async () => {
     const foreign = (await manager.listServices()).map((item) => ({
       id: item.ID,
@@ -548,5 +550,5 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       await new Promise<void>((resolve) => proxy.close(() => resolve()));
       await rm(temp, { recursive: true, force: true });
     }
-  }, 360_000);
+  }, 480_000);
 });

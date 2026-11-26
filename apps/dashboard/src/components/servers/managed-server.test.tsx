@@ -316,7 +316,7 @@ it("keeps first-subscription setup read-only on Cloud", async () => {
   expect(h.add).not.toHaveBeenCalled();
 });
 
-it.each([null, "unpaid"])("defaults to the paid Cloud space when a same-name placeholder is listed first (saved default: %s)", async (savedDefault) => {
+it.each([null, "unpaid"])("omits empty checkout drafts from the destination picker (saved default: %s)", async (savedDefault) => {
   const unpaid: ServerDetail = {
     ...server,
     id: "unpaid",
@@ -324,7 +324,11 @@ it.each([null, "unpaid"])("defaults to the paid Cloud space when a same-name pla
     managed: { ...workspace, id: "cws-unpaid", serverId: "unpaid", planTierId: "free",
       state: "needs_plan", subscriptionStatus: "credit_exhausted", projectCount: 0, resources: null },
   };
-  h.list.mockResolvedValue({ servers: [unpaid, server] });
+  h.list.mockResolvedValue({ servers: [
+    unpaid,
+    { ...unpaid, id: "second-draft", managed: { ...unpaid.managed!, id: "cws-second", serverId: "second-draft" } },
+    server,
+  ] });
   h.settings.mockResolvedValue({ defaultServerId: savedDefault });
   const change = vi.fn();
   const ready = vi.fn();
@@ -333,17 +337,45 @@ it.each([null, "unpaid"])("defaults to the paid Cloud space when a same-name pla
     serverId: server.id, workspaceId: workspace.id, deployTarget: "cloud",
   }));
 
-  // Users can still pick the unpaid space deliberately to buy a plan for it.
   const trigger = host.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!;
   await act(async () => trigger.click());
-  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
-  const placeholder = options.find(row => row.textContent?.includes(copy.states.needs_plan));
-  expect(placeholder).toBeDefined();
-  await act(async () => placeholder!.click());
-  expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ serverId: unpaid.id, workspaceId: unpaid.managed!.id }));
+  const options = document.querySelectorAll<HTMLElement>('[role="option"]');
+  expect(options).toHaveLength(1);
+  expect(options[0]?.textContent).toContain(server.name);
+  expect(document.body.textContent).toContain(copy.newProjectServer);
 });
 
-it("keeps a Cloud space available for purchase when it is the only destination", async () => {
+it("uses the normal first-plan flow when the inventory has only an empty checkout draft", async () => {
+  h.list.mockResolvedValue({ servers: [{
+    ...server,
+    projectCount: 0,
+    managed: { ...workspace, projectCount: 0, state: "needs_plan", planTierId: "free", resources: null },
+  }] });
+  const change = vi.fn();
+  await render(<ServerSelector forDeployment autoSelectFirst onSelect={change} />);
+  expect(change).toHaveBeenCalledExactlyOnceWith(null);
+  expect(host.textContent).toContain(copy.defaultHint);
+  expect(h.ensure).not.toHaveBeenCalled();
+});
+
+it("keeps the space selected by an in-progress purchase", async () => {
+  const purchase = {
+    ...server,
+    id: "purchasing",
+    name: "Current purchase",
+    managed: { ...workspace, id: "cws-purchasing", serverId: "purchasing",
+      projectCount: 0, state: "needs_plan", planTierId: "free", resources: null },
+  };
+  h.list.mockResolvedValue({ servers: [purchase, server] });
+  const change = vi.fn();
+  const ready = vi.fn();
+  await render(<ServerSelector forDeployment value={purchase.id} onSelect={change} onReadyChange={ready} />);
+  expect(host.textContent).toContain(purchase.name);
+  expect(change).not.toHaveBeenCalled();
+  expect(ready).toHaveBeenLastCalledWith(true);
+});
+
+it("keeps an unpaid Cloud space with assigned projects available", async () => {
   const unpaid: ServerDetail = {
     ...server,
     managed: { ...workspace, state: "needs_plan", planTierId: "free", resources: null },

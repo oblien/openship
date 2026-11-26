@@ -663,6 +663,22 @@ describe("buying another managed server", () => {
     expect(h.post).toHaveBeenCalledOnce();
   });
 
+  it("asks for a new choice when an old pricing link points to a removed draft", async () => {
+    const key = "72e918ec-8d9c-4b81-bf43-7a5790ca239a";
+    window.location.href = `http://localhost:3000/billing/plans?newServer=1&startCheckout=1&checkoutIntent=${key}`;
+    h.create.mockRejectedValueOnce(new ApiError(409, "Purchase removed", { code: "CLOUD_WORKSPACE_PURCHASE_REMOVED" }));
+    await render(<ManagedServerPurchase requestedPlanId="starter" autoCheckout checkoutIntent={key} />);
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post).not.toHaveBeenCalled();
+    const params = new URL(window.location.href).searchParams;
+    expect(params.has("startCheckout")).toBe(false);
+    const nextKey = params.get("checkoutIntent");
+    expect(nextKey).not.toBe(key);
+    await click("Choose Starter");
+    expect(h.create).toHaveBeenLastCalledWith({ name: copy.workspaces.defaultName, idempotencyKey: nextKey });
+    expect(h.post).toHaveBeenCalledOnce();
+  });
+
   it("waits for authentication and the live catalog before continuing a pricing selection", async () => {
     h.sessionPending = true;
     let finish!: (value: unknown) => void;
