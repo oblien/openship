@@ -244,6 +244,20 @@ const verifyDigitalOcean: Verifier = async ({ secrets }) => {
 };
 
 const VERIFIERS: Record<string, Verifier> = {
+  oblien: async ({ publicFields, secrets }) => {
+    const { Oblien, OblienError } = await import("@repo/adapters");
+    if (publicFields.authorization !== "oauth" || !publicFields.vmId || !secrets.apiToken)
+      return { ok: false, reason: "Reconnect this VM through Oblien." };
+    try {
+      const vm = await new Oblien({ token: secrets.apiToken, baseUrl: "https://api.oblien.com/v2" }).vm(publicFields.vmId).get();
+      return vm.id === publicFields.vmId && (vm.namespace ?? "") === publicFields.namespace
+        ? { ok: true } : { ok: false, reason: "The authorized VM changed." };
+    } catch (error) {
+      if (error instanceof OblienError && [401, 403, 404].includes(error.status ?? 0))
+        return { ok: false, reason: "Access to the authorized VM is unavailable. Reconnect in Oblien." };
+      return { ok: true, unverifiedReason: "Oblien could not be reached. Retry verification." };
+    }
+  },
   gitlab: async ({ secrets, publicFields }) => {
     if (publicFields.authorization === "host-cli") {
       const { resolveGlabToken } = await import("../gitlab/cli");

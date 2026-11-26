@@ -3,7 +3,7 @@ import { verifyCustomerSshConnection } from "../../lib/customer-ssh";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { withServerExecution } from "../../lib/server-execution";
 /** Retained server diagnostics and component installers behind shared authorization. */
-import { OperationError, type CreateServerInput, type ServerOperations } from "@repo/contracts";
+import { OperationError, type SshServerInput, type ServerOperations } from "@repo/contracts";
 import type { ExecutionContext } from "../../../context";
 import type { ServerDependencies } from "../../../servers";
 import { env } from "../../config";
@@ -116,7 +116,7 @@ async function checkServerComponents(ctx: ExecutionContext, serverId: string, na
  * Shared by the authenticated `/test-connection` and the pre-auth first-run
  * `/onboarding/test-connection` so both behave identically.
  */
-export async function runEphemeralConnectionTest(body: CreateServerInput, scope: { organizationId?: string; localBootstrap?: boolean } = {}) {
+export async function runEphemeralConnectionTest(body: SshServerInput, scope: { organizationId?: string; localBootstrap?: boolean } = {}) {
   const startedAt = Date.now();
   const built = await buildEphemeralSshConfig(body, scope);
 
@@ -137,7 +137,7 @@ export async function runEphemeralConnectionTest(body: CreateServerInput, scope:
 }
 
 
-export async function testConnection(ctx: ExecutionContext, body: CreateServerInput) {
+export async function testConnection(ctx: ExecutionContext, body: SshServerInput) {
 
   // Gate to org owner/admin: this endpoint connects to an arbitrary SSH host
   // from the request body (onboarding/setup wizard flow). Even non-Hono
@@ -165,7 +165,7 @@ export async function testConnection(ctx: ExecutionContext, body: CreateServerIn
  * Build an ephemeral SshConfig from request-body credentials for a one-off
  * connectivity check. Returns the config, or a Response when validation fails.
  */
-async function buildEphemeralSshConfig(body: CreateServerInput, scope: { organizationId?: string; localBootstrap?: boolean }) {
+async function buildEphemeralSshConfig(body: SshServerInput, scope: { organizationId?: string; localBootstrap?: boolean }) {
   const host = (body.sshHost as string)?.trim();
   if (!host) {
     return failSystem({ ok: false, message: "SSH host is required" }, 400);
@@ -236,7 +236,7 @@ async function buildEphemeralSshConfig(body: CreateServerInput, scope: { organiz
 export async function checkServer(ctx: ExecutionContext, serverId: string, body: Parameters<ServerOperations["check"]>[1] = {}) {
   const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
   if (!server || (env.CLOUD_MODE && server.isLocal)) return failSystem({ error: "Server not found" }, 404);
-  const managed = !!server.workspaceId;
+  const managed = !!(server.workspaceId || server.oblienCredentialId);
   const startedAt = Date.now();
 
 
@@ -574,7 +574,7 @@ export async function scanExposedPorts(ctx: ExecutionContext, serverId: string) 
   const server = await repos.server.getInOrganization(serverId, organizationId);
   if (!server || (env.CLOUD_MODE && server.isLocal)) return failSystem({ error: "Server not found" }, 404);
 
-  if (!server.workspaceId) {
+  if (!server.workspaceId && !server.oblienCredentialId) {
     await assertServerExecution(server);
     const reachable = await sshManager.probeReachable(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server-check.operations"); return false; });
     if (!reachable) {

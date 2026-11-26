@@ -595,6 +595,8 @@ describe("migration chain applies to an existing, populated database", () => {
       ).toEqual(connected.map((server) => ({
         ...server,
         workspace_id: null,
+        oblien_credential_id: null,
+        oblien_vm_id: null,
         purpose: "deployment",
         ssh_host_key: null,
         gpu_override: null,

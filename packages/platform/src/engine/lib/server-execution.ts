@@ -18,6 +18,12 @@ export async function acquireServerExecution(organizationId: string, serverId: s
   if (server.workspaceId) {
     executor = await openCloudWorkspaceExecutor(organizationId, server.workspaceId);
     dispose = () => executor.dispose();
+  } else if (server.oblienCredentialId && server.oblienVmId) {
+    await assertServerExecution(server);
+    const { connectedOblienVm } = await import("./connected-oblien-vm");
+    const connection = await connectedOblienVm(organizationId, server.oblienCredentialId, server.oblienVmId);
+    executor = connection.executor;
+    dispose = () => connection.dispose();
   } else {
     if (!(options?.migration && server.purpose === "migration_source")) {
       await assertServerExecution(server);
@@ -36,7 +42,7 @@ export async function acquireServerExecution(organizationId: string, serverId: s
     server,
     executor,
     run<T>(work: (executor: CommandExecutor) => Promise<T>): Promise<T> {
-      return server.workspaceId ? work(executor) : sshManager.withExecutor(serverId, work);
+      return server.workspaceId || server.oblienCredentialId ? work(executor) : sshManager.withExecutor(serverId, work);
     },
     async release() {
       if (released) return;
@@ -105,7 +111,7 @@ export async function openServerShell(
         409,
         "SERVER_TERMINAL_UNAVAILABLE",
       );
-    if (connection.server.workspaceId) {
+    if (connection.server.workspaceId || connection.server.oblienVmId) {
       // The provider accepts one terminal socket per VM. Refuse a second host
       // session across replicas instead of disconnecting another user's terminal.
       const busy = () =>
@@ -119,9 +125,11 @@ export async function openServerShell(
       ownsSlot = true;
       slot = await tryAcquireAdvisoryLock(`cloud:server-terminal:${serverId}`);
       if (!slot) throw busy();
-      const activity = await holdCloudWorkspaceActivity(connection.server.workspaceId, "terminal");
-      releaseActivity = activity.release;
-      shell = await activity.run(() => connection.executor.openShell!(options));
+      if (connection.server.workspaceId) {
+        const activity = await holdCloudWorkspaceActivity(connection.server.workspaceId, "terminal");
+        releaseActivity = activity.release;
+        shell = await activity.run(() => connection.executor.openShell!(options));
+      } else shell = await connection.executor.openShell(options);
     } else {
       shell = await connection.executor.openShell(options);
     }

@@ -78,6 +78,17 @@ describe("host-port target identity", () => {
     expect(result.stable).toBe(true);
   });
 
+  it("uses the same physical identity over OAuth and SSH and requires it for OAuth", async () => {
+    const files = { "/etc/machine-id": "0123456789abcdef0123456789abcdef" };
+    const target = { localHost: false, serverId: "vm", executor: executorWithFiles(files) };
+    const ssh = await resolveHostPortTargetIdentity({ ...target, connection });
+    const oauth = await resolveHostPortTargetIdentity({ ...target, requireStable: true, connection: null });
+    expect(oauth.targetKey).toBe(ssh.targetKey);
+    await expect(resolveHostPortTargetIdentity({
+      ...target, executor: executorWithFiles({}), requireStable: true, connection: null,
+    })).rejects.toThrow("host identity");
+  });
+
   it("normalizes a credential-free connection locator only as a last resort", async () => {
     expect(normalizeHostPortConnectionLocator(connection)).toBe(
       "ssh://deploy.example.com:22?jump=jump.example.com&args=-o%20ProxyCommand%3Dnone",

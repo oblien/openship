@@ -96,12 +96,12 @@ export function relayConfigEligible(input: {
 
 export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   const onServer = input.effectiveTarget === "server";
-  // Only an SSH Docker transport has both a remote daemon AND a command channel
+  // SSH and provider VM transports have both a remote daemon and a command channel
   // that can acquire source beside it. A socket/TCP transport can build there,
   // but its context must be prepared by the API host. Undefined preserves the
   // old remote-SSH assumption for callers that do not construct Docker runtimes.
   const dockerCanCloneOnTarget =
-    input.dockerTransport === undefined || input.dockerTransport === "ssh";
+    input.dockerTransport === undefined || input.dockerTransport === "ssh" || input.dockerTransport === "cloud";
   const localDockerBuildRequested =
     !input.isHosted && input.buildStrategy === "local" && input.cloneStrategy !== "server";
 

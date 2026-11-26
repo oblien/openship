@@ -36,6 +36,7 @@ export const CredentialProviderSchema = Type.Object({
     Type.Literal("dns"),
     Type.Literal("migration"),
     Type.Literal("git"),
+    Type.Literal("server"),
   ]),
   authorization: Type.Optional(
     Type.Object({ available: Type.Boolean(), hostCli: Type.Optional(Type.Boolean()) }),
@@ -73,6 +74,7 @@ export const CredentialCollectionSchemas = {
     input: Type.Object(
       {
         provider: Type.Union(CONNECTION_OAUTH_PROVIDERS.map((id) => Type.Literal(id))),
+        setup: Type.Optional(Type.Literal("new")),
         desktop: Type.Optional(Type.Boolean()),
         name: Type.String({ minLength: 1, maxLength: 100 }),
       },

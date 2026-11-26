@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, integer, bigint, timestamp, boolean, check, foreignKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
+import { credential } from "./credential";
 import { cloudWorkspace } from "./cloud-workspace";
 
 // ─── Servers ─────────────────────────────────────────────────────────────────
@@ -29,6 +30,9 @@ export const servers = pgTable("servers", {
 
   /** Managed host owner. Its subscription and provider VM lifecycle stay on the workspace. */
   workspaceId: text("workspace_id"),
+
+  oblienCredentialId: text("oblien_credential_id"),
+  oblienVmId: text("oblien_vm_id"),
 
   /** Import connections are never deployment destinations or general host controls. */
   purpose: text("purpose", { enum: ["deployment", "migration_source"] }).notNull().default("deployment"),
@@ -105,8 +109,19 @@ export const servers = pgTable("servers", {
     columns: [table.workspaceId, table.organizationId],
     foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId],
   }).onDelete("restrict"),
+  uniqueIndex("servers_oblien_credential").on(table.oblienCredentialId).where(sql`${table.oblienCredentialId} IS NOT NULL`),
+  uniqueIndex("servers_org_oblien_vm").on(table.organizationId, table.oblienVmId),
+  foreignKey({ name: "servers_oblien_credential_owner_fk",
+    columns: [table.organizationId, table.oblienCredentialId],
+    foreignColumns: [credential.organizationId, credential.id] }).onDelete("restrict"),
+  check("servers_oblien_binding_check", sql`
+    (${table.oblienCredentialId} IS NULL AND ${table.oblienVmId} IS NULL) OR
+    (${table.oblienCredentialId} IS NOT NULL AND ${table.oblienVmId} IS NOT NULL AND ${table.organizationId} IS NOT NULL
+     AND ${table.workspaceId} IS NULL AND ${table.purpose} = 'deployment' AND NOT ${table.isLocal}
+     AND ${table.sshHost} IS NULL AND ${table.sshPrivateKey} IS NULL AND ${table.sshPassword} IS NULL
+     AND ${table.sshJumpHost} IS NULL AND ${table.sshArgs} IS NULL AND ${table.sshKeyPath} IS NULL AND ${table.sshKeyPassphrase} IS NULL)`),
   check("servers_connection_check", sql`
-    (${table.workspaceId} IS NULL AND ${table.sshHost} IS NOT NULL)
+    ${table.oblienCredentialId} IS NOT NULL OR (${table.workspaceId} IS NULL AND ${table.sshHost} IS NOT NULL)
     OR (${table.workspaceId} IS NOT NULL AND ${table.organizationId} IS NOT NULL
       AND NOT ${table.isLocal} AND ${table.sshHost} IS NULL
       AND ${table.sshPassword} IS NULL AND ${table.sshKeyPath} IS NULL

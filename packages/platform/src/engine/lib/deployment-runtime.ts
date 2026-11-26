@@ -10,6 +10,7 @@ import {
   resolveStaticOutputPath,
   unavailableExecutor,
   type CommandExecutor,
+  type CloudServerConnection,
   type DockerConnectionOptions,
   type Platform,
   type RuntimeAdapter,
@@ -260,13 +261,13 @@ async function resolveOrgServer(
     return requireOrgServer(serverId, organizationId);
   }
 
-  const servers = await repos.server.listByOrganization(organizationId);
+  const servers = (await repos.server.listByOrganization(organizationId, true)).filter(server => !server.workspaceId);
   if (servers.length === 1 && servers[0]) {
     return servers[0];
   }
 
   if (servers.length === 0) {
-    throw new Error("No server configured. Add your SSH server in Settings.");
+    throw new Error("No server configured. Connect a server in Settings.");
   }
 
   throw new Error(
@@ -285,6 +286,12 @@ async function resolveServerTargetTopology(
 async function serverTargetTopology(server: OrgServer, organizationId?: string) {
   if (server.workspaceId) throw new AppError(
     "Resolve this managed server through its deployment destination", 409, "MANAGED_SERVER_CONTEXT_REQUIRED");
+  if (server.oblienCredentialId) {
+    if (!organizationId || server.organizationId !== organizationId || !server.oblienVmId || server.isLocal)
+      throw new AppError("Invalid connected VM binding", 409, "OBLIEN_VM_BINDING_INVALID");
+    if (env.CLOUD_MODE) await assertManagementAccess(organizationId, server.id);
+    return { server, isLocal: false };
+  }
   if (!server.sshHost) throw new AppError("Server connection is missing", 409, "SERVER_CONNECTION_MISSING");
   const isLocal = await isLocalHostRow(server);
   if (env.CLOUD_MODE && !isLocal) await assertManagementAccess(organizationId!, server.id);
@@ -327,14 +334,14 @@ export async function resolvePlannedTargetTopology(
   organizationId: string | undefined,
 ): Promise<{
   serverId: string | null;
-  dockerTransport: "socket" | "ssh" | undefined;
+  dockerTransport: "socket" | "ssh" | "cloud" | undefined;
 }> {
   if (target === "local") return { serverId: null, dockerTransport: "socket" };
   if (target !== "server") return { serverId: null, dockerTransport: undefined };
   const { server, isLocal } = await resolveServerTargetTopology(serverId, organizationId);
   return {
     serverId: server.id,
-    dockerTransport: isLocal ? "socket" : "ssh",
+    dockerTransport: server.oblienCredentialId ? "cloud" : isLocal ? "socket" : "ssh",
   };
 }
 
@@ -516,6 +523,7 @@ function resolveServerHostPortTarget(
   target: ResolvedServerTarget,
 ): Promise<HostPortTargetIdentity> {
   return resolveHostPortTargetIdentity({
+    requireStable: !!target.provider,
     localHost: target.isLocal,
     serverId: target.id,
     executor: target.executor,
@@ -616,8 +624,8 @@ async function createDeploymentPlatform(
 async function createWithRetainedConnection<T extends Platform | RuntimeAdapter>(
   executor: CommandExecutor,
   create: () => Promise<T>,
+  releaseConnection: () => void | Promise<void> = sshManager.retainExecutor(executor),
 ): Promise<T> {
-  const releaseConnection = sshManager.retainExecutor(executor);
   try {
     const value = await create();
     const runtime = "runtime" in value ? value.runtime : value as RuntimeAdapter;
@@ -627,11 +635,11 @@ async function createWithRetainedConnection<T extends Platform | RuntimeAdapter>
     // must outlive the same work, including slow construction and cleanup.
     runtime.dispose = () => disposal ??= (async () => {
       try { await dispose?.(); }
-      finally { releaseConnection(); }
+      finally { await releaseConnection(); }
     })();
     return value;
   } catch (error) {
-    releaseConnection();
+    await releaseConnection();
     throw error;
   }
 }
@@ -682,7 +690,8 @@ async function createPlatformForResolvedServer(
     target: "selfhosted",
     runtime: runtimeMode,
     executor,
-    ssh: ssh!,
+    localHost: false,
+    ssh: ssh ?? undefined,
     bare: { allowHostBuild: !env.CLOUD_MODE, ...(env.CLOUD_MODE ? { prepareSource: async (build, directory, logger) => {
       const { prepareRemoteSource } = await import("@repo/adapters");
       return prepareRemoteSource({ executor }, build, directory, logger);
@@ -690,7 +699,7 @@ async function createPlatformForResolvedServer(
     docker:
       runtimeMode === "docker"
         ? {
-            ...toDockerSshTransport(ssh!, executor),
+            ...serverDockerTransport(resolved),
             resolveRegistryAuth,
             buildCacheBudgetBytes: serverBuildCacheBudget(id),
             nativeBuilds: !env.CLOUD_MODE && process.env.OPENSHIP_DOCKER_BUILD_DRIVER === "docker",
@@ -700,7 +709,7 @@ async function createPlatformForResolvedServer(
     // Serialize provisioning per target server, so concurrent deploys (across
     // projects / single-app + compose) never race apt/openresty/networks/state.
     provisionLock: createProvisionLock(`provision:server:${id}`),
-  }));
+  }), resolved.provider && (() => resolved.provider!.dispose()));
 }
 
 export async function resolveTargetPlatform(
@@ -810,11 +819,19 @@ function serverBuildCacheBudget(
   return async () => (await repos.server.get(serverId))?.buildCacheBudgetBytes ?? null;
 }
 
+function serverDockerTransport(target: Pick<ServerExecution, "executor" | "provider" | "ssh">): DockerConnectionOptions {
+  if (target.provider) {
+    const connection = target.provider;
+    return { transport: "cloud", executor: target.executor, cloudConnection: () => connection.connectDocker() };
+  }
+  return toDockerSshTransport(target.ssh!, target.executor);
+}
+
 async function createDockerRuntimeForResolvedServer(
-  resolved: Pick<Awaited<ReturnType<typeof resolveServerExecutor>>, "id" | "executor" | "isLocal" | "ssh">,
+  resolved: Pick<Awaited<ReturnType<typeof resolveServerExecutor>>, "id" | "executor" | "isLocal" | "ssh" | "provider">,
   organizationId: string,
 ): Promise<DockerRuntime> {
-  const { id, executor, isLocal, ssh } = resolved;
+  const { id, executor, isLocal } = resolved;
   // Registry credentials for every pull this runtime makes, bound to THIS org. Injected
   // rather than read from the host's docker config: it is the only source that works on
   // every install shape, and binding the org here means no later call site can resolve
@@ -828,11 +845,11 @@ async function createDockerRuntimeForResolvedServer(
   }
   return createWithRetainedConnection(executor, () =>
     DockerRuntime.create({
-      ...toDockerSshTransport(ssh!, executor),
+      ...serverDockerTransport(resolved),
       resolveRegistryAuth,
       buildCacheBudgetBytes: serverBuildCacheBudget(id),
       nativeBuilds: !env.CLOUD_MODE && process.env.OPENSHIP_DOCKER_BUILD_DRIVER === "docker",
-    }),
+    }), resolved.provider && (() => resolved.provider!.dispose()),
   );
 }
 
@@ -967,10 +984,11 @@ export async function acquireLocalHostExecutor(serverId?: string): Promise<Comma
 type ServerExecution = {
   id: string;
   executor: CommandExecutor;
-  conn: { host: string; port: number; user: string };
+  provider?: CloudServerConnection;
+  conn: { host: string; port: number; user: string } | null;
   isLocal: boolean;
   ssh: SshConfig | null;
-  hostPortConnection: HostPortConnectionLocator;
+  hostPortConnection: HostPortConnectionLocator | null;
 };
 
 export async function resolveServerExecutor(
@@ -981,6 +999,11 @@ export async function resolveServerExecutor(
 }
 
 async function createServerExecutor({ server, isLocal }: { server: OrgServer; isLocal: boolean }): Promise<ServerExecution> {
+  if (server.oblienCredentialId && server.organizationId && server.oblienVmId) {
+    const { connectedOblienVm } = await import("./connected-oblien-vm");
+    const provider = await connectedOblienVm(server.organizationId, server.oblienCredentialId, server.oblienVmId);
+    return { id: server.id, executor: provider.executor, provider, conn: null, isLocal: false, ssh: null, hostPortConnection: null };
+  }
   // resolveServerTargetTopology has rejected managed/missing connections.
   const sshHost = server.sshHost!;
   const conn = {
@@ -1043,7 +1066,11 @@ export async function createServerCommandExecutor(
   conn: { host: string; port: number; user: string };
   isLocal: boolean;
 }> {
-  const { executor, conn, isLocal } = await resolveServerExecutor(serverId, organizationId);
+  const { executor, conn, isLocal, provider } = await resolveServerExecutor(serverId, organizationId);
+  if (!conn) {
+    await provider?.dispose();
+    throw new AppError("Direct SSH transfers require an SSH server connection.", 409, "SSH_CONNECTION_REQUIRED");
+  }
   return { executor, conn, isLocal };
 }
 
@@ -1421,7 +1448,7 @@ export async function resolveDeploymentRuntimeForRead(
       : await resolveServerExecutor(snapshot.serverId, dep.organizationId);
     const runtime = runtimeMode === "docker"
       ? await createDockerRuntimeForResolvedServer(target, dep.organizationId)
-      : await createWithRetainedConnection(target.executor, async () => new BareRuntime({ executor: target.executor }));
+      : await createWithRetainedConnection(target.executor, async () => new BareRuntime({ executor: target.executor }), target.provider && (() => target.provider!.dispose()));
     try {
       return {
         runtime,

@@ -16,7 +16,7 @@ export function createServerRepo(db: Database) {
     /** Connected-host inventory for SSH maintenance and infrastructure jobs. */
     async list(): Promise<ConnectedServer[]> {
       return db.query.servers.findMany({
-        where: and(isNull(servers.workspaceId), eq(servers.purpose, "deployment")),
+        where: and(isNull(servers.workspaceId), isNull(servers.oblienCredentialId), eq(servers.purpose, "deployment")),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       }) as Promise<ConnectedServer[]>;
     },
@@ -62,7 +62,7 @@ export function createServerRepo(db: Database) {
         where: and(
           eq(servers.organizationId, organizationId),
           eq(servers.purpose, "deployment"),
-          includeManaged ? undefined : isNull(servers.workspaceId),
+          includeManaged ? undefined : and(isNull(servers.workspaceId), isNull(servers.oblienCredentialId)),
         ),
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       });
@@ -130,6 +130,18 @@ export function createServerRepo(db: Database) {
       return out;
     },
 
+    async getByOblienCredential(organizationId: string, credentialId: string) {
+      return db.query.servers.findFirst({ where: and(eq(servers.organizationId, organizationId), eq(servers.oblienCredentialId, credentialId)) });
+    },
+
+    async attachOblienVm(organizationId: string, credentialId: string, vmId: string, name: string) {
+      const [added] = await db.insert(servers).values({ organizationId, oblienCredentialId: credentialId, oblienVmId: vmId, name })
+        .onConflictDoNothing({ target: [servers.organizationId, servers.oblienVmId] }).returning();
+      if (added) return added;
+      const existing = await db.query.servers.findFirst({ where: and(eq(servers.organizationId, organizationId), eq(servers.oblienVmId, vmId)) });
+      if (!existing || existing.oblienCredentialId !== credentialId) throw new AppError("This VM is already attached. Disconnect the existing server first.", 409, "SERVER_ALREADY_CONNECTED");
+      return existing;
+    },
     /** Create a new server */
     async create(data: Omit<NewServer, "id" | "createdAt" | "updatedAt">): Promise<Server> {
       const [row] = await db

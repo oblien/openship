@@ -151,7 +151,7 @@ function ServerInventoryPage() {
         list.filter(s => !s.managed && (selfHosted || !s.isLocal)).map((s) => ({
           id: s.id,
           name: s.name || s.sshHost || s.id,
-          host: s.sshHost ?? "",
+          host: s.connection === "oblien" ? "Oblien VM" : s.sshHost ?? "",
           port: s.sshPort ?? 22,
           user: s.sshUser ?? "root",
           auth: (s.sshAuthMethod as "key" | "password" | null) ?? null,

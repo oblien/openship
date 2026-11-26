@@ -31,11 +31,14 @@
 import { normalizeRegistryHost } from "./image-ref";
 
 /** What a credential is FOR. Consumers ask by capability, never by provider id. */
-export type CredentialCapability = "image-pull" | "dns" | "migration" | "git";
+export type CredentialCapability = "image-pull" | "dns" | "migration" | "git" | "server";
 
-export const CONNECTION_OAUTH_PROVIDERS = ["railway", "vercel", "gitlab"] as const;
+export const CONNECTION_OAUTH_PROVIDERS = ["railway", "vercel", "gitlab", "oblien"] as const;
 export type ConnectionOAuthProvider = (typeof CONNECTION_OAUTH_PROVIDERS)[number];
 export const CONNECTION_OAUTH_TTL_SECONDS = 600;
+
+export const connectionAuthorizationLifetime = (provider: ConnectionOAuthProvider) =>
+  provider === "oblien" ? 3600 : CONNECTION_OAUTH_TTL_SECONDS;
 
 export function supportsConnectionOAuth(provider: string): provider is ConnectionOAuthProvider {
   return CONNECTION_OAUTH_PROVIDERS.some((id) => id === provider);
@@ -103,6 +106,8 @@ export interface CredentialProvider {
  * compile error too.
  */
 export const CREDENTIAL_PROVIDERS = [
+  { id: "oblien", label: "Oblien", capability: "server", icon: "server", selector: null, fields: [],
+    summary: "Connect a VM owned and billed by your Oblien account." },
   {
     id: "gitlab",
     label: "GitLab",

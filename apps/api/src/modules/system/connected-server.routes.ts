@@ -12,6 +12,7 @@ import {
   InstallServerComponentsInputSchema,
   ServerInstallResponseInputSchema,
   CreateServerInputSchema,
+  SshServerInputSchema,
   UpdateServerRateLimitSchema,
 } from "@repo/contracts";
 import { secureRouter } from "../../lib/secure-router";
@@ -63,7 +64,7 @@ r.post(
     auditHandledByOperation: true,
     mcp: {
       description:
-        "Register a deployment server with SSH connection settings. Credentials are encrypted by the existing server operation. This does not create a cloud machine; test its connection and inspect prerequisites next.",
+        "Connect a deployment server using SSH settings or a previously authorized Oblien VM connection belonging to this organization.",
     },
   },
   serversCtrl.createServer,
@@ -164,7 +165,7 @@ r.post(
   {
     tag: "server:write",
     collection: true,
-    body: CreateServerInputSchema,
+    body: SshServerInputSchema,
     auditHandledByOperation: true,
     mcp: {
       description:
