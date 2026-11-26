@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { basename, dirname, posix } from "node:path";
 import { Mindwire, ensureDaemonBinary, SDK_VERSION, type TargetHandle } from "mindwire";
+import { configureMindwireReleaseBaseUrl } from "./mindwire-release";
 import { sq, type CommandExecutor } from "@repo/adapters";
 import type { AssistantConnectionRow } from "@repo/db";
 import type { AssistantProvider } from "@repo/contracts";
@@ -239,6 +240,7 @@ export async function createRemoteAssistantClient(
           platform: os === "Linux" ? "linux" : "darwin",
           arch: machine === "x86_64" ? "x64" : "arm64",
           exactVersion: true,
+          releaseBaseUrl: configureMindwireReleaseBaseUrl(),
           fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(60_000) }),
         });
         let record: Installed | undefined;
