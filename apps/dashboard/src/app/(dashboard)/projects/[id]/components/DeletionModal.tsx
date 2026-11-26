@@ -10,7 +10,7 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (wipeVolumes: boolean, recordOnly: boolean) => void;
+  onConfirm: (wipeVolumes: boolean, recordOnly: boolean, deleteDnsRecords: boolean) => void;
   projectName: string;
   projectId?: string | number;
   /** Static self-hosted signal from the caller (not cloud-managed). Gates the
@@ -33,6 +33,7 @@ interface Preview {
   deploymentVolumes: string[];
   networks: string[];
   totalVolumes: number;
+  customDomains: string[];
 }
 
 export const DeletionModal = (props: Props) =>
@@ -54,6 +55,9 @@ const DeletionModalContent = ({
   // Record-only ("soft") delete: keep the workload + data on the server, drop
   // only the Openship record. Self-hosted only (hidden for cloud below).
   const [recordOnly, setRecordOnly] = useState(false);
+  // Release the Openship-managed DNS records (Cloudflare / DigitalOcean) of the
+  // project's custom domains. Default on — same as removing a single domain.
+  const [deleteDnsRecords, setDeleteDnsRecords] = useState(true);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   // Projects this app is linked into. Deleting it unlinks them automatically
@@ -72,6 +76,7 @@ const DeletionModalContent = ({
     setInputValue("");
     setWipeVolumes(false);
     setRecordOnly(false);
+    setDeleteDnsRecords(true);
     setPreview(null);
     setLinkedProjects([]);
 
@@ -96,6 +101,7 @@ const DeletionModalContent = ({
             deploymentVolumes: res.preview.deploymentVolumes,
             networks: res.preview.networks,
             totalVolumes: res.preview.totalVolumes,
+            customDomains: res.preview.customDomains ?? [],
           });
         }
       })
@@ -123,10 +129,18 @@ const DeletionModalContent = ({
   // still shows it), else fall back to the live preview.
   const canRecordOnly = selfHosted ?? (!previewLoading && !!preview?.selfHosted);
   const showWipeBlock = !previewLoading && hasVolumes && !recordOnly;
+  const customDomains = preview?.customDomains ?? [];
+  const showDnsBlock = !previewLoading && customDomains.length > 0 && !recordOnly;
 
   const handleConfirm = () => {
     if (isConfirmDisabled) return;
-    onConfirm(showWipeBlock ? wipeVolumes : false, recordOnly);
+    // Record-only keeps the workload serving, so its DNS must keep resolving.
+    // With no preview (failed/loading) fall back to the API default (true).
+    onConfirm(
+      showWipeBlock ? wipeVolumes : false,
+      recordOnly,
+      recordOnly ? false : showDnsBlock ? deleteDnsRecords : true,
+    );
     onClose();
   };
 
@@ -298,6 +312,43 @@ const DeletionModalContent = ({
               )}
             </div>
           ) : null}
+
+          {/* DNS records — only when the project has custom domains. Openship
+              deletes only the records it created (ownership marker), never the
+              operator's own MX/SPF/CAA at the zone apex. */}
+          {showDnsBlock && (
+            <div className="rounded-xl border border-border/50 overflow-hidden">
+              <label className="flex cursor-pointer items-start gap-3 bg-muted/15 px-3 py-3">
+                <Checkbox
+                  checked={deleteDnsRecords}
+                  onCheckedChange={setDeleteDnsRecords}
+                  className="mt-0.5"
+                  aria-label={t.projectSettings.deletion.dnsLabel}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <UiIcon name="globe" className="size-3.5 text-muted-foreground" />
+                    <span className="text-sm font-medium text-foreground">
+                      {t.projectSettings.deletion.dnsLabel}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                    {deleteDnsRecords
+                      ? t.projectSettings.deletion.dnsOn
+                      : t.projectSettings.deletion.dnsOff}
+                  </span>
+                </span>
+              </label>
+              <ul className="border-t border-border/40 divide-y divide-border/30">
+                {customDomains.map((hostname) => (
+                  <li key={hostname} className="flex items-center gap-3 px-3 py-2.5">
+                    <UiIcon name="globe" className="size-3.5 text-muted-foreground/70 shrink-0" />
+                    <span className="font-mono text-[12px] text-foreground truncate">{hostname}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {recordOnly ? (
             // Non-destructive: nothing on the server is touched.

@@ -31,7 +31,7 @@ import { ProjectIconSetting } from "@/components/project-settings/ProjectIconSet
 import { RuntimeSourceUpdateDialog } from "@/components/updates/RuntimeSourceUpdate";
 
 interface Props {
-  onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void;
+  onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean, deleteDnsRecords?: boolean) => void;
 }
 
 const ICON_TONES = {

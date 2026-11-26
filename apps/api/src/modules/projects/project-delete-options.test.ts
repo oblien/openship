@@ -9,7 +9,13 @@ describe("parseProjectDeleteOptions", () => {
         {},
         { force: true, forceOrphan: false, wipeVolumes: true, recordOnly: false },
       ),
-    ).toEqual({ force: true, forceOrphan: false, wipeVolumes: true, recordOnly: false });
+    ).toEqual({
+      force: true,
+      forceOrphan: false,
+      wipeVolumes: true,
+      recordOnly: false,
+      deleteDnsRecords: true,
+    });
   });
 
   it("accepts query booleans and lets an explicit query value win over the body", () => {
@@ -18,7 +24,13 @@ describe("parseProjectDeleteOptions", () => {
         { force: "false", forceOrphan: "false", wipeVolumes: "true", recordOnly: "false" },
         { force: true, forceOrphan: true, wipeVolumes: false, recordOnly: true },
       ),
-    ).toEqual({ force: false, forceOrphan: false, wipeVolumes: true, recordOnly: false });
+    ).toEqual({
+      force: false,
+      forceOrphan: false,
+      wipeVolumes: true,
+      recordOnly: false,
+      deleteDnsRecords: true,
+    });
   });
 
   it("makes forceOrphan imply force for body and query clients", () => {
@@ -42,13 +54,26 @@ describe("parseProjectDeleteOptions", () => {
     });
   });
 
-  it("defaults an absent optional body and all flags to false", () => {
+  it("defaults an absent optional body to no destructive flags and DNS cleanup on", () => {
     expect(parseProjectDeleteOptions({}, undefined)).toEqual({
       force: false,
       forceOrphan: false,
       wipeVolumes: false,
       recordOnly: false,
+      deleteDnsRecords: true,
     });
+  });
+
+  it("lets clients opt out of DNS record cleanup via body or query", () => {
+    expect(parseProjectDeleteOptions({}, { deleteDnsRecords: false })).toMatchObject({
+      deleteDnsRecords: false,
+    });
+    expect(parseProjectDeleteOptions({ deleteDnsRecords: "false" }, undefined)).toMatchObject({
+      deleteDnsRecords: false,
+    });
+    expect(
+      parseProjectDeleteOptions({ deleteDnsRecords: "true" }, { deleteDnsRecords: false }),
+    ).toMatchObject({ deleteDnsRecords: true });
   });
 
   it.each([{ wipeVolumes: true }, { forceOrphan: true }])(

@@ -86,6 +86,7 @@ describe("DELETE project option transport", () => {
         forceOrphan: true,
         wipeVolumes: false,
         recordOnly: false,
+        deleteDnsRecords: true,
       },
     );
   });

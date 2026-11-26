@@ -365,7 +365,7 @@ r.delete(
     tag: "project:admin",
     mcp: {
       description:
-        "Delete this project and its owned deployment resources. Inspect deletion-preview first. Volumes are preserved unless query.wipeVolumes is explicitly true; force-orphan and record-only options can leave remote resources behind.",
+        "Delete this project and its owned deployment resources. Inspect deletion-preview first. Volumes are preserved unless query.wipeVolumes is explicitly true; force-orphan and record-only options can leave remote resources behind. Openship-managed DNS records of the project's domains are deleted unless deleteDnsRecords is false.",
     },
     query: RemoveProjectSchema,
   },

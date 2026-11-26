@@ -16,7 +16,8 @@ export function createProjectLifecycleOperations(
   return {
     async remove(ctx, id, input) {
       const { organizationId } = ctx;
-      const { force, forceOrphan, wipeVolumes, recordOnly } = normalizeProjectDeleteOptions(
+      const { force, forceOrphan, wipeVolumes, recordOnly, deleteDnsRecords } =
+        normalizeProjectDeleteOptions(
         input ?? {},
       );
       // Verify project exists in this org BEFORE the gate so we don't
@@ -48,6 +49,7 @@ export function createProjectLifecycleOperations(
         forceOrphan,
         wipeVolumes,
         recordOnly,
+        deleteDnsRecords,
       });
       // Typed pre-step rejections short-circuit before we record a
       // `project.deleted` row. Each gets its own audit event + HTTP code.

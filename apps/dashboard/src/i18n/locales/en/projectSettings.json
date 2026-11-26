@@ -937,7 +937,10 @@
     "linkedTitleOne": "{count} project is connected to this app",
     "linkedTitleOther": "{count} projects are connected to this app",
     "linkedNote": "They keep running with their data untouched — they only lose this connection. Redeploy them to pick that up.",
-    "linkedNoteRecordOnly": "They keep running, but the link goes with the record — re-importing this app later won't restore it."
+    "linkedNoteRecordOnly": "They keep running, but the link goes with the record — re-importing this app later won't restore it.",
+    "dnsLabel": "Also delete DNS records",
+    "dnsOn": "Openship-created DNS records for these domains are removed from your connected DNS provider. Your own records are never touched.",
+    "dnsOff": "Off: DNS records stay in your provider's zone and keep pointing at the old target."
   },
   "routing": {
     "title": "Routing",

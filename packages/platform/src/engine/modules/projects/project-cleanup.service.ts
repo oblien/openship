@@ -170,6 +170,8 @@ export interface DeletionPreview {
   networks: string[];
   /** Total named volumes across services + deployment containers. */
   totalVolumes: number;
+  /** Custom-domain hostnames whose Openship-managed DNS records can be released on delete. */
+  customDomains: string[];
 }
 
 export interface CollectManifestOptions {
@@ -1034,6 +1036,17 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     if (!attachedVolumes.has(name)) deploymentVolumes.push(name);
   }
   const totalVolumes = new Set([...attachedVolumes, ...ownedVolumes]).size;
+  const customDomains = await repos.domain
+    .listByProject(project.id)
+    .then((rows) => [
+      ...new Set(
+        rows.filter((d) => d.domainType === "custom").map((d) => d.hostname.toLowerCase()),
+      ),
+    ])
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-cleanup.service");
+      return [] as string[];
+    });
 
   return {
     projectId: project.id,
@@ -1043,6 +1056,7 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     deploymentVolumes: Array.from(new Set(deploymentVolumes)),
     networks: Array.from(networkSlugs).map((slug) => `openship-${slug}`),
     totalVolumes,
+    customDomains,
   };
   } finally {
     for (const runtime of openedRuntimes) disposeRuntime(runtime);

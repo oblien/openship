@@ -19,7 +19,11 @@ import { InvestigationLink } from "@/components/assistant/InvestigationLink";
 
 interface DraftProjectViewProps {
   /** Deletes this environment using the page's normal cleanup policy. */
-  onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void | Promise<void>;
+  onDeleteProject: (
+    wipeVolumes?: boolean,
+    recordOnly?: boolean,
+    deleteDnsRecords?: boolean,
+  ) => void | Promise<void>;
 }
 
 function relativeTime(iso: string | undefined, t: Dictionary): string {
@@ -117,7 +121,9 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             : t.projects.draft.targetPending
   );
 
-  const handleConfirmDelete = async (...options: [wipeVolumes?: boolean, recordOnly?: boolean]) => {
+  const handleConfirmDelete = async (
+    ...options: [wipeVolumes?: boolean, recordOnly?: boolean, deleteDnsRecords?: boolean]
+  ) => {
     setShowDeleteDialog(false);
     setDeleting(true);
     try {

@@ -145,6 +145,7 @@ export async function remove(c: Context) {
       orphan: c.req.query("orphan"),
       wipeVolumes: c.req.query("wipeVolumes"),
       recordOnly: c.req.query("recordOnly"),
+      deleteDnsRecords: c.req.query("deleteDnsRecords"),
     },
     await readOptionalJsonBody(c),
   );
