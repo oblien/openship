@@ -4,6 +4,8 @@ Openship Mail owns inbound SMTP, Dovecot IMAP, mailbox data and webmail. The Ema
 
 New hosted mailbox purchases and first-time host assignments require `OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED=true` on the Cloud API. Leave it off for a sending-only rollout. Existing hosts, funded orders, Email API purchases and compute billing keep their normal lifecycle.
 
+For a dedicated pilot while public enrollment is closed, set `OPENSHIP_MAIL_DEDICATED_PILOT_ORGS` on the Cloud API to a comma-separated list of production workspace IDs. Those workspaces can buy and resume dedicated orders through the normal paid checkout. Shared mailbox enrollment stays closed.
+
 ## Run locally
 
 | Flow | Command from the repo root | Open |

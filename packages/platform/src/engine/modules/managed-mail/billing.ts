@@ -225,8 +225,13 @@ export async function mailCheckoutSummary(
   return { pendingPlan: intent.plan, pendingProduct: intent.product ?? "mailboxes" };
 }
 
-export function assertHostedMailEnrollment() {
-  if (!env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED)
+export function dedicatedMailEnrollmentEnabled(org: string) {
+  return env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED ||
+    !!env.OPENSHIP_MAIL_DEDICATED_PILOT_ORGS?.split(",").some(id => id.trim() === org);
+}
+
+export function assertHostedMailEnrollment(dedicatedOrg?: string) {
+  if (!(dedicatedOrg ? dedicatedMailEnrollmentEnabled(dedicatedOrg) : env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED))
     throw new AppError("Hosted mailbox enrollment is currently closed.", 503, "MAIL_ENROLLMENT_CLOSED");
 }
 

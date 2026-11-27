@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   cloud: true,
   billingEnabled: true,
   hostedEnrollmentEnabled: true,
+  dedicatedPilotOrgs: "",
   forward: vi.fn(),
   grants: "{}",
   engines: "[]",
@@ -65,6 +66,7 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
       get OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED() {
         return h.hostedEnrollmentEnabled;
       },
+      get OPENSHIP_MAIL_DEDICATED_PILOT_ORGS() { return h.dedicatedPilotOrgs; },
       get BILLING_ENABLED() {
         return h.billingEnabled;
       },
@@ -138,6 +140,7 @@ beforeEach(() => {
   h.cloud = true;
   h.billingEnabled = true;
   h.hostedEnrollmentEnabled = true;
+  h.dedicatedPilotOrgs = "";
   h.engines = "[]";
   h.fleet = undefined;
   h.grants = "{}";
@@ -909,6 +912,20 @@ it("keeps sending checkout open while closing new hosted orders and activation",
   expect(await repos.managedMail.orders(owner.orgId)).toHaveLength(0);
   h.provider.createCheckout.mockResolvedValue({ checkoutId: "sending", url: "https://checkout.example.test" });
   expect((await checkout({ plan: "team", product: "sending" })).status).toBe(200);
+  expect(h.provider.createCheckout).toHaveBeenCalledTimes(1);
+});
+
+it("admits only the listed workspace to paid dedicated checkout during a closed rollout", async () => {
+  const pilot = await seedOwner();
+  const other = await seedOwner();
+  h.hostedEnrollmentEnabled = false;
+  h.dedicatedPilotOrgs = "org_unrelated, " + pilot.orgId;
+  h.provider.createCheckout.mockResolvedValue({ checkoutId: "pilot", url: "https://checkout.example.test" });
+  const order = { product: "dedicated", plan: "business", storageGB: 100, purchaseId: crypto.randomUUID(), expectedMonthlyCents: 3900 };
+  expect(await (await call(pilot, "/managed")).json()).toMatchObject({ hostedEnrollmentEnabled: false, dedicatedEnrollmentEnabled: true });
+  expect((await call(other, "/managed/checkout", order)).status).toBe(503);
+  expect((await call(pilot, "/managed/checkout", { plan: "business" })).status).toBe(503);
+  expect((await call(pilot, "/managed/checkout", order)).status).toBe(200);
   expect(h.provider.createCheckout).toHaveBeenCalledTimes(1);
 });
 
