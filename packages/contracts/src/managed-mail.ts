@@ -88,6 +88,7 @@ export interface ManagedMailSummary {
   billingUnavailable?: boolean;
   checkoutEnabled?: boolean;
   hostedEnrollmentEnabled?: boolean;
+  dedicatedEnrollmentEnabled?: boolean;
   hasBillingAccount?: boolean;
   sendingConfigured?: boolean;
   sendingAllowance?: number;

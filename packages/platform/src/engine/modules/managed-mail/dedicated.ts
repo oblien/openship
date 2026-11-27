@@ -170,7 +170,7 @@ export async function dedicatedCheckout(
         throw new AppError("This purchase ID belongs to a different mail order.", 409);
       return { url: returnUrl(existing) };
     }
-    assertHostedMailEnrollment();
+    assertHostedMailEnrollment(org);
     await provider.assertMonthlyCapacitySupport();
     const order = dedicatedOrderTerms(plan, storageGB);
     if (
@@ -235,7 +235,7 @@ export async function manageDedicatedOrder(
       throw new AppError("Payment is being reconciled.", 409);
     }
     if (action === "resume" && state === "open") {
-      assertHostedMailEnrollment();
+      assertHostedMailEnrollment(org);
       if (!env.BILLING_ENABLED) throw new AppError("Email checkout is unavailable.", 503);
       return { url: (await session(row)).url };
     }

@@ -370,6 +370,7 @@ const envSchema = z.object({
   /* ---------- Oblien Cloud ---------- */
   OPENSHIP_MAIL_DEDICATED_FLEET: z.string().optional(),
   OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED: envBool("false"),
+  OPENSHIP_MAIL_DEDICATED_PILOT_ORGS: z.string().optional(),
   OPENSHIP_MAIL_ENGINES: z.string().optional(),
   OPENSHIP_MAIL_PLAN_GRANTS: z.string().optional(),
   OBLIEN_CLIENT_ID: z.string().optional(),

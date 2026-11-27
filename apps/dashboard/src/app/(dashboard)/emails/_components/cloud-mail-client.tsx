@@ -202,7 +202,7 @@ function CloudMailService({
       </p>
       {service.provisioning === "payment" && (
         <Button
-          disabled={checkout.busy || data?.checkoutEnabled === false || data?.hostedEnrollmentEnabled === false}
+          disabled={checkout.busy || data?.checkoutEnabled === false || (data?.dedicatedEnrollmentEnabled ?? data?.hostedEnrollmentEnabled) === false}
           onClick={async () => {
             const result = await checkout.execute(() => managedMailApi.order(service.id, "resume"));
             if (result) window.location.assign(result.url);

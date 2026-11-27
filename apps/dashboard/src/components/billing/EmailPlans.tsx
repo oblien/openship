@@ -98,13 +98,14 @@ function EmailPlanCatalog({
   const pendingOrder = data?.services?.find((item) => item.pendingCheckout);
   useSidebarCollapseRequest(tiers.length >= 3);
   const checkoutDisabled = data?.checkoutEnabled === false || !!data?.billingUnavailable;
+  const dedicatedPurchaseClosed = (data?.dedicatedEnrollmentEnabled ?? data?.hostedEnrollmentEnabled) === false;
   const showReview = !!(
     reviewing &&
     reviewStorage &&
     data &&
     !account.error &&
     !checkoutDisabled &&
-    (service || data.hostedEnrollmentEnabled !== false) &&
+    (service || !dedicatedPurchaseClosed) &&
     (changeTarget ? !!service : !pendingOrder)
   );
   const { dialog, onKeyDown } = useDialogFocus(closeReview, showReview);
@@ -128,7 +129,7 @@ function EmailPlanCatalog({
     (mode === subscriptionProduct || addingMailboxes)
       ? "account"
       : undefined);
-  const hostedPurchaseClosed = data?.hostedEnrollmentEnabled === false && !sending &&
+  const hostedPurchaseClosed = (mode === "dedicated" ? dedicatedPurchaseClosed : data?.hostedEnrollmentEnabled === false) && !sending &&
     !(service || (target === "account" && subscriptionProduct === "mailboxes"));
   const validTarget = target === "account" ? data?.subscriptionTarget === "account" : !!service;
   const change = useMailPlanChange(validTarget ? target : undefined, account.refresh);
@@ -257,7 +258,7 @@ function EmailPlanCatalog({
                 {item.pendingCheckout ? (
                   <>
                     <Button
-                      disabled={mutation.busy || checkoutDisabled || data.hostedEnrollmentEnabled === false}
+                      disabled={mutation.busy || checkoutDisabled || dedicatedPurchaseClosed}
                       onClick={() => open(() => managedMailApi.order(item.id, "resume"))}
                     >
                       {c.resumeCheckout}

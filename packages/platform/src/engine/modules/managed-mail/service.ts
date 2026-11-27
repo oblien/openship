@@ -17,6 +17,7 @@ import { createProvisionLock, tryWithProvisionLock } from "../../lib/provision-l
 import { workspaceForServer } from "../../lib/cloud-workspace-scope";
 import {
   assertHostedMailEnrollment,
+  dedicatedMailEnrollmentEnabled,
   paidEmailPlan,
   mailCheckoutSummary,
   mailEntitlements,
@@ -234,6 +235,7 @@ export async function mailServiceSummary(
       product: row?.order ? "dedicated" : undefined,
       billingUnavailable: true,
       hostedEnrollmentEnabled: env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED,
+      dedicatedEnrollmentEnabled: dedicatedMailEnrollmentEnabled(org),
     };
   }
   const inventory = service || !env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED ? [] : mailEngines();
@@ -288,6 +290,7 @@ export async function mailServiceSummary(
         : undefined,
     checkoutEnabled: env.BILLING_ENABLED,
     hostedEnrollmentEnabled: env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED,
+    dedicatedEnrollmentEnabled: dedicatedMailEnrollmentEnabled(org),
     sendingConfigured: !!account?.sendingEnabled,
     sendingAllowance: recipients,
     dedicated: !!mailboxGrant?.dedicated,
