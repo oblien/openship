@@ -4470,6 +4470,10 @@
       "page": "projects",
       "description": "Stream edge setup for the project."
     },
+    "POST /api/projects/folder/files": {
+      "page": "sources",
+      "description": "Stage UTF-8 source files through JSON or MCP without Git (4 MB JSON limit)."
+    },
     "POST /api/projects/folder/upload/:sessionId": {
       "page": "sources",
       "description": "Upload the gzipped source archive (Cloud and self-hosted, 300 MB limit)."

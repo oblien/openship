@@ -4,7 +4,8 @@ description: Stage generated files or a directory, inspect the source, and deplo
 ---
 
 Source sessions hold uploaded application files until deployment. The SDK accepts a directory or an
-in-memory file map. REST accepts a compressed archive through a short-lived upload session.
+in-memory file map. REST and MCP accept UTF-8 file maps directly; larger trees and binary files use a
+compressed archive through a short-lived upload session. None of these paths requires Git.
 
 ## Deploy generated files
 
@@ -100,6 +101,33 @@ console.log(staged.sessionId, staged.expiresAt);
 Directory packing excludes `.git`, `node_modules`, and `.DS_Store`. It enforces path, entry, and size
 limits and rejects escaping symlinks and special files. A system `tar` executable is not required by the SDK.
 
+## Send source files through JSON or MCP
+
+`POST /api/projects/folder/files` stages a text source tree using the same source operations as archive
+uploads. Its MCP tool is `post_projects_folder_files`, so an assistant can submit source code without
+a separate uploader or access to the MCP client's OAuth token:
+
+```json
+{
+  "projectId": "proj_my_site",
+  "name": "my-site",
+  "files": {
+    "index.html": "<h1>Hello from Openship</h1>",
+    "assets/style.css": "body { margin: 0 }"
+  }
+}
+```
+
+The complete JSON body must fit within 4MB and contain at most 10,000 files. File paths must be relative
+POSIX paths, and contents must be UTF-8 strings. Optional `serverId`, `stack`, and `packageManager`
+use the same placement and hints as an archive session. An existing project's server owns placement.
+Create-only credentials must create a project first and supply its `projectId`; an unbound source
+requires wildcard project write access.
+
+The response contains an already-uploaded `sessionId`, `expiresAt`, and resolved server/workspace IDs
+when applicable. Continue with the scan, ensure, and build operations below. For MCP calls, include the
+chosen `organizationId` at the top level. See the [complete MCP flow](/docs/guides/deploy-local-folder#mcp).
+
 ## Inspect an uploaded source
 
 <Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
@@ -149,6 +177,7 @@ To finish a custom flow, use `projects.ensure()` to record the chosen configurat
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
+| Stage UTF-8 source files through JSON or MCP without Git (4 MB JSON limit). | HTTP only | `POST /api/projects/folder/files`<br />`project:write` |
 | Upload the gzipped source archive (Cloud and self-hosted, 300 MB limit). | HTTP only | `POST /api/projects/folder/upload/:sessionId`<br />`project:write` |
 
 {/* api-operations:end */}

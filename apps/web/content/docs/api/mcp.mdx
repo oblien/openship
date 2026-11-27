@@ -153,9 +153,10 @@ To manage projects whose records live in Cloud, authorize a separate MCP connect
 use the owner's Cloud account link to access those records. `CLOUD_SCOPE_UNAVAILABLE` also applies when
 `organizationId` is omitted; removing it does not widen the credential's permissions.
 
-A remote Cloud controller cannot read a folder on the MCP client's machine. Use a git repository or
-the [authenticated source upload flow](/docs/api/sources#upload-a-source-folder) through an SDK, CLI,
-or browser. A credential restricted to its own projects must create the project first and pass its
+A remote Cloud controller cannot read a folder on the MCP client's machine. Submit UTF-8 source files
+directly with `post_projects_folder_files`, or use the [archive upload flow](/docs/api/sources#upload-a-source-folder)
+through an SDK, CLI, or browser for larger trees and binary files. No Git connection is required.
+A credential restricted to its own projects must create the project first and pass its
 `projectId` to the upload session and subsequent `ensure` call. An unbound upload session requires
 wildcard project write permission. OAuth tokens remain in the MCP client.
 
@@ -201,7 +202,7 @@ curl -s "$OPENSHIP_URL/api/mcp" \
 |---|---|
 | `openship-overview` | The tool groups, each flow's entry point, and how permission scoping (incl. per-repo GitHub grants) shapes what you can see and do. |
 | `deploy-from-git` | Connect/verify GitHub → pick a repo → detect the stack → create the project → deploy → watch. Optional `repo` / `branch` arguments. |
-| `deploy-a-folder` | The 4-step folder-upload flow, including the out-of-band tarball upload that is deliberately **not** an MCP tool (raw binary can't cross JSON-RPC). |
+| `deploy-a-folder` | Direct JSON source files through MCP, desktop local import, or an authenticated archive upload, followed by detection, project configuration, and deployment. |
 | `install-catalog-app` | Browse the catalog → install → handle the `flowHref` that wizard apps (e.g. mail) return instead of installing in-band. |
 | `cluster-and-scale` | Private network → k3s → deploy → scale up/down → recover/clean up. Self-hosted. |
 | `cluster-database` | Create → observe → connect → PostgreSQL backup/restore-to-new → cleanup. Self-hosted. |

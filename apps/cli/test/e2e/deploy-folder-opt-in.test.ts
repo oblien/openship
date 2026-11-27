@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { runCommand, stubFetch, type FetchStub } from "../helpers/harness";
 
 vi.mock("../../src/lib/config", () => ({
@@ -38,10 +38,15 @@ describe("deploy requires folder upload opt-in (#853)", () => {
   it.each([
     { flags: ["--folder"], inRepo: true },
     { flags: ["--name", "local-app"], inRepo: false },
+    { flags: ["."], inRepo: true },
+    { flags: ["."], inRepo: false },
+    { flags: ["<source-directory>"], inRepo: true },
+    { flags: ["<relative-source-directory>"], inRepo: false },
   ])("uploads source with explicit opt-in: $flags", async ({ flags, inRepo }) => {
     const sourceDir = mkdtempSync(join(tmpdir(), "openship-folder-command-"));
     writeFileSync(join(sourceDir, "index.html"), "site");
-    vi.spyOn(process, "cwd").mockReturnValue(sourceDir);
+    const externalPath = flags.some((flag) => flag.includes("source-directory>"));
+    vi.spyOn(process, "cwd").mockReturnValue(externalPath ? tmpdir() : sourceDir);
     gitState.inRepo = inRepo;
     fetchStub = stubFetch((req) => {
       if (req.url.endsWith("/projects/folder/session")) {
@@ -94,7 +99,11 @@ describe("deploy requires folder upload opt-in (#853)", () => {
     try {
       const { deployCommand } = await import("../../src/commands/deploy");
       const result = await runCommand(deployCommand, [
-        ...flags,
+        ...flags.map((flag) => {
+          if (flag === "<source-directory>") return sourceDir;
+          if (flag === "<relative-source-directory>") return basename(sourceDir);
+          return flag;
+        }),
         "--project",
         "p1",
         "--service-ids",
@@ -106,7 +115,7 @@ describe("deploy requires folder upload opt-in (#853)", () => {
     } finally {
       rmSync(sourceDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it("does not provision an upload without a source or project opt-in outside Git", async () => {
     fetchStub = stubFetch(() => {
@@ -152,12 +161,12 @@ describe("deploy requires folder upload opt-in (#853)", () => {
     expect(fetchStub.calls).toHaveLength(1);
   });
 
-  it("rejects Git-only options with --folder before making requests", async () => {
+  it.each([["--folder"], ["."]])("rejects Git-only options with source opt-in %s before making requests", async (source) => {
     fetchStub = stubFetch(() => {
       throw new Error("must not send a request");
     });
     const { deployCommand } = await import("../../src/commands/deploy");
-    const result = await runCommand(deployCommand, ["--folder", "--commit", "abc123"]);
+    const result = await runCommand(deployCommand, [source, "--commit", "abc123"]);
     expect(result.code).toBe(1);
     expect(result.err).toContain("cannot be combined");
     expect(fetchStub.calls).toEqual([]);

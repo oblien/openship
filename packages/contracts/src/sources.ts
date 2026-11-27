@@ -1,11 +1,22 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { BuildServiceInput } from "./deployment-inputs";
-import { EnsureProjectBody } from "./project-inputs";
+import { EnsureProjectBody, FolderSessionBody } from "./project-inputs";
 import { EnvRevealKeysSchema, type SourceScanOptions } from "./env-reveal";
 
 export type CodeSource = { type: "directory"; path: string } | { type: "files"; files: Readonly<Record<string, string | Uint8Array>> };
 export interface StageSourceInput { source: CodeSource; projectId?: string; serverId?: string; name?: string; stack?: string; packageManager?: string }
+
+/** Small UTF-8 source trees can travel over JSON, including authenticated MCP. */
+export const MAX_SOURCE_FILES_BODY_BYTES = 4_000_000;
+export const SourceFilesBody = Type.Object({
+  ...FolderSessionBody.properties,
+  files: Type.Record(Type.String(), Type.String(), {
+    minProperties: 1,
+    maxProperties: 10_000,
+    description: "Relative POSIX file paths mapped to UTF-8 contents. The complete JSON body must fit within 4MB. Use the archive upload for larger trees or binary files.",
+  }),
+}, { additionalProperties: false });
 export const StagedSourceSchema = Type.Object({
   serverId: Type.Optional(Type.String()),
   workspaceId: Type.Optional(Type.String()),
