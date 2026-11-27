@@ -1,0 +1,342 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "verified": true,
+  "minEngine": "0.6.6",
+  "id": "documenso",
+  "name": "Documenso",
+  "description": "Send documents for signature and keep the signed copies, with a private PostgreSQL database, a generated signing certificate, and a preconfigured administrator.",
+  "kind": "template",
+  "logo": "documenso",
+  "category": "other",
+  "repository": "https://github.com/documenso/documenso",
+  "tags": ["e-signature", "documents", "contracts", "signing"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "documenso-db",
+      "image": "postgres:16-alpine",
+      "restart": "unless-stopped",
+      "environment": {
+        "POSTGRES_USER": "documenso",
+        "POSTGRES_DB": "documenso"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["documenso_db_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U documenso -d documenso"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      }
+    },
+    {
+      "name": "documenso",
+      "image": "documenso/documenso:v2.21.1",
+      "exposed": true,
+      "ports": ["8223:3000"],
+      "exposedPort": 3000,
+      "routes": [{ "port": 3000 }],
+      "restart": "unless-stopped",
+      "dependsOn": ["documenso-db"],
+      "commandArgv": [
+        "sh",
+        "-c",
+        "CERT=/home/nodejs/cert.p12; if [ ! -f \"$CERT\" ]; then openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/k.pem -out /tmp/c.pem -days 3650 -subj \"/CN=Documenso\" 2>/dev/null && openssl pkcs12 -export -out \"$CERT\" -inkey /tmp/k.pem -in /tmp/c.pem -passout env:NEXT_PRIVATE_SIGNING_PASSPHRASE && rm -f /tmp/k.pem /tmp/c.pem; fi; exec sh start.sh"
+      ],
+      "volumes": ["documenso_home:/home/nodejs"],
+      "environment": {
+        "PORT": "3000",
+        "NEXT_PUBLIC_WEBAPP_URL": "{{publicUrl:documenso}}",
+        "NEXT_PRIVATE_INTERNAL_WEBAPP_URL": "http://127.0.0.1:3000",
+        "NEXT_PRIVATE_DATABASE_URL": "postgres://documenso:{{config:DB_PASSWORD}}@documenso-db:5432/documenso",
+        "NEXT_PRIVATE_DIRECT_DATABASE_URL": "postgres://documenso:{{config:DB_PASSWORD}}@documenso-db:5432/documenso",
+        "NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH": "/home/nodejs/cert.p12",
+        "NEXT_PRIVATE_SMTP_TRANSPORT": "smtp-auth",
+        "NEXT_PRIVATE_SMTP_FROM_NAME": "Documenso",
+        "DOCUMENSO_DISABLE_TELEMETRY": "true",
+        "ADMIN_NAME": "Administrator"
+      },
+      "secretEnv": [
+        "NEXTAUTH_SECRET",
+        "NEXT_PRIVATE_ENCRYPTION_KEY",
+        "NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY",
+        "NEXT_PRIVATE_SIGNING_PASSPHRASE",
+        "NEXT_PRIVATE_DATABASE_URL",
+        "NEXT_PRIVATE_DIRECT_DATABASE_URL",
+        "NEXT_PRIVATE_SMTP_PASSWORD",
+        "ADMIN_PASSWORD"
+      ],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 10,
+        "startPeriod": "60s"
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "documenso-db",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "documenso-db"
+    },
+    {
+      "key": "DB_PASSWORD",
+      "service": "documenso",
+      "label": "Database password (app side)",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "documenso-db"
+    },
+    {
+      "key": "NEXTAUTH_SECRET",
+      "service": "documenso",
+      "label": "Session signing secret",
+      "help": "Auto-generated. Signs sign-in sessions; changing it signs everyone out.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "NEXT_PRIVATE_ENCRYPTION_KEY",
+      "service": "documenso",
+      "label": "Encryption key",
+      "help": "Auto-generated. Encrypts sensitive values stored in the database; losing it makes them unreadable.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY",
+      "service": "documenso",
+      "label": "Secondary encryption key",
+      "help": "Auto-generated. A second key Documenso requires alongside the primary one.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "NEXT_PRIVATE_SIGNING_PASSPHRASE",
+      "service": "documenso",
+      "label": "Signing certificate passphrase",
+      "help": "Auto-generated. Protects the self-signed certificate created on first start and stored on the persistent volume.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "ADMIN_PASSWORD",
+      "service": "documenso",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "settings": [
+    {
+      "id": "admin",
+      "label": "Administrator",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "ADMIN_EMAIL",
+          "service": "documenso",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "required": true,
+          "installStep": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator. Manage existing accounts in the app.",
+          "fullWidth": true
+        }
+      ]
+    },
+    {
+      "id": "email",
+      "label": "Outgoing email",
+      "description": "Documenso emails signing requests and notifications, so it needs an SMTP server.",
+      "columns": 2,
+      "fields": [
+        {
+          "key": "NEXT_PRIVATE_SMTP_HOST",
+          "service": "documenso",
+          "label": "SMTP host",
+          "type": "text",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "placeholder": "smtp.example.com"
+        },
+        {
+          "key": "NEXT_PRIVATE_SMTP_PORT",
+          "service": "documenso",
+          "label": "SMTP port",
+          "type": "number",
+          "default": "587",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "integer": true,
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "NEXT_PRIVATE_SMTP_USERNAME",
+          "service": "documenso",
+          "label": "SMTP username",
+          "type": "text",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "help": "Leave empty for a relay that needs no login."
+        },
+        {
+          "key": "NEXT_PRIVATE_SMTP_PASSWORD",
+          "service": "documenso",
+          "label": "SMTP password",
+          "type": "password",
+          "secret": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "NEXT_PRIVATE_SMTP_SECURE",
+          "service": "documenso",
+          "label": "Use TLS from the start",
+          "type": "boolean",
+          "default": "false",
+          "trueValue": "true",
+          "falseValue": "false",
+          "installStep": true,
+          "requiresRedeploy": true,
+          "help": "Turn on for port 465. Leave off for port 587, which upgrades with STARTTLS."
+        },
+        {
+          "key": "NEXT_PRIVATE_SMTP_FROM_ADDRESS",
+          "service": "documenso",
+          "label": "From address",
+          "type": "text",
+          "required": true,
+          "installStep": true,
+          "requiresRedeploy": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "placeholder": "noreply@example.com",
+          "help": "The sender shown on signing requests.",
+          "fullWidth": true
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "label": "Access",
+      "fields": [
+        {
+          "key": "NEXT_PUBLIC_DISABLE_SIGNUP",
+          "service": "documenso",
+          "label": "Disable public sign-ups",
+          "type": "boolean",
+          "default": "false",
+          "trueValue": "true",
+          "falseValue": "false",
+          "advanced": true,
+          "requiresRedeploy": true,
+          "help": "Sign-ups are open by default, as in upstream. Turn this on once you have invited the people you need; the administrator account already exists."
+        }
+      ]
+    }
+  ],
+  "prepare": [
+    {
+      "service": "documenso",
+      "title": "Create the administrator",
+      "description": "Creates the administrator through Documenso's own sign-up, then marks it verified and gives it the admin role.",
+      "command": "cd /app/apps/remix && node -e 'const b=process.env.NEXT_PRIVATE_INTERNAL_WEBAPP_URL,o=process.env.NEXT_PUBLIC_WEBAPP_URL;fetch(b+\"/api/auth/email-password/signup\",{method:\"POST\",headers:{\"content-type\":\"application/json\",origin:o},body:JSON.stringify({name:process.env.ADMIN_NAME,email:process.env.ADMIN_EMAIL,password:process.env.ADMIN_PASSWORD})}).then(async r=>{const t=await r.text();console.log(\"signup\",r.status,t.slice(0,120));process.exit(r.status===201?0:1)}).catch(e=>{console.log(\"signup failed\",e.message);process.exit(1)})' && E=$(printf %s \"$ADMIN_EMAIL\" | sed \"s/'/''/g\") && echo \"UPDATE \\\"User\\\" SET \\\"emailVerified\\\" = now(), roles = ARRAY['USER','ADMIN']::\\\"Role\\\"[] WHERE lower(email) = lower('$E');\" | npx prisma db execute --stdin --schema ../../packages/prisma/schema.prisma",
+      "capture": "documenso_admin_setup",
+      "once": true,
+      "mustSucceed": true,
+      "phase": "post-ready",
+      "readiness": {
+        "test": "wget -q -O /dev/null http://127.0.0.1:3000/api/health",
+        "interval": 3000,
+        "retries": 40
+      }
+    }
+  ],
+  "installLayout": {
+    "settings": "grouped",
+    "columns": 2
+  },
+  "endpoints": [
+    {
+      "service": "documenso",
+      "port": 3000,
+      "label": "Documenso",
+      "kind": "http",
+      "defaultMode": "domain"
+    },
+    {
+      "service": "documenso-db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "minResources": {
+    "cpuCores": 1,
+    "memoryMb": 1024
+  },
+  "connection": {
+    "title": "Sign in to Documenso",
+    "description": "Sign in with the email and generated password below. The administrator account is created and verified on first start, so no confirmation email is needed.",
+    "guide": {
+      "defaultMode": "public"
+    },
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Documenso",
+        "source": "publicUrl:documenso",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "email",
+        "label": "Email",
+        "source": "env:documenso:ADMIN_EMAIL",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Password",
+        "source": "env:documenso:ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "firstLogin": {
+      "note": "Account changes made in the app (a password change, new users) are preserved on redeployment. Public sign-ups are open until you turn them off in settings. Documents are signed with a self-signed certificate generated on first start and kept on the persistent volume; add a trusted certificate if recipients need to see a verified signer."
+    }
+  },
+  "marketplace": {
+    "features": [
+      {
+        "title": "Document signing",
+        "description": "Send documents for signature and keep the signed copies."
+      },
+      {
+        "title": "Private database",
+        "description": "Documents and accounts live in a dedicated, project-scoped Postgres instance."
+      },
+      {
+        "title": "Ready to sign",
+        "description": "A signing certificate and the administrator are created for you on first start."
+      }
+    ]
+  }
+}
