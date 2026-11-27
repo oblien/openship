@@ -1886,7 +1886,7 @@
       "services": [
         {
           "name": "uptime-kuma",
-          "image": "louislam/uptime-kuma:1",
+          "image": "louislam/uptime-kuma:2",
           "exposedPort": 3001,
           "exposed": true,
           "volumes": [
@@ -1911,7 +1911,7 @@
             "source": "publicUrl:uptime-kuma",
             "kind": "url",
             "recommended": true,
-            "help": "First visit prompts you to create the administrator account."
+            "help": "First visit asks which database to use (pick embedded SQLite unless you run MariaDB), then creates the administrator account."
           }
         ],
         "firstLogin": {
