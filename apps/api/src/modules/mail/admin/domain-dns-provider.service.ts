@@ -44,6 +44,12 @@ function recordSetToInputs(set: DnsRecordSet): DnsRecordInput[] {
     }));
 }
 
+type DomainDnsSource = {
+  read(serverId: string, domain: string): Promise<{ records: DnsRecordSet } | null>;
+  acknowledge(serverId: string, domain: string): Promise<unknown>;
+};
+const localSource: DomainDnsSource = { read: getDomainDnsState, acknowledge: acknowledgeDomainDns };
+
 /**
  * The desired inputs for a mail domain, read from its persisted DNS state. An
  * additional domain always has a saved record set (written at add time); a
@@ -53,8 +59,9 @@ function recordSetToInputs(set: DnsRecordSet): DnsRecordInput[] {
 async function resolveMailDnsInputs(
   serverId: string,
   domain: string,
+  source: DomainDnsSource,
 ): Promise<DnsRecordInput[]> {
-  const state = await getDomainDnsState(serverId, domain);
+  const state = await source.read(serverId, domain);
   if (!state) return [];
   return recordSetToInputs(state.records);
 }
@@ -64,8 +71,9 @@ export async function planMailDomainDns(
   organizationId: string,
   serverId: string,
   domain: string,
+  source = localSource,
 ): Promise<DnsPlanResult> {
-  const inputs = await resolveMailDnsInputs(serverId, domain);
+  const inputs = await resolveMailDnsInputs(serverId, domain, source);
   return planRecords(organizationId, domain, inputs);
 }
 
@@ -81,11 +89,12 @@ export async function applyMailDomainDns(
   organizationId: string,
   serverId: string,
   domain: string,
+  source = localSource,
 ): Promise<DnsProvisionResult> {
-  const inputs = await resolveMailDnsInputs(serverId, domain);
+  const inputs = await resolveMailDnsInputs(serverId, domain, source);
   const result = await provisionRecords(organizationId, domain, inputs);
   if (result.provisioned) {
-    await acknowledgeDomainDns(serverId, domain).catch((diagnosticFailure) => {
+    await source.acknowledge(serverId, domain).catch((diagnosticFailure) => {
       observeCaughtError(diagnosticFailure, "api/modules/mail/admin/domain-dns-provider.service");
     });
   }

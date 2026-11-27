@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
+import { TopologyNodeCard } from "@repo/ui/topology-node";
 
 import { memo, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
@@ -190,8 +191,11 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
     resource.state !== "disabled" &&
     resource.version;
   return (
-    <article
-      className={`topology-node scale-resource-tone w-[250px] rounded-2xl text-start ${action?.selected ? `border ${optionCardSurface(true)}` : ""}`}
+    <TopologyNodeCard
+      name={resource.name}
+      description={resource.description}
+      icon={<TopologyResourceIcon resource={resource} />}
+      className={`scale-resource-tone w-[250px] ${action?.selected ? `border ${optionCardSurface(true)}` : ""}`}
       data-kind={resource.tone}
       data-pending={resource.pending}
       data-picked={action?.selected || undefined}
@@ -204,19 +208,6 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
         position={Position.Left}
         isConnectable={(isService && !action) || action?.connectable === true}
       />
-      <div className="flex items-center gap-3 p-4 pb-3">
-        <span className="topology-node-icon flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
-          <TopologyResourceIcon resource={resource} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-medium text-foreground" title={resource.name}>
-            {resource.name}
-          </h3>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground" title={resource.description}>
-            {resource.description}
-          </p>
-        </div>
-      </div>
       {(resource.ownerName || resource.pending) && (
         <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
           {resource.ownerName && (
@@ -302,7 +293,7 @@ const Resource = memo(function Resource({ data }: NodeProps<ResourceFlowNode>) {
         position={Position.Right}
         isConnectable={(isService && !action) || action?.connectable === true}
       />
-    </article>
+    </TopologyNodeCard>
   );
 });
 

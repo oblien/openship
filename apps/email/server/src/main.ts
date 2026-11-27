@@ -4,7 +4,7 @@
  * Hono + Bun. Mounts:
  *   /auth/*       sign-in / sign-out / session
  *   /mail/idle    SSE bridge to IMAP IDLE
- *   /admin/*      branding writes (token-gated)
+ *   /admin/*      branding and private sending configuration (token-gated)
  *   /branding.*   branding read API + uploaded assets
  *   /trpc/*       tRPC over HTTP (all the things)
  *   /api/trpc/*   same - what the Zero client posts to
@@ -21,11 +21,11 @@ import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { getCookie } from 'hono/cookie';
+import { readActiveSessionId } from './lib/session-cookies';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
 import { trpcServer } from '@hono/trpc-server';
-import { serveStatic } from 'hono/bun';
+import { serveStatic } from '@hono/bun';
 import { env } from './env';
 import { authRoutes } from './routes/auth';
 import { idleRoute } from './routes/idle';
@@ -34,6 +34,7 @@ import { buildContext } from './ctx';
 import { getSession } from './lib/session';
 import { getBranding, assetsDir } from './lib/branding';
 import { renderIndexHtml } from './lib/index-html';
+import { sendingAdminRoute } from './routes/sending-admin';
 import { brandingAdminRoute } from './routes/branding-admin';
 import type { Server } from 'bun';
 import { startOutboxWorker } from './mail/outbox';
@@ -92,7 +93,7 @@ app.get('/health', (c) => c.json({ ok: true, version: '0.2.0' }));
 app.get('/branding.json', (c) => c.json(getBranding()));
 
 // Logo / favicon / future uploads - served from ${BRANDING_PATH}/assets/.
-// hono/bun's serveStatic resolves the file from `${root}/${path-after-rewrite}`.
+// serveStatic resolves the file from `${root}/${path-after-rewrite}`.
 app.use(
   '/branding/assets/*',
   serveStatic({
@@ -108,39 +109,25 @@ app.route('/mcp', mailMcpRoutes);
 // here using the shared BRANDING_ADMIN_TOKEN. Reads (`/branding.json`)
 // stay unauthenticated for the login page.
 app.route('/admin', brandingAdminRoute);
+app.route('/admin', sendingAdminRoute);
 
 // The upstream Zero client posts to /api/trpc; we keep /trpc as a
 // convenience for curl + the openship dashboard. `endpoint` MUST match
 // the mount point - the hono adapter uses it to strip the prefix
 // before resolving the procedure name.
-const createTrpcContext = async (_opts: unknown, c: any) => {
-  const sid = getCookie(c, env.SESSION_COOKIE_NAME);
-  const session = sid ? await getSession(sid) : null;
-  return { ...buildContext(session, c) };
-};
-// allowMethodOverride: the client uses `methodOverride: 'POST'` so EVERY
-// procedure call goes out as POST (queries and mutations alike). Without
-// this flag, @trpc/server rejects POST-to-query with
-// `METHOD_NOT_SUPPORTED` (HTTP 405), which is what every load-time
-// dashboard request hit.
-app.use(
-  '/trpc/*',
-  trpcServer({
+for (const endpoint of ['/trpc', '/api/trpc']) {
+  app.use(`${endpoint}/*`, trpcServer({
     router: appRouter,
-    endpoint: '/trpc',
-    createContext: createTrpcContext,
+    endpoint,
+    async createContext(_opts, c) {
+      const sid = await readActiveSessionId(c);
+      const session = sid ? await getSession(sid) : null;
+      return { ...buildContext(session, c) };
+    },
+    // The web client uses POST for both mutations and queries.
     allowMethodOverride: true,
-  }),
-);
-app.use(
-  '/api/trpc/*',
-  trpcServer({
-    router: appRouter,
-    endpoint: '/api/trpc',
-    createContext: createTrpcContext,
-    allowMethodOverride: true,
-  }),
-);
+  }));
+}
 
 // ─── Client SPA ──────────────────────────────────────────────────────────────
 //
@@ -162,7 +149,7 @@ const clientBuildDir =
 // immutable caching; only the document is dynamic, so it must not be cached by
 // intermediaries or a rebrand would appear stuck.
 const sendIndexHtml = (c: Context) =>
-  c.html(renderIndexHtml(clientBuildDir), 200, {
+  c.html(renderIndexHtml(clientBuildDir, env.SESSION_COOKIE_NAME), 200, {
     'Cache-Control': 'no-cache, must-revalidate',
   });
 
@@ -200,7 +187,7 @@ console.log(`[zero] listening on http://localhost:${port}`);
 export default {
   port,
   async fetch(request: Request, server: Server<unknown>) {
-    const response = await app.fetch(request);
+    const response = await app.fetch(request, { server });
     // Quiet SSE responses outlive Bun's default ten-second idle timeout.
     // Keep ordinary request timeouts intact.
     if (response.headers.get('Content-Type')?.startsWith('text/event-stream')) {

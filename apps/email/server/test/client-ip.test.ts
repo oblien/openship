@@ -1,6 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { Hono } from "hono";
 
+import { env } from "../src/env";
 import { clientIp } from "../src/lib/client-ip";
 
 type ConnectionEnv = {
@@ -26,7 +27,18 @@ async function requestClientIp(headers?: Record<string, string>, env?: Connectio
 }
 
 describe("clientIp", () => {
+  const previous = env.TRUST_PROXY;
+  afterEach(() => { env.TRUST_PROXY = previous; });
+
+  it("uses the socket peer for a direct listener, including when forwarding headers are present", async () => {
+    env.TRUST_PROXY = false;
+    expect(await requestClientIp({ "x-real-ip": "203.0.113.7" }, {
+      server: { requestIP: () => ({ address: "192.0.2.44" }) },
+    })).toBe("192.0.2.44");
+  });
+
   it("uses trimmed x-real-ip and ignores a conflicting x-forwarded-for", async () => {
+    env.TRUST_PROXY = true;
     const ip = await requestClientIp({
       "x-real-ip": " 203.0.113.7 ",
       "x-forwarded-for": "198.51.100.9",
@@ -62,6 +74,7 @@ describe("clientIp", () => {
     // `?.trim()` leaves an empty string, which is falsy, so these must reach the
     // connection-info fallback instead of becoming a blank bucket key that every
     // header-stripped request would share.
+    env.TRUST_PROXY = true;
     for (const xRealIp of ["", "   ", "\t\n"]) {
       const ip = await requestClientIp({
         "x-real-ip": xRealIp,

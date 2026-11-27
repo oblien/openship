@@ -1,4 +1,5 @@
 import { ManagementBillingOperationSchemas, ManagementPricingSchema } from "./management-billing";
+import { MailPricingSchema } from "./managed-mail";
 import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
 import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema, PreviewSubscriptionChangeBody, ConfirmSubscriptionChangeBody, SubscriptionChangeScopeSchema } from "./billing-inputs";
@@ -56,6 +57,7 @@ export const BillingCustomQuoteSchema = Type.Object({
 export const BillingPlansSchema = Type.Object({
   provider: Type.Optional(Type.Literal("oblien")),
   management: Type.Optional(ManagementPricingSchema),
+  mail: Type.Optional(MailPricingSchema),
   locale: Type.String(), annual: Type.Object({ enabled: Type.Boolean(), monthsFree: Type.Number() }),
   ui: Type.Record(Type.String(), Type.String()),
   custom: Type.Optional(Type.Object({

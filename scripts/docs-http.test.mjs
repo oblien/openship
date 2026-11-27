@@ -163,3 +163,21 @@ test("Cloud traffic analytics keeps its authenticated relay after retiring produ
   const telemetry = routes.filter((route) => route.method === "POST" && route.path === "/api/cloud/telemetry");
   assert.equal(telemetry.length, 0);
 });
+
+test("mail factories expose scoped worker routes and preserve Cloud-only DNS operations", () => {
+  const routes = httpSurface();
+  const find = (method, path) => routes.find((route) =>
+    route.method === method && route.path === "/api/mail" + path);
+  const admin = "/admin/:serverId/domains/:domain";
+  const worker = "/tenants/:mailTenant" + admin;
+  assert.ok(find("GET", admin).mcp);
+  assert.equal(find("GET", worker).access, "mail_server:read");
+  assert.equal(find("GET", worker).localOnly, true);
+  assert.equal(find("GET", worker).mcp, undefined);
+  assert.ok(find("GET", admin + "/dns/plan"));
+  assert.equal(find("GET", worker + "/dns/plan"), undefined);
+  assert.equal(find("POST", worker + "/dns/apply"), undefined);
+  for (const kind of ["senders", "domains"]) {
+    assert.equal(find("PUT", "/sending/caps/" + kind).access, "billing:admin");
+  }
+});

@@ -31,8 +31,6 @@ fatal() { echo "[db-bootstrap] FATAL: $*" >&2; exit 1; }
 
 ENGINE=/opt/iRedMail-engine
 SAMPLES="$ENGINE/samples"
-WORK=/tmp/mailboot.d
-rm -rf "$WORK"; mkdir -p "$WORK"
 
 DB_HOST="${OPENSHIP_MAIL_DB_HOST:-127.0.0.1}"
 DB_PORT="${OPENSHIP_MAIL_DB_PORT:-5432}"
@@ -117,8 +115,14 @@ if psql_su -d "$VMAIL_DB_NAME" -tAc \
 fi
 log "bootstrapping mail databases (vmail, amavisd, iredapd, fail2ban)"
 
+# SQL templates contain the postmaster hash after substitution.
+umask 077
+WORK="$(mktemp -d)"
+trap 'rm -rf -- "$WORK"' EXIT
+
 # ── 1. roles (idempotent create; converge password via psql :'pw', injection-safe)
-psql_su -d postgres -v pw="$MAIL_DB_PW" <<'SQL'
+psql_su -d postgres <<'SQL'
+\getenv pw MAIL_DB_PW
 DO $$
 DECLARE r text;
 BEGIN
@@ -150,18 +154,21 @@ cp -f "$TRIG"                                                 "$WORK/trigger.sql
 # EMPTY string, which was then substituted into first.sql — seeding a postmaster with
 # no password while the bootstrap reported success. Keep stderr, and refuse anything
 # that isn't a well-formed SSHA512 hash.
-DOMAIN_ADMIN_PASSWD_HASH="$(doveadm pw -s SSHA512 -p "$DOMAIN_ADMIN_PASSWD_PLAIN" || true)"
+case "${DOMAIN_ADMIN_PASSWD_PLAIN:?Postmaster password required}" in
+  *[[:cntrl:]]*) fatal "Postmaster password must be a single line without control characters." ;;
+esac
+# doveadm reads the password and confirmation from stdin in noninteractive mode.
+DOMAIN_ADMIN_PASSWD_HASH="$(printf '%s\n%s\n' "$DOMAIN_ADMIN_PASSWD_PLAIN" "$DOMAIN_ADMIN_PASSWD_PLAIN" | doveadm pw -s SSHA512)" || fatal "doveadm pw failed to hash the postmaster password."
 export DOMAIN_ADMIN_PASSWD_HASH
 case "$DOMAIN_ADMIN_PASSWD_HASH" in
   '{SSHA512}'*) : ;;
   '') fatal "doveadm pw produced no output — is doveadm installed in this image?
   The postmaster account would have been created with an EMPTY password." ;;
-  *) fatal "doveadm pw returned something that is not an SSHA512 hash: ${DOMAIN_ADMIN_PASSWD_HASH:0:40}…" ;;
+  *) fatal "doveadm pw returned an invalid SSHA512 hash." ;;
 esac
 
 # iRedMail's exact PH_ substitutions ($ENV = safe for '.', '/', etc. in values).
 for f in "$WORK/iredmail.sql" "$WORK/grant.sql" "$WORK/first.sql"; do
-  perl -pi -e 's#PH_VMAIL_DB_NAME#$ENV{VMAIL_DB_NAME}#g'                 "$f"
   perl -pi -e 's#PH_VMAIL_DB_BIND_USER#$ENV{VMAIL_DB_BIND_USER}#g'      "$f"
   perl -pi -e 's#PH_VMAIL_DB_ADMIN_USER#$ENV{VMAIL_DB_ADMIN_USER}#g'    "$f"
   perl -pi -e 's#PH_FIRST_DOMAIN#$ENV{FIRST_DOMAIN}#g'                  "$f"

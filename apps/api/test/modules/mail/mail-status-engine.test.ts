@@ -96,6 +96,17 @@ beforeEach(() => {
 });
 
 describe("GET /mail/status — engine state", () => {
+  it("returns public metadata from a saved installation with legacy step credentials", async () => {
+    const engine = { image: "openship-mail:test", container: "openship-mail" };
+    const secrets = { DOMAIN_ADMIN_PASSWD_PLAIN: "private-fixture-only" };
+    readState.mockResolvedValue({ ...STATE, secrets, completedSteps: {
+      "5": { stepId: 5, success: true, message: "Installed", data: { engine, secrets } },
+    } });
+    const status = await callStatus();
+    expect(status.steps).toContainEqual(expect.objectContaining({ id: 5, data: { engine } }));
+    expect(JSON.stringify(status)).not.toContain(secrets.DOMAIN_ADMIN_PASSWD_PLAIN);
+  });
+
   it("reports a serving containerized engine on the same executor as the state read", async () => {
     const body = await callStatus();
 

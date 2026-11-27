@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "Buzones compartidos",
+      "description": "Buzones para tu equipo alojados en OpenShip."
+    },
+    "dedicated": {
+      "name": "Servidor de correo dedicado",
+      "description": "Una nueva VM privada para tus buzones, con envío gestionado incluido."
+    },
+    "sending": {
+      "name": "API de envío",
+      "description": "Envía correos transaccionales desde tu aplicación con un dominio verificado."
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "Solo",
+      "tagline": "Para proyectos personales."
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "Para equipos pequeños."
+    },
+    "business": {
+      "name": "Business",
+      "tagline": "Para equipos con varias marcas."
+    },
+    "scale": {
+      "name": "Scale",
+      "tagline": "Para plataformas que dan servicio a clientes."
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

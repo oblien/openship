@@ -57,12 +57,12 @@ export function AliasesTab({
   // Heading lives in the page header in mail view — see ../../_lib/mail-section.
   const hoisted = useMailRailOwnsTabs(serverId);
   const [domains, setDomains] = useState<AdminDomain[]>([]);
+  const activeDomain = selectedDomain || primaryDomain || domains[0]?.domain || "";
   const [aliases, setAliases] = useState<AdminAlias[]>([]);
   const [loadingDomains, setLoadingDomains] = useState(true);
   const [loadingAliases, setLoadingAliases] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const activeDomain = selectedDomain || primaryDomain;
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +93,11 @@ export function AliasesTab({
   }, [serverId, selectedDomain, primaryDomain, onSelectDomain]);
 
   const reloadAliases = useCallback(async () => {
-    if (!activeDomain) return;
+    if (!activeDomain) {
+      setAliases([]);
+      setLoadingAliases(false);
+      return;
+    }
     setLoadingAliases(true);
     setError(null);
     try {
@@ -260,7 +264,7 @@ export function AliasesTab({
         columns={columns}
         rows={aliases}
         rowKey={(r) => String(r.id)}
-        loading={loadingAliases}
+        loading={loadingDomains || loadingAliases}
         rowActions={(row) => (
           <RowActionsMenu
             label={interpolate(t.emailsAdmin.shared.rowActions, { name: row.address })}
@@ -287,7 +291,7 @@ export function AliasesTab({
         empty={{
           icon: "forward",
           title: t.emailsAdmin.aliases.emptyTitle,
-          description: interpolate(t.emailsAdmin.aliases.emptyDesc, { domain: activeDomain }),
+          description: activeDomain ? interpolate(t.emailsAdmin.aliases.emptyDesc, { domain: activeDomain }) : t.emailsAdmin.domains.emptyDesc,
           action: (
             <button
               onClick={openCreate}

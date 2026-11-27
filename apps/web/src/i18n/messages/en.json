@@ -2902,10 +2902,6 @@
     "mlhqabe": "Mailbox storage",
     "m1t7t2wk": "Shared",
     "my14yjr": "API",
-    "myu51jo": "For personal projects.",
-    "m12ifwwp": "For small teams.",
-    "m15ti3x2": "For teams with multiple brands.",
-    "m1waezfd": "For platforms serving customers.",
     "m116lozf": "Compare features",
     "m178xhu3": "Send from your app via API",
     "mzxuq4l": "Send-only keys per domain",
@@ -2919,7 +2915,14 @@
     "m1r414ct": "API keys",
     "mfm9g8": "Per domain",
     "m12hv6lv": "Sample monthly prices in USD.",
-    "mhi9qfg": "View dashboard plans"
+    "mhi9qfg": "View dashboard plans",
+    "m1934rwj": "Usage reports",
+    "mukpq5o": "Run OpenShip Mail on your VM",
+    "m1shnxdq": "Install mailboxes on an existing Cloud VM or choose a new compute plan. Outgoing mail uses your Email API allowance.",
+    "m1cnf92t": "Use an existing VM",
+    "m7xi513": "Choose a new Cloud plan",
+    "m1qf703d": "Email API included",
+    "mzhhs8b": "Use a Cloud VM"
   },
   "ReleaseNotes": {
     "m1005a3f": "— the wizard used to invent a hostname from the project name whenever a step had no route chosen, labelling port fields, previewing monorepo sub-app hosts, and even wiring the \"Visit Site\" button to a host that would never exist. It now shows only hosts your config actually names, and hides \"Visit Site\" entirely when the deployment has no public domain.",

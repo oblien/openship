@@ -10,9 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useTRPC } from "@/providers/query-provider";
 import { useActiveConnection } from "@/hooks/use-connections";
+import { useMailAssistantAvailability } from "@/hooks/use-mail-assistant";
 import { useMediaQuery } from "@/hooks/use-media-query";
 
-const AIContext = createContext<{ open: boolean; setOpen: (v: boolean) => void } | null>(null);
+const AIContext = createContext<{ available: boolean; open: boolean; setOpen: (v: boolean) => void } | null>(null);
 
 function restoreAssistantFocus() {
   const triggers = document.querySelectorAll<HTMLButtonElement>(
@@ -30,6 +31,7 @@ export function useAISidebar() {
 export function AISidebarProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState(false);
   const account = useActiveConnection();
+  const available = !!useMailAssistantAvailability()?.configured;
   const desktop = useMediaQuery("(min-width: 1024px)");
   const setOpen = useCallback(
     (value: boolean) => {
@@ -39,9 +41,9 @@ export function AISidebarProvider({ children }: { children: ReactNode }) {
     [desktop],
   );
   return (
-    <AIContext.Provider value={{ open, setOpen }}>
+    <AIContext.Provider value={{ available, open: available && open, setOpen }}>
       {children}
-      {open &&
+      {available && open &&
         (desktop ? (
           <aside
             id="mail-assistant"

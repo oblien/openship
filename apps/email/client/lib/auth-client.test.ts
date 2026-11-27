@@ -1,8 +1,25 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { signIn } from "./auth-client";
+import { readActiveConnectionId, signIn } from "./auth-client";
 
 const input = { email: "user@example.test", password: "test-only" };
 afterEach(() => mock.restore());
+
+it("scopes the active mailbox to the cookie named by this webmail instance", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const dataset: { connectionCookie?: string } = {};
+  const doc = { documentElement: { dataset }, cookie: "zero_session_id=default; local_mail_id=remote" };
+  Object.defineProperty(globalThis, "document", { configurable: true, value: doc });
+  try {
+    expect(readActiveConnectionId()).toBe("default");
+    dataset.connectionCookie = "local_mail_id";
+    expect(readActiveConnectionId()).toBe("remote");
+    doc.cookie = "zero_session_id=default";
+    expect(readActiveConnectionId()).toBeNull();
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else Reflect.deleteProperty(globalThis, "document");
+  }
+});
 
 describe("webmail sign-in errors", () => {
   it("preserves the distinction between bad credentials and an unavailable backend", async () => {

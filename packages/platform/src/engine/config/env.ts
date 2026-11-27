@@ -368,6 +368,10 @@ const envSchema = z.object({
   HOST_DOMAIN: z.string().optional(),
 
   /* ---------- Oblien Cloud ---------- */
+  OPENSHIP_MAIL_DEDICATED_FLEET: z.string().optional(),
+  OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED: envBool("false"),
+  OPENSHIP_MAIL_ENGINES: z.string().optional(),
+  OPENSHIP_MAIL_PLAN_GRANTS: z.string().optional(),
   OBLIEN_CLIENT_ID: z.string().optional(),
   OBLIEN_CLIENT_SECRET: z.string().optional(),
   /** Control-plane endpoint. Override only for an Oblien staging installation. */

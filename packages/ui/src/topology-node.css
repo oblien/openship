@@ -1,0 +1,34 @@
+.topology-node {
+  border-radius: 1rem;
+  text-align: start;
+}
+.topology-node:not([data-picked="true"]) {
+  border: 0;
+  background: color-mix(in oklab, var(--scale-node-color) 12%, var(--th-card-on-page));
+  box-shadow: none;
+}
+.topology-node-header {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem 1rem .75rem;
+}
+.topology-node-header:only-child { padding-bottom: 1rem; }
+.topology-node-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: .75rem;
+  background: var(--scale-node-tint);
+  color: var(--scale-node-color);
+}
+.topology-node-label { flex: 1; min-width: 0; }
+.topology-node-label h3, .topology-node-label p {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.topology-node-label h3 { color: var(--foreground); font-size: .875rem; line-height: 1.25rem; font-weight: 500; }
+.topology-node-label p { margin-top: .125rem; color: var(--muted-foreground); font-size: .75rem; line-height: 1rem; }

@@ -169,6 +169,19 @@
       "name": "@repo/email",
       "version": "1.0.1",
     },
+    "apps/mail-desktop": {
+      "name": "@repo/mail-desktop",
+      "version": "1.0.1",
+      "devDependencies": {
+        "@electron-forge/cli": "^7.11.1",
+        "@electron-forge/maker-zip": "^7.11.1",
+        "@repo/ui": "workspace:*",
+        "electron": "44.11.1",
+        "playwright-core": "^1.65.1",
+        "react": "~19.2.9",
+        "react-dom": "~19.2.9",
+      },
+    },
     "apps/web": {
       "name": "@repo/web",
       "version": "1.0.1",
@@ -224,7 +237,7 @@
         "ignore": "^7.0.5",
         "ioredis": "^5.10.0",
         "ipaddr.js": "^2.4.0",
-        "oblien": "4.1.0",
+        "oblien": "4.2.0",
         "ssh2": "^1.17.0",
         "tar-fs": "^2.1.4",
         "undici": "^7.30.2",
@@ -1167,6 +1180,8 @@
     "@repo/desktop": ["@repo/desktop@workspace:apps/desktop"],
 
     "@repo/email": ["@repo/email@workspace:apps/email"],
+
+    "@repo/mail-desktop": ["@repo/mail-desktop@workspace:apps/mail-desktop"],
 
     "@repo/onboarding": ["@repo/onboarding@workspace:packages/onboarding"],
 
@@ -2756,7 +2771,7 @@
 
     "object.assign": ["object.assign@4.1.7", "", { "dependencies": { "call-bind": "^1.0.8", "call-bound": "^1.0.3", "define-properties": "^1.2.1", "es-object-atoms": "^1.0.0", "has-symbols": "^1.1.0", "object-keys": "^1.1.1" } }, "sha512-nK28WOo+QIjBkDduTINE4JkF/UJJKyf2EJxvJKfblDpyg0Q+pkOHNTL0Qwy6NP6FhE/EnzV73BxxqcJaXY9anw=="],
 
-    "oblien": ["oblien@4.1.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "openapi-fetch": "0.17.0", "ws": "^8.18.3", "zod": "4.3.6" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-C9hGiASF91OnbJq5F+127GsL4PJLOM6+GFIEqr9ji5+0Y/M0Nj1YIvf6/Tys1/snpK+17LrD3rsWm9SVcIWWkw=="],
+    "oblien": ["oblien@4.2.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "openapi-fetch": "0.17.0", "ws": "^8.18.3", "zod": "4.3.6" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-Dd8L8JLvsyNBoRD3uttqdFELFKABDvb7bn0a7yMyeX4gQEpAO0coykprH+Yrif8DTHzgPvaNE9vB9dmfk5lfbA=="],
 
     "obug": ["obug@2.2.1", "", {}, "sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q=="],
 
@@ -2881,6 +2896,8 @@
     "pkce-challenge": ["pkce-challenge@5.0.1", "", {}, "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="],
 
     "pkg-types": ["pkg-types@1.3.1", "", { "dependencies": { "confbox": "^0.1.8", "mlly": "^1.7.4", "pathe": "^2.0.1" } }, "sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ=="],
+
+    "playwright-core": ["playwright-core@1.65.1", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw=="],
 
     "plist": ["plist@3.1.1", "", { "dependencies": { "@xmldom/xmldom": "^0.9.10", "base64-js": "^1.5.1", "xmlbuilder": "^15.1.1" } }, "sha512-ZIfcLJC+7E7FBFnDxm9MPmt7D+DidyQ26lewieO75AdhA2ayMtsJSES0iWzqJQbcVRSrTufQoy0DR94xHue0oA=="],
 

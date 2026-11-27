@@ -59,7 +59,13 @@ export interface RelayProviderSpec {
   readonly mailFrom?: { readonly mxTemplate: string; readonly spf: string };
 }
 
+export const OBLIEN_RELAY = {
+  id: "oblien", label: "Openship managed sending",
+  hostTemplate: "smtp.oblien.com", defaultPort: 587,
+} as const satisfies RelayProviderSpec;
+
 export const RELAY_PROVIDERS = [
+  OBLIEN_RELAY,
   {
     id: "ses",
     label: "Amazon SES",

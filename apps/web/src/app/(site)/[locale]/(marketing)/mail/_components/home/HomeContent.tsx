@@ -73,11 +73,20 @@ export default function HomeContent() {
             </div>
             <div className="p-5">
               <p className="flex items-center gap-2 text-sm text-[#aaa]"><CurvedArrow className="size-4 fill-current" />{copy("Send from your code")}</p>
-              <pre dir="ltr" className="my-3 overflow-x-auto rounded-lg bg-[#141414] p-3 text-xs leading-relaxed text-[#b7b7b7]"><code>{`nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: 465, secure: true,
-  auth: { user, pass }
-})`}</code></pre>
+              <pre dir="ltr" className="my-3 overflow-x-auto rounded-lg bg-[#141414] p-3 text-xs leading-relaxed text-[#b7b7b7]"><code>{`import { OpenshipClient } from "openship/client";
+
+const client = new OpenshipClient({
+  baseUrl: "https://api.openship.io",
+  token: process.env.OPENSHIP_MAIL_API_KEY,
+});
+
+await client.mail.send({
+  from: "hello@example.com",
+  to: ["reader@example.org"],
+  subject: "Welcome",
+  text: "Your inbox is ready.",
+  idempotencyKey: "welcome-user-123",
+});`}</code></pre>
               <div className="flex flex-wrap gap-4 text-sm">
                 <Link href="/mail/setup-guide/nodemailer" className="mail-inline-link">{copy("Nodemailer")} <ArrowRight className="size-3.5 fill-current rtl:rotate-180" /></Link>
                 <Link href="/docs/api/mail" className="mail-inline-link">{copy("Mail API")} <ArrowRight className="size-3.5 fill-current rtl:rotate-180" /></Link>

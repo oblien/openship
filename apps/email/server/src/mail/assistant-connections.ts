@@ -23,7 +23,7 @@ export const connectAiInput = z.object({
   name: z.string().trim().max(80).optional(),
 });
 const connecting = new Set<string>();
-const prepared = new Map<string, Mindwire>();
+const preparations = new Map<string, "starting" | "started" | TRPCError>();
 const attempts = createRateLimiter({ windowMs: 60_000, max: 5 });
 
 function runtime(owner: string, agent: "codex" | "claude-code") {
@@ -58,18 +58,33 @@ export async function prepareAssistant(
     const owner = mailboxId(mailbox);
     const agent = agentFor(provider);
     const key = `${owner}:${agent}`;
-    if (start) prepared.set(key, runtime(owner, agent));
-    const client = prepared.get(key);
-    if (!client) return { ready: false, running: false, provider };
-    const status = await prepareRuntime(client, start);
+    const preparation = preparations.get(key);
+    if (!start && !preparation) return { ready: false, running: false, provider };
+    const client = runtime(owner, agent);
+    if (preparation === "starting") return { ready: false, running: true, provider };
+    if (start) {
+      // A cold image build can take minutes. The dialog polls while a single
+      // setup runs, even if the user closes it or retries the HTTP request.
+      preparations.set(key, "starting");
+      void prepareRuntime(client, true).then(
+        () => preparations.set(key, "started"),
+        (error) => preparations.set(key, preparationError(error)),
+      );
+      return { ready: false, running: true, provider };
+    }
+    if (preparation instanceof TRPCError) throw preparation;
+    const status = await prepareRuntime(client, false);
     return { ...status, provider };
   } catch (error) {
-    if (error instanceof TRPCError) throw error;
-    throw new TRPCError({
-      code: "BAD_GATEWAY",
-      message: "Could not prepare AI. Try again in a moment.",
-    });
+    throw preparationError(error);
   }
+}
+
+function preparationError(error: unknown) {
+  return error instanceof TRPCError ? error : new TRPCError({
+    code: "BAD_GATEWAY",
+    message: "Could not prepare AI. Try again in a moment.",
+  });
 }
 
 function customBaseUrl(value?: string) {

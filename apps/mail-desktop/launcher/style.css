@@ -1,0 +1,191 @@
+@font-face {
+  font-family: Gellix;
+  src: url(../dist/Gellix-Regular.woff2);
+}
+@font-face {
+  font-family: Gellix;
+  src: url(../dist/Gellix-Medium.woff2);
+  font-weight: 500 700;
+}
+:root {
+  color-scheme: dark;
+  --bg: #141414;
+  --surface: #222;
+  --text: #f5f5f4;
+  --muted: #b4b4b1;
+  --line: #373737;
+  --accent: #d1eaa5;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    16px/1.5 Gellix,
+    system-ui,
+    sans-serif;
+}
+main {
+  max-width: 490px;
+  margin: 0 auto;
+  padding: clamp(36px, 10vh, 88px) 32px 36px;
+}
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 500;
+  font-size: 18px;
+}
+.identity img {
+  object-fit: contain;
+}
+h1 {
+  font-size: clamp(31px, 7vw, 40px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.12;
+  margin: 36px 0 26px;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  color: var(--text);
+  border: 0;
+}
+button:focus-visible,
+input:focus-visible,
+fieldset input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+fieldset {
+  border: 0;
+  padding: 4px;
+  margin: 0 0 24px;
+  border-radius: 12px;
+  background: #1c1c1c;
+  display: flex;
+}
+fieldset label {
+  width: 50%;
+  position: relative;
+  cursor: pointer;
+}
+fieldset span {
+  display: block;
+  text-align: center;
+  border-radius: 9px;
+  padding: 7px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+fieldset input {
+  position: absolute;
+  opacity: 0;
+}
+fieldset input:checked + span {
+  background: #333331;
+  color: var(--text);
+}
+form > label,
+#server label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 7px;
+}
+input[type="email"],
+input[type="url"] {
+  background: var(--surface);
+  border: 0;
+  border-radius: 10px;
+  padding: 13px 15px;
+  width: 100%;
+  color: var(--text);
+}
+#server {
+  margin-top: 16px;
+}
+.primary {
+  width: 100%;
+  background: var(--text);
+  color: #171717;
+  font-weight: 500;
+  border-radius: 12px;
+  margin-top: 20px;
+  padding: 12px;
+}
+.primary span {
+  margin-left: 5px;
+}
+button:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+#status {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 16px 0 0;
+  overflow-wrap: anywhere;
+}
+#status.error {
+  color: #efae9e;
+}
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  gap: 8px;
+}
+li button,
+.back {
+  background: transparent;
+}
+.account {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 13px 0;
+  overflow-wrap: anywhere;
+}
+.account small {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.remove,
+.back {
+  padding: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.back {
+  margin-top: 10px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+[hidden] {
+  display: none !important;
+}

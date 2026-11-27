@@ -38,7 +38,9 @@ export const MailRequestSchemas = {
   setup: Type.Object({
     serverId: ResourceIdSchema, domain: Type.String({ minLength: 1 }),
     startStep: Type.Optional(Type.Integer({ minimum: 1 })),
+    outboundDelivery: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("relay")])),
     config: Type.Optional(Type.Object({
+      compose: Type.Optional(Type.Boolean()),
       adminPassword: Type.Optional(password),
       storageBackend: Type.Optional(Type.Union([Type.Literal("mariadb"), Type.Literal("postgresql")])),
     }, { additionalProperties: false })),
@@ -57,7 +59,7 @@ export const MailRequestSchemas = {
     provider, scope: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("selected")])),
     domains: Type.Optional(Type.Array(Type.String())), addresses: Type.Optional(Type.Array(Type.String())),
     spfInclude: optionalText, region: optionalText, host: optionalText, port,
-    username: Type.String(), password: optionalText, ...identity,
+    username: Type.String(), password: optionalText, credentialId: Type.Optional(Type.String({ maxLength: 64 })), ...identity,
     identities: Type.Optional(Type.Record(Type.String(), Type.Object(identity))),
   }, { additionalProperties: false }),
   deployExternalWebmail: Type.Object({
@@ -74,7 +76,7 @@ export const MailRequestSchemas = {
   certificate: Type.Object({ autoRenew: Type.Boolean() }, { additionalProperties: false }),
   domainFilter: Type.Object({ domain: optionalText }),
   logs: Type.Object({ lines: Type.Optional(Type.Integer({ minimum: 1 })) }),
-  createDomain: Type.Object({ domain: Type.String({ minLength: 1 }), ...domainFields }),
+  createDomain: Type.Object({ createPostmaster: Type.Optional(Type.Boolean()), domain: Type.String({ minLength: 1 }), ...domainFields }),
   updateDomain: Type.Object({ ...domainFields, active: Type.Optional(Type.Boolean()) }),
   deleteDomain: Type.Object({ cascade: Type.Optional(Type.Boolean({ default: false })) }),
   createMailbox: Type.Object({
@@ -115,6 +117,7 @@ export const MailRequestSchemas = {
       Type.Object({ kind: Type.Literal("cloud"), serverId: Type.Optional(ResourceIdSchema) }),
     ]),
     replaceLegacy: Type.Optional(Type.Boolean({ default: false })),
+    dedicatedAssistant: Type.Optional(Type.Boolean()),
     reconnectProjectId: Type.Optional(ResourceIdSchema),
   }),
 } as const;

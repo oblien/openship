@@ -11,11 +11,10 @@
 
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { getCookie, setCookie } from 'hono/cookie';
+import { activateSession, readLiveSessionIds } from '../../lib/session-cookies';
 import { inArray, eq } from 'drizzle-orm';
 import { router, protectedProcedure, publicProcedure } from '../trpc';
 import { db, schema } from '../../db';
-import { env } from '../../env';
 
 function gone(name: string): never {
   throw new TRPCError({
@@ -63,37 +62,6 @@ export interface Connection {
   isDefault: boolean;
 }
 
-// Read the multi-session cookie (`zero_sessions`) and filter out any IDs
-// whose rows have expired or been deleted. Returns the surviving ids in
-// the order the cookie listed them (freshest first).
-async function readLiveSessionIds(raw: string | undefined): Promise<string[]> {
-  if (!raw) return [];
-  const ids = Array.from(
-    new Set(raw.split(',').map((s) => s.trim()).filter(Boolean)),
-  );
-  if (!ids.length) return [];
-  const rows = await db.query.session.findMany({
-    where: inArray(schema.session.id, ids),
-    columns: { id: true, expiresAt: true },
-  });
-  const now = Date.now();
-  const alive = new Set(
-    rows.filter((r) => r.expiresAt.getTime() > now).map((r) => r.id),
-  );
-  return ids.filter((id) => alive.has(id));
-}
-
-// Host-only - see the long comment in routes/auth.ts for why we deliberately
-// don't set a Domain attribute. Same shape as the canonical COOKIE_OPTS in
-// auth.ts; kept duplicated locally to avoid a circular import between this
-// tRPC stub and the HTTP routes.
-const COOKIE_OPTS = {
-  httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'Lax' as const,
-  path: '/',
-};
-
 export const connectionsRouter = router({
   // Returns one entry per session id in the `zero_sessions` cookie. The
   // active one is whichever id `zero_session` points at. Connection IDs
@@ -117,10 +85,8 @@ export const connectionsRouter = router({
           ],
         };
       }
-      const activeId = getCookie(hono, env.SESSION_COOKIE_NAME) ?? ctx.session.sessionId;
-      const liveIds = await readLiveSessionIds(
-        getCookie(hono, `${env.SESSION_COOKIE_NAME}s`),
-      );
+      const activeId = ctx.session.sessionId;
+      const liveIds = await readLiveSessionIds(hono);
       // The active session is always present even if it somehow fell out
       // of the list cookie (e.g. cookie got truncated).
       const idsForLookup = liveIds.includes(activeId)
@@ -165,9 +131,7 @@ export const connectionsRouter = router({
       if (!hono) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Missing HTTP context' });
       }
-      const liveIds = await readLiveSessionIds(
-        getCookie(hono, `${env.SESSION_COOKIE_NAME}s`),
-      );
+      const liveIds = await readLiveSessionIds(hono);
       if (!liveIds.includes(input.connectionId)) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Unknown session' });
       }
@@ -178,23 +142,7 @@ export const connectionsRouter = router({
       if (!row) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Unknown session' });
       }
-      setCookie(hono, env.SESSION_COOKIE_NAME, row.id, {
-        ...COOKIE_OPTS,
-        expires: row.expiresAt,
-      });
-      // Mirror to the non-httpOnly companion cookie so the client can
-      // namespace its IDB persist slot at boot. Same value as the httpOnly
-      // session cookie - see auth.ts for the security rationale.
-      setCookie(hono, `${env.SESSION_COOKIE_NAME}_id`, row.id, {
-        ...COOKIE_OPTS,
-        httpOnly: false,
-        expires: row.expiresAt,
-      });
-      const reordered = [row.id, ...liveIds.filter((id) => id !== row.id)];
-      setCookie(hono, `${env.SESSION_COOKIE_NAME}s`, reordered.join(','), {
-        ...COOKIE_OPTS,
-        expires: row.expiresAt,
-      });
+      await activateSession(hono, row.id, row.expiresAt, liveIds);
       return { ok: true, email: row.email };
     }),
 });

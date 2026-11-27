@@ -154,6 +154,7 @@ export interface MailStepResult {
  * as `PlatformMailboxState.password`, and is NEVER returned to the client.
  */
 export interface OutboundRelay {
+  linkedInstallation?: string;
   enabled: boolean;
   /**
    * Provider id from the `@repo/core` RELAY_PROVIDERS registry (`custom` for
@@ -171,6 +172,8 @@ export interface OutboundRelay {
   username: string;
   /** Encrypted SASL password blob (lib/encryption). Never returned to the client. */
   passwordEncrypted: string;
+  /** Public provider key identifier used when rotating a managed relay. */
+  credentialId?: string;
   /**
    * Routing scope. `"all"` (or absent — back-compat) → a global Postfix
    * `relayhost`: every domain sends via the relay. `"selected"` → only

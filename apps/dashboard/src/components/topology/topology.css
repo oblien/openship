@@ -52,11 +52,6 @@
 .topology-node {
   transition: background-color 160ms ease-out;
 }
-.topology-node:not([data-picked="true"]) {
-  border: 0;
-  background: color-mix(in oklab, var(--scale-node-color) 12%, var(--th-card-on-page));
-  box-shadow: none;
-}
 .topology-node:not([data-picked="true"]):hover {
   background: color-mix(in oklab, var(--scale-node-color) 18%, var(--th-card-on-page));
 }
@@ -65,10 +60,6 @@
 }
 .topology-node[data-unavailable="true"] .topology-node-action {
   cursor: not-allowed;
-}
-.topology-node-icon {
-  background: var(--scale-node-tint);
-  color: var(--scale-node-color);
 }
 .topology-port.react-flow__handle {
   width: 9px;

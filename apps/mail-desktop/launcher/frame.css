@@ -1,0 +1,32 @@
+:root {
+  --titlebar-h: 44px;
+  --th-bg-page: #141414;
+  --th-text-title: rgba(255, 255, 255, 0.95);
+  --th-sf-06: rgba(255, 255, 255, 0.06);
+  --st-danger-solid: #c42b1c;
+}
+:root[data-appearance="light"] {
+  --th-bg-page: #fafafa;
+  --th-text-title: #222;
+  --th-sf-06: rgba(0, 0, 0, 0.06);
+}
+body {
+  margin: 0;
+  background-color: var(--th-bg-page);
+}
+#titlebar {
+  height: var(--titlebar-h);
+}
+.app-titlebar {
+  box-sizing: border-box;
+}
+.app-titlebar button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.app-titlebar button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}

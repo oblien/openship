@@ -1,3 +1,4 @@
+import { ensureMailCustomerGroupSql } from "./admin/tenant-database";
 /** Mail's archive layout; capture, restore and migration share this one plan. */
 import { HOST_STATE_DIR, safePipelineFragment } from "@repo/adapters";
 import { shellQuote } from "@repo/core";
@@ -84,7 +85,11 @@ export function buildMailBackupPayload(
     'stage="$tmp/staging"',
     'mkdir -p "$stage"',
     preflight,
-    `${mailPgDumpToStdout(flavor, dumpFlags)} > "$stage/vmail.sql"`,
+    // pg_dump includes RLS policies but omits cluster roles. A shared archive
+    // restores the policy group before replaying its grants, even on a new VM.
+    `shared="$(${mailPsqlCommand(flavor, "SELECT to_regclass('public.openship_mail_db_version') IS NOT NULL")})"`,
+    `if [ "$shared" = t ]; then printf '%s\\n' ${shellQuote(ensureMailCustomerGroupSql + ";")} > "$stage/vmail.sql"; fi`,
+    `${mailPgDumpToStdout(flavor, dumpFlags)} >> "$stage/vmail.sql"`,
     'mkdir -p "$stage/databases"',
     ...AUXILIARY_DATABASES.map((db) =>
       [

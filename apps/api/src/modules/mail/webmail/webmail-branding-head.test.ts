@@ -75,6 +75,14 @@ describe("webmail branding head (GH-568)", () => {
     expect(html).not.toContain("Your self-hosted mailbox.");
   });
 
+  it("keeps replacement markers literal in an operator's branding", () => {
+    const title = "Mail $& $1";
+    const { html } = injectBranding(HEAD, { siteTitle: title, siteDescription: title });
+    expect(html).toContain("<title>Mail $&amp; $1</title>");
+    expect(html).toContain('content="Mail $&amp; $1"');
+    expect(html).toContain(JSON.stringify(title));
+  });
+
   it("leaves tags it does not own alone", () => {
     const { html } = injectBranding(HEAD, BRANDED);
     expect(html).toContain('<meta property="og:image" content="/og.png"/>');

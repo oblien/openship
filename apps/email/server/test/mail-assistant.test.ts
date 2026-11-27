@@ -1,11 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import type { Mindwire } from "mindwire";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { Hono } from "hono";
 import { trpcServer } from "@hono/trpc-server";
 import { createTRPCClient, httpBatchStreamLink } from "@trpc/client";
 import superjson from "superjson";
 import { router } from "../src/trpc/trpc";
-import { assistantRouter } from "../src/trpc/routes/assistant";
+import { aiRouter, assistantRouter } from "../src/trpc/routes/assistant";
 import { buildContext } from "../src/ctx";
 import { eq } from "drizzle-orm";
 import { db, schema } from "../src/db";
@@ -18,8 +21,10 @@ import {
   streamAssistant,
   cancelAssistant,
 } from "../src/mail/assistant";
-import { authenticateGrant } from "../src/mail/grants";
-import { assistantTarget } from "../src/mail/assistant-targets";
+import { authenticateGrant, createGrant } from "../src/mail/grants";
+import { assistantRuntime, assistantTarget } from "../src/mail/assistant-targets";
+import { dedicatedAssistantBinary } from "../src/mail/assistant-hosting";
+import { bindHostedSending, sharedHosting } from "../src/mail/sending-settings";
 import { mailMcpRoutes } from "../src/mail/mcp";
 import { listJobs } from "../src/mail/outbox";
 import {
@@ -214,6 +219,110 @@ function mailServer(turn: Turn) {
 }
 
 describe("published Mindwire SDK mail integration", () => {
+  const namespace = "openship-mail-" + "a".repeat(32);
+  function mailClient(mailbox = alice) {
+    const session = { ...mailbox, name: null, sessionId: "test", expiresAt: new Date(Date.now() + 60_000) };
+    return router({ assistant: assistantRouter, ai: aiRouter }).createCaller(buildContext(session));
+  }
+  async function waitForPreparation() {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if ((await mailClient().assistant.preparation({ provider: "openai" })).ready) return;
+      await Bun.sleep(5);
+    }
+    throw new Error("Mailbox runtime did not finish setup.");
+  }
+  function clearHosting() {
+    for (const id of ["hosted-sending-namespace", "dedicated-mail-namespace"])
+      db.delete(schema.mailInstance).where(eq(schema.mailInstance.id, id)).run();
+  }
+
+  it.each([sharedHosting, namespace])("blocks Mindwire on standard hosting (%s), including existing grants", async (binding) => {
+    const previous = env.MAIL_MINDWIRE_DOCKER_SOCKET;
+    try {
+      await prepareAssistant(alice, "openai", true);
+      await waitForPreparation();
+      await configureAssistant(alice, true);
+      const assistantGrant = createGrant(alice, { name: "Turn", scopes: ["mail:read"], internal: true, expiresInDays: 1 });
+      const external = createGrant(alice, { name: "External", scopes: ["mail:read"], expiresInDays: 1 });
+      fixture.state.requests.length = 0;
+      env.MAIL_MINDWIRE_DOCKER_SOCKET = "/unused/mail-assistants.sock";
+      expect(bindHostedSending(binding)).toBe(true);
+      expect(bindHostedSending("another-namespace", true)).toBe(false);
+      const api = mailClient();
+      expect(await api.assistant.state()).toMatchObject({
+        placement: "standard", configured: false, enabled: false, connection: null, messages: [],
+      });
+      expect(assistantTarget(mailboxId(alice))).toBeNull();
+      for (const request of [
+        () => api.assistant.prepare({ provider: "openai" }),
+        () => api.assistant.preparation({ provider: "openai" }),
+        () => api.assistant.connect({ provider: "openai", apiKey: "test" }),
+        () => api.assistant.configure({ enabled: true }),
+        () => api.assistant.ask({ prompt: "Read mail" }),
+        () => api.ai.compose({ prompt: "Draft" }),
+        () => api.ai.generateSearchQuery({ query: "Recent mail" }),
+      ]) await expect(request()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(authenticateGrant(assistantGrant.token)).toBeNull();
+      expect(authenticateGrant(external.token)?.mailbox.email).toBe(alice.email);
+      expect(fixture.state.requests).toHaveLength(0);
+    } finally {
+      clearHosting();
+      env.MAIL_MINDWIRE_DOCKER_SOCKET = previous;
+    }
+  });
+
+  it("selects a VM-local mailbox runtime only after dedicated setup and explicit mailbox opt-in", async () => {
+    const previous = env.MAIL_MINDWIRE_DOCKER_SOCKET;
+    const previousHost = env.DEFAULT_IMAP_HOST;
+    const fixtureTarget = assistantTarget(mailboxId(alice))!;
+    const directory = mkdtempSync(join(tmpdir(), "osm-"));
+    const socket = join(directory, "docker.sock");
+    const engine = Bun.serve({ unix: socket, fetch: () => new Response(null, { status: 503 }) });
+    const connect = assistantRuntime.connect.bind(assistantRuntime);
+    const local = spyOn(assistantRuntime, "connect").mockImplementation(target => {
+      expect(target.managedOwner).toBe(mailboxId(alice));
+      return connect({ ...fixtureTarget, agent: target.agent });
+    });
+    try {
+      env.MAIL_MINDWIRE_DOCKER_SOCKET = undefined;
+      env.DEFAULT_IMAP_HOST = alice.imapHost;
+      expect(bindHostedSending(namespace, true)).toBe(true);
+      const api = mailClient();
+      expect(await api.assistant.availability()).toEqual({ placement: "dedicated", permitted: true, configured: false, enabled: false });
+      await expect(api.assistant.prepare({ provider: "openai" })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      env.MAIL_MINDWIRE_DOCKER_SOCKET = socket;
+      expect((await api.assistant.availability()).configured).toBe(false);
+      writeFileSync(dedicatedAssistantBinary(socket), "daemon fixture");
+      expect(await api.assistant.availability()).toEqual({ placement: "dedicated", permitted: true, configured: true, enabled: false });
+      const previousMailbox = { ...alice, imapHost: "previous.example.test" };
+      const stale = mailClient(previousMailbox);
+      expect(await stale.assistant.state()).toMatchObject({ permitted: false, configured: false, messages: [] });
+      await expect(stale.assistant.prepare({ provider: "openai" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const staleGrant = createGrant(previousMailbox, { name: "Previous turn", scopes: ["mail:read"], internal: true, expiresInDays: 1 });
+      expect(authenticateGrant(staleGrant.token)).toBeNull();
+      expect(await api.assistant.preparation({ provider: "openai" })).toMatchObject({ ready: false });
+      expect(local).not.toHaveBeenCalled();
+      expect(await api.assistant.prepare({ provider: "openai" })).toMatchObject({ running: true });
+      await waitForPreparation();
+      expect(await api.assistant.connect({ provider: "openai", apiKey: "fixture-key" })).toEqual({ ok: true });
+      expect(await api.assistant.state()).toMatchObject({ enabled: true, allowSend: false });
+      expect(assistantState(bob).enabled).toBe(false);
+      expect(assistantTarget(mailboxId(bob))?.managedOwner).toBe(mailboxId(bob));
+      const grant = createGrant(alice, { name: "Turn", scopes: ["mail:read"], internal: true, expiresInDays: 1 });
+      expect(authenticateGrant(grant.token)?.mailbox.email).toBe(alice.email);
+      env.MAIL_MINDWIRE_DOCKER_SOCKET = undefined;
+      expect(authenticateGrant(grant.token)).toBeNull();
+    } finally {
+      clearHosting();
+      local.mockRestore();
+      engine.stop(true);
+      rmSync(directory, { recursive: true, force: true });
+      env.MAIL_MINDWIRE_DOCKER_SOCKET = previous;
+      env.DEFAULT_IMAP_HOST = previousHost;
+    }
+  });
+
   it("uses authenticated tRPC streaming and rejects stale mailboxes and hostile origins before starting a turn", async () => {
     await configureAssistant(alice, true);
     const api = router({ assistant: assistantRouter });
@@ -391,7 +500,7 @@ describe("published Mindwire SDK mail integration", () => {
     expect(db.select().from(schema.mailGrant).all()).toHaveLength(0);
     fixture.state.configured = true;
     fixture.state.setupRunning = false;
-    expect(await prepareAssistant(alice, "openai")).toMatchObject({ ready: true, running: false });
+    await waitForPreparation();
     expect(await prepareAssistant(bob, "openai")).toMatchObject({ ready: false, running: false });
   });
   it("connects an AI key through native auth, scopes metadata to its mailbox and disconnects", async () => {

@@ -70,7 +70,7 @@ export function generateMaildir(
   return {
     storagebasedirectory: STORAGE_BASE,
     storagenode: STORAGE_NODE,
-    maildir: `${domain}/${u}/${us}/${username}-${timestampSuffix(now)}/`,
+    maildir: `${domain}/${u === "." ? "_" : u}/${/^\.{1,2}$/.test(us) ? "_" : us}/${username}-${timestampSuffix(now)}/`,
   };
 }
 
@@ -114,10 +114,12 @@ export async function createMaildirOnDisk(
   // Trailing slash already in maildir field; we don't need to add it again.
   const home = maildirHome(layout);
   const root = `${home}${MAILDIR_SUBDIR}`;
+  const dirs = [home.slice(0, -1), root, ...["cur", "new", "tmp"].map((dir) => `${root}/${dir}`)];
   const script = [
-    `mkdir -p ${shellQuote(`${root}/cur`)} ${shellQuote(`${root}/new`)} ${shellQuote(`${root}/tmp`)}`,
-    `chown -R vmail:vmail ${shellQuote(home)}`,
-    `chmod -R 0700 ${shellQuote(home)}`,
+    ...dirs.map(canonicalPathCheck),
+    `mkdir -p ${dirs.slice(2).map(shellQuote).join(" ")}`,
+    `chown vmail:vmail ${dirs.map(shellQuote).join(" ")}`,
+    `chmod 0700 ${dirs.map(shellQuote).join(" ")}`,
   ].join(" && ");
 
   await runMailCommand(serverIdOrExec, (flavor) =>
@@ -125,37 +127,32 @@ export async function createMaildirOnDisk(
   );
 }
 
-/**
- * Remove the Maildir directory tree from disk. Used by hard delete.
- *
- * We use `rm -rf` against the computed full path. The path is built from
- * the mailbox row's stored values, never from untrusted input - `vmail`
- * is the only legitimate writer of the maildir column, and the controller
- * has already validated the mailbox exists.
- */
+/** Delete only a mailbox home under its storage node. Resolve the path on
+ * the mail host so that a symlink cannot redirect cleanup to a different home. */
 export async function removeMaildirOnDisk(
   serverIdOrExec: MailTarget,
   layout: MaildirLayout,
+  expectedDomain?: string,
 ): Promise<void> {
-  const fullPath = maildirHome(layout);
-  // Guard: refuse to rm -rf anything that's not under /var/vmail/
-  if (!fullPath.startsWith(`${STORAGE_BASE}/`)) {
-    throw new Error(
-      `Refusing to remove maildir outside ${STORAGE_BASE}/: ${fullPath}`,
-    );
-  }
-  // Removes the home, so the `Maildir/` subtree inside it goes with it — no need to
-  // know the layout below. Flavor-routed for the same reason as the create path:
-  // `/var/vmail` is a volume in the engine, not a host directory.
+  const home = maildirHome(layout, expectedDomain).slice(0, -1);
+  const script = `${canonicalPathCheck(home)} && rm -rf -- ${shellQuote(home)}`;
   await runMailCommand(serverIdOrExec, (flavor) =>
-    mailEngineCommand(flavor, `rm -rf ${shellQuote(fullPath)}`),
+    mailEngineCommand(flavor, `sh -c ${shellQuote(script)}`),
   );
 }
 
-/** The mailbox home — what the userdb query returns as `home`. Keeps the one path
- *  concatenation in a single place so create and remove cannot disagree. */
-function maildirHome(layout: MaildirLayout): string {
-  return `${layout.storagebasedirectory}/${layout.storagenode}/${layout.maildir}`;
+function canonicalPathCheck(path: string): string {
+  const quoted = shellQuote(path);
+  return `[ "$(realpath -m -- ${quoted})" = ${quoted} ]`;
+}
+
+function maildirHome(layout: MaildirLayout, expectedDomain?: string): string {
+  const parts = layout.maildir.replace(/\/$/, "").split("/");
+  if (layout.storagebasedirectory !== STORAGE_BASE || layout.storagenode.includes("/") ||
+      parts.length < 2 || [layout.storagenode, ...parts].some((p) => !p || p === "." || p === ".." || /[\x00-\x1f]/.test(p)) ||
+      (expectedDomain !== undefined && parts[0] !== expectedDomain))
+    throw new Error("Refusing maildir outside its mailbox storage location.");
+  return `${STORAGE_BASE}/${layout.storagenode}/${parts.join("/")}/`;
 }
 
 function shellQuote(s: string): string {

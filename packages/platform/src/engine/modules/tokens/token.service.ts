@@ -340,6 +340,25 @@ async function mintToken(ctx: RequestContext, body: TCreateTokenBody, deadline?:
     if (err) throw responseError(err.body, err.status);
   }
 
+  return persistToken(ctx, body, grants, deadline);
+}
+
+/** The managed-mail issuer has already verified the sender in this organization's namespace. */
+export async function createMailSendToken(ctx: RequestContext, domainId: string, domain: string) {
+  assertCredentialManagement(ctx);
+  if (!await checkPermissionOnResource(ctx, { resourceType: "billing", resourceId: "*", action: "admin" }))
+    throw new AppError("Email key management requires billing administration.", 403);
+  return persistToken(ctx, { name: ("OpenShip Mail · " + domain).slice(0, 100) }, [
+    { resourceType: "mail_sender", resourceId: domainId, permissions: ["write"] },
+  ]);
+}
+
+async function persistToken(
+  ctx: RequestContext,
+  body: Pick<TCreateTokenBody, "name" | "readOnly" | "expiresInDays">,
+  grants: NonNullable<TCreateTokenBody["grants"]>,
+  deadline?: number,
+) {
   const { token, tokenPrefix, tokenHash } = mintPatToken();
   let expiresAt = body.expiresInDays
     ? new Date(Date.now() + body.expiresInDays * 86_400_000)
@@ -357,16 +376,9 @@ async function mintToken(ctx: RequestContext, body: TCreateTokenBody, deadline?:
     tokenPrefix,
     tokenHash,
     readOnly: body.readOnly ?? false,
-    scoped: wantScoped,
+    scoped: grants.length > 0,
     expiresAt,
-  }, wantScoped ? grants.map((g) => ({
-        resourceType: g.resourceType as never,
-        resourceId: g.resourceId,
-        permissions: g.permissions,
-        // Normalised by the repo on write, so a pattern the matcher would reject
-        // is never stored as though it were enforceable.
-        scope: g.scope,
-      })) : []);
+  }, grants.map(grant => ({ ...grant, resourceType: grant.resourceType as ResourceType })));
 
   // `token` is shown exactly once — it's never retrievable again.
   return { ...serialize(row), token };

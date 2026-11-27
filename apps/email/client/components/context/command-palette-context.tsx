@@ -45,6 +45,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { navigationConfig } from '@/config/navigation';
 import { Separator } from '@/components/ui/separator';
 import { useTRPC } from '@/providers/query-provider';
+import { useMailAssistantAvailability } from '@/hooks/use-mail-assistant';
 import { Calendar } from '@/components/ui/calendar';
 import { useMutation } from '@tanstack/react-query';
 import { useThreads } from '@/hooks/use-threads';
@@ -197,6 +198,7 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
 
   const { userLabels = [] } = useLabels();
   const trpc = useTRPC();
+  const smartSearch = !!useMailAssistantAvailability()?.enabled;
   const { mutateAsync: generateSearchQuery } = useMutation(
     trpc.ai.generateSearchQuery.mutationOptions(),
   );
@@ -535,7 +537,7 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
       try {
         let finalQuery = query;
 
-        if (useNaturalLanguage) {
+        if (useNaturalLanguage && smartSearch) {
           const result = await generateSearchQuery({ query });
           finalQuery = result.query;
 
@@ -585,7 +587,7 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
           value: finalQuery,
           highlight: getMainSearchTerm(query),
           folder: searchValue.folder,
-          isAISearching: useNaturalLanguage,
+          isAISearching: false,
           isLoading: true,
         });
 
@@ -601,7 +603,7 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
         setIsProcessing(false);
       }
     },
-    [activeFilters, searchValue.folder, isProcessing],
+    [activeFilters, searchValue.folder, isProcessing, smartSearch, generateSearchQuery, addFilter, setOpen, setSearchValue],
   );
 
   const quickSearchResults = useMemo(() => {
@@ -1001,9 +1003,9 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
               <CommandItem onSelect={() => handleSearch(searchQuery, true)} disabled={isProcessing}>
                 <Search className="h-4 w-4 opacity-60" />
                 <span className="ml-2">Search for "{searchQuery}"</span>
-                <Badge variant="secondary" className="ml-auto text-xs">
+                {smartSearch && <Badge variant="secondary" className="ml-auto text-xs">
                   Smart Search
-                </Badge>
+                </Badge>}
               </CommandItem>
 
               <CommandItem
@@ -1042,7 +1044,7 @@ export function CommandPalette({ children }: { children: React.ReactNode }) {
             </CommandGroup>
           )}
 
-          {!searchQuery && (
+          {!searchQuery && smartSearch && (
             <CommandGroup heading="Try Natural Language">
               {[
                 'emails from john',

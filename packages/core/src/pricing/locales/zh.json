@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "共享邮箱",
+      "description": "由 OpenShip 托管的团队邮箱。"
+    },
+    "dedicated": {
+      "name": "专用邮件服务器",
+      "description": "为邮箱新建专用虚拟机，包含托管邮件发送。"
+    },
+    "sending": {
+      "name": "发送 API",
+      "description": "使用已验证的域名从应用发送事务邮件。"
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "个人",
+      "tagline": "适合个人项目。"
+    },
+    "team": {
+      "name": "团队",
+      "tagline": "适合小型团队。"
+    },
+    "business": {
+      "name": "商业",
+      "tagline": "适合管理多个品牌的团队。"
+    },
+    "scale": {
+      "name": "规模化",
+      "tagline": "适合为客户提供服务的平台。"
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

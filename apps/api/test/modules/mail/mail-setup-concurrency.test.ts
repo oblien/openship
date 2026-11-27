@@ -23,6 +23,7 @@ vi.mock("@repo/db", async (importOriginal) => ({
   repos: {
     mailServer: {
       upsert: mocks.upsertMailServer,
+      setResumeStep: async () => undefined,
     },
   },
   tryAcquireAdvisoryLock: mocks.acquireLock,
@@ -54,21 +55,23 @@ vi.mock("../../../src/modules/mail/mail-setup-preflight", () => ({
   preflightMailSetup: mocks.preflight,
 }));
 
+import { makeFreshState } from "@repo/platform/engine/modules/mail/mail-state";
 import { startSetup } from "../../../src/modules/mail/mail.controller";
 
-function setupContext() {
+function setupContext(input: { startStep?: number; outboundDelivery?: "relay" | "direct" } = {}) {
   return {
     req: {
       json: vi.fn(async () => ({
         serverId: "server-1",
         domain: "example.com",
+        ...input,
       })),
     },
     json: vi.fn((body: unknown, status?: number) => ({ body, status })),
   } as unknown as Context;
 }
 
-describe("startSetup concurrency", () => {
+describe("startSetup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.acquireLock.mockResolvedValue({ release: mocks.releaseLock });
@@ -76,6 +79,26 @@ describe("startSetup concurrency", () => {
     mocks.upsertMailServer.mockResolvedValue({});
     mocks.streamSSE.mockReturnValue({ stream: true });
     mocks.preflight.mockResolvedValue(null);
+  });
+
+  test.each([
+    [undefined, "ptr_pending"],
+    ["relay", "step_start"],
+  ] as const)("resumes after forward DNS with outboundDelivery=%s", async (outboundDelivery, expectedEvent) => {
+    const state = {
+      ...makeFreshState("server-1", "example.com"),
+      dnsAcknowledged: true,
+      dnsRecords: { a: { type: "A", value: "192.0.2.1" } },
+    };
+    mocks.sshWithExecutor.mockResolvedValueOnce(state)
+      .mockResolvedValue({ stepId: 7, success: false, message: "Stopped at TLS" });
+    const writeSSE = vi.fn(async (_frame: { event: string; data: string }) => undefined);
+    await startSetup(setupContext({ startStep: 7, outboundDelivery }));
+    await mocks.streamSSE.mock.calls[0][1]({ writeSSE });
+    const first = writeSSE.mock.calls[0][0];
+    expect(first.event).toBe(expectedEvent);
+    if (outboundDelivery === "relay")
+      expect(JSON.parse(first.data)).toMatchObject({ key: "request_ssl" });
   });
 
   test("releases failed reservations and allows only one concurrent setup", async () => {

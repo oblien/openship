@@ -18,7 +18,8 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { buildMailImageRef, safeErrorMessage, mailHostname } from "@repo/core";
-import { DEFAULT_CONTAINER_LOG_ARGS } from "../../container-logging";
+import { randomUUID } from "node:crypto";
+import { DEFAULT_CONTAINER_LOG_ARGS, DEFAULT_CONTAINER_LOG_CONFIG } from "../../container-logging";
 import type { CommandExecutor, LogEntry } from "../../types";
 import type { SystemLog, SystemLogCallback } from "../types";
 import { sq } from "../local-shell";
@@ -91,6 +92,7 @@ export interface ContainerMailResult {
 }
 
 export interface ContainerMailOptions {
+  compose?: boolean;
   onLog: SystemLogCallback;
   /** The primary mail domain (FIRST_DOMAIN), injected into the engine on first boot. */
   domain: string;
@@ -169,9 +171,11 @@ function pullFailureMessage(image: string, output: string): string {
 }
 
 /** Render one bind mount as a `-v` arg. `:z` relabels for SELinux; ro when asked. */
+function mailVolume(m: MailMount): string {
+  return `${m.host}:${m.container}:${m.readonly ? "ro,z" : "z"}`;
+}
 function mountArg(m: MailMount): string {
-  const opts = m.readonly ? "ro,z" : "z";
-  return `-v ${sq(`${m.host}:${m.container}:${opts}`)}`;
+  return `-v ${sq(mailVolume(m))}`;
 }
 
 /**
@@ -566,6 +570,81 @@ export function buildMailRunCommand(container: string, image: string, hostname?:
     .join(" ");
 }
 
+const composeFile = MAIL_HOST_STATE_DIR + "/compose.yaml";
+const composeProject = "openship-mail";
+
+function mailComposeProject(value: string) {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(value))
+    throw new Error("The mail Compose project name must be a valid Docker Compose project name.");
+  return value;
+}
+
+export function mailComposeManifest(
+  container: string,
+  dbContainer: string,
+  image: string,
+  hostname: string,
+  dbPort: number,
+  project = composeProject,
+) {
+  const logging = {
+    driver: DEFAULT_CONTAINER_LOG_CONFIG.Type,
+    options: DEFAULT_CONTAINER_LOG_CONFIG.Config,
+  };
+  return {
+    name: mailComposeProject(project),
+    services: {
+      db: {
+        image: MAIL_DB_IMAGE,
+        container_name: dbContainer,
+        restart: "unless-stopped",
+        logging,
+        env_file: [{ path: DB_ENV_FILE, format: "raw" }],
+        environment: { PGDATA: MAIL_DB_PGDATA },
+        ports: [`${MAIL_DB_HOST_BIND}:${resolveMailDbPort(dbPort)}:${MAIL_DB_INTERNAL_PORT}`],
+        volumes: [`${MAIL_DB_HOST_DATA_DIR}:${MAIL_DB_CONTAINER_DATA_DIR}:z`],
+      },
+      mail: {
+        image,
+        hostname,
+        container_name: container,
+        depends_on: ["db"],
+        restart: "unless-stopped",
+        logging,
+        env_file: [{ path: ENGINE_ENV_FILE, format: "raw" }],
+        network_mode: "host",
+        cap_add: ["NET_ADMIN"],
+        volumes: MAIL_CONTAINER_MOUNTS.map(mailVolume),
+      },
+    },
+  };
+}
+
+async function startComposeMail(
+  executor: CommandExecutor,
+  writer: CommandExecutor,
+  manifest: ReturnType<typeof mailComposeManifest>,
+  onLog: SystemLogCallback,
+  engineOnly = false,
+) {
+  const candidate = composeFile + "." + randomUUID();
+  // This manifest also serves as an overlay for the full OpenShip stack.
+  // Bringing up mail alone must never remove its sibling services.
+  const compose = `COMPOSE_REMOVE_ORPHANS=false COMPOSE_IGNORE_ORPHANS=true docker compose -p ${sq(manifest.name)} -f`;
+  try {
+    await writer.writeFile(candidate, JSON.stringify(manifest, null, 2), { mode: 0o644 });
+    await executor.exec(`${compose} ${sq(candidate)} config --quiet`);
+    await writer.exec(`mv -f ${sq(candidate)} ${sq(composeFile)}`);
+    const result = await executor.streamExec(
+      `${compose} ${sq(composeFile)} up -d ${engineOnly ? "--no-deps mail" : "db mail"}`,
+      onLog as (l: LogEntry) => void,
+    );
+    return result.code === 0;
+  } finally {
+    await writer.rm(candidate).catch(error => observeCaughtError(error, "adapters/mail/compose-manifest-cleanup"));
+  }
+}
+
 /** Start (or restart) the Postgres sidecar. `docker rm -f` first frees a stale name. */
 async function startDb(
   executor: CommandExecutor,
@@ -690,7 +769,42 @@ export async function ensureContainerMail(
     await carryIgnoreIp(executor, onLog);
     await handOverEnvFile(executor, ENGINE_ENV_FILE, onLog);
 
-    const start = makeMailStart(executor, container, opts);
+    const project = (
+      await executor.exec(
+        `docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' ${sq(container)}`,
+      )
+    ).trim();
+    let start = makeMailStart(executor, container, opts);
+    if (project && project !== "<no value>") {
+      if (project !== composeProject) {
+        const saved = JSON.parse(await executor.readFile(composeFile));
+        if (saved.name !== project || saved.services?.mail?.container_name !== container ||
+            saved.services?.db?.container_name !== dbContainer)
+          throw new Error("Update this mail engine through the Compose project that owns it.");
+      }
+      const dbPort = await containerDbPort(executor, dbContainer);
+      if (!dbPort)
+        throw new Error("Cannot identify the mail database port for this Compose project.");
+      const writer = await rootOrDegrade(executor, {
+        purpose: "Updating the mail Compose project",
+        consequence: "The deployment manifest must be writable.",
+        report: (message) => onLog(log(message, "warn")),
+      });
+      start = async (ref) => {
+        const manifest = mailComposeManifest(
+          container,
+          dbContainer,
+          ref,
+          mailHostname(opts.domain),
+          dbPort,
+          project,
+        );
+        return (
+          (await startComposeMail(executor, writer, manifest, onLog, true)) &&
+          (await verifyMailEngine(executor, opts)).ok
+        );
+      };
+    }
     const swap = await swapManagedImage(executor, {
       kind: "mail",
       from: current,
@@ -708,6 +822,23 @@ export async function ensureContainerMail(
       "Docker isn't available on this server, and the mail engine now runs as a container. " +
         "Install the Docker component first, then set up mail.",
     );
+  }
+
+  const requestedProject = process.env.OPENSHIP_MAIL_COMPOSE_PROJECT?.trim();
+  let stackProject: string | undefined;
+  if (requestedProject) {
+    const project = mailComposeProject(requestedProject);
+    // A worker can manage several VPSes. Join its stack only on the machine that runs it.
+    const containers = await executor.exec(
+      `docker ps -a --filter ${sq("label=com.docker.compose.project=" + project)} --format '{{.Label "com.docker.compose.service"}} {{.Names}}'`,
+    );
+    const services = containers.trim().split("\n").map((line) => line.split(" "));
+    if (services.some(([service]) => service === "api")) {
+      if (services.some(([service, name]) =>
+        (service === "db" && name !== dbContainer) || (service === "mail" && name !== container)))
+        throw new Error("This Compose project already has a different mail or db service.");
+      stackProject = project;
+    }
   }
 
   // 1. Obtain the image before anything is created. Pull unless it's already on the
@@ -818,16 +949,29 @@ export async function ensureContainerMail(
   await handOverEnvFile(executor, ENGINE_ENV_FILE, onLog);
 
   try {
-    // 4. DB sidecar first — the engine's entrypoint blocks on it.
-    onLog(log("Starting the mail database (postgres sidecar)..."));
-    if (!(await startDb(executor, dbContainer, onLog, dbPort))) {
-      throw new Error("the mail database container failed to become ready");
-    }
+    if (opts.compose || stackProject) {
+      const manifest = mailComposeManifest(
+        container,
+        dbContainer,
+        image,
+        mailHostname(opts.domain),
+        dbPort,
+        stackProject || composeProject,
+      );
+      if (!(await startComposeMail(executor, hostState, manifest, onLog)))
+        throw new Error("The mail Compose project failed to start.");
+    } else {
+      // 4. DB sidecar first — the engine's entrypoint blocks on it.
+      onLog(log("Starting the mail database (postgres sidecar)..."));
+      if (!(await startDb(executor, dbContainer, onLog, dbPort))) {
+        throw new Error("the mail database container failed to become ready");
+      }
 
-    // 5. Engine.
-    onLog(log("Starting the mail engine container..."));
-    if (!(await startEngine(executor, container, image, mailHostname(opts.domain), onLog))) {
-      throw new Error("the mail engine container failed to start");
+      // 5. Engine.
+      onLog(log("Starting the mail engine container..."));
+      if (!(await startEngine(executor, container, image, mailHostname(opts.domain), onLog))) {
+        throw new Error("the mail engine container failed to start");
+      }
     }
 
     // 6. Prove it's actually serving mail.

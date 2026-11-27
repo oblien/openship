@@ -42,7 +42,8 @@ import { safeErrorMessage, DEFAULT_RETAIN_COUNT, mailHostname } from "@repo/core
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { repos } from "@repo/db";
 import { getRequestContext, type RequestContext } from "../../lib/request-context";
-import { permission } from "../../lib/permission";
+import { authorization, permission } from "../../lib/permission";
+import { applyOperationContext } from "../../lib/operation-context";
 // Shared org-scope guard (single implementation in controller-helpers) —
 // the mail stack gives SSH-level reach into the box, so a cross-org
 // serverId here is the same severity as the terminal hole.
@@ -53,6 +54,7 @@ import { pinnedMailImage } from "@repo/platform/engine/lib/mail-image";
 import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
 import {
   MAIL_SETUP_STEPS,
+  publicMailStepResult,
   TOTAL_STEPS,
   STEP_RUNNERS,
   STEP_TIMEOUT_MS,
@@ -71,6 +73,7 @@ import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
 import { preflightMailSetup } from "./mail-setup-preflight";
 import { applyRelayToState } from "@repo/platform/engine/modules/mail/admin/outbound-relay.service";
+import { ensureOpenshipPlatformMailbox } from "@repo/platform/engine/modules/mail/admin/platform-mailbox.service";
 // The webmail is an ordinary project: its status is resolved from the DB, not
 // from this server's state file.
 import {
@@ -166,7 +169,7 @@ function statusFromState(
         (completedByEarlierVersion && step.key === "verify_reachability"
           ? "This server was installed before public-port verification was recorded. The Health tab checks it live."
           : undefined),
-      data: result?.data,
+      data: result && publicMailStepResult(result).data,
     };
   });
 
@@ -695,7 +698,7 @@ function validateSetupConfig(config: IRedMailConfig | undefined): string | null 
 /**
  * POST /mail/setup - start (or resume) the mail setup wizard.
  *
- * Body: { serverId: string, domain: string, startStep?: number, config?: IRedMailConfig }
+ * Body: { serverId, domain, startStep?, config?, outboundDelivery?: "direct" | "relay" }
  *
  * Returns an SSE stream with events:
  *   - step_start    { stepId, key, label }
@@ -715,6 +718,10 @@ export async function startSetup(c: Context) {
   const domain = body.domain as string | undefined;
   const startStep = Math.max(1, Math.min(TOTAL_STEPS, Number(body.startStep) || 1));
   const config = body.config as IRedMailConfig | undefined;
+  const outboundDelivery = body.outboundDelivery ?? "direct";
+  if (outboundDelivery !== "direct" && outboundDelivery !== "relay")
+    return c.json({ error: "Invalid outbound delivery mode" }, 400);
+
 
   if (!serverId) {
     return c.json({ error: "serverId is required" }, 400);
@@ -880,21 +887,10 @@ export async function startSetup(c: Context) {
       // as in-progress immediately, not "pending".
       await persist();
 
-      // ── PTR gate ──────────────────────────────────────────────────
-      //
-      // Runs BEFORE the loop, so it fires when the user resumes from step 7+
-      // (request_ssl) with DNS acknowledged but PTR not yet. The flow is:
-      //   1. Step 6 (dkim_keys) emits dns_pending → user clicks "I've set DNS" →
-      //      ack endpoint flips dnsAcknowledged → resume with startStep=7
-      //   2. Pre-loop check below: dnsAck=true, ptrAck=false → emit
-      //      ptr_pending → halt
-      //   3. User clicks "I've set PTRs" → ack flips ptrAck → resume with
-      //      startStep=7 → pre-loop check passes → loop runs request_ssl
-      //
-      // The `startStep > 6` guard prevents the gate from firing when the user
-      // resumes from an earlier step — the loop re-runs dkim_keys and re-issues
-      // dns_pending, which is the right order.
+      // Direct SMTP delivery uses this host's public IP. Managed workers use the
+      // relay's egress IP and can proceed to TLS without acknowledging a local PTR.
       if (
+        outboundDelivery === "direct" &&
         startStep > 6 &&
         state.dnsRecords &&
         state.dnsAcknowledged &&
@@ -1009,18 +1005,11 @@ export async function startSetup(c: Context) {
           log(stepId, "error", message);
         }
 
-        state = recordStep(state, {
-          stepId: result.stepId,
-          success: result.success,
-          message: result.message,
-          warning: result.warning,
-          data: result.data,
-        });
+        const publicResult = publicMailStepResult(result);
+        state = recordStep(state, publicResult);
 
-        // The deploy step returns generated DB passwords - persist so a re-run
-        // reuses the same values the engine's first boot wrote into its configs.
-        if (stepDef.key === "deploy_engine" && result.data?.secrets) {
-          state = mergeSecrets(state, result.data.secrets as Record<string, string>);
+        if (stepDef.key === "deploy_engine" && result.setupSecrets) {
+          state = mergeSecrets(state, result.setupSecrets);
         }
 
         // ...and which engine image + container it brought up, so the dashboard can
@@ -1037,7 +1026,7 @@ export async function startSetup(c: Context) {
 
         await stream.writeSSE({
           event: "step_done",
-          data: JSON.stringify(result),
+          data: JSON.stringify(publicResult),
         });
 
         // DKIM step: broadcast records + hold-and-continue gate
@@ -1104,13 +1093,7 @@ export async function startSetup(c: Context) {
       // the wizard's terminal success state; the operator (or the first
       // sendTestEmail call) will trigger ensureOpenshipPlatformMailbox again
       // later via its on-demand backfill path.
-      //
-      // Dynamic import mirrors the pattern domains.service.ts uses to dodge a
-      // load-time cycle (mail-state ↔ mail.controller ↔ admin services).
       try {
-        const { ensureOpenshipPlatformMailbox } = await import(
-          "@repo/platform/engine/modules/mail/admin/platform-mailbox.service"
-        );
         // Clear any cached "platform mailbox unavailable" marker from BEFORE the
         // install finished — otherwise the send path keeps skipping this server
         // for the rest of the failure window right after a successful install.
@@ -1565,10 +1548,8 @@ export async function listMailBackupRuns(c: Context) {
  *
  * Body: { serverId: string, password: string }
  *
- * Hashes via doveadm, UPDATEs `vmail.mailbox`, mirrors the cleartext into
- * the on-server state file so the dashboard's Credentials card refreshes
- * cleanly. Refuses if a setup is currently running against the same server
- * (would race with the installer's own writes to that row).
+ * Updates the Dovecot hash and the private setup state. A running installation
+ * must finish before rotation can update the same account.
  */
 export async function setPostmasterPassword(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
@@ -1590,13 +1571,12 @@ export async function setPostmasterPassword(c: Context) {
     return c.json({ error: pwError }, 400);
   }
 
-  // Primary gate: rotating the postmaster password is destructive (admin).
-  await permission.assert(getRequestContext(c), {
+  const ctx = await authorization.authorize(getRequestContext(c), {
     resourceType: "mail_server",
     resourceId: serverId,
     action: "admin",
-  });
-  const ctx = getRequestContext(c);
+  }, permission.resolveRequestScopeOrg(c));
+  applyOperationContext(c, ctx);
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
@@ -1617,10 +1597,11 @@ export async function setPostmasterPassword(c: Context) {
   } catch (err) {
     observeCaughtError(err, "api/modules/mail/mail.controller");
     return c.json(
-      { error: err instanceof Error ? err.message : "Password change failed" },
+      { error: "The mail server could not complete the postmaster password change." },
       500,
     );
   }
+  c.set("createdResourceId", serverId);
   return c.json({ ok: true });
 }
 

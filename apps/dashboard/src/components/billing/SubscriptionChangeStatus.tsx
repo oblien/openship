@@ -10,7 +10,9 @@ import { getApiErrorMessage } from "@/lib/api/client";
 import { workspaceBillingHref } from "./BillingWorkspaceContext";
 
 /** Shared by the confirmation dialog and the selected server's billing card. */
-export function SubscriptionChangeStatus({ initial, workspaceId }: {
+export type ReadChange = (id: string, cancel: boolean) => Promise<BillingPlanChange>;
+export function SubscriptionChangeStatus({ initial, workspaceId, readChange, onUpdated, appliedText }: {
+  appliedText?: string; readChange?: ReadChange; onUpdated?: () => void;
   initial: BillingPlanChange; workspaceId?: string;
 }) {
   const { t, locale } = useI18n();
@@ -27,15 +29,15 @@ export function SubscriptionChangeStatus({ initial, workspaceId }: {
     const changed = next.status !== current.current.status || next.serverUpdate !== current.current.serverUpdate;
     current.current = next;
     setChange(next);
-    if (changed) router.refresh();
-  }, [router]);
+    if (changed) { router.refresh(); onUpdated?.(); }
+  }, [router, onUpdated]);
   const refresh = useCallback(async (cancel = false) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
     try {
-      receive(await (cancel ? billingApi.cancelSubscriptionChange(initial.id, workspaceId)
+      receive(await (readChange ? readChange(initial.id, cancel) : cancel ? billingApi.cancelSubscriptionChange(initial.id, workspaceId)
         : billingApi.getSubscriptionChange(initial.id, workspaceId)));
     } catch (failure) {
       if (mounted.current) setError(getApiErrorMessage(failure));
@@ -43,7 +45,7 @@ export function SubscriptionChangeStatus({ initial, workspaceId }: {
       busyRef.current = false;
       if (mounted.current) setBusy(false);
     }
-  }, [initial.id, workspaceId, receive]);
+  }, [initial.id, workspaceId, receive, readChange]);
   const pending = !["applied", "canceled", "failed", "expired"].includes(change.status) ||
     (change.status === "applied" && change.serverUpdate === "pending");
   useEffect(() => {
@@ -60,7 +62,7 @@ export function SubscriptionChangeStatus({ initial, workspaceId }: {
   const date = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(change.effectiveAt));
   const message = change.status === "scheduled" ? interpolate(copy.scheduled, { name: change.next.name, date })
     : change.status === "payment_pending" ? copy.paymentPending
-      : change.status === "applied" ? change.serverUpdate === "review_required" ? copy.resizeReview : copy.applied
+      : change.status === "applied" ? change.serverUpdate === "review_required" ? copy.resizeReview : change.serverUpdate === "pending" ? copy.processing : appliedText ?? copy.applied
         : change.status === "canceled" ? copy.canceled
           : change.status === "failed" || change.status === "expired" ? copy.failed
             : copy.processing;

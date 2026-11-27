@@ -15,8 +15,16 @@ function needsFreshQuote(error: unknown) {
 }
 
 export function useSubscriptionChange(workspaceId?: string, onAccepted?: () => void) {
+  const actions = usePlanChangeReview(workspaceId, quoteId => billingApi.confirmSubscriptionChange({ workspaceId, quoteId, confirmRestart: true }), onAccepted);
+  return { ...actions, review: (planTierId: PlanTierId, custom?: CustomSubscriptionSelection, fresh = false) =>
+    actions.review(JSON.stringify([planTierId, custom]), idempotencyKey =>
+      billingApi.previewSubscriptionChange({ workspaceId, planTierId, custom, idempotencyKey }), fresh) };
+}
+
+type Preview<Quote> = (key: string) => Promise<Quote>;
+export function usePlanChangeReview<Quote extends BillingPlanChangeQuote = BillingPlanChangeQuote>(scope: string | undefined, confirmQuote: (id: string) => Promise<BillingPlanChange>, onAccepted?: () => void) {
   const router = useRouter();
-  const [quote, setQuote] = useState<BillingPlanChangeQuote | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
   const [change, setChange] = useState<BillingPlanChange | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -25,7 +33,7 @@ export function useSubscriptionChange(workspaceId?: string, onAccepted?: () => v
   const [refreshRequired, setRefreshRequired] = useState(false);
   const inFlight = useRef(false);
   const generation = useRef(0);
-  const selection = useRef<{ planTierId: PlanTierId; custom?: CustomSubscriptionSelection; key: string } | null>(null);
+  const selection = useRef<{ signature: string; preview: Preview<Quote>; key: string } | null>(null);
   const acceptedRef = useRef(onAccepted);
   acceptedRef.current = onAccepted;
   useEffect(() => {
@@ -34,7 +42,7 @@ export function useSubscriptionChange(workspaceId?: string, onAccepted?: () => v
     setQuote(null); setChange(null); setError(null); setOpen(false); setBusy(false); setConfirmationStarted(false); setRefreshRequired(false);
     selection.current = null;
     return () => { generation.current++; };
-  }, [workspaceId]);
+  }, [scope]);
 
   async function run(work: () => Promise<void>) {
     if (inFlight.current) return;
@@ -44,16 +52,16 @@ export function useSubscriptionChange(workspaceId?: string, onAccepted?: () => v
     catch (failure) { if (version === generation.current) setError(getApiErrorMessage(failure)); }
     finally { if (version === generation.current) { inFlight.current = false; setBusy(false); } }
   }
-  async function review(planTierId: PlanTierId, custom?: CustomSubscriptionSelection, fresh = false) {
+  async function review(signature: string, preview: Preview<Quote>, fresh = false) {
     return run(async () => {
       const version = generation.current;
       const previous = selection.current;
-      const key = !fresh && previous?.planTierId === planTierId && JSON.stringify(previous.custom) === JSON.stringify(custom)
+      const key = !fresh && previous?.signature === signature
         ? previous.key : randomUUID();
-      selection.current = { planTierId, custom, key };
-      let next: BillingPlanChangeQuote;
+      selection.current = { signature, preview, key };
+      let next: Quote;
       try {
-        next = await billingApi.previewSubscriptionChange({ workspaceId, planTierId, custom, idempotencyKey: key });
+        next = await preview(key);
       } catch (error) {
         if (version === generation.current && needsFreshQuote(error)) selection.current = null;
         throw error;
@@ -69,7 +77,7 @@ export function useSubscriptionChange(workspaceId?: string, onAccepted?: () => v
       setConfirmationStarted(true);
       let result: BillingPlanChange;
       try {
-        result = await billingApi.confirmSubscriptionChange({ workspaceId, quoteId: quote.id, confirmRestart: true });
+        result = await confirmQuote(quote.id);
       } catch (error) {
         if (version === generation.current && needsFreshQuote(error)) {
           setConfirmationStarted(false); setRefreshRequired(true);
@@ -84,7 +92,7 @@ export function useSubscriptionChange(workspaceId?: string, onAccepted?: () => v
   }
   return {
     quote, change, error, busy, open, confirmationStarted, refreshRequired, review, confirm,
-    refreshQuote: () => selection.current ? review(selection.current.planTierId, selection.current.custom, true) : Promise.resolve(),
+    refreshQuote: () => selection.current ? review(selection.current.signature, selection.current.preview, true) : Promise.resolve(),
     close: () => { if (!inFlight.current) { setOpen(false); if (!confirmationStarted) selection.current = null; router.refresh(); } },
   };
 }

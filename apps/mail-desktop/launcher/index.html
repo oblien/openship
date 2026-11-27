@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="../dist/titlebar.css" />
+    <link rel="stylesheet" href="frame.css" />
+    <title>OpenShip Mail</title>
+  </head>
+  <body>
+    <div id="titlebar"></div>
+    <main>
+      <div class="identity">
+        <img src="../dist/mail.svg" width="45" height="32" alt="" />OpenShip Mail
+      </div>
+      <section id="saved" hidden>
+        <h1>Your mailboxes</h1>
+        <ul id="accounts"></ul>
+        <button id="add" class="primary">Add mailbox</button>
+      </section>
+      <section id="add-mailbox">
+        <h1>Open your mailbox</h1>
+        <form id="connect">
+          <fieldset>
+            <legend class="sr-only">Mailbox hosting</legend>
+            <label
+              ><input type="radio" name="mode" value="cloud" checked /><span
+                >OpenShip Cloud</span
+              ></label
+            >
+            <label><input type="radio" name="mode" value="self" /><span>Self-hosted</span></label>
+          </fieldset>
+          <label for="email">Email address</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            maxlength="254"
+            required
+          />
+          <div id="server" hidden>
+            <label for="url">Webmail address</label>
+            <input
+              type="url"
+              id="url"
+              name="url"
+              placeholder="https://mail.example.com"
+              spellcheck="false"
+            />
+          </div>
+          <button class="primary" id="continue" type="submit">
+            Continue <span aria-hidden="true">→</span>
+          </button>
+        </form>
+        <button class="back" id="back" hidden>Back to mailboxes</button>
+      </section>
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="../dist/titlebar.js"></script>
+    <script src="launcher.js"></script>
+  </body>
+</html>

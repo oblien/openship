@@ -1,15 +1,17 @@
+import { withMailDatabaseTenant } from "@repo/platform/engine/modules/mail/tenant-session";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { Context, Next } from "hono";
 import { randomUUID } from "node:crypto";
-import { repos } from "@repo/db";
+import { repos, type PublicPersonalAccessToken } from "@repo/db";
+import { MAIL_SEND_PATH, MAIL_SERVICE_HEADER, MAIL_TENANT_TOKEN_PREFIX } from "@repo/contracts/managed-mail";
 import { SDK_SCOPE_HEADER, ValidationError } from "@repo/contracts";
 import { auth } from "@repo/platform/engine/lib/auth";
 import { env, trustedOrigins } from "@repo/platform/engine/config/env";
 import { ensureLocalUser } from "../lib/local-user";
 import { resolveActiveOrganizationId } from "./active-organization";
 import { zeroAuthAllowed } from "./zero-auth-guard";
-import { hashPatToken } from "@repo/platform/engine/lib/pat";
-import { isPatToken, parseBearerToken } from "../lib/bearer";
+import { hashPatToken, LEGACY_MAIL_PAT_PREFIX, patPrefix } from "@repo/platform/engine/lib/pat";
+import { parseBearerToken } from "../lib/bearer";
 import {
   buildRequestContext,
   type PrincipalKind,
@@ -176,6 +178,30 @@ export interface ResolvedBearer {
   principalId: string;
 }
 
+function patIdentity(pat: PublicPersonalAccessToken, organizationId = pat.organizationId): ResolvedBearer {
+  return {
+    kind: "pat",
+    userId: pat.userId,
+    organizationId,
+    scoped: pat.scoped,
+    readOnly: pat.readOnly,
+    tokenId: pat.id,
+    hasBinding: true,
+    principalId: `pat:${pat.id}`,
+  };
+}
+
+async function resolveMailBearer(c: Context, token: string): Promise<ResolvedBearer | null> {
+  const grant = await repos.managedMail.tenantAccess(hashPatToken(token));
+  if (!grant?.parentId || grant.namespace !== c.req.param("mailTenant") ||
+      grant.serverId !== c.req.param("serverId") || grant.serviceId !== c.req.header(MAIL_SERVICE_HEADER)) return null;
+  const parent = await repos.personalAccessToken.findById(grant.parentId);
+  if (!parent || parent.revokedAt || (parent.expiresAt && parent.expiresAt.getTime() <= Date.now()) ||
+      (parent.organizationId && parent.organizationId !== grant.organizationId) ||
+      (parent.scoped && !parent.organizationId)) return null;
+  return patIdentity(parent, grant.organizationId);
+}
+
 /**
  * Resolve a bearer token to its identity — or null if it isn't a recognized /
  * valid credential (the caller decides 401-vs-fall-through by kind). A PAT
@@ -185,21 +211,18 @@ export interface ResolvedBearer {
 export async function resolveBearerIdentity(
   token: string,
   headers: Headers,
+  forMailSubmission = false,
 ): Promise<ResolvedBearer | null> {
-  if (isPatToken(token)) {
-    const pat = await repos.personalAccessToken.findActiveByHash(hashPatToken(token));
-    if (!pat) return null;
-    return {
-      kind: "pat",
-      userId: pat.userId,
-      organizationId: pat.organizationId,
-      scoped: pat.scoped,
-      readOnly: pat.readOnly,
-      tokenId: pat.id,
-      hasBinding: true,
-      principalId: `pat:${pat.id}`,
-    };
+  const prefix = patPrefix(token);
+  if (prefix) {
+    if (prefix === LEGACY_MAIL_PAT_PREFIX && !forMailSubmission) return null;
+    const pat = await repos.personalAccessToken.findActiveByHash(
+      hashPatToken(token), forMailSubmission ? "mail-submission" : "platform",
+    );
+    if (!pat || (forMailSubmission && (!pat.scoped || !pat.organizationId))) return null;
+    return patIdentity(pat);
   }
+  if (forMailSubmission) return null;
 
   let session: Awaited<ReturnType<typeof repos.oauth.findAccessToken>>;
   try {
@@ -247,8 +270,15 @@ async function tryBearerAuth(
   next: Next,
 ): Promise<Response | typeof PAT_HANDLED | null> {
   const token = parseBearerToken(c);
-  if (!token) return null; // no Authorization: Bearer → session path
-  const isPat = isPatToken(token);
+  const mailCredential = token?.startsWith(MAIL_TENANT_TOKEN_PREFIX) ?? false;
+  const tenantRoute = c.req.routePath.startsWith("/api/mail/tenants/:mailTenant/admin/:serverId/");
+  if (tenantRoute !== mailCredential || (mailCredential && env.CLOUD_MODE))
+    return c.json({ error: "Invalid credential for this mail route" }, 401);
+  const submission = c.req.method === "POST" && c.req.routePath === "/api" + MAIL_SEND_PATH;
+  const isPat = mailCredential || !!(token && patPrefix(token));
+  if (submission && (!env.CLOUD_MODE || !isPat))
+    return c.json({ error: "Cloud mail submission requires an email-scoped access token.", code: "MAIL_KEY_SCOPE" }, 401);
+  if (!token) return null;
 
   // Bearer is a CLI/API credential: from a browser-trusted origin a PAT is
   // rejected outright; an OAuth token falls through so the session path's F14
@@ -265,7 +295,7 @@ async function tryBearerAuth(
       : null;
   }
 
-  const resolved = await resolveBearerIdentity(token, c.req.raw.headers);
+  const resolved = mailCredential ? await resolveMailBearer(c, token) : await resolveBearerIdentity(token, c.req.raw.headers, submission);
   if (!resolved) {
     // A PAT that didn't resolve is invalid; a non-PAT that didn't resolve isn't
     // an OAuth MCP token → let the session path try it.
@@ -303,7 +333,7 @@ async function tryBearerAuth(
   const patScope = resolved.scoped ? { tokenId: resolved.tokenId, scoped: true } : undefined;
   return finishBearer(
     c,
-    next,
+    mailCredential ? () => withMailDatabaseTenant(c.req.param("mailTenant")!, next) : next,
     user,
     resolved.principalId,
     resolved.organizationId,

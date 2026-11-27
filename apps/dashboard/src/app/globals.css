@@ -5,6 +5,7 @@
 @import "../styles/fonts.css";
 @import "../styles/theme.css";
 @import "../styles/chart.css";
+@import "@repo/ui/desktop-titlebar.css";
 
 /* Tailwind v4 - selector-based dark mode via data-theme */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -60,104 +61,6 @@ details[open] > .disclosure-summary > .disclosure-chevron {
 }
 .is-desktop .h-screen {
   height: calc(100vh - var(--titlebar-h));
-}
-
-.is-desktop .app-titlebar {
-  position: fixed;
-  inset: 0 0 auto 0;
-  height: var(--titlebar-h);
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  padding-inline: 0.5rem;
-  background: var(--th-bg-page);
-  -webkit-app-region: drag;
-  user-select: none;
-}
-/* macOS draws its native traffic lights over the start of the bar
- * (trafficLightPosition x:18 y:16), so reserve room before the nav chevrons.
- * Windows/Linux have no inlaid controls, so nav starts at the normal padding. */
-.is-desktop-mac .app-titlebar {
-  /* Clear the native traffic lights (they end around x:70) and leave a modest
-   * gap, so the chevrons read as ours rather than a fourth light crowded up
-   * against the green one. 6.75rem overshot and stranded them mid-bar. */
-  padding-inline-start: 5.75rem;
-}
-
-/* Navigation — Spotify-style: chevrons at the start, quiet until hovered. Bigger
- * than the trailing icons on purpose; these are the only controls in the bar
- * anyone clicks repeatedly, and a chevron needs more room than a 15px logo to not
- * look cramped. */
-.app-titlebar-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  -webkit-app-region: no-drag;
-}
-.app-titlebar-nav .app-titlebar-btn {
-  width: 2rem;
-  height: 2rem;
-}
-
-/* Everything between nav and the end zone is pure drag surface. */
-.app-titlebar-drag {
-  flex: 1;
-  min-width: 0;
-  align-self: stretch;
-}
-
-.app-titlebar-end {
-  display: flex;
-  align-items: center;
-  gap: 0.125rem;
-  -webkit-app-region: no-drag;
-}
-
-/* One button style for nav, socials, the ⋯ menu and the window controls.
- * Deliberately quiet at rest — this is chrome, and at full strength it competed
- * with the page's own controls. Opacity carries the state so the icon colour stays
- * a single token. */
-.app-titlebar-btn,
-.app-titlebar-menu > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex-shrink: 0;
-  border-radius: 999px;
-  color: var(--th-text-title);
-  opacity: 0.45;
-  transition:
-    background-color 0.15s,
-    opacity 0.15s;
-}
-.app-titlebar-btn:hover,
-.app-titlebar-menu > button:hover {
-  background: var(--th-sf-06);
-  opacity: 1;
-}
-/* Nothing to go back/forward to — visibly inert and not hoverable, so the bar
- * never offers a control that would do nothing. */
-.app-titlebar-btn:disabled {
-  opacity: 0.15;
-  pointer-events: none;
-}
-/* Window controls share the catalog while retaining their compact dimensions. */
-.app-titlebar-wc {
-  width: 12px;
-  height: 12px;
-}
-/* The ⋯ dropdown lives in a 44px bar, so its popup has to escape downward. */
-.app-titlebar-menu {
-  position: relative;
-  -webkit-app-region: no-drag;
-}
-/* Close goes red on hover, like every other desktop app. */
-.app-titlebar-btn--close:hover {
-  background: var(--st-danger-solid);
-  color: #fff;
-  opacity: 1;
 }
 
 /* An in-page navigation control the desktop titlebar supersedes. Hidden only in

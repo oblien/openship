@@ -37,9 +37,8 @@ vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domain-counts", () => ({
   recountDomain: mocks.recountDomain,
-  validateDomain: vi.fn(),
 }));
 
 vi.mock("@repo/platform/engine/modules/mail/admin/password", () => ({
@@ -196,7 +195,7 @@ describe("mailbox lookup by address", () => {
   test("updateMailbox accepts a mixed-case address", async () => {
     await updateMailbox("srv_test", "Ops@Example.com", { active: false });
 
-    expect(sqlOf(mocks.execute.mock.calls)).toContain("username = 'ops@example.com'");
+    expect(sqlOf(mocks.transaction.mock.calls)).toContain("username = 'ops@example.com'");
   });
 
   test("softDeleteMailbox accepts a mixed-case address", async () => {

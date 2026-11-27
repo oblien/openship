@@ -118,6 +118,7 @@ export async function startDeployAsProjectHandler(c: Context) {
       hostname,
       target,
       replaceLegacy: body.replaceLegacy === true,
+      ...(typeof body.dedicatedAssistant === "boolean" && { dedicatedAssistant: body.dedicatedAssistant }),
       reconnectProjectId: body.reconnectProjectId as string | undefined,
     });
     return c.json({ deploymentId, projectId });

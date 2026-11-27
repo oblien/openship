@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "Caixas de e-mail compartilhadas",
+      "description": "Caixas de e-mail da equipe hospedadas pela OpenShip."
+    },
+    "dedicated": {
+      "name": "Servidor de e-mail dedicado",
+      "description": "Uma nova VM privada para suas caixas, com envio gerenciado incluso."
+    },
+    "sending": {
+      "name": "API de envio",
+      "description": "Envie e-mails transacionais do seu aplicativo usando um domínio verificado."
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "Solo",
+      "tagline": "Para projetos pessoais."
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "Para equipes pequenas."
+    },
+    "business": {
+      "name": "Business",
+      "tagline": "Para equipes com várias marcas."
+    },
+    "scale": {
+      "name": "Scale",
+      "tagline": "Para plataformas que atendem clientes."
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

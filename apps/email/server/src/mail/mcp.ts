@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { stripHtml } from "string-strip-html";
-import { env } from "../env";
+import { permitsBrowserOrigin } from "../lib/request-origin";
 import { createRateLimiter } from "../lib/rate-limit";
 import { listThreads, getThread, normalizeFolderSlug } from "../lib/imap-driver";
 import { authenticateGrant, liveGrant, type MailScope } from "./grants";
@@ -180,8 +180,7 @@ export function createMailMcpServer(token: string) {
 
 export const mailMcpRoutes = new Hono();
 mailMcpRoutes.all("/", async (c) => {
-  const origin = c.req.header("Origin");
-  if (origin && origin !== new URL(c.req.url).origin && !env.TRUSTED_ORIGINS.includes(origin)) {
+  if (!permitsBrowserOrigin(c)) {
     return c.json({ error: "Origin not allowed" }, 403);
   }
   const token = /^Bearer (\S+)$/.exec(c.req.header("Authorization") ?? "")?.[1];

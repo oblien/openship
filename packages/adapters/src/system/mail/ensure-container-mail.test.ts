@@ -15,6 +15,7 @@ import { MAIL_HOST_STATE_DIR, MAIL_CONTAINER_MOUNTS } from "../../infra/mail-con
 import type { CommandExecutor } from "../../types";
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   setDefaultMailImage(undefined);
   setManagedImagesFromSource("mail", false);
 });
@@ -228,15 +229,16 @@ const PROC_LISTENING = [
  * listening, and the image-presence probe reports whatever `imagePresent` says.
  * `streamExec` and the writes succeed so the bring-up runs end to end.
  */
-function firstBootExecutor(opts: { imagePresent: boolean }) {
+function firstBootExecutor(opts: { imagePresent: boolean; composeContainers?: string }) {
   let dbStarted = false;
   const streamExec = vi.fn(async (cmd: string) => {
-    if (cmd.includes("docker run") && cmd.includes("postgres")) dbStarted = true;
+    if ((cmd.includes("docker run") && cmd.includes("postgres")) || cmd.includes("up -d db mail")) dbStarted = true;
     return { code: 0, output: "" };
   });
   const exec = vi.fn(async (cmd: string) => {
     // No engine on the box yet — the state probe finds nothing.
     if (cmd.includes(STATE_PROBE)) return "";
+    if (cmd.includes("label=com.docker.compose.project=")) return opts.composeContainers ?? "";
     // Docker is available.
     if (cmd.includes("docker version")) return "27.0.0\n";
     // Image presence probe (docker image inspect -f '{{.Id}}').
@@ -1172,4 +1174,41 @@ describe("mail bring-up on a non-root sudo box (GH-630)", () => {
     // Retains 5436 from engine.env
     expect(dbRun).toContain("-p '127.0.0.1:5436:5432'");
   });
+});
+
+it.each([
+  { requested: undefined, stack: "", project: "openship-mail", compose: true },
+  { requested: "openship-cloud", stack: "api openship-cloud-api-1", project: "openship-cloud", compose: false },
+  { requested: "openship-cloud", stack: "", project: "openship-mail", compose: true },
+])("starts persistent mail in $project on the selected host", async ({ requested, stack, project, compose }) => {
+  vi.stubEnv("OPENSHIP_MAIL_COMPOSE_PROJECT", requested);
+  setDefaultMailImage("ghcr.io/x/openship-mail:pinned");
+  const box = firstBootExecutor({imagePresent: true, composeContainers: stack});
+  const writeFile = vi.fn(async (_path: string, _content: string) => {});
+  const exec = {exec: box.exec, streamExec: box.streamExec, writeFile, rm: vi.fn().mockResolvedValue(undefined)};
+  await ensureContainerMail(exec as never, {domain: "example.com", compose, secrets: {}, onLog() {}});
+  const manifest = writeFile.mock.calls.find(([path]) => path.includes("compose.yaml."));
+  expect(manifest).toBeDefined();
+  const {name, services} = JSON.parse(manifest![1]);
+  expect(name).toBe(project);
+  expect(services.db).toMatchObject({ports: ["127.0.0.1:5432:5432"], env_file:[{format: "raw"}]});
+  expect(services.mail).toMatchObject({image: "ghcr.io/x/openship-mail:pinned", hostname:"mail.example.com",
+    network_mode: "host", cap_add:["NET_ADMIN"], env_file:[{format:"raw"}]});
+  expect(services.mail.volumes.some((mount: string) => mount.includes("/var/spool/postfix"))).toBe(true);
+  expect(box.exec.mock.calls.some(([cmd]) => cmd.includes("config --quiet"))).toBe(true);
+  expect(box.streamExec.mock.calls.filter(([cmd]) => cmd.includes("up -d db mail"))).toHaveLength(1);
+  expect(box.streamExec.mock.calls.some(([cmd]) => cmd.includes("docker run"))).toBe(false);
+  expect(box.streamExec.mock.calls.some(([cmd]) => cmd.includes("COMPOSE_REMOVE_ORPHANS=false") && cmd.includes(`-p '${project}'`))).toBe(true);
+});
+
+it("preserves an existing database service in the control-plane project", async () => {
+  vi.stubEnv("OPENSHIP_MAIL_COMPOSE_PROJECT", "openship-cloud");
+  const box = firstBootExecutor({
+    imagePresent: true,
+    composeContainers: "api openship-cloud-api-1\ndb existing-app-db",
+  });
+  await expect(ensureContainerMail(box.executor, {
+    domain: "example.com", secrets: {}, onLog() {},
+  })).rejects.toThrow("already has a different mail or db service");
+  expect(box.streamExec).not.toHaveBeenCalled();
 });

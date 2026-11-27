@@ -47,18 +47,16 @@ export default function AgentsPage() {
     <div className="mx-auto max-w-2xl space-y-8 py-5 text-sm sm:py-8">
       <header className="space-y-1.5">
         <h1 className="text-xl font-semibold tracking-tight">AI & agents</h1>
-        <p className="text-muted-foreground text-[13px]">Your AI, connected to your mailbox.</p>
       </header>
-      <section aria-labelledby="assistant-heading" className="space-y-4">
+      {assistant.isPending && <Skeleton className="h-28 rounded-xl" />}
+      {(assistant.data?.permitted || assistant.isError) && <section aria-labelledby="assistant-heading" className="space-y-4">
         <div className="flex items-center gap-2">
           <MailIcon name="assistant" className="text-iconLight dark:text-iconDark" />
           <h2 id="assistant-heading" className="font-medium">
             Mail assistant
           </h2>
         </div>
-        {assistant.isPending ? (
-          <Skeleton className="h-28 rounded-xl" />
-        ) : assistant.isError ? (
+        {assistant.isError ? (
           <div
             role="alert"
             className="flex items-center justify-between gap-3 rounded-xl border p-4"
@@ -68,6 +66,10 @@ export default function AgentsPage() {
               Retry
             </Button>
           </div>
+        ) : !assistant.data.configured && !connected ? (
+          <p className="text-muted-foreground text-[13px]">
+            Ask your mail administrator to set up the assistant runtime on your mail server.
+          </p>
         ) : (
           <div className="overflow-hidden rounded-xl border">
             <div className="flex flex-wrap items-center justify-between gap-4 p-4">
@@ -149,10 +151,10 @@ export default function AgentsPage() {
             )}
           </div>
         )}
-        <p className="text-muted-foreground text-xs leading-relaxed">
+        {assistant.data?.configured && <p className="text-muted-foreground text-xs leading-relaxed">
           Uses your AI account. Mail you ask it to read is shared with your provider.
-        </p>
-      </section>
+        </p>}
+      </section>}
       <section aria-labelledby="agents-heading" className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -208,7 +210,7 @@ export default function AgentsPage() {
           </div>
         )}
       </section>
-      <ConnectAiDialog open={aiOpen} onOpenChange={setAiOpen} onConnected={refresh} />
+      {assistant.data?.configured && <ConnectAiDialog open={aiOpen} onOpenChange={setAiOpen} onConnected={refresh} />}
       <ConnectMailAgentDialog open={agentOpen} onOpenChange={setAgentOpen} onConnected={refresh} />
     </div>
   );

@@ -1,3 +1,4 @@
+import { emailPlansHref, type MailProduct } from "@repo/core/managed-mail";
 import { CLOUD_DASHBOARD_URL, migrationHref, type MigrationSourceKind } from "@repo/core";
 
 export function cloudMigrationHref(source?: MigrationSourceKind): string {
@@ -20,4 +21,8 @@ export function managePlanHref(plan?: "basic" | "priority"): string {
   const url = new URL("/billing/manage", CLOUD_DASHBOARD_URL);
   if (plan) url.searchParams.set("plan", plan);
   return url.toString();
+}
+
+export function cloudEmailPlanHref(plan?: string | null, product?: MailProduct, storageGB?: number) {
+  return new URL(emailPlansHref(plan, null, product, storageGB), CLOUD_DASHBOARD_URL).href;
 }

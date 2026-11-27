@@ -38,9 +38,8 @@ vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domain-counts", () => ({
   recountDomain: mocks.recountDomain,
-  validateDomain: vi.fn(),
 }));
 
 vi.mock("@repo/platform/engine/modules/mail/admin/password", () => ({
@@ -97,7 +96,7 @@ describe("hardDeleteMailbox postmaster protection", () => {
 
     expect(mocks.transaction).toHaveBeenCalledOnce();
     expect(mocks.removeMaildirOnDisk).toHaveBeenCalledOnce();
-    expect(mocks.recountDomain).toHaveBeenCalledWith("srv_test", "additional.example");
+    expect(mocks.recountDomain).toHaveBeenCalledWith("srv_test", "additional.example", undefined);
   });
 
   test("refuses to hard-delete the postmaster mailbox of the install domain", async () => {
@@ -129,6 +128,22 @@ describe("platform mailbox protection", () => {
     vi.clearAllMocks();
     mocks.readState.mockResolvedValue({ domain: "primary.example" });
     mocks.transaction.mockResolvedValue(undefined);
+  });
+
+  test("reserves creation and password rotation of the installation postmaster for setup and credentials", async () => {
+    mocks.queryOne.mockResolvedValue(null);
+    const username = "postmaster@primary.example";
+    await expect(createMailbox("srv_test", {
+      localPart: "postmaster", domain: "primary.example", password: "fixture-password",
+    })).rejects.toThrow("provisioned by mail server setup");
+
+    mocks.queryOne.mockResolvedValue({ ...mailbox(username, "primary.example"), isGlobalAdmin: true });
+    const admin = vi.fn(async () => {});
+    await expect(updateMailbox("srv_test", username, { active: false })).rejects.toThrow("admin permission");
+    await expect(updateMailbox("srv_test", username, { password: "fixture-password" }, undefined, admin))
+      .rejects.toThrow("mail server credentials");
+    expect(admin).toHaveBeenCalledOnce();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
   test("marks only the primary install sender as platform-owned", async () => {

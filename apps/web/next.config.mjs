@@ -11,6 +11,8 @@ const withIntl = createNextIntlPlugin("./src/i18n/request.ts");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // Client-side plan selection must use the same public checkout origin as SSR.
+  env: { OPENSHIP_CLOUD_DASHBOARD_URL: process.env.OPENSHIP_CLOUD_DASHBOARD_URL ?? "" },
   // Multiple document layouts plus a locale segment need an independent 404 document.
   experimental: { globalNotFound: true },
   // Monorepo: trace from the repo root so the standalone bundle includes the

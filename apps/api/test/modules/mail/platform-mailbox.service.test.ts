@@ -54,7 +54,7 @@ vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domain-counts", () => ({
   recountDomain: mocks.recountDomain,
 }));
 
@@ -78,7 +78,7 @@ describe("ensureOpenshipPlatformMailbox live reconciliation", () => {
     mocks.readState.mockResolvedValue(state);
     mocks.decrypt.mockReturnValue("old-plaintext");
     mocks.encrypt.mockReturnValue("sealed-new-password");
-    mocks.hashPassword.mockResolvedValue("{SSHA512}new-hash");
+    mocks.hashPassword.mockReturnValue("{SSHA512}new-hash");
     mocks.transaction.mockResolvedValue(undefined);
     mocks.createMaildirOnDisk.mockResolvedValue(undefined);
     mocks.mutateState.mockResolvedValue(undefined);

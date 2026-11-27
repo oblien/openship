@@ -51,8 +51,7 @@ import type { BackupOperations } from "@repo/contracts";
 import type { BackupDestinationOperations } from "@repo/contracts";
 import { deploySourceWorkflow } from "./source-workflow";
 import { createRemoteTerminalOperations, type TerminalOperations } from "./terminal-client";
-import { createRemoteMailOperations } from "./mail-client";
-import type { MailOperations } from "@repo/contracts";
+import { createRemoteMailOperations, type RemoteMailOperations } from "./mail-client";
 import { createRemoteMigrationOperations } from "./migration-client";
 import type { MigrationOperations } from "@repo/contracts";
 import { createRemoteInstanceOperations } from "./instance-client";
@@ -77,8 +76,8 @@ export interface OpenshipClientOptions extends Omit<HttpClientOptions, "internal
 export class OpenshipClient {
   /** Interactive terminals use authenticated HTTP tickets and WebSockets. */
   readonly terminal: TerminalOperations;
-  /** Self-hosted mail administration through the authenticated remote controller. */
-  readonly mail: MailOperations;
+  /** Cloud email sending and mail server administration. */
+  readonly mail: RemoteMailOperations;
   readonly migrations: MigrationOperations;
   readonly instance: InstanceOperations;
   readonly deployments: DeploymentOperations;

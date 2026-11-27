@@ -28,7 +28,7 @@ function withFolder<T extends { folder?: string }>(input: T) {
 }
 import { sanitizeMailHtml, blockRemoteContent } from '../../lib/sanitize';
 import { sendInput, prepareMessage, mailRouteInternals } from '../../mail/messages';
-import { enqueueSend, cancelJob, snooze, unsnooze } from '../../mail/outbox';
+import { enqueueSend, cancelJob, sendingInSent, snooze, unsnooze } from '../../mail/outbox';
 export { formatFromAddress, mailRouteInternals } from '../../mail/messages';
 
 // Folder comes in as a loose string (client uses `bin`/`draft`/`snoozed`
@@ -71,14 +71,21 @@ export const mailRouter = router({
         labelIds: z.array(z.string()).optional(),
       }),
     )
-    .query(({ ctx, input }) => {
-      return listThreads(ctx.imap, {
-        folder: normalizeFolderSlug(input.folder),
+    .query(async ({ ctx, input }) => {
+      const folder = normalizeFolderSlug(input.folder);
+      // Read the queue first. If the worker appends to IMAP during this fetch,
+      // the IMAP row wins in the same response.
+      const sending = folder === 'sent' && !input.cursor && !input.q?.trim() && !input.labelIds?.length
+        ? sendingInSent(ctx.session) : [];
+      const page = await listThreads(ctx.imap, {
+        folder,
         cursor: input.cursor || undefined,
         limit: input.limit,
         q: input.q,
         labelIds: input.labelIds,
       });
+      const visible = new Set(page.threads.map(thread => thread.id));
+      return { ...page, sending: sending.filter(job => !visible.has(job.messageId)) };
     }),
 
   get: protectedProcedure

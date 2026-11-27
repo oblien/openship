@@ -8,12 +8,12 @@
  *
  * Multi-account model:
  *
- *   `zero_session`     (httpOnly)        - active session id
- *   `zero_session_id`  (NOT httpOnly)    - same value, readable from JS
+ *   `zero_session`     (httpOnly)        - signed active session ID
+ *   `zero_session_id`  (NOT httpOnly)    - public connection ID
  *                                          so we can namespace the IDB
  *                                          persisted query cache per
  *                                          mailbox.
- *   `zero_sessions`    (httpOnly)        - comma-separated list of every
+ *   `zero_sessions`    (httpOnly)        - signed list of every
  *                                          session id the browser is
  *                                          signed in to.
  *
@@ -38,8 +38,10 @@ const BASE = BACKEND_URL;
 // Shared by root, auth cleanup and queued-mail UI to scope state to this connection.
 export function readActiveConnectionId(): string | null {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(/(?:^|;\s*)zero_session_id=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  const name = document.documentElement.dataset.connectionCookie ?? 'zero_session_id';
+  const prefix = name + '=';
+  const cookie = document.cookie.split(/;\s*/).find(value => value.startsWith(prefix));
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) || null : null;
 }
 
 // Drop the persisted query cache for ONE connection - used on sign-out so

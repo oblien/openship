@@ -23,7 +23,9 @@ import type { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { sanitizeMailHtml } from './sanitize';
 import { withImap, type ImapAuth } from './imap';
-import { composeRfc822, decodeAttachments, sendMail, type SmtpAuth, type SendInput } from './smtp';
+import { composeRfc822, decodeAttachments, type SmtpAuth, type SendInput } from './smtp';
+
+import { deliverMailboxMessage } from './outbound';
 
 export type FolderSlug =
   | 'inbox'
@@ -65,7 +67,7 @@ const FOLDER_SLUGS: readonly FolderSlug[] = [
 export function normalizeFolderSlug(input: string | undefined | null): FolderSlug {
   if (!input) return 'inbox';
   const lower = input.toLowerCase();
-  if (lower in FOLDER_ALIASES) return FOLDER_ALIASES[lower]!;
+  if (Object.hasOwn(FOLDER_ALIASES, lower)) return FOLDER_ALIASES[lower]!;
   return (FOLDER_SLUGS as readonly string[]).includes(lower) ? (lower as FolderSlug) : 'inbox';
 }
 
@@ -1399,7 +1401,7 @@ export async function send(
   imap: ImapAuth,
   from: string,
   input: SendMailInput,
-): Promise<{ messageId: string }> {
+): Promise<{ messageId: string; sentCopySaved?: boolean }> {
   const send: SendInput = {
     messageId: input.messageId,
     from,
@@ -1413,17 +1415,13 @@ export async function send(
     references: input.references,
     attachments: decodeAttachments(input.attachments),
   };
-  const result = await sendMail(smtp, send);
+  const result = await deliverMailboxMessage(smtp, imap, send);
 
-  // Append a copy to Sent so the user sees the message in the UI.
-  // Postfix's sender_bcc would also do this, but appending lets us
-  // reflect the message immediately without waiting for delivery.
-  await withImap(imap, async (client) => {
+  // Submission has succeeded. An IMAP failure must never trigger another send.
+  const sentCopySaved = await withImap(imap, async (client) => {
     const rfc822 = await composeRfc822({ ...send, messageId: result.messageId });
-    await client.append('Sent', rfc822, ['\\Seen']);
-  }).catch(() => {
-    // Best-effort: an APPEND failure shouldn't fail the send.
-  });
+    return Boolean(await client.append('Sent', rfc822, ['\\Seen']));
+  }).catch(() => false);
 
-  return result;
+  return { ...result, sentCopySaved };
 }

@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "Paylaşımlı posta kutuları",
+      "description": "OpenShip tarafından barındırılan ekip posta kutuları."
+    },
+    "dedicated": {
+      "name": "Özel posta sunucusu",
+      "description": "Posta kutularınız için yönetilen gönderim dahil yeni, özel bir VM."
+    },
+    "sending": {
+      "name": "Gönderim API’si",
+      "description": "Doğrulanmış bir alan adıyla uygulamanızdan işlem e-postaları gönderin."
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "Solo",
+      "tagline": "Kişisel projeler için."
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "Küçük ekipler için."
+    },
+    "business": {
+      "name": "Business",
+      "tagline": "Birden fazla marka yöneten ekipler için."
+    },
+    "scale": {
+      "name": "Scale",
+      "tagline": "Müşterilere hizmet veren platformlar için."
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

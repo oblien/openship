@@ -166,3 +166,10 @@ export const mailAssistantConnection = sqliteTable('mail_assistant_connection', 
   model: text('model'),
   customProvider: text('custom_provider'),
 });
+
+export const sendingDomain = sqliteTable('sending_domain', {
+  domain: text('domain').primaryKey(),
+  namespace: text('namespace').notNull(),
+  keyId: text('key_id').notNull(),
+  secret: blob('secret', { mode: 'buffer' }).notNull(),
+});

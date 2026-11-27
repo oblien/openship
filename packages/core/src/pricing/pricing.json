@@ -14,6 +14,31 @@
     }
   },
   "campaigns": [],
+  "mail": {
+    "version": 1,
+    "popularTier": "business",
+    "plans": {
+      "included": { "checkoutAvailable": false, "monthlyCents": 0, "domains": 1, "mailboxes": 1, "storageMB": 1024, "recipients": 500, "dailyRecipients": 500 },
+      "solo": { "checkoutAvailable": true, "monthlyCents": 300, "domains": 10, "mailboxes": 1, "storageMB": 5120, "recipients": 5000, "dailyRecipients": 1000 },
+      "team": { "checkoutAvailable": true, "monthlyCents": 900, "domains": 50, "mailboxes": 5, "storageMB": 25600, "recipients": 25000, "dailyRecipients": 2500 },
+      "business": { "checkoutAvailable": true, "monthlyCents": 1900, "domains": 100, "mailboxes": 15, "storageMB": 76800, "recipients": 75000, "dailyRecipients": 7500 },
+      "scale": { "checkoutAvailable": true, "monthlyCents": 4900, "domains": 1000, "mailboxes": 50, "storageMB": 256000, "recipients": 200000, "dailyRecipients": 20000 }
+    },
+    "features": {
+      "shared": ["sending-api", "domain-keys", "sending-usage", "webmail-imap", "aliases"],
+      "dedicated": ["sending-api", "domain-keys", "sending-usage", "webmail-imap", "aliases", "private-storage", "mail-assistant"],
+      "relay": ["sending-api", "domain-keys", "sending-usage"]
+    },
+    "dedicated": {
+      "cpuCores": 2, "memoryMB": 4096, "systemDiskGB": 25,
+      "storage": [
+        { "storageGB": 100, "vmMonthlyCents": 2400 },
+        { "storageGB": 200, "vmMonthlyCents": 2900 },
+        { "storageGB": 400, "vmMonthlyCents": 3900 }
+      ]
+    },
+    "sendingCentsPerThousand": 20
+  },
   "custom": {
     "resources": {
       "cpuCores": {

@@ -9,7 +9,7 @@
 import { eq } from 'drizzle-orm';
 import { router, protectedProcedure } from '../trpc';
 import { db, schema } from '../../db';
-import { userSettingsSchema, defaultUserSettings } from '../../lib/schemas';
+import { userSettingsPatch, defaultUserSettings } from '../../lib/schemas';
 
 export const settingsRouter = router({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -20,26 +20,16 @@ export const settingsRouter = router({
   }),
 
   save: protectedProcedure
-    .input(userSettingsSchema.partial())
-    .mutation(async ({ ctx, input }) => {
-      const now = new Date();
-      const existing = await db.query.userSettings.findFirst({
-        where: eq(schema.userSettings.email, ctx.session.email),
-      });
-      const merged = { ...defaultUserSettings, ...(existing?.settings ?? {}), ...input };
-      if (existing) {
-        await db
-          .update(schema.userSettings)
-          .set({ settings: merged, updatedAt: now })
-          .where(eq(schema.userSettings.email, ctx.session.email));
-      } else {
-        await db.insert(schema.userSettings).values({
-          email: ctx.session.email,
-          settings: merged,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-      return { settings: merged, success: true };
+    .input(userSettingsPatch)
+    .mutation(({ ctx, input }) => {
+      const email = ctx.session.email;
+      return db.transaction(tx => {
+        const now = new Date();
+        const current = tx.select().from(schema.userSettings).where(eq(schema.userSettings.email, email)).get();
+        const settings = { ...defaultUserSettings, ...current?.settings, ...input };
+        tx.insert(schema.userSettings).values({ email, settings, createdAt: now, updatedAt: now })
+          .onConflictDoUpdate({ target: schema.userSettings.email, set: { settings, updatedAt: now } }).run();
+        return { settings, success: true };
+      }, { behavior: 'immediate' });
     }),
 });

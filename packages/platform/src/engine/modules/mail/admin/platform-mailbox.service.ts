@@ -58,7 +58,7 @@ import {
   STORAGE_BASE,
   STORAGE_NODE,
 } from "./maildir";
-import { recountDomain } from "./domains.service";
+import { recountDomain } from "./domain-counts";
 
 export { MAIL_DOMAIN_RE as DOMAIN_RE } from "../mail-domain";
 export const PLATFORM_LOCAL_PART = "openship";
@@ -230,7 +230,7 @@ async function mintAndPersist(args: MintArgs): Promise<PlatformMailboxCreds> {
   const { exec, serverId, state, domain, email, smtpHost } = args;
 
   const plaintext = randomPassword(24);
-  const hash = await hashPassword(exec, plaintext);
+  const hash = hashPassword(plaintext);
   const layout = generateMaildir(domain, PLATFORM_LOCAL_PART);
 
   // 1. UPSERT mailbox + self-forwarding row atomically.

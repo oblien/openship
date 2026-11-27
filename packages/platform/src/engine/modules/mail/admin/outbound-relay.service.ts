@@ -165,6 +165,8 @@ export interface ConfigureRelayInput {
   port: number;
   /** SASL username (SES SMTP username — NOT an AWS access key). */
   username: string;
+  credentialId?: string;
+  linkedInstallation?: string;
   /** Plaintext SASL password — encrypted before it hits state; never persisted raw. */
   password: string;
   /** Routing scope: "all" domains (global relayhost) or only `domains`/`addresses` (per-sender). Default "all". */
@@ -463,8 +465,9 @@ async function pinRelayTlsPolicy(
   engine: (cmd: string) => string,
   tlsPolicy: { write: string; engine: string },
   nexthop: string,
+  policy: "encrypt" | "secure",
 ): Promise<string> {
-  await writeMailConfigFile(hostFiles, tlsPolicy.write, `${nexthop} encrypt\n`, {
+  await writeMailConfigFile(hostFiles, tlsPolicy.write, `${nexthop} ${policy}\n`, {
     mode: 0o644,
   });
   await engineExec.exec(engine(`postmap ${tlsPolicy.engine}`));
@@ -585,7 +588,7 @@ export async function configureOutboundRelay(
     // Opportunistic globally (the engine default) so non-relayed domains still
     // reach MXes without STARTTLS; `encrypt` applies to the relay hop only.
     sasl.push("smtp_tls_security_level=may", "smtp_tls_wrappermode=no");
-    const policyMaps = await pinRelayTlsPolicy(hostFiles, engineExec, engine, tlsPolicy, nexthop);
+    const policyMaps = await pinRelayTlsPolicy(hostFiles, engineExec, engine, tlsPolicy, nexthop, input.linkedInstallation ? "secure" : "encrypt");
     await engineExec.exec(
       engine(`postconf -e ${[...sasl, `${TLS_POLICY_PARAM}=${policyMaps}`].map(sq).join(" ")}`),
     );
@@ -629,6 +632,8 @@ export async function configureOutboundRelay(
     port: input.port,
     username: input.username,
     passwordEncrypted: encrypt(input.password),
+    credentialId: input.credentialId,
+    linkedInstallation: input.linkedInstallation,
     scope,
     // Persist the same case-folded values the `sender_relayhost` rows use, so the
     // UI's selection round-trips to exactly what Postfix will match.

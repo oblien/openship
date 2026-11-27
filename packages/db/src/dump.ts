@@ -942,6 +942,10 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   cloud_support_message: "Private Cloud support correspondence and mail delivery state",
   cloud_support_block:
     "Private Cloud operator abuse rules and sender/IP data; never transfer to another installation",
+  mail_tenant_access: "Worker mail credentials and tenant reservations belong to the issuing instance",
+  managed_mail_account: "Cloud mail sending and paid subscription ownership are instance-local",
+  managed_mail_host: "Mail host identities belong to the provisioning control plane",
+  managed_mail_service: "Cloud mail engine assignments belong to the provisioning control plane",
   cloud_customer_email: "Private Cloud onboarding and invoice delivery state; never transfer or replay on another installation",
   platform_instance:
     "the receiving installation retains its own identity and encryption-key binding",

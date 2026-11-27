@@ -13,6 +13,9 @@
 
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import { HTTPException } from 'hono/http-exception';
+import { probeImap } from './imap';
+import { hostedSendingNamespace } from '../mail/sending-settings';
 import { db, schema } from '../db';
 import { encryptSecret, decryptSecret } from './crypto';
 import { env } from '../env';
@@ -74,11 +77,33 @@ export async function getSession(sessionId: string): Promise<SessionContext | nu
     await deleteSession(sessionId);
     return null;
   }
+  const password = decryptSecret(row.encryptedPassword as Buffer);
+  if (hostedSendingNamespace()) {
+    // Local data such as templates and scheduled messages is served from SQLite.
+    // An unexpired cookie alone cannot establish that Dovecot still accepts the
+    // mailbox. A tRPC batch shares this context and performs one authority check.
+    const pinned = row.imapHost.toLowerCase() === env.DEFAULT_IMAP_HOST?.toLowerCase() &&
+      row.imapPort === env.DEFAULT_IMAP_PORT;
+    let authorized = false;
+    if (pinned) {
+      try {
+        authorized = await probeImap({ host: row.imapHost, port: row.imapPort, user: row.email, pass: password });
+      } catch {
+        throw new HTTPException(503, { message: 'The mail server is temporarily unavailable.' });
+      }
+    }
+    if (!authorized) {
+      // Another tab may have reauthenticated and refreshed the row during IMAP.
+      await db.delete(schema.session).where(and(eq(schema.session.id, row.id),
+        eq(schema.session.encryptedPassword, row.encryptedPassword)));
+      return null;
+    }
+  }
   return {
     sessionId: row.id,
     email: row.email,
     name: row.name,
-    password: decryptSecret(row.encryptedPassword as Buffer),
+    password,
     imapHost: row.imapHost,
     imapPort: row.imapPort,
     smtpHost: row.smtpHost,

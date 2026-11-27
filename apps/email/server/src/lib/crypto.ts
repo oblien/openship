@@ -8,7 +8,7 @@
  * their mailbox and record. Existing session ciphertext remains compatible.
  */
 
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { env } from '../env';
 
 const ALGO = 'aes-256-gcm';
@@ -34,6 +34,10 @@ export function encryptSecret(plaintext: string, context?: string): Buffer {
   const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, ciphertext, tag]);
+}
+
+export function sessionCookieKey(cookieName: string) {
+  return createHmac('sha256', getKey()).update('openship-mail/cookie/v1/' + cookieName).digest('hex');
 }
 
 export function decryptSecret(payload: Buffer, context?: string): string {

@@ -61,6 +61,7 @@ seed() { # <seed-subdir> <target>
 seed postfix /etc/postfix
 seed dovecot /etc/dovecot
 seed amavis-confd /etc/amavis/conf.d
+python3 -I /opt/openship-mail/api-relay-config.py restore
 
 # An older bind-mounted master.cf hides corrected image defaults (#392).
 bash /opt/openship-mail/postfix-filter-tls.sh

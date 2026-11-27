@@ -1197,11 +1197,56 @@ disable mutations until current status is available. Ban actions select an expli
 jail; review the exact IP and jail before applying either action. Use server-reported
 management capability and the existing mail API; Cloud mail does not mount this panel.
 
-Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
-webmail app installer. Keep its client card beside a compact Managed email / Coming
-soon notice. Cloud mail entry points must not mount local server setup, registry or
-administration requests. Desktop and self-hosted instances retain the normal mail
-console and setup flow. Navigation remains Emails across these modes.
+Cloud Emails opens hosted mailbox subscriptions on the Overview tab of the shared mail admin panel.
+Before a worker is assigned, Overview shows plan limits, sending usage, mailbox hosting status and sender domains.
+The first sender domain can be connected directly from Overview. Submitting
+the domain opens its DNS ownership records. The sender-domain detail shows verification and its
+sending cap. A **Sender domains** link returns to the list, where customers can connect another domain.
+Overview links each sender to the Sending tab. Before mailbox hosting is active, the Domains tab uses the same domain inventory as self-hosted Mail, with ownership status and monthly sending usage. A verified domain opens its sending tools. A pending domain opens DNS setup, as does connecting a new domain that requires verification. When verification makes the sender ready, open its sending tools. **Review DNS records** stays available in each domain’s row menu. Fetch DNS details only on that explicit view.
+A ready sending domain offers **Send test email** above its DNS records. Place **API keys** below the sender details. Its table shows the key prefix, creation date and last use, with revocation in the row menu. Beside it, under workspace usage, **Send from your app** provides the copyable endpoint, a domain-specific cURL example and links to the OpenShip SDK and API reference. Show the masked, copyable OpenShip key once. After dismissal, display only the stored prefix. Mark previously issued Oblien keys so their owners can revoke them after migration.
+The test uses the workspace allowance and shows the provider receipt with a delivery status refresh.
+Before a mailbox host is assigned, the Mailboxes tab shows a webmail preview that opens at full size.
+Customers with mailbox coverage can activate an available shared or reserved host here.
+If capacity is unavailable, show the hosting status with **Check availability** and a link to Sending.
+Keep the same availability and activation actions compact in Overview. Sending-only subscribers
+land on Sending. Their Mailboxes tab shows a webmail preview and a link to mailbox pricing.
+Paid Email API customers can review a change to a shared mailbox plan on their existing subscription.
+Customers with mailbox coverage enter setup, and existing mail services open their dashboard. For first-time users, show the webmail
+preview with a link to the Email plans tab in regular Billing and a Connect your mail server
+action. Existing OpenShip installations open their own authenticated Emails dashboard. Existing
+IMAP providers connect through the webmail app. Pricing and checkout belong in Billing, and
+the public Pricing page includes mail alongside compute and management. Billing lists active
+and pending email plans in its normal plan inventory. Mailboxes include the Email API.
+The hosted dashboard has Overview, Mailboxes, Domains and Sending tabs. Each
+domain links to its DNS records and mailbox list. The overview shows plan usage and
+the number of messages in the IMAP Inbox across the service, per domain and per mailbox.
+Use one Mailbox activity header above the two-column mailbox grid. Show the Inbox total for the current
+selection beside the heading. For multiple domains, put the domain switch in its own compact card above Mail server in the right column.
+On narrow hosted dashboards it sits directly above the mailbox activity. Its options include domain counts and it scopes
+the grid from the same Inbox snapshot. Each live address opens its domain’s mailbox list. Hosted mailbox cards
+show accepted and pending recipients against the sender’s monthly cap or the shared workspace allowance.
+The Sending tab uses the same control for each sender domain. Billing admins can set a cap, block sending
+with a zero cap, or clear the cap to inherit the allowance. Other readers see usage. The Mail server card sits beside
+activity on wide screens and immediately below the usage cards on narrow hosted dashboards.
+Load additional mailbox cards on demand.
+In the Mailboxes table, use a labeled Manage menu for password changes, mailbox settings and deletion.
+A password change has its own form. Delete opens a confirmation with the mailbox address.
+Show an unavailable count as a dash.
+Mail and project overviews share the same status card label and value typography. Mail quota rings round
+percentages down to whole numbers and show positive usage below one percent as `<1%`. The sending ring shows accepted
+recipients divided by the workspace period allowance. Remaining capacity accounts for pending
+reservations. The overview puts accepted, pending and remaining counts behind the help icon
+beside Monthly sending. The Sending tab shows those details inline.
+
+Use three product cards in Billing and on the public pricing pages. Shared mailboxes, dedicated
+mail servers and the Sending API use the compute pricing-card layout and the catalog’s popular tier.
+Dedicated checkout reviews one monthly total, itemizing the new VM, usable mailbox storage and
+sending allowance. Each dedicated purchase opens an independent service in the same Emails panel.
+For an existing paid subscription, **Change plan** in Emails and Billing opens the plan cards
+for that subscription. Use the shared billing review to show changed allowances, the prorated
+amount due and the next invoice before confirmation. A larger dedicated disk stays on the
+existing VM and its restart appears in the review. Pending changes can be reopened from the
+same subscription to complete payment or cancel a scheduled change.
 
 When a mail registration has lost its webmail link, the Deploy webmail screen
 shows existing catalog apps that already use that mail hostname on the mail

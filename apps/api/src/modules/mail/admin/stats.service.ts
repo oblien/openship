@@ -1,30 +1,21 @@
 /**
- * Aggregate counters for the admin overview sidebar.
- *
- * One SQL round-trip returns every number the Overview's right sidebar
- * wants to show: domain/mailbox/alias totals + storage usage. Counts are
- * authoritative live values from the source tables, NOT the
- * `vmail.domain.mailboxes` counter (which iRedAdmin keeps in sync but can
- * drift if something outside openship writes the tables).
- *
- * Storage comes from `vmail.used_quota` - Dovecot updates this on every
- * LOGOUT, so the value is "what each mailbox occupies as of the last
- * client session." Good enough for a dashboard; not a real-time number.
+ * The overview reads inventory and quota usage in one SQL snapshot.
+ * Dovecot's used_quota covers every folder. The optional Inbox breakdown
+ * reads folder counters for the mailboxes in that snapshot.
  */
 
-import { queryOne } from "@repo/platform/engine/modules/mail/admin/psql-runner";
+import { queryOne, q } from "@repo/platform/engine/modules/mail/admin/psql-runner";
 
-export interface MailServerStats {
-  domains: { total: number; active: number };
-  mailboxes: { total: number; active: number };
-  aliases: { total: number };
-  /** Aggregated bytes from vmail.used_quota. Null if the table is empty. */
-  storageBytes: number;
-  /** Aggregated message count from vmail.used_quota. */
-  messages: number;
-}
+import { tenantDomainsSql } from "@repo/platform/engine/modules/mail/admin/tenant-domains";
+
+import type { Static } from "@sinclair/typebox";
+import type { MailStatsSchema } from "@repo/contracts";
+import { inboxCounts, type InboxDomain } from "./inbox-counts";
+
+type MailServerStats = Static<typeof MailStatsSchema>;
 
 interface StatsRow {
+  inventory?: InboxDomain[];
   domainsTotal: number;
   domainsActive: number;
   mailboxesTotal: number;
@@ -36,21 +27,41 @@ interface StatsRow {
 
 export async function getMailServerStats(
   serverId: string,
+  excludeDomain?: string,
+  namespace?: string,
+  includeInbox = false,
 ): Promise<MailServerStats> {
   // bigint columns come back as strings from psql's JSON output (Postgres
   // serialises them as numeric strings to avoid the int53 trap). We coerce
   // to number at the edge - none of these will realistically exceed 2^53.
-  const row = await queryOne<StatsRow>(
-    serverId,
-    `SELECT
-       (SELECT COUNT(*)::int FROM domain) AS "domainsTotal",
-       (SELECT COUNT(*)::int FROM domain WHERE active = 1) AS "domainsActive",
-       (SELECT COUNT(*)::int FROM mailbox) AS "mailboxesTotal",
-       (SELECT COUNT(*)::int FROM mailbox WHERE active = 1) AS "mailboxesActive",
-       (SELECT COUNT(*)::int FROM forwardings WHERE is_alias = 1 AND active = 1) AS "aliasesTotal",
-       (SELECT COALESCE(SUM(bytes), 0)::text FROM used_quota) AS "storageBytes",
-       (SELECT COALESCE(SUM(messages), 0)::text FROM used_quota) AS "messages"`,
-  );
+  // Hosted accounts exclude the engine's bootstrap domain from every counter.
+  const visible = [
+    namespace !== undefined && `domain IN (${tenantDomainsSql(namespace)})`,
+    excludeDomain && `domain <> ${q(excludeDomain)}`,
+  ].filter(Boolean).join(" AND ") || "TRUE";
+  const scopedStorage = namespace !== undefined || excludeDomain
+    ? "WHERE username IN (SELECT username FROM visible_mailboxes)"
+    : "";
+  // The optional roster includes empty domains and uses the same rows as the
+  // counters. Each source aggregate is computed in the same SQL snapshot.
+  const inventory = includeInbox ? `, (
+    SELECT COALESCE(json_agg(d ORDER BY domain), '[]') FROM (
+      SELECT v.domain, COALESCE(json_agg(json_build_object('username', m.username, 'created', m.created) ORDER BY m.username)
+        FILTER (WHERE m.username IS NOT NULL), '[]') AS mailboxes
+      FROM visible_domains v LEFT JOIN visible_mailboxes m ON m.domain = v.domain
+      GROUP BY v.domain
+    ) d) AS inventory` : "";
+  const row = await queryOne<StatsRow>(serverId, `
+    WITH visible_domains AS (SELECT domain, active FROM domain WHERE ${visible}),
+         visible_mailboxes AS (SELECT domain, username, active${includeInbox ? ", created" : ""} FROM mailbox WHERE ${visible})
+    SELECT ds.*, ms.*, usage.*,
+      (SELECT COUNT(*)::int FROM forwardings WHERE ${visible} AND is_alias = 1 AND active = 1) AS "aliasesTotal"
+      ${inventory}
+    FROM (SELECT COUNT(*)::int AS "domainsTotal", COUNT(*) FILTER (WHERE active = 1)::int AS "domainsActive" FROM visible_domains) ds
+    CROSS JOIN (SELECT COUNT(*)::int AS "mailboxesTotal", COUNT(*) FILTER (WHERE active = 1)::int AS "mailboxesActive" FROM visible_mailboxes) ms
+    CROSS JOIN (SELECT COALESCE(SUM(bytes), 0)::text AS "storageBytes", COALESCE(SUM(messages), 0)::text AS messages
+                FROM used_quota ${scopedStorage}) usage
+  `);
 
   if (!row) {
     return {
@@ -68,5 +79,6 @@ export async function getMailServerStats(
     aliases: { total: row.aliasesTotal },
     storageBytes: Number(row.storageBytes ?? 0),
     messages: Number(row.messages ?? 0),
+    ...(row.inventory && { inbox: await inboxCounts(serverId, visible, row.inventory) }),
   };
 }
