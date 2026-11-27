@@ -5,6 +5,42 @@ import { sendingAdminRoute } from '../src/routes/sending-admin';
 import * as imap from '../src/lib/imap';
 import * as smtp from '../src/lib/smtp';
 import { env } from '../src/env';
+import { appSendingSettings } from '../src/mail/sending-credentials';
+
+test('a standalone app sends with its OpenShip key from Apps settings', async () => {
+  const previous = { host: env.DEFAULT_IMAP_HOST, settings: env.managedSending };
+  const host = 'mail.apps.example';
+  const key = 'opsh_pat_app_fixture';
+  const mailbox = { host, user: 'alice@apps.example', pass: 'test', port: env.DEFAULT_IMAP_PORT };
+  const message = { from: mailbox.user, to: ['bob@example.org'], text: 'Hello', subject: 'Hi' };
+  expect(() => appSendingSettings(key)).toThrow('pinned IMAP');
+  expect(() => appSendingSettings('opsh_unknown', 'legacy', host)).toThrow('valid OpenShip');
+  expect(appSendingSettings('omk_fixture', 'legacy', host)).toEqual({ key: 'omk_fixture', namespace: 'legacy' });
+  const auth = spyOn(imap, 'withImap').mockResolvedValue(undefined);
+  const native = spyOn(smtp, 'sendMail').mockRejectedValue(new Error('Unexpected SMTP'));
+  const api = spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: 'test', state: 'queued' }, { status: 202 }));
+  try {
+    env.DEFAULT_IMAP_HOST = host;
+    env.managedSending = appSendingSettings(key, undefined, host);
+    await expect(deliverMailboxMessage(mailbox, { ...mailbox, host: 'foreign.example' }, message))
+      .rejects.toThrow('authenticated mailbox');
+    await deliverMailboxMessage(mailbox, mailbox, message);
+    expect(auth).toHaveBeenCalledTimes(1);
+    expect(api).toHaveBeenCalledTimes(1);
+    const [[url, request]] = api.mock.calls;
+    expect(String(url)).toBe('https://api.openship.io/api/mail/send');
+    expect(new Headers(request?.headers).get('authorization')).toBe('Bearer ' + key);
+    await expect(deliverMailboxMessage(mailbox, mailbox, { ...message, inReplyTo: '<id@apps.example>' }))
+      .rejects.toThrow('full MIME');
+    expect(native).not.toHaveBeenCalled();
+  } finally {
+    env.DEFAULT_IMAP_HOST = previous.host;
+    env.managedSending = previous.settings;
+    auth.mockRestore();
+    native.mockRestore();
+    api.mockRestore();
+  }
+});
 
 test('webmail keeps threads, custom headers and attachments on the MIME path', () => {
   const message = {

@@ -1,9 +1,9 @@
 import { TtlCache } from "../../../state/cache";
-import { MAIL_SERVICE_HEADER, MAIL_TENANT_TOKEN_PREFIX } from "@repo/contracts/managed-mail";
+import { CUSTOMER_WEBMAIL_PROJECT_HEADER, MAIL_SERVICE_HEADER, MAIL_TENANT_TOKEN_PREFIX } from "@repo/contracts/managed-mail";
 import { createHash } from "node:crypto";
 import { diagnostics } from "@repo/core/diagnostics";
 import { AppError } from "@repo/core";
-import type { MailSetupStatusSchema } from "@repo/contracts";
+import { isWebmailOnMailServer, type MailSetupStatusSchema } from "@repo/contracts";
 import type { Static } from "@sinclair/typebox";
 import type { MailEngine } from "./service";
 
@@ -52,6 +52,7 @@ export async function engineResponse(
     headers: {
       authorization: "Bearer " + engine.token,
       "content-type": "application/json",
+      ...(engine.customerProjectId && engine.placement === "dedicated" && !engine.tenant && path.includes("/webmail/") && { [CUSTOMER_WEBMAIL_PROJECT_HEADER]: engine.customerProjectId }),
       ...(engine.serviceId && { [MAIL_SERVICE_HEADER]: engine.serviceId }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -86,10 +87,14 @@ export function workerStatus(engine: MailEngine) {
   );
 }
 
-export async function bindReadyMailEngine(engine: MailEngine, namespace: string) {
+export async function bindReadyMailEngine(engine: MailEngine, namespace: string, options?: {
+  observed?: Awaited<ReturnType<typeof workerStatus>>;
+  requireCustomerApp?: boolean;
+  prepareCustomerApp?: () => Promise<string | null>;
+}) {
   const slot = engine.hostname;
   const path = "/admin/" + encodeURIComponent(engine.serverId);
-  const worker = await workerStatus(engine).catch(() => {
+  const worker = options?.observed ?? await workerStatus(engine).catch(() => {
     diagnostics.warn("managed-mail", "Could not reach an unassigned mail worker.", { slot });
     return null;
   });
@@ -98,17 +103,21 @@ export async function bindReadyMailEngine(engine: MailEngine, namespace: string)
     worker.active ||
     worker.observationError ||
     worker.serverId !== engine.serverId ||
-    !worker.webmail?.projectId ||
-    worker.webmail.routingUnknown ||
     !worker.finishedAt ||
     !worker.engine?.running ||
     worker.engine.flavor !== "container" ||
-    !worker.webmail?.installed ||
-    worker.domain !== engine.hostname.replace(/^mail\./, "") ||
+    worker.domain !== engine.hostname.replace(/^mail\./, "")
+  ) return false;
+  const customerOwned = options?.requireCustomerApp || (options?.prepareCustomerApp && !worker.webmail?.projectId);
+  if (customerOwned) {
+    if (engine.shared || engine.placement !== "dedicated" || !engine.providerVmId ||
+        worker.webmail?.projectId || worker.webmail?.installed || worker.webmail?.routingUnknown) return false;
+  } else if (
+    !worker.webmail?.projectId || worker.webmail.routingUnknown || !worker.webmail.installed ||
+    (engine.placement === "dedicated" && !isWebmailOnMailServer(worker.webmail, engine.serverId)) ||
     !URL.canParse(worker.webmail.url) ||
     new URL(worker.webmail.url).origin !== new URL(engine.webmailUrl).origin
-  )
-    return false;
+  ) return false;
   if (!engine.shared) {
     const { domains } = await engineRequest<{ domains: { domain: string }[] }>(
       engine,
@@ -119,9 +128,15 @@ export async function bindReadyMailEngine(engine: MailEngine, namespace: string)
       return false;
     }
   }
-  const dedicated = engine.placement === "dedicated" && worker.webmail.serverId === engine.serverId && !worker.webmail.workspaceId;
+  if (customerOwned) {
+    const projectId = await options?.prepareCustomerApp?.();
+    if (!projectId) return false;
+    engine = { ...engine, customerProjectId: projectId };
+  }
+  const dedicated = engine.placement === "dedicated";
   const hosted = await engineRequest<{ bound: boolean; apiRelay?: boolean }>(engine, path + "/webmail/hosting", "PUT", {
     ...(engine.shared ? { shared: true } : { namespace, ...(dedicated && { dedicated: true }) }),
+    ...(engine.customerProjectId && { customerProjectId: engine.customerProjectId }),
     imapHost: engine.hostname,
   });
   return hosted.bound === true && hosted.apiRelay === true;

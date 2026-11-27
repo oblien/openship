@@ -2,7 +2,7 @@ import "../mail/_setup-env";
 import { Hono } from "hono";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { db, repos, schema } from "@repo/db";
-import { OblienError } from "@repo/adapters";
+import { initPlatform, resetPlatform, OblienError } from "@repo/adapters";
 import { hashPatToken, PAT_PREFIX } from "@repo/platform/engine/lib/pat";
 import { eq } from "drizzle-orm";
 import { seedOwner } from "../jobs/_harness";
@@ -193,11 +193,15 @@ it.each([true, false])("discovers active hosted domains through the public route
   h.engines = JSON.stringify([engine]);
   const lookup = (domain = "inbox.example.test") => app.request("/api/mail/discovery?domain=" + encodeURIComponent(domain));
   h.discoveryTxt.mockResolvedValue([["openship-mail=", id]]);
-  const worker = vi.fn(async () => Response.json({ domain: { domain: "inbox.example.test", active: true } }));
+  const customUrl = "https://inbox.example.test";
+  let verifiedUrl: string | null = customUrl;
+  const worker = vi.fn(async (url: URL) => url.pathname.endsWith("/webmail/login-route")
+    ? Response.json({ url: customUrl, verifiedUrl })
+    : Response.json({ domain: { domain: "inbox.example.test", active: true } }));
   vi.stubGlobal("fetch", worker);
   const res = await lookup();
   expect(res.status, await res.clone().text()).toBe(200);
-  expect(await res.json()).toEqual({ webmailUrl: engine.webmailUrl });
+  expect(await res.json()).toEqual({ webmailUrl: shared ? engine.webmailUrl : customUrl });
   expect(worker).toHaveBeenCalledWith(new URL("/api/mail/admin/" + engine.serverId + "/domains/inbox.example.test", engine.origin),
     expect.objectContaining({ method: "GET", redirect: "error" }));
   expect(h.discoveryMx).not.toHaveBeenCalled();
@@ -212,7 +216,14 @@ it.each([true, false])("discovers active hosted domains through the public route
   h.discoveryMx.mockResolvedValue([{ priority: 0, exchange: "unassigned.test" }]);
   expect((await lookup()).status).toBe(404);
   expect((await lookup("alex@inbox.example.test")).status).toBe(400);
-  expect(worker).toHaveBeenCalledTimes(4);
+  expect(worker).toHaveBeenCalledTimes(shared ? 4 : 6);
+  if (!shared) {
+    h.discoveryMx.mockResolvedValue([{ priority: 10, exchange: engine.hostname }]);
+    verifiedUrl = null;
+    expect((await lookup()).status).toBe(404);
+    verifiedUrl = "http://inbox.example.test";
+    expect((await lookup()).status).toBe(404);
+  }
   h.discoveryTxt.mockRejectedValue(Object.assign(new Error("DNS unavailable"), { code: "ETIMEOUT" }));
   expect((await lookup()).status).toBe(503);
   h.cloud = false;
@@ -1134,6 +1145,9 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
   for (let i = 0; i < 2; i++)
     expect((await call(owner, "/managed/checkout", purchase)).status).toBe(200);
   const [row] = await repos.managedMail.orders(org);
+  // A pending order from before customer Apps already has a worker-local Webmail.
+  expect(row?.order?.webmailOwner).toBe("customer");
+  await repos.managedMail.updateOrder(org, row!.id, { order: { ...row!.order!, webmailOwner: undefined } });
   const checkout = h.provider.createCheckout.mock.calls[0]![0];
   expect(checkout).toMatchObject({
     namespace: row!.billingNamespace,
@@ -1219,6 +1233,7 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
   let acknowledged = false;
   const domain = row!.id + ".fleet.test";
   const registeredId = "worker-new-mail";
+  let webmailServerId = "another-worker";
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: URL, init: RequestInit) => {
@@ -1246,7 +1261,7 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
                 webmail: {
                   installed: true,
                   projectId: "webmail",
-                  serverId: registeredId,
+                  serverId: webmailServerId,
                   url: "https://webmail." + domain,
                 },
               }
@@ -1287,6 +1302,9 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
   await warmMailFleet();
   await warmMailFleet();
   await warmMailFleet();
+  expect((await repos.managedMail.service(owner.orgId, row!.id))?.provisioning).toBe(true);
+  webmailServerId = registeredId;
+  await warmMailFleet();
   expect(h.vmCreate).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
       namespace: row!.billingNamespace,
@@ -1300,9 +1318,7 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
     expected_revision: 1,
     tcp_ports: [25, 80, 443, 587, 993],
   });
-  expect(h.dnsWrite).toHaveBeenCalledWith(expect.anything(), "fixture", {
-    type: "A", name: "webmail." + domain, content: "192.0.2.10", proxied: false,
-  });
+  expect(h.dnsWrite).not.toHaveBeenCalledWith(expect.anything(), "fixture", expect.objectContaining({ name: "webmail." + domain }));
   expect(h.dnsWrite).not.toHaveBeenCalledWith(expect.anything(), "fixture",
     expect.objectContaining({ type: "A", name: "mail." + domain }));
   expect(h.dnsWrite).toHaveBeenCalledWith(
@@ -1692,3 +1708,101 @@ it.each([["mailboxes", "mailboxes"], ["sending", "sending"], ["sending", "mailbo
     expect(h.provider.createCheckout).toHaveBeenCalledTimes(1);
   },
 );
+
+it("installs the customer catalog App on the funded VM, follows its routes and respects deletion", async () => {
+  const { orgId } = await seedOwner();
+  const { dedicatedOrderTerms, dedicatedOffer, dedicated } = await import("@repo/platform/engine/modules/managed-mail/dedicated");
+  const { prepareCustomerWebmail, customerWebmailStatus } = await import("@repo/platform/engine/modules/managed-mail/customer-webmail");
+  const { findBillingOwnerByNamespace } = await import("@repo/platform/engine/modules/billing/billing-namespace-owner");
+  const builds = await import("@repo/platform/engine/modules/deployments/build.service");
+
+  const id = "managed-mail-" + crypto.randomUUID();
+  const namespace = "openship-mail-vm-" + id.slice(13);
+  const vm = "vm-" + id;
+  const host = "mail." + id + ".test";
+  const row = await repos.managedMail.createOrder({ id, organizationId: orgId, placement: "dedicated",
+    provisioning: true, cloudServerId: vm, billingNamespace: namespace, orderState: "funded",
+    checkoutId: id, order: dedicatedOrderTerms("business", 100) });
+  const { warmMailFleet } = await import("@repo/platform/engine/modules/managed-mail/fleet");
+  const worker = { origin: "https://worker.test", serverId: "worker", hostname: host, token: "test", providerVmId: vm,
+    placement: "dedicated", prepare: true, webmailUrl: "https://legacy.test" };
+  h.engines = JSON.stringify([worker]);
+  let occupied = true;
+  const bind = vi.fn(async (init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    expect(body.customerProjectId).toBeTruthy();
+    expect(new Headers(init.headers).get("x-openship-webmail-project")).toBe(body.customerProjectId);
+    return Response.json({ bound: true, apiRelay: true });
+  });
+  vi.stubGlobal("fetch", vi.fn(async (url: URL, init: RequestInit) => {
+    if (url.pathname.endsWith("/status")) return Response.json({ serverId: worker.serverId, domain: host.slice(5),
+      finishedAt: new Date().toISOString(), engine: { running: true, flavor: "container" } });
+    if (url.pathname.endsWith("/domains")) return Response.json({ domains: [{ domain: occupied ? "other.test" : host.slice(5) }] });
+    if (url.pathname.endsWith("/webmail/hosting")) return bind(init);
+    throw new Error("Unexpected worker operation: " + url.pathname);
+  }));
+  dedicated(row);
+  const periodStart = new Date(Date.now() - 60_000).toISOString();
+  const periodEnd = new Date(Date.now() + 3600_000).toISOString();
+  const offer = dedicatedOffer(row);
+  const subscription = { status: "active", tierId: "reseller", billingInterval: "monthly", periodStart, periodEnd, offer,
+    metadata: { openship_product: "dedicated_mail", openship_organization: orgId, openship_mail_service: id, openship_namespace: namespace } };
+  h.provider.getSubscription.mockResolvedValue({ namespace, subscription });
+  h.provider.getEntitlement.mockResolvedValue({ namespace, tierId: "capacity", status: "active", billingMode: "monthly",
+    computeCovered: true, periodStart, periodEnd, quota: { limit: null, used: 0 }, capacity: {
+      namespace, provider: "stripe", billingMode: "monthly", computeCovered: true, periodStart, periodEnd, capacity: offer.capacity,
+    } });
+  const build = vi.spyOn(builds, "requestBuildAccess").mockImplementation(async (ctx, input) => {
+    expect(ctx.organizationId).toBe(orgId);
+    expect(input.deployTarget).toBe("cloud");
+    const { buildServiceRouteDomains, ensureRouteDomainRecord } = await import("@repo/platform/engine/lib/routing-domains");
+    const project = (await repos.project.findByIdInOrganization(input.projectId, ctx.organizationId))!;
+    const [service] = await repos.service.listByProject(project.id);
+    for (const route of buildServiceRouteDomains({ project, service: service!, runtimeName: "docker", usesManagedRouting: true, certificateManagement: "provider" })) {
+      await ensureRouteDomainRecord({ projectId: project.id, route, domainByHostname: new Map() });
+    }
+    const deploymentId = "dep-" + id;
+    await db.insert(schema.deployment).values({ id: deploymentId, organizationId: orgId, projectId: input.projectId, branch: "main", status: "ready" });
+    await db.update(schema.project).set({ activeDeploymentId: deploymentId }).where(eq(schema.project.id, input.projectId));
+    return { deployment_id: deploymentId } as Awaited<ReturnType<typeof builds.requestBuildAccess>>;
+  });
+  try {
+    await initPlatform({ target: "cloud", runtime: "cloud" });
+    const current = async () => (await repos.managedMail.service(orgId, id))!;
+    await warmMailFleet();
+    expect(build).not.toHaveBeenCalled();
+    occupied = false;
+    await warmMailFleet();
+    await warmMailFleet();
+    expect(bind).toHaveBeenCalledOnce();
+    const saved = await current();
+    expect(saved.provisioning).toBe(false);
+    const projectId = saved.order!.webmailProjectId!;
+    const project = await repos.project.findByIdInOrganization(projectId, orgId);
+    expect(project).toMatchObject({ isApp: true, appTemplateId: "webmail" });
+    const binding = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: project!.workspaceId! }, orgId);
+    expect(binding?.workspaceId).toBe(vm);
+    expect(await findBillingOwnerByNamespace(namespace)).toEqual({ kind: "mail", organizationId: orgId });
+    const services = await repos.service.listByProject(projectId);
+    expect(services).toHaveLength(1);
+    expect(services[0]?.advanced).toMatchObject({ extraHosts: { [host]: "host-gateway" } });
+    const routes = await repos.domain.listByProject(projectId);
+    expect(routes).toHaveLength(1);
+    expect(routes[0]?.domainType).toBe("free");
+    expect(await customerWebmailStatus(saved)).toMatchObject({ installed: true, verifiedUrl: "https://" + routes[0]!.hostname });
+    await db.insert(schema.domain).values({ id: "domain-" + id, projectId, serviceId: services[0]!.id, domainType: "custom",
+      hostname: "webmail.customer.example", verified: true, isPrimary: true, status: "active", sslStatus: "active" });
+    await db.update(schema.domain).set({ isPrimary: false }).where(eq(schema.domain.id, routes[0]!.id));
+    expect(await prepareCustomerWebmail(saved)).toBe(projectId);
+    expect((await customerWebmailStatus(saved))?.verifiedUrl).toBe("https://webmail.customer.example");
+    await db.delete(schema.project).where(eq(schema.project.id, projectId));
+    expect(await prepareCustomerWebmail(await current())).toBeNull();
+    expect(await customerWebmailStatus(await current())).toBeNull();
+    expect((await current()).cloudServerId).toBe(vm);
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(h.vmCreate).not.toHaveBeenCalled();
+  } finally {
+    build.mockRestore();
+    resetPlatform();
+  }
+});

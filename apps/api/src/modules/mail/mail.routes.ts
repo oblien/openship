@@ -183,6 +183,11 @@ r.post(
 
 /* ── Webmail deploy (creates a standard project + deployment) ─────── */
 r.get(
+  "/admin/:serverId/webmail/login-route",
+  { tag: "mail_server:read", mcpExcluded: "Internal dedicated mailbox sign-in discovery." },
+  webmail.dedicatedLoginRoute,
+);
+r.get(
   "/webmail/targets",
   { tag: "mail_server:read", mcp: { description: "List permitted deployment targets for the mail server named by query.serverId." }, query: MailRequestSchemas.server },
   webmail.getTargetsHandler,

@@ -11,19 +11,37 @@
  */
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { isWebmailOnMailServer } from "@repo/contracts";
 import type { Context } from "hono";
 import { AppError, isRelayProviderId, RELAY_PROVIDER_IDS } from "@repo/core";
 import { env } from "@repo/platform/engine/config/index";
 import { getRequestContext } from "../../../lib/request-context";
+import { repos } from "@repo/db";
+import { assertResourceInOrg } from "@repo/platform/engine/lib/resource-access";
 import { requestTag } from "../../../middleware/error-handler";
 import { listWebmailTargets } from "./webmail.service";
 import {
   startWebmailDeploy,
   startExternalWebmailDeploy,
+  resolveWebmailSummary,
 } from "@repo/platform/engine/modules/mail/webmail/webmail-install.service";
 
 const HOSTNAME_RE = /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/;
 const portOk = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
+
+/** Read the linked project's routes without probing the VM on every sign-in. */
+export async function dedicatedLoginRoute(c: Context) {
+  const serverId = c.req.param("serverId")!;
+  const { organizationId } = getRequestContext(c);
+  assertResourceInOrg(await repos.server.get(serverId), "mail_server", organizationId, serverId);
+  const record = await repos.mailServer.get(serverId);
+  const app = record?.webmailProjectId && await resolveWebmailSummary(organizationId, record);
+  c.header("Cache-Control", "no-store");
+  if (!app || !app.installed || app.routingUnknown || app.legacy ||
+      app.projectId !== record?.webmailProjectId || !isWebmailOnMailServer(app, serverId))
+    return c.json({ url: null, verifiedUrl: null });
+  return c.json({ url: app.url, verifiedUrl: app.verifiedUrl ?? null });
+}
 
 /**
  * The install service refuses in ways the operator can act on — a hostname

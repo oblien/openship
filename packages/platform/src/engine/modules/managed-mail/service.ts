@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { bindReadyMailEngine, engineResponse, sharedMailTarget } from "./engine-client";
 import { pooledSendingAllowance } from "./sending";
+import { customerWebmailStatus } from "./customer-webmail";
 import { enrolledMailEngine } from "./dedicated-fleet";
 import { dedicatedCoverage } from "./dedicated";
 import { z } from "zod";
 import { MAIL_PLACEMENTS } from "@repo/core/managed-mail";
 import { AppError, PRICING } from "@repo/core";
+import { diagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import {
   managedMailboxCapacity,
@@ -42,7 +44,7 @@ const engineSchema = z
     mailboxStorageMB: z.number().int().positive().optional(),
   })
   .strict();
-export type MailEngine = z.infer<typeof engineSchema>;
+export type MailEngine = z.infer<typeof engineSchema> & { customerProjectId?: string };
 function configError() {
   return new AppError(
     "Managed mail capacity is misconfigured. Contact the operator.",
@@ -133,10 +135,31 @@ async function boundEngine(org: string, row: Binding) {
   return row.order
     ? {
         ...target,
+        customerProjectId: row.order.webmailProjectId,
         mailboxStorageMB: Math.min(row.order.storageGB * 1024, target.mailboxStorageMB ?? Infinity),
       }
     : target;
 }
+async function webmailLoginOrigin(engine: MailEngine): Promise<string | null> {
+  const configured = new URL(engine.webmailUrl).origin;
+  if (engine.placement !== "dedicated") return configured;
+  try {
+    const response = await engineResponse(engine,
+      "/admin/" + encodeURIComponent(engine.serverId) + "/webmail/login-route", "GET", undefined, 3_000);
+    const route = await response.json() as { url: string | null; verifiedUrl: string | null };
+    // Only the operator-pinned origin may be used without a verified project route.
+    if (!route.verifiedUrl) return route.url === configured ? configured : null;
+    if (typeof route.verifiedUrl !== "string" || !URL.canParse(route.verifiedUrl)) return null;
+    const url = new URL(route.verifiedUrl);
+    return url.protocol === "https:" && url.origin === route.verifiedUrl &&
+      hostname.safeParse(url.hostname).success ? url.origin : null;
+  } catch (error) {
+    // Workers from before route discovery only support their operator-pinned URL.
+    if (error instanceof AppError && error.statusCode === 404) return configured;
+    throw error;
+  }
+}
+
 /** DNS selects a possible assignment. Only the assigned worker can confirm hosting. */
 export async function hostedMailboxOrigin(selector: { id: string } | { hostname: string }, domain: string) {
   const row = await repos.managedMail.discoverMailboxService(selector);
@@ -148,7 +171,9 @@ export async function hostedMailboxOrigin(selector: { id: string } | { hostname:
     const result = z.object({ domain: z.object({ domain: z.string(), active: z.boolean() }) }).safeParse(await response.json());
     if (!result.success) throw new AppError("The mail worker returned an invalid domain.", 502);
     if (result.data.domain.domain === domain && result.data.domain.active)
-      return new URL(engine.webmailUrl).origin;
+      return row.order?.webmailProjectId
+        ? await customerWebmailStatus(row).then(app => (app?.installed && app.verifiedUrl) || null)
+        : await webmailLoginOrigin(engine);
     return null;
   } catch (error) {
     if (error instanceof AppError && error.statusCode === 404) return null;
@@ -159,9 +184,12 @@ async function summary(
   org: string,
   row: Binding,
 ): Promise<NonNullable<ManagedMailSummary["service"]>> {
+  const customerApp = row.order?.webmailProjectId ? await customerWebmailStatus(row) : null;
+  const project = customerApp?.projectId ? { webmailProjectId: customerApp.projectId } : {};
   if (row.provisioning) {
     return {
       id: row.id,
+      ...project,
       placement: row.placement,
       ...(row.cloudServerId ? { cloudServerId: row.cloudServerId } : {}),
       provisioning:
@@ -177,13 +205,20 @@ async function summary(
   const target = await boundEngine(org, row);
   return {
     id: row.id,
+    ...project,
     placement: row.placement,
     ...(row.cloudServerId ? { cloudServerId: row.cloudServerId } : {}),
     ...(row.placement === "dedicated" && target.mailboxStorageMB !== undefined
       ? { mailboxStorageMB: target.mailboxStorageMB }
       : {}),
     hostname: target.hostname,
-    webmailUrl: target.webmailUrl,
+    // The already-provisioned fleet address also works when the worker's control API is offline.
+    webmailUrl: row.order?.webmailProjectId
+      ? (customerApp?.installed && customerApp.verifiedUrl) || null
+      : await webmailLoginOrigin(target).catch(() => {
+          diagnostics.warn("managed-mail", "Could not read the worker's Webmail route. Using its configured origin.", { serviceId: row.id });
+          return new URL(target.webmailUrl).origin;
+        }),
   };
 }
 

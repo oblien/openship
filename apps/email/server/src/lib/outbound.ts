@@ -41,7 +41,8 @@ export function needsMime(input: SendInput, maxBodyLength = 500_000) {
 export async function deliverMailboxMessage(smtp: SmtpAuth, imap: ImapAuth, input: SendInput) {
   const senderDomain = imap.user.toLowerCase().split('@')[1] ?? '';
   const hosted = hostedSendingNamespace();
-  const settings = sendingSettings(senderDomain) ?? (hosted ? undefined : env.managedSending);
+  const domainSettings = sendingSettings(senderDomain);
+  const settings = domainSettings ?? (hosted ? undefined : env.managedSending);
   if (!permitsSendingNamespace(hosted, settings?.namespace))
     throw new Error(
       'Verify and enable managed sending for this mailbox domain in the Emails dashboard.',
@@ -65,7 +66,7 @@ export async function deliverMailboxMessage(smtp: SmtpAuth, imap: ImapAuth, inpu
     throw new Error('Mailbox sending limit reached. Try again in a minute.');
   const apiOrigin = 'apiOrigin' in settings ? settings.apiOrigin : undefined;
   if (needsMime(input, apiOrigin ? 250_000 : 500_000)) {
-    if (hosted)
+    if (hosted || (!domainSettings && apiOrigin))
       throw new Error('The managed sending API supports text and HTML. This message requires full MIME delivery.');
     return sendMail(smtp, input);
   }

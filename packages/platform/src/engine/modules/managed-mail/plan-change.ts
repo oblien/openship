@@ -332,12 +332,19 @@ export async function reconcileMailChange(org: string, target: string) {
           },
         });
       }
+      if (intent.resize && owner.row.order.webmailProjectId && owner.row.cloudServerId) {
+        const workspace = await repos.cloudWorkspace.findByNamespace(owner.namespace);
+        if (workspace && workspace.organizationId === org)
+          await repos.cloudDockerWorkspace.updateResources({ ownerWorkspaceId: workspace.id }, org, owner.row.cloudServerId, intent.resize.after);
+      }
       intent = { ...intent, serverUpdate: "not_required" };
       await repos.managedMail.updateOrder(org, target, {
         change: intent,
         order: {
           ...nextOrder,
           worker: owner.row.order.worker,
+          webmailProjectId: owner.row.order.webmailProjectId,
+          webmailOwner: owner.row.order.webmailOwner,
           purchase: owner.row.order.purchase ?? {
             plan: owner.row.order.plan,
             storageGB: owner.row.order.storageGB,

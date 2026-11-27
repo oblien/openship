@@ -5,6 +5,7 @@ import type { ExecutionContext } from "../../../context";
 import { getOblienClient } from "../../lib/oblien-client";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { createMailSendToken } from "../tokens/token.service";
+import { customerWebmailStatus } from "./customer-webmail";
 import { sendingNamespace } from "./billing";
 import { engineRequest, type MailTarget } from "./engine-client";
 import { activateSending, listSendingKeys } from "./sending";
@@ -20,6 +21,14 @@ export async function connectHostedSending(
 ) {
   return createProvisionLock("managed-mail:delivery:" + serviceId).run(async () => {
     const org = ctx.organizationId;
+    if (engine.customerProjectId) {
+      const row = await repos.managedMail.service(org, serviceId);
+      const app = row?.order?.webmailProjectId === engine.customerProjectId && await customerWebmailStatus(row);
+      if (!app || app.projectId !== engine.customerProjectId || !app.installed) {
+        if (action === "status") return { configured: false };
+        throw new AppError("Deploy the linked Webmail app on its dedicated VM first.", 409);
+      }
+    }
     const namespace = action === "connect" ? await activateSending(org) : sendingNamespace(org);
     if (engine.tenant && engine.tenant !== namespace)
       throw new AppError("Mail service not found.", 404);

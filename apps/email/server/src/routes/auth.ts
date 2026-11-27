@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { getCookie } from 'hono/cookie';
 import { activateSession, clearActiveCookies, clearSessionCookies, readActiveSessionId, readLiveSessionIds } from '../lib/session-cookies';
 import { env } from '../env';
+import { openshipApiOrigin } from '../mail/sending-credentials';
 import { signInSchema } from '../lib/schemas';
 import { probeImap } from '../lib/imap';
 import { classifyImapFailure } from '../lib/imap-errors';
@@ -64,7 +65,7 @@ authRoutes.get('/mailbox-location', async (c) => {
   if (!domain || !domain.includes('.') || isIP(domain) || !z.hostname().safeParse(domain).success)
     return c.json({ error: 'Enter your full mailbox address.' }, 400);
 
-  const lookup = new URL('https://api.openship.io/api/mail/discovery');
+  const lookup = new URL('/api/mail/discovery', openshipApiOrigin);
   lookup.searchParams.set('domain', domain);
   try {
     const response = await fetch(lookup, {

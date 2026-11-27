@@ -263,11 +263,16 @@ function CloudMailService({
         </div>
         {data && !connecting && !access && (
           <div className="flex flex-wrap items-center gap-2">
-            {service && !service.provisioning && (
+            {service && !service.provisioning && service.webmailUrl && (
               <Button asChild>
                 <a href={service.webmailUrl} target="_blank" rel="noopener noreferrer">
                   {t.emailsAdmin.overview.openWebmail}<Icon name="arrow-up-right" />
                 </a>
+              </Button>
+            )}
+            {service?.webmailProjectId && (
+              <Button asChild variant="secondary" size="sm">
+                <Link href={`/projects/${encodeURIComponent(service.webmailProjectId)}`}>{t.importProject.deploymentProcessing.openProject}</Link>
               </Button>
             )}
             {data.subscriptionTarget && (
@@ -399,11 +404,11 @@ function CloudMailService({
             active: false,
             steps: [],
             domain: service.hostname.replace(/^mail\./, ""),
-            webmail: {
+            webmail: service.webmailUrl ? {
               installed: true,
               url: service.webmailUrl,
               hostname: new URL(service.webmailUrl).hostname,
-            },
+            } : undefined,
           }}
           onRefresh={() => setAttempt((n) => n + 1)}
           onForgotten={() => setAttempt((n) => n + 1)}

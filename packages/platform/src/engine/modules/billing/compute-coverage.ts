@@ -1,3 +1,4 @@
+import { isDedicatedMailNamespace } from "../managed-mail/dedicated-contract";
 import { repos } from "@repo/db";
 import { getOblienBillingApi } from "../../lib/oblien-client";
 
@@ -12,7 +13,7 @@ export async function paidComputeCoverage(org: string): Promise<Date | null> {
     [
       organization?.oblienNamespace,
       ...workspaces
-        .filter((row) => !row.remote && !row.deletionInProgress)
+        .filter((row) => !row.remote && !row.deletionInProgress && !isDedicatedMailNamespace(row.namespace))
         .map((row) => row.namespace),
     ].filter((value): value is string => !!value),
   );

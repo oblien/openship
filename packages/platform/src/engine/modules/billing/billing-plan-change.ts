@@ -13,6 +13,7 @@ import { cloudWorkspaceResourcesFromLimits } from "../../lib/resources";
 import { previewWorkspaceResourceChange, applyApprovedWorkspaceResize, requestPaidWorkspaceProvisioning } from "../cloud-workspaces/cloud-workspace.service";
 import { withCloudBillingLock } from "./billing-oblien-quota";
 import { assertBillingEnabled } from "./billing.service";
+import { assertComputeBillingOwner } from "../managed-mail/dedicated-contract";
 import { resolveSubscriptionSelection, subscriptionMetadata, subscriptionPlan } from "./billing-catalog";
 import { canChangeCloudSubscription, hasPendingSubscriptionChange, presentSubscriptionChange } from "./billing-subscription";
 import { assertWorkspaceCheckoutsSettled } from "./workspace-checkout";
@@ -21,6 +22,7 @@ import { requestKey, terminal, previewChange, acceptChange, readAcceptedChange, 
 
 async function requireOwner(organizationId: string, workspaceId?: string): Promise<CloudWorkspace & { namespace: string }> {
   const { workspace } = await cloudBillingOwner(organizationId, workspaceId);
+  assertComputeBillingOwner(workspace?.namespace);
   if (!workspace || workspace.remote || !workspace.namespace)
     throw new AppError("Select a subscribed managed server before changing its plan", 409, "BILLING_SERVER_REQUIRED");
   if (workspace.deletionInProgress)

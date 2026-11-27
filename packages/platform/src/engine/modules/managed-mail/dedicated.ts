@@ -1,7 +1,7 @@
+import { dedicated, dedicatedCoverageEnd, dedicatedOffer, verifiedDedicatedResources, type Binding, type Order } from "./dedicated-contract";
+export { dedicated, dedicatedOffer } from "./dedicated-contract";
 import { assertHostedMailEnrollment } from "./billing";
-import { matchesAppliedSubscription } from "../billing/subscription-change-lifecycle";
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import { AppError, mailMonthlyCents, PRICING } from "@repo/core";
 import { CLOUD_DOCKER_IMAGE, cloudWorkspaceCreationFailure, OblienError } from "@repo/adapters";
 import { dedicatedMailMonthlyCents, type PaidMailPlan } from "@repo/core/managed-mail";
@@ -12,45 +12,7 @@ import { assertOblienEntitlementMatchesSubscription } from "../../lib/oblien-bil
 import { ensureCloudNamespace } from "../../lib/oblien-namespace";
 import { findOwnedWorkspaceBySlug } from "../../lib/cloud-docker-workspace";
 import { createProvisionLock } from "../../lib/provision-lock";
-import { monthlyCapacity } from "../billing/billing-capacity";
 import { isExpiredCheckout } from "../billing/workspace-checkout";
-
-type Binding = NonNullable<Awaited<ReturnType<typeof repos.managedMail.service>>>;
-type Order = Binding & {
-  organizationId: string;
-  billingNamespace: string;
-  order: NonNullable<Binding["order"]>;
-};
-
-export function dedicated(row: Binding | null): asserts row is Order {
-  if (!row?.order || !row.organizationId || !row.billingNamespace || row.orderState === "closed")
-    throw new AppError("Dedicated mail service not found.", 404);
-}
-
-export function dedicatedOffer(row: Order) {
-  const { cpuCores, memoryMB, diskGB, plan, storageGB, sendingMonthlyCents, vmMonthlyCents } =
-    row.order;
-  const resourceLimits = {
-    max_workspaces: 1,
-    max_vcpus: cpuCores,
-    max_ram_mb: memoryMB,
-    max_disk_gb: diskGB,
-    max_total_vcpus: cpuCores,
-    max_total_ram_mb: memoryMB,
-    max_total_disk_gb: diskGB,
-  };
-  return {
-    reference: "openship:mail:dedicated:v1:" + row.id.slice("managed-mail-".length),
-    name: "OpenShip Dedicated Mail · " + plan,
-    description: `Private mail server with ${storageGB} GB of mailbox storage and managed sending`,
-    billingMode: "monthly" as const,
-    currency: "usd" as const,
-    credits: 0,
-    unitAmount: dedicatedMailMonthlyCents(vmMonthlyCents, sendingMonthlyCents),
-    resourceLimits,
-    capacity: monthlyCapacity(resourceLimits),
-  };
-}
 
 function returnUrl(row: Order) {
   const url = new URL("/emails", runtimeTarget.dashboard);
@@ -210,7 +172,7 @@ export async function dedicatedCheckout(
       provisioning: true,
       billingNamespace: "openship-mail-vm-" + digest,
       orderState: "checkout",
-      order,
+      order: { ...order, webmailOwner: "customer" },
     });
     dedicated(row);
     return { url: (await session(row)).url };
@@ -261,44 +223,13 @@ export async function dedicatedCoverage(row: Binding) {
   const { subscription } = await provider.getSubscription(row.billingNamespace);
   if (!subscription || !["active", "trialing", "past_due"].includes(subscription.status))
     return null;
-  // Keep the existing allowance available while the confirmed disk expansion is being applied.
-  const changing = row.change;
-  const approved =
-    changing?.confirmationKey &&
-    !changing.completed &&
-    changing.nextOrder &&
-    matchesAppliedSubscription(subscription, changing)
-      ? changing.nextOrder
-      : row.order;
-  const offer = dedicatedOffer({ ...row, order: approved });
-  const meta = subscription.metadata;
-  const paid = subscription.offer;
-  if (
-    meta?.openship_product !== "dedicated_mail" ||
-    meta.openship_organization !== row.organizationId ||
-    meta.openship_mail_service !== row.id ||
-    meta.openship_namespace !== row.billingNamespace ||
-    subscription.billingInterval !== "monthly" ||
-    paid?.reference !== offer.reference ||
-    paid.unitAmount !== offer.unitAmount ||
-    paid.billingMode !== offer.billingMode ||
-    paid.currency !== offer.currency ||
-    paid.credits !== 0 ||
-    !isDeepStrictEqual(paid.capacity, offer.capacity) ||
-    !isDeepStrictEqual(paid.resourceLimits, offer.resourceLimits)
-  )
-    throw new AppError("The dedicated mail subscription does not match its order.", 502);
+  verifiedDedicatedResources(row, subscription);
   const entitlement = await provider.getEntitlement(row.billingNamespace);
   if (entitlement.namespace !== row.billingNamespace)
     throw new AppError("Unexpected dedicated mail entitlement.", 502);
   assertOblienEntitlementMatchesSubscription(entitlement, subscription);
-  const until = new Date(entitlement.periodEnd ?? "");
-  if (
-    entitlement.status !== "active" ||
-    !entitlement.computeCovered ||
-    !(until.getTime() > Date.now())
-  )
-    return null;
+  const until = dedicatedCoverageEnd(entitlement, subscription);
+  if (!until) return null;
   return {
     plan: row.order.plan,
     until,

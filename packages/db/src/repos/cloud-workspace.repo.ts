@@ -4,6 +4,7 @@ import { AppError, generateId } from "@repo/core";
 import type { Database, DatabaseTransaction } from "../client";
 import {
   cloudDockerWorkspace,
+  managedMailService,
   cloudWorkspace,
   cloudServerDeletion,
   project,
@@ -74,6 +75,15 @@ async function updatedLinkedProjects(
     throw new AppError("A project identity is already controlled by another installation on this server", 409, "CLOUD_PROJECT_IDENTITY_CONFLICT");
   if (projects.length) links.push({ controllerId, projects });
   return links;
+}
+
+async function insertWorkspace(tx: DatabaseTransaction, input: Pick<CloudWorkspace, "organizationId" | "name"> & { id?: string; namespace?: string }) {
+  const [workspace] = await tx.insert(cloudWorkspace).values({ ...input, id: input.id ?? generateId("cws") }).returning();
+  await tx.insert(servers).values({
+    organizationId: workspace!.organizationId, workspaceId: workspace!.id, name: workspace!.name,
+    sshHost: null, sshPort: null, sshUser: null,
+  });
+  return workspace!;
 }
 
 export function createCloudWorkspaceRepo(db: Database) {
@@ -161,14 +171,34 @@ export function createCloudWorkspaceRepo(db: Database) {
         .orderBy(asc(cloudWorkspace.createdAt), asc(cloudWorkspace.id));
     },
     async create(input: Pick<CloudWorkspace, "organizationId" | "name"> & { id?: string }) {
-      return db.transaction(async (tx) => {
-        const [row] = await tx.insert(cloudWorkspace)
-          .values({ ...input, id: input.id ?? generateId("cws") }).returning();
-        await tx.insert(servers).values({
-          organizationId: input.organizationId, workspaceId: row!.id,
-          name: input.name, sshHost: null, sshPort: null, sshUser: null,
+      return db.transaction(tx => insertWorkspace(tx, input));
+    },
+    /** Publish the purchased host as a deployment destination in one transaction.
+     * A concurrent Apps install must never see an empty workspace and allocate another VM. */
+    async attachDedicatedMailVm(organizationId: string, serviceId: string, vmId: string, image: string) {
+      return db.transaction(async tx => {
+        const [mail] = await tx.select().from(managedMailService).where(and(
+          eq(managedMailService.id, serviceId), eq(managedMailService.organizationId, organizationId),
+          eq(managedMailService.placement, "dedicated"), eq(managedMailService.orderState, "funded"),
+          eq(managedMailService.cloudServerId, vmId),
+        )).for("update");
+        if (!mail?.order || !mail.billingNamespace || mail.shared)
+          throw new AppError("The dedicated VM does not belong to this mail order.", 409);
+        const existing = await tx.query.cloudWorkspace.findFirst({ where: eq(cloudWorkspace.namespace, mail.billingNamespace) });
+        if (existing) {
+          const binding = await tx.query.cloudDockerWorkspace.findFirst({ where: eq(cloudDockerWorkspace.ownerWorkspaceId, existing.id) });
+          if (existing.organizationId !== organizationId || existing.remote || existing.deletionInProgress ||
+              binding?.workspaceId !== vmId || binding.namespace !== mail.billingNamespace)
+            throw new AppError("The Cloud destination belongs to a different host.", 409);
+          return existing;
+        }
+        const workspace = await insertWorkspace(tx, { organizationId, name: "OpenShip Mail", namespace: mail.billingNamespace });
+        await tx.insert(cloudDockerWorkspace).values({
+          ownerWorkspaceId: workspace.id, namespace: mail.billingNamespace, workspaceId: vmId,
+          provisionKey: mail.id, image,
+          resources: { cpuCores: mail.order.cpuCores, memoryMb: mail.order.memoryMB, diskMb: mail.order.diskGB * 1024 },
         });
-        return row!;
+        return workspace;
       });
     },
     /** Linking is idempotent and never copies a subscription or creates a VM. */

@@ -60,3 +60,24 @@ it("shares an explicitly shared host across organizations and prevents changing 
   expect(await repos.managedMail.occupied("pool", "mail.pool.test", true)).toBe(false);
   expect(await repos.managedMail.occupied("pool", "mail.pool.test")).toBe(true);
 });
+
+it("attaches a funded VM as one customer Apps destination and rejects another workspace or VM", async () => {
+  const organizationId = "dedicated-owner";
+  await connection.db.insert(schema.organization).values({ id: organizationId, name: organizationId });
+  const order = await repos.managedMail.createOrder({
+    id: "managed-mail-funded", organizationId, placement: "dedicated", provisioning: true,
+    cloudServerId: "vm-funded", billingNamespace: "openship-mail-vm-funded", orderState: "funded",
+    order: { plan: "team", storageGB: 100, vmMonthlyCents: 1400, sendingMonthlyCents: 500, cpuCores: 2, memoryMB: 4096, diskGB: 125 },
+  });
+  const attach = (org: string, vmId: string) =>
+    repos.cloudWorkspace.attachDedicatedMailVm(org, order!.id, vmId, "test-image");
+  await expect(attach("someone-else", "vm-funded")).rejects.toThrow();
+  await expect(attach(organizationId, "another-vm")).rejects.toThrow();
+  const [a, b] = await Promise.all([attach(organizationId, "vm-funded"), attach(organizationId, "vm-funded")]);
+  expect(a.id).toBe(b.id);
+  expect(await repos.cloudWorkspace.listByOrganization(organizationId)).toHaveLength(1);
+  expect(await repos.server.findByWorkspace(a.id, organizationId)).toMatchObject({ workspaceId: a.id, sshHost: null });
+  expect(await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: a.id }, organizationId)).toMatchObject({
+    namespace: order!.billingNamespace, workspaceId: "vm-funded", resources: { cpuCores: 2, memoryMb: 4096, diskMb: 128000 },
+  });
+});

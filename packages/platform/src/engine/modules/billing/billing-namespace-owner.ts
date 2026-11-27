@@ -1,3 +1,4 @@
+import { isDedicatedMailNamespace } from "../managed-mail/dedicated-contract";
 import { db, eq, repos, schema } from "@repo/db";
 
 type BillingOwner =
@@ -18,8 +19,15 @@ export async function findBillingOwnerByNamespace(namespace: string): Promise<Bi
       .limit(1),
     repos.actionBilling.byNamespace(namespace),
     repos.managementBilling.byNamespace(namespace),
-    namespace.startsWith("openship-mail-vm-") ? repos.managedMail.orderByNamespace(namespace) : namespace.startsWith("openship-mail-") ? repos.managedMail.billingOwner(namespace) : null,
+    isDedicatedMailNamespace(namespace) ? repos.managedMail.orderByNamespace(namespace) : namespace.startsWith("openship-mail-") ? repos.managedMail.billingOwner(namespace) : null,
   ]);
+  // The native Apps destination and the paid mail order intentionally reference the same VM.
+  if (workspace && isDedicatedMailNamespace(namespace) && !row && !actions && !management &&
+      mail?.organizationId === workspace.organizationId && "cloudServerId" in mail && mail.cloudServerId && !workspace.remote) {
+    const vm = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: workspace.id }, workspace.organizationId);
+    if (vm?.workspaceId === mail.cloudServerId && vm.namespace === namespace)
+      return { kind: "mail", organizationId: workspace.organizationId };
+  }
   if (Number(!!workspace) + Number(!!row) + Number(!!actions) + Number(!!management) + Number(!!mail) > 1)
     throw new Error("Cloud namespace has ambiguous billing ownership");
   if (mail?.organizationId) return { kind: "mail", organizationId: mail.organizationId };

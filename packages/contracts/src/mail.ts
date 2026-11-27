@@ -185,10 +185,17 @@ export const MailWebmailSummarySchema = Type.Object({
   installed: Type.Boolean(),
   hostname: text,
   url: text,
+  verifiedUrl: Type.Optional(text),
   routingUnknown: Type.Optional(Type.Boolean()),
   projectId: Type.Optional(nullableText),
   legacy: Type.Optional(Type.Boolean()),
 });
+export function isWebmailOnMailServer(
+  webmail: { serverId?: string | null; workspaceId?: string | null },
+  serverId: string,
+) {
+  return webmail.serverId === serverId && !webmail.workspaceId;
+}
 export const MailWebmailRecoveryCandidateSchema = Type.Object({
   projectId: text,
   name: text,

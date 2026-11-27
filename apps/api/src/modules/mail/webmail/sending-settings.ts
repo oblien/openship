@@ -1,4 +1,6 @@
-import { managedMailNamespacePattern } from "@repo/contracts/managed-mail";
+import { customerAppAdmin, customerProjectIdSchema } from "./customer-app-admin";
+import { CUSTOMER_WEBMAIL_PROJECT_HEADER, managedMailNamespacePattern } from "@repo/contracts/managed-mail";
+import { isWebmailOnMailServer } from "@repo/contracts";
 import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
 import { patPrefix } from "@repo/platform/engine/lib/pat";
 import { mailApiRelay, mailApiRelayAvailable } from "@repo/platform/engine/modules/mail/admin/api-relay";
@@ -36,6 +38,16 @@ async function authorizedWebmail(c: Context, serverId: string, requireLocal = fa
   });
   const ctx = getRequestContext(c);
   const record = await repos.mailServer.get(serverId);
+  const customerProjectId = c.req.header(CUSTOMER_WEBMAIL_PROJECT_HEADER);
+  if (customerProjectId !== undefined) {
+    if (workerTenant(c) || ctx.principalKind !== "pat" || !ctx.sessionId.startsWith("pat:") ||
+        !record || record.webmailProjectId || !customerProjectIdSchema.safeParse(customerProjectId).success)
+      throw new AppError("Invalid dedicated Webmail assignment.", 403);
+    await permission.assert(ctx, { resourceType: "server", resourceId: serverId, action: "admin" });
+    const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
+    if (!server?.sshHost || server.workspaceId) throw new AppError("Dedicated mail requires a registered VM.", 409);
+    return customerAppAdmin(serverId, customerProjectId);
+  }
   if (!record?.webmailProjectId) throw new AppError("Deploy and link Openship Webmail first.", 409);
   await permission.assert(ctx, {
     resourceType: "project",
@@ -45,7 +57,7 @@ async function authorizedWebmail(c: Context, serverId: string, requireLocal = fa
   const webmail = await resolveWebmailSummary(ctx.organizationId, record);
   if (!webmail?.installed || !webmail.url || webmail.projectId !== record.webmailProjectId)
     throw new AppError("The linked webmail must be running with its verified hostname.", 409);
-  if (requireLocal && (webmail.serverId !== serverId || webmail.workspaceId))
+  if (requireLocal && !isWebmailOnMailServer(webmail, serverId))
     throw new AppError("Dedicated AI requires webmail on the dedicated mail VM.", 409);
   const services = await repos.service.listByProject(record.webmailProjectId);
   const service = services.find((row) => row.name === "webmail");
@@ -82,6 +94,7 @@ async function authorizedWebmail(c: Context, serverId: string, requireLocal = fa
 }
 
 export const hostingSchema = z.union([
+  z.object({ namespace: sendingSettingsSchema.shape.namespace, imapHost: z.hostname(), dedicated: z.literal(true), customerProjectId: customerProjectIdSchema }).strict(),
   z.object({ namespace: sendingSettingsSchema.shape.namespace, imapHost: z.hostname(), dedicated: z.literal(true).optional() }).strict(),
   z.object({ shared: z.literal(true), imapHost: z.hostname() }).strict(),
 ]);
@@ -90,11 +103,14 @@ export async function bindWebmailHosting(
   serverId: string,
   input: z.infer<typeof hostingSchema>,
 ) {
+  const { customerProjectId, ...binding } = { customerProjectId: undefined as string | undefined, ...input };
+  if (c.req.header(CUSTOMER_WEBMAIL_PROJECT_HEADER) !== customerProjectId)
+    throw new AppError("Invalid dedicated Webmail binding.", 409);
   const request = await authorizedWebmail(c, serverId, "dedicated" in input && input.dedicated);
   if (!await mailApiRelayAvailable(serverId)) return { bound: false, apiRelay: false };
   if ("shared" in input)
     await initializeSharedDomains(serverId, input.imapHost.replace(/^mail\./, ""));
-  const result = await request("/admin/hosting", z.object({ bound: z.boolean() }), input);
+  const result = await request("/admin/hosting", z.object({ bound: z.boolean() }), binding);
   if (result.bound && "shared" in input) {
     await enforceSharedImap(serverId);
   }
