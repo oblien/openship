@@ -87,6 +87,7 @@ export interface ManagedMailSummary {
   limits?: { storageMB: number; mailboxes: number | null; domains: number; recipients: number };
   billingUnavailable?: boolean;
   checkoutEnabled?: boolean;
+  hostedEnrollmentEnabled?: boolean;
   hasBillingAccount?: boolean;
   sendingConfigured?: boolean;
   sendingAllowance?: number;

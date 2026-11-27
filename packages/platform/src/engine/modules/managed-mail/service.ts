@@ -16,6 +16,7 @@ import { env } from "../../config/env";
 import { createProvisionLock, tryWithProvisionLock } from "../../lib/provision-lock";
 import { workspaceForServer } from "../../lib/cloud-workspace-scope";
 import {
+  assertHostedMailEnrollment,
   paidEmailPlan,
   mailCheckoutSummary,
   mailEntitlements,
@@ -232,9 +233,10 @@ export async function mailServiceSummary(
       plan: null,
       product: row?.order ? "dedicated" : undefined,
       billingUnavailable: true,
+      hostedEnrollmentEnabled: env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED,
     };
   }
-  const inventory = service ? [] : mailEngines();
+  const inventory = service || !env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED ? [] : mailEngines();
   const slots = inventory.filter(
     (engine) =>
       !engine.cloudServerId &&
@@ -285,6 +287,7 @@ export async function mailServiceSummary(
           : "mailboxes"
         : undefined,
     checkoutEnabled: env.BILLING_ENABLED,
+    hostedEnrollmentEnabled: env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED,
     sendingConfigured: !!account?.sendingEnabled,
     sendingAllowance: recipients,
     dedicated: !!mailboxGrant?.dedicated,
@@ -320,6 +323,7 @@ export async function activateMailService(
         );
       return summary(org, existing);
     }
+    assertHostedMailEnrollment();
     const grant = await requireMailEntitlement(org);
     if (cloudServerId)
       throw new AppError("Choose a new dedicated mail server in Email plans.", 409);

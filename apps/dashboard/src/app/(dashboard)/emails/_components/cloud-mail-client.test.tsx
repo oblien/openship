@@ -1030,6 +1030,19 @@ function mockMailPlans() {
   h.checkout.mockRejectedValue(new Error("Offline checkout"));
 }
 
+it("closes hosted plan purchases while keeping the Email API purchase available", async () => {
+  mockMailPlans();
+  h.summary.mockResolvedValue({ plan: null, service: null, hostedEnrollmentEnabled: false, checkoutEnabled: true });
+  await act(async () => root.render(<I18nProvider><EmailPlans requestedProduct="mailboxes" /></I18nProvider>));
+  expect(buttonNamed("Choose Team").disabled).toBe(true);
+  await act(async () => container.querySelector<HTMLButtonElement>('button[value="dedicated"]')!.click());
+  expect(buttonNamed("Choose Team").disabled).toBe(true);
+  await act(async () => container.querySelector<HTMLButtonElement>('button[value="sending"]')!.click());
+  expect(buttonNamed("Choose Team").disabled).toBe(false);
+  await act(async () => buttonNamed("Choose Team").click());
+  expect(h.checkout).toHaveBeenCalledExactlyOnceWith("team", "sending");
+});
+
 it("uses the same pricing card for mailbox and sending checkout at their respective prices", async () => {
   mockMailPlans();
   await act(async () =>

@@ -104,6 +104,7 @@ function EmailPlanCatalog({
     data &&
     !account.error &&
     !checkoutDisabled &&
+    (service || data.hostedEnrollmentEnabled !== false) &&
     (changeTarget ? !!service : !pendingOrder)
   );
   const { dialog, onKeyDown } = useDialogFocus(closeReview, showReview);
@@ -127,6 +128,8 @@ function EmailPlanCatalog({
     (mode === subscriptionProduct || addingMailboxes)
       ? "account"
       : undefined);
+  const hostedPurchaseClosed = data?.hostedEnrollmentEnabled === false && !sending &&
+    !(service || (target === "account" && subscriptionProduct === "mailboxes"));
   const validTarget = target === "account" ? data?.subscriptionTarget === "account" : !!service;
   const change = useMailPlanChange(validTarget ? target : undefined, account.refresh);
   const busy = mutation.busy || change.actions.busy;
@@ -218,7 +221,7 @@ function EmailPlanCatalog({
             {data.pendingPlan && (
               <>
                 <Button
-                  disabled={mutation.busy || checkoutDisabled}
+                  disabled={mutation.busy || checkoutDisabled || (data.hostedEnrollmentEnabled === false && data.pendingProduct !== "sending")}
                   onClick={() =>
                     open(() => managedMailApi.checkout(data.pendingPlan!, data.pendingProduct))
                   }
@@ -254,7 +257,7 @@ function EmailPlanCatalog({
                 {item.pendingCheckout ? (
                   <>
                     <Button
-                      disabled={mutation.busy || checkoutDisabled}
+                      disabled={mutation.busy || checkoutDisabled || data.hostedEnrollmentEnabled === false}
                       onClick={() => open(() => managedMailApi.order(item.id, "resume"))}
                     >
                       {c.resumeCheckout}
@@ -312,7 +315,7 @@ function EmailPlanCatalog({
           ))}
         </div>
       )}
-      {mode === "mailboxes" && data && !data.service && data.hostingAvailable === false && (
+      {!hostedPurchaseClosed && mode === "mailboxes" && data && !data.service && data.hostingAvailable === false && (
         <p role="status" className="text-sm text-muted-foreground">
           {c.sharedUnavailable}
         </p>
@@ -332,7 +335,7 @@ function EmailPlanCatalog({
           </Button>
         </div>
       )}
-      {data?.checkoutEnabled === false && (
+      {(data?.checkoutEnabled === false || hostedPurchaseClosed) && (
         <p role="status" className="text-sm text-muted-foreground">
           {t.billing.checkoutUnavailable.checkoutTitle}
         </p>
@@ -410,7 +413,7 @@ function EmailPlanCatalog({
                   disabled={
                     !plan ||
                     !data ||
-                    checkoutDisabled ||
+                    checkoutDisabled || hostedPurchaseClosed ||
                     !!account.error ||
                     mutation.busy ||
                     (target

@@ -1,3 +1,4 @@
+import { assertHostedMailEnrollment } from "./billing";
 import { matchesAppliedSubscription } from "../billing/subscription-change-lifecycle";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -153,7 +154,6 @@ export async function dedicatedCheckout(
   const id = "managed-mail-" + digest;
   return orderLock(org).run(async () => {
     const provider = getOblienBillingApi();
-    await provider.assertMonthlyCapacitySupport();
     const existing = await repos.managedMail.service(org, id);
     if (existing?.orderState === "funded") {
       dedicated(existing);
@@ -170,6 +170,8 @@ export async function dedicatedCheckout(
         throw new AppError("This purchase ID belongs to a different mail order.", 409);
       return { url: returnUrl(existing) };
     }
+    assertHostedMailEnrollment();
+    await provider.assertMonthlyCapacitySupport();
     const order = dedicatedOrderTerms(plan, storageGB);
     if (
       dedicatedMailMonthlyCents(order.vmMonthlyCents, order.sendingMonthlyCents) !==
@@ -233,6 +235,7 @@ export async function manageDedicatedOrder(
       throw new AppError("Payment is being reconciled.", 409);
     }
     if (action === "resume" && state === "open") {
+      assertHostedMailEnrollment();
       if (!env.BILLING_ENABLED) throw new AppError("Email checkout is unavailable.", 503);
       return { url: (await session(row)).url };
     }

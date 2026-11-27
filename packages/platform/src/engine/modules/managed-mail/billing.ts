@@ -225,12 +225,18 @@ export async function mailCheckoutSummary(
   return { pendingPlan: intent.plan, pendingProduct: intent.product ?? "mailboxes" };
 }
 
+export function assertHostedMailEnrollment() {
+  if (!env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED)
+    throw new AppError("Hosted mailbox enrollment is currently closed.", 503, "MAIL_ENROLLMENT_CLOSED");
+}
+
 export async function emailCheckout(
   org: string,
   plan: PaidMailPlan,
   product: Exclude<MailProduct, "dedicated"> = "mailboxes",
 ) {
   return createProvisionLock("managed-mail:checkout:" + org).run(async () => {
+    if (product === "mailboxes") assertHostedMailEnrollment();
     const provider = getOblienBillingApi();
     if (!env.BILLING_ENABLED || !(await provider.getCatalog()).reseller?.serviceOffers)
       throw new AppError("Email checkout is currently unavailable.", 503);

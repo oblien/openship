@@ -33,7 +33,8 @@ import {
   dedicatedOrderTerms,
   orderLock,
 } from "./dedicated";
-import { mailServiceOffer, paidEmailPlan, sendingNamespace } from "./billing";
+import { env } from "../../config/env";
+import { assertHostedMailEnrollment, mailServiceOffer, paidEmailPlan, sendingNamespace } from "./billing";
 import { reconcileSending } from "./sending";
 import { mailEngines } from "./service";
 
@@ -187,6 +188,7 @@ export async function previewMailChange(
         throw new AppError("Select an active mail subscription.", 409);
       currentPlan = paid.plan;
       currentProduct = paid.sendingOnly ? "sending" : "mailboxes";
+      if (paid.sendingOnly && input.product === "mailboxes") assertHostedMailEnrollment();
       offer = mailServiceOffer(input.plan, input.product ?? currentProduct);
       metadata.openship_mail_plan = input.plan;
       if (input.product) metadata.openship_mail_product = input.product;
@@ -225,7 +227,16 @@ export async function confirmMailChange(org: string, target: string, quoteId: st
       [org, target],
       owner.change,
       quoteId,
-      () => resizePreview(owner, owner.change?.nextOrder),
+      async (intent) => {
+        const metadata = intent.request.metadata as Record<string, unknown> | undefined;
+        if (
+          !owner.row &&
+          !env.OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED &&
+          metadata?.openship_mail_product === "mailboxes" &&
+          (await paidEmailPlan(org))?.sendingOnly !== false
+        ) assertHostedMailEnrollment();
+        return resizePreview(owner, owner.change?.nextOrder);
+      },
       (intent) => owner.save({ ...owner.change, ...intent }),
     );
     return status(change, owner.change);

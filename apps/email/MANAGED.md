@@ -2,6 +2,8 @@
 
 Openship Mail owns inbound SMTP, Dovecot IMAP, mailbox data and webmail. The Emails dashboard calls the same domains, mailboxes, aliases, DNS and statistics routes for all inbox placements. The control plane authorizes the requested service and resolves it to the instance, the shared worker under the organization’s namespace, or its dedicated VM. A connected instance can open the same Cloud dashboard. API sending uses the organization’s Oblien namespace independently of inbox placement. DNS automation uses the customer's connected DNS provider in either mode.
 
+New hosted mailbox purchases and first-time host assignments require `OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED=true` on the Cloud API. Leave it off for a sending-only rollout. Existing hosts, funded orders, Email API purchases and compute billing keep their normal lifecycle.
+
 ## Run locally
 
 | Flow | Command from the repo root | Open |

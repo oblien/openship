@@ -17,6 +17,7 @@ import {
 const h = vi.hoisted(() => ({
   cloud: true,
   billingEnabled: true,
+  hostedEnrollmentEnabled: true,
   forward: vi.fn(),
   grants: "{}",
   engines: "[]",
@@ -60,6 +61,9 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
       ...actual.env,
       get CLOUD_MODE() {
         return h.cloud;
+      },
+      get OPENSHIP_MAIL_HOSTED_ENROLLMENT_ENABLED() {
+        return h.hostedEnrollmentEnabled;
       },
       get BILLING_ENABLED() {
         return h.billingEnabled;
@@ -133,6 +137,7 @@ function call(owner: Owner, path: string, body?: object, method = body ? "POST" 
 beforeEach(() => {
   h.cloud = true;
   h.billingEnabled = true;
+  h.hostedEnrollmentEnabled = true;
   h.engines = "[]";
   h.fleet = undefined;
   h.grants = "{}";
@@ -887,6 +892,26 @@ it("rejects a new install on an existing VM and preserves previously reserved VM
   expect(fetch).toHaveBeenCalledTimes(count);
 });
 
+it("keeps sending checkout open while closing new hosted orders and activation", async () => {
+  const owner = await seedOwner();
+  h.hostedEnrollmentEnabled = false;
+  expect(await (await call(owner, "/managed")).json()).toMatchObject({
+    hostedEnrollmentEnabled: false, checkoutEnabled: true, hostingAvailable: false,
+  });
+  const checkout = (body: object) => call(owner, "/managed/checkout", body);
+  expect((await checkout({ plan: "team" })).status).toBe(503);
+  expect((await checkout({
+    product: "dedicated", plan: "team", storageGB: 200, purchaseId: crypto.randomUUID(),
+    expectedMonthlyCents: 3400,
+  })).status).toBe(503);
+  expect((await call(owner, "/managed", { placement: "standard" })).status).toBe(503);
+  expect(h.provider.createCheckout).not.toHaveBeenCalled();
+  expect(await repos.managedMail.orders(owner.orgId)).toHaveLength(0);
+  h.provider.createCheckout.mockResolvedValue({ checkoutId: "sending", url: "https://checkout.example.test" });
+  expect((await checkout({ plan: "team", product: "sending" })).status).toBe(200);
+  expect(h.provider.createCheckout).toHaveBeenCalledTimes(1);
+});
+
 it("reports disabled checkout before any provider payment request", async () => {
   const owner = await seedOwner();
   h.billingEnabled = false;
@@ -1475,6 +1500,12 @@ it.each([["mailboxes", "mailboxes"], ["sending", "sending"], ["sending", "mailbo
       },
     }));
     expect((await call(outsider, path + "/preview", selected)).status).toBe(404);
+    if (product !== nextProduct) {
+      h.hostedEnrollmentEnabled = false;
+      expect((await call(owner, path + "/preview", selected)).status).toBe(503);
+      expect(h.provider.previewPlanChange).not.toHaveBeenCalled();
+      h.hostedEnrollmentEnabled = true;
+    }
     const response = await call(owner, path + "/preview", selected);
     expect(response.status).toBe(200);
     const quote = await response.json();
@@ -1486,6 +1517,10 @@ it.each([["mailboxes", "mailboxes"], ["sending", "sending"], ["sending", "mailbo
     });
     const { offer, metadata } = h.provider.previewPlanChange.mock.calls[0]![1];
     if (product !== nextProduct) {
+      h.hostedEnrollmentEnabled = false;
+      expect((await call(owner, path, { quoteId: "quote", confirmRestart: true })).status).toBe(503);
+      expect(h.provider.changePlan).not.toHaveBeenCalled();
+      h.hostedEnrollmentEnabled = true;
       expect(metadata.openship_mail_product).toBe("mailboxes");
       expect(quote.allowances.current.mailboxes).toBeUndefined();
       expect(quote.allowances.next).toMatchObject({ mailboxes: 5, storageGB: 25 });
