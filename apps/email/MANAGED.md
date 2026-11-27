@@ -65,7 +65,13 @@ For a self-hosted mailbox, choose **Self-hosted** and enter the HTTPS address of
 
 Run `bun run dev:mail-desktop` from the repository root. To use local SaaS discovery, prefix the command with `OPENSHIP_CLOUD_API_URL=http://127.0.0.1:4100`. Development also accepts loopback HTTP webmail URLs. With the [sample mail environment](dev/README.md) running, `OPENSHIP_MAIL_SAMPLE_URL=http://127.0.0.1:3040 bun run --cwd apps/mail-desktop test:e2e` checks mailbox sign-in and inbox access in Electron. Run `bun run build:mail-desktop` on the target OS to make the desktop ZIP in `apps/mail-desktop/out/make`.
 
-### IPv4 access for dedicated webmail
+### Customer-owned Webmail
+
+A new dedicated subscription installs the catalog Webmail App in the purchasing workspace on the VM allocated by the mail order. In **Apps → Webmail**, workspace admins can change the image and settings, add a verified custom hostname, redeploy, or delete the App. **Emails → Open webmail** and Mail Desktop use the running App’s verified route. Deleting Webmail removes browser access. The VM, mail engine, and mailbox data belong to the mail service and retain their own lifecycle. Replacement images need the Webmail admin API to receive managed sending settings.
+
+Roll out the worker API before enabling this flow on SaaS. Its operator PAT needs admin access to the registered server and its mail installation. OpenShip sends each verified domain’s send-only key to the linked App on that VM. A standalone catalog install also accepts an OpenShip sending API key in App settings with a pinned IMAP host.
+
+### IPv4 ingress for existing worker-owned webmail
 
 Deploy the [webmail ingress](webmail-ingress/compose.yaml) on an OpenShip-operated Linux host with a public IPv4 address, outbound IPv6, and ports 80 and 443 available. Set `FLEET_DOMAIN` to the operator-owned DNS zone in `OPENSHIP_MAIL_DEDICATED_FLEET`. The gateway resolves dedicated VM addresses with an IPv4-reachable DNS resolver. Set `DNS_RESOLVER` to use your own resolver. Start the gateway from the repository root.
 
@@ -73,7 +79,7 @@ Deploy the [webmail ingress](webmail-ingress/compose.yaml) on an OpenShip-operat
 FLEET_DOMAIN=mailfleet.example.net docker compose -f apps/email/webmail-ingress/compose.yaml up -d
 ```
 
-Once the gateway is reachable, add its public IPv4 address as `webmailIngressIPv4` in the fleet configuration. New dedicated subscriptions receive a webmail A record pointing to the gateway and an AAAA record pointing to the VM. For each already-enrolled VM, add the A record to its existing `webmail.<service-id>.<fleet-zone>` hostname. Shared installations supply their own reachable `webmailUrl`.
+For a worker-owned installation that uses this gateway, point its existing `webmail.<service-id>.<fleet-zone>` A record at the gateway and its AAAA record at the VM. New customer-owned Webmail Apps use the standard Cloud edge route. Shared installations use their configured `webmailUrl`.
 
 The gateway forwards TLS by server name to the VM's IPv6 address. Webmail presents its own certificate and authenticates the mailbox there. Port 80 forwards certificate challenges and redirects ordinary requests to HTTPS. The mail hostname and customer MX continue to route SMTP and IMAP independently of the webmail gateway.
 
@@ -114,7 +120,7 @@ When upgrading webmail from unsigned session cookies, update all webmail replica
 
 Dedicated mail is a separate monthly capacity subscription. In **Billing → Email plans → Dedicated mail server**, choose mailbox storage and a sending tier, then review the single monthly charge. Payment confirmation provisions a new permanent VM in its own Oblien namespace. Existing shared inboxes and Cloud VMs keep their assignments. The Emails service picker opens each installation in the regular mail admin panel.
 
-Mindwire is optional on dedicated mail. Configure the assistant-only runtime engine on the dedicated VM, then each mailbox owner can connect a provider in webmail. For an existing dedicated installation, update Cloud and the worker, redeploy the linked webmail on the same VM through `/api/mail/webmail/deploy-project` with `dedicatedAssistant: true`, then repeat `PUT /api/mail/admin/:serverId/webmail/hosting` with the existing service namespace, pinned IMAP hostname as `imapHost`, and `dedicated: true`. This preserves the current catalog installation's mailbox data and sending keys. [Mail assistant deployment setup](MAIL-AGENTS.md#deployment-setup-once-per-mail-installation)
+Mindwire is optional on dedicated mail. Configure the assistant-only runtime engine on the dedicated VM, then each mailbox owner can connect a provider in webmail. For an existing worker-owned dedicated installation, update Cloud and the worker, redeploy the linked webmail on the same VM through `/api/mail/webmail/deploy-project` with `dedicatedAssistant: true`, then repeat `PUT /api/mail/admin/:serverId/webmail/hosting` with the existing service namespace, pinned IMAP hostname as `imapHost`, and `dedicated: true`. This preserves the current catalog installation's mailbox data and sending keys. [Mail assistant deployment setup](MAIL-AGENTS.md#deployment-setup-once-per-mail-installation)
 
 For automatic enrollment, set `OPENSHIP_MAIL_DEDICATED_FLEET` on the SaaS API. It accepts a JSON object with the following fields.
 
@@ -127,7 +133,7 @@ For automatic enrollment, set `OPENSHIP_MAIL_DEDICATED_FLEET` on the SaaS API. I
 
 Run `bun run --cwd apps/api cloud:check --dedicated-mail-fleet` with the deployed SaaS environment to check billing, the configured fleet, worker inventory access and DNS zone read access. To review the local configuration, run `bun --env-file=.env.local-saas scripts/cloud-readiness.ts --dedicated-mail-fleet` from `apps/api`. These checks are read-only. A live purchase on a pilot domain exercises VM creation, DNS writes, certificate issuance and inbox delivery.
 
-The fleet uses the immutable VM returned for the paid order. It enables inbound IPv6 for SMTP, submission, IMAP and web traffic, publishes the technical hostnames and MX, registers the target with the worker and runs the existing Compose mail installer. The installer publishes DKIM through the fleet, checks DNS and certificates, and deploys webmail before opening administration. This automatic network path requires an IPv6-capable provider node and clients. For IPv4 reachability, provision inbound IPv4 routing for the technical hostname. Oblien handles outbound delivery through the managed relay.
+The fleet uses the immutable VM returned for the paid order. It enables inbound IPv6 for SMTP, submission, IMAP and web traffic, publishes the technical hostnames and MX, registers the target with the worker and runs the existing Compose mail installer. The installer publishes DKIM through the fleet and checks the engine’s DNS and certificate. Cloud links the funded VM as an Apps destination and installs Webmail with the normal Apps installer. This automatic network path requires an IPv6-capable provider node and clients. For IPv4 reachability, provision inbound IPv4 routing for the technical hostname. Oblien handles outbound delivery through the managed relay.
 
 For an operator-routed installation, supply a dedicated `OPENSHIP_MAIL_ENGINES` entry whose `providerVmId` matches the purchased VM's immutable Oblien ID. Supply the routed mail hostname, worker origin, worker server ID, token and webmail URL. Existing private installations registered by `cloudServerId` continue to use their original worker. Previously reserved hosts can still activate under their operator grant.
 

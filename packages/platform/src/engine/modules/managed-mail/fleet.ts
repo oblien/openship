@@ -6,6 +6,7 @@ import {
   enrollDedicatedVm,
   publishDedicatedDkim,
 } from "./dedicated-fleet";
+import { prepareCustomerWebmail } from "./customer-webmail";
 import { provisionDedicatedOrder } from "./dedicated";
 import { sendingNamespace } from "./billing";
 import { repos } from "@repo/db";
@@ -22,7 +23,7 @@ import {
 /** The pool operator supplies isolated Linux targets. One pass advances the
  * existing resumable installer. DNS, certificate and webmail readiness are
  * observed on the owning worker and survive a SaaS process restart. */
-export async function prepareMailEngine(engine: MailEngine) {
+export async function prepareMailEngine(engine: MailEngine, customerOwnsApp = false) {
   const id = engine.serverId;
   const domain = engine.hostname.replace(/^mail\./, "");
   const status = await workerStatus(engine);
@@ -31,6 +32,7 @@ export async function prepareMailEngine(engine: MailEngine) {
   if (status.active || status.observationError) return;
   if (status.finishedAt) {
     if (
+      !customerOwnsApp &&
       !status.webmail?.projectId &&
       !status.webmail?.installed &&
       !status.webmail?.routingUnknown
@@ -42,7 +44,7 @@ export async function prepareMailEngine(engine: MailEngine) {
         dedicatedAssistant: engine.placement === "dedicated" && !engine.shared,
       });
     }
-    return;
+    return status;
   }
   if (!status.domain) {
     const scanned = await engineRequest<{ iredmailInstalled: boolean; hasState: boolean }>(
@@ -146,8 +148,15 @@ export async function warmMailFleet() {
             ))
           )
             return;
-          if (engine.prepare || pending.order) await prepareMailEngine(engine);
-          if (await bindReadyMailEngine(engine, sendingNamespace(pending.organizationId)))
+          const observed = (engine.prepare || pending.order) ? await prepareMailEngine(engine, !!pending.order) : undefined;
+          const ready = await bindReadyMailEngine(engine, sendingNamespace(pending.organizationId), {
+            observed,
+            requireCustomerApp: pending.order?.webmailOwner === "customer" || !!pending.order?.webmailProjectId,
+            prepareCustomerApp: pending.order
+              ? () => prepareCustomerWebmail({ ...pending, hostname: engine.hostname })
+              : undefined,
+          });
+          if (ready)
             await repos.managedMail.finishProvisioning(pending.id, pending.organizationId);
           return;
         }

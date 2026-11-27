@@ -164,6 +164,21 @@ describe("webmail summary routing", () => {
       hostname: "webmail.example.com",
       url: "https://webmail.example.com",
     });
+    expect((await resolveWebmailSummary("org1", MAIL_SERVER))?.verifiedUrl).toBeUndefined();
+  });
+
+  it("uses the app's primary verified HTTPS route for dedicated sign-in", async () => {
+    const edge = { hostname: "inbox.opsh.io", verified: true, status: "active", sslStatus: "active" };
+    const custom = { ...edge, hostname: "inbox.example.com", isPrimary: true };
+    h.rows = [edge, custom];
+    expect((await resolveWebmailSummary("org1", MAIL_SERVER))?.verifiedUrl).toBe("https://inbox.example.com");
+    for (const pending of [
+      { verified: false }, { status: "removing" }, { sslStatus: "pending" },
+      { sslExpiresAt: new Date(0) }, { redirectTo: "inbox.opsh.io" },
+    ]) {
+      h.rows = [edge, { ...custom, ...pending }];
+      expect((await resolveWebmailSummary("org1", MAIL_SERVER))?.verifiedUrl).toBe("https://inbox.opsh.io");
+    }
   });
 
   it("reports no hostname at all when the route list cannot be read", async () => {

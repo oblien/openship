@@ -3,7 +3,8 @@
  * Openship mirrors that authority. Explicit complimentary plans use Mode A.
  */
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { AppError, safeErrorMessage, type PlanTierId, type PlanLimits, type OblienLimits } from "@repo/core";
+import { AppError, quoteCustomResources, safeErrorMessage, type PlanTierId, type PlanLimits, type OblienLimits } from "@repo/core";
+import { dedicated, dedicatedCoverageEnd, isDedicatedMailNamespace, verifiedDedicatedResources } from "../managed-mail/dedicated-contract";
 import { repos } from "@repo/db";
 import type { NamespaceUsageUnits } from "@repo/adapters";
 import { env } from "../../config/env";
@@ -93,11 +94,33 @@ async function readAndMirrorEntitlement(organizationId: string, options: Entitle
     // A provider may echo the requested namespace while falling back to the
     // API-key owner's tier/period. Verify the namespace's subscription before
     // mirroring paid access or issuing a customer token.
-    const resolved = await reconcilePlanGrant({
+    const isMail = isDedicatedMailNamespace(owner.namespace);
+    const resolved = isMail ? { ...state, grant: null } : await reconcilePlanGrant({
       organizationId, namespace: owner.namespace, grants: repos.billingPlanGrant, billing, state,
     });
     const { entitlement, subscription, grant } = resolved;
-    const { tier, limits, resourceLimits, currentPeriodStart, currentPeriodEnd } = effectiveCloudPlan(resolved, grant, organizationId);
+    let plan;
+    if (isMail) {
+      const mail = await repos.managedMail.orderByNamespace(owner.namespace);
+      if (!mail || mail.organizationId !== organizationId || mail.orderState !== "funded" || !subscription ||
+          !mail.cloudServerId || !owner.workspaceId)
+        throw new AppError("The mail VM's subscription is unavailable.", 409);
+      const currentPeriodEnd = dedicatedCoverageEnd(entitlement, subscription);
+      if (!currentPeriodEnd)
+        throw new AppError("The dedicated mail subscription is inactive.", 402, "MAIL_PLAN_REQUIRED");
+      dedicated(mail);
+      const host = await repos.cloudDockerWorkspace.find({ ownerWorkspaceId: owner.workspaceId }, organizationId);
+      if (host?.workspaceId !== mail.cloudServerId || host.namespace !== owner.namespace)
+        throw new AppError("The mail subscription belongs to a different VM.", 409);
+      const resourceLimits = verifiedDedicatedResources(mail, subscription);
+      const compute = quoteCustomResources({ cpuCores: resourceLimits.max_vcpus, memoryMb: resourceLimits.max_ram_mb, diskGb: resourceLimits.max_disk_gb });
+      plan = { tier: compute.basePlanTierId, limits: compute.limits, resourceLimits,
+        currentPeriodStart: entitlement.periodStart ? new Date(entitlement.periodStart) : null,
+        currentPeriodEnd };
+    } else {
+      plan = effectiveCloudPlan(resolved, grant, organizationId);
+    }
+    const { tier, limits, resourceLimits, currentPeriodStart, currentPeriodEnd } = plan;
     // Positive entitlements must have provider-enforced resource ceilings before
     // issuing a token or allowing another deployment. Exhausted/suspended
     // customers can still obtain management access to stop/delete resources.

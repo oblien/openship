@@ -37,10 +37,13 @@ export type DedicatedMailOrder = {
   diskGB: number;
   allowance?: { recipients: number; dailyRecipients: number; domains: number };
   worker?: { id: string; origin: string };
+  /** Kept after app deletion so fulfillment never recreates a customer-deleted project. */
+  webmailProjectId?: string;
+  webmailOwner?: "customer";
 };
 
 export type MailChangeIntent = CloudSubscriptionChangeIntent & {
-  nextOrder?: Omit<DedicatedMailOrder, "worker" | "purchase">;
+  nextOrder?: Omit<DedicatedMailOrder, "worker" | "purchase" | "webmailProjectId" | "webmailOwner">;
   restartWorkloads?: CloudWorkspaceOperation["restartWorkloads"];
 };
 

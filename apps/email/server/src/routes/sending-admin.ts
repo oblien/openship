@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, schema } from '../db';
 import { env } from '../env';
+import { openshipSendingKey } from '../mail/sending-credentials';
 import {
   bindHostedSending,
   sharedHosting,
@@ -30,7 +31,7 @@ const apiCredentials = z.object({
       (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)));
   }),
   keyId: credentials.shape.keyId,
-  key: z.string().max(4096).regex(/^opsh_(?:pat|send)_[A-Za-z0-9_-]+$/),
+  key: openshipSendingKey,
 }).strict();
 
 export const sendingAdminRoute = new Hono();

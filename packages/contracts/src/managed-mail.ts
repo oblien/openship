@@ -46,6 +46,7 @@ export const MailPricingSchema = Type.Object({
 export type MailPricing = Static<typeof MailPricingSchema>;
 export const isManagedMailId = (id: string) => id.startsWith("managed-mail-");
 export const MAIL_TENANT_TOKEN_PREFIX = "opsh_mail_";
+export const CUSTOMER_WEBMAIL_PROJECT_HEADER = "x-openship-webmail-project";
 export const MAIL_SERVICE_HEADER = "x-openship-mail-service";
 export const managedMailNamespacePattern = /^openship-mail-[a-f0-9]{32}$/;
 export function managedMailDomainProof(serviceId: string, domain: string) {
@@ -99,9 +100,9 @@ export interface ManagedMailSummary {
   hostingAvailable?: boolean;
   reservedHostingAvailable?: boolean;
   service:
-    | (MailboxHost & { id: string } & (
+    | (MailboxHost & { id: string; webmailProjectId?: string } & (
           | { provisioning: "payment" | "vm" | "network" | "install" }
-          | { provisioning?: undefined; hostname: string; webmailUrl: string }
+          | { provisioning?: undefined; hostname: string; webmailUrl: string | null }
         ))
     | null;
 }

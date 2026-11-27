@@ -15,6 +15,7 @@ import {
   subscriptionPlan,
 } from "./billing-catalog";
 import { syncOblienEntitlement, withCloudBillingLock } from "./billing-oblien-quota";
+import { assertComputeBillingOwner } from "../managed-mail/dedicated-contract";
 import { listLiveSubscriptions } from "./billing.repository";
 import { canStartCloudSubscription, canTopUpCloudSubscription, hasPendingSubscriptionChange, presentCloudSubscription } from "./billing-subscription";
 import { fromOblienCredits } from "./billing-credit-units";
@@ -45,6 +46,7 @@ function checkoutKey(orgId: string, resource: string, requestKey?: string): stri
 
 async function assertBillingOwnerAvailable(orgId: string, workspaceId?: CloudWorkspaceScope) {
   const owner = await cloudBillingOwner(orgId, workspaceId);
+  assertComputeBillingOwner(owner.namespace);
   if (owner.workspace?.deletionInProgress) throw new AppError("This workspace is being deleted", 409, "CLOUD_WORKSPACE_DELETING");
   return owner;
 }

@@ -15,14 +15,17 @@ const state = vi.hoisted(() => ({
   assertDomain: vi.fn(),
   relay: vi.fn(),
   apiRelay: vi.fn(),
+  appOnVm: false,
+  exec: vi.fn(),
 }));
 vi.mock("../../../src/lib/request-context", () => ({
-  getRequestContext: () => ({ organizationId: "owner" }),
+  getRequestContext: () => ({ organizationId: "owner", principalKind: "pat", sessionId: "pat:operator" }),
 }));
 vi.mock("../../../src/lib/permission", () => ({ permission: { assert: state.authorize } }));
 vi.mock("@repo/db", () => ({
   repos: {
-    mailServer: { get: async () => ({ webmailProjectId: "webmail" }) },
+    mailServer: { get: async () => ({ webmailProjectId: state.appOnVm ? null : "webmail" }) },
+    server: { getInOrganization: async () => ({ sshHost: "vm", workspaceId: null }) },
     service: { listByProject: async () => [{ name: "webmail", id: "service" }] },
     project: { getEnvMap: async () => ({ OPENSHIP_SENDING_ADMIN_TOKEN: "encrypted" }) },
   },
@@ -42,7 +45,9 @@ vi.mock("@repo/platform/engine/modules/mail/admin/shared-relay", () => ({
 }));
 
 vi.mock("@repo/platform/engine/lib/encryption", () => ({ decrypt: () => "webmail-token" }));
+vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({ sshManager: { withExecutor: async (_id: string, fn: Function) => fn({ execWithInput: state.exec }) } }));
 afterEach(() => {
+  state.appOnVm = false;
   vi.unstubAllGlobals();
   vi.resetAllMocks();
 });
@@ -161,4 +166,33 @@ it.each(["opsh_pat_fixture", "opsh_send_fixture"])("checks the domain and namesp
   expect(fetch).toHaveBeenCalledWith(new URL("https://webmail.host.test/admin/sending/customer.test"),
     expect.objectContaining({ body: JSON.stringify({ ...settings, apiOrigin }), redirect: "error" }));
   expect(state.relay).not.toHaveBeenCalled();
+});
+
+it("binds a customer App through its VM with operator authority and rejects tenant delegation", async () => {
+  state.appOnVm = true;
+  const namespace = "openship-mail-" + "a".repeat(32);
+  const input = { dedicated: true as const, customerProjectId: "proj_1", namespace, imapHost: "mail.private.test" };
+  const headers = { "x-openship-webmail-project": input.customerProjectId };
+  const app = new Hono().onError((e,c) => c.json({}, e instanceof AppError && e.statusCode === 403 ? 403 : 500))
+    .put("/hosting", async c => c.json(await bindWebmailHosting(c, "server", input)))
+    .get("/tenants/:mailTenant/sending", async c => c.json(await linkedWebmailSending(c, "server", "private.test")));
+  expect((await app.request("/tenants/" + namespace + "/sending", { headers })).status).toBe(403);
+  state.authorize.mockImplementation(async (_ctx, resource) => {
+    if (resource.resourceType === "server") throw new AppError("Denied", 403);
+  });
+  expect((await app.request("/hosting", { method: "PUT", headers })).status).toBe(403);
+  expect(state.exec).not.toHaveBeenCalled();
+  state.authorize.mockResolvedValue(undefined);
+  state.exec.mockImplementation(async (cmd, stdin) => {
+    expect(cmd).toContain("label=openship.project=proj_1");
+    expect(cmd).toContain("label=openship.service=webmail");
+    expect(cmd).not.toContain(namespace);
+    const chunks = [];
+    for await (const chunk of stdin) chunks.push(chunk);
+    expect(JSON.parse(chunks.join(""))).toEqual({ path: "/admin/hosting", body: { namespace, imapHost: input.imapHost, dedicated: true } });
+    return { code: 0, stdout: JSON.stringify({ bound: true }), stderr: "" };
+  });
+  expect(await (await app.request("/hosting", { method: "PUT", headers })).json()).toEqual({ bound: true, apiRelay: true });
+  expect(state.exec).toHaveBeenCalledOnce();
+  expect(state.summary).not.toHaveBeenCalled();
 });

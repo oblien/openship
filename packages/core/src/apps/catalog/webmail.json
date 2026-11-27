@@ -117,21 +117,21 @@
           "requiresRedeploy": true
         },
         {
-          "key": "OPENSHIP_SENDING_NAMESPACE",
+          "key": "OPENSHIP_SENDING_KEY",
           "service": "webmail",
-          "label": "Managed sending namespace",
-          "help": "From Emails → Sending. Pin the IMAP host above to the server that authenticates these mailboxes.",
-          "type": "text",
-          "advanced": true,
+          "label": "OpenShip sending API key",
+          "help": "Create a send-only key for your domain in Emails → Sending and set the IMAP host above. This app can then send text and HTML email through OpenShip.",
+          "type": "password",
+          "secret": true,
+          "installStep": true,
           "requiresRedeploy": true
         },
         {
-          "key": "OPENSHIP_SENDING_KEY",
+          "key": "OPENSHIP_SENDING_NAMESPACE",
           "service": "webmail",
-          "label": "Managed sending key",
-          "help": "Use the send-only key for your verified sender domain. Messages with attachments or threading headers use the mailbox submission server.",
-          "type": "password",
-          "secret": true,
+          "label": "Legacy sending namespace",
+          "help": "Only required for installations using a legacy provider key.",
+          "type": "text",
           "advanced": true,
           "requiresRedeploy": true
         }

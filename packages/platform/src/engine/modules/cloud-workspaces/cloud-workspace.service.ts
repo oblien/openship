@@ -15,6 +15,7 @@ import type { ExecutionContext } from "../../../context";
 import { env } from "../../config/env";
 import { authorization } from "../../lib/authorization";
 import { requireCloudWorkspace, requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
+import { assertComputeBillingOwner } from "../managed-mail/dedicated-contract";
 import {
   ensureCloudWorkspaceHost,
   cloudSubscriptionWorkspaceResources,
@@ -490,6 +491,7 @@ export async function remove(
     ctx.organizationId,
     async (sync) => {
       const row = await requireCloudWorkspace(ctx.organizationId, id);
+      assertComputeBillingOwner(row.namespace);
       await assertWorkspaceCheckoutsSettled(row);
       if (row.namespace) assertSubscriptionEnded(await sync({ syncResourceLimits: false }));
       await hostForDeletion(row);

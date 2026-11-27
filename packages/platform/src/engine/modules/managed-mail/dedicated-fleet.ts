@@ -106,21 +106,10 @@ export async function enrollDedicatedVm(row: Service, fleet: DedicatedMailFleet)
   const domain = serviceDomain(row, fleet);
   const dns = resolveDnsProvider(fleet.dnsProvider);
   const credentials = { apiToken: fleet.dnsToken };
-  for (const label of ["mail.", "webmail."])
-    await dns.upsertRecord(credentials, fleet.zoneId, {
-      type: "AAAA",
-      name: label + domain,
-      content: ipv6.address,
-      proxied: false,
-    });
-  if (fleet.webmailIngressIPv4) {
-    await dns.upsertRecord(credentials, fleet.zoneId, {
-      type: "A",
-      name: "webmail." + domain,
-      content: fleet.webmailIngressIPv4,
-      proxied: false,
-    });
-  }
+  // Browser hostnames are claimed by the customer's catalog App through normal routing.
+  await dns.upsertRecord(credentials, fleet.zoneId, {
+    type: "AAAA", name: "mail." + domain, content: ipv6.address, proxied: false,
+  });
   await dns.upsertRecord(credentials, fleet.zoneId, {
     type: "MX",
     name: domain,
