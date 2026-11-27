@@ -42,7 +42,8 @@ import { safeErrorMessage, DEFAULT_RETAIN_COUNT, mailHostname } from "@repo/core
 import { sshManager } from "@repo/platform/engine/lib/ssh-manager";
 import { repos } from "@repo/db";
 import { getRequestContext, type RequestContext } from "../../lib/request-context";
-import { permission } from "../../lib/permission";
+import { authorization, permission } from "../../lib/permission";
+import { applyOperationContext } from "../../lib/operation-context";
 // Shared org-scope guard (single implementation in controller-helpers) —
 // the mail stack gives SSH-level reach into the box, so a cross-org
 // serverId here is the same severity as the terminal hole.
@@ -53,6 +54,7 @@ import { pinnedMailImage } from "@repo/platform/engine/lib/mail-image";
 import { deliverManagedImage } from "@repo/platform/engine/lib/deliver-managed-image";
 import {
   MAIL_SETUP_STEPS,
+  publicMailStepResult,
   TOTAL_STEPS,
   STEP_RUNNERS,
   STEP_TIMEOUT_MS,
@@ -167,7 +169,7 @@ function statusFromState(
         (completedByEarlierVersion && step.key === "verify_reachability"
           ? "This server was installed before public-port verification was recorded. The Health tab checks it live."
           : undefined),
-      data: result?.data,
+      data: result && publicMailStepResult(result).data,
     };
   });
 
@@ -1003,18 +1005,11 @@ export async function startSetup(c: Context) {
           log(stepId, "error", message);
         }
 
-        state = recordStep(state, {
-          stepId: result.stepId,
-          success: result.success,
-          message: result.message,
-          warning: result.warning,
-          data: result.data,
-        });
+        const publicResult = publicMailStepResult(result);
+        state = recordStep(state, publicResult);
 
-        // The deploy step returns generated DB passwords - persist so a re-run
-        // reuses the same values the engine's first boot wrote into its configs.
-        if (stepDef.key === "deploy_engine" && result.data?.secrets) {
-          state = mergeSecrets(state, result.data.secrets as Record<string, string>);
+        if (stepDef.key === "deploy_engine" && result.setupSecrets) {
+          state = mergeSecrets(state, result.setupSecrets);
         }
 
         // ...and which engine image + container it brought up, so the dashboard can
@@ -1031,7 +1026,7 @@ export async function startSetup(c: Context) {
 
         await stream.writeSSE({
           event: "step_done",
-          data: JSON.stringify(result),
+          data: JSON.stringify(publicResult),
         });
 
         // DKIM step: broadcast records + hold-and-continue gate
@@ -1553,10 +1548,8 @@ export async function listMailBackupRuns(c: Context) {
  *
  * Body: { serverId: string, password: string }
  *
- * Hashes via doveadm, UPDATEs `vmail.mailbox`, mirrors the cleartext into
- * the on-server state file so the dashboard's Credentials card refreshes
- * cleanly. Refuses if a setup is currently running against the same server
- * (would race with the installer's own writes to that row).
+ * Updates the Dovecot hash and the private setup state. A running installation
+ * must finish before rotation can update the same account.
  */
 export async function setPostmasterPassword(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
@@ -1578,13 +1571,12 @@ export async function setPostmasterPassword(c: Context) {
     return c.json({ error: pwError }, 400);
   }
 
-  // Primary gate: rotating the postmaster password is destructive (admin).
-  await permission.assert(getRequestContext(c), {
+  const ctx = await authorization.authorize(getRequestContext(c), {
     resourceType: "mail_server",
     resourceId: serverId,
     action: "admin",
-  });
-  const ctx = getRequestContext(c);
+  }, permission.resolveRequestScopeOrg(c));
+  applyOperationContext(c, ctx);
   if (!(await isServerInOrg(ctx, serverId))) {
     return c.json({ error: "Server not found" }, 404);
   }
@@ -1605,10 +1597,11 @@ export async function setPostmasterPassword(c: Context) {
   } catch (err) {
     observeCaughtError(err, "api/modules/mail/mail.controller");
     return c.json(
-      { error: err instanceof Error ? err.message : "Password change failed" },
+      { error: "The mail server could not complete the postmaster password change." },
       500,
     );
   }
+  c.set("createdResourceId", serverId);
   return c.json({ ok: true });
 }
 

@@ -153,6 +153,7 @@ export async function createDomainHandler(c: Context) {
     return c.json({ error: "Server not found" }, 404);
   }
   const body = await c.req.json();
+  const namespace = workerTenant(c);
   try {
     const { row, dnsWarning } = await createDomain(serverId, {
       createPostmaster: body.createPostmaster !== false,
@@ -161,8 +162,11 @@ export async function createDomainHandler(c: Context) {
       maxMailboxes: body.maxMailboxes != null ? Number(body.maxMailboxes) : undefined,
       maxAliases: body.maxAliases != null ? Number(body.maxAliases) : undefined,
       defaultQuotaMB: body.defaultQuotaMB != null ? Number(body.defaultQuotaMB) : undefined,
-    }, workerTenant(c));
-    return c.json({ domain: row, dnsWarning }, 201);
+    }, namespace);
+    const warning = namespace && dnsWarning
+      ? "The domain was added, but the mail server could not finish DNS setup."
+      : dnsWarning;
+    return c.json({ domain: row, dnsWarning: warning }, 201);
   } catch (err) {
     observeCaughtError(err, "api/modules/mail/admin/admin.controller");
     if (err instanceof DomainExistsError) {
@@ -630,7 +634,9 @@ export async function updateMailboxHandler(c: Context) {
       password: body.password ? String(body.password) : undefined,
       quotaMB: body.quotaMB != null ? Number(body.quotaMB) : undefined,
       active: body.active != null ? Boolean(body.active) : undefined,
-    }, workerTenant(c));
+    }, workerTenant(c), () => permission.assert(ctx, {
+      resourceType: "mail_server", resourceId: serverId, action: "admin",
+    }));
     return c.json({ mailbox: row });
   } catch (err) {
     observeCaughtError(err, "api/modules/mail/admin/admin.controller");

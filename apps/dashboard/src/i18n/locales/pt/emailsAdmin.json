@@ -307,7 +307,7 @@
     "loadDomainsFailed": "Falha ao carregar domínios",
     "loadFailed": "Falha ao carregar caixas de correio",
     "emptyTitle": "Nenhuma caixa de correio ainda",
-    "emptyDesc": "Crie a primeira caixa de correio para {domain}. As senhas são criptografadas com doveadm SSHA512 - apenas o hash é armazenado no disco.",
+    "emptyDesc": "Crie a primeira caixa de correio para {domain}. As senhas são criptografadas com SSHA512 - apenas o hash é armazenado no disco.",
     "create": {
       "title": "Nova caixa de correio · {domain}",
       "description": "Escolha um endereço e uma senha para esta caixa de e-mail.",

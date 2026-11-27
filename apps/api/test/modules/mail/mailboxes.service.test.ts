@@ -130,6 +130,22 @@ describe("platform mailbox protection", () => {
     mocks.transaction.mockResolvedValue(undefined);
   });
 
+  test("reserves creation and password rotation of the installation postmaster for setup and credentials", async () => {
+    mocks.queryOne.mockResolvedValue(null);
+    const username = "postmaster@primary.example";
+    await expect(createMailbox("srv_test", {
+      localPart: "postmaster", domain: "primary.example", password: "fixture-password",
+    })).rejects.toThrow("provisioned by mail server setup");
+
+    mocks.queryOne.mockResolvedValue({ ...mailbox(username, "primary.example"), isGlobalAdmin: true });
+    const admin = vi.fn(async () => {});
+    await expect(updateMailbox("srv_test", username, { active: false })).rejects.toThrow("admin permission");
+    await expect(updateMailbox("srv_test", username, { password: "fixture-password" }, undefined, admin))
+      .rejects.toThrow("mail server credentials");
+    expect(admin).toHaveBeenCalledOnce();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   test("marks only the primary install sender as platform-owned", async () => {
     mocks.queryRows.mockResolvedValue([
       mailbox("openship@primary.example", "primary.example"),

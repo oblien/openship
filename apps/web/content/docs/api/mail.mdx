@@ -398,7 +398,7 @@ Use `--schema` for JSON configuration commands. Mail is a remote, self-hosted fe
 | Mark DNS (DKIM) records as configured, releasing the DNS gate. | `mail.acknowledgeDns(input)`<br />Remote client | `POST /api/mail/setup/dns-ack`<br />`mail_server:write` · Self-hosted |
 | Mark reverse-DNS (PTR) as configured, releasing the PTR gate. | `mail.acknowledgePtr(input)`<br />Remote client | `POST /api/mail/setup/ptr-ack`<br />`mail_server:write` · Self-hosted |
 | Wipe the on-server state file (does not touch iRedMail). | `mail.resetSetup(input)`<br />Remote client | `POST /api/mail/setup/reset`<br />`mail_server:admin` · Self-hosted |
-| Rotate the postmaster account password. | `mail.setPostmasterPassword(input)`<br />Remote client | `POST /api/mail/credentials/postmaster`<br />`mail_server:write` · Self-hosted |
+| Rotate the postmaster account password. | `mail.setPostmasterPassword(input)`<br />Remote client | `POST /api/mail/credentials/postmaster`<br />`mail_server:admin` · Self-hosted |
 | List deploy-target options (self-hosted servers / cloud). | `mail.getWebmailTargets(input)`<br />Remote client | `GET /api/mail/webmail/targets`<br />`mail_server:read` · Self-hosted |
 | Install or redeploy webmail; reconnectProjectId explicitly recovers an existing app after its mail-server link was lost. | `mail.deployWebmail(input)`<br />Remote client | `POST /api/mail/webmail/deploy-project`<br />`mail_server:write` · Self-hosted |
 | Deploy webmail for an external mail server. | `mail.deployExternalWebmail(input)`<br />Remote client | `POST /api/mail/webmail/deploy-external`<br />`mail_server:write` · Self-hosted |

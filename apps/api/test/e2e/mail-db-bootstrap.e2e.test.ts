@@ -208,7 +208,7 @@ describeDockerE2E("mail engine DB bootstrap (real postgres)", () => {
       const r = await runBootstrap();
 
       expect(r.code).not.toBe(0);
-      expect(r.log).toMatch(/doveadm pw produced no output|is doveadm installed/i);
+      expect(r.log).toMatch(/doveadm pw failed|doveadm pw produced no output/i);
       // And it must not have claimed success on the way out.
       expect(r.log).not.toMatch(/DB bootstrap complete/);
     } finally {

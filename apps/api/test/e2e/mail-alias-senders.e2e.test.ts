@@ -2,6 +2,7 @@
  * All traffic stays on the isolated Docker network, including the test relay. */
 import { OBLIEN_RELAY } from "@repo/core";
 import { ensureMailCustomerGroupSql, tenantDatabaseEnrollmentSql } from "@repo/platform/engine/modules/mail/admin/tenant-database";
+import { hashPassword } from "@repo/platform/engine/modules/mail/admin/password";
 import { sharedImapPolicy } from "@repo/platform/engine/modules/mail/admin/shared-imap";
 import { applySharedSubmission, sharedRelayMap } from "@repo/platform/engine/modules/mail/admin/shared-relay";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -368,7 +369,7 @@ p.write_text(re.sub(r'^query\\s*=.*$', 'query = ' + LEGACY_QUERY, p.read_text(),
   it("isolates two shared inboxes and attributes native submissions to their domain credentials", async () => {
     const first = "bob@example.test", second = "bob@other.test";
     await query(`INSERT INTO mailbox (username, domain) VALUES ('${second}', 'other.test')`);
-    await run("sh", "-ec", `printf '%s\\n' '${second}:{PLAIN}isolated-second' >> /etc/dovecot/alias-users
+    await run("sh", "-ec", `printf '%s\\n' '${second}:${hashPassword("isolated-second")}' >> /etc/dovecot/alias-users
       mkdir -p /etc/dovecot/iredmail
       install -d -o nobody -g nogroup /tmp/test-mail/example.test/bob /tmp/test-mail/other.test/bob
       sed -i 's/^protocols =$/protocols = imap/;s@home=/tmp$@home=/tmp/test-mail/%d/%n@' /etc/dovecot/dovecot.conf`);

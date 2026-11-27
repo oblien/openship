@@ -18,6 +18,7 @@ import { initializeSharedDomains } from "@repo/platform/engine/modules/mail/admi
 // Exercise the worker's real handlers, permissions, SQL and aggregates. Only
 // replace the network hop that normally invokes psql over the host executor.
 const vmail = new PGlite();
+const beforeWrite = vi.hoisted(() => vi.fn(async () => {}));
 const runMailCommand = vi.hoisted(() => vi.fn());
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: { withExecutor: async (_server: string, run: (executor: object) => unknown) => run({}) },
@@ -31,6 +32,7 @@ vi.mock("@repo/platform/engine/modules/mail/mail-engine", async (original) => ({
   ...(await original<object>()),
   runMailCommand,
   runMailSql: async (_server: string, sql: string) => {
+    if (sql.startsWith("BEGIN;")) await beforeWrite();
     const tenant = mailDatabaseTenant();
     let result;
     if (tenant) {
@@ -154,6 +156,11 @@ it("scopes lists, stats, address operations and ID-only alias mutations inside o
     { username: "me@first.test", messages: 2 }, { username: "new@first.test", messages: null },
   ] }] });
   expect(runMailCommand).toHaveBeenCalledTimes(3);
+  // The same addresses after a delete/recreate must get a fresh Dovecot snapshot.
+  await vmail.exec("DELETE FROM mailbox WHERE username='new@first.test'");
+  await vmail.exec("INSERT INTO mailbox (username,domain,active,maildir) VALUES ('new@first.test','first.test',1,'first.test/new-home/')");
+  await stats();
+  expect(runMailCommand).toHaveBeenCalledTimes(4);
   for (const path of [
     "domains/other.test",
     "domains/other.test/dns",
@@ -200,22 +207,20 @@ it("scopes lists, stats, address operations and ID-only alias mutations inside o
   await expect(hardDeleteMailbox(server, "me@other.test", a)).rejects.toThrow();
   const path = "mailboxes/me%40first.test";
   const replacement = { password: "replacement-password" };
-  const hash = "{SSHA512}YWJj";
   // Ownership must still hold at write time, even after a successful scoped read.
-  runMailCommand.mockImplementationOnce(async () => {
+  beforeWrite.mockImplementationOnce(async () => {
     await vmail.query("UPDATE openship_domain_owner SET namespace=$1 WHERE domain='first.test'", [b]);
-    return { output: hash, flavor: "container" };
   });
   await expect(updateMailbox(server, "me@first.test", replacement, a)).rejects.toThrow("Mail domain ownership changed");
   // psql closes its connection on an aborted transaction. Our single in-process connection stays open.
   await vmail.exec("ROLLBACK");
   expect((await vmail.query("SELECT password FROM mailbox WHERE username='me@first.test'")).rows).toEqual([{ password: "" }]);
   await vmail.query("UPDATE openship_domain_owner SET namespace=$1 WHERE domain='first.test'", [a]);
-  runMailCommand.mockResolvedValue({ output: hash, flavor: "container" });
+  runMailCommand.mockResolvedValue({ output: "", flavor: "container" });
   expect((await call(b, path, "PATCH", replacement)).status).toBe(404);
   expect((await call(a, path, "PATCH", replacement)).status).toBe(200);
   const account = () => vmail.query("SELECT active, quota, password FROM mailbox WHERE username = 'me@first.test'");
-  expect((await account()).rows).toEqual([{ active: 1, quota: 2048, password: hash }]);
+  expect((await account()).rows).toEqual([{ active: 1, quota: 2048, password: expect.stringMatching(/^\{SSHA512\}/) }]);
   expect((await call(a, path, "DELETE")).status).toBe(200);
   expect((await account()).rows[0]).toMatchObject({ active: 0 });
   expect((await vmail.query("SELECT username FROM deleted_mailboxes")).rows).toEqual([{ username: "me@first.test" }]);
@@ -223,19 +228,22 @@ it("scopes lists, stats, address operations and ID-only alias mutations inside o
   expect((await account()).rows).toEqual([]);
   expect((await vmail.query("SELECT active, password FROM mailbox WHERE username = 'me@other.test'")).rows)
     .toEqual([{ active: 1, password: "" }]);
-  const connect = (domain: string) => call(b, "domains", "POST", { domain, createPostmaster: false });
+  const connect = (domain: string) => call(b, "domains", "POST", { domain });
   expect((await connect("first.test")).status).toBe(409);
   expect((await connect("host.test")).status).toBe(409);
   expect((await connect("new.test")).status).toBe(201);
+  expect((await vmail.query("SELECT username FROM mailbox WHERE domain='new.test'")).rows).toEqual([]);
   expect((await connect("new.test")).status).toBe(409);
   expect((await call(b, "domains/new.test")).status).toBe(200);
   expect((await call(a, "domains/new.test")).status).toBe(404);
-  const mailbox = { localPart: "team", domain: "new.test", password: "fixture-password" };
+  const mailbox = { localPart: "postmaster", domain: "new.test", password: "fixture-password" };
   expect((await call(b, "mailboxes", "POST", mailbox)).status).toBe(201);
-  expect((await call(b, "mailboxes/team%40new.test")).status).toBe(200);
-  expect((await call(a, "mailboxes/team%40new.test")).status).toBe(404);
-  runMailCommand.mockRejectedValueOnce(new Error("Fixture worker diagnostic"));
-  const workerFailure = await call(b, "mailboxes/team%40new.test", "PATCH", replacement);
+  const postmaster = await call(b, "mailboxes/postmaster%40new.test");
+  expect(postmaster.status).toBe(200);
+  expect(await postmaster.json()).toMatchObject({ mailbox: { isAdmin: false, isGlobalAdmin: false } });
+  expect((await call(a, "mailboxes/postmaster%40new.test")).status).toBe(404);
+  beforeWrite.mockRejectedValueOnce(new Error("Fixture worker diagnostic"));
+  const workerFailure = await call(b, "mailboxes/postmaster%40new.test", "PATCH", replacement);
   expect(workerFailure.status).toBe(500);
   expect(await workerFailure.json()).toEqual({ error: "The mail server could not complete this operation." });
   const parent = await repos.personalAccessToken.findActiveByHash(hashPatToken(owner.token));

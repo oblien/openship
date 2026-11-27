@@ -154,7 +154,11 @@ cp -f "$TRIG"                                                 "$WORK/trigger.sql
 # EMPTY string, which was then substituted into first.sql — seeding a postmaster with
 # no password while the bootstrap reported success. Keep stderr, and refuse anything
 # that isn't a well-formed SSHA512 hash.
-DOMAIN_ADMIN_PASSWD_HASH="$(doveadm pw -s SSHA512 -p "$DOMAIN_ADMIN_PASSWD_PLAIN" || true)"
+case "${DOMAIN_ADMIN_PASSWD_PLAIN:?Postmaster password required}" in
+  *[[:cntrl:]]*) fatal "Postmaster password must be a single line without control characters." ;;
+esac
+# doveadm reads the password and confirmation from stdin in noninteractive mode.
+DOMAIN_ADMIN_PASSWD_HASH="$(printf '%s\n%s\n' "$DOMAIN_ADMIN_PASSWD_PLAIN" "$DOMAIN_ADMIN_PASSWD_PLAIN" | doveadm pw -s SSHA512)" || fatal "doveadm pw failed to hash the postmaster password."
 export DOMAIN_ADMIN_PASSWD_HASH
 case "$DOMAIN_ADMIN_PASSWD_HASH" in
   '{SSHA512}'*) : ;;

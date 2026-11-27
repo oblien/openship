@@ -307,7 +307,7 @@
     "loadDomainsFailed": "Domains konnten nicht geladen werden",
     "loadFailed": "Postfächer konnten nicht geladen werden",
     "emptyTitle": "Noch keine Postfächer",
-    "emptyDesc": "Erstelle das erste Postfach für {domain}. Passwörter werden mit doveadm SSHA512 gehasht – nur der Hash wird auf der Festplatte gespeichert.",
+    "emptyDesc": "Erstelle das erste Postfach für {domain}. Passwörter werden mit SSHA512 gehasht – nur der Hash wird auf der Festplatte gespeichert.",
     "create": {
       "title": "Neues Postfach · {domain}",
       "description": "Wähle eine Adresse und ein Passwort für dieses Postfach.",

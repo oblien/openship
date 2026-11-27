@@ -216,10 +216,21 @@ export interface StepResult {
   stepId: number;
   success: boolean;
   message: string;
-  /** Extra data the step may return (e.g. DKIM keys, DNS records) */
+  /** Private first-boot values used to resume installation on the same host. */
+  setupSecrets?: Record<string, string>;
+  /** Public engine metadata and DNS or reachability results. */
   data?: Record<string, unknown>;
   /** Warning that doesn't block progress */
   warning?: string;
+}
+
+/** Project both live results and saved results from older workers onto the public API. */
+export function publicMailStepResult({ stepId, success, message, warning, data }: StepResult): Omit<StepResult, "setupSecrets"> {
+  const metadata: Record<string, unknown> = {};
+  for (const key of ["engine", "dnsRecords", "expiresAt", "issuer", "mailDomain", "smtpHost", "imapHost", "reachability"]) {
+    if (data && Object.hasOwn(data, key)) metadata[key] = data[key];
+  }
+  return { stepId, success, message, warning, data: Object.keys(metadata).length ? metadata : undefined };
 }
 
 // ─── Logger callback type ────────────────────────────────────────────────────
@@ -575,9 +586,8 @@ export function genSecret(bytes = 24): string {
  * the domain to `ensureContainerMail` (which pulls, runs host-networked, and lets
  * the image's first-boot entrypoint provision the vmail DB), then health-gates on
  * the container's daemons. Idempotent: a container already on the pinned image is
- * left as-is. Generated secrets come back in `data.secrets` (the only way to admin
- * the mail DB later) and the deployed image ref + container name in `data.engine`,
- * both for the controller to persist onto the mail-state.
+ * left as-is. The controller saves setupSecrets privately for retries. The
+ * deployed image and container name are public setup metadata.
  */
 export async function stepDeployEngine(
   exec: CommandExecutor,
@@ -619,17 +629,6 @@ export async function stepDeployEngine(
     ...generated,
     ...(config?.prefillSecrets ?? {}),
   };
-  // The plaintext we'll show in the dashboard. After prefillSecrets is
-  // overlaid above, `secrets.DOMAIN_ADMIN_PASSWD_PLAIN` is the
-  // authoritative value - use that, not the local `adminPassword` (which
-  // would lose any prior-run reuse).
-  const finalAdminPassword = secrets.DOMAIN_ADMIN_PASSWD_PLAIN;
-
-  // finalAdminPassword is the postmaster password the dashboard surfaces; it's
-  // injected into the engine's first-boot env so the container provisions the
-  // account with it. Referenced via `secrets` below.
-  void finalAdminPassword;
-
   // Deploy the engine as the `openship-mail` container (+ postgres sidecar).
   // Idempotent: a container already running the pinned image is left as-is (the
   // env-file secrets are only consumed on first boot, so a re-run never rotates a
@@ -696,7 +695,8 @@ export async function stepDeployEngine(
     stepId,
     success: true,
     message: "Mail engine deployed",
-    data: { secrets: { ...secrets } as Record<string, string>, engine },
+    setupSecrets: secrets,
+    data: { engine },
   };
 }
 

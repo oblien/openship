@@ -96,7 +96,7 @@ r.patch("/admin/:serverId/certificate", { tag: "mail_server:admin", body: MailRe
 r.get("/health/:serverId", { tag: "mail_server:read", mcp: { description: "Check live mail components, delivery and network reachability. Set query.refreshReachability to bypass the reachability cache." }, query: MailRequestSchemas.health }, mail.getHealth);
 r.post(
   "/credentials/postmaster",
-  { tag: "mail_server:write", mcpExcluded: "Privileged mail administrator credentials are changed in the authenticated mail settings." },
+  { tag: "mail_server:admin", authorizationHandledByOperation: true, mcpExcluded: "Privileged mail administrator credentials are changed in the authenticated mail settings." },
   mail.setPostmasterPassword,
 );
 

@@ -5,7 +5,10 @@ import type { MailInboxCountsSchema } from "@repo/contracts";
 import type { Static } from "@sinclair/typebox";
 import { mailEngineCommand, mailPsqlCommand, runMailCommand } from "@repo/platform/engine/modules/mail/mail-engine";
 
-export interface InboxDomain { domain: string; usernames: string[] }
+export interface InboxDomain {
+  domain: string;
+  mailboxes: Array<{ username: string; created: string }>;
+}
 type Counts = Static<typeof MailInboxCountsSchema>;
 const snapshots = new Map<string, { expires: number; value: Promise<Counts> }>();
 // Dovecot 2.3 seeks in the -F file, so a pipe or /dev/stdin cannot serve as
@@ -24,7 +27,7 @@ function sum(values: Array<number | null>): number | null {
 
 async function readCounts(serverId: string, visible: string, inventory: InboxDomain[]): Promise<Counts> {
   const counts = new Map<string, number>();
-  if (inventory.some(d => d.usernames.length)) {
+  if (inventory.some(d => d.mailboxes.length)) {
     try {
       // Pipe the worker's scoped SQL roster directly into Dovecot. The command
       // size is independent of the number of accounts. Never enumerate all
@@ -46,15 +49,15 @@ async function readCounts(serverId: string, visible: string, inventory: InboxDom
       diagnostics.warn("mail", "Could not read Dovecot INBOX counters.", { serverId });
     }
   }
-  const domains = inventory.map(({ domain, usernames }) => {
-    const mailboxes = usernames.map(username => ({ username, messages: counts.get(username) ?? null }));
+  const domains = inventory.map(({ domain, mailboxes: roster }) => {
+    const mailboxes = roster.map(({ username }) => ({ username, messages: counts.get(username) ?? null }));
     return { domain, mailboxes, messages: sum(mailboxes.map(m => m.messages)) };
   });
   return { total: sum(domains.map(d => d.messages)), domains };
 }
 
 /** Share a worker read across concurrent overview requests. Changing domain
- * ownership or the mailbox roster produces a new key immediately. */
+ * ownership, membership or mailbox creation time invalidates the snapshot. */
 export function inboxCounts(serverId: string, visible: string, inventory: InboxDomain[]) {
   const key = createHash("sha256").update(JSON.stringify([serverId, visible, inventory])).digest("hex");
   const now = Date.now();

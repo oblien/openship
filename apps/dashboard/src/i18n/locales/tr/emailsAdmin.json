@@ -307,7 +307,7 @@
     "loadDomainsFailed": "Alan adları yüklenemedi",
     "loadFailed": "Posta kutuları yüklenemedi",
     "emptyTitle": "Henüz posta kutusu yok",
-    "emptyDesc": "{domain} için ilk posta kutusunu oluşturun. Şifreler doveadm SSHA512 ile hash'lenir - diskte yalnızca hash saklanır.",
+    "emptyDesc": "{domain} için ilk posta kutusunu oluşturun. Şifreler SSHA512 ile hash'lenir - diskte yalnızca hash saklanır.",
     "create": {
       "title": "Yeni posta kutusu · {domain}",
       "description": "Bu posta kutusu için bir adres ve parola seçin.",

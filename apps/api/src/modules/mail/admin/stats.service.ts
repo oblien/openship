@@ -46,14 +46,14 @@ export async function getMailServerStats(
   // counters. Each source aggregate is computed in the same SQL snapshot.
   const inventory = includeInbox ? `, (
     SELECT COALESCE(json_agg(d ORDER BY domain), '[]') FROM (
-      SELECT v.domain, COALESCE(array_agg(m.username ORDER BY m.username)
-        FILTER (WHERE m.username IS NOT NULL), '{}') AS usernames
+      SELECT v.domain, COALESCE(json_agg(json_build_object('username', m.username, 'created', m.created) ORDER BY m.username)
+        FILTER (WHERE m.username IS NOT NULL), '[]') AS mailboxes
       FROM visible_domains v LEFT JOIN visible_mailboxes m ON m.domain = v.domain
       GROUP BY v.domain
     ) d) AS inventory` : "";
   const row = await queryOne<StatsRow>(serverId, `
     WITH visible_domains AS (SELECT domain, active FROM domain WHERE ${visible}),
-         visible_mailboxes AS (SELECT domain, username, active FROM mailbox WHERE ${visible})
+         visible_mailboxes AS (SELECT domain, username, active${includeInbox ? ", created" : ""} FROM mailbox WHERE ${visible})
     SELECT ds.*, ms.*, usage.*,
       (SELECT COUNT(*)::int FROM forwardings WHERE ${visible} AND is_alias = 1 AND active = 1) AS "aliasesTotal"
       ${inventory}

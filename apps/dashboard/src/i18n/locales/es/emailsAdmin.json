@@ -307,7 +307,7 @@
     "loadDomainsFailed": "No se pudieron cargar los dominios",
     "loadFailed": "No se pudieron cargar los buzones",
     "emptyTitle": "Aún no hay buzones",
-    "emptyDesc": "Crea el primer buzón para {domain}. Las contraseñas se cifran con doveadm SSHA512; solo el hash se almacena en disco.",
+    "emptyDesc": "Crea el primer buzón para {domain}. Las contraseñas se cifran con SSHA512; solo el hash se almacena en disco.",
     "create": {
       "title": "Nuevo buzón · {domain}",
       "description": "Elige una dirección y una contraseña para este buzón.",

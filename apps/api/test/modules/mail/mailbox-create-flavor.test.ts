@@ -2,25 +2,6 @@ import "./_setup-env";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * The mailbox-creation path must reach the mail engine, not the host (GH-562).
- *
- * `doveadm` and the `vmail` user live wherever Dovecot does. On a container-flavor
- * box that is INSIDE `openship-mail` and emphatically not on the host — yet
- * `hashPassword` ran a bare `doveadm pw` and `createMaildirOnDisk` ran a bare
- * `chown -R vmail:vmail`, both straight against the host executor. The result was a
- * 500 on every mailbox create on a containerized install: no `doveadm` on the host
- * meant empty output, and the SSHA512 gate rejected it.
- *
- * Every existing test in this directory hands these helpers a `vi.fn()` executor and
- * asserts on the ROWS, so all of them stayed green while the command that produced
- * those rows could not run anywhere. The assertions here are deliberately on the
- * COMMAND STRING, because the prefix is the entire bug.
- *
- * These run on every PR — no daemon needed. The companion real-Docker case is
- * test/e2e/mail-db-bootstrap.e2e.test.ts, which covers the other half of GH-562.
- */
-
 vi.mock("@repo/adapters", () => ({
   HOST_STATE_DIR: "/root/.openship",
   detectMailEngine: vi.fn(),
@@ -42,8 +23,6 @@ import {
   removeMaildirOnDisk,
 } from "@repo/platform/engine/modules/mail/admin/maildir";
 import { forgetMailEngine } from "@repo/platform/engine/modules/mail/mail-engine";
-
-const HASH = "{SSHA512}c2FsdGVkaGFzaHZhbHVl";
 
 const CONTAINER = {
   flavor: "container" as const,
@@ -70,44 +49,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("hashPassword transport", () => {
-  it("runs doveadm INSIDE the engine on a container-flavor box", async () => {
-    vi.mocked(detectMailEngine).mockResolvedValue(CONTAINER);
-    const r = recorder(HASH);
-
-    await expect(hashPassword(r.exec as never, "sekrit-pw")).resolves.toBe(HASH);
-
-    // The prefix IS the fix. Without it the host answers, and the host has no doveadm.
-    expect(r.last()).toContain("docker exec openship-mail ");
-    expect(r.last()).toContain("doveadm pw -s SSHA512");
-  });
-
-  it("runs doveadm bare on a legacy host-flavor box", async () => {
-    vi.mocked(detectMailEngine).mockResolvedValue(HOST);
-    const r = recorder(HASH);
-
-    await expect(hashPassword(r.exec as never, "sekrit-pw")).resolves.toBe(HASH);
-
-    expect(r.last()).not.toContain("docker exec");
-    expect(r.last()).toContain("doveadm pw -s SSHA512");
-  });
-
-  it("keeps the plaintext out of the thrown message when doveadm answers nothing", async () => {
-    vi.mocked(detectMailEngine).mockResolvedValue(CONTAINER);
-    const r = recorder("");
-
-    // The empty-output case is exactly what a missing doveadm produced, and the
-    // operator saw only "500 Internal Server Error" for it.
-    await expect(hashPassword(r.exec as never, "sekrit-pw")).rejects.toThrow(/empty output/);
-    await expect(hashPassword(r.exec as never, "sekrit-pw")).rejects.not.toThrow(/sekrit-pw/);
-  });
-
-  it("names the engine flavor in the failure, so the reader knows which box answered", async () => {
-    vi.mocked(detectMailEngine).mockResolvedValue(CONTAINER);
-    const r = recorder("doveadm: command not found");
-
-    await expect(hashPassword(r.exec as never, "pw")).rejects.toThrow(/container engine/);
-  });
+it("generates a fresh Dovecot salt for each mailbox password", () => {
+  const first = hashPassword("fixture-password");
+  expect(first).toMatch(/^\{SSHA512\}/);
+  expect(hashPassword("fixture-password")).not.toBe(first);
 });
 
 describe("createMaildirOnDisk transport + layout", () => {

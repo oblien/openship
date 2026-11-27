@@ -41,7 +41,7 @@ import {
   buildInsertSelfForwardingSql,
   PLATFORM_LOCAL_PART,
 } from "./platform-mailbox.service";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import { readState } from "../mail-state";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
@@ -248,7 +248,12 @@ export async function createMailbox(
       throw new PlatformMailboxProtectedError(username);
     }
 
-    const hash = await hashPassword(exec, input.password);
+    if (input.localPart === "postmaster" &&
+        (!state?.domain || input.domain.toLowerCase() === state.domain.toLowerCase())) {
+      throw new AppError("The installation postmaster is provisioned by mail server setup.", 409);
+    }
+
+    const hash = hashPassword(input.password);
     const layout = generateMaildir(input.domain.toLowerCase(), input.localPart);
 
     // 1. Insert mailbox + matching forwardings row atomically.
@@ -300,12 +305,21 @@ export async function updateMailbox(
   email: string,
   patch: UpdateMailboxInput,
   namespace?: string,
+  authorizeServerAdmin?: () => Promise<void>,
 ): Promise<MailboxRow> {
   const username = normalizeEmail(email);
 
   const existing = await getMailbox(serverId, username, namespace);
   if (!existing) throw new MailboxNotFoundError(username);
   assertMailboxIsUserManaged(existing);
+  const privileged = existing.isAdmin || existing.isGlobalAdmin;
+  if (privileged) {
+    if (namespace !== undefined || !authorizeServerAdmin) throw new AppError("Mail server admin permission required.", 403);
+    await authorizeServerAdmin();
+    if (patch.password && existing.isGlobalAdmin && username.startsWith("postmaster@")) {
+      throw new AppError("Change the installation postmaster password in mail server credentials.", 409);
+    }
+  }
 
   await sshManager.withExecutor(serverId, async (exec) => {
     const sets: string[] = ["modified = NOW()"];
@@ -325,13 +339,19 @@ export async function updateMailbox(
       if (patch.password.length < 8) {
         throw new Error("Password must be at least 8 characters.");
       }
-      const hash = await hashPassword(exec, patch.password);
+      const hash = hashPassword(patch.password);
       sets.push(`password = ${q(hash)}`);
       sets.push("passwordlastchange = NOW()");
     }
 
     if (sets.length === 1) return;
-    const writes = [`UPDATE mailbox SET ${sets.join(", ")} WHERE username = ${q(username)}`];
+    const writes: string[] = [];
+    // Bind the permission decision to the row being changed under the same transaction.
+    if (!privileged) writes.push("DO " + q(`BEGIN
+      PERFORM 1 FROM mailbox WHERE username = ${q(username)} AND isadmin = 0 AND isglobaladmin = 0 FOR UPDATE;
+      IF NOT FOUND THEN RAISE EXCEPTION 'Mailbox privileges changed'; END IF;
+    END`));
+    writes.push(`UPDATE mailbox SET ${sets.join(", ")} WHERE username = ${q(username)}`);
     if (patch.active !== undefined) {
       writes.push(`UPDATE forwardings SET active = ${patch.active ? 1 : 0}
         WHERE address = ${q(username)} AND forwarding = ${q(username)}`);

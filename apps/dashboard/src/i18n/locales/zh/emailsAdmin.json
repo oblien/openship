@@ -307,7 +307,7 @@
     "loadDomainsFailed": "加载域名失败",
     "loadFailed": "加载邮箱失败",
     "emptyTitle": "暂无邮箱",
-    "emptyDesc": "为 {domain} 创建第一个邮箱。密码使用 doveadm SSHA512 进行哈希处理——磁盘上仅存储哈希值。",
+    "emptyDesc": "为 {domain} 创建第一个邮箱。密码使用 SSHA512 进行哈希处理——磁盘上仅存储哈希值。",
     "create": {
       "title": "新建邮箱 · {domain}",
       "description": "为此邮箱设置地址和密码。",

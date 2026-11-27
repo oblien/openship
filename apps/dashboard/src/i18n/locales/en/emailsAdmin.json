@@ -307,7 +307,7 @@
     "loadDomainsFailed": "Failed to load domains",
     "loadFailed": "Failed to load mailboxes",
     "emptyTitle": "No mailboxes yet",
-    "emptyDesc": "Create the first mailbox for {domain}. Passwords are hashed with doveadm SSHA512 - only the hash is stored on disk.",
+    "emptyDesc": "Create the first mailbox for {domain}. Passwords are hashed with SSHA512 - only the hash is stored on disk.",
     "create": {
       "title": "New mailbox · {domain}",
       "description": "Choose an address and a password for this inbox.",

@@ -307,7 +307,7 @@
     "loadDomainsFailed": "Échec du chargement des domaines",
     "loadFailed": "Échec du chargement des boîtes aux lettres",
     "emptyTitle": "Aucune boîte aux lettres pour l'instant",
-    "emptyDesc": "Créez la première boîte aux lettres pour {domain}. Les mots de passe sont hachés avec doveadm SSHA512 - seul le hachage est stocké sur le disque.",
+    "emptyDesc": "Créez la première boîte aux lettres pour {domain}. Les mots de passe sont hachés avec SSHA512 - seul le hachage est stocké sur le disque.",
     "create": {
       "title": "Nouvelle boîte aux lettres · {domain}",
       "description": "Choisissez une adresse et un mot de passe pour cette boîte mail.",

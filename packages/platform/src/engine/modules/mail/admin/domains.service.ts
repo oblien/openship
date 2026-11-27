@@ -152,26 +152,12 @@ export async function createDomain(
   // DKIM provisioning is best-effort: if it fails, we still record the
   // MX/SPF/DMARC banner so the operator can publish those, and the
   // dnsWarning toast tells them what to fix.
-  // Auto-create the postmaster mailbox for the new domain. iRedMail's
-  // installer creates postmaster for the primary install; we mirror that
-  // behavior so every added domain has a working SMTP-Auth identity out
-  // of the box - needed for DKIM/SPF alignment when sending AS the new
-  // domain, and read by the welcome test-email flow after the operator
-  // acks the DNS banner.
-  //
-  // Track the postmaster-creation outcome separately from `dnsWarning` so
-  // the operator gets a precise message instead of a generic 535 at
-  // welcome-send time. If postmaster creation failed AND a postmaster
-  // mailbox already exists in vmail.mailbox from a prior attempt (with
-  // an unknown hash), the test-email flow would later authenticate with
-  // a plaintext we never saved against a hash we never set - surface
-  // that as a fatal/visible warning here so the operator can rotate the
-  // password (or delete and re-add the domain) before they hit the
-  // welcome modal.
+  // Self-hosted operators can request a postmaster for an additional domain.
+  // On shared workers each mailbox is provisioned explicitly against the customer's plan.
   let postmasterPassword: string | undefined;
   let postmasterWarning: string | undefined;
   try {
-    if (input.createPostmaster !== false) {
+    if (namespace === undefined && input.createPostmaster !== false) {
       postmasterPassword = genSecret(18);
       await createMailbox(serverId, {
         localPart: "postmaster",
