@@ -55,7 +55,30 @@ function requestCookies(response: Response) {
     .map(header => header.split(";")[0]).join("; ");
 }
 
-if (scenario === "browser-origin") {
+if (scenario === "mailbox-location") {
+  const lookup = (domain: string) => app.request("/auth/mailbox-location?" + new URLSearchParams({domain}), {
+    headers: { cookie: "private=local", authorization: "Bearer private" },
+  });
+  assert.equal((await lookup("shared.example")).status, 404);
+  env.TRUSTED_ORIGINS = ["https://mail.openship.io"];
+  assert.equal((await lookup("https://elsewhere.example")).status, 400);
+  let target = "https://dedicated.example";
+  let status = 200;
+  globalThis.fetch = (async (url, opts) => {
+    assert.equal(String(url), "https://api.openship.io/api/mail/discovery?domain=shared.example");
+    assert.equal(opts?.headers, undefined);
+    assert.equal(opts?.credentials, "omit");
+    return Response.json({webmailUrl: target}, {status});
+  }) as typeof fetch;
+  assert.deepEqual(await (await lookup("shared.example")).json(), {webmailUrl: target});
+  target = "https://mail.openship.io";
+  assert.deepEqual(await (await lookup("shared.example")).json(), {webmailUrl: target});
+  target = "http://invalid.example";
+  assert.equal((await lookup("shared.example")).status, 503);
+  status = 404;
+  assert.equal((await lookup("shared.example")).status, 404);
+  assert.equal(probes, 0);
+} else if (scenario === "browser-origin") {
   for (const path of ["sign-in", "sign-out", "switch"]) {
     const response = await app.request("/auth/" + path, {
       method: "POST", headers: { origin: "https://unrelated.test" },
