@@ -953,6 +953,7 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/mail/admin/:serverId/relay` | Configures outbound delivery credentials and provider identity in the mail-server settings; MCP can inspect the resulting relay state. |
 | `POST /api/mail/admin/:serverId/tenant-access` | Operator enrollment for shared mail. |
 | `PUT /api/mail/admin/:serverId/webmail/hosting` | Assigns an operator-managed private webmail deployment. |
+| `GET /api/mail/admin/:serverId/webmail/login-route` | Internal dedicated mailbox sign-in discovery. |
 | `GET /api/mail/admin/:serverId/webmail/sending/:domain` | Internal webmail sending configuration. |
 | `PUT /api/mail/admin/:serverId/webmail/sending/:domain` | Installs a private sending credential in the linked webmail. |
 | `POST /api/mail/credentials/postmaster` | Privileged mail administrator credentials are changed in the authenticated mail settings. |

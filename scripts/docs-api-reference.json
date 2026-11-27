@@ -5327,6 +5327,11 @@
       "section": "Worker administration",
       "description": "Issue scoped worker access for a shared mailbox service."
     },
+    "GET /api/mail/admin/:serverId/webmail/login-route": {
+      "page": "mail",
+      "section": "Worker administration",
+      "description": "Read the verified sign-in route of the Webmail app linked to this dedicated mail server."
+    },
     "PUT /api/mail/admin/:serverId/webmail/hosting": {
       "page": "mail",
       "section": "Worker administration",

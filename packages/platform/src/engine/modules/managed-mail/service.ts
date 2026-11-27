@@ -7,6 +7,7 @@ import { dedicatedCoverage } from "./dedicated";
 import { z } from "zod";
 import { MAIL_PLACEMENTS } from "@repo/core/managed-mail";
 import { AppError, PRICING } from "@repo/core";
+import { diagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import {
   managedMailboxCapacity,
@@ -214,7 +215,10 @@ async function summary(
     // The already-provisioned fleet address also works when the worker's control API is offline.
     webmailUrl: row.order?.webmailProjectId
       ? (customerApp?.installed && customerApp.verifiedUrl) || null
-      : await webmailLoginOrigin(target).catch(() => new URL(target.webmailUrl).origin),
+      : await webmailLoginOrigin(target).catch(() => {
+          diagnostics.warn("managed-mail", "Could not read the worker's Webmail route. Using its configured origin.", { serviceId: row.id });
+          return new URL(target.webmailUrl).origin;
+        }),
   };
 }
 

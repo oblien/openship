@@ -484,6 +484,7 @@ Use `--schema` for JSON configuration commands. Mail is a remote, self-hosted fe
 | Operation | SDK | REST API |
 | --- | --- | --- |
 | Issue scoped worker access for a shared mailbox service. | HTTP only | `POST /api/mail/admin/:serverId/tenant-access`<br />`mail_server:admin` · Self-hosted |
+| Read the verified sign-in route of the Webmail app linked to this dedicated mail server. | HTTP only | `GET /api/mail/admin/:serverId/webmail/login-route`<br />`mail_server:read` · Self-hosted |
 | Set the hosting placement for the linked webmail installation. | HTTP only | `PUT /api/mail/admin/:serverId/webmail/hosting`<br />`mail_server:admin` · Self-hosted |
 | Read webmail’s managed sending configuration for this domain. | HTTP only | `GET /api/mail/admin/:serverId/webmail/sending/:domain`<br />`mail_server:admin` · Self-hosted |
 | Install the domain’s managed sending configuration in webmail. | HTTP only | `PUT /api/mail/admin/:serverId/webmail/sending/:domain`<br />`mail_server:admin` · Self-hosted |
