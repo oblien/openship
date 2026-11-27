@@ -35,9 +35,9 @@ function detectPackageManager(paths: Set<string>): string {
 /**
  * Folder-upload entry: the user first picks the stack (reusing the framework
  * grid — no auto-detection), which fixes the build image up front, then uploads
- * the folder. We pack in the browser, open a session, upload straight to the
- * build workspace (SaaS) or the API (self-hosted), and hand off to the deploy
- * wizard seeded from the chosen stack.
+ * the folder. We pack in the browser, upload through the shared source session,
+ * and hand off to the deploy wizard seeded from the chosen stack. Cloud binds
+ * the session to the selected server before any build runs.
  */
 export function FolderUpload() {
   const { t } = useI18n();

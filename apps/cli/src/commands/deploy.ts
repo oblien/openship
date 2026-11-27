@@ -5,8 +5,8 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  *
  * Two paths:
  *   - Git repo  → POST /api/deployments (git-source build of the linked project).
- *   - --folder (or --name outside Git) → stage the current directory through
- *                 the shared SDK source workflow.
+ *   - [path], --folder (or --name outside Git) → stage local source through
+ *                 the shared SDK source workflow, without a Git connection.
  *
  * The git path's controller accepts an allowlist body ({ projectId, branch,
  * commitSha, environment, serverId, forceAll, serviceIds, smartRoute, refresh }) and
@@ -15,6 +15,7 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  */
 import { Command } from "commander";
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import ora from "ora";
 import { getShipClient, assertLinkedProjectConnection, ApiError } from "../lib/ship-client";
 import type { CreateDeploymentInput, CreateDeploymentResult } from "@repo/sdk/client";
@@ -62,7 +63,8 @@ function composeReviewDetails(error: unknown): string | null {
 }
 
 export const deployCommand = new Command("deploy")
-  .description("Trigger a deployment for the current project")
+  .description("Deploy a project or upload local source without a Git connection")
+  .argument("[path]", "Upload this source directory (defaults to the current directory with --folder)")
   .option("--project <id>", "Project ID (defaults to the linked project in .openship/project.json)")
   .option("--branch <name>", "Git branch to deploy (defaults to the current branch)")
   .option("--commit <sha>", "Specific commit SHA (defaults to the latest commit on the branch)")
@@ -80,10 +82,11 @@ export const deployCommand = new Command("deploy")
   .option("--server <id>", "Registered server ID (see `openship server list`)")
   .option("--watch", "Stream the deployment logs until it finishes")
   .option("--timeout <ms>", "Maximum watch duration; timing out leaves the deployment running", timeoutMilliseconds, 600_000)
-  .action(async (opts) => {
+  .action(async (path: string | undefined, opts) => {
+    const sourceDirectory = resolve(path ?? process.cwd());
     // An explicit project selects its own target, without inheriting a different
     // project's branch, environment or connection from the working directory.
-    const link = opts.project ? null : readProjectLink();
+    const link = opts.project ? null : readProjectLink(sourceDirectory);
     assertLinkedProjectConnection(link);
     const env = parseDeploymentEnvironment(opts.env ?? link?.defaults?.environment ?? "production");
 
@@ -99,13 +102,13 @@ export const deployCommand = new Command("deploy")
       opts.smartRoute ||
       opts.refresh ||
       opts.acceptComposeChanges;
-    if (opts.folder && gitOnlyFlags) {
+    if ((opts.folder || path !== undefined) && gitOnlyFlags) {
       err(
-        "--folder cannot be combined with --branch, --commit, --smart-route, --refresh, or --accept-compose-changes.",
+        "A source path or --folder cannot be combined with --branch, --commit, --smart-route, --refresh, or --accept-compose-changes.",
       );
       exitCommand(1);
     }
-    const folderUpload = opts.folder || (!inGitRepo && !gitOnlyFlags && opts.name);
+    const folderUpload = path !== undefined || opts.folder || (!inGitRepo && !gitOnlyFlags && opts.name);
     const targetProjectId: string | undefined = opts.project || link?.projectId;
     if (!inGitRepo && !gitOnlyFlags && !folderUpload && !targetProjectId) {
       err(
@@ -128,7 +131,7 @@ export const deployCommand = new Command("deploy")
       const spinner = isJsonMode() ? null : ora("Deploying folder").start();
       try {
         const result = await getShipClient().deploy({
-          source: { type: "directory", path: process.cwd() },
+          source: { type: "directory", path: sourceDirectory },
           name: opts.name,
           projectId: opts.project || link?.projectId,
           environment: env,

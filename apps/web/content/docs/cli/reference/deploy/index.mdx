@@ -8,11 +8,15 @@ See the [workflow guide](/docs/cli/deploy) for examples. Global flags such as `-
 
 ## openship deploy
 
-Trigger a deployment for the current project
+Deploy a project or upload local source without a Git connection
 
 ```text
-openship deploy [options]
+openship deploy [options] [path]
 ```
+
+| Argument | Meaning |
+| --- | --- |
+| `path` | Upload this source directory (defaults to the current directory with --folder) |
 
 | Option | Meaning |
 | --- | --- |

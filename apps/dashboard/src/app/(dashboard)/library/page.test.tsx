@@ -86,7 +86,7 @@ vi.mock("@/lib/api/git", async (original) => ({
   gitApi: () => ({ getUserRepos: h.gitlabRepos }),
 }));
 vi.mock("./components/LocalProjects", () => ({ LocalProjects: () => null }));
-vi.mock("./components/FolderUpload", () => ({ FolderUpload: () => null }));
+vi.mock("./components/FolderUpload", () => ({ FolderUpload: () => <div>Upload source folder</div> }));
 vi.mock("@/components/apps/AppCatalog", () => ({ AppCatalog: () => <div>App catalog</div> }));
 vi.mock("@/components/migration/PlatformMigrationWizard", () => ({
   PlatformMigrationWizard: ({ provider, onBack }: { provider: string; onBack: () => void }) => (
@@ -160,6 +160,15 @@ async function submitUrl(url: string) {
 }
 
 describe("New Project source actions", () => {
+  it("opens the Cloud folder upload without connecting a Git provider", async () => {
+    h.connected = false;
+    await render();
+    await click("Folder");
+    expect(container.textContent).toContain("Upload source folder");
+    expect(button("Folder").getAttribute("aria-pressed")).toBe("true");
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
   it("switches providers directly from the connection card and opens the selected provider's settings", async () => {
     await render();
     const sidebar = container.querySelector('aside[aria-label="Connection"]')!;
