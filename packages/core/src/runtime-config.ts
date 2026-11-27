@@ -1,5 +1,5 @@
 export const DEFAULT_PORT = {
-  web: 3000,
+  web: 3009,
   dashboard: 3001,
   api: 4000,
   saasDashboard: 3002,
