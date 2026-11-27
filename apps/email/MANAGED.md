@@ -53,6 +53,8 @@ In the worker’s Emails dashboard, open **Deploy webmail** for that engine. Giv
 
 Each fleet entry has its own webmail origin. The shared sign-in opens the inboxes on that engine. Users on a dedicated VM reach their installation through **Open webmail** in the Cloud dashboard. The operator can assign its corporate domain’s MX to its dedicated VM independently of the public sign-in hostname.
 
+At `https://mail.openship.io`, the browser asks for an address first. Webmail sends only its domain to Cloud discovery. Shared users sign in on the same origin. Dedicated users continue to their assigned HTTPS webmail and enter their password there. Configure the central installation with `https://mail.openship.io` among its trusted origins.
+
 ### Mail Desktop
 
 A mailbox user opens **OpenShip Mail**, chooses **OpenShip Cloud**, and enters their email address. Desktop sends the domain to `GET /api/mail/discovery`. Cloud matches the ownership TXT or primary MX to a provisioned service, then asks its assigned worker whether it hosts that domain. The response contains the webmail origin. The mailbox password goes directly to webmail over HTTPS. The same inbox, managed sending relay, and dedicated assistant settings serve browser and desktop clients.

@@ -9,6 +9,7 @@
  * only caller; the token never reaches the browser.
  */
 
+import { env } from '../../env';
 import { router, publicProcedure } from '../trpc';
 import { defaultBranding, getBranding } from '../../lib/branding';
 import { hostedSendingNamespace } from '../../mail/sending-settings';
@@ -16,7 +17,7 @@ import { hostedSendingNamespace } from '../../mail/sending-settings';
 export const brandingRouter = router({
   get: publicProcedure.query(() => {
     const branding = getBranding();
-    const cloudLogin = Boolean(hostedSendingNamespace());
+    const cloudLogin = env.TRUSTED_ORIGINS.includes('https://mail.openship.io') || Boolean(hostedSendingNamespace());
     return {
       ...branding,
       loginFooter:

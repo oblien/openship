@@ -8,6 +8,7 @@ import { join } from "node:path";
 describe("webmail sign-in", () => {
   for (const scenario of [
     "browser-origin",
+    "mailbox-location",
     "hosted-session",
     "credentials",
     "unavailable",

@@ -18,6 +18,8 @@
  */
 
 import { Hono } from 'hono';
+import { isIP } from 'node:net';
+import { z } from 'zod';
 import { getCookie } from 'hono/cookie';
 import { activateSession, clearActiveCookies, clearSessionCookies, readActiveSessionId, readLiveSessionIds } from '../lib/session-cookies';
 import { env } from '../env';
@@ -50,6 +52,39 @@ function rateLimited(c: any, retryAfter: number) {
   c.header('Retry-After', String(retryAfter));
   return c.json({ error: 'Too many requests' }, 429);
 }
+
+const discoveryLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+
+authRoutes.get('/mailbox-location', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  if (!env.TRUSTED_ORIGINS.includes('https://mail.openship.io')) return c.notFound();
+  const hit = discoveryLimiter.hit(clientIp(c));
+  if (!hit.ok) return rateLimited(c, hit.retryAfter);
+  const domain = c.req.query('domain')?.trim().toLowerCase();
+  if (!domain || !domain.includes('.') || isIP(domain) || !z.hostname().safeParse(domain).success)
+    return c.json({ error: 'Enter your full mailbox address.' }, 400);
+
+  const lookup = new URL('https://api.openship.io/api/mail/discovery');
+  lookup.searchParams.set('domain', domain);
+  try {
+    const response = await fetch(lookup, {
+      credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status === 404) return c.json({ error: 'No hosted inbox was found for this domain.' }, 404);
+    if (response.status === 429) return c.json({ error: 'Too many lookups. Try again shortly.' }, 429);
+    if (response.ok) {
+      const { webmailUrl } = await response.json() as { webmailUrl?: string };
+      if (typeof webmailUrl === 'string') {
+        const url = new URL(webmailUrl);
+        if (url.protocol === 'https:' && url.origin === webmailUrl)
+          return c.json({ webmailUrl: url.origin });
+      }
+    }
+  } catch {
+    // Transport failures and invalid directory replies are retryable by the user.
+  }
+  return c.json({ error: 'Mailbox lookup is temporarily unavailable. Try again shortly.' }, 503);
+});
 
 authRoutes.post('/sign-in', async (c) => {
   const ip = clientIp(c);

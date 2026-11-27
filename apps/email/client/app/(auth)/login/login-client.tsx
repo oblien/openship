@@ -40,6 +40,9 @@ export function LoginClient() {
   const showPoweredBy = branding?.showPoweredBy ?? firstPaint.showPoweredBy;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [locatedEmail, setLocatedEmail] = useState('');
+  const centralLogin = typeof window !== 'undefined' && window.location.origin === 'https://mail.openship.io';
+  const needsLookup = centralLogin && (!locatedEmail || locatedEmail !== email.trim().toLowerCase());
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
@@ -60,6 +63,27 @@ export function LoginClient() {
     setSignInError(null);
     setSubmitting(true);
     try {
+      if (needsLookup) {
+        const address = email.trim().toLowerCase();
+        const domain = address.slice(address.lastIndexOf('@') + 1);
+        const response = await fetch('/auth/mailbox-location?' + new URLSearchParams({ domain }), {
+          credentials: 'omit', redirect: 'error',
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Mailbox lookup failed. Try again.');
+        const destination = new URL(result.webmailUrl);
+        if (destination.protocol !== 'https:' || destination.origin !== result.webmailUrl) {
+          throw new Error('Invalid mailbox location. Try again later.');
+        }
+        if (destination.origin !== window.location.origin) {
+          destination.pathname = '/login';
+          destination.hash = new URLSearchParams({ email: email.trim() }).toString();
+          window.location.assign(destination.href);
+          return;
+        }
+        setLocatedEmail(address);
+        return;
+      }
       const { error } = await signIn.email({ email, password });
       if (error) {
         setSignInError(error.message);
@@ -105,37 +129,47 @@ export function LoginClient() {
                   autoComplete="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={submitting}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (centralLogin) {
+                      setLocatedEmail('');
+                      setPassword('');
+                      setSignInError(null);
+                    }
+                  }}
                   placeholder="you@example.com"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password" className="block">
-                  Password
-                </Label>
-                <div className="relative">
-                  <Input
-                    variant="filled"
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                    className="pe-11"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    className="absolute end-0 inset-y-0 grid w-11 place-items-center rounded-xl text-muted-foreground hover:text-foreground focus-visible:outline-2"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+              {!needsLookup && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="password" className="block">
+                    Password
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      variant="filled"
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      className="pe-11"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className="absolute end-0 inset-y-0 grid w-11 place-items-center rounded-xl text-muted-foreground hover:text-foreground focus-visible:outline-2"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {signInError && (
@@ -147,10 +181,10 @@ export function LoginClient() {
               <Button
                 type="submit"
                 isLoading={submitting}
-                loadingText="Signing in"
+                loadingText={needsLookup ? 'Finding mailbox' : 'Signing in'}
                 className="mail-login__submit"
               >
-                Sign in <ArrowRight aria-hidden="true" />
+                {needsLookup ? 'Continue' : 'Sign in'} <ArrowRight aria-hidden="true" />
               </Button>
               {branding?.createAccountUrl && (
                 <a className="mail-login__signup" href={branding.createAccountUrl}>
