@@ -19,6 +19,7 @@
     "./signatures": "./src/lib/signature.ts"
   },
   "dependencies": {
+    "@hono/bun": "^1.0.1",
     "@hono/trpc-server": "^0.3.4",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@trpc/client": "^11.4.4",

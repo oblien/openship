@@ -40,10 +40,9 @@ const signIn = (
     headers: {
       "Content-Type": "application/json",
       cookie,
-      "X-Real-IP": ip ?? `192.0.2.${++requests}`,
     },
     body: JSON.stringify(body),
-  });
+  }, { server: { requestIP: () => ({ address: ip ?? `192.0.2.${++requests}` }) } });
 const credentialError = () =>
   Object.assign(new Error("Command failed"), {
     authenticationFailed: true,

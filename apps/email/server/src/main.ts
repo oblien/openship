@@ -25,7 +25,7 @@ import { readActiveSessionId } from './lib/session-cookies';
 import { secureHeaders } from 'hono/secure-headers';
 import { bodyLimit } from 'hono/body-limit';
 import { trpcServer } from '@hono/trpc-server';
-import { serveStatic } from 'hono/bun';
+import { serveStatic } from '@hono/bun';
 import { env } from './env';
 import { authRoutes } from './routes/auth';
 import { idleRoute } from './routes/idle';
@@ -93,7 +93,7 @@ app.get('/health', (c) => c.json({ ok: true, version: '0.2.0' }));
 app.get('/branding.json', (c) => c.json(getBranding()));
 
 // Logo / favicon / future uploads - served from ${BRANDING_PATH}/assets/.
-// hono/bun's serveStatic resolves the file from `${root}/${path-after-rewrite}`.
+// serveStatic resolves the file from `${root}/${path-after-rewrite}`.
 app.use(
   '/branding/assets/*',
   serveStatic({
@@ -115,34 +115,19 @@ app.route('/admin', sendingAdminRoute);
 // convenience for curl + the openship dashboard. `endpoint` MUST match
 // the mount point - the hono adapter uses it to strip the prefix
 // before resolving the procedure name.
-const createTrpcContext = async (_opts: unknown, c: any) => {
-  const sid = await readActiveSessionId(c);
-  const session = sid ? await getSession(sid) : null;
-  return { ...buildContext(session, c) };
-};
-// allowMethodOverride: the client uses `methodOverride: 'POST'` so EVERY
-// procedure call goes out as POST (queries and mutations alike). Without
-// this flag, @trpc/server rejects POST-to-query with
-// `METHOD_NOT_SUPPORTED` (HTTP 405), which is what every load-time
-// dashboard request hit.
-app.use(
-  '/trpc/*',
-  trpcServer({
+for (const endpoint of ['/trpc', '/api/trpc']) {
+  app.use(`${endpoint}/*`, trpcServer({
     router: appRouter,
-    endpoint: '/trpc',
-    createContext: createTrpcContext,
+    endpoint,
+    async createContext(_opts, c) {
+      const sid = await readActiveSessionId(c);
+      const session = sid ? await getSession(sid) : null;
+      return { ...buildContext(session, c) };
+    },
+    // The web client uses POST for both mutations and queries.
     allowMethodOverride: true,
-  }),
-);
-app.use(
-  '/api/trpc/*',
-  trpcServer({
-    router: appRouter,
-    endpoint: '/api/trpc',
-    createContext: createTrpcContext,
-    allowMethodOverride: true,
-  }),
-);
+  }));
+}
 
 // ─── Client SPA ──────────────────────────────────────────────────────────────
 //

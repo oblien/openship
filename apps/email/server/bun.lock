@@ -5,6 +5,7 @@
     "": {
       "name": "@zero/server",
       "dependencies": {
+        "@hono/bun": "^1.0.1",
         "@hono/trpc-server": "^0.3.4",
         "@modelcontextprotocol/sdk": "1.32.2",
         "@trpc/client": "^11.4.4",
@@ -113,6 +114,8 @@
     "@grpc/grpc-js": ["@grpc/grpc-js@1.14.7", "", { "dependencies": { "@grpc/proto-loader": "^0.8.0", "@js-sdsl/ordered-map": "^4.4.2" } }, "sha512-W4W/fcBMGRVtG6dW2c7cw2mnpS3hvbBd+oQXjh2iYFTZDk1JJmcNqkM5KSaPubQpamlUUurrlb7G1s9NJeERmQ=="],
 
     "@grpc/proto-loader": ["@grpc/proto-loader@0.7.15", "", { "dependencies": { "lodash.camelcase": "^4.3.0", "long": "^5.0.0", "protobufjs": "^7.2.5", "yargs": "^17.7.2" }, "bin": { "proto-loader-gen-types": "build/bin/proto-loader-gen-types.js" } }, "sha512-tMXdRCfYVixjuFK+Hk0Q1s38gV9zDiDJfWL3h1rv4Qc39oILCu1TRTDt7+fGUI8K4G1Fj125Hx/ru3azECWTyQ=="],
+
+    "@hono/bun": ["@hono/bun@1.0.1", "", { "peerDependencies": { "hono": ">=4.13.9 || ^5.0.0-0" } }, "sha512-74m9j/JY6sPhjOnZZSSPFDRWWRVqO8jI7cDTrcjXP+qnlCMOu0BCLnjq31LrKsWGWW7SsRWDzqrf9vDfnwtStA=="],
 
     "@hono/node-server": ["@hono/node-server@2.1.8", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA=="],
 

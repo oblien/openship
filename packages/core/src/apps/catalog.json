@@ -4345,7 +4345,8 @@
             "webmail_data:/data"
           ],
           "environment": {
-            "TRUSTED_ORIGINS": "{{publicUrl:webmail}}"
+            "TRUSTED_ORIGINS": "{{publicUrl:webmail}}",
+            "TRUST_PROXY": "true"
           },
           "restart": "unless-stopped"
         }

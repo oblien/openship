@@ -45,6 +45,11 @@ export function hostedSendingNamespace() {
 // Existing installations store their exclusive namespace under this key.
 export const sharedHosting = 'shared';
 
+/** Apply the same hosting restriction when a domain key is installed and when it is used. */
+export function permitsSendingNamespace(hosted: string | undefined, namespace: string | undefined) {
+  return !hosted || (!!namespace && (hosted === sharedHosting || namespace === hosted));
+}
+
 export function mailHostingPlacement() {
   const records = db.select().from(schema.mailInstance)
     .where(inArray(schema.mailInstance.id, [hostingId, dedicatedId])).all();

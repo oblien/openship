@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import addresses from 'email-addresses';
 import Oblien from 'oblien';
 import { z } from 'zod';
-import { hostedSendingNamespace, sendingSettings, sharedHosting } from '../mail/sending-settings';
+import { hostedSendingNamespace, permitsSendingNamespace, sendingSettings } from '../mail/sending-settings';
 import { env } from '../env';
 import { withImap, type ImapAuth } from './imap';
 import { createRateLimiter } from './rate-limit';
@@ -42,7 +42,7 @@ export async function deliverMailboxMessage(smtp: SmtpAuth, imap: ImapAuth, inpu
   const senderDomain = imap.user.toLowerCase().split('@')[1] ?? '';
   const hosted = hostedSendingNamespace();
   const settings = sendingSettings(senderDomain) ?? (hosted ? undefined : env.managedSending);
-  if (hosted && (!settings?.namespace || (hosted !== sharedHosting && settings.namespace !== hosted)))
+  if (!permitsSendingNamespace(hosted, settings?.namespace))
     throw new Error(
       'Verify and enable managed sending for this mailbox domain in the Emails dashboard.',
     );

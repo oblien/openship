@@ -133,9 +133,11 @@ test('a hosted webmail accepts one organization and requires a verified key even
         'content-type': 'application/json',
         'x-openship-sending-token': env.sendingAdminToken!,
       },
-      body: JSON.stringify({ namespace: tenant, imapHost }),
+      body: JSON.stringify({ namespace: tenant, imapHost, dedicated: true }),
     });
   const native = spyOn(smtp, 'sendMail').mockRejectedValue(new Error('Unexpected SMTP dispatch'));
+  const auth = spyOn(imap, 'withImap').mockResolvedValue(undefined);
+  const api = spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: 'receipt', state: 'queued' }, { status: 202 }));
   try {
     expect((await bind(namespace, 'other.example')).status).toBe(409);
     expect(await (await bind(namespace, env.DEFAULT_IMAP_HOST)).json()).toEqual({ bound: true });
@@ -177,6 +179,12 @@ test('a hosted webmail accepts one organization and requires a verified key even
       }),
     ).rejects.toThrow('Verify and enable managed sending');
     const hostedMailbox = { ...mailbox, user: 'user@api.hosted.test' };
+    await deliverMailboxMessage(hostedMailbox, hostedMailbox, {
+      from: hostedMailbox.user, to: ['recipient@example.org'], subject: 'Hello', text: 'Hello',
+    });
+    const [[endpoint, init]] = api.mock.calls;
+    expect(String(endpoint)).toBe(credential.apiOrigin + '/api/mail/send');
+    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer ' + credential.key);
     await expect(deliverMailboxMessage(hostedMailbox, hostedMailbox, {
       from: hostedMailbox.user, to: ['somebody@example.com'], subject: 'Notes', text: 'attached',
       attachments: [{ filename: 'notes.txt', content: 'notes' }],
@@ -192,17 +200,20 @@ test('a hosted webmail accepts one organization and requires a verified key even
     expect(native).not.toHaveBeenCalled();
   } finally {
     const { db, schema } = await import('../src/db');
-    const { eq } = await import('drizzle-orm');
+    const { eq, inArray } = await import('drizzle-orm');
     db.delete(schema.mailInstance)
-      .where(eq(schema.mailInstance.id, 'hosted-sending-namespace'))
+      .where(inArray(schema.mailInstance.id, ['hosted-sending-namespace', 'dedicated-mail-namespace']))
       .run();
+    db.delete(schema.sendingDomain).where(eq(schema.sendingDomain.domain, 'api.hosted.test')).run();
+    auth.mockRestore();
+    api.mockRestore();
     env.DEFAULT_IMAP_HOST = host;
     env.sendingAdminToken = token;
     native.mockRestore();
   }
 });
 
-test('one shared webmail selects the authenticated domain key for each organization', async () => {
+test.each(['OpenShip API', 'legacy provider'] as const)('shared webmail selects the authenticated domain key for each organization with %s', async transport => {
   const { db, schema } = await import('../src/db');
   const { eq } = await import('drizzle-orm');
   const { bindHostedSending, sharedHosting } = await import('../src/mail/sending-settings');
@@ -211,12 +222,16 @@ test('one shared webmail selects the authenticated domain key for each organizat
   const namespaces = ['a', 'b'].map(c => 'openship-mail-' + c.repeat(32));
   const domains = ['first.shared.test', 'second.shared.test'];
   const auth = spyOn(imap, 'withImap').mockResolvedValue(undefined);
+  const apiOrigin = 'https://cloud.example';
+  const receipt = { id: 'test-receipt', state: 'queued' };
+  const useApi = transport === 'OpenShip API';
   const provider = spyOn(globalThis, 'fetch').mockImplementation(async () =>
-    Response.json({ success: true, data: { id: 'test-receipt', state: 'queued' } }, { status: 202 }));
+    Response.json(useApi ? receipt : { success: true, data: receipt }, { status: 202 }));
   try {
     expect(bindHostedSending(sharedHosting)).toBe(true);
     for (const [i, domain] of domains.entries()) {
-      configureSending(domain, namespaces[i]!, 'test-key-' + i, String(i));
+      const issuer = useApi ? JSON.stringify({ apiOrigin, namespace: namespaces[i] }) : namespaces[i]!;
+      configureSending(domain, issuer, 'test-key-' + i, String(i));
       const mailbox = { host: env.DEFAULT_IMAP_HOST, port: env.DEFAULT_IMAP_PORT, user: 'me@' + domain, pass: 'test' };
       const input = { from: mailbox.user, to: ['recipient@example.org'], subject: 'Hello', text: 'Hello' };
       await deliverMailboxMessage(mailbox, mailbox, input);
@@ -225,7 +240,8 @@ test('one shared webmail selects the authenticated domain key for each organizat
     }
     expect(provider.mock.calls).toHaveLength(2);
     for (const [i, [url, init]] of provider.mock.calls.entries()) {
-      expect(String(url)).toContain('/mail/' + namespaces[i] + '/messages');
+      if (useApi) expect(String(url)).toBe(apiOrigin + '/api/mail/send');
+      else expect(String(url)).toContain('/mail/' + namespaces[i] + '/messages');
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer test-key-' + i);
     }
   } finally {

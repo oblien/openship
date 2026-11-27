@@ -91,6 +91,7 @@ export interface Env {
 
   COOKIE_DOMAIN: string;
   TRUSTED_ORIGINS: string[];
+  TRUST_PROXY: boolean;
 
   SESSION_ENCRYPTION_KEY: string;
   SESSION_COOKIE_NAME: string;
@@ -145,6 +146,8 @@ export const env: Env = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+
+  TRUST_PROXY: process.env.TRUST_PROXY === 'true',
 
   SESSION_ENCRYPTION_KEY: required('SESSION_ENCRYPTION_KEY'),
   SESSION_COOKIE_NAME: optional('SESSION_COOKIE_NAME', 'zero_session'),

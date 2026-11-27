@@ -8,6 +8,7 @@ import {
   bindHostedSending,
   sharedHosting,
   hostedSendingNamespace,
+  permitsSendingNamespace,
   configureSending,
   sendingAuthority,
 } from '../mail/sending-settings';
@@ -73,7 +74,7 @@ sendingAdminRoute.put('/sending/:domain', async (c) => {
   if (!parsed.success) return c.json({ error: 'Invalid sending credentials' }, 400);
   const hosted = hostedSendingNamespace();
   const settings = parsed.data;
-  if (hosted && (!settings.namespace || (hosted !== sharedHosting && hosted !== settings.namespace)))
+  if (!permitsSendingNamespace(hosted, settings.namespace))
     return c.json({ error: 'Invalid hosted namespace' }, 409);
   configureSending(
     c.req.param('domain').toLowerCase(),

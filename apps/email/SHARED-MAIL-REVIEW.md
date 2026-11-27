@@ -37,7 +37,7 @@ Paths in this table are relative to `apps/email/server/src`.
 | [lib/audit-log.ts](server/src/lib/audit-log.ts) | Authentication events are structured and appended to a private file. The operator still handles log retention. |
 | [lib/blocked-senders.ts](server/src/lib/blocked-senders.ts) | Sieve updates serialize by mailbox and preserve the previous active script. |
 | [lib/branding.ts](server/src/lib/branding.ts) | Config and assets come from operator-selected paths. Branding is instance-wide, so it must contain public information only. |
-| [lib/client-ip.ts](server/src/lib/client-ip.ts) | Validates the forwarded IP and can fall back to Bun's socket address. The production origin must be reachable only through the proxy that overwrites the header. |
+| [lib/client-ip.ts](server/src/lib/client-ip.ts) | Direct listeners use Bun’s socket peer. The catalog enables `TRUST_PROXY=true` behind the OpenShip edge, which overwrites `X-Real-IP`. Restrict origin access to that proxy when enabling this setting. |
 | [lib/cookies.ts](server/src/lib/cookies.ts) | Defines consent preferences and defaults. It does not issue login credentials. |
 | [lib/crypto.ts](server/src/lib/crypto.ts) | AES-GCM protects stored credentials. Job and grant data use associated data. Cookie signatures use keys derived for each cookie name. |
 | [lib/imap-driver.ts](server/src/lib/imap-driver.ts) | Traced folder selection, UID lookup, reads, flags, deletes, attachment parsing and Sent append through mailbox-authenticated connections. Folder aliases now match own properties only. |
@@ -112,7 +112,7 @@ The worker HTTP tests now load the shipping iRedMail schema and exercise two wor
 | Check | Result |
 | --- | --- |
 | API mail and managed-mail suites | 604 passed across 64 files |
-| Webmail server with the repository-pinned Bun 1.4.4 | 265 passed across 23 files |
+| Webmail server with the repository-pinned Bun 1.4.4 | 267 passed across 23 files |
 | Managed-mail repository tests | 2 passed |
 | Docker mail authentication, tenant isolation, relay and restore | 7 passed |
 | Docker PostgreSQL bootstrap | 7 passed |
