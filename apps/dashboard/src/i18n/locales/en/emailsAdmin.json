@@ -190,7 +190,7 @@
   },
   "domains": {
     "heading": "Domains",
-    "description": "Each row maps to a row in vmail.domain on the mail VPS. Additional domains accept mail once their MX record points here.",
+    "description": "Receive email at addresses on your own domains.",
     "addDomain": "Add domain",
     "editAction": "Edit",
     "deleteAction": "Delete",
@@ -213,7 +213,7 @@
     "loadFailed": "Failed to load domains",
     "create": {
       "title": "Add domain",
-      "description": "Adds a new entry to vmail.domain on the mail VPS. Make sure the MX record for this domain points to the mail server before sending mail through it.",
+      "description": "Add the domain you want to use for email.",
       "submit": "Create domain",
       "submitting": "Creating…",
       "domainLabel": "Domain",
@@ -279,7 +279,7 @@
   },
   "mailboxes": {
     "heading": "Mailboxes",
-    "description": "Each row is an IMAP/SMTP account on the mail server. Passwords are hashed with doveadm SSHA512 before storage.",
+    "description": "Manage the addresses people use to send and receive email.",
     "addMailbox": "Add mailbox",
     "domainLabel": "Domain",
     "loading": "Loading…",
@@ -299,6 +299,9 @@
     "rotateSubmitting": "Repairing…",
     "rotateFailed": "Failed to repair the platform mailbox",
     "rotateNote": "User mailboxes and stored messages are not changed.",
+    "readOnlyServer": "This mail server is read-only. An OpenShip Mail worker is required to manage mailbox accounts.",
+    "manageAction": "Manage",
+    "changePassword": "Change password",
     "editAction": "Edit",
     "deleteAction": "Delete",
     "loadDomainsFailed": "Failed to load domains",
@@ -307,7 +310,7 @@
     "emptyDesc": "Create the first mailbox for {domain}. Passwords are hashed with doveadm SSHA512 - only the hash is stored on disk.",
     "create": {
       "title": "New mailbox · {domain}",
-      "description": "Creates an IMAP/SMTP account on the mail server. Password is hashed with doveadm SSHA512 on the VPS - only the hash is stored.",
+      "description": "Choose an address and a password for this inbox.",
       "submit": "Create mailbox",
       "submitting": "Creating…",
       "localPartLabel": "Local part",
@@ -338,13 +341,13 @@
     },
     "deleteForm": {
       "title": "Delete {username}?",
-      "descHard": "Hard delete: removes the DB rows AND the Maildir on disk. Cannot be undone.",
-      "descSoft": "Soft delete: sets active = 0 and inserts a row in vmail.deleted_mailboxes. The mail server's cleanup cron picks it up later. The Maildir stays on disk until then.",
-      "submitHard": "Hard-delete mailbox",
-      "submitSoft": "Soft-delete mailbox",
+      "descHard": "The mailbox and all its messages will be permanently deleted.",
+      "descSoft": "Mailbox access and delivery stop immediately. Stored messages remain until the server runs its cleanup.",
+      "submitHard": "Delete permanently",
+      "submitSoft": "Delete mailbox",
       "submitting": "Deleting…",
-      "hardDeleteLabel": "Hard delete",
-      "hardDeleteDesc": "Remove DB rows and Maildir files immediately. Cannot be undone.",
+      "hardDeleteLabel": "Delete stored messages now",
+      "hardDeleteDesc": "This permanently removes the mailbox and its messages from the mail server.",
       "postmasterNote": "The postmaster mailbox is hard-delete protected - only soft delete is available, so the mail server's bootstrap account stays intact."
     }
   },

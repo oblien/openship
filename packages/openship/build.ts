@@ -44,6 +44,7 @@ if (!process.argv.includes("--check")) {
             ]),
           ),
           "@repo/platform/native": ["packages/platform/src/native-host.ts"],
+          "@repo/core/managed-mail": ["packages/core/src/mail-server/managed-mail.ts"],
           "@repo/platform/source-files": [
             "packages/platform/src/source-files.ts",
           ],

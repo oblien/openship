@@ -74,12 +74,24 @@ function int(name: string, fallback: number): number {
   return n;
 }
 
+function managedSending() {
+  const namespace = process.env.OPENSHIP_SENDING_NAMESPACE?.trim();
+  const key = process.env.OPENSHIP_SENDING_KEY?.trim();
+  if (!namespace && !key) return undefined;
+  if (!namespace || namespace === 'openship' || !key || !process.env.DEFAULT_IMAP_HOST?.trim())
+    throw new Error('Managed sending requires a customer namespace, send-only key and pinned IMAP host.');
+  return { namespace, key };
+}
+
 export interface Env {
+  sendingAdminToken?: string;
+  managedSending: ReturnType<typeof managedSending>;
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
 
   COOKIE_DOMAIN: string;
   TRUSTED_ORIGINS: string[];
+  TRUST_PROXY: boolean;
 
   SESSION_ENCRYPTION_KEY: string;
   SESSION_COOKIE_NAME: string;
@@ -121,6 +133,8 @@ export interface Env {
 }
 
 export const env: Env = {
+  managedSending: managedSending(),
+  sendingAdminToken: process.env.OPENSHIP_SENDING_ADMIN_TOKEN || undefined,
   NODE_ENV: (process.env.NODE_ENV as Env['NODE_ENV']) ?? 'development',
   PORT: int('PORT', 3030),
 
@@ -132,6 +146,8 @@ export const env: Env = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+
+  TRUST_PROXY: process.env.TRUST_PROXY === 'true',
 
   SESSION_ENCRYPTION_KEY: required('SESSION_ENCRYPTION_KEY'),
   SESSION_COOKIE_NAME: optional('SESSION_COOKIE_NAME', 'zero_session'),

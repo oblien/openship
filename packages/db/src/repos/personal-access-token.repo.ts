@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, exists, gt, inArray, isNull, isNotNull, notExists, or, sql } from "drizzle-orm";
 import {
   generateId,
   AppError,
@@ -71,14 +71,43 @@ export function createPersonalAccessTokenRepo(db: Database) {
      * hash (unique-indexed) — the secret carries full entropy, so equality on
      * the hash leaks nothing exploitable.
      */
-    async findActiveByHash(tokenHash: string): Promise<PersonalAccessToken | null> {
-      const row = await db.query.personalAccessToken.findFirst({
-        where: eq(personalAccessToken.tokenHash, tokenHash),
-      });
-      if (!row) return null;
-      if (row.revokedAt) return null;
-      if (row.expiresAt && row.expiresAt < new Date()) return null;
-      return row;
+    async findActiveByHash(tokenHash: string, usage: "platform" | "mail-submission" = "platform"): Promise<PersonalAccessToken | null> {
+      const token = personalAccessToken;
+      const grant = personalAccessTokenGrant;
+      // Check the grant in the same indexed lookup, including on routes that
+      // accept any authenticated user and would otherwise skip grant checks.
+      const mailGrant = db.select({ id: grant.id }).from(grant)
+        .where(and(eq(grant.tokenId, token.id), eq(grant.resourceType, "mail_sender")));
+      const [row] = await db.select().from(token).where(and(
+        eq(token.tokenHash, tokenHash), isNull(token.revokedAt),
+        or(isNull(token.expiresAt), gt(token.expiresAt, new Date())),
+        usage === "mail-submission" ? exists(mailGrant) : notExists(mailGrant),
+      )).limit(1);
+      return row ?? null;
+    },
+
+    /** Organization administrators manage application keys by their stored grant, never by display name. */
+    async listMailSendKeys(organizationId: string) {
+      const token = personalAccessToken;
+      const grant = personalAccessTokenGrant;
+      return db.select({ id: token.id, domainId: grant.resourceId, name: token.name, prefix: token.tokenPrefix,
+        createdAt: token.createdAt, lastUsedAt: token.lastUsedAt })
+        .from(token).innerJoin(grant, eq(grant.tokenId, token.id))
+        .where(and(eq(token.organizationId, organizationId), eq(grant.resourceType, "mail_sender"),
+          isNull(token.revokedAt), or(isNull(token.expiresAt), gt(token.expiresAt, new Date()))))
+        .orderBy(desc(token.createdAt));
+    },
+
+    async revokeMailSendKeys(organizationId: string, target: { id: string } | { domainId: string }) {
+      const grant = personalAccessTokenGrant;
+      const ids = db.select({ id: grant.tokenId }).from(grant).where(and(
+        eq(grant.resourceType, "mail_sender"),
+        "id" in target ? eq(grant.tokenId, target.id) : eq(grant.resourceId, target.domainId),
+      ));
+      const revoked = await db.update(personalAccessToken).set({ revokedAt: new Date() })
+        .where(and(eq(personalAccessToken.organizationId, organizationId), isNull(personalAccessToken.revokedAt),
+          inArray(personalAccessToken.id, ids))).returning();
+      return revoked.length > 0;
     },
 
     /**

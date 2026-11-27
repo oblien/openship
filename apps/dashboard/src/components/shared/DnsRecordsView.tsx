@@ -17,7 +17,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  * copy buttons).
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { DnsRecord, DnsRecords } from "@/lib/api";
 
@@ -86,26 +86,15 @@ export function DnsRecordsView({
 export function DnsRecordCard({
   rec,
   domain,
+  status,
 }: {
   rec: DnsRecord;
-  domain: string;
+  /** DNS zone for relative names. Omit when the authoritative zone is unknown. */
+  domain?: string;
+  status?: ReactNode;
 }) {
   const { t } = useI18n();
   const w = t.widgets.shared.dnsRecords;
-  const [copied, setCopied] = useState<"name" | "value" | null>(null);
-  const displayedName = displayDnsName(rec.name, domain);
-
-  const copy = async (which: "name" | "value", text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(which);
-      setTimeout(() => setCopied(null), 1200);
-    } catch (diagnosticFailure) {
-      observeCaughtError(diagnosticFailure, "dashboard/components/shared/DnsRecordsView");
-      // Non-HTTPS context - silently no-op.
-    }
-  };
-
   return (
     <div className="bg-card rounded-xl border border-border/60 p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -122,22 +111,45 @@ export function DnsRecordCard({
             {w.recommended}
           </span>
         )}
+        {status && <span className="ms-auto">{status}</span>}
       </div>
 
-      <div className="space-y-2 font-mono text-[12px]">
-        <DnsRecordField
-          fieldLabel={w.name}
-          value={displayedName}
-          copied={copied === "name"}
-          onCopy={() => copy("name", displayedName)}
-        />
-        <DnsRecordField
-          fieldLabel={w.value}
-          value={rec.value}
-          copied={copied === "value"}
-          onCopy={() => copy("value", rec.value)}
-        />
-      </div>
+      <DnsRecordFields rec={rec} domain={domain} />
+    </div>
+  );
+}
+
+export function DnsRecordFields({ rec, domain }: { rec: DnsRecord; domain?: string }) {
+  const { t } = useI18n();
+  const w = t.widgets.shared.dnsRecords;
+  const [copied, setCopied] = useState<"name" | "value" | null>(null);
+  const displayedName = domain ? displayDnsName(rec.name, domain) : rec.name;
+
+  const copy = async (which: "name" | "value", text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied(null), 1200);
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/components/shared/DnsRecordsView");
+      // Non-HTTPS context - silently no-op.
+    }
+  };
+
+  return (
+    <div className="space-y-2 font-mono text-[12px]">
+      <DnsRecordField
+        fieldLabel={w.name}
+        value={displayedName}
+        copied={copied === "name"}
+        onCopy={() => copy("name", displayedName)}
+      />
+      <DnsRecordField
+        fieldLabel={w.value}
+        value={rec.value}
+        copied={copied === "value"}
+        onCopy={() => copy("value", rec.value)}
+      />
     </div>
   );
 }

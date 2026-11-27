@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "Shared mailboxes",
+      "description": "Team inboxes hosted by OpenShip."
+    },
+    "dedicated": {
+      "name": "Dedicated mail server",
+      "description": "A new private VM for your inboxes, with managed sending included."
+    },
+    "sending": {
+      "name": "Sending API",
+      "description": "Send transactional email from your app using a verified domain."
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "Solo",
+      "tagline": "For personal projects."
+    },
+    "team": {
+      "name": "Team",
+      "tagline": "For small teams."
+    },
+    "business": {
+      "name": "Business",
+      "tagline": "For teams with multiple brands."
+    },
+    "scale": {
+      "name": "Scale",
+      "tagline": "For platforms serving customers."
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

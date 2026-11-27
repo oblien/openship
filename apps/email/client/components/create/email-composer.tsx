@@ -30,6 +30,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import { useTRPC } from '@/providers/query-provider';
+import { useMailAssistantAvailability } from '@/hooks/use-mail-assistant';
 import { useMutation } from '@tanstack/react-query';
 import { useSettings } from '@/hooks/use-settings';
 
@@ -119,7 +120,8 @@ export function EmailComposer({
   const { data: settings } = useSettings();
   const [showCc, setShowCc] = useState(initialCc.length > 0);
   const [showBcc, setShowBcc] = useState(initialBcc.length > 0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const sendInProgress = useRef(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [messageLength, setMessageLength] = useState(0);
@@ -130,6 +132,7 @@ export function EmailComposer({
   const [draftId, setDraftId] = useQueryState('draftId');
   const [aiGeneratedMessage, setAiGeneratedMessage] = useState<string | null>(null);
   const [aiIsLoading, setAiIsLoading] = useState(false);
+  const isLoading = isSending || aiIsLoading;
   const [isGeneratingSubject, setIsGeneratingSubject] = useState(false);
   const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
   const [scheduleAt, setScheduleAt] = useState<string>();
@@ -217,6 +220,7 @@ export function EmailComposer({
   ];
 
   const trpc = useTRPC();
+  const canGenerate = !!useMailAssistantAvailability()?.enabled;
   const { mutateAsync: aiCompose } = useMutation(trpc.ai.compose.mutationOptions());
   const { mutateAsync: createDraft } = useMutation(trpc.drafts.create.mutationOptions());
   const { mutateAsync: generateEmailSubject } = useMutation(
@@ -342,9 +346,8 @@ export function EmailComposer({
   }, [editor, draftId]);
 
   const proceedWithSend = async () => {
+    if (sendInProgress.current || isLoading || isSavingDraft) return;
     try {
-      if (isLoading || isSavingDraft) return;
-
       const values = getValues();
 
       // Validate recipient field
@@ -358,7 +361,8 @@ export function EmailComposer({
         return;
       }
 
-      setIsLoading(true);
+      sendInProgress.current = true;
+      setIsSending(true);
       setAiGeneratedMessage(null);
       // Save draft before sending, we want to send drafts instead of sending new emails
       if (hasUnsavedChanges) await saveDraft();
@@ -378,9 +382,10 @@ export function EmailComposer({
       setIsComposeOpen(null);
     } catch (error) {
       console.error('Error sending email:', error);
-      toast.error(m['pages.createEmail.failedToSendEmail']());
+      toast.error(error instanceof Error && error.message ? error.message : m['pages.createEmail.failedToSendEmail']());
     } finally {
-      setIsLoading(false);
+      sendInProgress.current = false;
+      setIsSending(false);
     }
   };
 
@@ -425,7 +430,6 @@ export function EmailComposer({
 
   const handleAiGenerate = async () => {
     try {
-      setIsLoading(true);
       setAiIsLoading(true);
       const values = getValues();
 
@@ -443,7 +447,6 @@ export function EmailComposer({
       console.error('Error generating AI email:', error);
       toast.error('Failed to generate email');
     } finally {
-      setIsLoading(false);
       setAiIsLoading(false);
     }
   };
@@ -542,7 +545,7 @@ export function EmailComposer({
   }, [editor, showLeaveConfirmation]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges || isLoading || isSavingDraft) return;
 
     const autoSaveTimer = setTimeout(() => {
       console.log('timeout set');
@@ -550,7 +553,7 @@ export function EmailComposer({
     }, 3000);
 
     return () => clearTimeout(autoSaveTimer);
-  }, [hasUnsavedChanges, saveDraft]);
+  }, [hasUnsavedChanges, isLoading, isSavingDraft, saveDraft]);
 
   useEffect(() => {
     const handlePasteFiles = (event: ClipboardEvent) => {
@@ -710,7 +713,7 @@ export function EmailComposer({
               setHasUnsavedChanges(true);
             }}
           />
-          <button
+          {canGenerate && <button
             onClick={handleGenerateSubject}
             disabled={isLoading || isGeneratingSubject || messageLength < 1}
             aria-label="Generate subject with AI"
@@ -725,7 +728,7 @@ export function EmailComposer({
                 )}
               </div>
             </div>
-          </button>
+          </button>}
         </div>
 
         {/* From */}
@@ -780,16 +783,16 @@ export function EmailComposer({
         <div className="flex flex-col items-start justify-start gap-2">
           {toggleToolbar && <Toolbar editor={editor} />}
           <div className="flex items-center justify-start gap-2">
-            <Button size={'xs'} onClick={handleSend} disabled={isLoading || settingsLoading || !isScheduleValid}>
-              <div className="flex items-center justify-center">
-                <div className="text-center text-sm leading-none text-white dark:text-black">
-                  <span>Send </span>
-                </div>
-              </div>
-              <div className="flex h-5 items-center justify-center gap-1 rounded-sm bg-white/10 px-1 dark:bg-black/10">
-                <Command className="h-3.5 w-3.5 text-white dark:text-black" />
-                <CurvedArrow className="mt-1.5 h-4 w-4 fill-white dark:fill-black" />
-              </div>
+            <Button size="xs" onClick={handleSend} aria-busy={isSending}
+              disabled={isLoading || isSavingDraft || settingsLoading || !isScheduleValid}>
+              {isSending ? (
+                <><Loader aria-hidden className="size-3.5 animate-spin" />{scheduleAt ? 'Scheduling…' : 'Sending…'}</>
+              ) : (
+                <>Send <span className="flex h-5 items-center justify-center gap-1 rounded-sm bg-white/10 px-1 dark:bg-black/10">
+                  <Command className="h-3.5 w-3.5 text-white dark:text-black" />
+                  <CurvedArrow className="mt-1.5 h-4 w-4 fill-white dark:fill-black" />
+                </span></>
+              )}
             </Button>
             <ScheduleSendPicker
               value={scheduleAt}
@@ -958,7 +961,7 @@ export function EmailComposer({
             </TooltipProvider>
           </div>
         </div>
-        <div className="flex items-start justify-start gap-2">
+        {canGenerate && <div className="flex items-start justify-start gap-2">
           <div className="relative">
             <AnimatePresence>
               {aiGeneratedMessage !== null ? (
@@ -1009,7 +1012,7 @@ export function EmailComposer({
               </div>
             </Button>
           </div>
-        </div>
+        </div>}
       </div>
 
       <Dialog open={showLeaveConfirmation} onOpenChange={setShowLeaveConfirmation}>

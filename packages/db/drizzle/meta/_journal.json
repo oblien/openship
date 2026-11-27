@@ -1646,6 +1646,41 @@
       "when": 1795223437981,
       "tag": "0234_git_webhook_delivery_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1795223438981,
+      "tag": "0235_managed_mail_service",
+      "breakpoints": true
+    },
+    {
+      "idx": 236,
+      "version": "7",
+      "when": 1795223439981,
+      "tag": "0236_shared_mail_hosts",
+      "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1795223440981,
+      "tag": "0237_dedicated_mail_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1795223441981,
+      "tag": "0238_mail_plan_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1795223442981,
+      "tag": "0239_mail_tenant_access",
+      "breakpoints": true
     }
   ]
 }

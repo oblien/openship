@@ -190,7 +190,7 @@
   },
   "domains": {
     "heading": "ドメイン",
-    "description": "各行はメール VPS 上の vmail.domain の 1 行に対応します。追加ドメインは、その MX レコードがここを指すようになるとメールを受け付けます。",
+    "description": "独自ドメインのアドレスでメールを受信できます。",
     "addDomain": "ドメインを追加",
     "editAction": "編集",
     "deleteAction": "削除",
@@ -213,7 +213,7 @@
     "loadFailed": "ドメインの読み込みに失敗しました",
     "create": {
       "title": "ドメインを追加",
-      "description": "メール VPS 上の vmail.domain に新しいエントリを追加します。このドメインでメールを送信する前に、MX レコードがメールサーバーを指していることを確認してください。",
+      "description": "メールに使用するドメインを追加してください。",
       "submit": "ドメインを作成",
       "submitting": "作成中…",
       "domainLabel": "ドメイン",
@@ -279,7 +279,7 @@
   },
   "mailboxes": {
     "heading": "メールボックス",
-    "description": "各行はメールサーバー上の IMAP/SMTP アカウントです。パスワードは保存前に doveadm SSHA512 でハッシュ化されます。",
+    "description": "メールの送受信に使うアドレスを管理します。",
     "addMailbox": "メールボックスを追加",
     "domainLabel": "ドメイン",
     "loading": "読み込み中…",
@@ -299,6 +299,9 @@
     "rotateSubmitting": "修復中…",
     "rotateFailed": "プラットフォームメールボックスを修復できませんでした",
     "rotateNote": "ユーザーメールボックスと保存済みメッセージは変更されません。",
+    "readOnlyServer": "このメールサーバーは読み取り専用です。メールボックスの管理には OpenShip Mail ワーカーが必要です。",
+    "manageAction": "管理",
+    "changePassword": "パスワードを変更",
     "editAction": "編集",
     "deleteAction": "削除",
     "loadDomainsFailed": "ドメインの読み込みに失敗しました",
@@ -307,7 +310,7 @@
     "emptyDesc": "{domain} の最初のメールボックスを作成しましょう。パスワードは doveadm SSHA512 でハッシュ化され、ディスクにはハッシュのみが保存されます。",
     "create": {
       "title": "新しいメールボックス · {domain}",
-      "description": "メールサーバー上に IMAP/SMTP アカウントを作成します。パスワードは VPS 上で doveadm SSHA512 によりハッシュ化され、ハッシュのみが保存されます。",
+      "description": "メールボックスのアドレスとパスワードを設定してください。",
       "submit": "メールボックスを作成",
       "submitting": "作成中…",
       "localPartLabel": "ローカル部分",
@@ -338,13 +341,13 @@
     },
     "deleteForm": {
       "title": "{username} を削除しますか?",
-      "descHard": "ハード削除: DB の行とディスク上の Maildir の両方を削除します。元に戻せません。",
-      "descSoft": "ソフト削除: active = 0 に設定し、vmail.deleted_mailboxes に行を挿入します。メールサーバーのクリーンアップ cron が後でそれを処理します。それまで Maildir はディスク上に残ります。",
-      "submitHard": "メールボックスをハード削除",
-      "submitSoft": "メールボックスをソフト削除",
+      "descHard": "メールボックスとすべてのメッセージが完全に削除されます。",
+      "descSoft": "ログインとメールの受信は直ちに停止します。保存済みのメールは、サーバーがクリーンアップを実行するまで保持されます。",
+      "submitHard": "完全に削除",
+      "submitSoft": "メールボックスを削除",
       "submitting": "削除中…",
-      "hardDeleteLabel": "ハード削除",
-      "hardDeleteDesc": "DB の行と Maildir ファイルをただちに削除します。元に戻せません。",
+      "hardDeleteLabel": "保存済みのメッセージを今すぐ削除",
+      "hardDeleteDesc": "メールボックスとそのメッセージをサーバーから完全に削除します。",
       "postmasterNote": "ポストマスターのメールボックスはハード削除から保護されています - ソフト削除のみ利用可能で、メールサーバーのブートストラップアカウントは維持されます。"
     }
   },

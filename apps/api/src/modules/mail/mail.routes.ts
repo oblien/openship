@@ -6,10 +6,13 @@
 
 import { Hono } from "hono";
 import { MailRequestSchemas } from "@repo/contracts";
+import { cloudRuntimeTarget } from "@repo/platform/engine/config/env";
+import { mailApiRelayAvailable } from "@repo/platform/engine/modules/mail/admin/api-relay";
 import { secureRouter } from "../../lib/secure-router";
 import * as mail from "./mail.controller";
 import * as admin from "./admin/admin.controller";
 import * as webmail from "./webmail/webmail.controller";
+import { bindWebmailHosting, hostingSchema, linkedWebmailSending, sendingSettingsSchema } from "./webmail/sending-settings";
 import * as inbound from "./inbound/inbound.controller";
 import * as certificate from "./admin/certificate.controller";
 
@@ -19,6 +22,52 @@ const r = secureRouter(new Hono(), {
   ids: { mail_server: "serverId" },
   localOnly: true,
 });
+
+r.put(
+  "/admin/:serverId/webmail/hosting",
+  {
+    tag: "mail_server:admin",
+    mcpExcluded: "Assigns an operator-managed private webmail deployment.",
+  },
+  async (c) => {
+    const input = hostingSchema.safeParse(await c.req.json());
+    if (!input.success) return c.json({ error: "Invalid hosted mail binding" }, 400);
+    return c.json(await bindWebmailHosting(c, c.req.param("serverId")!, input.data));
+  },
+);
+for (const sendingPath of [
+  "/admin/:serverId/webmail/sending/:domain",
+  "/tenants/:mailTenant/admin/:serverId/webmail/sending/:domain",
+]) {
+  r.get(
+    sendingPath,
+    { tag: "mail_server:admin", mcpExcluded: "Internal webmail sending configuration." },
+    async (c) => {
+      const serverId = c.req.param("serverId")!;
+      const settings = await linkedWebmailSending(c, serverId, c.req.param("domain")!);
+      return c.json({ ...settings, apiRelay: await mailApiRelayAvailable(serverId), relayOrigin: new URL(cloudRuntimeTarget.api).origin });
+    },
+  );
+  r.put(
+    sendingPath,
+    {
+      tag: "mail_server:admin",
+      mcpExcluded: "Installs a private sending credential in the linked webmail.",
+    },
+    async (c) => {
+      const settings = sendingSettingsSchema.safeParse(await c.req.json());
+      if (!settings.success) return c.json({ error: "Invalid sending settings" }, 400);
+      return c.json(
+        await linkedWebmailSending(
+          c,
+          c.req.param("serverId")!,
+          c.req.param("domain")!,
+          settings.data,
+        ),
+      );
+    },
+  );
+}
 
 /* ── Setup wizard ─────────────────────────────────────────────────── */
 r.get("/steps", { tag: "mail_server:read", mcp: { description: "Read the ordered mail installation steps. Installing a new mail stack uses the dashboard’s streaming setup wizard." } }, mail.getSteps);
@@ -51,124 +100,10 @@ r.post(
   mail.setPostmasterPassword,
 );
 
-/* ── Admin panel - domains ────────────────────────────────────────── */
-r.get(
-  "/admin/:serverId/domains",
-  { tag: "mail_server:list", mcp: { description: "List mail domains configured on this mail server." } },
-  admin.listDomainsHandler,
-);
-r.post(
-  "/admin/:serverId/domains",
-  { tag: "mail_server:write", mcp: { description: "Create a mail domain with mailbox, alias and quota limits. Then inspect its DNS plan and apply or configure the required records." }, body: MailRequestSchemas.createDomain },
-  admin.createDomainHandler,
-);
-r.get(
-  "/admin/:serverId/domains/:domain",
-  { tag: "mail_server:read", mcp: { description: "Read a mail domain’s configuration and status." } },
-  admin.getDomainHandler,
-);
-r.patch(
-  "/admin/:serverId/domains/:domain",
-  { tag: "mail_server:write", mcp: { description: "Update a mail domain’s description, capacity limits, default quota or enabled state." }, body: MailRequestSchemas.updateDomain },
-  admin.updateDomainHandler,
-);
-r.delete(
-  "/admin/:serverId/domains/:domain",
-  { tag: "mail_server:admin", mcp: { description: "Delete a mail domain. Inspect dependents first; query.cascade=true also removes dependent mailboxes and aliases." }, query: MailRequestSchemas.deleteDomain },
-  admin.deleteDomainHandler,
-);
-r.get(
-  "/admin/:serverId/domains/:domain/dependents",
-  { tag: "mail_server:read", mcp: { description: "Inspect mailboxes and aliases affected by deleting this mail domain." } },
-  admin.domainDependentsHandler,
-);
-r.get(
-  "/admin/:serverId/domains/:domain/dns",
-  { tag: "mail_server:read", mcp: { description: "Read required DNS records and the current DNS acknowledgment state for this mail domain." } },
-  admin.getDomainDnsHandler,
-);
-r.post(
-  "/admin/:serverId/domains/:domain/dns/acknowledge",
-  { tag: "mail_server:write", mcp: { description: "Recheck and acknowledge a mail domain’s DNS configuration. Only use after the required records have been configured." } },
-  admin.acknowledgeDomainDnsHandler,
-);
-// On-demand DNS auto-configure via a connected provider (Settings→DNS). Plan is
-// a read-only dry-run; apply writes the records on operator press (never on add).
-r.get(
-  "/admin/:serverId/domains/:domain/dns/plan",
-  { tag: "mail_server:read", mcp: { description: "Preview DNS changes for this mail domain through a connected DNS provider. Does not apply records." } },
-  admin.planDomainDnsHandler,
-);
-r.post(
-  "/admin/:serverId/domains/:domain/dns/apply",
-  { tag: "mail_server:write", mcp: { description: "Apply this mail domain’s required DNS records through a connected provider. Inspect the DNS plan first." } },
-  admin.applyDomainDnsHandler,
-);
-r.get(
-  "/admin/:serverId/domains-dns/pending",
-  { tag: "mail_server:read", mcp: { description: "List mail domains still requiring DNS configuration or acknowledgment." } },
-  admin.pendingDomainDnsHandler,
-);
-
-/* ── Admin panel - mailboxes ──────────────────────────────────────── */
-r.get(
-  "/admin/:serverId/mailboxes",
-  { tag: "mail_server:list", mcp: { description: "List mailboxes, optionally filtered by query.domain. Passwords are not returned." }, query: MailRequestSchemas.domainFilter },
-  admin.listMailboxesHandler,
-);
-r.post(
-  "/admin/:serverId/mailboxes",
-  { tag: "mail_server:write", mcp: { description: "Create a mailbox with a supplied password and optional quota. This changes the mail server’s account database." }, body: MailRequestSchemas.createMailbox },
-  admin.createMailboxHandler,
-);
-r.get(
-  "/admin/:serverId/mailboxes/:email",
-  { tag: "mail_server:read", mcp: { description: "Read a mailbox’s profile, quota and enabled state without its password." } },
-  admin.getMailboxHandler,
-);
-r.patch(
-  "/admin/:serverId/mailboxes/:email",
-  { tag: "mail_server:write", mcp: { description: "Update a mailbox’s name, quota, password or enabled state. Omit password to preserve it." }, body: MailRequestSchemas.updateMailbox },
-  admin.updateMailboxHandler,
-);
-r.delete(
-  "/admin/:serverId/mailboxes/:email",
-  { tag: "mail_server:admin", mcp: { description: "Remove a mailbox account. query.hard=true also deletes its stored mail; read its details before requesting permanent removal." }, query: MailRequestSchemas.deleteMailbox },
-  admin.deleteMailboxHandler,
-);
 r.post(
   "/admin/:serverId/platform-mailbox/rotate",
   { tag: "mail_server:admin", mcpExcluded: "Rotates the platform’s private mail-delivery credential. Use the mail-server settings; this is not a user mailbox." },
   admin.rotatePlatformMailboxHandler,
-);
-
-/* ── Admin panel - aliases / forwards / catch-all ─────────────────── */
-r.get(
-  "/admin/:serverId/aliases",
-  { tag: "mail_server:list", mcp: { description: "List mail aliases and forwards, optionally filtered by query.domain." }, query: MailRequestSchemas.domainFilter },
-  admin.listAliasesHandler,
-);
-r.post(
-  "/admin/:serverId/aliases",
-  { tag: "mail_server:write", mcp: { description: "Create a mail alias, forward or catch-all and its destination. A catch-all applies to unmatched recipients in the domain." }, body: MailRequestSchemas.createAlias },
-  admin.createAliasHandler,
-);
-r.patch(
-  "/admin/:serverId/aliases/:id",
-  { tag: "mail_server:write", mcp: { description: "Enable or disable this mail alias using body.active." }, body: MailRequestSchemas.updateAlias },
-  admin.updateAliasHandler,
-);
-r.delete(
-  "/admin/:serverId/aliases/:id",
-  { tag: "mail_server:admin", mcp: { description: "Delete a mail alias or forward. Messages addressed through it will no longer use that mapping." } },
-  admin.deleteAliasHandler,
-);
-
-/* ── Admin panel - aggregates ─────────────────────────────────────── */
-r.get(
-  "/admin/:serverId/stats",
-  { tag: "mail_server:read", mcp: { description: "Read mail-server domain, mailbox, alias and storage totals." } },
-  admin.getStatsHandler,
 );
 
 /* ── Admin panel - backup (plugs into the general backup system) ──── */
@@ -186,13 +121,6 @@ r.get(
   "/admin/:serverId/backup-runs",
   { tag: "mail_server:read", mcp: { description: "Read this mail server’s recent backup runs. Follow run IDs with the general backup status and restore tools." } },
   mail.listMailBackupRuns,
-);
-
-/* ── Admin panel - DNS scan ───────────────────────────────────────── */
-r.get(
-  "/admin/:serverId/dns-scan",
-  { tag: "mail_server:read", mcp: { description: "Check current mail DNS records, optionally for query.domain. Does not apply changes." }, query: MailRequestSchemas.domainFilter },
-  admin.getDnsScanHandler,
 );
 
 /* ── Admin panel - outbound relay (split delivery) ────────────────── */

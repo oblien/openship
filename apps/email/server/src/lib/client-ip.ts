@@ -1,27 +1,18 @@
-/**
- * Resolve the calling client's IP address for rate-limiting / audit logging.
- *
- * Openship's deploy topology always fronts this Bun process with
- * openresty/nginx inside the orchestrator stack. The reverse proxy
- * populates `X-Real-IP` with the originating client address and
- * strips/rewrites anything inbound. We trust that header at face
- * value and ignore `X-Forwarded-For` entirely.
- *
- * If we ever lose the proxy (direct exposure) the function returns
- * the socket-level remote (or "unknown"), so rate limiters still
- * have a bucket — but that path should never happen in production.
- */
-
-import { getConnInfo } from 'hono/bun';
+import { isIP } from 'node:net';
+import { getConnInfo } from '@hono/bun';
 import type { Context } from 'hono';
+import { env } from '../env';
 
 export function clientIp(c: Context): string {
-  const realIp = c.req.header('x-real-ip')?.trim();
-  if (realIp) return realIp;
+  // The OpenShip edge overwrites this header. Direct listeners use the socket peer.
+  if (env.TRUST_PROXY) {
+    const forwarded = c.req.header('x-real-ip')?.trim();
+    if (forwarded && isIP(forwarded)) return forwarded;
+  }
   try {
-    const info = getConnInfo(c);
-    return info.remote.address ?? 'unknown';
+    return getConnInfo(c).remote.address ?? 'unknown';
   } catch {
+    // Synthetic requests and disconnected sockets may have no peer information.
     return 'unknown';
   }
 }

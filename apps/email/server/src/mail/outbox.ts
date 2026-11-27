@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, notInArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, notInArray, lte, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { db, schema } from "../db";
 import { encryptSecret, decryptSecret } from "../lib/crypto";
@@ -163,6 +163,35 @@ export function enqueueSend(
   const delay = settings.undoSendEnabled ? settings.undoSendTime * 1000 : 0;
   const job = insertJob(mailbox, "send", message, () => scheduledTime(scheduleAt, delay), options);
   return { messageId: job.id, sendAt: job.dueAt, state: job.state };
+}
+
+function sentMessageId(mailbox: MailboxCredentials, jobId: string) {
+  return `<${jobId}@${mailbox.email.split("@").at(-1)}>`;
+}
+
+export function sendingInSent(mailbox: MailboxCredentials) {
+  // Include immediate sends throughout the maximum 30-second undo window.
+  // Future deliveries and items awaiting approval belong in Scheduled.
+  const jobs = schema.mailJob;
+  const rows = db
+    .select({ id: jobs.id, mailboxId: jobs.mailboxId, payload: jobs.payload, state: jobs.state })
+    .from(jobs)
+    .where(and(
+      eq(jobs.mailboxId, mailboxId(mailbox)),
+      eq(jobs.kind, "send"),
+      or(
+        inArray(jobs.state, ["pending", "running", "uncertain", "failed"]),
+        and(eq(jobs.state, "done"), isNotNull(jobs.error)),
+      ),
+      lte(jobs.dueAt, Date.now() + 30_000),
+    ))
+    .orderBy(desc(jobs.createdAt))
+    .limit(100)
+    .all();
+  return rows.map((row) => {
+    const { message } = JSON.parse(decryptSecret(row.payload, context(row, "payload"))) as PreparedMessage;
+    return { messageId: sentMessageId(mailbox, row.id), subject: message.subject, state: row.state };
+  });
 }
 
 export function readJob(mailbox: MailboxCredentials, id: string) {
@@ -415,10 +444,11 @@ export async function runOutboxPass(now = Date.now()) {
         const payload = JSON.parse(decryptSecret(row.payload, context(row, "payload"))) as Payload;
         if (row.kind === "send" && "message" in payload) {
           dispatched = true;
-          await mailRouteInternals.send(auth.smtp, auth.imap, payload.from, {
+          const receipt = await mailRouteInternals.send(auth.smtp, auth.imap, payload.from, {
             ...payload.message,
-            messageId: `<${row.id}@${mailbox.email.split("@").at(-1)}>`,
+            messageId: sentMessageId(mailbox, row.id),
           });
+          if (receipt.sentCopySaved === false) message = "Message sent. A copy could not be saved to Sent.";
         } else if (row.kind === "snooze" && "ids" in payload) {
           dispatched = true;
           await withSnoozeLock(row.mailboxId, async () => {

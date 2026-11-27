@@ -13,8 +13,7 @@
 
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { getCookie } from 'hono/cookie';
-import { env } from '../env';
+import { readActiveSessionId } from '../lib/session-cookies';
 import { getSession } from '../lib/session';
 import { bridgeImapIdle } from '../lib/imap-idle';
 import { createImapClient } from '../lib/imap';
@@ -23,7 +22,7 @@ import { folderToMailbox, normalizeFolderSlug } from '../lib/imap-driver';
 export const idleRoute = new Hono();
 
 idleRoute.get('/idle', async (c) => {
-  const sid = getCookie(c, env.SESSION_COOKIE_NAME);
+  const sid = await readActiveSessionId(c);
   if (!sid) return c.text('Unauthorized', 401);
   const session = await getSession(sid);
   if (!session) return c.text('Unauthorized', 401);

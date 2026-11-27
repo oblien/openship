@@ -190,7 +190,7 @@
   },
   "domains": {
     "heading": "Alan Adları",
-    "description": "Her satır e-posta VPS'indeki vmail.domain tablosunda bir satıra karşılık gelir. Ek alan adları, MX kayıtları buraya yönlendiğinde postaları kabul eder.",
+    "description": "Kendi alan adlarınızdaki adreslere e-posta alın.",
     "addDomain": "Alan adı ekle",
     "editAction": "Düzenle",
     "deleteAction": "Sil",
@@ -213,7 +213,7 @@
     "loadFailed": "Alan adları yüklenemedi",
     "create": {
       "title": "Alan adı ekle",
-      "description": "E-posta VPS'indeki vmail.domain tablosuna yeni bir girdi ekler. E-posta göndermeden önce bu alan adının MX kaydının e-posta sunucusuna yönlendiğinden emin olun.",
+      "description": "E-posta için kullanmak istediğiniz alan adını ekleyin.",
       "submit": "Alan adı oluştur",
       "submitting": "Oluşturuluyor…",
       "domainLabel": "Alan Adı",
@@ -279,7 +279,7 @@
   },
   "mailboxes": {
     "heading": "Posta Kutuları",
-    "description": "Her satır e-posta sunucusundaki bir IMAP/SMTP hesabıdır. Şifreler saklanmadan önce doveadm SSHA512 ile hash'lenir.",
+    "description": "E-posta gönderip almak için kullanılan adresleri yönetin.",
     "addMailbox": "Posta kutusu ekle",
     "domainLabel": "Alan Adı",
     "loading": "Yükleniyor…",
@@ -299,6 +299,9 @@
     "rotateSubmitting": "Onarılıyor…",
     "rotateFailed": "Platform posta kutusu onarılamadı",
     "rotateNote": "Kullanıcı posta kutuları ve saklanan iletiler değiştirilmez.",
+    "readOnlyServer": "Bu posta sunucusu salt okunurdur. Posta kutusu hesaplarını yönetmek için bir OpenShip Mail sunucusu gerekir.",
+    "manageAction": "Yönet",
+    "changePassword": "Parolayı değiştir",
     "editAction": "Düzenle",
     "deleteAction": "Sil",
     "loadDomainsFailed": "Alan adları yüklenemedi",
@@ -307,7 +310,7 @@
     "emptyDesc": "{domain} için ilk posta kutusunu oluşturun. Şifreler doveadm SSHA512 ile hash'lenir - diskte yalnızca hash saklanır.",
     "create": {
       "title": "Yeni posta kutusu · {domain}",
-      "description": "E-posta sunucusunda bir IMAP/SMTP hesabı oluşturur. Şifre VPS üzerinde doveadm SSHA512 ile hash'lenir - yalnızca hash saklanır.",
+      "description": "Bu posta kutusu için bir adres ve parola seçin.",
       "submit": "Posta kutusu oluştur",
       "submitting": "Oluşturuluyor…",
       "localPartLabel": "Kullanıcı adı kısmı (Local part)",
@@ -338,13 +341,13 @@
     },
     "deleteForm": {
       "title": "{username} silinsin mi?",
-      "descHard": "Kalıcı silme (Hard delete): Veritabanı satırlarını VE diskteki Maildir klasörünü siler. Geri alınamaz.",
-      "descSoft": "Yumuşak silme (Soft delete): active = 0 olarak ayarlar ve vmail.deleted_mailboxes tablosuna satır ekler. Sunucunun temizleme görevi bunu daha sonra siler. Maildir o zamana kadar diskte kalır.",
-      "submitHard": "Posta kutusunu kalıcı sil",
-      "submitSoft": "Posta kutusunu yumuşak sil",
+      "descHard": "Posta kutusu ve tüm iletileri kalıcı olarak silinecek.",
+      "descSoft": "Oturum açma ve ileti teslimi hemen durur. Kayıtlı iletiler sunucu temizliği gerçekleşene kadar saklanır.",
+      "submitHard": "Kalıcı olarak sil",
+      "submitSoft": "Posta kutusunu sil",
       "submitting": "Siliniyor…",
-      "hardDeleteLabel": "Kalıcı silme",
-      "hardDeleteDesc": "Veritabanı satırlarını ve Maildir dosyalarını hemen kaldırır. Geri alınamaz.",
+      "hardDeleteLabel": "Kayıtlı iletileri şimdi sil",
+      "hardDeleteDesc": "Bu işlem posta kutusunu ve iletilerini posta sunucusundan kalıcı olarak kaldırır.",
       "postmasterNote": "Postmaster posta kutusu kalıcı silmeye karşı korumalıdır — yalnızca yumuşak silme kullanılabilir, böylece sunucunun ana hesabı korunur."
     }
   },

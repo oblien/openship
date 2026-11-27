@@ -28,3 +28,17 @@ describe("signature settings", () => {
     expect(userSettingsSchema.safeParse({ signature: "a".repeat(100_001) }).success).toBe(false);
   });
 });
+
+it("persists simultaneous partial preferences and keeps other mailboxes independent", async () => {
+  const { settingsRouter } = await import("../src/trpc/routes/settings");
+  const { buildContext } = await import("../src/ctx");
+  const caller = (email: string) => settingsRouter.createCaller(buildContext({
+    sessionId: crypto.randomUUID(), expiresAt: new Date(Date.now() + 60000), email, name: null, password: "test",
+    imapHost: "mail.test", imapPort: 993, smtpHost: "mail.test", smtpPort: 587,
+  }));
+  const alice = caller(crypto.randomUUID() + "@a.test");
+  const bob = caller(crypto.randomUUID() + "@b.test");
+  await Promise.all([alice.save({ signatureEnabled: true }), alice.save({ timezone: "Africa/Cairo" }), bob.save({ language: "fr" })]);
+  expect((await alice.get()).settings).toMatchObject({ signatureEnabled: true, timezone: "Africa/Cairo", language: "en" });
+  expect((await bob.get()).settings).toMatchObject({ signatureEnabled: false, timezone: "UTC", language: "fr" });
+});

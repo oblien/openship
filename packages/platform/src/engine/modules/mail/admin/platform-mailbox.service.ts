@@ -58,7 +58,7 @@ import {
   STORAGE_BASE,
   STORAGE_NODE,
 } from "./maildir";
-import { recountDomain } from "./domains.service";
+import { recountDomain } from "./domain-counts";
 
 export { MAIL_DOMAIN_RE as DOMAIN_RE } from "../mail-domain";
 export const PLATFORM_LOCAL_PART = "openship";

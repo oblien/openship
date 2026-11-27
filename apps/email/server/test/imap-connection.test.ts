@@ -116,23 +116,35 @@ const auth = (port = 993) => ({
   pass: "test-only-password",
 });
 
+function requestCookies(response: Response) {
+  return response.headers.getSetCookie().filter(value => !value.includes("Max-Age=0"))
+    .map(value => value.split(";")[0]).join("; ");
+}
+
 describe("webmail over real local IMAP sockets", () => {
   it("keeps the authenticated SSE response alive beyond Bun's ordinary idle timeout", async () => {
     const fixture = await localImap("tls");
     routeTo(fixture.port);
     const { default: application } = await import("../src/main");
-    const { saveSession, deleteSession } = await import("../src/lib/session");
-    const { env } = await import("../src/env");
-    const session = await saveSession({
-      email: "idle-runtime@example.test", password: "test-only-password",
-      imapHost: "mail.example.test", imapPort: 993,
-      smtpHost: "mail.example.test", smtpPort: 587,
-    });
     const http = Bun.serve({ ...application, port: 0, idleTimeout: 1 });
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let cookie = "";
     try {
+      const login = await fetch(`http://127.0.0.1:${http.port}/auth/sign-in`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "idle-runtime@example.test", password: "test-only-password" }),
+      });
+      expect(login.status).toBe(200);
+      cookie = requestCookies(login);
+      const { sessionId } = await login.json();
+      const switched = await fetch(`http://127.0.0.1:${http.port}/api/trpc/connections.setDefault`, {
+        method: "POST", headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectionId: sessionId } }),
+      });
+      expect(switched.status).toBe(200);
+      cookie = requestCookies(switched);
       const response = await fetch(`http://127.0.0.1:${http.port}/mail/idle?view=inbox`, {
-        headers: { Cookie: `${env.SESSION_COOKIE_NAME}=${session.id}` },
+        headers: { cookie },
       });
       expect(response.status).toBe(200);
       expect(response.headers.get('X-Accel-Buffering')).toBe('no');
@@ -152,7 +164,7 @@ describe("webmail over real local IMAP sockets", () => {
         { query: 'folder=Personal', mailbox: 'Personal' },
       ]) {
         const mapped = await fetch(`http://127.0.0.1:${http.port}/mail/idle?${query}`, {
-          headers: { Cookie: `${env.SESSION_COOKIE_NAME}=${session.id}` },
+          headers: { cookie },
         });
         const mappedReader = mapped.body!.getReader();
         try {
@@ -162,8 +174,8 @@ describe("webmail over real local IMAP sockets", () => {
       }
     } finally {
       await reader?.cancel();
+      if (cookie) await fetch(`http://127.0.0.1:${http.port}/auth/sign-out`, { method: "POST", headers: { cookie } });
       http.stop(true);
-      await deleteSession(session.id);
       await fixture.close();
     }
   }, 15_000);

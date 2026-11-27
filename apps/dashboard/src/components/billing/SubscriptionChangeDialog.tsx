@@ -1,23 +1,24 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Icon } from "@repo/ui/icons";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { ServerResizeDetails } from "@/components/servers/managed/ServerResizeDetails";
-import { SubscriptionChangeStatus } from "./SubscriptionChangeStatus";
-import type { useSubscriptionChange } from "./useSubscriptionChange";
+import { SubscriptionChangeStatus, type ReadChange } from "./SubscriptionChangeStatus";
+import type { usePlanChangeReview } from "./useSubscriptionChange";
 
-export function SubscriptionChangeDialog({ actions, workspaceId }: { actions: ReturnType<typeof useSubscriptionChange>; workspaceId?: string }) {
+type ReviewProps = { children?: ReactNode; appliedText?: string; actions: Omit<ReturnType<typeof usePlanChangeReview>, "review">; workspaceId?: string; readChange?: ReadChange; onUpdated?: () => void };
+export function SubscriptionChangeDialog({ actions, ...scope }: ReviewProps) {
   return <Modal isOpen={actions.open} onClose={actions.close} closable={!actions.busy}
     showCloseButton={false} width="100%" maxWidth="640px" maxHeight="calc(100dvh - 2rem)" overflow="hidden" zIndex={10010}>
-    <ChangeReview actions={actions} workspaceId={workspaceId} />
+    <ChangeReview actions={actions} {...scope} />
   </Modal>;
 }
 
-function ChangeReview({ actions, workspaceId }: { actions: ReturnType<typeof useSubscriptionChange>; workspaceId?: string }) {
+function ChangeReview({ actions, workspaceId, readChange, onUpdated, appliedText, children }: ReviewProps) {
   const { t, locale } = useI18n();
   const copy = t.billing.planChange;
   const titleId = useId();
@@ -48,7 +49,7 @@ function ChangeReview({ actions, workspaceId }: { actions: ReturnType<typeof use
       <Button size="icon" variant="ghost" disabled={actions.busy} aria-label={copy.close} onClick={actions.close}><Icon name="close" className="size-4" /></Button>
     </header>
     <div className="min-h-0 space-y-5 overflow-y-auto px-5 pb-5">
-      {actions.change ? <SubscriptionChangeStatus key={actions.change.id} initial={actions.change} workspaceId={workspaceId} /> : <>
+      {actions.change ? <SubscriptionChangeStatus key={actions.change.id} initial={actions.change} workspaceId={workspaceId} readChange={readChange} onUpdated={onUpdated} appliedText={appliedText} /> : <>
         <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-4">
           {[{ label: t.billing.pricing.currentPlan, offer: quote.current }, { label: copy.nextPlan, offer: quote.next }].map(({ label, offer }) => <div key={label} className="min-w-0">
             <p className="text-xs text-muted-foreground">{label}</p>
@@ -56,6 +57,7 @@ function ChangeReview({ actions, workspaceId }: { actions: ReturnType<typeof use
             <p className="mt-1 text-sm tabular-nums">{money(offer.priceCents)} <span className="text-muted-foreground">{quote.interval === "annual" ? copy.yearly : copy.monthly}</span></p>
           </div>)}
         </div>
+        {children}
         <dl className="space-y-2 text-sm">
           {quote.direction === "upgrade" && <>
             <div className="flex justify-between gap-4"><dt className="text-muted-foreground">{copy.remainingCharge}</dt><dd className="tabular-nums">{money(quote.remainingTimeCharge)}</dd></div>

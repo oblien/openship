@@ -1,0 +1,25 @@
+{
+  "name": "@repo/mail-desktop",
+  "productName": "OpenShip Mail",
+  "version": "1.0.1",
+  "private": true,
+  "description": "Desktop client for OpenShip Mail",
+  "license": "Apache-2.0",
+  "author": "OpenShip",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "bun assets.ts && electron .",
+    "make": "bun assets.ts && electron-forge make",
+    "test:e2e": "bun assets.ts && node --test test/desktop.e2e.cjs",
+    "test": "node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.1",
+    "@electron-forge/maker-zip": "^7.11.1",
+    "@repo/ui": "workspace:*",
+    "react": "~19.2.9",
+    "react-dom": "~19.2.9",
+    "electron": "44.11.1",
+    "playwright-core": "^1.65.1"
+  }
+}

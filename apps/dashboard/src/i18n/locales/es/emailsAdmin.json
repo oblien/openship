@@ -190,7 +190,7 @@
   },
   "domains": {
     "heading": "Dominios",
-    "description": "Cada fila se corresponde con una fila de vmail.domain en el VPS de correo. Los dominios adicionales aceptan correo una vez que su registro MX apunta aquí.",
+    "description": "Recibe correo en direcciones de tus propios dominios.",
     "addDomain": "Añadir dominio",
     "editAction": "Editar",
     "deleteAction": "Eliminar",
@@ -213,7 +213,7 @@
     "loadFailed": "No se pudieron cargar los dominios",
     "create": {
       "title": "Añadir dominio",
-      "description": "Añade una nueva entrada a vmail.domain en el VPS de correo. Asegúrate de que el registro MX de este dominio apunte al servidor de correo antes de enviar correo a través de él.",
+      "description": "Añade el dominio que quieras utilizar para el correo.",
       "submit": "Crear dominio",
       "submitting": "Creando…",
       "domainLabel": "Dominio",
@@ -279,7 +279,7 @@
   },
   "mailboxes": {
     "heading": "Buzones",
-    "description": "Cada fila es una cuenta IMAP/SMTP en el servidor de correo. Las contraseñas se cifran con doveadm SSHA512 antes de almacenarse.",
+    "description": "Gestiona las direcciones con las que tu equipo envía y recibe correo.",
     "addMailbox": "Añadir buzón",
     "domainLabel": "Dominio",
     "loading": "Cargando…",
@@ -299,6 +299,9 @@
     "rotateSubmitting": "Reparando…",
     "rotateFailed": "No se pudo reparar el buzón de plataforma",
     "rotateNote": "Los buzones de usuario y los mensajes almacenados no cambian.",
+    "readOnlyServer": "Este servidor de correo es de solo lectura. Se necesita un servidor OpenShip Mail para gestionar las cuentas.",
+    "manageAction": "Gestionar",
+    "changePassword": "Cambiar contraseña",
     "editAction": "Editar",
     "deleteAction": "Eliminar",
     "loadDomainsFailed": "No se pudieron cargar los dominios",
@@ -307,7 +310,7 @@
     "emptyDesc": "Crea el primer buzón para {domain}. Las contraseñas se cifran con doveadm SSHA512; solo el hash se almacena en disco.",
     "create": {
       "title": "Nuevo buzón · {domain}",
-      "description": "Crea una cuenta IMAP/SMTP en el servidor de correo. La contraseña se cifra con doveadm SSHA512 en el VPS; solo se almacena el hash.",
+      "description": "Elige una dirección y una contraseña para este buzón.",
       "submit": "Crear buzón",
       "submitting": "Creando…",
       "localPartLabel": "Parte local",
@@ -338,13 +341,13 @@
     },
     "deleteForm": {
       "title": "¿Eliminar {username}?",
-      "descHard": "Eliminación permanente: elimina las filas de la base de datos Y el Maildir en disco. No se puede deshacer.",
-      "descSoft": "Eliminación temporal: establece active = 0 e inserta una fila en vmail.deleted_mailboxes. El cron de limpieza del servidor de correo lo recoge más tarde. El Maildir permanece en disco hasta entonces.",
-      "submitHard": "Eliminar buzón permanentemente",
-      "submitSoft": "Eliminar buzón temporalmente",
+      "descHard": "El buzón y todos sus mensajes se eliminarán de forma permanente.",
+      "descSoft": "El acceso y la entrega se detienen de inmediato. Los mensajes se conservan hasta la limpieza del servidor.",
+      "submitHard": "Eliminar definitivamente",
+      "submitSoft": "Eliminar buzón",
       "submitting": "Eliminando…",
-      "hardDeleteLabel": "Eliminación permanente",
-      "hardDeleteDesc": "Elimina las filas de la base de datos y los archivos Maildir de inmediato. No se puede deshacer.",
+      "hardDeleteLabel": "Eliminar ahora los mensajes almacenados",
+      "hardDeleteDesc": "El buzón y sus mensajes se eliminarán permanentemente del servidor.",
       "postmasterNote": "El buzón postmaster está protegido contra la eliminación permanente; solo está disponible la eliminación temporal, de modo que la cuenta de arranque del servidor de correo permanece intacta."
     }
   },

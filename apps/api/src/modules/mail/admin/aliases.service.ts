@@ -18,7 +18,9 @@
  */
 
 import { queryRows, queryOne, execute, transaction, q, qInt } from "@repo/platform/engine/modules/mail/admin/psql-runner";
-import { validateDomain, recountDomain } from "@repo/platform/engine/modules/mail/admin/domains.service";
+import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domain-counts";
+import { lockTenantDomainSql, ownedDomain } from "@repo/platform/engine/modules/mail/admin/tenant-domains";
+import { validateMailDomain as validateDomain } from "@repo/platform/engine/modules/mail/mail-domain";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 const LOCAL_PART_RE = /^[a-z0-9._+-]+$/;
@@ -75,20 +77,21 @@ function validateLocalPart(local: string): void {
 export async function listAliases(
   serverId: string,
   domain: string,
+  namespace?: string,
 ): Promise<AliasRow[]> {
   validateDomain(domain);
   return queryRows<AliasRow>(
     serverId,
     `SELECT${SELECT_COLUMNS} FROM forwardings
-       WHERE domain = ${q(domain.toLowerCase())} AND is_alias = 1
+       WHERE domain = ${q(domain.toLowerCase())} AND is_alias = 1${ownedDomain(namespace)}
        ORDER BY (address = domain) DESC, address`,
   );
 }
 
-export async function getAlias(serverId: string, id: number): Promise<AliasRow | null> {
+export async function getAlias(serverId: string, id: number, namespace?: string): Promise<AliasRow | null> {
   return queryOne<AliasRow>(
     serverId,
-    `SELECT${SELECT_COLUMNS} FROM forwardings WHERE id = ${qInt(id)} AND is_alias = 1`,
+    `SELECT${SELECT_COLUMNS} FROM forwardings WHERE id = ${qInt(id)} AND is_alias = 1${ownedDomain(namespace)}`,
   );
 }
 
@@ -108,6 +111,7 @@ export async function getAlias(serverId: string, id: number): Promise<AliasRow |
 export async function createAlias(
   serverId: string,
   input: CreateAliasInput,
+  namespace?: string,
 ): Promise<AliasRow> {
   const domain = input.domain.trim().toLowerCase();
   validateDomain(domain);
@@ -130,19 +134,19 @@ export async function createAlias(
   if (!input.isCatchAll) {
     const mailboxHit = await queryOne<{ username: string }>(
       serverId,
-      `SELECT username FROM mailbox WHERE username = ${q(address)}`,
+      `SELECT username FROM mailbox WHERE username = ${q(address)}${ownedDomain(namespace)}`,
     );
     if (mailboxHit) {
       throw new AliasConflictsWithMailboxError(address);
     }
   }
 
+  const statements: string[] = [];
+  if (namespace !== undefined) {
+    for (const name of new Set([domain, destDomain])) statements.push(lockTenantDomainSql(name, namespace));
+  }
   if (input.isCatchAll) {
-    await transaction(serverId, [
-      `DELETE FROM forwardings WHERE domain = ${q(domain)} AND address = ${q(domain)} AND is_alias = 1`,
-      `INSERT INTO forwardings (address, forwarding, domain, dest_domain, is_maillist, is_list, is_forwarding, is_alias, active)
-         VALUES (${q(address)}, ${q(destination)}, ${q(domain)}, ${q(destDomain)}, 0, 0, 0, 1, 1)`,
-    ]);
+    statements.push(`DELETE FROM forwardings WHERE domain = ${q(domain)} AND address = ${q(domain)} AND is_alias = 1${ownedDomain(namespace)}`);
   } else {
     // Friendlier than letting the (address, forwarding) unique index fire -
     // matches the duplicate pre-check convention in mailboxes.service.ts.
@@ -150,24 +154,23 @@ export async function createAlias(
     // (fan-out); only the exact pair is a duplicate.
     const existing = await queryOne<{ id: number }>(
       serverId,
-      `SELECT id FROM forwardings WHERE address = ${q(address)} AND forwarding = ${q(destination)}`,
+      `SELECT id FROM forwardings WHERE address = ${q(address)} AND forwarding = ${q(destination)}${ownedDomain(namespace)}`,
     );
     if (existing) {
       throw new AliasExistsError(address, destination);
     }
-    await execute(
-      serverId,
-      `INSERT INTO forwardings (address, forwarding, domain, dest_domain, is_maillist, is_list, is_forwarding, is_alias, active)
-         VALUES (${q(address)}, ${q(destination)}, ${q(domain)}, ${q(destDomain)}, 0, 0, 0, 1, 1)`,
-    );
   }
+  const insert = `INSERT INTO forwardings (address, forwarding, domain, dest_domain, is_maillist, is_list, is_forwarding, is_alias, active)
+    VALUES (${q(address)}, ${q(destination)}, ${q(domain)}, ${q(destDomain)}, 0, 0, 0, 1, 1)`;
+  if (statements.length) await transaction(serverId, [...statements, insert]);
+  else await execute(serverId, insert);
 
-  await recountDomain(serverId, domain);
+  await recountDomain(serverId, domain, namespace);
 
   const row = await queryOne<AliasRow>(
     serverId,
     `SELECT${SELECT_COLUMNS} FROM forwardings
-       WHERE address = ${q(address)} AND forwarding = ${q(destination)} AND is_alias = 1`,
+       WHERE address = ${q(address)} AND forwarding = ${q(destination)} AND is_alias = 1${ownedDomain(namespace)}`,
   );
   if (!row) {
     throw new Error("Alias was created but could not be re-read.");
@@ -179,27 +182,28 @@ export async function updateAliasActive(
   serverId: string,
   id: number,
   active: boolean,
+  namespace?: string,
 ): Promise<AliasRow> {
-  const existing = await getAlias(serverId, id);
+  const existing = await getAlias(serverId, id, namespace);
   if (!existing) throw new AliasNotFoundError(id);
 
   await execute(
     serverId,
-    `UPDATE forwardings SET active = ${active ? 1 : 0} WHERE id = ${qInt(id)} AND is_alias = 1`,
+    `UPDATE forwardings SET active = ${active ? 1 : 0} WHERE id = ${qInt(id)} AND is_alias = 1${ownedDomain(namespace)}`,
   );
-  await recountDomain(serverId, existing.domain);
+  await recountDomain(serverId, existing.domain, namespace);
 
-  const row = await getAlias(serverId, id);
+  const row = await getAlias(serverId, id, namespace);
   if (!row) throw new AliasNotFoundError(id);
   return row;
 }
 
-export async function deleteAlias(serverId: string, id: number): Promise<void> {
-  const existing = await getAlias(serverId, id);
+export async function deleteAlias(serverId: string, id: number, namespace?: string): Promise<void> {
+  const existing = await getAlias(serverId, id, namespace);
   if (!existing) throw new AliasNotFoundError(id);
 
-  await execute(serverId, `DELETE FROM forwardings WHERE id = ${qInt(id)} AND is_alias = 1`);
-  await recountDomain(serverId, existing.domain);
+  await execute(serverId, `DELETE FROM forwardings WHERE id = ${qInt(id)} AND is_alias = 1${ownedDomain(namespace)}`);
+  await recountDomain(serverId, existing.domain, namespace);
 }
 
 // ─── Typed errors ────────────────────────────────────────────────────────────

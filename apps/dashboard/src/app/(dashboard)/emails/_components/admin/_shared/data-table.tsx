@@ -27,11 +27,12 @@ export interface DataTableColumn<T> {
   key: string;
   header: string;
   cell: (row: T) => React.ReactNode;
+  skeleton?: React.ReactNode;
   /** CSS grid-template column value: `1fr`, `200px`, `minmax(160px, 1fr)`, etc. */
   width: string;
   align?: "left" | "right" | "center";
-  /** Hide on small screens. Useful for secondary columns. */
-  hideBelow?: "sm" | "md" | "lg";
+  /** Secondary columns can respond to the viewport or the table's available width. */
+  hideBelow?: "sm" | "md" | "lg" | "table-sm" | "table-md";
 }
 
 interface DataTableProps<T> {
@@ -64,146 +65,56 @@ export function DataTable<T>({
   loading,
   skeletonRows = 5,
   rowActions,
-  rowActionsWidth = "56px",
+  rowActionsWidth = "40px",
   onRowClick,
   empty,
 }: DataTableProps<T>) {
-  const gridTemplate = useGridTemplate(columns, rowActions ? rowActionsWidth : null);
-
-  if (!loading && rows.length === 0 && empty) {
-    return <DataTableEmpty {...empty} />;
-  }
-
+  if (!loading && rows.length === 0 && empty) return <DataTableEmpty {...empty} />;
+  const cellClass = (c: DataTableColumn<T>) => cn(
+    "px-2 py-3 first:ps-4 last:pe-4 sm:px-4",
+    c.align === "right" ? "text-end" : c.align === "center" ? "text-center" : "text-start",
+    c.hideBelow === "sm" && "hidden sm:table-cell",
+    c.hideBelow === "md" && "hidden md:table-cell",
+    c.hideBelow === "lg" && "hidden lg:table-cell",
+    c.hideBelow === "table-sm" && "hidden @min-[32rem]/table:table-cell",
+    c.hideBelow === "table-md" && "hidden @min-[44rem]/table:table-cell",
+  );
   return (
-    // No overflow-hidden: a row's ⋯ menu renders in-flow, so it would be
-    // clipped on the last row. Corners come from the header + last row instead.
-    <div role="table" aria-busy={loading || undefined} className="bg-card rounded-2xl border border-border/50">
-      {/* Header row. A hairline and quieter labels, no grey fill strip: the
-          dashboard's other lists head their cards this way, and the filled bar
-          read as a second surface stacked on the card. */}
-      <div
-        className="grid items-center gap-4 px-5 pt-4 pb-2.5 border-b border-border/50 rounded-t-2xl"
-        style={{ gridTemplateColumns: gridTemplate }}
-        role="row"
-      >
-        {columns.map((c) => (
-          <div
-            key={c.key}
-            className={cn(
-              "text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider",
-              alignClass(c.align),
-              hideBelowClass(c.hideBelow),
-            )}
-            role="columnheader"
-          >
-            {c.header}
-          </div>
-        ))}
-        {rowActions && <div role="columnheader" />}
-      </div>
-
-      {/* Body */}
-      <div role="rowgroup" className="divide-y divide-border/50">
-        {loading
-          ? Array.from({ length: skeletonRows }).map((_, i) => (
-              <DataTableRowSkeleton
-                key={i}
-                gridTemplate={gridTemplate}
-                columnCount={columns.length}
-                hasActions={!!rowActions}
-              />
-            ))
-          : rows.map((row) => (
-              <DataTableRow
-                key={rowKey(row)}
-                row={row}
-                columns={columns}
-                gridTemplate={gridTemplate}
-                rowActions={rowActions}
-                onRowClick={onRowClick}
-              />
+    <div className={cn("rounded-2xl bg-card px-1 sm:px-2", columns.some(c => c.hideBelow?.startsWith("table-")) && "@container/table")}>
+      <table role="table" aria-busy={loading || undefined} className="w-full table-fixed border-collapse">
+        <thead>
+          <tr role="row" className="border-b border-border/60">
+            {columns.map(c => (
+              <th role="columnheader" scope="col" key={c.key}
+                style={{ width: c.width.endsWith("px") ? c.width : undefined }}
+                className={cn(cellClass(c), "text-xs font-medium text-muted-foreground")}>
+                {c.header}
+              </th>
             ))}
-      </div>
-    </div>
-  );
-}
-
-function DataTableRow<T>({
-  row,
-  columns,
-  gridTemplate,
-  rowActions,
-  onRowClick,
-}: {
-  row: T;
-  columns: DataTableColumn<T>[];
-  gridTemplate: string;
-  rowActions?: (row: T) => React.ReactNode;
-  onRowClick?: (row: T) => void;
-}) {
-  const interactive = !!onRowClick;
-  return (
-    <div
-      role="row"
-      onClick={interactive ? () => onRowClick(row) : undefined}
-      className={cn(
-        "grid items-center gap-4 px-5 py-4 transition-colors last:rounded-b-2xl",
-        interactive && "cursor-pointer hover:bg-foreground/[0.03]",
-      )}
-      style={{ gridTemplateColumns: gridTemplate }}
-    >
-      {columns.map((c) => (
-        <div
-          key={c.key}
-          role="cell"
-          className={cn(
-            "min-w-0 text-sm text-foreground",
-            alignClass(c.align),
-            hideBelowClass(c.hideBelow),
-          )}
-        >
-          {c.cell(row)}
-        </div>
-      ))}
-      {rowActions && (
-        <div
-          role="cell"
-          className="flex items-center justify-end gap-1"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {rowActions(row)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DataTableRowSkeleton({
-  gridTemplate,
-  columnCount,
-  hasActions,
-}: {
-  gridTemplate: string;
-  columnCount: number;
-  hasActions: boolean;
-}) {
-  return (
-    <div
-      aria-hidden="true"
-      className="grid items-center gap-4 px-5 py-4"
-      style={{ gridTemplateColumns: gridTemplate }}
-    >
-      {Array.from({ length: columnCount }).map((_, i) => (
-        <Skeleton
-          key={i}
-          className={cn(
-            "h-3.5",
-            i === 0 ? "w-40" : "w-20",
-            i === 0 ? "" : "justify-self-start",
-          )}
-        />
-      ))}
-      {hasActions && <Skeleton className="h-6 w-16 justify-self-end" />}
+            {rowActions && <th role="columnheader" scope="col" style={{ width: rowActionsWidth }} />}
+          </tr>
+        </thead>
+        <tbody role="rowgroup" className="divide-y divide-border/50">
+          {loading ? Array.from({ length: skeletonRows }, (_, index) => (
+            <tr key={index} aria-hidden="true">
+              {columns.map(c => <td key={c.key} className={cellClass(c)}>{c.skeleton ?? <Skeleton className="h-4 w-3/4" />}</td>)}
+              {rowActions && <td />}
+            </tr>
+          )) : rows.map(row => (
+            <tr role="row" key={rowKey(row)} onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={cn("transition-colors hover:bg-muted/25", onRowClick && "cursor-pointer")}>
+              {columns.map(c => (
+                <td role="cell" key={c.key} className={cn(cellClass(c), "text-sm")}>{c.cell(row)}</td>
+              ))}
+              {rowActions && (
+                <td role="cell" className="pe-2" onClick={event => event.stopPropagation()}>
+                  <div className="flex justify-end">{rowActions(row)}</div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -251,39 +162,36 @@ function DataTableEmpty({
  * trash icon parked at the row's edge sits one stray click away from the row's
  * own action, and it advertises deletion as the primary thing a row offers.
  */
-export function RowActionsMenu({ label, actions }: { label: string; actions: MenuAction[] }) {
+export function RowActionsMenu({
+  label,
+  actions,
+  triggerText,
+}: {
+  label: string;
+  actions: MenuAction[];
+  triggerText?: string;
+}) {
   return (
     <DropdownMenu
       align="right"
       actions={actions}
       triggerLabel={label}
-      triggerClassName="flex size-8 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+      trigger={
+        triggerText && (
+          <>
+            {triggerText}
+            <UiIcon name="chevron-down" className="size-3.5 shrink-0" />
+          </>
+        )
+      }
+      triggerClassName={cn(
+        "inline-flex h-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+        triggerText
+          ? "gap-1.5 bg-secondary px-2.5 text-xs font-medium text-secondary-foreground"
+          : "w-8",
+      )}
     />
   );
 }
 
 export type { MenuAction };
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function useGridTemplate<T>(
-  columns: DataTableColumn<T>[],
-  rowActionsWidth: string | null,
-): string {
-  const parts = columns.map((c) => c.width);
-  if (rowActionsWidth) parts.push(rowActionsWidth);
-  return parts.join(" ");
-}
-
-function alignClass(align: DataTableColumn<unknown>["align"]): string {
-  if (align === "right") return "text-end justify-self-end";
-  if (align === "center") return "text-center justify-self-center";
-  return "text-start";
-}
-
-function hideBelowClass(hide: DataTableColumn<unknown>["hideBelow"]): string {
-  if (hide === "sm") return "hidden sm:block";
-  if (hide === "md") return "hidden md:block";
-  if (hide === "lg") return "hidden lg:block";
-  return "";
-}

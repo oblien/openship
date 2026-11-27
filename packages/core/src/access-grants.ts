@@ -67,6 +67,7 @@ export const RESOURCE_TYPES = [
   "project",
   "server",
   "mail_server",
+  "mail_sender",
   "backup_destination",
   "billing",
   "audit",

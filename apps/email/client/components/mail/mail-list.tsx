@@ -37,9 +37,9 @@ import { VList, type VListHandle } from 'virtua';
 import { BimiAvatar } from '../ui/bimi-avatar';
 import { RenderLabels } from './render-labels';
 import { Badge } from '@/components/ui/badge';
-import { Check, Star } from 'lucide-react';
+import { Check, CircleAlert, LoaderCircle, Star } from 'lucide-react';
 import { m } from '@/paraglide/messages';
-import { useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { Button } from '../ui/button';
 import { Avatar } from '../ui/avatar';
 import { useQueryState } from 'nuqs';
@@ -743,8 +743,12 @@ export const MailList = memo(
       };
     }, [setAnchorIndex]);
 
-    const [{ refetch, isLoading, isFetching, isFetchingNextPage, hasNextPage }, items, , loadMore] =
+    const [{ data, refetch, isLoading, isFetching, isFetchingNextPage, hasNextPage }, items, , loadMore] =
       useThreads();
+    const sending = useMemo(() => {
+      const visible = new Set(items.map(item => item.id));
+      return (data?.pages[0]?.sending ?? []).filter(job => !visible.has(job.messageId));
+    }, [data, items]);
     const trpc = useTRPC();
     const isFetchingMail = useIsFetching({ queryKey: trpc.mail.get.queryKey() }) > 0;
     const itemsRef = useRef(items);
@@ -969,15 +973,32 @@ export const MailList = memo(
           ref={parentRef}
           className={cn(
             'hide-link-indicator flex h-full w-full',
+            sending.length > 0 && 'flex-col',
             getSelectMode() === 'range' && 'select-none',
           )}
         >
           <>
-            {isLoading ? (
+            {sending.length > 0 && (
+              <ul aria-label="Outgoing messages" aria-live="polite" className="max-h-[45%] shrink-0 overflow-auto px-2">
+                {sending.map(job => {
+                  const busy = job.state === 'pending' || job.state === 'running';
+                  return (
+                    <li key={job.messageId} className="text-muted-foreground flex items-center gap-3 px-3 py-3 text-sm">
+                      {busy ? <LoaderCircle aria-hidden className="size-4 shrink-0 animate-spin" /> : <CircleAlert aria-hidden className="size-4 shrink-0" />}
+                      <span className="text-foreground min-w-0 flex-1 truncate">{job.subject || '(No subject)'}</span>
+                      {busy ? <span>Sending…</span> : job.state === 'done' ? <span>Sent · copy unavailable</span> : (
+                        <Link className="underline" to="/mail/scheduled">{job.state === 'failed' ? 'Send failed' : 'Check delivery'}</Link>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {isLoading || (folder === 'sent' && isFetching && !items.length && !sending.length) ? (
               <div className="flex h-32 w-full items-center justify-center">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-900 border-t-transparent dark:border-white dark:border-t-transparent" />
               </div>
-            ) : !items || items.length === 0 ? (
+            ) : !items.length ? (sending.length ? null :
               <div className="flex w-full items-center justify-center">
                 <div className="flex flex-col items-center justify-center gap-2 text-center">
                   <EmptyStateIcon width={200} height={200} />
@@ -993,7 +1014,7 @@ export const MailList = memo(
                 </div>
               </div>
             ) : (
-              <div className="flex flex-1 flex-col" id="mail-list-scroll">
+              <div className="flex min-h-0 flex-1 flex-col" id="mail-list-scroll">
                 <VList
                   ref={vListRef}
                   count={filteredItems.length}

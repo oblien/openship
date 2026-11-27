@@ -1,0 +1,37 @@
+worker_processes auto;
+events { worker_connections 2048; }
+
+stream {
+    resolver ${DNS_RESOLVER} ipv4=off valid=60s;
+    resolver_timeout 5s;
+    map $ssl_preread_server_name $webmail_tls {
+        default "";
+        "~^webmail[.](managed-mail-[0-9a-f]{32})[.]${FLEET_PATTERN}$" mail.$1.${FLEET_DOMAIN}:443;
+    }
+    server {
+        listen 0.0.0.0:443;
+        ssl_preread on;
+        proxy_pass $webmail_tls;
+        proxy_connect_timeout 5s;
+        proxy_timeout 1h;
+    }
+}
+
+http {
+    access_log off;
+    resolver ${DNS_RESOLVER} ipv4=off valid=60s;
+    resolver_timeout 5s;
+    map $host $webmail_http {
+        default "";
+        "~^webmail[.](managed-mail-[0-9a-f]{32})[.]${FLEET_PATTERN}$" mail.$1.${FLEET_DOMAIN}:80;
+    }
+    server {
+        listen 0.0.0.0:80 default_server;
+        if ($webmail_http = "") { return 444; }
+        location ^~ /.well-known/acme-challenge/ {
+            proxy_set_header Host $host;
+            proxy_pass http://$webmail_http;
+        }
+        location / { return 308 https://$host$request_uri; }
+    }
+}

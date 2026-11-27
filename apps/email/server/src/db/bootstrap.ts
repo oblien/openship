@@ -24,6 +24,9 @@
 import type { Database } from 'bun:sqlite';
 
 const STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS sending_domain (
+    domain TEXT PRIMARY KEY, namespace TEXT NOT NULL, key_id TEXT NOT NULL, secret BLOB NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS mail_assistant_connection (
     mailbox_id TEXT PRIMARY KEY, agent TEXT NOT NULL, name TEXT NOT NULL,
     model TEXT, custom_provider TEXT

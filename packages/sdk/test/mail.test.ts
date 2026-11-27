@@ -28,6 +28,23 @@ const certificate = {
   health: null,
 };
 
+it("submits mail to the OpenShip endpoint with a bearer key and no workspace configuration", async () => {
+  const input = { from: "hello@team.test", to: ["reader@example.test"], subject: "Welcome", text: "Hi", idempotencyKey: "welcome-01" };
+  const receipt = { id: "m_1", state: "queued", reason: null };
+  const client = new OpenshipClient({
+    baseUrl: "https://controller.example.test",
+    token: "opsh_pat_fixture",
+    fetch: async (url, options) => {
+      expect(url).toBe("https://controller.example.test/api/mail/send");
+      expect(options?.method).toBe("POST");
+      expect(new Headers(options?.headers).get("authorization")).toBe("Bearer opsh_pat_fixture");
+      expect(JSON.parse(String(options?.body))).toEqual(input);
+      return Response.json(receipt, { status: 202 });
+    },
+  });
+  expect(await client.mail.send(input)).toEqual(receipt);
+});
+
 describe("mail administration uses the existing authenticated controller", () => {
   it("uses shared Fail2ban contracts and rejects option injection before any HTTP request", async () => {
     const f = fixture((url) => Response.json(url.pathname.endsWith("status") ? { jails: [], details: {}, checkedAt: "2026-11-06T08:00:00Z", canManage: true } : { success: true, output: "1" }));

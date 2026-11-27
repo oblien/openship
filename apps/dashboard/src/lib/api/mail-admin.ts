@@ -266,7 +266,7 @@ export const mailAdminApi = {
   },
   mailboxes: {
     list: (serverId: string, domain: string) =>
-      api.get<{ mailboxes: AdminMailbox[] }>(
+      api.get<{ mailboxes: AdminMailbox[]; readOnly?: boolean }>(
         `${endpoints.mail.admin.mailboxes(serverId)}?domain=${encodeURIComponent(domain)}`,
       ),
     get: (serverId: string, email: string) =>
@@ -331,8 +331,8 @@ export const mailAdminApi = {
       api.post<InboundTestResult>(endpoints.mail.admin.inboundRulesTest(serverId), {}),
   },
   stats: {
-    get: (serverId: string) =>
-      api.get<MailServerStats>(endpoints.mail.admin.stats(serverId)),
+    get: (serverId: string, options?: { inbox: boolean }) =>
+      api.get<MailServerStats>(endpoints.mail.admin.stats(serverId) + (options?.inbox ? "?inbox=1" : "")),
   },
   dns: {
     /**
@@ -357,7 +357,7 @@ export const mailAdminApi = {
       api.post<{ relay: OutboundRelayStatus | null }>(endpoints.mail.admin.relay(serverId), body),
     /** Disable the relay — revert Postfix to direct-to-MX. */
     disable: (serverId: string) =>
-      api.delete<{ ok: boolean }>(endpoints.mail.admin.relay(serverId)),
+      api.delete<{ ok: boolean; cloudKeyRetained?: boolean }>(endpoints.mail.admin.relay(serverId)),
   },
   backup: {
     /** The mail server's backup policy, or null if none yet. */

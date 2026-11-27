@@ -1,5 +1,7 @@
 # Self-hosted email - target architecture
 
+For the implemented self-hosted and Cloud flows, see [Managed mail](MANAGED.md).
+
 Status: **target state, not current.** Today only the engine (iRedMail) and Zero
 (server + client) exist side-by-side. This document is the blueprint we're
 moving toward.

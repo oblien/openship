@@ -9,6 +9,7 @@ import { referralEstimate } from "@/components/referrals/referral-presentation";
 import { referralPlans } from "@/components/referrals/referral-plans";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
+import { PricingCard, PricingCardGrid } from "./PricingCard";
 import { PlanResources } from "./PlanResources";
 import { PlanIcon } from "./PlanIcon";
 import { PlanUsageNote } from "./PlanUsageNote";
@@ -176,15 +177,6 @@ function resolveCardPrice(
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-// Keep a lone offer at card width. Larger comparisons, including in the deploy
-// modal, use balanced rows until there is room for four readable cards.
-const CARD_COLUMNS: Record<number, string> = {
-  1: "grid-cols-1 max-w-[26rem]",
-  2: "grid-cols-1 @min-[34rem]/pricing:grid-cols-2",
-  3: "grid-cols-1 @min-[34rem]/pricing:grid-cols-2 @min-[52rem]/pricing:grid-cols-3",
-  4: "grid-cols-1 @min-[34rem]/pricing:grid-cols-2 @min-[70rem]/pricing:grid-cols-4",
-};
-
 export const PricingCards: React.FC<PricingCardsProps> = ({
   plans,
   ui,
@@ -214,7 +206,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
 
   const comparison =
     pricedPlans.length > 0 ? (
-      <div className={`grid gap-4 ${CARD_COLUMNS[Math.min(pricedPlans.length, 4)]}`}>
+      <PricingCardGrid count={pricedPlans.length}>
         {pricedPlans.map((plan) => {
           const referral = referralOffer && referralPlans([plan], referralOffer, interval).length
             ? referralOffer : null;
@@ -251,33 +243,8 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
           const icon = <PlanIcon planId={plan.id} />;
 
           return (
-            <article
-              key={plan.id}
-              id={`${comparisonId}-${plan.id}`}
-              aria-label={plan.name}
-              className={`relative min-w-0 scroll-mt-6 rounded-2xl bg-card p-5 ${
-                isPopular ? "bg-gradient-to-b from-primary/5 to-card" : ""
-              }`}
-            >
-              {/* Header */}
-              <div className="mb-4 flex min-h-10 flex-wrap items-center gap-3">
-                <div
-                  className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${
-                    isPopular ? "bg-primary/10 text-primary" : "bg-muted/60 text-foreground/80"
-                  }`}
-                >
-                  {icon}
-                </div>
-                <h3 className="text-lg font-semibold tracking-tight text-foreground">
-                  {plan.name}
-                </h3>
-                {isPopular && (
-                  <span className="ms-auto rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-                    {ui.mostPopular}
-                  </span>
-                )}
-              </div>
-
+            <PricingCard key={plan.id} id={`${comparisonId}-${plan.id}`} name={plan.name}
+              icon={icon} popularLabel={isPopular ? ui.mostPopular : undefined}>
               {/* Price */}
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span className="text-2xl font-medium tracking-tight tabular-nums text-foreground">
@@ -355,10 +322,10 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
               </div>
 
               <PlanResources plan={plan} workspaceScoped={workspaceScoped} />
-            </article>
+            </PricingCard>
           );
         })}
-      </div>
+      </PricingCardGrid>
     ) : null;
 
   return (

@@ -4,6 +4,8 @@ import { env } from "../env";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { isIPv4 } from "node:net";
+import { dedicatedAssistantBinary } from "./assistant-hosting";
 
 const clients = new Map<string, Mindwire>();
 const label = "io.openship.mail.assistant";
@@ -45,18 +47,19 @@ async function ensureRuntimeImage(engine: Docker, socket: string) {
 }
 
 /** Called only after mailbox authentication. No browser-supplied Docker options or host paths. */
-export function managedAssistant(owner: string): Mindwire {
-  if (!/^[a-f0-9]{64}$/.test(owner) || !env.MAIL_MINDWIRE_DOCKER_SOCKET)
+export function managedAssistant(owner: string, dedicatedSocket?: string): Mindwire {
+  const socket = dedicatedSocket ?? env.MAIL_MINDWIRE_DOCKER_SOCKET;
+  if (!/^[a-f0-9]{64}$/.test(owner) || !socket)
     throw new Error("Mail assistant runtime is unavailable.");
   if (
     env.MAIL_MINDWIRE_DOCKER_NETWORK &&
     /^(host|none|container:.*)$/.test(env.MAIL_MINDWIRE_DOCKER_NETWORK)
   )
     throw new Error("Mail assistants require a private Docker network.");
-  const key = `${env.MAIL_MINDWIRE_DOCKER_SOCKET}:${owner}`;
+  const key = `${dedicatedSocket ? "dedicated" : "standalone"}:${socket}:${owner}`;
   const cached = clients.get(key);
   if (cached) return cached;
-  const engine = new Docker({ socketPath: env.MAIL_MINDWIRE_DOCKER_SOCKET });
+  const engine = new Docker({ socketPath: socket });
   const name = `openship-mail-ai-${owner}`;
   const client = new Mindwire({
     agent: "codex",
@@ -64,9 +67,18 @@ export function managedAssistant(owner: string): Mindwire {
     target: {
       name: "mail-container",
       async connect() {
-        const pending = reservations.get(env.MAIL_MINDWIRE_DOCKER_SOCKET!) ?? new Set<string>();
-        reservations.set(env.MAIL_MINDWIRE_DOCKER_SOCKET!, pending);
+        const pending = reservations.get(socket) ?? new Set<string>();
+        reservations.set(socket, pending);
+        // The co-located webmail deploy pins its mail hostname to Docker's private
+        // host gateway. The separate rootless engine publishes only to that interface.
+        const gateway = dedicatedSocket && !env.MAIL_MINDWIRE_DOCKER_SOCKET ? privateMailGateway() : "127.0.0.1";
         try {
+          if (dedicatedSocket) {
+            const info = await engine.info();
+            if (!info.SecurityOptions?.includes("name=rootless") ||
+                !info.MemoryLimit || !info.SwapLimit || !info.CpuCfsQuota || !info.PidsLimit)
+              throw new Error("Dedicated mail needs a rootless engine with memory, CPU and process limits.");
+          }
           let existing = await engine
             .getContainer(name)
             .inspect()
@@ -85,10 +97,11 @@ export function managedAssistant(owner: string): Mindwire {
             });
             if (containers.length + pending.size > 32)
               throw new Error("Mail assistant capacity reached.");
-            await ensureRuntimeImage(engine, env.MAIL_MINDWIRE_DOCKER_SOCKET!);
+            await ensureRuntimeImage(engine, socket);
           }
           const handle = await provisionDocker(engine as unknown as DockerodeLike, {
             ...(existing ? { container: name } : {}),
+            ...(dedicatedSocket && { daemonBin: dedicatedAssistantBinary(dedicatedSocket) }),
             image: runtimeImage,
             pull: "never",
             agent: "codex",
@@ -108,12 +121,16 @@ export function managedAssistant(owner: string): Mindwire {
                 ...(env.MAIL_MINDWIRE_DOCKER_NETWORK
                   ? { NetworkMode: env.MAIL_MINDWIRE_DOCKER_NETWORK }
                   : {}),
-                PortBindings: { [`${port}/tcp`]: [{ HostIp: "127.0.0.1", HostPort: "0" }] },
+                PortBindings: { [`${port}/tcp`]: [{ HostIp: gateway, HostPort: "0" }] },
               },
             },
           });
           // When webmail itself is containerized, use its private network, never a public port.
-          if (env.MAIL_MINDWIRE_DOCKER_NETWORK) {
+          if (gateway !== "127.0.0.1") {
+            const url = new URL(handle.baseUrl);
+            url.hostname = gateway;
+            handle.baseUrl = url.origin;
+          } else if (env.MAIL_MINDWIRE_DOCKER_NETWORK) {
             existing = await engine.getContainer(name).inspect();
             const address =
               existing.NetworkSettings.Networks[env.MAIL_MINDWIRE_DOCKER_NETWORK]?.IPAddress;
@@ -140,4 +157,15 @@ export function managedAssistant(owner: string): Mindwire {
   });
   clients.set(key, client);
   return client;
+}
+
+function privateMailGateway() {
+  const host = env.DEFAULT_IMAP_HOST?.toLowerCase();
+  const entries = readFileSync("/etc/hosts", "utf8").toLowerCase().split("\n");
+  for (const entry of entries) {
+    const [ip, ...names] = entry.split("#", 1)[0]!.trim().split(/\s+/);
+    if (host && ip && names.includes(host) && isIPv4(ip) &&
+        /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(ip)) return ip;
+  }
+  throw new Error("The dedicated mail VM is missing its private host gateway.");
 }

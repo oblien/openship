@@ -11,7 +11,6 @@ import {
 } from 'react-router';
 import { ServerProviders } from '@/providers/server-providers';
 import { ClientProviders } from '@/providers/client-providers';
-import Toaster from '@/components/ui/toast';
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { useEffect, type PropsWithChildren } from 'react';
 import type { AppRouter } from '@zero/server/trpc';
@@ -69,8 +68,6 @@ export function Layout({ children }: PropsWithChildren) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -86,7 +83,6 @@ export function Layout({ children }: PropsWithChildren) {
         <ServerProviders connectionId={readActiveConnectionId()}>
           <ClientProviders>{children}</ClientProviders>
         </ServerProviders>
-        <Toaster />
         <ScrollRestoration />
         <Scripts />
       </body>

@@ -368,6 +368,7 @@ import { createNetworkPreparationRepo } from "./network-preparation.repo";
 import { createServerGithubAuthRepo } from "./server-github-auth.repo";
 import { createGithubDeployKeyRepo } from "./github-deploy-key.repo";
 import { createServerTunnelRepo } from "./server-tunnel.repo";
+import { createManagedMailRepo } from "./managed-mail.repo";
 import { createMailServerRepo } from "./mail-server.repo";
 import { createMailInboundRepo } from "./mail-inbound.repo";
 import { createAnalyticsRepo } from "./analytics.repo";
@@ -463,6 +464,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     serverGithubAuth: createServerGithubAuthRepo(db),
     githubDeployKey: createGithubDeployKeyRepo(db),
     serverTunnel: createServerTunnelRepo(db),
+    managedMail: createManagedMailRepo(db),
     mailServer: createMailServerRepo(db),
     mailInbound: createMailInboundRepo(db),
     analytics: createAnalyticsRepo(db),

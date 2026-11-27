@@ -18,6 +18,7 @@ import "../../../src/modules/billing/billing-local.routes";
 import "../../../src/modules/analytics/analytics.routes";
 import "../../../src/modules/migration/migration.routes";
 import "../../../src/modules/mail/mail.routes";
+import "../../../src/modules/mail/accounts.routes";
 import "../../../src/modules/permissions/permissions.routes";
 import "../../../src/modules/domains/domain.routes";
 import "../../../src/modules/apps/app.routes";

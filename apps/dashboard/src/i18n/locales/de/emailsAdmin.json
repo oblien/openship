@@ -190,7 +190,7 @@
   },
   "domains": {
     "heading": "Domains",
-    "description": "Jede Zeile entspricht einer Zeile in vmail.domain auf dem Mail-VPS. Zusätzliche Domains nehmen Mail an, sobald ihr MX-Eintrag hierher zeigt.",
+    "description": "Empfange E-Mails an Adressen deiner eigenen Domains.",
     "addDomain": "Domain hinzufügen",
     "editAction": "Bearbeiten",
     "deleteAction": "Löschen",
@@ -213,7 +213,7 @@
     "loadFailed": "Domains konnten nicht geladen werden",
     "create": {
       "title": "Domain hinzufügen",
-      "description": "Fügt einen neuen Eintrag zu vmail.domain auf dem Mail-VPS hinzu. Stelle sicher, dass der MX-Eintrag dieser Domain auf den Mailserver zeigt, bevor du darüber Mail versendest.",
+      "description": "Füge die Domain hinzu, die du für E-Mails verwenden möchtest.",
       "submit": "Domain erstellen",
       "submitting": "Wird erstellt…",
       "domainLabel": "Domain",
@@ -279,7 +279,7 @@
   },
   "mailboxes": {
     "heading": "Postfächer",
-    "description": "Jede Zeile ist ein IMAP/SMTP-Konto auf dem Mailserver. Passwörter werden vor der Speicherung mit doveadm SSHA512 gehasht.",
+    "description": "Verwalte Adressen zum Senden und Empfangen von E-Mails.",
     "addMailbox": "Postfach hinzufügen",
     "domainLabel": "Domain",
     "loading": "Wird geladen…",
@@ -299,6 +299,9 @@
     "rotateSubmitting": "Reparatur läuft…",
     "rotateFailed": "Plattform-Postfach konnte nicht repariert werden",
     "rotateNote": "Benutzerpostfächer und gespeicherte Nachrichten bleiben unverändert.",
+    "readOnlyServer": "Dieser Mailserver ist schreibgeschützt. Zum Verwalten von Postfächern ist ein OpenShip Mail Worker erforderlich.",
+    "manageAction": "Verwalten",
+    "changePassword": "Passwort ändern",
     "editAction": "Bearbeiten",
     "deleteAction": "Löschen",
     "loadDomainsFailed": "Domains konnten nicht geladen werden",
@@ -307,7 +310,7 @@
     "emptyDesc": "Erstelle das erste Postfach für {domain}. Passwörter werden mit doveadm SSHA512 gehasht – nur der Hash wird auf der Festplatte gespeichert.",
     "create": {
       "title": "Neues Postfach · {domain}",
-      "description": "Erstellt ein IMAP/SMTP-Konto auf dem Mailserver. Das Passwort wird auf dem VPS mit doveadm SSHA512 gehasht – nur der Hash wird gespeichert.",
+      "description": "Wähle eine Adresse und ein Passwort für dieses Postfach.",
       "submit": "Postfach erstellen",
       "submitting": "Wird erstellt…",
       "localPartLabel": "Lokaler Teil",
@@ -338,13 +341,13 @@
     },
     "deleteForm": {
       "title": "{username} löschen?",
-      "descHard": "Endgültiges Löschen: entfernt die DB-Zeilen UND das Maildir auf der Festplatte. Kann nicht rückgängig gemacht werden.",
-      "descSoft": "Sanftes Löschen: setzt active = 0 und fügt eine Zeile in vmail.deleted_mailboxes ein. Der Aufräum-Cronjob des Mailservers greift sie später auf. Das Maildir bleibt bis dahin auf der Festplatte.",
-      "submitHard": "Postfach endgültig löschen",
-      "submitSoft": "Postfach sanft löschen",
+      "descHard": "Das Postfach und alle Nachrichten werden endgültig gelöscht.",
+      "descSoft": "Anmeldung und Zustellung enden sofort. Gespeicherte Nachrichten bleiben bis zur nächsten Serverbereinigung erhalten.",
+      "submitHard": "Endgültig löschen",
+      "submitSoft": "Postfach löschen",
       "submitting": "Wird gelöscht…",
-      "hardDeleteLabel": "Endgültig löschen",
-      "hardDeleteDesc": "DB-Zeilen und Maildir-Dateien sofort entfernen. Kann nicht rückgängig gemacht werden.",
+      "hardDeleteLabel": "Gespeicherte Nachrichten jetzt löschen",
+      "hardDeleteDesc": "Damit werden das Postfach und seine Nachrichten endgültig vom Mailserver entfernt.",
       "postmasterNote": "Das Postmaster-Postfach ist vor endgültigem Löschen geschützt – nur sanftes Löschen ist möglich, damit das Bootstrap-Konto des Mailservers erhalten bleibt."
     }
   },

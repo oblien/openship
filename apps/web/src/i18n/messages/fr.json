@@ -2902,10 +2902,6 @@
     "mlhqabe": "Stockage des boîtes mail",
     "m1t7t2wk": "Mutualisé",
     "my14yjr": "API",
-    "myu51jo": "Pour les projets personnels.",
-    "m12ifwwp": "Pour les petites équipes.",
-    "m15ti3x2": "Pour les équipes qui gèrent plusieurs marques.",
-    "m1waezfd": "Pour les plateformes au service de leurs clients.",
     "m116lozf": "Comparer les fonctionnalités",
     "m178xhu3": "Envoyer depuis votre application via l’API",
     "mzxuq4l": "Clés d’envoi par domaine",
@@ -2919,7 +2915,14 @@
     "m1r414ct": "Clés API",
     "mfm9g8": "Par domaine",
     "m12hv6lv": "Exemples de tarifs mensuels en USD.",
-    "mhi9qfg": "Voir les offres dans le tableau de bord"
+    "mhi9qfg": "Voir les offres dans le tableau de bord",
+    "m1934rwj": "Suivi du volume",
+    "mukpq5o": "Hébergez OpenShip Mail sur votre VM",
+    "m1shnxdq": "Installez vos boîtes mail sur une VM Cloud existante ou choisissez un nouveau forfait de calcul. Les envois utilisent votre quota API e-mail.",
+    "m1cnf92t": "Utiliser une VM existante",
+    "m7xi513": "Choisir un nouveau forfait Cloud",
+    "m1qf703d": "API e-mail incluse",
+    "mzhhs8b": "Utiliser une VM Cloud"
   },
   "ReleaseNotes": {
     "m1005a3f": "- l'assistant utilisé pour inventer un nom d'hôte à partir du nom du projet chaque fois qu'une étape n'avait pas choisi d'itinéraire, étiquetant les champs de port, prévisualisant les hôtes de sous-application monorepo et même câblant le bouton \"Visiter le site\" à un hôte qui n'existerait jamais. Il affiche désormais uniquement les hôtes que votre configuration nomme réellement et masque entièrement « Visiter le site » lorsque le déploiement n'a pas de domaine public.",

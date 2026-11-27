@@ -9,14 +9,17 @@ export const formatPlanCount = (value: number | null | undefined) =>
 
 type Fact = { label: string; value: string; href?: string };
 
-export function PlanFacts({ facts }: { facts: Fact[] }) {
+export function PlanFacts({ facts, checked = false }: { facts: Fact[]; checked?: boolean }) {
   const copy = useCopy();
 
   return (
     <dl className="pp-plan-limits">
       {facts.map(({ label, value, href }) => (
         <div className="pp-plan-limit" key={label}>
-          <dt>{href ? <Link href={href}>{copy(label)}</Link> : copy(label)}</dt>
+          <dt className={checked ? "flex items-center gap-2" : undefined}>
+            {checked && <Check className="size-4 shrink-0" aria-hidden="true" />}
+            {href ? <Link href={href}>{copy(label)}</Link> : copy(label)}
+          </dt>
           <dd>{copy(value)}</dd>
         </div>
       ))}

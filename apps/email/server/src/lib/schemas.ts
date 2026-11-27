@@ -33,6 +33,14 @@ export const userSettingsSchema = z.object({
 
 export type UserSettings = z.infer<typeof userSettingsSchema>;
 
+// Zod applies field defaults even inside partial(). A patch must contain
+// exactly the supplied preferences so one tab cannot reset another tab.
+const preferenceFields = userSettingsSchema.shape;
+const patchFields = Object.fromEntries(Object.entries(preferenceFields).map(
+  ([key, field]) => [key, field.removeDefault()],
+)) as { [K in keyof typeof preferenceFields]: ReturnType<typeof preferenceFields[K]['removeDefault']> };
+export const userSettingsPatch = z.object(patchFields).partial();
+
 export const defaultUserSettings: UserSettings = userSettingsSchema.parse({});
 
 /**

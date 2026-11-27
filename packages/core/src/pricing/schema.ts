@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { PAID_MAIL_PLANS } from "../mail-server/managed-mail";
 import { WORKLOAD_TYPES } from "../deployment-class";
 import { RESOURCE_TIER_ORDER } from "../resources";
 
@@ -220,6 +221,25 @@ const actionsPricingSchema = z.object({
     ctx.addIssue({ code: "custom", path: ["depositsCents"], message: "Actions deposits must be unique and ascending" });
 });
 
+const positiveCount = z.number().int().positive();
+const mailPlanSchema = z.object({
+  checkoutAvailable: z.boolean(),
+  monthlyCents: z.number().int().nonnegative(),
+  domains: positiveCount, mailboxes: positiveCount, storageMB: positiveCount,
+  recipients: positiveCount, dailyRecipients: positiveCount,
+}).strict().refine(plan => plan.dailyRecipients <= plan.recipients, "Daily sending exceeds monthly capacity");
+const mailPricingSchema = z.object({
+  version: positiveCount,
+  plans: z.record(z.enum(["included", ...PAID_MAIL_PLANS]), mailPlanSchema),
+  popularTier: z.enum(PAID_MAIL_PLANS),
+  features: z.record(z.enum(["shared", "dedicated", "relay"]), z.array(z.string().min(1))),
+  dedicated: z.object({
+    cpuCores: positiveCount, memoryMB: positiveCount, systemDiskGB: positiveCount,
+    storage: z.array(z.object({ storageGB: positiveCount, vmMonthlyCents: positiveCount })).nonempty(),
+  }),
+  sendingCentsPerThousand: positiveCount,
+}).strict();
+
 export const pricingCatalogSchema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -243,6 +263,7 @@ export const pricingCatalogSchema = z
     campaigns: z.array(campaignSchema),
     custom: customPricingSchema,
     actions: actionsPricingSchema,
+    mail: mailPricingSchema,
     management: z.object({
       version: z.number().int().positive(),
       monthlyCents: z.number().int().min(100),
@@ -284,6 +305,8 @@ export const pricingCatalogSchema = z
       ctx.addIssue({ code: "custom", path: ["management", "priorityMonthlyCents"], message: "Priority must include the Basic price and an additional support fee" });
     }
     const ids = new Set<string>();
+    if (data.mail.plans.included.checkoutAvailable)
+      ctx.addIssue({ code: "custom", path: ["mail", "plans", "included"], message: "The compute benefit cannot be purchased separately" });
     data.plans.forEach((plan, i) => {
       if (ids.has(plan.id)) {
         ctx.addIssue({ code: "custom", path: ["plans", i, "id"], message: `duplicate plan id "${plan.id}"` });
@@ -438,6 +461,7 @@ export type PricingCreditPackRaw = PricingCatalogRaw["creditPacks"][number];
 /** Shape gate for a `locales/<lang>.json` copy file. Every leaf is a string;
  *  non-English files may be PARTIAL (missing keys deep-merge from English). */
 export const pricingCopySchema = z.object({
+  mailPlans: z.record(z.string(), z.object({ name: z.string(), tagline: z.string() })).optional(),
   plans: z.record(z.string(), z.object({ name: z.string(), tagline: z.string() }).partial()).optional(),
   features: z.record(z.string(), z.string()).optional(),
   selfHosted: z

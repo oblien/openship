@@ -35,6 +35,9 @@ describe("mail archive topology", () => {
     }
     expect(capture).not.toContain("vmail1"); // Other stores/sieve/quarantine must survive too.
     expect(capture).toContain("--clean --if-exists --no-owner");
+    expect(capture).toContain("CREATE ROLE openship_mail_customer NOLOGIN");
+    expect(capture.indexOf("CREATE ROLE openship_mail_customer NOLOGIN")).toBeLessThan(capture.indexOf("pg_dump"));
+    expect(capture).toContain("public.openship_mail_db_version");
     expect(capture).not.toContain("--table=");
   });
 });

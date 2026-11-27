@@ -5,6 +5,8 @@ import { z } from "zod";
 import { db, schema } from "../db";
 import { decryptSecret, encryptSecret } from "../lib/crypto";
 import { mailboxCredentials, mailboxId, type MailboxCredentials } from "./identity";
+import { mailHostingPlacement } from "./sending-settings";
+import { dedicatedAssistantSocket, mailboxAssistantPermitted } from "./assistant-hosting";
 
 export const mailScope = z.enum(["mail:read", "mail:draft", "mail:send"]);
 export type MailScope = z.infer<typeof mailScope>;
@@ -85,6 +87,15 @@ export function liveGrant(id: string, owner: string, scope?: MailScope) {
     (scope && !row.scopes.includes(scope))
   )
     return null;
+  if (row.internal) {
+    const placement = mailHostingPlacement();
+    if (placement === "standard") return null;
+    if (placement === "dedicated") {
+      if (!dedicatedAssistantSocket()) return null;
+      const mailbox: MailboxCredentials = JSON.parse(decryptSecret(row.credentials, grantContext(id, owner)));
+      if (!mailboxAssistantPermitted(mailbox, placement)) return null;
+    }
+  }
   if (row.parentId) {
     const parent = db
       .select()
@@ -138,11 +149,11 @@ export function listGrants(mailbox: MailboxCredentials) {
     .all();
 }
 
-export function revokeGrant(mailbox: MailboxCredentials, id: string) {
-  return endGrant(mailboxId(mailbox), id);
+export function revokeGrant(mailbox: MailboxCredentials, id: string, ifPresent = false) {
+  return endGrant(mailboxId(mailbox), id, ifPresent);
 }
 
-function endGrant(owner: string, id: string) {
+function endGrant(owner: string, id: string, ifPresent = false) {
   db.transaction((tx) => {
     const rows = tx
       .update(schema.mailGrant)
@@ -155,8 +166,10 @@ function endGrant(owner: string, id: string) {
       )
       .returning({ id: schema.mailGrant.id })
       .all();
-    if (!rows.some((row) => row.id === id))
+    if (!rows.some((row) => row.id === id)) {
+      if (ifPresent) return;
       throw new TRPCError({ code: "NOT_FOUND", message: "Connection not found" });
+    }
     tx.update(schema.mailJob)
       .set({
         state: "cancelled",

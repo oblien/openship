@@ -14,13 +14,14 @@
  * neutral glyph if a mark is missing/offline.
  */
 
-import type { RelayProviderId } from "@repo/core";
+import { OBLIEN_RELAY, type RelayProviderId } from "@repo/core";
 
 /** Real brand logo via the favicon service — the actual brand favicon. */
 const brandLogo = (domain: string): string =>
   `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 
 export type MailProviderId =
+  | "oblien"
   | "custom"
   | "resend"
   | "ses"
@@ -66,6 +67,17 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     imapPort: 993,
     smtpHost: "",
     smtpPort: 465,
+  },
+  {
+    id: OBLIEN_RELAY.id,
+    label: OBLIEN_RELAY.label,
+    backendProvider: OBLIEN_RELAY.id,
+    sendOnly: true,
+    imapHost: "",
+    imapPort: 993,
+    smtpHost: OBLIEN_RELAY.hostTemplate,
+    smtpPort: OBLIEN_RELAY.defaultPort,
+    hint: "Use the SMTP submission credentials for your verified sending domain.",
   },
   {
     id: "gmail",

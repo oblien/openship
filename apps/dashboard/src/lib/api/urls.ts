@@ -200,11 +200,12 @@ export function getCloudApiOrigin(rawUrl?: string) {
 /**
  * Origin of the public marketing site (apps/web), where docs and setup
  * guides live. In production: app.openship.io → openship.io. In dev:
- * localhost:3001/3002 → localhost:3000. SSR falls back to production.
+ * localhost:3001/3002 → localhost:3009. SSR falls back to production.
  */
-export function getMarketingOrigin() {
-  if (typeof window === "undefined") return "https://openship.io";
-  const { protocol, hostname, port } = window.location;
+export function getMarketingOrigin(dashboardUrl?: string) {
+  const origin = dashboardUrl ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+  if (!origin || !URL.canParse(origin)) return "https://openship.io";
+  const { protocol, hostname, port } = new URL(origin);
   if (hostname.startsWith("app.")) return `${protocol}//${hostname.slice(4)}`;
   if (port === String(DEFAULT_PORT.dashboard) || port === String(DEFAULT_PORT.saasDashboard)) {
     return `${protocol}//${hostname}:${DEFAULT_PORT.web}`;

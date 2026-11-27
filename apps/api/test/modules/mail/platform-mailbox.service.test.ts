@@ -54,7 +54,7 @@ vi.mock("@repo/platform/engine/modules/mail/admin/maildir", () => ({
   STORAGE_NODE: "vmail1",
 }));
 
-vi.mock("@repo/platform/engine/modules/mail/admin/domains.service", () => ({
+vi.mock("@repo/platform/engine/modules/mail/admin/domain-counts", () => ({
   recountDomain: mocks.recountDomain,
 }));
 

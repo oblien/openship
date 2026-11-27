@@ -1,5 +1,5 @@
 export const DEFAULT_PORT = {
-  web: 3000,
+  web: 3009,
   dashboard: 3001,
   api: 4000,
   saasDashboard: 3002,
@@ -27,7 +27,7 @@ const envUrl = (key: string): string | undefined => {
   return v && v.trim() ? v.trim() : undefined;
 };
 export const CLOUD_DASHBOARD_URL =
-  envUrl("OPENSHIP_CLOUD_DASHBOARD_URL") ?? "https://app.openship.io";
+  (typeof process === "undefined" ? undefined : process.env.OPENSHIP_CLOUD_DASHBOARD_URL?.trim()) || "https://app.openship.io";
 export const CLOUD_API_URL = envUrl("OPENSHIP_CLOUD_API_URL") ?? "https://api.openship.io";
 
 /**

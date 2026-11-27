@@ -99,7 +99,7 @@ function replaceMetaContent(
 ): string | null {
   const tag = html.match(new RegExp(`<meta\\s+[^>]*${attr}=["']${name}["'][^>]*>`, 'i'))?.[0];
   if (!tag || !CONTENT_PATTERN.test(tag)) return null;
-  return html.replace(tag, tag.replace(CONTENT_PATTERN, `$1${escapeHtml(value)}$2`));
+  return html.replace(tag, () => tag.replace(CONTENT_PATTERN, (_match, open, close) => open + escapeHtml(value) + close));
 }
 
 const CONTENT_PATTERN = /(content=["'])[^"']*(["'])/i;
@@ -137,14 +137,14 @@ export function injectBranding(
   const apply: Record<Slot['key'], (html: string) => string | null> = {
     title: (h) =>
       TITLE_PATTERN.test(h)
-        ? h.replace(TITLE_PATTERN, `$1${escapeHtml(siteTitle)}$2`)
+        ? h.replace(TITLE_PATTERN, (_match, open, close) => open + escapeHtml(siteTitle) + close)
         : null,
     description: (h) => replaceMetaContent(h, 'name', 'description', siteDescription),
     'og:title': (h) => replaceMetaContent(h, 'property', 'og:title', siteTitle),
     'og:description': (h) => replaceMetaContent(h, 'property', 'og:description', siteDescription),
     embed: (h) =>
       h.includes('</head>')
-        ? h.replace('</head>', `${brandingScriptTag(branding)}</head>`)
+        ? h.replace('</head>', () => `${brandingScriptTag(branding)}</head>`)
         : null,
   };
 
@@ -165,9 +165,14 @@ let warnedMissing = false;
  * The branded shell. Throws only if index.html is absent, which means the
  * image was assembled wrong - failing loudly is right there.
  */
-export function renderIndexHtml(clientBuildDir: string): string {
+export function renderIndexHtml(clientBuildDir: string, sessionCookieName: string): string {
   if (template === null) {
-    template = readFileSync(join(clientBuildDir, 'index.html'), 'utf8');
+    // The browser must select this instance's public connection cookie even
+    // when several webmail instances share a hostname on different ports.
+    template = readFileSync(join(clientBuildDir, 'index.html'), 'utf8').replace(
+      /<html\b/i,
+      () => `<html data-connection-cookie="${escapeHtml(sessionCookieName + '_id')}"`,
+    );
   }
   const { html, missing } = injectBranding(template, getBranding());
   if (missing.length > 0 && !warnedMissing) {
