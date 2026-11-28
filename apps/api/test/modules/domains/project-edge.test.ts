@@ -1,18 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, repos, schema } from "@repo/db";
+import type { CommandExecutor } from "@repo/adapters";
 import type { ExecutionContext } from "@repo/platform";
-import { seedDeployment, seedOrg, seedProject, setActive } from "../../helpers/seed";
+import { getRoutingBaseDomain } from "@repo/platform/engine/lib/routing-domains";
+import { seedDeployment, seedOrg, seedProject, seedService, seedServiceDeployment, setActive } from "../../helpers/seed";
 
 const io = vi.hoisted(() => ({
   events: [] as string[],
   reuse: vi.fn(),
   verify: vi.fn(),
   provision: vi.fn(),
+  scanEdge: vi.fn(),
+  getContainerInfo: vi.fn(),
+  dispose: vi.fn(),
+}));
+vi.mock("@repo/adapters", async (original) => ({
+  ...(await original<typeof import("@repo/adapters")>()),
+  scanRunningOpenshipEdge: io.scanEdge,
 }));
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async (original) => ({
   ...(await original<Record<string, unknown>>()),
+  resolveDeploymentRuntimeForRead: async () => ({
+    runtime: {
+      name: "docker",
+      supports: (capability: string) => capability === "containerInfo",
+      getContainerInfo: io.getContainerInfo,
+      dispose: io.dispose,
+    },
+  }),
   withDeploymentPlatform: async (_deployment: unknown, run: (platform: unknown) => unknown) =>
     run({ routing: {} }),
+}));
+vi.mock("@repo/platform/engine/lib/platform-config", async (original) => ({
+  ...(await original<typeof import("@repo/platform/engine/lib/platform-config")>()),
+  platform: () => ({ target: "selfhosted" }),
 }));
 vi.mock("@repo/platform/engine/lib/edge-challenge", () => ({
   ensureEdgeChallengeReady: async () => {
@@ -48,7 +69,7 @@ vi.mock("@repo/platform/engine/lib/domain-ssl", async (original) => ({
   manageDomainSsl: io.provision,
 }));
 
-import { applyProjectEdgeRoutes } from "@repo/platform/engine/modules/domains/project-edge.service";
+import { applyProjectEdgeRoutes, staleProjectEdgeUpstreams } from "@repo/platform/engine/modules/domains/project-edge.service";
 
 describe("pending domains recover after edge setup without a restart", () => {
   let ctx: ExecutionContext;
@@ -151,5 +172,70 @@ describe("pending domains recover after edge setup without a restart", () => {
     );
     expect(await repos.domain.findById(pending.id)).toBeDefined();
     expect(io.events).toContain("service paths");
+  });
+
+  it("checks direct service routes and resolves a project domain by its published port", async () => {
+    const project = (await repos.project.findById(projectId))!;
+    const scoped = { ...project, routeStrategy: "container-ip" as const };
+    const hostname = "owned-edge.example.com";
+    const freeHostname = `edge-drift.${getRoutingBaseDomain()}`;
+    const web = await seedService(project.id, {
+      name: "web",
+      exposed: true,
+      enabled: true,
+      ports: ["8080:80"],
+      publicEndpoints: [
+        { domainType: "custom", customDomain: hostname, port: 80 },
+        { domainType: "free", domain: "edge-drift", port: 80 },
+      ],
+    });
+    const internal = await seedService(project.id, { name: "internal", ports: ["9000"] });
+    await seedServiceDeployment(project.activeDeploymentId!, web, {
+      containerId: "current-web",
+      ip: "172.19.0.2",
+    });
+    await seedServiceDeployment(project.activeDeploymentId!, internal, {
+      containerId: "internal",
+      ip: "172.19.0.4",
+    });
+    const routed = await domain({ serviceId: web.id, hostname, targetPort: 80 });
+    const free = await domain({
+      serviceId: web.id, hostname: freeHostname, targetPort: 80, domainType: "free",
+    });
+    const projectRoute = await domain({ targetPort: 8080 });
+    const loopback = await domain({ targetPort: 8080 });
+    const unconfigured = await domain({ serviceId: web.id, targetPort: 80 });
+    const site = (host: string, url: string) => ({
+      serverNames: [host],
+      target: { kind: "proxy", url },
+    });
+    io.scanEdge.mockReturnValue({
+      sites: [
+        site(routed.hostname, "http://172.19.0.2:80"),
+        site(free.hostname, "http://172.19.0.2:80"),
+        site(projectRoute.hostname, "http://172.19.0.2:80"),
+        site(loopback.hostname, "http://127.0.0.1:80"),
+        site(unconfigured.hostname, "http://172.19.0.2:80"),
+      ],
+    });
+    io.getContainerInfo.mockResolvedValue({ status: "running", ip: "172.19.0.5" });
+    const executor = {} as CommandExecutor;
+
+    expect(await staleProjectEdgeUpstreams(scoped, executor, "serving-edge"))
+      .toEqual([routed.hostname, free.hostname, projectRoute.hostname].sort());
+    expect(io.scanEdge).toHaveBeenCalledExactlyOnceWith(executor, "serving-edge");
+    expect(io.getContainerInfo).toHaveBeenCalledExactlyOnceWith("current-web");
+    expect(io.dispose).toHaveBeenCalledOnce();
+    expect(await staleProjectEdgeUpstreams({ ...project, routeStrategy: "loopback-port" }, executor, "serving-edge"))
+      .toEqual([]);
+
+    io.scanEdge.mockReturnValue({
+      sites: [
+        site(routed.hostname, "http://172.19.0.5:80"),
+        site(free.hostname, "http://172.19.0.5:80"),
+        site(projectRoute.hostname, "http://172.19.0.5:80"),
+      ],
+    });
+    expect(await staleProjectEdgeUpstreams(scoped, executor, "serving-edge")).toEqual([]);
   });
 });

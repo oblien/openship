@@ -1078,6 +1078,7 @@
       "publishFailed": "Domínio salvo, mas o deploy não foi iniciado — faça redeploy para publicar."
     },
     "edge": {
+      "staleUpstream": "O roteamento do edge precisa ser atualizado",
       "setUp": "Configurar edge",
       "ready": "Edge pronto",
       "checking": "Verificando edge…",

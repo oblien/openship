@@ -452,6 +452,7 @@ export const projectsApi = {
       reachable?: boolean | null;
       classification?: "free" | "ours" | "known" | "unknown";
       canProceedClean?: boolean;
+      staleUpstreams?: string[];
       managed?: "cloud";
       reason?: string;
       occupants?: Array<{ port: number; proxy: string | null; label: string | null }>;

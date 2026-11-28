@@ -1161,6 +1161,7 @@
       "enterSubdomain": "Bir alt alan adı girin."
     },
     "edge": {
+      "staleUpstream": "Uç yönlendirmenin güncellenmesi gerekiyor",
       "setUp": "Kenarı kur",
       "ready": "Kenar hazır",
       "checking": "Kenar denetleniyor…",

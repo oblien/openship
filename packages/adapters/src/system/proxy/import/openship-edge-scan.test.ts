@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { scanForeignOpenResty, scanOpenshipEdge } from "./nginx";
+import { scanForeignOpenResty, scanOpenshipEdge, scanRunningOpenshipEdge } from "./nginx";
 import {
   OPENRESTY_DEFAULT_PATHS,
   edgeChallengeVhostConf,
@@ -33,6 +33,32 @@ function containerEdgeHost(): CommandExecutor {
     }),
   } as unknown as CommandExecutor;
 }
+
+describe("scanRunningOpenshipEdge", () => {
+  it("reads the selected container's resolved config without consulting legacy host files", async () => {
+    const live = VHOST.replace("443 ssl", "80")
+      .replace(/  ssl_certificate[^\n]*\n/g, "")
+      .replace("127.0.0.1:8080", "172.19.0.8:8080");
+    const exec = vi.fn(async (cmd: string) => cmd.startsWith("docker exec") ? live : VHOST);
+
+    const result = await scanRunningOpenshipEdge({ exec } as unknown as CommandExecutor, "serving-edge");
+
+    expect(result.sites).toMatchObject([
+      { serverNames: ["app.example.com"], target: { kind: "proxy", url: "http://172.19.0.8:8080" } },
+    ]);
+    expect(exec).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(/^docker exec 'serving-edge'.*openresty -T/),
+      { timeout: 10_000 },
+    );
+  });
+
+  it("reports an inconclusive container read without falling back to host configuration", async () => {
+    const exec = vi.fn(async () => "");
+    await expect(scanRunningOpenshipEdge({ exec } as unknown as CommandExecutor, "serving-edge"))
+      .rejects.toThrow("active OpenResty config dump was empty");
+    expect(exec).toHaveBeenCalledOnce();
+  });
+});
 
 describe("scanOpenshipEdge", () => {
   it("reads vhosts from the host when they're there, without touching Docker", async () => {

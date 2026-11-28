@@ -1078,6 +1078,7 @@
       "publishFailed": "Domain gespeichert, aber Deployment wurde nicht gestartet — erneut deployen, um sie zu veröffentlichen."
     },
     "edge": {
+      "staleUpstream": "Edge-Routing muss aktualisiert werden",
       "setUp": "Edge einrichten",
       "ready": "Edge bereit",
       "checking": "Edge wird geprüft…",

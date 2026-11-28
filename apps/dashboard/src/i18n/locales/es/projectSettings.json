@@ -1078,6 +1078,7 @@
       "publishFailed": "Dominio guardado, pero el despliegue no comenzó — redespliega para publicarlo."
     },
     "edge": {
+      "staleUpstream": "El enrutamiento del edge necesita una actualización",
       "setUp": "Configurar edge",
       "ready": "Edge listo",
       "checking": "Comprobando edge…",
