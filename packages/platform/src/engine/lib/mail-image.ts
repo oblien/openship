@@ -31,19 +31,9 @@ export function pinnedMailImage(): string {
  * for the same reason. Keep the two in step if either side moves.
  *
  * Only the engine is a MANAGED image (pinned to APP_VERSION, built from source in a
- * checkout, reconciled by this API). Webmail is a catalog app: it is installed and
- * deployed like any other template, so it has no pin and no build spec here — see
- * packages/core/src/apps/catalog/webmail.json.
- *
- * That catalog entry names `openship-webmail:latest`, deliberately unpinned, unlike
- * every third-party app in the catalog. Two reasons. Skew is harmless: the engine is
- * pinned because this API execs into it and assumes its layout, whereas webmail is a
- * standalone IMAP/SMTP client nothing here reaches into. And a pinned tag would have
- * to be rewritten in generated, drift-tested JSON on every release (scripts/release.ts
- * syncs package.json versions only), so the pin would rot into a tag that was never
- * published. Floating matches how openship ships its own other images (the compose
- * install defaults to :latest, overridable by --image-version); an app update is a
- * redeploy with trigger "update", which is the one trigger that force-pulls.
+ * checkout, reconciled by this API). The Webmail catalog entry selects the
+ * published client image for both standalone and Cloud installs. Hosted mail
+ * needs that image's admin API to bind the installation and configure sending.
  */
 const MAIL_DOCKERFILE = join("apps", "email", "Dockerfile");
 

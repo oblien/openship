@@ -4335,7 +4335,7 @@
       "services": [
         {
           "name": "webmail",
-          "image": "ghcr.io/oblien/openship-webmail:latest",
+          "image": "ghcr.io/oblien/openship-webmail:mail-20261128",
           "secretEnv": [
             "OPENSHIP_SENDING_KEY"
           ],
