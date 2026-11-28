@@ -101,9 +101,27 @@ async function probeHostUnits(
     (u) => `echo "## ${u}"; systemctl show ${u} -p LoadState -p ActiveState 2>/dev/null || true`,
   ).join("; ");
   const raw = await executor.exec(
-    `if command -v systemctl >/dev/null 2>&1; then { ${script} ; }; else echo __OPENSHIP_NO_SYSTEMCTL__; fi`,
+    `if ! command -v systemctl >/dev/null 2>&1; then
+       echo __OPENSHIP_NO_SYSTEMCTL__
+     elif [ ! -d /run/systemd/system ] && [ -r /proc/1/comm ] && [ "$(cat /proc/1/comm)" != systemd ]; then
+       if command -v postfix >/dev/null 2>&1 || command -v dovecot >/dev/null 2>&1 || [ -e /etc/iredmail-release ]; then
+         echo 'Native mail installation found without a running systemd manager' >&2
+         exit 1
+       fi
+       echo __OPENSHIP_OFFLINE_SYSTEMD__
+     else
+       ${script}
+     fi`,
   );
   if (raw.trim() === "__OPENSHIP_NO_SYSTEMCTL__") return { installed: false, active: false };
+  if (raw.trim() === "__OPENSHIP_OFFLINE_SYSTEMD__") {
+    // systemctl is installed in the Docker VM image, but PID 1 is not systemd.
+    // Enumerate offline so a stopped native installation is never adopted as an empty VM.
+    const units = await executor.exec("systemctl --root=/ list-unit-files --type=service --no-legend --no-pager");
+    if (/^\s*(?:postfix|dovecot)\.service\s/m.test(units))
+      throw new Error("Native mail service files found without a running systemd manager");
+    return { installed: false, active: false };
+  }
 
   const states = new Map<string, { load: string; active: string }>();
   let current: string | null = null;

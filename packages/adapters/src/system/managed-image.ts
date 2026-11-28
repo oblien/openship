@@ -121,7 +121,7 @@ export async function containerState(
   let out: string;
   try {
     out = await executor.exec(
-      `docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)} ${options.strict ? "2>&1" : "2>/dev/null"}`,
+      `docker inspect -f '{{.State.Running}}\t{{.Config.Image}}' ${sq(container)}${options.strict ? "" : " 2>/dev/null"}`,
     );
   } catch (error) {
     if (!options.strict) return null;
