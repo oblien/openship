@@ -311,28 +311,33 @@ const OURS: RouteConfig = { ...PROXY, terminatesTlsLocally: true };
 const BOOTSTRAP_DIR = "/etc/letsencrypt/openship-bootstrap/app.example.com";
 
 describe("NginxProvider path-only routes", () => {
-  test.each([false, true])("returns 404 outside explicit paths (existing TLS cert: %s)", async (withCert) => {
-    const { nginx, conf, files } = setup({ certDomains: withCert ? ["app.example.com"] : [] });
-    await nginx.registerRoute({
-      domain: "app.example.com",
-      tls: true,
-      terminatesTlsLocally: true,
-      notFound: true,
-      proxyLocations: [
-        { pathPrefix: "/v3", targetUrl: "http://10.0.0.2:9000" },
-        { pathPrefix: "/mcp", targetUrl: "http://10.0.0.3:4000", exact: true },
-        { pathPrefix: "/", targetUrl: "http://10.0.0.2:9000", exact: true },
-      ],
-    });
-    const config = conf("app-example-com")!;
-    expect(config).toMatch(/location \/ \{\s*(?:if[\s\S]*?\n\s*\}\s*)?return 404;/);
-    expect(config).toContain("location ^~ /v3 {");
-    expect(config).toContain("location = /mcp {");
-    expect(config).toContain("location = / {");
-    expect(config).not.toContain("proxy_pass undefined");
-    expect(config).toContain("listen 443 ssl;");
-    expect(JSON.parse(files.get(`${SITES}/app-example-com.route.json`)!)).toMatchObject({ notFound: true });
-  });
+  test.each([false, true])(
+    "returns 404 outside explicit paths (existing TLS cert: %s)",
+    async (withCert) => {
+      const { nginx, conf, files } = setup({ certDomains: withCert ? ["app.example.com"] : [] });
+      await nginx.registerRoute({
+        domain: "app.example.com",
+        tls: true,
+        terminatesTlsLocally: true,
+        notFound: true,
+        proxyLocations: [
+          { pathPrefix: "/v3", targetUrl: "http://10.0.0.2:9000" },
+          { pathPrefix: "/mcp", targetUrl: "http://10.0.0.3:4000", exact: true },
+          { pathPrefix: "/", targetUrl: "http://10.0.0.2:9000", exact: true },
+        ],
+      });
+      const config = conf("app-example-com")!;
+      expect(config).toMatch(/location \/ \{\s*(?:if[\s\S]*?\n\s*\}\s*)?return 404;/);
+      expect(config).toContain("location ^~ /v3 {");
+      expect(config).toContain("location = /mcp {");
+      expect(config).toContain("location = / {");
+      expect(config).not.toContain("proxy_pass undefined");
+      expect(config).toContain("listen 443 ssl;");
+      expect(JSON.parse(files.get(`${SITES}/app-example-com.route.json`)!)).toMatchObject({
+        notFound: true,
+      });
+    },
+  );
 });
 
 /**
@@ -526,18 +531,31 @@ describe("NginxProvider.reapplyStoredRoutes", () => {
     expect(conf("myapp-opsh-io")).toContain("proxy_pass_header X-Accel-Buffering;");
   });
 
-  test.each([undefined, false])("repairs generation-3 static routes without changing saved policy: %s", async (spaFallback) => {
-    const { nginx, files, conf } = setup();
-    await nginx.registerRoute({ domain: "static.test", tls: false, staticRoot: "/opt/openship/site", spaFallback });
-    files.set(`${SITES}/static-test.conf`, conf("static-test")!
-      .replace(/^# openship-vhost-gen: \d+$/m, "# openship-vhost-gen: 3")
-      .replace("@osh_fallback;", "/index.html;"));
-    expect(VHOST_GENERATION).toBeGreaterThan(3);
-    expect((await nginx.reapplyStoredRoutes()).repaired).toEqual(["static.test"]);
-    expect(conf("static-test")).toContain("try_files $uri $uri/ @osh_fallback;");
-    expect(conf("static-test")!.includes("try_files /index.html =404;")).toBe(spaFallback !== false);
-    expect((await nginx.reapplyStoredRoutes()).repaired).toEqual([]);
-  });
+  test.each([undefined, false])(
+    "repairs generation-3 static routes without changing saved policy: %s",
+    async (spaFallback) => {
+      const { nginx, files, conf } = setup();
+      await nginx.registerRoute({
+        domain: "static.test",
+        tls: false,
+        staticRoot: "/opt/openship/site",
+        spaFallback,
+      });
+      files.set(
+        `${SITES}/static-test.conf`,
+        conf("static-test")!
+          .replace(/^# openship-vhost-gen: \d+$/m, "# openship-vhost-gen: 3")
+          .replace("@osh_fallback;", "/index.html;"),
+      );
+      expect(VHOST_GENERATION).toBeGreaterThan(3);
+      expect((await nginx.reapplyStoredRoutes()).repaired).toEqual(["static.test"]);
+      expect(conf("static-test")).toContain("try_files $uri $uri/ @osh_fallback;");
+      expect(conf("static-test")!.includes("try_files /index.html =404;")).toBe(
+        spaFallback !== false,
+      );
+      expect((await nginx.reapplyStoredRoutes()).repaired).toEqual([]);
+    },
+  );
 
   test("a converged box writes nothing and reloads nothing", async () => {
     // This runs on the ordinary edge-ensure path, so the steady state has to be free.
@@ -804,13 +822,20 @@ describe("NginxProvider upstream-down page", () => {
 
   test("upgrades an existing generation-2 route without changing its upstream", async () => {
     const { nginx, files, conf } = setup();
-    await nginx.registerRoute({ domain: "legacy.example.com", tls: false, targetUrl: "http://127.0.0.1:3009" });
-    files.set(`${SITES}/legacy-example-com.conf`, `# openship-vhost-gen: 2
+    await nginx.registerRoute({
+      domain: "legacy.example.com",
+      tls: false,
+      targetUrl: "http://127.0.0.1:3009",
+    });
+    files.set(
+      `${SITES}/legacy-example-com.conf`,
+      `# openship-vhost-gen: 2
 server {
     listen 80;
     server_name legacy.example.com;
     location / { proxy_pass http://127.0.0.1:3009; }
-}`);
+}`,
+    );
     const result = await nginx.reapplyStoredRoutes();
     expect(result.repaired).toEqual(["legacy.example.com"]);
     expect(result.failed).toEqual([]);
@@ -1686,7 +1711,10 @@ describe("registerRoute renders proxy directives at server scope", () => {
   });
   test("preserves an explicitly configured response-buffer tuple", async () => {
     const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
-    await nginx.registerRoute({ ...PROXY, proxy: { proxyBufferSize: "16k", largeClientHeaderBuffers: "4 16k" } });
+    await nginx.registerRoute({
+      ...PROXY,
+      proxy: { proxyBufferSize: "16k", largeClientHeaderBuffers: "4 16k" },
+    });
     const output = conf("app-example-com")!;
     expect(output).toContain("proxy_buffer_size 16k;");
     expect(output).toContain("large_client_header_buffers 4 16k;");
@@ -2067,11 +2095,20 @@ describe("provisionCert legacy route recovery", () => {
     "never drops an existing password gate when its sidecar is %s",
     async (state) => {
       const { nginx, files, conf } = await legacy();
-      files.set(configPath, conf(slug)!.replace("server {", "server {\nset $openship_route_auth 'private-policy';"));
+      files.set(
+        configPath,
+        conf(slug)!.replace("server {", "server {\nset $openship_route_auth 'private-policy';"),
+      );
       if (state === "invalid JSON") files.set(statePath, "{");
-      if (state === "missing policy") files.set(statePath, JSON.stringify({ domain, tls: true, targetUrl: "http://127.0.0.1:3000" }));
+      if (state === "missing policy")
+        files.set(
+          statePath,
+          JSON.stringify({ domain, tls: true, targetUrl: "http://127.0.0.1:3000" }),
+        );
       const before = conf(slug);
-      await expect(nginx.provisionCert(domain)).rejects.toThrow("Cannot recover this protected route");
+      await expect(nginx.provisionCert(domain)).rejects.toThrow(
+        "Cannot recover this protected route",
+      );
       expect(conf(slug)).toBe(before);
     },
   );
@@ -2211,16 +2248,32 @@ describe("installCert leaves the private key unreadable to other users", () => {
     const { nginx, calls, files, writes } = setup();
     await nginx.installCert("app.example.com", makeTestCert(["app.example.com"]));
 
-    const keyWrite = writes.find(write => write.content.includes("PRIVATE KEY"));
+    const keyWrite = writes.find((write) => write.content.includes("PRIVATE KEY"));
     expect(keyWrite).toMatchObject({ mode: 0o600 });
     expect(keyWrite!.path).toContain(".staging-");
-    expect(calls.some(c => c.startsWith("chmod "))).toBe(false);
+    expect(calls.some((c) => c.startsWith("chmod "))).toBe(false);
 
     // The pair still lands as a pair — the mode must not cost the atomic swap.
     expect(files.get("/etc/letsencrypt/live/app.example.com/privkey.pem")).toContain("PRIVATE KEY");
     expect(files.get("/etc/letsencrypt/live/app.example.com/fullchain.pem")).toContain(
       "CERTIFICATE",
     );
+  });
+});
+
+describe("vhost and sidecar file permissions", () => {
+  test("writes vhost configuration files with 0644 mode and route state sidecars with 0600 mode", async () => {
+    const { nginx, writes } = setup();
+    await nginx.registerRoute(OURS);
+
+    const confWrite = writes.find((w) => w.path.includes("app-example-com.conf"));
+    const stateWrite = writes.find((w) => w.path.includes("app-example-com.route.json"));
+
+    expect(confWrite).toBeDefined();
+    expect(confWrite?.mode).toBe(0o644);
+
+    expect(stateWrite).toBeDefined();
+    expect(stateWrite?.mode).toBe(0o600);
   });
 });
 
@@ -2265,7 +2318,7 @@ describe("route protection rollback keeps credentials private", () => {
       ]) {
         expect(files.get(path)).toBe(content);
         const restored = writes.filter((write) => write.content === content).at(-1);
-        expect(restored).toMatchObject({ content, mode: 0o600 });
+        expect(restored).toMatchObject({ content, mode: path.endsWith(".conf") ? 0o644 : 0o600 });
       }
     },
   );
@@ -2273,7 +2326,9 @@ describe("route protection rollback keeps credentials private", () => {
 
 describe("manual DNS certificate activation", () => {
   const wildcard: RouteConfig = {
-    domain: "*.example.com", tls: false, targetUrl: "http://127.0.0.1:3009",
+    domain: "*.example.com",
+    tls: false,
+    targetUrl: "http://127.0.0.1:3009",
     proxyLocations: [{ pathPrefix: "/api/", targetUrl: "http://127.0.0.1:4010" }],
   };
 
@@ -2295,7 +2350,9 @@ describe("manual DNS certificate activation", () => {
     const opts: FakeOpts = {};
     const { nginx, files } = setup(opts);
     await nginx.registerRoute(wildcard);
-    const paths = [...files.keys()].filter((path) => path.endsWith(".conf") || path.endsWith(".route.json"));
+    const paths = [...files.keys()].filter(
+      (path) => path.endsWith(".conf") || path.endsWith(".route.json"),
+    );
     const previous = paths.map((path) => [path, files.get(path)]);
     const cert = makeTestCert([wildcard.domain]);
     opts.failReload = true;
@@ -2307,7 +2364,9 @@ describe("manual DNS certificate activation", () => {
     // A failed upload rolls back its files too; retry the upload through the
     // same installation path once the edge can reload again.
     opts.failReload = false;
-    await expect(nginx.installCert(wildcard.domain, cert)).resolves.toMatchObject({ verified: true });
+    await expect(nginx.installCert(wildcard.domain, cert)).resolves.toMatchObject({
+      verified: true,
+    });
     const config = files.get(paths.find((path) => path.endsWith(".conf"))!)!;
     expect(config).toContain("listen 443 ssl;");
     expect(config).toContain("proxy_pass http://127.0.0.1:4010;");
@@ -2344,7 +2403,9 @@ describe("a container edge refuses certificate publication across different name
 
     // Names the path it refused — the STAGED one, which is where the write was aimed —
     // and the mounts that would have been legal.
-    expect(message).toContain(`Refusing to stage certificate files in ${OFF_MOUNT_CERT_DIR}/app.example.com`);
+    expect(message).toContain(
+      `Refusing to stage certificate files in ${OFF_MOUNT_CERT_DIR}/app.example.com`,
+    );
     expect(message).toContain("/etc/letsencrypt");
 
     // Refused BEFORE the key bytes went anywhere: no write, no chmod at a path the
@@ -2384,7 +2445,7 @@ describe("a container edge refuses certificate publication across different name
     const { nginx, writes, files } = setup({ provider: { containerEdge: true } });
     await nginx.installCert("app.example.com", makeTestCert(["app.example.com"]));
 
-    expect(writes.find(write => write.content.includes("PRIVATE KEY"))?.mode).toBe(0o600);
+    expect(writes.find((write) => write.content.includes("PRIVATE KEY"))?.mode).toBe(0o600);
     expect(files.get("/etc/letsencrypt/live/app.example.com/privkey.pem")).toContain("PRIVATE KEY");
   });
 
@@ -3245,15 +3306,18 @@ describe("vercel.json path headers and URL shape", () => {
 
   // Every unknown path used to answer 200 with the home page, so a multi-page site's own
   // 404.html never showed and `/.well-known/x.json` was "found" as HTML (#1624).
-  test.each([undefined, true, false])("only disables SPA fallback when requested: %s", async (spaFallback) => {
-    const { nginx, conf } = setup();
-    await nginx.registerRoute({ ...STATIC, spaFallback });
-    const c = appConf(conf);
-    expect(c.includes("try_files /index.html =404;")).toBe(spaFallback !== false);
-    expect(c.includes("error_page 404 =404 @osh_not_found;")).toBe(spaFallback === false);
-    expect(c.includes("try_files /404.html =404;")).toBe(spaFallback === false);
-    expect(c).not.toContain("error_page 404 /404.html;");
-  });
+  test.each([undefined, true, false])(
+    "only disables SPA fallback when requested: %s",
+    async (spaFallback) => {
+      const { nginx, conf } = setup();
+      await nginx.registerRoute({ ...STATIC, spaFallback });
+      const c = appConf(conf);
+      expect(c.includes("try_files /index.html =404;")).toBe(spaFallback !== false);
+      expect(c.includes("error_page 404 =404 @osh_not_found;")).toBe(spaFallback === false);
+      expect(c.includes("try_files /404.html =404;")).toBe(spaFallback === false);
+      expect(c).not.toContain("error_page 404 /404.html;");
+    },
+  );
 });
 
 // A canonical host redirect (`www.example.com` → `example.com`, or an old domain
@@ -3282,7 +3346,9 @@ describe("canonical host redirect", () => {
 
   test("redirects a host that has no upstream of its own (#1418)", async () => {
     const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
-    const { targetUrl: _upstream, ...noUpstream } = REDIRECT as RouteConfig & { targetUrl?: string };
+    const { targetUrl: _upstream, ...noUpstream } = REDIRECT as RouteConfig & {
+      targetUrl?: string;
+    };
     await nginx.registerRoute({ ...noUpstream, notFound: true } as RouteConfig);
     const c = wwwConf(conf);
     expect(c).toContain("return 301 https://example.com$request_uri;");
@@ -3835,7 +3901,6 @@ describe("operator-trusted proxies on a container edge", () => {
   });
 });
 
-
 describe("inherited TLS certificate read safety", () => {
   const parent = "/etc/letsencrypt/live/*.example.com";
   const child = "/etc/letsencrypt/live/app.example.com";
@@ -3901,9 +3966,7 @@ describe("inherited TLS certificate read safety", () => {
         expect(files).toEqual(previous);
         expect(writes).toHaveLength(writeCount);
         expect(
-          calls
-            .slice(callCount)
-            .some((command) => /openssl|certbot|-s reload/.test(command)),
+          calls.slice(callCount).some((command) => /openssl|certbot|-s reload/.test(command)),
         ).toBe(false);
         expect(conf("app-example-com")).toContain(certificate);
         await nginx.registerRoute({
@@ -3911,9 +3974,7 @@ describe("inherited TLS certificate read safety", () => {
           targetUrl: "http://127.0.0.1:3010",
         });
         expect(conf("app-example-com")).toContain(certificate);
-        expect(conf("app-example-com")).toContain(
-          "proxy_pass http://127.0.0.1:3010;",
-        );
+        expect(conf("app-example-com")).toContain("proxy_pass http://127.0.0.1:3010;");
       } finally {
         read.mockRestore();
       }
@@ -3968,9 +4029,7 @@ describe("inherited TLS certificate read safety", () => {
             ? await nginx.provisionCert(PROXY.domain)
             : await nginx.renewCert(PROXY.domain);
         expect(result).toMatchObject({ verified: false, reason: "read_error" });
-        expect(
-          calls.some((command) => /certbot|openssl|-s reload/.test(command)),
-        ).toBe(false);
+        expect(calls.some((command) => /certbot|openssl|-s reload/.test(command))).toBe(false);
         expect(files).toEqual(previous);
       } finally {
         read.mockRestore();
@@ -3988,20 +4047,16 @@ describe("inherited TLS certificate read safety", () => {
       const writeCount = writes.length;
       const executor = executorOf(nginx);
       const exists = executor.exists.bind(executor);
-      const probe = vi
-        .spyOn(executor, "exists")
-        .mockImplementation(async (requested) => {
-          if (requested === path) throw new Error("SSH connection lost");
-          return exists(requested);
-        });
+      const probe = vi.spyOn(executor, "exists").mockImplementation(async (requested) => {
+        if (requested === path) throw new Error("SSH connection lost");
+        return exists(requested);
+      });
       try {
         expect(await nginx.verifyCert(PROXY.domain)).toMatchObject({
           verified: false,
           reason: "read_error",
         });
-        await expect(nginx.registerRoute(OURS)).rejects.toThrow(
-          "Routing was not changed",
-        );
+        await expect(nginx.registerRoute(OURS)).rejects.toThrow("Routing was not changed");
         expect(files).toEqual(previous);
         expect(writes).toHaveLength(writeCount);
       } finally {
@@ -4023,15 +4078,9 @@ describe("inherited TLS certificate read safety", () => {
     expect((await nginx.provisionCert(PROXY.domain)).verified).toBe(true);
     expect(calls.some((command) => /^certbot\b/.test(command))).toBe(false);
     expect(files.has(`${child}/privkey.pem`)).toBe(false);
-    expect(
-      (await nginx.provisionCert(PROXY.domain, { force: true })).verified,
-    ).toBe(true);
-    expect(
-      calls.some((command) => /^certbot\b.*\bcertonly\b/.test(command)),
-    ).toBe(true);
-    expect(conf("app-example-com")).toContain(
-      `ssl_certificate ${child}/fullchain.pem;`,
-    );
+    expect((await nginx.provisionCert(PROXY.domain, { force: true })).verified).toBe(true);
+    expect(calls.some((command) => /^certbot\b.*\bcertonly\b/.test(command))).toBe(true);
+    expect(conf("app-example-com")).toContain(`ssl_certificate ${child}/fullchain.pem;`);
     expect(files.get(`${parent}/fullchain.pem`)).toBe(original.certPem);
     expect(files.get(`${parent}/privkey.pem`)).toBe(original.keyPem);
   });
@@ -4054,16 +4103,14 @@ describe("inherited TLS certificate read safety", () => {
       entered = resolve;
     });
     let first = true;
-    const read = vi
-      .spyOn(executor, "readFile")
-      .mockImplementation(async (path) => {
-        if (first && path === `${parent}/privkey.pem`) {
-          first = false;
-          entered();
-          await paused;
-        }
-        return readFile(path);
-      });
+    const read = vi.spyOn(executor, "readFile").mockImplementation(async (path) => {
+      if (first && path === `${parent}/privkey.pem`) {
+        first = false;
+        entered();
+        await paused;
+      }
+      return readFile(path);
+    });
     const verification = nginx.verifyCert(PROXY.domain);
     let rotation: Promise<unknown> | undefined;
     try {
