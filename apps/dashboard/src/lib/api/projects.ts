@@ -398,6 +398,8 @@ export const projectsApi = {
       forceOrphan?: boolean;
       /** Record-only: drop the OpenShip row, keep the server workload (self-hosted). */
       recordOnly?: boolean;
+      /** Delete Openship-managed DNS records of the project's domains (API default true). */
+      deleteDnsRecords?: boolean;
     } = {},
   ) => {
     const { force, forceOrphan, recordOnly, ...rest } = body;
@@ -433,6 +435,7 @@ export const projectsApi = {
         deploymentVolumes: string[];
         networks: string[];
         totalVolumes: number;
+        customDomains?: string[];
       };
     }>(`${endpoints.projects.item(id)}/deletion-preview`),
 

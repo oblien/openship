@@ -90,6 +90,14 @@ const h = vi.hoisted(() => ({
   transitionBackupRun: vi.fn(async () => {}),
   deleteGitHubWebhook: vi.fn(async () => {}),
   cleanupWebmailInstall: vi.fn(async (): Promise<string | null> => null),
+  domains: [] as Array<{ hostname: string }>,
+  releaseRecords: vi.fn(
+    async (
+      _org: string,
+      _hostname: string,
+      _names: string[],
+    ): Promise<{ deleted: number; reason?: string }> => ({ deleted: 2 }),
+  ),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -129,7 +137,12 @@ vi.mock("@repo/db", () => ({
       listByProject: h.orphanListByProject,
     },
     projectConnection: { listBySource: vi.fn(async () => h.consumers) },
+    domain: { listByProject: vi.fn(async () => h.domains) },
   },
+}));
+
+vi.mock("@repo/platform/engine/modules/dns/dns-credential.service", () => ({
+  releaseRecords: h.releaseRecords,
 }));
 
 vi.mock("@repo/platform/engine/modules/projects/project-connection.service", () => ({
@@ -196,6 +209,8 @@ beforeEach(() => {
   h.activeMigration = null;
   h.listByProjectCalls = 0;
   h.consumers = [];
+  h.domains = [];
+  h.releaseRecords.mockResolvedValue({ deleted: 2 });
 });
 
 describe("teardownProject — dependency inspection", () => {
@@ -1047,3 +1062,71 @@ it.each(["partial", "awaiting_cutover", "cutover"])(
     }
   },
 );
+
+describe("teardownProject — DNS records of the project's domains", () => {
+  it("releases only Openship-managed records for every domain after the row drops", async () => {
+    h.domains = [{ hostname: "App.Example.com" }, { hostname: "api.example.com" }];
+    h.deleteHard.mockImplementationOnce(async () => {
+      // Records must not be released while the project could still be kept.
+      expect(h.releaseRecords).not.toHaveBeenCalled();
+    });
+
+    const res = await teardownProject(ctx, "p1", { force: true, deleteDnsRecords: true });
+
+    expect(res.rowDeleted).toBe(true);
+    expect(h.releaseRecords).toHaveBeenCalledWith("org1", "app.example.com", [
+      "app.example.com",
+      "_openship-challenge.app.example.com",
+    ]);
+    expect(h.releaseRecords).toHaveBeenCalledWith("org1", "api.example.com", [
+      "api.example.com",
+      "_openship-challenge.api.example.com",
+    ]);
+    expect(stepOf(res.steps, "dns_records")).toMatchObject({ status: "ok", details: "4 record(s) deleted" });
+    expect(res.ok).toBe(true);
+  });
+
+  it("leaves DNS untouched when the caller opts out", async () => {
+    h.domains = [{ hostname: "app.example.com" }];
+    const res = await teardownProject(ctx, "p1", { force: true, deleteDnsRecords: false });
+    expect(res.rowDeleted).toBe(true);
+    expect(h.releaseRecords).not.toHaveBeenCalled();
+    expect(stepOf(res.steps, "dns_records")).toBeUndefined();
+  });
+
+  it("keeps DNS for a record-only delete: the workload still serves", async () => {
+    h.domains = [{ hostname: "app.example.com" }];
+    const res = await teardownProject(ctx, "p1", {
+      force: true,
+      recordOnly: true,
+      deleteDnsRecords: true,
+    });
+    expect(res.rowDeleted).toBe(true);
+    expect(h.releaseRecords).not.toHaveBeenCalled();
+    expect(stepOf(res.steps, "dns_records")?.status).toBe("skipped");
+  });
+
+  it("never releases records when the row is kept", async () => {
+    h.domains = [{ hostname: "app.example.com" }];
+    h.deleteHard.mockRejectedValueOnce(new Error("db down"));
+    const res = await teardownProject(ctx, "p1", { force: true, deleteDnsRecords: true });
+    expect(res.rowDeleted).toBe(false);
+    expect(h.releaseRecords).not.toHaveBeenCalled();
+  });
+
+  it("reports a provider failure without blocking the delete", async () => {
+    h.domains = [{ hostname: "app.example.com" }];
+    h.releaseRecords.mockResolvedValueOnce({ deleted: 0, reason: "Cloudflare unreachable" });
+    const res = await teardownProject(ctx, "p1", { force: true, deleteDnsRecords: true });
+    expect(res.rowDeleted).toBe(true);
+    const step = stepOf(res.steps, "dns_records");
+    expect(step?.status).toBe("failed");
+    expect(step?.error).toMatch(/app\.example\.com: Cloudflare unreachable/);
+  });
+
+  it("skips cleanly when the project has no domains", async () => {
+    const res = await teardownProject(ctx, "p1", { force: true, deleteDnsRecords: true });
+    expect(h.releaseRecords).not.toHaveBeenCalled();
+    expect(stepOf(res.steps, "dns_records")).toMatchObject({ status: "skipped", details: "no domains" });
+  });
+});

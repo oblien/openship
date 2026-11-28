@@ -48,6 +48,7 @@ import { env } from "../../config/index";
 import { cleanupWebmailInstall } from "../mail/webmail/webmail-install.service";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { readActiveProjectWork } from "./project-active-work";
+import { releaseRecords } from "../dns/dns-credential.service";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -176,6 +177,14 @@ export interface TeardownOptions {
    * are ALWAYS orphaned (enforced delete) regardless of this flag.
    */
   forceOrphan?: boolean;
+  /**
+   * After the row drops, delete the DNS records Openship auto-created for the
+   * project's domains through a connected DNS provider (Cloudflare,
+   * DigitalOcean). Only records carrying the Openship ownership marker are
+   * touched. Ignored for record-only deletes: the workload keeps serving, so its
+   * records must keep resolving. Defaults to false for internal callers.
+   */
+  deleteDnsRecords?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -532,7 +541,19 @@ async function teardownProjectLocked(
 
     // ── Step 5: Drop the DB row. FK CASCADE on project.id sweeps
     //   deployment, service, env_var, domain, backup_policy.
+    // Read the hostnames BEFORE the row drop: the FK CASCADE sweeps the domain
+    // rows with it. The records themselves are released only AFTER the row is
+    // gone, so a kept project never loses DNS that still routes to it.
+    const dnsHostnames =
+      opts.deleteDnsRecords && !recordOnly ? await readDnsHostnames(projectId, push) : [];
     rowDeleted = await stepDeleteRow(projectId, project.groupId, push);
+    if (rowDeleted) {
+      if (recordOnly) {
+        push({ step: "dns_records", status: "skipped", details: "record-only: kept" });
+      } else if (opts.deleteDnsRecords) {
+        await stepReleaseDnsRecords(ctx.organizationId, dnsHostnames, push);
+      }
+    }
 
     return finalize(steps, rowDeleted, undefined, { orphaned, unlinked: unlink.unlinked });
   } catch (error) {
@@ -1287,6 +1308,66 @@ async function stepWebmailTeardown(
     observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
     push({ step: "webmail", status: "failed", error: safeErrorMessage(err) });
   }
+}
+
+async function readDnsHostnames(
+  projectId: string,
+  push: (s: TeardownStep) => void,
+): Promise<string[] | null> {
+  try {
+    const domains = await repos.domain.listByProject(projectId);
+    return [...new Set(domains.map((d) => d.hostname.toLowerCase()))];
+  } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
+    push({ step: "dns_records", status: "failed", error: safeErrorMessage(err) });
+    return null;
+  }
+}
+
+/**
+ * Best-effort: take back the DNS records Openship wrote for the project's
+ * domains. Same contract as single-domain removal — `releaseRecords` deletes
+ * only records carrying our ownership marker, so an apex domain's MX/SPF/CAA
+ * records stay untouched. Never gates the delete (the row is already gone);
+ * a failure is reported so the operator can clean up the zone by hand.
+ */
+async function stepReleaseDnsRecords(
+  organizationId: string,
+  hostnames: string[] | null,
+  push: (s: TeardownStep) => void,
+): Promise<void> {
+  if (hostnames === null) return; // read failure already reported
+  if (hostnames.length === 0) {
+    push({ step: "dns_records", status: "skipped", details: "no domains" });
+    return;
+  }
+  let deleted = 0;
+  const failures: string[] = [];
+  for (const hostname of hostnames) {
+    const released = await releaseRecords(organizationId, hostname, [
+      hostname,
+      `_openship-challenge.${hostname}`,
+    ]).catch((err: unknown) => {
+      observeCaughtError(err, "platform/engine/modules/projects/project-teardown");
+      return { deleted: 0, reason: safeErrorMessage(err) };
+    });
+    deleted += released.deleted;
+    if (released.reason) failures.push(`${hostname}: ${released.reason}`);
+  }
+  if (failures.length > 0) {
+    push({
+      step: "dns_records",
+      status: "failed",
+      details: `${deleted} record(s) deleted`,
+      error: `Could not clean up DNS records for ${failures.join("; ")}`,
+    });
+    return;
+  }
+  push(
+    deleted > 0
+      ? { step: "dns_records", status: "ok", details: `${deleted} record(s) deleted` }
+      : { step: "dns_records", status: "skipped", details: "no Openship-managed records found" },
+  );
 }
 
 async function stepDeleteRow(

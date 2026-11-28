@@ -679,6 +679,9 @@ const ProjectSettingsContent = () => {
     // modal's (wipeVolumes, recordOnly) call maps positionally, and so it survives
     // the force/forceOrphan retries below.
     recordOnly = false,
+    // Release the Openship-managed DNS records of the project's domains. Also
+    // positional from the modal, and carried through the retries below.
+    deleteDnsRecords = true,
     force = false,
     forceOrphan = false,
   ) => {
@@ -728,6 +731,7 @@ const ProjectSettingsContent = () => {
       const response = await projectsApi.delete(deletedId, {
         wipeVolumes,
         recordOnly,
+        deleteDnsRecords,
         force,
         forceOrphan,
       });
@@ -835,7 +839,7 @@ const ProjectSettingsContent = () => {
         if (body.code === "PROJECT_HAS_ACTIVE_WORK") {
           if (!force) {
             showToast(t.projects.delete.cancellingActiveWork, "success", t.projects.delete.cleaningUpTitle);
-            void handleDeleteProject(wipeVolumes, recordOnly, true, forceOrphan);
+            void handleDeleteProject(wipeVolumes, recordOnly, deleteDnsRecords, true, forceOrphan);
             return;
           }
           showToast(
@@ -899,7 +903,7 @@ const ProjectSettingsContent = () => {
                     type="button"
                     onClick={() => {
                       hideModal(modalId);
-                      void handleDeleteProject(wipeVolumes, recordOnly, force, true);
+                      void handleDeleteProject(wipeVolumes, recordOnly, deleteDnsRecords, force, true);
                     }}
                     className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-danger-solid px-4 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90"
                   >
@@ -1096,9 +1100,9 @@ const ProjectSettingsContent = () => {
         projectId={id}
         projectName={projectData.name}
         selfHosted={projectData.deployTarget !== "cloud"}
-        onConfirm={(wipeVolumes, recordOnly) => {
+        onConfirm={(wipeVolumes, recordOnly, deleteDnsRecords) => {
           setRetryDeletionFor(null);
-          void handleDeleteProject(wipeVolumes, recordOnly);
+          void handleDeleteProject(wipeVolumes, recordOnly, deleteDnsRecords);
         }}
       />
     </>

@@ -6,6 +6,7 @@ export interface ProjectDeleteOptions {
   forceOrphan: boolean;
   wipeVolumes: boolean;
   recordOnly: boolean;
+  deleteDnsRecords: boolean;
 }
 
 type DeleteOptionName = keyof ProjectDeleteOptions;
@@ -25,6 +26,7 @@ function parseDeleteBoolean(
   name: DeleteOptionName,
   queryValue: string | undefined,
   bodyValue: unknown,
+  fallback = false,
 ): boolean {
   // An explicitly supplied query parameter is authoritative, including false.
   // This keeps old query-based clients deterministic when they also send a body.
@@ -38,7 +40,7 @@ function parseDeleteBoolean(
     );
   }
 
-  if (bodyValue === undefined) return false;
+  if (bodyValue === undefined) return fallback;
   if (typeof bodyValue === "boolean") return bodyValue;
   throw new AppError(
     `${name} in the request body must be a boolean`,
@@ -69,6 +71,12 @@ export function parseProjectDeleteOptions(
     forceOrphan,
     wipeVolumes: parseDeleteBoolean("wipeVolumes", query.wipeVolumes, record.wipeVolumes),
     recordOnly: parseDeleteBoolean("recordOnly", query.recordOnly, record.recordOnly),
+    deleteDnsRecords: parseDeleteBoolean(
+      "deleteDnsRecords",
+      query.deleteDnsRecords,
+      record.deleteDnsRecords,
+      true,
+    ),
   };
   return normalizeProjectDeleteOptions(options);
 }

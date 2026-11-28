@@ -107,6 +107,7 @@ export const ProjectDeletionPreviewSchema = Type.Object({
   deploymentVolumes: Type.Array(Type.String()),
   networks: Type.Array(Type.String()),
   totalVolumes: Type.Number(),
+  customDomains: Type.Array(Type.String()),
 });
 const message = Type.Object({ success: Type.Boolean(), message: Type.String() });
 
@@ -115,6 +116,8 @@ export const RemoveProjectSchema = Type.Object({
   forceOrphan: Type.Optional(Type.Boolean()),
   wipeVolumes: Type.Optional(Type.Boolean()),
   recordOnly: Type.Optional(Type.Boolean()),
+  /** Delete the Openship-managed DNS records of the project's domains. Default true. */
+  deleteDnsRecords: Type.Optional(Type.Boolean()),
 });
 export type RemoveProjectInput = Static<typeof RemoveProjectSchema>;
 export function normalizeProjectDeleteOptions(input: RemoveProjectInput) {
@@ -123,6 +126,7 @@ export function normalizeProjectDeleteOptions(input: RemoveProjectInput) {
     forceOrphan: !!input.forceOrphan,
     wipeVolumes: !!input.wipeVolumes,
     recordOnly: !!input.recordOnly,
+    deleteDnsRecords: input.deleteDnsRecords !== false,
   };
   if (options.recordOnly && (options.wipeVolumes || options.forceOrphan))
     throw new AppError(
