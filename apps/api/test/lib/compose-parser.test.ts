@@ -1856,3 +1856,168 @@ describe("Compose GPU selectors are never broadened or silently discarded", () =
     expect(configured.services[0]?.advanced?.gpus).toMatchObject({ deviceIds: ["GPU-specific"] });
   });
 });
+
+/**
+ * #1854. `env_file:` used to be dropped in silence: the parser never read
+ * `svc.env_file` and `UNSUPPORTED_SERVICE_KEYS` had no entry for it, so a
+ * service's whole environment could vanish with nothing reported (#533).
+ * The import now reads each declared file (contents arrive via `envFileContents`,
+ * keyed by the path resolved against `composeDirectory`), merges it BELOW
+ * `environment:` — Compose's own precedence — and reports what it cannot read.
+ */
+describe("parseComposeFile — service env_file (#1854)", () => {
+  const svc = (body: string) => `services:\n  app:\n    image: nginx\n${body}`;
+
+  it("merges env_file variables into the service environment, below `environment:`", () => {
+    const parsed = parseComposeFile(
+      svc("    env_file: config/app.env\n    environment:\n      PORT: '3000'\n"),
+      {
+        envFileContents: {
+          "config/app.env": "DATABASE_URL=postgres://db/app\nSECRET_KEY_BASE=abc\nPORT=9999\n",
+        },
+      },
+    );
+
+    expect(parsed.services[0]?.environment).toEqual({
+      DATABASE_URL: "postgres://db/app",
+      SECRET_KEY_BASE: "abc",
+      PORT: "3000",
+    });
+    // Read, so it must not also be reported as dropped.
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("resolves env_file paths against the compose file's directory", () => {
+    const parsed = parseComposeFile(svc("    env_file: .env\n"), {
+      composeDirectory: "deploy",
+      envFileContents: { "deploy/.env": "PORT=9090\n" },
+    });
+
+    expect(parsed.services[0]?.environment).toEqual({ PORT: "9090" });
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("lets a later env_file override an earlier one, like Compose", () => {
+    const parsed = parseComposeFile(
+      svc("    env_file:\n      - base.env\n      - override.env\n"),
+      {
+        envFileContents: {
+          "base.env": "A=1\nB=base\n",
+          "override.env": "B=override\n",
+        },
+      },
+    );
+
+    expect(parsed.services[0]?.environment).toEqual({ A: "1", B: "override" });
+  });
+
+  it("skips a missing file silently only when the entry opts out with required: false", () => {
+    const parsed = parseComposeFile(
+      svc(
+        "    env_file:\n      - path: ./api.env\n        required: false\n      - path: ./missing.env\n",
+      ),
+      { envFileContents: {} },
+    );
+
+    // api.env is absent-but-optional (Compose ignores it); missing.env is a
+    // required file we could not read — reported, not dropped (#533).
+    expect(parsed.services[0]?.environment).toEqual({});
+    expect(parsed.unsupported).toEqual([
+      expect.objectContaining({ service: "app", field: "env_file" }),
+    ]);
+    expect(blockingComposeFields(parsed.unsupported)).toEqual([]);
+  });
+
+  it("warns, without blocking, when a declared env_file cannot be read", () => {
+    const parsed = parseComposeFile(svc("    env_file: ./config/app.env\n"), {
+      envFileContents: {},
+    });
+
+    expect(parsed.services[0]?.environment).toEqual({});
+    const warning = parsed.unsupported.find((u) => u.field === "env_file");
+    expect(warning?.service).toBe("app");
+    expect(warning?.reason).toContain("config/app.env");
+    expect(blockingComposeFields(parsed.unsupported)).toEqual([]);
+  });
+
+  it("reports env_file when the caller supplies no file contents at all", () => {
+    // migrate.service / docker-inspect parse without a reader: the key must
+    // still not be invisible (#533), even though nothing could be loaded.
+    const parsed = parseComposeFile(svc("    env_file: .env\n"));
+
+    expect(parsed.services[0]?.environment).toEqual({});
+    expect(parsed.unsupported.map((u) => u.field)).toContain("env_file");
+  });
+
+  it("warns on an env_file path that cannot live inside the repository", () => {
+    const absolute = parseComposeFile(svc("    env_file: /etc/app.env\n"), {
+      envFileContents: {},
+    });
+    expect(absolute.unsupported.map((u) => u.field)).toContain("env_file");
+
+    const escaping = parseComposeFile(svc("    env_file: ../../outside.env\n"), {
+      composeDirectory: "deploy",
+      envFileContents: {},
+    });
+    expect(escaping.unsupported.map((u) => u.field)).toContain("env_file");
+  });
+
+  it("interpolates the env_file path before resolving it", () => {
+    const parsed = parseComposeFile(svc("    env_file: ${ENV_DIR}/app.env\n"), {
+      envFileContent: "ENV_DIR=config\n",
+      envFileContents: { "config/app.env": "A=1\n" },
+    });
+
+    expect(parsed.services[0]?.environment).toEqual({ A: "1" });
+    expect(parsed.unsupported).toEqual([]);
+  });
+
+  it("resolves later env files against earlier values and project interpolation inputs", () => {
+    const parsed = parseComposeFile(
+      svc("    env_file: [base.env, app.env]\n    environment:\n      MODE: production\n"),
+      {
+        env: { DOMAIN: "example.test" },
+        envFileContents: {
+          "base.env": "HOST=${DOMAIN}\nMODE=dev\n",
+          "app.env": "URL=https://${HOST}/\nCOPY=${URL}\n",
+        },
+      },
+    );
+    expect(parsed.services[0]?.environment).toEqual({
+      HOST: "example.test",
+      MODE: "production",
+      URL: "https://example.test/",
+      COPY: "https://example.test/",
+    });
+    expect(parsed.services[0]?.environmentMeta?.MODE).toBeUndefined();
+  });
+
+  it("keeps env_file values literal — they are never Compose templates", () => {
+    const parsed = parseComposeFile(svc("    env_file: app.env\n"), {
+      envFileContents: { "app.env": "PRICE=$$5\nTOKEN=pa$word\n" },
+    });
+
+    expect(parsed.services[0]?.environment).toEqual({ PRICE: "$5", TOKEN: "pa" });
+    // The values still contain no template provenance: env_file lines are
+    // dotenv, not Compose expressions, so nothing here may be re-interpolated.
+    expect(parsed.services[0]?.environmentTemplates).toBeUndefined();
+    expect(parsed.services[0]?.advanced?.environmentTemplateKeys).toEqual([]);
+  });
+
+  it("parses long-form entries and honors format: raw without dotenv unquoting", () => {
+    const parsed = parseComposeFile(
+      svc(
+        "    env_file:\n      - path: ./raw.env\n        format: raw\n      - path: ./quoted.env\n",
+      ),
+      {
+        envFileContents: {
+          "raw.env": 'A="quoted"\n',
+          "quoted.env": "B='single'\n",
+        },
+      },
+    );
+
+    // dotenv strips the quotes; raw keeps the line's value verbatim.
+    expect(parsed.services[0]?.environment).toEqual({ A: '"quoted"', B: "single" });
+  });
+});

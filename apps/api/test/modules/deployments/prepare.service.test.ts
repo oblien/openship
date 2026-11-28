@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -36,6 +36,27 @@ describe("resolveProjectInfo", () => {
     ]);
     return path;
   }
+
+  it("reads service env files only from inside the selected project", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "openship-contained-env-"));
+    tempDirs.push(directory);
+    const path = join(directory, "project");
+    await mkdir(path);
+    await writeFile(join(directory, "outside.env"), "OUTSIDE=fixture\n");
+    await writeFile(join(path, "inside.env"), "INSIDE=fixture\n");
+    await symlink(join(directory, "outside.env"), join(path, "outside.env"), "file");
+    await symlink("inside.env", join(path, "linked.env"), "file");
+    await writeFile(
+      join(path, "compose.yaml"),
+      "services:\n  web:\n    image: nginx:alpine\n    env_file: [linked.env, outside.env]\n",
+    );
+
+    const info = await resolveProjectInfo({ source: "local", path, expectCompose: true });
+    expect(info.services?.[0]?.environment).toEqual({ INSIDE: "fixture" });
+    expect(info.unsupportedCompose).toEqual([
+      expect.objectContaining({ service: "web", field: "env_file" }),
+    ]);
+  });
 
   it("inspects an explicitly selected root or unlisted folder without promoting another app", async () => {
     const path = await mkdtemp(join(tmpdir(), "openship-selected-root-"));
@@ -484,6 +505,46 @@ describe("resolveProjectInfo", () => {
         },
       },
     });
+  });
+
+  it("merges a service env_file below environment: and reports files it cannot read (#1854)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+    await mkdir(join(tempDir, "deploy"), { recursive: true });
+    await writeFile(
+      join(tempDir, "deploy", "api.env"),
+      "DATABASE_URL=postgres://db/app\nPORT=9999\n",
+    );
+    await writeFile(
+      join(tempDir, "deploy", "docker-compose.yaml"),
+      [
+        "services:",
+        "  api:",
+        "    image: nginx:alpine",
+        "    env_file:",
+        "      - api.env",
+        "      - ./missing.env",
+        "    environment:",
+        "      PORT: '3000'",
+      ].join("\n"),
+    );
+
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      composePath: "deploy/docker-compose.yaml",
+    });
+
+    // env_file resolves against the compose file's directory; `environment:`
+    // still wins over it, exactly like Compose.
+    expect(info.services?.[0]?.environment).toEqual({
+      DATABASE_URL: "postgres://db/app",
+      PORT: "3000",
+    });
+    // The unreadable file is a visible warning, not a silent drop (#533).
+    expect(info.unsupportedCompose).toEqual([
+      expect.objectContaining({ service: "api", field: "env_file" }),
+    ]);
   });
 
   it("#795 carries native service build args and source-env provenance", async () => {
