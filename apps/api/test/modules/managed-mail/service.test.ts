@@ -1210,10 +1210,21 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
     connection: { user: "root", host: vm.id, bastion: "ssh.oblien.test" },
   }));
   const setKey = vi.fn();
-  const expose = vi.fn(async () => ({ active: true, address: "2001:db8::123" }));
+  const networkState = {
+    supported: true, enabled: true, active: false, address: "2001:db8::123", revision: 1,
+    tcp_ports: [8443], tcp_port_ranges: [{ start: 80, end: 81 }],
+  };
+  const firewall = vi.fn(async ({ public_tcp_ports }: { public_tcp_ports: number[] }) => {
+    networkState.tcp_ports = public_tcp_ports;
+    return { revision: ++networkState.revision };
+  });
+  const expose = vi.fn(async () => ({ ...networkState, active: true }))
+    .mockRejectedValueOnce(new Error("Node firewall unavailable"));
   h.vmHandle.mockReturnValue({
     network: {
-      getPublicIPv6: async () => ({ supported: true, enabled: false, revision: 1 }),
+      getPublicIPv6: async () => ({ ...networkState }),
+      getFirewall: async () => ({ revision: networkState.revision, private_ports: [22], public_tcp_ports: networkState.tcp_ports }),
+      setFirewall: firewall,
       setPublicIPv6: expose,
     },
     ssh: { status: readSsh, setKey },
@@ -1300,6 +1311,10 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
     }),
   );
   await warmMailFleet();
+  expect(expose).toHaveBeenCalledTimes(1);
+  expect(h.dnsWrite).not.toHaveBeenCalled();
+  expect(setKey).not.toHaveBeenCalled();
+  await warmMailFleet();
   await warmMailFleet();
   await warmMailFleet();
   expect((await repos.managedMail.service(owner.orgId, row!.id))?.provisioning).toBe(true);
@@ -1313,11 +1328,13 @@ it("fulfills the reviewed dedicated order once, retains shared inboxes and pools
       config: expect.objectContaining({ disk_size_mb: 225 * 1024 }),
     }),
   );
-  expect(expose).toHaveBeenCalledExactlyOnceWith({
-    enabled: true,
+  expect(firewall).toHaveBeenCalledExactlyOnceWith({
     expected_revision: 1,
-    tcp_ports: [25, 80, 443, 587, 993],
+    private_ports: [22],
+    public_tcp_ports: [8443, 25, 443, 587, 993],
   });
+  expect(expose).toHaveBeenCalledTimes(2);
+  expect(expose).toHaveBeenLastCalledWith({ enabled: true, expected_revision: 2 });
   expect(h.dnsWrite).not.toHaveBeenCalledWith(expect.anything(), "fixture", expect.objectContaining({ name: "webmail." + domain }));
   expect(h.dnsWrite).not.toHaveBeenCalledWith(expect.anything(), "fixture",
     expect.objectContaining({ type: "A", name: "mail." + domain }));

@@ -1,4 +1,5 @@
 import { AppError } from "@repo/core";
+import { OblienError } from "@repo/adapters";
 import { diagnostics } from "@repo/core/diagnostics";
 import {
   dedicatedFleet,
@@ -110,9 +111,10 @@ export async function warmMailFleet() {
             const latest = await repos.managedMail.service(row.organizationId!, row.id);
             if (latest) await enrollDedicatedVm(latest, profile);
           });
-      } catch {
+      } catch (error) {
         diagnostics.warn("managed-mail", "Dedicated worker enrollment will retry.", {
           serviceId: row.id,
+          ...(error instanceof OblienError && { providerCode: error.code, requestId: error.requestId }),
         });
       }
     }

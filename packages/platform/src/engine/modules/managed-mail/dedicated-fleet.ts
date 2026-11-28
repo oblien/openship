@@ -1,4 +1,5 @@
 import { isIPv6 } from "node:net";
+import type { Oblien } from "@repo/adapters";
 import { AppError } from "@repo/core";
 import { repos } from "@repo/db";
 import { z } from "zod";
@@ -15,6 +16,42 @@ import {
 } from "./dedicated-worker";
 
 type Service = NonNullable<Awaited<ReturnType<typeof repos.managedMail.service>>>;
+type VmNetwork = ReturnType<Oblien["vm"]>["network"];
+type PublicIPv6 = Awaited<ReturnType<VmNetwork["getPublicIPv6"]>>;
+
+const mailPorts = [25, 80, 443, 587, 993];
+
+function missingMailPorts(state: PublicIPv6) {
+  if (state.tcp_allow_all) return [];
+  return mailPorts.filter(port => !state.tcp_ports.includes(port) &&
+    !state.tcp_port_ranges?.some(({ start, end }) => start <= port && port <= end));
+}
+
+async function dedicatedMailAddress(network: VmNetwork) {
+  let state = await network.getPublicIPv6();
+  if (!state.supported)
+    throw new AppError("This node requires an operator-routed mail worker.", 503);
+
+  const missing = missingMailPorts(state);
+  if (missing.length) {
+    const firewall = await network.getFirewall();
+    if (firewall.revision !== state.revision) return;
+    const saved = await network.setFirewall({
+      expected_revision: firewall.revision,
+      private_ports: firewall.private_ports,
+      public_tcp_ports: [...firewall.public_tcp_ports, ...missing],
+    });
+    state = await network.getPublicIPv6();
+    if (state.revision !== saved.revision || missingMailPorts(state).length) return;
+  }
+  // The provider may save the rules even when applying them on the node fails.
+  // A later provisioning pass must retry activation using the current revision.
+  if (!state.enabled || !state.active) {
+    state = await network.setPublicIPv6({ enabled: true, expected_revision: state.revision });
+  }
+  if (state.active && state.enabled && state.address && isIPv6(state.address) && !missingMailPorts(state).length)
+    return state.address;
+}
 
 export function dedicatedFleet() {
   return parseDedicatedMailFleet(env.OPENSHIP_MAIL_DEDICATED_FLEET);
@@ -90,25 +127,14 @@ export async function enrollDedicatedVm(row: Service, fleet: DedicatedMailFleet)
     return;
   }
   const vm = client.vm(owned.id);
-  const previous = await vm.network.getPublicIPv6();
-  if (!previous.supported)
-    throw new AppError("This node requires an operator-routed mail worker.", 503);
-  const ports = [25, 80, 443, 587, 993];
-  const ipv6 =
-    previous.enabled && ports.every((port) => previous.tcp_ports.includes(port))
-      ? previous
-      : await vm.network.setPublicIPv6({
-          enabled: true,
-          expected_revision: previous.revision,
-          tcp_ports: ports,
-        });
-  if (!ipv6.active || !ipv6.address || !isIPv6(ipv6.address)) return;
+  const address = await dedicatedMailAddress(vm.network);
+  if (!address) return;
   const domain = serviceDomain(row, fleet);
   const dns = resolveDnsProvider(fleet.dnsProvider);
   const credentials = { apiToken: fleet.dnsToken };
   // Browser hostnames are claimed by the customer's catalog App through normal routing.
   await dns.upsertRecord(credentials, fleet.zoneId, {
-    type: "AAAA", name: "mail." + domain, content: ipv6.address, proxied: false,
+    type: "AAAA", name: "mail." + domain, content: address, proxied: false,
   });
   await dns.upsertRecord(credentials, fleet.zoneId, {
     type: "MX",
