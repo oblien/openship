@@ -84,6 +84,7 @@ export interface ProjectOptionsBody {
   runtimeVersion?: string | null;
   runtimeImage?: string | null;
   installCommand?: string;
+  runtimeInstallCommand?: string | null;
   buildCommand?: string;
   startCommand?: string;
   releaseCommands?: string[] | null;
@@ -287,6 +288,7 @@ export const projectsApi = {
     localPath?: string;
     packageManager?: string;
     installCommand?: string;
+    runtimeInstallCommand?: string | null;
     buildCommand?: string;
     outputDirectory?: string;
     productionPaths?: string;
@@ -438,8 +440,11 @@ export const projectsApi = {
 
   /** Retention edits include artifact cleanup on the project's host. */
   update: (id: string | number, fields: Record<string, unknown>) =>
-    api.patch<any>(endpoints.projects.item(id), fields,
-      fields.rollbackWindow !== undefined ? { timeout: 120_000 } : undefined),
+    api.patch<any>(
+      endpoints.projects.item(id),
+      fields,
+      fields.rollbackWindow !== undefined ? { timeout: 120_000 } : undefined,
+    ),
 
   /**
    * Read-only edge health for the project's server: is OpenResty already the
@@ -573,7 +578,9 @@ export const projectsApi = {
   updateRouteRule: (id: string | number, ruleId: string, body: RouteRuleInput) =>
     api.patch<{ rule: RouteRuleRow }>(endpoints.projects.routeRule(id, ruleId), body),
   deleteRouteRule: (id: string | number, ruleId: string) =>
-    api.delete<{ success: boolean; edgeApplied?: boolean }>(endpoints.projects.routeRule(id, ruleId)),
+    api.delete<{ success: boolean; edgeApplied?: boolean }>(
+      endpoints.projects.routeRule(id, ruleId),
+    ),
 
   /** Create a new deployment session */
   createDeploymentSession: (id: string | number) =>
@@ -603,7 +610,11 @@ export const projectsApi = {
       upserts: Array<{ key: string; value: string; isSecret?: boolean }>;
       deletes: string[];
     },
-  ) => api.patch<{ upserted: number; deleted: number; warnings?: string[] }>(endpoints.projects.env(id), body),
+  ) =>
+    api.patch<{ upserted: number; deleted: number; warnings?: string[] }>(
+      endpoints.projects.env(id),
+      body,
+    ),
 
   /** Real values for named keys in the shared (project-level) env store only. */
   revealEnv: (
@@ -637,7 +648,13 @@ export const projectsApi = {
   /** Link a GitHub repo to an existing project + register webhook */
   linkRepo: (
     id: string | number,
-    body: { provider?: string; owner: string; repo: string; branch?: string; installationId?: number },
+    body: {
+      provider?: string;
+      owner: string;
+      repo: string;
+      branch?: string;
+      installationId?: number;
+    },
   ) => api.post<any>(endpoints.projects.gitLink(id), body),
 
   /** Atomically transition a single-app project to a tracked prebuilt image. */

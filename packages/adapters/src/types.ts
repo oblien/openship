@@ -7,7 +7,13 @@
  */
 
 import { PRICING } from "@repo/core";
-import type { BaseImageReceipt, BuildStrategy, ProxySettings, BuildStep, LogEntry } from "@repo/core";
+import type {
+  BaseImageReceipt,
+  BuildStrategy,
+  ProxySettings,
+  BuildStep,
+  LogEntry,
+} from "@repo/core";
 import type { Readable, Writable, Duplex } from "node:stream";
 import type { RouteProtection } from "./infra/route-protection";
 export type { BuildStrategy } from "@repo/core";
@@ -118,7 +124,11 @@ export interface BuildConfig {
   /** Trusted uploaded/release bytes supplied by the control plane. Never executes source locally. */
   /** Source hook already populated the target directory; skip cloning. */
   sourceStaged?: boolean;
-  sourceTransfer?: (executor: CommandExecutor, directory: string, onLog: LogCallback) => Promise<void>;
+  sourceTransfer?: (
+    executor: CommandExecutor,
+    directory: string,
+    onLog: LogCallback,
+  ) => Promise<void>;
   /** Detected framework / stack */
   stack: string;
   /** Docker image for the build container (e.g. "node:22", "oven/bun:latest") */
@@ -137,6 +147,8 @@ export interface BuildConfig {
   refreshBaseImages?: boolean;
   /** Shell command to install dependencies */
   installCommand: string;
+  /** Shell command to install system tools or packages in the generated runtime stage (as root) */
+  runtimeInstallCommand?: string;
   /**
    * Monorepo-only: shell command run ONCE at the workspace root after
    * the repo is cloned, before any per-service build runs. Use for any
@@ -751,7 +763,15 @@ export interface SslResult {
    * exists, so a retry won't help, and treating it as valid is what let "Recheck
    * SSL" report green on a cert browsers reject.
    */
-  reason?: "issued" | "renewed" | "missing" | "read_error" | "not_local" | "invalid" | "edge_invalid" | "pending";
+  reason?:
+    | "issued"
+    | "renewed"
+    | "missing"
+    | "read_error"
+    | "not_local"
+    | "invalid"
+    | "edge_invalid"
+    | "pending";
   /** Safe explanation from a live HTTPS check, independent of provider metadata. */
   detail?: string;
 }

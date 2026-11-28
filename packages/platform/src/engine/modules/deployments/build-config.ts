@@ -16,6 +16,7 @@ export interface BuildConfigSnapshotLike {
   runtimeImage: string;
   packageManager: string;
   installCommand: string;
+  runtimeInstallCommand?: string;
   buildCommand: string;
   outputDirectory: string;
   productionPaths: string[];
@@ -80,17 +81,31 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     branch: dep.branch,
     commitSha: dep.commitSha ?? undefined,
     localPath: env.CLOUD_MODE ? undefined : snapshot.localPath,
-    ...(env.CLOUD_MODE && snapshot.localPath ? {
-      sourceTransfer: async (executor, directory, onLog) => {
-        const source = snapshot.uploadSessionId ? getFolderSession(snapshot.uploadSessionId) : undefined;
-        if (!source?.uploaded || source.uploading || source.orgId !== project.organizationId ||
-            source.projectId !== project.id || source.serverId !== project.serverId ||
-            source.managedWorkspaceId !== project.workspaceId || source.stagingDir !== snapshot.localPath) {
-          throw new AppError("This deployment's uploaded source is unavailable. Upload the folder again.", 409, "SOURCE_UPLOAD_UNAVAILABLE");
+    ...(env.CLOUD_MODE && snapshot.localPath
+      ? {
+          sourceTransfer: async (executor, directory, onLog) => {
+            const source = snapshot.uploadSessionId
+              ? getFolderSession(snapshot.uploadSessionId)
+              : undefined;
+            if (
+              !source?.uploaded ||
+              source.uploading ||
+              source.orgId !== project.organizationId ||
+              source.projectId !== project.id ||
+              source.serverId !== project.serverId ||
+              source.managedWorkspaceId !== project.workspaceId ||
+              source.stagingDir !== snapshot.localPath
+            ) {
+              throw new AppError(
+                "This deployment's uploaded source is unavailable. Upload the folder again.",
+                409,
+                "SOURCE_UPLOAD_UNAVAILABLE",
+              );
+            }
+            await executor.transferIn(source.stagingDir!, directory, onLog);
+          },
         }
-        await executor.transferIn(source.stagingDir!, directory, onLog);
-      },
-    } : {}),
+      : {}),
     buildStrategy: snapshot.buildStrategy,
     stack: snapshot.framework,
     buildImage: snapshot.buildImage,
@@ -99,6 +114,8 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     runtimeImage: snapshot.runtimeImage,
     packageManager: snapshot.packageManager,
     installCommand: snapshot.hasBuild ? snapshot.installCommand : "",
+    runtimeInstallCommand:
+      snapshot.runtimeInstallCommand?.trim() || project.runtimeInstallCommand?.trim() || undefined,
     workspacePrepareCommand: project.workspacePrepareCommand?.trim() || undefined,
     buildCommand: snapshot.hasBuild ? snapshot.buildCommand : "",
     outputDirectory: snapshot.outputDirectory,
@@ -115,8 +132,8 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     ...overrides,
     // Run intent is shared by generated, Dockerfile and monorepo builds. A
     // rollback replays its sources/artifacts without inheriting old pull hints.
-    refreshBaseImages: dep.trigger !== "rollback" &&
-      (snapshot.forcePullImages === true || dep.trigger === "update"),
+    refreshBaseImages:
+      dep.trigger !== "rollback" && (snapshot.forcePullImages === true || dep.trigger === "update"),
   };
 }
 

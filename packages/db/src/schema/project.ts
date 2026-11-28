@@ -151,10 +151,18 @@ export const project = pgTable(
     /** Null uses the shared default: deployment and per-service GitHub Checks. */
     githubChecks: jsonb("github_checks").$type<GitHubDeploymentChecks | null>(),
     /** Opt-in pull request environments. A custom base domain uses the server's wildcard DNS/TLS. */
-    previewSettings: jsonb("preview_settings").$type<{ enabled: boolean; baseDomain?: string; comments: boolean; protectionHostname?: string } | null>(),
+    previewSettings: jsonb("preview_settings").$type<{
+      enabled: boolean;
+      baseDomain?: string;
+      comments: boolean;
+      protectionHostname?: string;
+    } | null>(),
     previewScannedAt: timestamp("preview_scanned_at"),
     /** Internal successful build receipts, keyed by project or service id. */
-    buildCacheReceipts: jsonb("build_cache_receipts").$type<Record<string, { targets: string[]; deploymentId: string; completedAt: string; durationMs?: number }> | null>(),
+    buildCacheReceipts: jsonb("build_cache_receipts").$type<Record<
+      string,
+      { targets: string[]; deploymentId: string; completedAt: string; durationMs?: number }
+    > | null>(),
     /**
      * Per-project clone-token override (encrypted via lib/encryption).
      * When set, this is the first credential `resolveCloneToken` returns -
@@ -181,6 +189,8 @@ export const project = pgTable(
     packageManager: text("package_manager").default("npm"),
     /** Custom install command override */
     installCommand: text("install_command"),
+    /** Optional shell command to install system tools or packages in the generated runtime stage (as root) */
+    runtimeInstallCommand: text("runtime_install_command"),
     /** Custom build command override */
     buildCommand: text("build_command"),
     /** Build output directory */
@@ -526,11 +536,24 @@ export const project = pgTable(
   },
   (table) => [
     uniqueIndex("project_owner_unique").on(table.id, table.organizationId),
-    check("project_workspace_target_check", sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NOT NULL AND ${table.clusterId} IS NULL)`),
-    foreignKey({ columns: [table.workspaceId, table.organizationId], foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId], name: "project_workspace_owner_fk" }).onDelete("restrict"),
-    foreignKey({ columns: [table.serverId, table.workspaceId, table.organizationId], foreignColumns: [servers.id, servers.workspaceId, servers.organizationId], name: "project_server_workspace_fk" }).onDelete("restrict"),
+    check(
+      "project_workspace_target_check",
+      sql`${table.workspaceId} IS NULL OR (${table.serverId} IS NOT NULL AND ${table.clusterId} IS NULL)`,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.organizationId],
+      foreignColumns: [cloudWorkspace.id, cloudWorkspace.organizationId],
+      name: "project_workspace_owner_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.serverId, table.workspaceId, table.organizationId],
+      foreignColumns: [servers.id, servers.workspaceId, servers.organizationId],
+      name: "project_server_workspace_fk",
+    }).onDelete("restrict"),
     index("project_workspace_idx").on(table.workspaceId),
-    index("project_cluster_idx").on(table.clusterId).where(sql`${table.clusterId} IS NOT NULL`),
+    index("project_cluster_idx")
+      .on(table.clusterId)
+      .where(sql`${table.clusterId} IS NOT NULL`),
     uniqueIndex("uq_project_app_environment_slug_active")
       .on(table.groupId, table.environmentSlug)
       .where(sql`${table.deletedAt} IS NULL`),

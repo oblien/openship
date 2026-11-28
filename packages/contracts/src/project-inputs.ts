@@ -26,9 +26,12 @@ import {
 export const RuntimeVersionSchema = Type.String({
   pattern: RUNTIME_VERSION_PATTERN,
   maxLength: RUNTIME_VERSION_MAX_LENGTH,
-  description: "Runtime version; supported versions and images are validated for the selected stack.",
+  description:
+    "Runtime version; supported versions and images are validated for the selected stack.",
 });
-export const OptionalRuntimeVersionSchema = Type.Optional(Type.Union([RuntimeVersionSchema, Type.Null()]));
+export const OptionalRuntimeVersionSchema = Type.Optional(
+  Type.Union([RuntimeVersionSchema, Type.Null()]),
+);
 
 export const FrameworkEnum = Type.String({
   maxLength: 100,
@@ -93,6 +96,7 @@ export const MonorepoSubAppFieldsSchema = {
     Type.String({ minLength: 1, maxLength: 200, pattern: NO_TRAVERSAL_PATTERN }),
   ),
   installCommand: Type.Optional(Type.String({ maxLength: 1000 })),
+  runtimeInstallCommand: Type.Optional(Type.String({ maxLength: 1000 })),
   buildCommand: Type.Optional(Type.String({ maxLength: 1000 })),
   startCommand: Type.Optional(Type.String({ maxLength: 1000 })),
   // `*` not `+`: an empty string is the pipeline's own "serve from root / unset"
@@ -396,7 +400,8 @@ export const CreateProjectBody = Type.Object({
   serverId: Type.Optional(
     Type.String({
       minLength: 1,
-      description: "Execution server for this project: a connected host or a Cloud workspace's managed server.",
+      description:
+        "Execution server for this project: a connected host or a Cloud workspace's managed server.",
     }),
   ),
   /** Override the auto-generated slug (used as free subdomain: slug.opsh.io) */
@@ -417,6 +422,7 @@ export const CreateProjectBody = Type.Object({
   framework: Type.Optional(FrameworkEnum),
   packageManager: Type.Optional(PackageManagerEnum),
   installCommand: Type.Optional(Type.String({ maxLength: 500 })),
+  runtimeInstallCommand: Type.Optional(Type.Union([Type.String({ maxLength: 1000 }), Type.Null()])),
   buildCommand: Type.Optional(Type.String({ maxLength: 500 })),
   // `*` not `+`: an empty string is the pipeline's own "serve from root / unset"
   // value (build-config default, `!outputDirectory` checks), so `""` must be a
@@ -454,7 +460,17 @@ export const CreateProjectBody = Type.Object({
   roles: Type.Optional(Type.Union([Type.Null(), Type.Array(RoleSchema, { maxItems: 20 })])),
   buildImage: Type.Optional(Type.String({ maxLength: 200 })),
   runtimeVersion: OptionalRuntimeVersionSchema,
-  runtimeImage: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 200, description: "Custom production base image for generated Docker builds; null restores the stack default." }), Type.Null()])),
+  runtimeImage: Type.Optional(
+    Type.Union([
+      Type.String({
+        minLength: 1,
+        maxLength: 200,
+        description:
+          "Custom production base image for generated Docker builds; null restores the stack default.",
+      }),
+      Type.Null(),
+    ]),
+  ),
   productionMode: Type.Optional(
     Type.Union([Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone")]),
   ),
@@ -483,10 +499,9 @@ export const CreateProjectBody = Type.Object({
   workloadType: Type.Optional(
     Type.Union([Type.Literal("web"), Type.Literal("worker"), Type.Literal("static")]),
   ),
-  rollbackWindow: Type.Optional(Type.Union([
-    Type.Integer({ minimum: 0, maximum: MAX_ROLLBACK_WINDOW }),
-    Type.Null(),
-  ])),
+  rollbackWindow: Type.Optional(
+    Type.Union([Type.Integer({ minimum: 0, maximum: MAX_ROLLBACK_WINDOW }), Type.Null()]),
+  ),
   /** Project flavor - "monorepo" wires the request through the multi-app path below. */
   projectType: Type.Optional(
     Type.Union([
@@ -565,7 +580,9 @@ export const CreateProjectBody = Type.Object({
 // also what keeps PROJECT_UPDATE_KEYS from becoming a target-retargeting path.
 export const UpdateProjectBody = Type.Object({
   ...Type.Partial(Type.Omit(CreateProjectBody, ["serverId"])).properties,
-  iconUrl: Type.Optional(Type.Union([Type.String({ maxLength: MAX_IMAGE_URL_LENGTH }), Type.Null()])),
+  iconUrl: Type.Optional(
+    Type.Union([Type.String({ maxLength: MAX_IMAGE_URL_LENGTH }), Type.Null()]),
+  ),
 });
 
 /**
@@ -676,9 +693,12 @@ const ResourceSelection = Type.Object({
 
 export const UpdateResourcesBody = Type.Object({
   production: Type.Optional(ResourceSelection),
-  build: Type.Optional(Type.Union([ResourceSelection, Type.Null()], {
-    description: "Optional build resource limits. Cloud builds use available pool capacity up to these limits; null restores automatic sizing. Self-hosted builds use the target machine by default.",
-  })),
+  build: Type.Optional(
+    Type.Union([ResourceSelection, Type.Null()], {
+      description:
+        "Optional build resource limits. Cloud builds use available pool capacity up to these limits; null restores automatic sizing. Self-hosted builds use the target machine by default.",
+    }),
+  ),
   sleepMode: Type.Optional(Type.Union([Type.Literal("auto_sleep"), Type.Literal("always_on")])),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
 });
@@ -747,7 +767,17 @@ export const SetOptionsBody = Type.Object(
     packageManager: Type.Optional(Type.String()),
     buildImage: Type.Optional(Type.String()),
     runtimeVersion: OptionalRuntimeVersionSchema,
-  runtimeImage: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 200, description: "Custom production base image for generated Docker builds; null restores the stack default." }), Type.Null()])),
+    runtimeImage: Type.Optional(
+      Type.Union([
+        Type.String({
+          minLength: 1,
+          maxLength: 200,
+          description:
+            "Custom production base image for generated Docker builds; null restores the stack default.",
+        }),
+        Type.Null(),
+      ]),
+    ),
     framework: Type.Optional(Type.String()),
     productionMode: Type.Optional(Type.String({ description: "host | static | standalone." })),
     hasServer: Type.Optional(Type.Boolean()),

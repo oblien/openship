@@ -55,6 +55,7 @@ export function cachedRunPrefix(
     config.stack,
     config.installCommand,
     config.workspacePrepareCommand,
+    config.runtimeInstallCommand,
     config.buildCommand,
     Object.entries(config.envVars ?? {}).sort(([a], [b]) => a.localeCompare(b)),
   ];

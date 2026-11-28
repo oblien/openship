@@ -30,12 +30,33 @@ describe("project publicEndpoints domain cap (issue #1018)", () => {
   });
 });
 
-
 describe.each([CreateProjectBody, UpdateProjectBody])("static fallback input", (schema) => {
   it.each([true, false])("preserves %s instead of stripping the setting", (spaFallback) => {
-    expect(parseInput(schema, { name: "site", routingConfig: { spaFallback } }).routingConfig).toEqual({ spaFallback });
+    expect(
+      parseInput(schema, { name: "site", routingConfig: { spaFallback } }).routingConfig,
+    ).toEqual({ spaFallback });
   });
   it.each(["false", 0, null])("rejects a non-boolean setting: %s", (spaFallback) => {
     expect(() => parseInput(schema, { name: "site", routingConfig: { spaFallback } })).toThrow();
   });
 });
+
+describe.each([CreateProjectBody, UpdateProjectBody])(
+  "runtimeInstallCommand input (#1773)",
+  (schema) => {
+    it("accepts string and null values", () => {
+      const cmd = "apt-get update && apt-get install -y postgresql-client-16";
+      expect(
+        parseInput(schema, { name: "app", runtimeInstallCommand: cmd }).runtimeInstallCommand,
+      ).toBe(cmd);
+      expect(
+        parseInput(schema, { name: "app", runtimeInstallCommand: null }).runtimeInstallCommand,
+      ).toBeNull();
+    });
+
+    it("rejects strings exceeding max length", () => {
+      const tooLong = "a".repeat(1001);
+      expect(() => parseInput(schema, { name: "app", runtimeInstallCommand: tooLong })).toThrow();
+    });
+  },
+);
