@@ -135,6 +135,7 @@ export function generatePhpDockerfile(config: BuildConfig): string {
       : []),
     ...phpBinaryVersionCheck(config),
     PHP_EXT_INSTALL_LINE,
+    ...(config.runtimeInstallCommand?.trim() ? [`RUN ${config.runtimeInstallCommand.trim()}`] : []),
     // --chown on the COPY instead of a trailing `chown -R`: the recursive form
     // rewrites every file into a second layer, doubling the app's size on disk.
     // Ownership has to be settled HERE, before anything mounts: Docker seeds a

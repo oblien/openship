@@ -23,6 +23,7 @@ function optionsOf(config: Config): ProjectOptionsBody {
   const options = config.options ?? {};
   return {
     installCommand: options.installCommand ?? "",
+    runtimeInstallCommand: options.runtimeInstallCommand ?? null,
     buildCommand: options.buildCommand ?? "",
     startCommand: options.startCommand ?? "",
     outputDirectory: options.outputDirectory ?? "",

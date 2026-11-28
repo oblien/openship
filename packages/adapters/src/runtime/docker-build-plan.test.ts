@@ -38,38 +38,56 @@ function phpConfig(over: Partial<BuildConfig> = {}): BuildConfig {
 
 describe("explicit Bun runtime selection", () => {
   it("uses the selected Bun in workspace preparation, dependency installation and the final stage", () => {
-    const df = generateDockerfile(config({
-      stack: "nextjs", packageManager: "bun",
-      buildImage: "oven/bun:1.4.4-alpine", runtimeImage: "oven/bun:1.4.4-alpine",
-      runtimeImageOverride: true,
-      workspacePrepareCommand: "bun install --frozen-lockfile",
-      installCommand: "bun install --frozen-lockfile", buildCommand: "bun run build",
-      startCommand: "bun run start",
-    }));
+    const df = generateDockerfile(
+      config({
+        stack: "nextjs",
+        packageManager: "bun",
+        buildImage: "oven/bun:1.4.4-alpine",
+        runtimeImage: "oven/bun:1.4.4-alpine",
+        runtimeImageOverride: true,
+        workspacePrepareCommand: "bun install --frozen-lockfile",
+        installCommand: "bun install --frozen-lockfile",
+        buildCommand: "bun run build",
+        startCommand: "bun run start",
+      }),
+    );
     expect(df).toContain("FROM oven/bun:1.4.4-alpine AS builder");
     expect(df).toContain("FROM oven/bun:1.4.4-alpine AS runtime");
-    const runs = df.split("\n").filter((line) => line.startsWith("RUN") && line.includes("bun install"));
+    const runs = df
+      .split("\n")
+      .filter((line) => line.startsWith("RUN") && line.includes("bun install"));
     expect(runs).toHaveLength(2);
     for (const run of runs) expect(run).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
   });
   it("leaves repository toolchain selection intact when there is no explicit runtime override", () => {
-    const df = generateDockerfile(config({
-      stack: "nextjs", packageManager: "bun", buildImage: "oven/bun:1.4.4", runtimeImage: "oven/bun:1.4.4",
-      installCommand: "bun install",
-    }));
+    const df = generateDockerfile(
+      config({
+        stack: "nextjs",
+        packageManager: "bun",
+        buildImage: "oven/bun:1.4.4",
+        runtimeImage: "oven/bun:1.4.4",
+        installCommand: "bun install",
+      }),
+    );
     expect(df).not.toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='1.4.4'");
   });
-  it.each(["npm", "pnpm", "yarn"])("does not use the Node runtime version as the %s version", (packageManager) => {
-    const df = generateDockerfile(config({
-      packageManager,
-      buildImage: "node:22.22.2-alpine", runtimeImage: "node:22.22.2-alpine",
-      runtimeImageOverride: true,
-      installCommand: `${packageManager} install`,
-    }));
-    expect(df).toContain("FROM node:22.22.2-alpine AS runtime");
-    expect(df).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION=''");
-    expect(df).not.toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='22.22.2'");
-  });
+  it.each(["npm", "pnpm", "yarn"])(
+    "does not use the Node runtime version as the %s version",
+    (packageManager) => {
+      const df = generateDockerfile(
+        config({
+          packageManager,
+          buildImage: "node:22.22.2-alpine",
+          runtimeImage: "node:22.22.2-alpine",
+          runtimeImageOverride: true,
+          installCommand: `${packageManager} install`,
+        }),
+      );
+      expect(df).toContain("FROM node:22.22.2-alpine AS runtime");
+      expect(df).toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION=''");
+      expect(df).not.toContain("OPENSHIP_BUILD_PACKAGE_MANAGER_VERSION='22.22.2'");
+    },
+  );
 });
 
 describe("generateDockerfile — PHP branch", () => {
@@ -88,17 +106,29 @@ describe("generateDockerfile — PHP branch", () => {
   });
 
   it("checks both selected stages and the actual Composer platform", () => {
-    const selected = generateDockerfile(phpConfig({ runtimeVersion: "8.3", buildImage: "php:8.3-cli-bookworm", runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm" }));
+    const selected = generateDockerfile(
+      phpConfig({
+        runtimeVersion: "8.3",
+        buildImage: "php:8.3-cli-bookworm",
+        runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm",
+      }),
+    );
     expect(selected.match(/RUN php -r/g)).toHaveLength(2);
     expect(selected.match(/check-platform-reqs --no-dev/g)).toHaveLength(2);
-    expect(selected).toContain("env -u COMPOSER_IGNORE_PLATFORM_REQ -u COMPOSER_IGNORE_PLATFORM_REQS");
+    expect(selected).toContain(
+      "env -u COMPOSER_IGNORE_PLATFORM_REQ -u COMPOSER_IGNORE_PLATFORM_REQS",
+    );
     expect(selected).toContain("rm -f /tmp/openship-composer");
     expect(generateDockerfile(phpConfig())).not.toContain("check-platform-reqs");
   });
   it("refuses a mismatched builder or a recipe that cannot honor the version", () => {
     expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.3" }))).toThrow(/uses PHP 8.4/);
-    expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.4", dockerfilePath: "Dockerfile" }))).toThrow(/your own Dockerfile/);
-    expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.4", isStatic: true }))).toThrow(/generated PHP Docker/);
+    expect(() =>
+      generateDockerfile(phpConfig({ runtimeVersion: "8.4", dockerfilePath: "Dockerfile" })),
+    ).toThrow(/your own Dockerfile/);
+    expect(() => generateDockerfile(phpConfig({ runtimeVersion: "8.4", isStatic: true }))).toThrow(
+      /generated PHP Docker/,
+    );
   });
   const df = generateDockerfile(phpConfig());
 
@@ -147,7 +177,9 @@ describe("generateDockerfile — PHP branch", () => {
       phpConfig({ outputDirectory: "web", buildCommand: "npm i --force && npm run build" }),
     );
     expect(renamed).toContain("ENV SERVER_ROOT=web/");
-    expect(renamed).toContain("COPY --from=assets --chown=www-data:www-data /workspace/web /app/web");
+    expect(renamed).toContain(
+      "COPY --from=assets --chown=www-data:www-data /workspace/web /app/web",
+    );
   });
 
   it("drops the fpm+nginx machinery entirely", () => {
@@ -195,14 +227,18 @@ describe("generateDockerfile — PHP with a JS asset pipeline", () => {
   });
 
   it("keeps the whole workspace and builds in the selected monorepo application", () => {
-    const output = generateDockerfile(phpConfig({ rootDirectory: "apps/web", buildCommand: "npm run build" }));
+    const output = generateDockerfile(
+      phpConfig({ rootDirectory: "apps/web", buildCommand: "npm run build" }),
+    );
     const assets = output.slice(output.indexOf("AS assets"), output.indexOf("AS runtime"));
     expect(assets).toContain("COPY --from=builder /workspace /workspace");
     expect(assets).toContain("WORKDIR /workspace/apps/web");
   });
 
   it("does not require a vendor directory when the installation step is disabled", () => {
-    const output = generateDockerfile(phpConfig({ installCommand: "", buildCommand: "npm run build" }));
+    const output = generateDockerfile(
+      phpConfig({ installCommand: "", buildCommand: "npm run build" }),
+    );
     const assets = output.slice(output.indexOf("AS assets"), output.indexOf("AS runtime"));
     expect(assets).not.toContain("/vendor");
     expect(assets).toContain("npm run build");
@@ -233,7 +269,12 @@ describe("generateDockerfile — non-PHP is unaffected", () => {
         buildCommand: "npm run build",
       }),
     );
-    const runLines = df.split("\n").filter((l) => l.startsWith("RUN ") && !l.includes(".env.example") && !l.includes("eval(Buffer.from"));
+    const runLines = df
+      .split("\n")
+      .filter(
+        (l) =>
+          l.startsWith("RUN ") && !l.includes(".env.example") && !l.includes("eval(Buffer.from"),
+      );
     expect(runLines).toHaveLength(1);
     expect(runLines[0]).toContain("npm i --force");
     expect(runLines[0]).toContain("npm run build");
@@ -355,7 +396,12 @@ describe("generateDockerfile — node_modules/.bin on PATH (#623)", () => {
 
   it("keeps install and build in one RUN layer — the PATH is an ENV, not a step", () => {
     const df = generateDockerfile(bunNext());
-    const runLines = df.split("\n").filter((l) => l.startsWith("RUN ") && !l.includes(".env.example") && !l.includes("eval(Buffer.from"));
+    const runLines = df
+      .split("\n")
+      .filter(
+        (l) =>
+          l.startsWith("RUN ") && !l.includes(".env.example") && !l.includes("eval(Buffer.from"),
+      );
     expect(runLines).toHaveLength(1);
     expect(runLines[0]).toContain("bun install");
     expect(runLines[0]).toContain("next build");
@@ -423,7 +469,9 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     const exports = inlineExports(df);
     expect(exports).toEqual([]);
     expect(df).toContain(BUILD_ENV_SOURCE);
-    expect([...dockerBuildSecrets(nextApp({ envVars: HOSTILE_ENV })).values()]).toEqual([EXPECTED_EXPORT]);
+    expect([...dockerBuildSecrets(nextApp({ envVars: HOSTILE_ENV })).values()]).toEqual([
+      EXPECTED_EXPORT,
+    ]);
   });
 
   it("never lets the project's PATH value into the recipe at all", () => {
@@ -476,7 +524,9 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     const exports = inlineExports(df);
     expect(exports).toEqual([]);
     expect(df).toContain(BUILD_ENV_SOURCE);
-    expect([...dockerBuildSecrets(nextApp({ envVars: HOSTILE_ENV })).values()]).toEqual([EXPECTED_EXPORT]);
+    expect([...dockerBuildSecrets(nextApp({ envVars: HOSTILE_ENV })).values()]).toEqual([
+      EXPECTED_EXPORT,
+    ]);
   });
 
   it("covers the PHP asset stage — a Node stage inside a composer project", () => {
@@ -502,7 +552,11 @@ describe("generateDockerfile — a project env var named PATH cannot unset the b
     );
     const exports = inlineExports(df);
     expect(exports).toEqual([]);
-    expect([...dockerBuildSecrets(nextApp({ envVars: { PATH: "/bad", PATH_PREFIX: "/base", NEXT_PUBLIC_PATH: "/p" } })).values()]).toEqual(["export PATH_PREFIX='/base'\nexport NEXT_PUBLIC_PATH='/p'\nexport NO_COLOR='1'\n"]);
+    expect([
+      ...dockerBuildSecrets(
+        nextApp({ envVars: { PATH: "/bad", PATH_PREFIX: "/base", NEXT_PUBLIC_PATH: "/p" } }),
+      ).values(),
+    ]).toEqual(["export PATH_PREFIX='/base'\nexport NEXT_PUBLIC_PATH='/p'\nexport NO_COLOR='1'\n"]);
   });
 });
 
@@ -556,5 +610,76 @@ describe("stack-selected recipes and custom runtime bases", () => {
     expect(() =>
       generateDockerfile(config({ runtimeImageOverride: true, isStatic: true })),
     ).toThrow(/static sites/);
+  });
+});
+
+describe("runtimeInstallCommand in generated builds (#1773)", () => {
+  it("installs system packages in the PHP runtime stage as root before copying application code", () => {
+    const installCmd =
+      "apt-get update && apt-get install --no-install-recommends -y postgresql-client-16 imagemagick && rm -rf /var/lib/apt/lists/*";
+    const df = generateDockerfile(
+      phpConfig({
+        runtimeInstallCommand: installCmd,
+      }),
+    );
+    const runtimeStage = df.slice(df.indexOf("AS runtime"));
+    expect(runtimeStage).toContain(`RUN ${installCmd}`);
+
+    const extInstallIdx = runtimeStage.indexOf("install-php-extensions");
+    const runtimeInstallIdx = runtimeStage.indexOf(`RUN ${installCmd}`);
+    const copyAppIdx = runtimeStage.indexOf("COPY --from=builder --chown=www-data:www-data");
+    const userWwwDataIdx = runtimeStage.indexOf("USER www-data");
+
+    // Must run after PHP extension install, before app code copy, while still root
+    expect(extInstallIdx).toBeLessThan(runtimeInstallIdx);
+    expect(runtimeInstallIdx).toBeLessThan(copyAppIdx);
+    expect(runtimeInstallIdx).toBeLessThan(userWwwDataIdx);
+  });
+
+  it("installs system tools in Ruby runtime stage before dropping privileges to rails user", () => {
+    const installCmd = "apt-get update && apt-get install -y ffmpeg";
+    const df = generateDockerfile(
+      config({
+        stack: "rails",
+        packageManager: "bundler",
+        buildImage: "ruby:3.3-slim",
+        runtimeImage: "ruby:3.3-slim",
+        runtimeInstallCommand: installCmd,
+      }),
+    );
+    const runtimeStage = df.slice(df.indexOf("AS runtime"));
+    expect(runtimeStage).toContain(`RUN ${installCmd}`);
+    const cmdIdx = runtimeStage.indexOf(`RUN ${installCmd}`);
+    const userIdx = runtimeStage.indexOf("USER rails");
+    expect(cmdIdx).toBeLessThan(userIdx);
+  });
+
+  it("installs system tools in generic multi-stage runtime", () => {
+    const installCmd = "apt-get update && apt-get install -y poppler-utils";
+    const df = generateDockerfile(
+      config({
+        buildImage: "node:22",
+        runtimeImage: "node:22-slim",
+        runtimeInstallCommand: installCmd,
+      }),
+    );
+    const runtimeStage = df.slice(df.indexOf("AS runtime"));
+    expect(runtimeStage).toContain(`RUN ${installCmd}`);
+  });
+
+  it("omits runtime install step when runtimeInstallCommand is absent or whitespace", () => {
+    const df = generateDockerfile(phpConfig({ runtimeInstallCommand: "   " }));
+    const runtimeStage = df.slice(df.indexOf("AS runtime"));
+    expect(runtimeStage).not.toContain("RUN    ");
+    const runs = runtimeStage
+      .split("\n")
+      .filter(
+        (l) =>
+          l.startsWith("RUN ") &&
+          !l.includes("caddy") &&
+          !l.includes("check-platform-reqs") &&
+          !l.includes("install-php-extensions"),
+      );
+    expect(runs).toHaveLength(0);
   });
 });

@@ -93,6 +93,7 @@ export function generateRubyDockerfile(config: BuildConfig): string {
     // proxies to the app; nothing else serves public/assets.
     `ENV RAILS_ENV=production RACK_ENV=production RAILS_LOG_TO_STDOUT=1 RAILS_SERVE_STATIC_FILES=1`,
     rubyPackagesRunLine("runtime"),
+    ...(config.runtimeInstallCommand?.trim() ? [`RUN ${config.runtimeInstallCommand.trim()}`] : []),
     ...runtimeCompatibilityLines(config),
     `COPY --from=builder /usr/local/bundle /usr/local/bundle`,
     ...runtimeCopyDirectives(config, sourceDir),
