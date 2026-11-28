@@ -2,6 +2,7 @@ import { assertNoCloudBuildActivities } from "./cloud-build-activity.repo";
 import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import {
   AppError,
+  CLOUD_PROJECT_ACTIVITY_SCOPE_PREFIX,
   CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX,
   cloudServiceTerminalId,
   generateId,
@@ -96,8 +97,8 @@ async function insertWorkspace(tx: DatabaseTransaction, input: Pick<CloudWorkspa
 
 export function createCloudWorkspaceRepo(db: Database) {
   return {
-    /** Only this control plane may recover its own interrupted terminals. */
-    async listLocalTerminalActivities(limit = 50, afterId?: string) {
+    /** Only this control plane may recover its own interrupted activities. */
+    async listRecoverableLocalActivities(limit = 50, afterId?: string) {
       return db
         .select()
         .from(cloudWorkspace)
@@ -109,6 +110,11 @@ export function createCloudWorkspaceRepo(db: Database) {
               sql`${cloudWorkspace.activity}->>'scope' = 'terminal'`,
               sql`starts_with(${cloudWorkspace.activity}->>'scope', ${CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX})
                 and length(${cloudWorkspace.activity}->>'scope') > ${CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX.length}`,
+              and(
+                isNull(cloudWorkspace.remote),
+                sql`starts_with(${cloudWorkspace.activity}->>'scope', ${CLOUD_PROJECT_ACTIVITY_SCOPE_PREFIX})`,
+                sql`jsonb_typeof(${cloudWorkspace.activity}->'commands') = 'array'`,
+              ),
             ),
           ),
         )

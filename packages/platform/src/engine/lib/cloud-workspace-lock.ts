@@ -1,7 +1,7 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
-import { AppError, cloudServiceTerminalId, isCloudTerminalActivity, safeErrorMessage } from "@repo/core";
+import { AppError, CLOUD_PROJECT_ACTIVITY_SCOPE_PREFIX, cloudServiceTerminalId, isCloudTerminalActivity, safeErrorMessage } from "@repo/core";
 import { repos, type CloudWorkspace, type CloudWorkspaceActivity } from "@repo/db";
 import { withManagedCommandTracking } from "@repo/adapters";
 import { createProvisionLock, tryWithProvisionLock } from "./provision-lock";
@@ -35,10 +35,18 @@ async function recoverCommands(row: CloudWorkspace) {
   }
 }
 
-/** An acquired advisory lock proves no local replica still owns the session.
+function recoverableDockerProject(row: CloudWorkspace): string | undefined {
+  const activity = row.activity;
+  if (row.remote || !activity?.scope.startsWith(CLOUD_PROJECT_ACTIVITY_SCOPE_PREFIX) ||
+      !activity.commands?.every(command => command.kind === "docker")) return undefined;
+  return activity.scope.slice(CLOUD_PROJECT_ACTIVITY_SCOPE_PREFIX.length) || undefined;
+}
+
+/** An acquired advisory lock proves no local replica still owns the operation.
  * Never expire another controller's claim, or release before remote exit. */
-export async function recoverOrphanedCloudTerminal(row: CloudWorkspace): Promise<boolean> {
-  if (row.activity?.controllerId !== activityController(row) || !isCloudTerminalActivity(row.activity.scope))
+export async function recoverOrphanedCloudActivity(row: CloudWorkspace): Promise<boolean> {
+  if (row.activity?.controllerId !== activityController(row) ||
+      (!isCloudTerminalActivity(row.activity.scope) && !recoverableDockerProject(row)))
     return false;
   if (held.getStore()?.get(row.id)?.active) return false;
   return (
@@ -53,10 +61,33 @@ export async function recoverOrphanedCloudTerminal(row: CloudWorkspace): Promise
         current.activity.scope !== row.activity!.scope
       )
         return false;
-      return recoverTerminalActivity(current, current.activity);
+      const projectId = recoverableDockerProject(current);
+      if (projectId) return recoverDockerProjectActivity(current, current.activity, projectId);
+      return isCloudTerminalActivity(current.activity.scope)
+        ? recoverTerminalActivity(current, current.activity)
+        : false;
     })) ?? false
   );
 }
+async function recoverDockerProjectActivity(row: CloudWorkspace, activity: CloudWorkspaceActivity, projectId: string) {
+  const { projectRuntimeLockKey } = await import("./project-runtime-lock");
+  const { readActiveProjectWork } = await import("../modules/projects/project-active-work");
+  return (await tryWithProvisionLock(projectRuntimeLockKey(projectId), async () => {
+    const project = await repos.project.findByIdInOrganization(projectId, row.organizationId);
+    if (project?.workspaceId !== row.id) return false;
+    const [work, handovers, builds] = await Promise.all([
+      readActiveProjectWork(projectId),
+      repos.deployment.listPendingRoleHandovers(projectId),
+      repos.cloudBuildActivity.listActive(row.id, row.organizationId),
+    ]);
+    if (work.activeDeployments.length || work.runs.length || work.restores.length ||
+        work.migration || handovers.length || builds.length) return false;
+    await recoverCommands(row);
+    await repos.cloudWorkspace.releaseActivity(row.id, row.organizationId, activity.id, activity.controllerId);
+    return true;
+  })) ?? false;
+}
+
 async function recoverTerminalActivity(row: CloudWorkspace, activity: CloudWorkspaceActivity): Promise<boolean> {
   await recoverCommands(row);
   const serviceId = cloudServiceTerminalId(activity.scope);

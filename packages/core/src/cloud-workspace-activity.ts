@@ -1,3 +1,4 @@
+export const CLOUD_PROJECT_ACTIVITY_SCOPE_PREFIX = "project:";
 export const CLOUD_SERVICE_TERMINAL_SCOPE_PREFIX = "service-terminal:";
 
 export function cloudServiceTerminalId(scope: string): string | undefined {

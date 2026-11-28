@@ -12,6 +12,10 @@ const h = vi.hoisted(() => ({
   remote: vi.fn(),
   recover: vi.fn(),
   serviceTerminalExited: vi.fn(),
+  findProject: vi.fn(),
+  activeProjectWork: vi.fn(),
+  pendingHandovers: vi.fn(),
+  activeBuilds: vi.fn(),
   dispose: vi.fn(),
   tryLock: vi.fn(),
 }));
@@ -29,7 +33,9 @@ vi.mock("@repo/db", () => ({
         workspaceId: h.bindings.get(ownerWorkspaceId),
       }),
     },
-    project: { listByWorkspace: async () => [] },
+    project: { listByWorkspace: async () => [], findByIdInOrganization: h.findProject },
+    deployment: { listPendingRoleHandovers: h.pendingHandovers },
+    cloudBuildActivity: { listActive: h.activeBuilds },
   },
   // Each simulated installation has its own PGlite. The real process mutex and
   // SQL admission rows still fence work across those independent databases.
@@ -41,6 +47,9 @@ vi.mock("@repo/platform/engine/lib/cloud/server-link", () => ({
     h.repositories.get(id)!.findByIdInOrganization(id, org),
   remoteCloudRequest: h.remote,
 }));
+vi.mock("@repo/platform/engine/modules/projects/project-active-work", () => ({
+  readActiveProjectWork: h.activeProjectWork,
+}));
 vi.mock("@repo/platform/engine/lib/cloud-workspace-host", () => ({
   openCloudWorkspaceExecutor: async () => ({ recoverCommand: h.recover, dispose: h.dispose }),
   cloudServiceTerminalHasExited: h.serviceTerminalExited,
@@ -49,7 +58,7 @@ import {
   withCloudWorkspaceActivity,
   holdCloudWorkspaceActivity,
   reconcileSettledCloudActivity,
-  recoverOrphanedCloudTerminal,
+  recoverOrphanedCloudActivity,
 } from "@repo/platform/engine/lib/cloud-workspace-lock";
 
 const databases: DatabaseConnection[] = [];
@@ -95,6 +104,10 @@ beforeEach(async () => {
   }
   h.recover.mockResolvedValue(undefined);
   h.serviceTerminalExited.mockResolvedValue(true);
+  h.findProject.mockResolvedValue(null);
+  h.activeProjectWork.mockResolvedValue({ activeDeployments: [], runs: [], restores: [], migration: null });
+  h.pendingHandovers.mockResolvedValue([]);
+  h.activeBuilds.mockResolvedValue([]);
   h.dispose.mockResolvedValue(undefined);
   h.tryLock.mockResolvedValue({ release: async () => {} });
   h.remote.mockImplementation(async (_org: string, path: string, input: RequestInit) => {
@@ -118,12 +131,42 @@ describe("managed server admission across independent installations", () => {
     await cloud.recordActivityCommand(host.id, activity.id, command);
     const stale = (await cloud.findById(host.id))!;
     h.recover.mockRejectedValueOnce(new Error("remote exit unknown"));
-    await expect(recoverOrphanedCloudTerminal(stale)).rejects.toThrow("exit unknown");
+    await expect(recoverOrphanedCloudActivity(stale)).rejects.toThrow("exit unknown");
     expect((await cloud.findById(host.id))!.activity?.commands).toEqual([command]);
     await expect(cloud.finishTerminalRecovery(host.id, "org", activity.id)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_ACTIVITY_CHANGED" });
-    expect(await recoverOrphanedCloudTerminal(stale)).toBe(true);
+    expect(await recoverOrphanedCloudActivity(stale)).toBe(true);
     expect(h.recover).toHaveBeenLastCalledWith(command);
     expect((await cloud.findById(host.id))!.activity).toBeNull();
+  });
+
+  it("releases an abandoned project claim only after Docker confirms the tracked request exited", async () => {
+    const activity = { id: randomUUID(), controllerId: "saas", scope: "project:a", startedAt: new Date().toISOString() };
+    const request = { ...command, kind: "docker" as const };
+    await cloud.claimActivity(host.id, "org", activity);
+    await cloud.recordActivityCommand(host.id, activity.id, request);
+    const [stale] = await cloud.listRecoverableLocalActivities();
+    expect(stale?.activity?.id).toBe(activity.id);
+    h.findProject.mockResolvedValue({ workspaceId: host.id });
+
+    h.tryLock.mockResolvedValueOnce(null);
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(false);
+    h.activeBuilds.mockResolvedValueOnce([{ id: "active-build" }]);
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(false);
+    h.pendingHandovers.mockResolvedValueOnce([{ id: "active-handover" }]);
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(false);
+    h.activeProjectWork.mockResolvedValueOnce({ activeDeployments: [], runs: [], restores: [{ id: "active-restore" }], migration: null });
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(false);
+    expect(h.recover).not.toHaveBeenCalled();
+
+    h.recover.mockRejectedValueOnce(new Error("remote exit unknown"));
+    await expect(recoverOrphanedCloudActivity(stale!)).rejects.toThrow("exit unknown");
+    expect((await cloud.findById(host.id))!.activity?.commands).toEqual([request]);
+
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(true);
+    expect(h.findProject).toHaveBeenCalledWith("a", "org");
+    expect(h.recover).toHaveBeenLastCalledWith(request);
+    expect((await cloud.findById(host.id))!.activity).toBeNull();
+    expect(await withCloudWorkspaceActivity(host.id, async () => "admitted")).toBe("admitted");
   });
 
   it("recovers a service terminal and closes only its own audit after Docker confirms exit", async () => {
@@ -152,15 +195,15 @@ describe("managed server admission across independent installations", () => {
       { id: "sibling-service-terminal", serviceId: siblingId, userId },
     ]);
     await cloud.claimActivity(host.id, "org", activity);
-    const [stale] = await cloud.listLocalTerminalActivities();
+    const [stale] = await cloud.listRecoverableLocalActivities();
     expect(stale?.id).toBe(host.id);
 
     h.tryLock.mockResolvedValueOnce(null);
-    expect(await recoverOrphanedCloudTerminal(stale!)).toBe(false);
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(false);
     expect(h.serviceTerminalExited).not.toHaveBeenCalled();
 
     h.serviceTerminalExited.mockResolvedValue(false);
-    expect(await recoverOrphanedCloudTerminal(stale!)).toBe(false);
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(false);
     const newShell = vi.fn();
     await expect(withCloudWorkspaceActivity(host.id, newShell, undefined, { scope: activity.scope }))
       .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_ACTIVITY_BUSY" });
@@ -169,7 +212,7 @@ describe("managed server admission across independent installations", () => {
     expect((await db.query.serviceTerminalSessions.findMany()).every(row => row.endedAt === null)).toBe(true);
 
     h.serviceTerminalExited.mockResolvedValue(true);
-    expect(await recoverOrphanedCloudTerminal(stale!)).toBe(true);
+    expect(await recoverOrphanedCloudActivity(stale!)).toBe(true);
     expect(h.serviceTerminalExited).toHaveBeenLastCalledWith("org", host.id, serviceId);
     expect((await cloud.findById(host.id))!.activity).toBeNull();
     const sessions = new Map((await db.query.serviceTerminalSessions.findMany()).map(row => [row.id, row]));
@@ -185,26 +228,26 @@ describe("managed server admission across independent installations", () => {
     await cloud.claimActivity(host.id, "org", activity);
     await cloud.claimActivity(later.id, "org", { ...activity, id: randomUUID() });
 
-    const [first] = await cloud.listLocalTerminalActivities(1);
+    const [first] = await cloud.listRecoverableLocalActivities(1);
     expect(first?.id).toBe(host.id);
     h.tryLock.mockResolvedValueOnce(null);
-    expect(await recoverOrphanedCloudTerminal(first!)).toBe(false);
-    const [next] = await cloud.listLocalTerminalActivities(1, first!.id);
+    expect(await recoverOrphanedCloudActivity(first!)).toBe(false);
+    const [next] = await cloud.listRecoverableLocalActivities(1, first!.id);
     expect(next?.id).toBe(later.id);
-    expect(await recoverOrphanedCloudTerminal(next!)).toBe(true);
+    expect(await recoverOrphanedCloudActivity(next!)).toBe(true);
     expect((await cloud.findById(host.id))?.activity?.id).toBe(activity.id);
   });
 
   it("leaves a live replica's terminal and another controller's ownership intact", async () => {
     const live = await holdCloudWorkspaceActivity(host.id, "terminal");
-    expect(await recoverOrphanedCloudTerminal((await cloud.findById(host.id))!)).toBe(false);
+    expect(await recoverOrphanedCloudActivity((await cloud.findById(host.id))!)).toBe(false);
     expect(h.recover).not.toHaveBeenCalled();
     await live.release();
     const remote = { id: randomUUID(), controllerId: "remote-user:installation:other", scope: "terminal", startedAt: new Date().toISOString() };
     await cloud.claimActivity(host.id, "org", remote);
     const row = (await cloud.findById(host.id))!;
-    expect(await recoverOrphanedCloudTerminal(row)).toBe(false);
-    expect(await cloud.listLocalTerminalActivities()).toEqual([]);
+    expect(await recoverOrphanedCloudActivity(row)).toBe(false);
+    expect(await cloud.listRecoverableLocalActivities()).toEqual([]);
     expect((await cloud.findById(host.id))!.activity?.id).toBe(remote.id);
   });
 
@@ -212,7 +255,7 @@ describe("managed server admission across independent installations", () => {
     const activity = { id: randomUUID(), controllerId: "saas", scope: "terminal", startedAt: new Date().toISOString() };
     await cloud.claimActivity(host.id, "org", activity);
     h.tryLock.mockResolvedValueOnce(null);
-    expect(await recoverOrphanedCloudTerminal((await cloud.findById(host.id))!)).toBe(false);
+    expect(await recoverOrphanedCloudActivity((await cloud.findById(host.id))!)).toBe(false);
     expect((await cloud.findById(host.id))!.activity?.id).toBe(activity.id);
     expect(h.recover).not.toHaveBeenCalled();
   });
@@ -223,14 +266,14 @@ describe("managed server admission across independent installations", () => {
       throw new Error("installation interrupted");
     }, undefined, { scope: "terminal" })).rejects.toMatchObject({ code: "CLOUD_COMMAND_EXIT_UNCONFIRMED" });
     const stale = (await local.findById(a.id))!;
-    expect((await local.listLocalTerminalActivities()).map(row => row.id)).toEqual([a.id]);
-    expect(await cloud.listLocalTerminalActivities()).toEqual([]);
-    expect(await recoverOrphanedCloudTerminal((await cloud.findById(host.id))!)).toBe(false);
+    expect((await local.listRecoverableLocalActivities()).map(row => row.id)).toEqual([a.id]);
+    expect(await cloud.listRecoverableLocalActivities()).toEqual([]);
+    expect(await recoverOrphanedCloudActivity((await cloud.findById(host.id))!)).toBe(false);
     h.remote.mockRejectedValueOnce(new Error("Cloud acknowledgement unavailable"));
-    await expect(recoverOrphanedCloudTerminal(stale)).rejects.toThrow("acknowledgement unavailable");
+    await expect(recoverOrphanedCloudActivity(stale)).rejects.toThrow("acknowledgement unavailable");
     expect((await local.findById(a.id))!.activity).toMatchObject({ id: stale.activity!.id, settled: true, commands: [] });
     expect((await cloud.findById(host.id))!.activity).not.toBeNull();
-    expect(await recoverOrphanedCloudTerminal((await local.findById(a.id))!)).toBe(true);
+    expect(await recoverOrphanedCloudActivity((await local.findById(a.id))!)).toBe(true);
     expect((await local.findById(a.id))!.activity).toBeNull();
     expect((await cloud.findById(host.id))!.activity).toBeNull();
   });
@@ -256,14 +299,14 @@ describe("managed server admission across independent installations", () => {
     await expect(cloud.finishTerminalRecovery(host.id, "org", "old-admission"))
       .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_ACTIVITY_CHANGED" });
     expect((await db.query.terminalSessions.findMany()).every(row => row.endedAt === null)).toBe(true);
-    expect(await recoverOrphanedCloudTerminal(stale)).toBe(true);
+    expect(await recoverOrphanedCloudActivity(stale)).toBe(true);
     const rows = new Map((await db.query.terminalSessions.findMany()).map(row => [row.id, row]));
     expect(rows.get(oldId)).toMatchObject({ endedAt: expect.any(Date), exitReason: "server_error" });
     expect(rows.get(newerId)?.endedAt).toBeNull();
     expect(rows.get(foreignId)?.endedAt).toBeNull();
     const next = { ...activity, id: randomUUID() };
     await cloud.claimActivity(host.id, "org", next);
-    expect(await recoverOrphanedCloudTerminal(stale)).toBe(false);
+    expect(await recoverOrphanedCloudActivity(stale)).toBe(false);
     expect((await cloud.findById(host.id))!.activity?.id).toBe(next.id);
   });
   it("prevents two installations from claiming the same project identity", async () => {
