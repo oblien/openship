@@ -73,6 +73,29 @@ describe("mail topology requires a completed observation", () => {
     ).toMatchObject({ flavor: "host", running: false, exists: true });
   });
 
+  it("can recognize a missing container on an SSH executor that reports errors from stderr", async () => {
+    const exec = vi.fn(async (command: string) => {
+      if (command.startsWith("docker inspect")) throw command.includes("2>&1") ? new Error("Exit code 1") : missing();
+      return host("not-found", "inactive");
+    });
+    expect(await detectMailEngine({ exec } as unknown as CommandExecutor)).toMatchObject({ flavor: "none" });
+  });
+
+  it.each([
+    ["ssh.service enabled enabled", null],
+    ["dovecot.service disabled enabled", "Native mail service files"],
+    [new Error("Could not read unit files"), "Could not read unit files"],
+  ] as const)("checks installed units on a host booted without systemd (%s)", async (units, error) => {
+    const e = executor(missing());
+    e.exec.mockRejectedValueOnce(missing()).mockResolvedValueOnce("__OPENSHIP_OFFLINE_SYSTEMD__");
+    if (units instanceof Error) e.exec.mockRejectedValueOnce(units);
+    else e.exec.mockResolvedValueOnce(units);
+    const probe = detectMailEngine(e.target);
+    if (error) await expect(probe).rejects.toThrow(error);
+    else await expect(probe).resolves.toMatchObject({ flavor: "none", exists: false });
+    expect(e.exec).toHaveBeenLastCalledWith("systemctl --root=/ list-unit-files --type=service --no-legend --no-pager");
+  });
+
   it.each([host("not-found", "inactive"), "__OPENSHIP_NO_SYSTEMCTL__"])(
     "reports no engine only after both topologies are ruled out",
     async (units) => {
