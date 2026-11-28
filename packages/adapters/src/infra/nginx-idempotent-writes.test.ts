@@ -90,6 +90,22 @@ describe("unchanged edge writes", () => {
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 
+  it("writes vhost conf files with 0644 mode and route state sidecars with 0600 mode", async () => {
+    const nginx = provider();
+    await nginx.registerRoute(route());
+
+    const confCall = writes.mock.calls.find(([path]) => path.includes("shop-example-com.conf"));
+    const stateCall = writes.mock.calls.find(([path]) =>
+      path.includes("shop-example-com.route.json"),
+    );
+
+    expect(confCall).toBeDefined();
+    expect(confCall?.[2]).toEqual({ mode: 0o644 });
+
+    expect(stateCall).toBeDefined();
+    expect(stateCall?.[2]).toEqual({ mode: 0o600 });
+  });
+
   it("confirms the running config for both new and reused providers", async () => {
     await provider().registerRoute(route());
     resetCounts();
@@ -130,12 +146,12 @@ describe("unchanged edge writes", () => {
   it("rewrites a file whose content matches but whose mode does not", async () => {
     const nginx = provider();
     await nginx.registerRoute(route());
-    await chmod(confPath(), 0o644);
+    await chmod(confPath(), 0o600);
     resetCounts();
 
     await nginx.registerRoute(route());
 
-    expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+    expect((await stat(confPath())).mode & 0o777).toBe(0o644);
     expect(reloads).toHaveBeenCalledTimes(1);
   });
 
@@ -149,7 +165,7 @@ describe("unchanged edge writes", () => {
     await expect(nginx.registerRoute(route())).rejects.toThrow("reload refused");
 
     expect(await readFile(confPath(), "utf8")).toBe(original);
-    expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+    expect((await stat(confPath())).mode & 0o777).toBe(0o644);
   });
 
   it.each(["unavailable", "refused"])(
@@ -167,7 +183,7 @@ describe("unchanged edge writes", () => {
 
       await nginx.registerRoute(route());
 
-      expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+      expect((await stat(confPath())).mode & 0o777).toBe(0o644);
       expect(reloads).toHaveBeenCalledTimes(1);
     },
   );
@@ -204,7 +220,7 @@ describe("unchanged edge writes", () => {
     await expect(nginx.registerRoute(route(3002))).rejects.toThrow("reload refused");
 
     expect((await lstat(confPath())).isFile()).toBe(true);
-    expect((await stat(confPath())).mode & 0o777).toBe(0o600);
+    expect((await stat(confPath())).mode & 0o777).toBe(0o644);
     expect(await readFile(confPath(), "utf8")).toBe(original);
     expect(await readFile(target, "utf8")).toBe(original);
   });
@@ -361,12 +377,12 @@ describe("state outside the route files", () => {
     const nginx = provider();
     await nginx.serveEdgeChallenge({ host: "203.0.113.10" });
     const vhost = join(sites, "_oblien-challenge-203-0-113-10.conf");
-    await chmod(vhost, 0o644);
+    await chmod(vhost, 0o600);
     resetCounts();
 
     await nginx.serveEdgeChallenge({ host: "203.0.113.10" });
 
-    expect((await stat(vhost)).mode & 0o777).toBe(0o600);
+    expect((await stat(vhost)).mode & 0o777).toBe(0o644);
   });
 });
 
