@@ -1,6 +1,6 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { createHash, randomUUID } from "node:crypto";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, mapConcurrent, safeErrorMessage } from "@repo/core";
 import { repos, type CloudWorkspace, type CloudWorkspaceOperation } from "@repo/db";
 import { cloudWorkspaceStatus, deleteCloudWorkspace } from "@repo/adapters";
 import type {
@@ -34,7 +34,7 @@ import {
   measureCloudWorkspace,
   unavailableWorkspaceUsage,
 } from "../../lib/cloud-workspace-host";
-import { withCloudWorkspaceActivity, reconcileSettledCloudActivity, recoverOrphanedCloudTerminal } from "../../lib/cloud-workspace-lock";
+import { withCloudWorkspaceActivity, reconcileSettledCloudActivity, recoverOrphanedCloudActivity } from "../../lib/cloud-workspace-lock";
 import { createProvisionLock } from "../../lib/provision-lock";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
@@ -791,10 +791,22 @@ export async function retry(ctx: ExecutionContext, id: string) {
   return summary(updated);
 }
 
+const ACTIVITY_RECOVERY_PAGE_SIZE = 50;
+let activityRecoveryAfterId: string | undefined;
+
+async function recoverCloudActivities() {
+  let rows = await repos.cloudWorkspace.listRecoverableLocalActivities(ACTIVITY_RECOVERY_PAGE_SIZE, activityRecoveryAfterId);
+  if (rows.length === 0 && activityRecoveryAfterId !== undefined)
+    rows = await repos.cloudWorkspace.listRecoverableLocalActivities(ACTIVITY_RECOVERY_PAGE_SIZE);
+  // Advance even when a controller is still live or the provider is unavailable.
+  // Revisit skipped claims after wrapping, without delaying this sweep indefinitely.
+  activityRecoveryAfterId = rows.length === ACTIVITY_RECOVERY_PAGE_SIZE ? rows.at(-1)?.id : undefined;
+  await mapConcurrent(rows, 4, row => recoverOrphanedCloudActivity(row).catch(error =>
+    errorDiagnostics.warn("platform/engine/modules/cloud-workspaces/cloud-workspace.service", `[cloud-activity-recovery] ${row.id}: ${safeErrorMessage(error)}`, error)));
+}
+
 export async function runCloudWorkspaceRecovery() {
-  for (const row of await repos.cloudWorkspace.listLocalTerminalActivities())
-    await recoverOrphanedCloudTerminal(row).catch(error =>
-      errorDiagnostics.warn("platform/engine/modules/cloud-workspaces/cloud-workspace.service", `[cloud-terminal-recovery] ${row.id}: ${safeErrorMessage(error)}`, error));
+  await recoverCloudActivities();
   if (env.CLOUD_MODE) {
     const { reconcileWorkspaceSubscriptionChange } = await import("../billing/billing-plan-change");
     for (const row of await repos.cloudWorkspace.listPendingSubscriptionChanges())
