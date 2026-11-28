@@ -48,6 +48,19 @@ const PHP_ASSET_BUILD_IMAGE = "node:22-bookworm-slim";
 
 const PHP_EXT_INSTALL_LINE = `RUN install-php-extensions ${PHP_EXTENSIONS.join(" ")} > /dev/null`;
 
+/**
+ * Configure PHP runtime defaults to match the edge's upload ceiling.
+ *
+ * The edge accepts request bodies up to 50 MB by default (`EDGE_CLIENT_MAX_BODY_SIZE`).
+ * FrankenPHP images ship no php.ini, leaving PHP at its built-in defaults:
+ * `upload_max_filesize=2M` and `post_max_size=8M`. Requests larger than 2 MB pass the
+ * edge and then fail inside PHP with no log to explain it. Writing zz-openship.ini into
+ * $PHP_INI_DIR/conf.d in the runtime stage aligns PHP with the edge for web, worker and
+ * release containers (#1774).
+ */
+const PHP_INI_SETUP_LINE =
+  'RUN printf \'upload_max_filesize = 50M\\npost_max_size = 50M\\n\' > "$PHP_INI_DIR/conf.d/zz-openship.ini"';
+
 function phpBinaryVersionCheck(config: BuildConfig): string[] {
   const version =
     config.runtimeVersion ??
@@ -135,6 +148,7 @@ export function generatePhpDockerfile(config: BuildConfig): string {
       : []),
     ...phpBinaryVersionCheck(config),
     PHP_EXT_INSTALL_LINE,
+    PHP_INI_SETUP_LINE,
     // --chown on the COPY instead of a trailing `chown -R`: the recursive form
     // rewrites every file into a second layer, doubling the app's size on disk.
     // Ownership has to be settled HERE, before anything mounts: Docker seeds a
