@@ -874,10 +874,18 @@ the required roots and start commands.
       type: "string",
       description: "Runs once at the repo root before per-app builds.",
     },
-    "apps[].name": { type: "string", description: "Required." },
+    "exclude": {
+      type: "string[]",
+      description: "Paths to exclude from detected workspace apps.",
+    },
+    "apps[].name": { type: "string", description: "Required unless enabled is false." },
     "apps[].rootDirectory": {
       type: "string",
       description: "Required. Matches a detected sub-app.",
+    },
+    "apps[].enabled": {
+      type: "boolean",
+      description: "Set false to exclude a detected sub-app from being treated as a deployable service.",
     },
     "apps[]…": {
       type: "build fields",

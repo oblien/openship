@@ -566,21 +566,23 @@ function mergeMonorepoApps(
   declared: OpenshipMonorepoApp[],
 ): MonorepoApp[] {
   const byRoot = new Map(declared.map((d) => [normalizeProjectRootDirectory(d.rootDirectory), d]));
-  return detected.map((app) => {
-    const d = byRoot.get(normalizeProjectRootDirectory(app.rootDirectory));
-    if (!d) return app;
-    return {
-      ...app,
-      ...(d.framework && { stack: d.framework }),
-      ...(d.packageManager && { packageManager: d.packageManager }),
-      ...(d.installCommand && { installCommand: d.installCommand }),
-      ...(d.buildCommand && { buildCommand: d.buildCommand }),
-      ...(d.startCommand && { startCommand: d.startCommand }),
-      ...(d.outputDirectory && { outputDirectory: d.outputDirectory }),
-      ...(d.buildImage && { buildImage: d.buildImage }),
-      ...(d.port !== undefined && { port: d.port }),
-    };
-  });
+  return detected
+    .filter((app) => byRoot.get(normalizeProjectRootDirectory(app.rootDirectory))?.enabled !== false)
+    .map((app) => {
+      const d = byRoot.get(normalizeProjectRootDirectory(app.rootDirectory));
+      if (!d) return app;
+      return {
+        ...app,
+        ...(d.framework && { stack: d.framework }),
+        ...(d.packageManager && { packageManager: d.packageManager }),
+        ...(d.installCommand && { installCommand: d.installCommand }),
+        ...(d.buildCommand && { buildCommand: d.buildCommand }),
+        ...(d.startCommand && { startCommand: d.startCommand }),
+        ...(d.outputDirectory && { outputDirectory: d.outputDirectory }),
+        ...(d.buildImage && { buildImage: d.buildImage }),
+        ...(d.port !== undefined && { port: d.port }),
+      };
+    });
 }
 
 /**
@@ -657,6 +659,13 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
         );
       }
     });
+    config.monorepo.exclude?.forEach((path, index) => {
+      if (!roots.has(normalizeProjectRootDirectory(path))) {
+        warn(
+          `monorepo.exclude[${index}]: path did not match a detected workspace app; ignored.`,
+        );
+      }
+    });
     if (config.monorepo.workspace && !info.monorepoWorkspace) {
       warn("monorepo.workspace: no workspace was detected; workspace overrides were ignored.");
     }
@@ -669,6 +678,12 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
     }
     if (config.monorepo.apps?.length && info.monorepoApps?.length) {
       info.monorepoApps = mergeMonorepoApps(info.monorepoApps, config.monorepo.apps);
+    }
+    if (config.monorepo.exclude?.length && info.monorepoApps?.length) {
+      const excluded = new Set(config.monorepo.exclude.map(normalizeProjectRootDirectory));
+      info.monorepoApps = info.monorepoApps.filter(
+        (app) => !excluded.has(normalizeProjectRootDirectory(app.rootDirectory)),
+      );
     }
   }
   return info;
