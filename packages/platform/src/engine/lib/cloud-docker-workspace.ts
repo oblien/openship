@@ -44,11 +44,15 @@ export async function findOwnedDockerWorkspace(
   ownerWorkspaceId: string,
   namespace: string,
 ) {
+  return findOwnedWorkspaceBySlug(client, workspaceSlug(ownerWorkspaceId), namespace);
+}
+
+export async function findOwnedWorkspaceBySlug(client: Oblien, slug: string, namespace: string) {
   let found: Awaited<ReturnType<typeof client.vms.get>> | undefined;
   for (let page = 1; ; page++) {
     const result = await client.vms.list({ page, limit: 100 });
     const matches = result.vms.filter(
-      (item) => item.slug === workspaceSlug(ownerWorkspaceId) && item.namespace === namespace,
+      (item) => item.slug === slug && item.namespace === namespace,
     );
     for (const workspace of matches) {
       if (found && found.id !== workspace.id)

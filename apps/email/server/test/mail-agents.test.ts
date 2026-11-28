@@ -11,6 +11,7 @@ import {
   jobDetails,
   listJobs,
   readJob,
+  sendingInSent,
   rescheduleJob,
   runOutboxPass,
 } from "../src/mail/outbox";
@@ -123,6 +124,19 @@ describe("mailbox authority", () => {
 });
 
 describe("durable sends and approvals", () => {
+  it("tracks a send under its final Sent Message-ID across retries and removes it after dispatch", async () => {
+    const requestId = crypto.randomUUID();
+    const queued = enqueueSend(alice, message, undefined, { requestId });
+    enqueueSend(alice, message, undefined, { requestId });
+    enqueueSend(alice, message, new Date(Date.now() + 86_400_000).toISOString());
+    const expectedId = `<${queued.messageId}@example.test>`;
+    expect(sendingInSent(alice)).toEqual([{ messageId: expectedId, subject: message.message.subject, state: "pending" }]);
+    expect(sendingInSent(bob)).toEqual([]);
+    await runOutboxPass(Date.now() + 30_000);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[3].messageId).toBe(expectedId);
+    expect(sendingInSent(alice)).toEqual([]);
+  });
   it("filters scheduled mail before pagination, keeps delivery issues visible, and scopes both views", () => {
     const later = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
     const pending = [30, 10, 20].map((minutes) => enqueueSend(alice, message, later(minutes)));
@@ -229,6 +243,15 @@ describe("durable sends and approvals", () => {
     await runOutboxPass(Date.now() + 60_000);
     expect(send).toHaveBeenCalledTimes(1);
     expect(readJob(alice, queued.messageId).state).toBe("uncertain");
+  });
+  it("keeps a submitted message visible if its Sent copy could not be saved, without retrying delivery", async () => {
+    send.mockResolvedValueOnce({ messageId: "<sent@example.test>", sentCopySaved: false });
+    const queued = enqueueSend(alice, message);
+    await runOutboxPass(Date.now() + 30_000);
+    await runOutboxPass(Date.now() + 60_000);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(readJob(alice, queued.messageId).state).toBe("done");
+    expect(sendingInSent(alice)[0]?.state).toBe("done");
   });
   it("makes cancellation lose cleanly after dispatch has started", async () => {
     let complete!: () => void;

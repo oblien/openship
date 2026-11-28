@@ -5,6 +5,7 @@
     "": {
       "name": "@zero/server",
       "dependencies": {
+        "@hono/bun": "^1.0.1",
         "@hono/trpc-server": "^0.3.4",
         "@modelcontextprotocol/sdk": "1.32.2",
         "@trpc/client": "^11.4.4",
@@ -24,6 +25,7 @@
         "mindwire": "0.1.61",
         "nanoid": "^5.1.16",
         "nodemailer": "^10.5.0",
+        "oblien": "4.2.0",
         "sanitize-html": "^2.18.1",
         "string-strip-html": "^13.4.12",
         "superjson": "^2.2.2",
@@ -112,6 +114,8 @@
     "@grpc/grpc-js": ["@grpc/grpc-js@1.14.7", "", { "dependencies": { "@grpc/proto-loader": "^0.8.0", "@js-sdsl/ordered-map": "^4.4.2" } }, "sha512-W4W/fcBMGRVtG6dW2c7cw2mnpS3hvbBd+oQXjh2iYFTZDk1JJmcNqkM5KSaPubQpamlUUurrlb7G1s9NJeERmQ=="],
 
     "@grpc/proto-loader": ["@grpc/proto-loader@0.7.15", "", { "dependencies": { "lodash.camelcase": "^4.3.0", "long": "^5.0.0", "protobufjs": "^7.2.5", "yargs": "^17.7.2" }, "bin": { "proto-loader-gen-types": "build/bin/proto-loader-gen-types.js" } }, "sha512-tMXdRCfYVixjuFK+Hk0Q1s38gV9zDiDJfWL3h1rv4Qc39oILCu1TRTDt7+fGUI8K4G1Fj125Hx/ru3azECWTyQ=="],
+
+    "@hono/bun": ["@hono/bun@1.0.1", "", { "peerDependencies": { "hono": ">=4.13.9 || ^5.0.0-0" } }, "sha512-74m9j/JY6sPhjOnZZSSPFDRWWRVqO8jI7cDTrcjXP+qnlCMOu0BCLnjq31LrKsWGWW7SsRWDzqrf9vDfnwtStA=="],
 
     "@hono/node-server": ["@hono/node-server@2.1.8", "", { "peerDependencies": { "hono": "^4 || ^5.0.0-0" } }, "sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA=="],
 
@@ -473,13 +477,17 @@
 
     "object-inspect": ["object-inspect@1.13.4", "", {}, "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew=="],
 
-    "oblien": ["oblien@2.10.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-ESdeDWuIJ+R0fJtTjHAhU1VRGOqjUtxqMZeL3sm2AgkI4/1nf1FjrqKvha2zsd9nfkbzpJuYwzOOOtQUdhv1hQ=="],
+    "oblien": ["oblien@4.2.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "openapi-fetch": "0.17.0", "ws": "^8.18.3", "zod": "4.3.6" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-Dd8L8JLvsyNBoRD3uttqdFELFKABDvb7bn0a7yMyeX4gQEpAO0coykprH+Yrif8DTHzgPvaNE9vB9dmfk5lfbA=="],
 
     "on-exit-leak-free": ["on-exit-leak-free@2.1.2", "", {}, "sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA=="],
 
     "on-finished": ["on-finished@2.4.2", "", { "dependencies": { "ee-first": "1.1.1" } }, "sha512-ATWUv387i+nLD49EiDoOft5scf32Vsdz3ktrQJG9bi7jRFmaXTssvyvj1EmeKVVgvesbqUtvQQvaS2TpTukAZQ=="],
 
     "once": ["once@1.4.0", "", { "dependencies": { "wrappy": "1" } }, "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w=="],
+
+    "openapi-fetch": ["openapi-fetch@0.17.0", "", { "dependencies": { "openapi-typescript-helpers": "^0.1.0" } }, "sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig=="],
+
+    "openapi-typescript-helpers": ["openapi-typescript-helpers@0.1.0", "", {}, "sha512-OKTGPthhivLw/fHz6c3OPtg72vi86qaMlqbJuVJ23qOvQ+53uw1n7HdmkJFibloF7QEjDrDkzJiOJuockM/ljw=="],
 
     "p-limit": ["p-limit@2.3.0", "", { "dependencies": { "p-try": "^2.0.0" } }, "sha512-//88mFWSJx8lxCzwdAABTJL2MyWB12+eIY7MDL2SqLmAkeKU9qxRvWuSyTjm3FUmpBEMuFfckAIqEaVGUDxb6w=="],
 
@@ -705,7 +713,11 @@
 
     "mimetext/mime-types": ["mime-types@2.1.35", "", { "dependencies": { "mime-db": "1.52.0" } }, "sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw=="],
 
+    "mindwire/oblien": ["oblien@2.10.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-ESdeDWuIJ+R0fJtTjHAhU1VRGOqjUtxqMZeL3sm2AgkI4/1nf1FjrqKvha2zsd9nfkbzpJuYwzOOOtQUdhv1hQ=="],
+
     "negotiator/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
+
+    "oblien/zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 
     "parse5/entities": ["entities@6.0.1", "", {}, "sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g=="],
 

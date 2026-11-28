@@ -307,7 +307,11 @@ describe("readable Cloud usage", () => {
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("125.5");
     const measurements = [...container.querySelectorAll("tbody td")].map(cell => cell.textContent);
     expect(measurements).toEqual(["2vCPU-hours", "4GB-hours", "0.25GB", "1.5GB"]);
-    expect(container.textContent).toContain(copy.resourcesGuide.diskHint);
+    const diskRow = [...container.querySelectorAll("tbody tr")].find(row => row.querySelector("th")?.textContent === copy.usage.resources.disk.label);
+    const diskHint = diskRow?.querySelector("button");
+    expect(diskHint).toBeDefined();
+    await act(async () => diskHint!.click());
+    expect(diskRow?.querySelector('[role="tooltip"]')?.textContent).toBe(copy.resourcesGuide.diskHint);
     expect(container.querySelector("table")?.textContent).not.toContain("Credits");
     expect(container.querySelector("table")?.textContent).not.toContain("%");
     const requestedEnd = new Date(mocks.get.mock.calls[0]![1].params.to).getTime();

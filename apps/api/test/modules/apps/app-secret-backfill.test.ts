@@ -71,6 +71,7 @@ describe("ensureGeneratedAppSecrets", () => {
 
     expect(written).toContain("SESSION_ENCRYPTION_KEY");
     expect(written).toContain("BRANDING_ADMIN_TOKEN");
+    expect(written).toContain("OPENSHIP_SENDING_ADMIN_TOKEN");
     const vars = upserted();
     // Stored encrypted, and a real value — a blank row boots no better than none.
     expect(decrypt(vars.get("SESSION_ENCRYPTION_KEY")!.value).length).toBeGreaterThan(16);
@@ -100,6 +101,7 @@ describe("ensureGeneratedAppSecrets", () => {
     getEnvMap.mockResolvedValue({
       SESSION_ENCRYPTION_KEY: "not-valid-ciphertext",
       BRANDING_ADMIN_TOKEN: "also-not-valid",
+      OPENSHIP_SENDING_ADMIN_TOKEN: "unreadable-relay-admin-token",
     });
 
     expect(await ensureGeneratedAppSecrets("prj_1", WEBMAIL)).toEqual([]);

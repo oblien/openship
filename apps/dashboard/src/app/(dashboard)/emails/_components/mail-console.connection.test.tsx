@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   modal: vi.fn(),
   toast: vi.fn(),
 }));
+vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({ connected: false }) }));
 vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: h.selfHosted, deployMode: h.deployMode }) }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(h.query),
@@ -47,6 +48,8 @@ vi.mock("../_lib/mail-section", () => ({
 }));
 // Exercise the console's actual loading/selection/recovery flow; the child
 // editors don't need their own requests or interactive setup in these tests.
+vi.mock("@/components/billing/useCloudBilling", () => ({useCloudPlans: () => ({loading:true})}));
+vi.mock("@/lib/api/managed-mail", () => ({ managedMailApi: { summary: async () => ({ service: null, plan: "included" }) } }));
 vi.mock("./mail-setup-form", () => ({ MailSetupForm: () => <div data-testid="setup" /> }));
 vi.mock("./mail-progress", () => ({ MailProgress: () => <div data-testid="progress" /> }));
 vi.mock("./mail-sidebar", () => ({ MailSidebar: () => null }));
@@ -56,13 +59,16 @@ vi.mock("./admin/admin-panel", () => ({
     serverId,
     status,
     onRefresh,
+    setup,
   }: {
-    serverId: string;
-    status: MailSetupStatus;
+    serverId?: string;
+    status?: MailSetupStatus;
+    setup?: import("./admin/overview-tab").MailSetupPanels;
     onRefresh: () => void;
   }) => (
-    <div data-testid="admin" data-server={serverId} data-engine={String(status.engine?.running)}>
-      {status.domain}
+    <div data-testid="admin" data-server={serverId} data-engine={String(status?.engine?.running)}
+      data-hosted-setup={setup ? "true" : undefined}>
+      {status?.domain}
       <button onClick={onRefresh}>Refresh test status</button>
     </div>
   ),
@@ -193,13 +199,12 @@ it("discards an old server response when the newly selected server cannot be loa
 });
 
 
-it("offers the generic Cloud mail client without loading or provisioning mail servers", async () => {
+it("offers hosted mail without loading self-hosted setup", async () => {
   h.selfHosted = false;
   h.deployMode = "cloud";
   await render();
-  expect(node.textContent).toContain("Coming soon");
-  expect(node.textContent).toContain("do not provision a mail server");
-  expect(node.querySelector('a[href="/apps/new/webmail"]')?.textContent).toContain("Connect existing mail server");
+  expect(admin()?.getAttribute("data-hosted-setup")).toBe("true");
+  expect(admin()?.hasAttribute("data-server")).toBe(false);
   expect(h.registry).not.toHaveBeenCalled();
   expect(h.status).not.toHaveBeenCalled();
   expect(setup()).toBeNull();

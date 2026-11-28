@@ -174,6 +174,10 @@ RUN python3 /opt/openship-mail/sender_aliases.py \
       /opt/iredapd/plugins/reject_sender_login_mismatch.py \
       /opt/iRedMail-engine/samples/postfix/pgsql/sender_login_maps.cf
 
+# iRedMail probes IPv6 on the build host. Let Postfix use the address
+# families available on the mail server when it starts.
+RUN postconf -X inet_protocols
+
 # Preserve the baked config OUTSIDE the mount paths so the entrypoint can
 # seed-if-absent into empty bind mounts on first boot (a bind mount over
 # /etc/postfix would otherwise hide the built config).

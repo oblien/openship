@@ -97,6 +97,7 @@ const ROOT_RESOURCES = new Set<string>([
   "deployment",
   "server",
   "mail_server",
+  "mail_sender",
   "backup_destination",
   "billing",
   "audit",

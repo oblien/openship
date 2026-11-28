@@ -1,0 +1,107 @@
+<div id="openship-mail-selection" class="viz-dotted-background">
+  <style>
+    #openship-mail-selection { container-type:inline-size; }
+    #openship-mail-selection .mail-window { color-scheme:light dark; --paper:light-dark(#fafaf9,#111112); --surface:light-dark(#fff,#1c1c1e); --ink:light-dark(#202022,#f2f2f2); --secondary-ink:light-dark(#55565c,#b1b1b7); --rule:light-dark(#dbdbde,#39393d); background:var(--paper);color:var(--ink);font-family:Inter,system-ui,sans-serif;padding:clamp(14px,3vw,24px);border-radius:18px; }
+    #openship-mail-selection h2,#openship-mail-selection h3,#openship-mail-selection p {margin:0;}
+    #openship-mail-selection h2 {font-size:24px;font-weight:550;letter-spacing:-.045em}
+    #openship-mail-selection h3 {font-size:16px;font-weight:550;letter-spacing:-.02em}
+    #openship-mail-selection button,#openship-mail-selection select {font:inherit;color:inherit;cursor:pointer}
+    #openship-mail-selection .products,#openship-mail-selection .tiers {display:grid;gap:8px}
+    #openship-mail-selection .products {grid-template-columns:repeat(3,minmax(0,1fr));margin:16px 0 22px}
+    #openship-mail-selection .pick {text-align:start;border:1px solid var(--rule);border-radius:12px;background:var(--surface);padding:12px;min-width:0}
+    #openship-mail-selection .pick[aria-pressed=true] {border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+    #openship-mail-selection .pick strong {display:block;font-size:14px;font-weight:550}
+    #openship-mail-selection .product-icon {margin-bottom:9px;display:block;width:18px;height:18px}
+    #openship-mail-selection .hint {display:block;margin-top:5px;color:var(--secondary-ink);font-size:13px;line-height:1.4}
+    #openship-mail-selection .tools,#openship-mail-selection .total,#openship-mail-selection .review-row {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #openship-mail-selection select {border-radius:8px;padding:6px;background:var(--surface);border:1px solid var(--rule)}
+    #openship-mail-selection .tiers {grid-template-columns:repeat(4,minmax(0,1fr));margin:12px 0 14px}
+    #openship-mail-selection .tiers .pick {display:flex;flex-direction:column;gap:5px}
+    #openship-mail-selection .price {font-size:23px;letter-spacing:-.05em;font-weight:550}
+    #openship-mail-selection .unit {font-size:12px;color:var(--secondary-ink);font-weight:400}
+    #openship-mail-selection .popular {font-size:11px;color:var(--ink);font-weight:550}
+    #openship-mail-selection .total,#openship-mail-selection .review-row {border-top:1px solid var(--rule);padding-top:14px;margin-top:12px}
+    #openship-mail-selection .next {background:var(--ink);color:var(--paper);border:0;padding:10px 15px;border-radius:9px;font-size:14px;font-weight:500}
+    #openship-mail-selection .back {background:transparent;border:0;padding:8px 0;color:var(--secondary-ink)}
+    #openship-mail-selection [hidden] {display:none!important}
+    @container(max-width:560px){#openship-mail-selection .products{grid-template-columns:1fr}#openship-mail-selection .product-icon{float:left;margin:0 10px 0 0}#openship-mail-selection .products .hint{margin-inline-start:28px}#openship-mail-selection .tiers{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  </style>
+  <section class="mail-window" aria-label="Mail plans design preview">
+    <div data-step="plans">
+      <h2>Email plans</h2>
+      <div class="products" role="group" aria-label="Mail service">
+        <button type="button" class="pick" data-product="shared" aria-pressed="false"><i class="product-icon" data-lucide="inbox" aria-hidden="true"></i><strong>Shared Mailboxes</strong><span class="hint">Team inboxes hosted by OpenShip.</span></button>
+        <button type="button" class="pick" data-product="dedicated" aria-pressed="true"><i class="product-icon" data-lucide="server" aria-hidden="true"></i><strong>Dedicated Mail Server</strong><span class="hint">A new private VM for your inboxes. Sending included.</span></button>
+        <button type="button" class="pick" data-product="api" aria-pressed="false"><i class="product-icon" data-lucide="code" aria-hidden="true"></i><strong>Sending API</strong><span class="hint">Send receipts, sign-in links, and notifications from your app.</span></button>
+      </div>
+      <div class="tools"><h3 data-title>Dedicated plans</h3><label data-storage-label>Mailbox storage <select aria-label="Mailbox storage"><option value="100">100 GB</option><option value="200">200 GB</option><option value="400">400 GB</option></select></label></div>
+      <div class="tiers" role="group" aria-label="Plan tier"></div>
+      <div class="total"><div><strong data-selection></strong><span class="hint" data-breakdown></span></div><button type="button" class="next" data-review>Review plan →</button></div>
+    </div>
+    <div data-step="review" hidden>
+      <button type="button" class="back" data-back>← Email plans</button>
+      <h2 data-review-title></h2><p class="hint" data-review-description></p>
+      <div data-review-facts></div><div class="total"><strong data-review-total></strong><button class="next" type="button" data-confirm></button></div>
+    </div>
+    <div data-step="result" hidden><button type="button" class="back" data-back>← Email plans</button><h2 data-result-title></h2><p class="hint" data-result-description></p></div>
+  </section>
+</div>
+<script>
+(() => {
+  const root=document.getElementById("openship-mail-selection");
+  const el=selector=>root.querySelector(selector);
+  const tiers=["Solo","Team","Business","Scale"], recipients=[5000,25000,75000,200000], api=[1,5,15,40], shared=[3,9,19,49], boxes=[1,5,15,50], disks=[5,25,75,250];
+  const products={shared:"Shared Mailboxes",dedicated:"Dedicated Mail Server",api:"Sending API"};
+  let state={product:"dedicated",tier:1,storage:100,step:"plans"};
+  const qty=value=>value.toLocaleString("en-US"), dollars=value=>"$"+value;
+  function restore(value) {
+    if(!value)return;
+    if(Object.hasOwn(products,value.product))state.product=value.product;
+    if(Number.isInteger(value.tier)&&value.tier>=0&&value.tier<4)state.tier=value.tier;
+    if([100,200,400].includes(value.storage))state.storage=value.storage;
+    if(["plans","review","result"].includes(value.step))state.step=value.step;
+  }
+  function save(){window.openai?.setWidgetState?.({modelContent:{...state}})?.catch(()=>{});}
+  function draw() {
+    const {product,tier,storage,step}=state;
+    const dedicated=product==="dedicated", onlyApi=product==="api";
+    const vm=24+(storage-100)*0.05;
+    const price=i=>dedicated?vm+api[i]:onlyApi?api[i]:shared[i];
+    const allocation=i=>qty(recipients[i])+" recipients / month";
+    const box=i=>boxes[i]+(boxes[i]===1?" mailbox":" mailboxes")+" · "+disks[i]+" GB";
+    const summary=dedicated?dollars(vm)+" VM + "+dollars(api[tier])+" sending":onlyApi?"Verified sender domains and send-only keys":box(tier)+" · Sending API included";
+    for(const part of root.querySelectorAll("[data-step]"))part.hidden=part.dataset.step!==step;
+    for(const button of root.querySelectorAll("[data-product]"))button.setAttribute("aria-pressed",String(button.dataset.product===product));
+    el("[data-storage-label]").hidden=!dedicated;
+    el("select").value=String(storage);
+    el("[data-title]").textContent=dedicated?"Dedicated plans":onlyApi?"Sending plans":"Mailbox plans";
+    el(".tiers").innerHTML=tiers.map((name,i)=>'<button type="button" class="pick" data-tier="'+i+'" aria-pressed="'+(i===tier)+'"><strong>'+name+'</strong><span><span class="price">'+dollars(price(i))+'</span><span class="unit"> / mo</span></span><span class="hint">'+allocation(i)+'</span>'+(product==="shared"?'<span class="hint">'+box(i)+'</span>':'')+(i===2?'<span class="popular">Most popular</span>':'')+'</button>').join("");
+    el("[data-selection]").textContent=tiers[tier]+" · "+dollars(price(tier))+"/month";
+    el("[data-breakdown]").textContent=dedicated?"Illustrative price · "+summary:summary;
+    el("[data-review-title]").textContent=products[product]+" · "+tiers[tier];
+    el("[data-review-description]").textContent=dedicated?"OpenShip will provision a new VM for this mail service.":onlyApi?"Verify a sender domain and create an API key.":"Create your team’s addresses on a verified domain.";
+    const facts=dedicated?[["New private VM",dollars(vm)+"/mo"],["Mailbox storage",storage+" GB"],["Sending API",dollars(api[tier])+"/mo"]]:onlyApi?[["Sending API",dollars(api[tier])+"/mo"]]:[["Hosted mailboxes",box(tier)],["Sending API","Included"]];
+    facts.push(["Monthly recipients",qty(recipients[tier])]);
+    el("[data-review-facts]").innerHTML=facts.map(([label,value])=>'<div class="review-row"><span>'+label+'</span><strong>'+value+'</strong></div>').join("");
+    el("[data-review-total]").textContent=(dedicated?"Illustrative total · ":"Total · ")+dollars(price(tier))+"/month";
+    el("[data-confirm]").textContent=dedicated?"Create dedicated mail server":onlyApi?"Activate sending":"Set up mailboxes";
+    el("[data-result-title]").textContent=dedicated?"Preparing your new mail server":onlyApi?"Verify your sender domain":"Connect your domain";
+    el("[data-result-description]").textContent=dedicated?"Next: connect a domain and create the first mailbox.":onlyApi?"Publish your verification records, then create a send-only key.":"Publish your DNS records, then create the first mailbox.";
+  }
+  root.addEventListener("click",event=>{
+    const b=event.target.closest("button");if(!b)return;
+    if(b.dataset.product)state.product=b.dataset.product;
+    else if(b.hasAttribute("data-tier"))state.tier=Number(b.dataset.tier);
+    else if(b.hasAttribute("data-review"))state.step="review";
+    else if(b.hasAttribute("data-confirm"))state.step="result";
+    else if(b.hasAttribute("data-back"))state.step="plans";
+    draw();save();
+    if(b.hasAttribute("data-tier"))el('[data-tier="'+state.tier+'"]').focus();
+    if(b.hasAttribute("data-review")||b.hasAttribute("data-confirm"))el('[data-step="'+state.step+'"] [data-back]').focus();
+    if(b.hasAttribute("data-back"))el("[data-review]").focus();
+  });
+  el("select").addEventListener("change",event=>{state.storage=Number(event.target.value);draw();save()});
+  restore(window.openai?.widgetState?.modelContent);draw();
+  window.addEventListener("openai:set_globals",event=>{const globals=event.detail?.globals;if(globals&&"widgetState" in globals){restore(globals.widgetState?.modelContent);draw()}});
+})();
+</script>

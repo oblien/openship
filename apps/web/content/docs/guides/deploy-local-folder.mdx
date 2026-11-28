@@ -16,16 +16,17 @@ through the browser, or submit it with the CLI. OpenShip builds the uploaded sou
 
 ## What actually gets uploaded
 
-Openship sends your **source files** — the code you wrote — and nothing else. The heavy, rebuildable stuff
-is skipped: `node_modules`, `.git`, and build output like `dist` and `.next` never go over the wire. Your
-dependencies get reinstalled fresh during the build, so leaving them behind is exactly what you want. It
-keeps the upload small and your build clean.
+The browser skips dependencies, Git metadata, and build output such as `dist` and `.next`.
+The CLI skips `node_modules`, `.git`, and `.DS_Store`, while retaining build output so you can also
+deploy an already-built site. Dependencies can be installed again during the build.
 
 The **desktop app** is the exception: it reads your folder straight from disk and uploads nothing at all.
 
 ## In the dashboard
 
 Open the **Library** page (the **New project** button lands you here too) and choose the **Folder** tab.
+Folder uploads are available on Openship Cloud and self-hosted instances without connecting Git.
+On Cloud, select a destination server before continuing; the upload stays bound to that server.
 
 What you see next depends on how you're using Openship. The **desktop app** can read a folder directly off
 your computer. A **web browser** (talking to a self-hosted or cloud instance) can't peek at your filesystem,
@@ -140,6 +141,8 @@ above.
 ```bash
 # From inside your project folder:
 openship deploy --folder --name my-app --watch
+# Or upload a directory from anywhere:
+openship deploy ./my-app --name my-app --watch
 ```
 
 - `--name` sets the project's name (without it, the folder's name is used).
@@ -147,7 +150,7 @@ openship deploy --folder --name my-app --watch
   command to follow the logs later.
 
 <Callout title="Deploying inside a git repo?" type="info">
-`--folder` also uploads files directly from a Git checkout. Without it, `openship deploy` in a Git
+`--folder` or an explicit directory also uploads files directly from a Git checkout. Without either, `openship deploy` in a Git
 repository uses the Git flow. Outside Git, `--name` also opts into a folder upload for existing scripts.
 Run from your app's source directory: uploading the temporary directory or any ancestor of it is refused
 to keep staging archives outside the source tree. If `TMPDIR` is inside your app, set it elsewhere.
@@ -170,6 +173,37 @@ openship deploy --folder # uploads this folder to the linked project
 `openship init` writes a small `.openship/project.json` file so later commands know which project this folder
 belongs to. It links to a project that **already exists**, so create one first — with a folder deploy, or in
 the dashboard — then run `openship init` to pin future deploys to it.
+
+## MCP
+
+An assistant can submit source code directly through the authenticated MCP connection. No Git
+connection, separate HTTP uploader, or access to the MCP client's bearer token is required.
+
+1. Create a project with `post_projects`, setting `name`, `gitProvider: "upload"`, and the selected
+   `serverId`. A credential limited to projects it creates must do this before staging source.
+2. Call `post_projects_folder_files` with a body such as:
+
+```json
+{
+  "projectId": "proj_123",
+  "name": "my-site",
+  "files": {
+    "index.html": "<h1>Hello from MCP</h1>",
+    "assets/style.css": "body { font-family: system-ui }"
+  }
+}
+```
+
+3. Scan the returned `sessionId` with `post_projects_folder_scan_by_sessionId`.
+4. Apply the detected build settings with `post_projects_ensure`, including the explicit
+   `projectId`, `gitProvider: "upload"`, and `uploadSessionId`. Pass detected services through when present.
+5. Call `post_deployments_build_access` with `projectId` and `uploadSessionId`. Managed servers use
+   `buildStrategy: "server"`. Follow the deployment status and logs to verify completion.
+
+Pass the chosen `organizationId` at the top level of every MCP call. File keys must be relative POSIX
+paths and values must be UTF-8 text. The complete JSON body is limited to 4MB and 10,000 files.
+For binary files or larger projects, use the CLI or the archive upload returned by
+`post_projects_folder_session`. Upload sessions expire after one hour.
 
 ## Troubleshooting
 

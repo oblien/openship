@@ -21,9 +21,11 @@
  * The UI converts to/from GB.
  */
 
+import { lockTenantDomainSql, ownedDomain } from "./tenant-domains";
+import type { CommandExecutor } from "@repo/adapters";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { sshManager } from "../../../lib/ssh-manager";
-import { execute, queryOne, queryRows, q, qInt, transaction } from "./psql-runner";
+import { queryOne, queryRows, q, qInt, transaction } from "./psql-runner";
 import { hashPassword } from "./password";
 import {
   createMaildirOnDisk,
@@ -32,13 +34,14 @@ import {
   STORAGE_BASE,
   STORAGE_NODE,
 } from "./maildir";
-import { recountDomain, validateDomain } from "./domains.service";
+import { recountDomain } from "./domain-counts";
+import { validateMailDomain as validateDomain } from "../mail-domain";
 import {
   buildInsertMailboxSql,
   buildInsertSelfForwardingSql,
   PLATFORM_LOCAL_PART,
 } from "./platform-mailbox.service";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import { readState } from "../mail-state";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
@@ -144,27 +147,34 @@ function validateDisplayName(name: string): void {
   }
 }
 
+/** Lock the live domain and its reservation in the same transaction as every shared mailbox write. */
+async function writeMailbox(exec: CommandExecutor, domain: string, namespace: string | undefined, statements: string[]) {
+  if (namespace !== undefined) statements.unshift(lockTenantDomainSql(domain, namespace));
+  await transaction(exec, statements);
+}
+
 export async function listMailboxes(
   serverId: string,
   domain: string,
+  namespace?: string,
 ): Promise<MailboxRow[]> {
   validateDomain(domain);
   return sshManager.withExecutor(serverId, async (exec) => {
     const rows = await queryRows<Omit<MailboxRow, "isPlatform">>(
       exec,
-      `SELECT${SELECT_COLUMNS} FROM mailbox WHERE domain = ${q(domain.toLowerCase())} ORDER BY username`,
+      `SELECT${SELECT_COLUMNS} FROM mailbox WHERE domain = ${q(domain.toLowerCase())}${ownedDomain(namespace)} ORDER BY username`,
     );
     const state = await readState(exec);
     return rows.map((row) => annotatePlatformMailbox(row, state?.domain));
   });
 }
 
-export async function getMailbox(serverId: string, email: string): Promise<MailboxRow | null> {
+export async function getMailbox(serverId: string, email: string, namespace?: string): Promise<MailboxRow | null> {
   const username = normalizeEmail(email);
   return sshManager.withExecutor(serverId, async (exec) => {
     const row = await queryOne<Omit<MailboxRow, "isPlatform">>(
       exec,
-      `SELECT${SELECT_COLUMNS} FROM mailbox WHERE username = ${q(username)}`,
+      `SELECT${SELECT_COLUMNS} FROM mailbox WHERE username = ${q(username)}${ownedDomain(namespace)}`,
     );
     if (!row) return null;
     const state = await readState(exec);
@@ -209,6 +219,7 @@ function assertMailboxIsUserManaged(row: MailboxRow): void {
 export async function createMailbox(
   serverId: string,
   input: CreateMailboxInput,
+  namespace?: string,
 ): Promise<MailboxRow> {
   validateLocalPart(input.localPart);
   validateDomain(input.domain);
@@ -223,7 +234,7 @@ export async function createMailbox(
   validateEmail(username);
 
   // Duplicate check (friendlier than letting Postgres' unique constraint fire).
-  const existing = await getMailbox(serverId, username);
+  const existing = await getMailbox(serverId, username, namespace);
   if (existing) {
     throw new MailboxExistsError(username);
   }
@@ -237,11 +248,16 @@ export async function createMailbox(
       throw new PlatformMailboxProtectedError(username);
     }
 
-    const hash = await hashPassword(exec, input.password);
+    if (input.localPart === "postmaster" &&
+        (!state?.domain || input.domain.toLowerCase() === state.domain.toLowerCase())) {
+      throw new AppError("The installation postmaster is provisioned by mail server setup.", 409);
+    }
+
+    const hash = hashPassword(input.password);
     const layout = generateMaildir(input.domain.toLowerCase(), input.localPart);
 
     // 1. Insert mailbox + matching forwardings row atomically.
-    await transaction(exec, [
+    await writeMailbox(exec, input.domain.toLowerCase(), namespace, [
       buildInsertMailboxSql({
         username,
         passwordHash: hash,
@@ -265,21 +281,21 @@ export async function createMailbox(
       // most likely cause is "no write access to /var/vmail" which means
       // the install is broken regardless, and the DB rollback should still
       // work.
-      await execute(exec, `DELETE FROM mailbox WHERE username = ${q(username)};`);
-      await execute(
-        exec,
-        `DELETE FROM forwardings WHERE address = ${q(username)} AND forwarding = ${q(username)};`,
-      );
+      await writeMailbox(exec, input.domain.toLowerCase(), namespace, [
+        `DELETE FROM mailbox WHERE username = ${q(username)} AND maildir = ${q(layout.maildir)}`,
+        `DELETE FROM forwardings WHERE address = ${q(username)} AND forwarding = ${q(username)}
+         AND NOT EXISTS (SELECT 1 FROM mailbox WHERE username = ${q(username)})`,
+      ]);
       throw new Error(
         `Failed to create Maildir; mailbox was rolled back: ${safeErrorMessage(err)}`,
       );
     }
 
     // 3. Refresh the domain counter.
-    await recountDomain(serverId, input.domain);
+    await recountDomain(serverId, input.domain, namespace);
   });
 
-  const row = await getMailbox(serverId, username);
+  const row = await getMailbox(serverId, username, namespace);
   if (!row) throw new Error(`createMailbox: row not found after INSERT for ${username}`);
   return row;
 }
@@ -288,12 +304,22 @@ export async function updateMailbox(
   serverId: string,
   email: string,
   patch: UpdateMailboxInput,
+  namespace?: string,
+  authorizeServerAdmin?: () => Promise<void>,
 ): Promise<MailboxRow> {
   const username = normalizeEmail(email);
 
-  const existing = await getMailbox(serverId, username);
+  const existing = await getMailbox(serverId, username, namespace);
   if (!existing) throw new MailboxNotFoundError(username);
   assertMailboxIsUserManaged(existing);
+  const privileged = existing.isAdmin || existing.isGlobalAdmin;
+  if (privileged) {
+    if (namespace !== undefined || !authorizeServerAdmin) throw new AppError("Mail server admin permission required.", 403);
+    await authorizeServerAdmin();
+    if (patch.password && existing.isGlobalAdmin && username.startsWith("postmaster@")) {
+      throw new AppError("Change the installation postmaster password in mail server credentials.", 409);
+    }
+  }
 
   await sshManager.withExecutor(serverId, async (exec) => {
     const sets: string[] = ["modified = NOW()"];
@@ -313,28 +339,28 @@ export async function updateMailbox(
       if (patch.password.length < 8) {
         throw new Error("Password must be at least 8 characters.");
       }
-      const hash = await hashPassword(exec, patch.password);
+      const hash = hashPassword(patch.password);
       sets.push(`password = ${q(hash)}`);
       sets.push("passwordlastchange = NOW()");
     }
 
-    if (sets.length > 1) {
-      await execute(exec, `UPDATE mailbox SET ${sets.join(", ")} WHERE username = ${q(username)}`);
-    }
-
-    // Mirror active flag on the forwardings row so Postfix stops accepting
-    // mail when the mailbox is disabled.
+    if (sets.length === 1) return;
+    const writes: string[] = [];
+    // Bind the permission decision to the row being changed under the same transaction.
+    if (!privileged) writes.push("DO " + q(`BEGIN
+      PERFORM 1 FROM mailbox WHERE username = ${q(username)} AND isadmin = 0 AND isglobaladmin = 0 FOR UPDATE;
+      IF NOT FOUND THEN RAISE EXCEPTION 'Mailbox privileges changed'; END IF;
+    END`));
+    writes.push(`UPDATE mailbox SET ${sets.join(", ")} WHERE username = ${q(username)}`);
     if (patch.active !== undefined) {
-      await execute(
-        exec,
-        `UPDATE forwardings SET active = ${patch.active ? 1 : 0}
-           WHERE address = ${q(username)} AND forwarding = ${q(username)}`,
-      );
-      await recountDomain(serverId, existing.domain);
+      writes.push(`UPDATE forwardings SET active = ${patch.active ? 1 : 0}
+        WHERE address = ${q(username)} AND forwarding = ${q(username)}`);
     }
+    await writeMailbox(exec, existing.domain, namespace, writes);
+    if (patch.active !== undefined) await recountDomain(serverId, existing.domain, namespace);
   });
 
-  const row = await getMailbox(serverId, username);
+  const row = await getMailbox(serverId, username, namespace);
   if (!row) throw new MailboxNotFoundError(username);
   return row;
 }
@@ -352,14 +378,15 @@ export async function softDeleteMailbox(
   serverId: string,
   email: string,
   adminUsername: string,
+  namespace?: string,
 ): Promise<void> {
   const username = normalizeEmail(email);
-  const existing = await getMailbox(serverId, username);
+  const existing = await getMailbox(serverId, username, namespace);
   if (!existing) throw new MailboxNotFoundError(username);
   assertMailboxIsUserManaged(existing);
 
   await sshManager.withExecutor(serverId, async (exec) => {
-    await transaction(exec, [
+    await writeMailbox(exec, existing.domain, namespace, [
       `UPDATE mailbox SET active = 0, modified = NOW() WHERE username = ${q(username)}`,
       `UPDATE forwardings SET active = 0 WHERE address = ${q(username)} AND forwarding = ${q(username)}`,
       `INSERT INTO deleted_mailboxes (
@@ -372,7 +399,7 @@ export async function softDeleteMailbox(
           CURRENT_DATE
         )`,
     ]);
-    await recountDomain(serverId, existing.domain);
+    await recountDomain(serverId, existing.domain, namespace);
   });
 }
 
@@ -383,9 +410,9 @@ export async function softDeleteMailbox(
  * input, so we can't be tricked into rm-ing an arbitrary path. `removeMaildirOnDisk`
  * additionally guards against any path outside /var/vmail/.
  */
-export async function hardDeleteMailbox(serverId: string, email: string): Promise<void> {
+export async function hardDeleteMailbox(serverId: string, email: string, namespace?: string): Promise<void> {
   const username = normalizeEmail(email);
-  const existing = await getMailbox(serverId, username);
+  const existing = await getMailbox(serverId, username, namespace);
   if (!existing) throw new MailboxNotFoundError(username);
   assertMailboxIsUserManaged(existing);
 
@@ -402,8 +429,8 @@ export async function hardDeleteMailbox(serverId: string, email: string): Promis
       }
     }
 
-    await transaction(exec, [
-      `DELETE FROM forwardings WHERE address = ${q(username)} OR forwarding = ${q(username)}`,
+    await writeMailbox(exec, existing.domain, namespace, [
+      `DELETE FROM forwardings WHERE (address = ${q(username)} OR forwarding = ${q(username)})${ownedDomain(namespace)}`,
       `DELETE FROM used_quota WHERE username = ${q(username)}`,
       `DELETE FROM last_login WHERE username = ${q(username)}`,
       `DELETE FROM deleted_mailboxes WHERE username = ${q(username)}`,
@@ -414,14 +441,14 @@ export async function hardDeleteMailbox(serverId: string, email: string): Promis
         storagebasedirectory: existing.storagebasedirectory || STORAGE_BASE,
         storagenode: existing.storagenode || STORAGE_NODE,
         maildir: existing.maildir,
-      });
+      }, namespace === undefined ? undefined : existing.domain);
     } catch (diagnosticFailure) {
       observeCaughtError(diagnosticFailure, "platform/engine/modules/mail/admin/mailboxes.service");
       // Disk cleanup failure is non-fatal - the auth rows are gone, the
       // mailbox can't be logged into. Leftover bytes are an operator
       // cleanup task, not a user-facing error.
     }
-    await recountDomain(serverId, existing.domain);
+    await recountDomain(serverId, existing.domain, namespace);
   });
 }
 

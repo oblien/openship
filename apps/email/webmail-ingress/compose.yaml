@@ -1,0 +1,12 @@
+services:
+  webmail-ingress:
+    image: nginx:stable-alpine@sha256:8eb04fe3b385090e9aa02961f77398ad09b6bf33ab07f6669a5bb7acce22c0d3
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      FLEET_DOMAIN: ${FLEET_DOMAIN:?Set the dedicated mail fleet DNS zone}
+      DNS_RESOLVER: ${DNS_RESOLVER:-1.1.1.1}
+    volumes:
+      - ./start.sh:/start.sh:ro
+      - ./nginx.conf.template:/etc/nginx/webmail.conf.template:ro
+    entrypoint: ["/bin/sh", "/start.sh"]

@@ -1,4 +1,4 @@
-The homepage and `/mail` share a capture of the real `MailAdminPanel`. The fixture
+The homepage and `/mail` use the light and dark versions of the real `MailAdminPanel`. The fixture
 uses fictional `example.com` accounts and does not change production components.
 It captures every supported language, including the dashboard's Arabic layout.
 
@@ -8,7 +8,7 @@ Run a dashboard development server on port 3012, then run from the repository ro
 bun scripts/screenshots/mail/capture.mjs
 ```
 
-Set `SCREENSHOT_ORIGIN` for another local port. If Playwright is installed outside
+Set `SCREENSHOT_THEME=dark` to capture the mail landing’s `mail-control-panel-dark.webp` in each language. Set `SCREENSHOT_ORIGIN` for another local port. If Playwright is installed outside
 this workspace, set `PLAYWRIGHT_MODULE` to its module path. `SCREENSHOT_LOCALES=en,ar`
 limits captures while reviewing a change; omit it before publishing updated assets.
 

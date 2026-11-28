@@ -6,9 +6,8 @@
  *                control plane and the platform nav is hidden
  *
  * Precedence:
- *   1. CLOUD_MODE → always "platform", unconditionally. The entire /api/mail
- *      mount is localOnly (modules/mail/mail.routes.ts), so a mail-mode SaaS
- *      shell would render a rail of links that all 403. Not a preference.
+ *   1. CLOUD_MODE → the organization dashboard exposes hosted mail under Emails.
+ *      The instance-wide operator rail remains specific to self-hosted installations.
  *   2. instance_settings.product_mode — the operator's dashboard toggle.
  *   3. OPENSHIP_PRODUCT — the launcher-declared instance default.
  *
@@ -45,8 +44,7 @@ let cached: ProductMode | null = null;
 let cacheGeneration = 0;
 
 export async function resolveProductMode(): Promise<ProductMode> {
-  // Multi-tenant SaaS: mail is self-hosted-only infrastructure. Checked first so
-  // no stored value or env var can produce a dead rail on the cloud.
+  // The instance-wide operator rail belongs to a self-hosted installation.
   if (env.CLOUD_MODE) return "platform";
 
   if (cached !== null) return cached;

@@ -1,3 +1,4 @@
+import { isManagedMailId } from "@repo/contracts/managed-mail";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { enrichErrorContext } from "@repo/core/diagnostics/node";
 import { randomUUID } from "node:crypto";
@@ -78,6 +79,7 @@ export interface PermissionRepositories {
     findEnvVarById(id: string): Lookup<ProjectChild>;
   };
   server: { get(id: string): Lookup<Owned> };
+  managedMail?: { owner(id: string): Lookup<string> };
   backupDestination: { findById(id: string): Lookup<Owned> };
   deployment: {
     findById(id: string): Lookup<ProjectChild>;
@@ -182,6 +184,7 @@ export function createAuthorization(deps: AuthorizationDependencies) {
         return (await repos.project.findById(id))?.organizationId ?? null;
       case "server":
       case "mail_server":
+        if (type === "mail_server" && isManagedMailId(id)) return await repos.managedMail?.owner(id) ?? null;
         return (await repos.server.get(id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/authorization"); return null; }))?.organizationId ?? null;
       case "backup_destination":
         return (await repos.backupDestination.findById(id))?.organizationId ?? null;
@@ -248,7 +251,8 @@ export function createAuthorization(deps: AuthorizationDependencies) {
     if (input.scope === "list" || input.resourceId === "*") return scopeOrg;
     const resource = await resolveResourceOrg(input.resourceType, input.resourceId);
     if (resource) return resource.orgId;
-    if (!canForward() || (!PROJECT_ROOTED.has(input.resourceType) && input.resourceType !== "server") || !scopeOrg) return null;
+    const cloudMail = input.resourceType === "mail_server" && isManagedMailId(input.resourceId);
+    if (!canForward() || (!PROJECT_ROOTED.has(input.resourceType) && input.resourceType !== "server" && !cloudMail) || !scopeOrg) return null;
     return (await deps.cloud!.isLinked(scopeOrg).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/authorization"); return false; })) ? scopeOrg : null;
   }
 

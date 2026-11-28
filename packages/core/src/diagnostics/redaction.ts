@@ -47,7 +47,7 @@ export function redactDiagnosticText(value: string, limit = 2048, secrets: reado
       "[REDACTED ARGUMENT]",
     )
     .replace(
-      /\b(?:gh[pousr]_|github_pat_|sk_(?:live_|test_)?|oblien_)[A-Za-z0-9_-]{12,}/g,
+      /\b(?:gh[pousr]_|github_pat_|opsh_(?:pat|send|mail)_|omk_|sk_(?:live_|test_)?|oblien_)[A-Za-z0-9_-]{12,}/g,
       "[REDACTED TOKEN]",
     )
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]*)?/g, "[REDACTED TOKEN]")

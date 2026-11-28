@@ -9,6 +9,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { appSendingSettings } from './mail/sending-credentials';
 
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -75,11 +76,14 @@ function int(name: string, fallback: number): number {
 }
 
 export interface Env {
+  sendingAdminToken?: string;
+  managedSending: ReturnType<typeof appSendingSettings>;
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
 
   COOKIE_DOMAIN: string;
   TRUSTED_ORIGINS: string[];
+  TRUST_PROXY: boolean;
 
   SESSION_ENCRYPTION_KEY: string;
   SESSION_COOKIE_NAME: string;
@@ -121,6 +125,12 @@ export interface Env {
 }
 
 export const env: Env = {
+  managedSending: appSendingSettings(
+    process.env.OPENSHIP_SENDING_KEY?.trim(),
+    process.env.OPENSHIP_SENDING_NAMESPACE?.trim(),
+    process.env.DEFAULT_IMAP_HOST?.trim(),
+  ),
+  sendingAdminToken: process.env.OPENSHIP_SENDING_ADMIN_TOKEN || undefined,
   NODE_ENV: (process.env.NODE_ENV as Env['NODE_ENV']) ?? 'development',
   PORT: int('PORT', 3030),
 
@@ -132,6 +142,8 @@ export const env: Env = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+
+  TRUST_PROXY: process.env.TRUST_PROXY === 'true',
 
   SESSION_ENCRYPTION_KEY: required('SESSION_ENCRYPTION_KEY'),
   SESSION_COOKIE_NAME: optional('SESSION_COOKIE_NAME', 'zero_session'),

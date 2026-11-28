@@ -249,6 +249,8 @@ export function validateReturnTo(input: string | null): string | null {
     isRepositoryDeploy ||
     /^\/apps\/new\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathOnly) ||
     pathOnly === "/billing/plans" ||
+    pathOnly === "/emails" ||
+    input === "/library" ||
     pathOnly === "/library/migrate" ||
     pathOnly === "/cloud-billing" ||
     ALLOWED_PREFIXES.some((prefix) => {

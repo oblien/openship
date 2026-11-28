@@ -21,6 +21,7 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./managed-mail": "./src/mail-server/managed-mail.ts",
     "./ports": {
       "types": "./src/ports.ts",
       "import": "./src/ports.ts"
@@ -35,6 +36,7 @@
     "*": {
       "diagnostics": ["./src/diagnostics/index.ts"],
       "diagnostics/node": ["./src/diagnostics/node.ts"],
+      "managed-mail": ["./src/mail-server/managed-mail.ts"],
       "ports": [
         "./src/ports.ts"
       ],

@@ -1775,6 +1775,14 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   column-gap: clamp(1rem, 1.3vw, 1.75rem);
 }
+.pp-mail-products { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; margin-block-end: 1.75rem; }
+.pp-mail-products button { display: flex; align-items: flex-start; text-align: start; gap: .75rem; padding: 1.15rem; border: 1px solid var(--th-bd-strong); border-radius: 1rem; cursor: pointer; }
+.pp-mail-products button[aria-pressed="true"] { border-color: currentColor; background: color-mix(in srgb,currentColor 6%,transparent); }
+.pp-mail-products svg { flex: none; margin-top: .15rem; }
+.pp-mail-products span { flex: 1; }
+.pp-mail-products strong, .pp-mail-products small { display: block; }
+.pp-mail-products small { margin-top: .3rem; max-width: 36ch; font-size: .875rem; line-height: 1.45; opacity: .8; }
+@media (max-width: 760px) { .pp-mail-products { grid-template-columns: 1fr; } }
 .pp-plans--alternative {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

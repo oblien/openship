@@ -234,6 +234,18 @@ describe("legacy webmail replace", () => {
     expect(h.requestBuildAccess).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ["mail-1", true, true],
+    ["mail-1", false, false],
+    ["elsewhere", true, false],
+  ] as const)("reserves the runtime volume only for co-located dedicated webmail (%s, %s)", async (serverId, dedicatedAssistant, expected) => {
+    h.linked = WEBMAIL_PROJECT;
+    await startWebmailDeploy(ctx, { ...input, target: { kind: "self", serverId }, dedicatedAssistant });
+    const patch = expect.objectContaining({ volumes: ["mail_assistant_runtime:/run/openship-mail-assistants:ro"] });
+    if (expected) expect(h.updateService).toHaveBeenCalledWith(ctx, WEBMAIL_PROJECT.id, "svc1", patch);
+    else expect(h.updateService).not.toHaveBeenCalledWith(ctx, WEBMAIL_PROJECT.id, "svc1", patch);
+  });
+
   it("reports a legacy install as legacy so the UI can offer the replace", async () => {
     const mailServer = { serverId: "mail-1", domain: "example.com", webmailProjectId: "wm-old" };
 

@@ -24,6 +24,10 @@ export async function syncCloudResourceLimits(
   tier: PlanTierId,
   desired: NamespaceLimits = cloudNamespaceLimits(tier),
 ): Promise<void> {
+  return syncNamespaceResourceLimits(namespace, desired);
+}
+
+export async function syncNamespaceResourceLimits(namespace: string, desired: NamespaceLimits): Promise<void> {
   const client = getOblienClient();
   const { data: current } = await client.namespaces.get(namespace);
   const providerLimits = toOblienVmLimits(desired);

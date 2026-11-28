@@ -4116,6 +4116,12 @@
       "section": "Operations",
       "description": "Publish reviewed changes with source write authorization.",
       "route": "POST /api/git/:provider/repos/:owner/:repo/changes"
+    },
+    "mail.send": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Submit text or HTML with a domain-scoped OpenShip API key. The response confirms acceptance for delivery.",
+      "route": "POST /api/mail/send"
     }
   },
   "http": {
@@ -4463,6 +4469,10 @@
     "POST /api/projects/:id/routing/ensure-edge/stream": {
       "page": "projects",
       "description": "Stream edge setup for the project."
+    },
+    "POST /api/projects/folder/files": {
+      "page": "sources",
+      "description": "Stage UTF-8 source files through JSON or MCP without Git (4 MB JSON limit)."
     },
     "POST /api/projects/folder/upload/:sessionId": {
       "page": "sources",
@@ -5311,6 +5321,331 @@
     "DELETE /api/cloud/support/blocks": {
       "page": "support",
       "description": "Remove an operator-managed sender or IP intake block."
+    },
+    "POST /api/mail/admin/:serverId/tenant-access": {
+      "page": "mail",
+      "section": "Worker administration",
+      "description": "Issue scoped worker access for a shared mailbox service."
+    },
+    "GET /api/mail/admin/:serverId/webmail/login-route": {
+      "page": "mail",
+      "section": "Worker administration",
+      "description": "Read the verified sign-in route of the Webmail app linked to this dedicated mail server."
+    },
+    "PUT /api/mail/admin/:serverId/webmail/hosting": {
+      "page": "mail",
+      "section": "Worker administration",
+      "description": "Set the hosting placement for the linked webmail installation."
+    },
+    "GET /api/mail/admin/:serverId/webmail/sending/:domain": {
+      "page": "mail",
+      "section": "Worker administration",
+      "description": "Read webmail’s managed sending configuration for this domain."
+    },
+    "PUT /api/mail/admin/:serverId/webmail/sending/:domain": {
+      "page": "mail",
+      "section": "Worker administration",
+      "description": "Install the domain’s managed sending configuration in webmail."
+    },
+    "GET /api/mail/discovery": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Resolve the webmail sign-in URL for a hosted mailbox domain."
+    },
+    "GET /api/mail/managed": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Read the workspace’s mail entitlement and available services."
+    },
+    "POST /api/mail/managed": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Activate mailbox hosting in the selected placement."
+    },
+    "DELETE /api/mail/managed/:serverId/reservation": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Cancel an unused VM mail reservation."
+    },
+    "GET /api/mail/managed/services/:serverId": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Read the selected mail service and its provisioning state."
+    },
+    "POST /api/mail/managed/checkout": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Start checkout for a shared mailbox plan, sending allowance, or dedicated mail server."
+    },
+    "POST /api/mail/managed/checkout/cancel": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Cancel a pending email checkout."
+    },
+    "GET /api/mail/managed/plans/:id/change": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Read the current plan change."
+    },
+    "POST /api/mail/managed/plans/:id/change": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Confirm a quoted plan change."
+    },
+    "GET /api/mail/managed/plans/:id/change/:changeId": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Look up a specific plan change."
+    },
+    "POST /api/mail/managed/plans/:id/change/cancel": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Cancel a pending plan change."
+    },
+    "POST /api/mail/managed/plans/:id/change/preview": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Preview the terms of changing a mail plan."
+    },
+    "POST /api/mail/managed/portal": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Open the workspace email billing portal."
+    },
+    "POST /api/mail/managed/services/:serverId/cancel": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Cancel a pending dedicated server checkout."
+    },
+    "POST /api/mail/managed/services/:serverId/portal": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Open the selected dedicated server’s billing portal."
+    },
+    "POST /api/mail/managed/services/:serverId/resume": {
+      "page": "mail",
+      "section": "Hosted mail",
+      "description": "Resume a pending dedicated server checkout."
+    },
+    "GET /api/mail/managed/:serverId/sending/:id": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Check managed sending for a hosted mailbox domain."
+    },
+    "POST /api/mail/managed/:serverId/sending/:id": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Connect the verified sender domain to the mail service."
+    },
+    "DELETE /api/mail/managed/:serverId/sending/:id/api-relay": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Disable API delivery for native submissions on a linked server."
+    },
+    "GET /api/mail/managed/:serverId/sending/:id/api-relay": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Read the API relay state for a linked server."
+    },
+    "POST /api/mail/managed/:serverId/sending/:id/api-relay": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Enable the API relay for native submissions on a linked server."
+    },
+    "POST /api/mail/managed/:serverId/sending/:id/smtp": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Configure SMTP delivery for this sender domain on a linked server."
+    },
+    "PUT /api/mail/sending/caps/domains": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Set or clear a domain’s monthly recipient cap."
+    },
+    "PUT /api/mail/sending/caps/senders": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Set or clear an address’s monthly recipient cap."
+    },
+    "GET /api/mail/sending/domains": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "List the workspace’s sending domains."
+    },
+    "POST /api/mail/sending/domains": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Register a sender domain and retrieve its verification requirements."
+    },
+    "DELETE /api/mail/sending/domains/:id": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Release a sender domain from the workspace."
+    },
+    "GET /api/mail/sending/domains/:id": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Read a sending domain and its DNS verification state."
+    },
+    "POST /api/mail/sending/domains/:id/key": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Issue a send-only OpenShip API key for a verified domain."
+    },
+    "POST /api/mail/sending/domains/:id/smtp-key": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Issue an SMTP relay credential for the linked installation."
+    },
+    "POST /api/mail/sending/domains/:id/test-email": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Submit a test message from a verified sender domain."
+    },
+    "POST /api/mail/sending/domains/:id/verify": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Recheck the domain’s DNS verification records."
+    },
+    "GET /api/mail/sending/keys": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "List mail API keys for the workspace."
+    },
+    "DELETE /api/mail/sending/keys/:id": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Revoke a mail API key."
+    },
+    "GET /api/mail/sending/messages/:id": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Read a submitted message’s delivery receipt."
+    },
+    "GET /api/mail/sending/usage": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Read the workspace’s monthly sending usage."
+    },
+    "GET /api/mail/sending/usage/domains": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Read accepted and pending recipients and caps by domain."
+    },
+    "GET /api/mail/sending/usage/senders": {
+      "page": "mail",
+      "section": "Managed sending",
+      "description": "Read accepted and pending recipients and caps by sender."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/aliases": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "List mail aliases on a server."
+    },
+    "POST /api/mail/tenants/:mailTenant/admin/:serverId/aliases": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Create a mail alias."
+    },
+    "DELETE /api/mail/tenants/:mailTenant/admin/:serverId/aliases/:id": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Remove a mail alias."
+    },
+    "PATCH /api/mail/tenants/:mailTenant/admin/:serverId/aliases/:id": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Update a mail alias."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/dns-scan": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Live DNS health scan (MX/SPF/DKIM/DMARC/PTR)."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/domains": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "List mail domains on the server."
+    },
+    "POST /api/mail/tenants/:mailTenant/admin/:serverId/domains": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Add a mail domain."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/domains-dns/pending": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "List additional domains whose DNS is still pending."
+    },
+    "DELETE /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Delete a domain (add `?cascade=true` to remove its mailboxes too)."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Get one domain's config."
+    },
+    "PATCH /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Update a domain (quotas, limits, active flag)."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain/dependents": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Count mailboxes/aliases that depend on a domain."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain/dns": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "DNS records + publish state for an additional domain."
+    },
+    "POST /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain/dns/acknowledge": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Confirm a domain's DNS records are published."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "List mailboxes in a domain."
+    },
+    "POST /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Create a mailbox."
+    },
+    "DELETE /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes/:email": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Delete a mailbox (add `?hard=true` to purge its maildir; default is a soft delete)."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes/:email": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Get one mailbox."
+    },
+    "PATCH /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes/:email": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Update a mailbox (name, password, quota, active)."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/stats": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Aggregate counts (domains, mailboxes, storage)."
+    },
+    "GET /api/mail/tenants/:mailTenant/admin/:serverId/webmail/sending/:domain": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Read webmail’s managed sending configuration for this domain."
+    },
+    "PUT /api/mail/tenants/:mailTenant/admin/:serverId/webmail/sending/:domain": {
+      "page": "mail",
+      "section": "Tenant-scoped worker endpoints",
+      "description": "Install the domain’s managed sending configuration in webmail."
     }
   }
 }

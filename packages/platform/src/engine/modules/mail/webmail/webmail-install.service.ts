@@ -7,11 +7,12 @@
  * other app goes through, and the app installs from /apps just as well without us.
  *
  * What this file owns is the part the catalog can't know: WHICH IMAP/SMTP backend
- * a webmail belongs to. Two entry points, one shared core:
+ * a webmail belongs to. The three entry points use one install path:
  *
  *   startWebmailDeploy          mail-server-backed — the backend is one of OUR
  *                               engines, so every coordinate is derived, not asked.
  *   startExternalWebmailDeploy  "Connect existing" — the operator's own backend.
+ *   installDedicatedWebmailApp  the customer workspace and VM from a funded mail order.
  *
  * The core is three generic calls, in the same order the /apps/new/<id> wizard
  * makes them:
@@ -39,6 +40,7 @@ import { repos, type Domain, type Project } from "@repo/db";
 import type { Platform } from "@repo/adapters";
 import type { MailWebmailRecoveryCandidate } from "@repo/contracts";
 import { assertResourceInOrg } from "../../../lib/resource-access";
+import { resolveManagedHostname } from "../../../lib/routing-domains";
 import { pickCanonicalDomainRow, resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { sshManager } from "../../../lib/ssh-manager";
@@ -61,6 +63,7 @@ import { workspaceForServer } from "../../../lib/cloud-workspace-scope";
 import { authorization } from "../../../lib/authorization";
 import { listProjectRouteRows } from "../../domains/project-route.service";
 import { MAIL_DOMAIN_OWNER } from "../../../lib/domain-ssl";
+import { resolveTargetPlatform, disposePlatform } from "../../../lib/deployment-runtime";
 import { updateService } from "../../services/service.service";
 import { mutateState, readState, type MailServerState } from "../mail-state";
 
@@ -136,8 +139,8 @@ function webmailBackendSettings(
 export function managedMailWebmailSettings(
   service: string,
   installDomain: string,
-  publicHostname: string,
-  useProxyVariant: boolean,
+  publicHostname?: string,
+  useProxyVariant = false,
 ): AppSettingChange[] {
   const mailHost = mailHostname(installDomain);
   return webmailBackendSettings(
@@ -148,7 +151,7 @@ export function managedMailWebmailSettings(
       smtpHost: mailHost,
       smtpPort: OUR_SMTP_PORT,
     },
-    useProxyVariant ? `https://${publicHostname}` : "",
+    publicHostname === undefined ? undefined : useProxyVariant ? `https://${publicHostname}` : "",
   );
 }
 
@@ -160,6 +163,7 @@ export type WebmailDeployTarget =
 
 export interface StartWebmailDeployInput {
   mailServerId: string;
+  dedicatedAssistant?: boolean;
   /** Public hostname for the webmail UI. */
   hostname: string;
   target: WebmailDeployTarget;
@@ -211,6 +215,8 @@ export interface WebmailSummary {
   /** Hostname the operator opens. "" when nothing is routed yet. */
   hostname: string;
   url: string;
+  /** Public sign-in can follow a project route only after verification and TLS. */
+  verifiedUrl?: string;
   /**
    * The route list could not be read, so `hostname` is "" because we don't KNOW —
    * not because there is none. Callers that treat an empty hostname as "unrouted"
@@ -287,7 +293,7 @@ interface WebmailInstallPlan {
   routeAfterLink?: boolean;
   /** Same-host mail daemons are reached through Docker's host gateway while
    * their certificate hostname remains unchanged. Remote backends use DNS. */
-  hostBackend?: { hostname: string; local: boolean };
+  hostBackend?: { hostname: string; local: boolean; dedicatedAssistant?: boolean };
 }
 
 async function runWebmailInstall(
@@ -342,9 +348,6 @@ async function runWebmailInstall(
   // the deploy as "deployed and running" (#566).
   await enableRestartLoopWatch(ctx, projectId, template);
 
-  // Before the deploy, never after: the deploy's success hook resolves the mail
-  // server FROM the project, and a build can finish before a later write lands.
-  await plan.beforeDeploy?.(projectId);
   if (plan.hostBackend) {
     const service = (await repos.service.listByProject(projectId)).find(
       (row) => row.name === webmailEndpoint(template).service,
@@ -353,18 +356,28 @@ async function runWebmailInstall(
       throw new AppError("The webmail service is missing. Refresh before deploying.", 409, "WEBMAIL_SERVICE_MISSING");
     }
     const previous = (service.advanced as ComposeAdvanced | null)?.extraHosts ?? {};
+    // An empty project-scoped volume reserves the VM-local opt-in socket. Webmail
+    // only reads it. The fleet operator installs the rootless engine separately.
+    const assistantMount = "mail_assistant_runtime:/run/openship-mail-assistants:ro";
+    const volumes = service.volumes ?? [];
+    const hasMount = volumes.includes(assistantMount);
+    const attachRuntime = plan.hostBackend.local && (plan.hostBackend.dedicatedAssistant ?? hasMount);
     const aliases = { ...previous };
     if (plan.hostBackend.local) aliases[plan.hostBackend.hostname] = "host-gateway";
     else if (aliases[plan.hostBackend.hostname] === "host-gateway") {
       delete aliases[plan.hostBackend.hostname];
     }
-    if (JSON.stringify(aliases) !== JSON.stringify(previous)) {
+    const hostsChanged = JSON.stringify(aliases) !== JSON.stringify(previous);
+    if (hostsChanged || hasMount !== attachRuntime) {
       await updateService(ctx, projectId, service.id, {
-        advanced: { extraHosts: Object.keys(aliases).length ? aliases : null },
+        ...(hostsChanged && { advanced: { extraHosts: Object.keys(aliases).length ? aliases : null } }),
+        ...(hasMount !== attachRuntime && { volumes: attachRuntime
+          ? [...volumes, assistantMount] : volumes.filter(volume => volume !== assistantMount) }),
       });
     }
   }
 
+  await plan.beforeDeploy?.(projectId);
   // The mail host's route, now that the link authorizing it exists. Same plan builder
   // and same per-service write as a first install — the only difference is that it could
   // not have been accepted a few lines earlier.
@@ -443,6 +456,24 @@ async function reapplyRouting(
     if (!routing) continue;
     await updateService(ctx, project.id, row.id, serviceRoutingPatch(routing));
   }
+}
+
+/** Fulfill a dedicated order through the same catalog, settings and deploy pipeline as Apps. */
+export async function installDedicatedWebmailApp(
+  ctx: RequestContext,
+  input: { serverId: string; hostname: string; beforeDeploy: (projectId: string) => Promise<void> },
+) {
+  const target = await webmailDeploymentTarget(ctx, { deployTarget: "cloud", serverId: input.serverId });
+  const template = await requireWebmailTemplate(ctx.organizationId);
+  const endpoint = webmailEndpoint(template);
+  return runWebmailInstall(ctx, template, {
+    ...target,
+    name: `Webmail ${input.hostname}`,
+    routes: [{ ...endpoint, mode: "free" }],
+    settings: managedMailWebmailSettings(endpoint.service, input.hostname.replace(/^mail\./, "")),
+    hostBackend: { hostname: input.hostname, local: true, dedicatedAssistant: true },
+    beforeDeploy: input.beforeDeploy,
+  });
 }
 
 // ─── Mail-server-backed install ──────────────────────────────────────────────
@@ -617,6 +648,7 @@ export async function startWebmailDeploy(
     hostBackend: {
       hostname: mailHost,
       local: target.deployTarget === "server" && target.serverId === input.mailServerId,
+      dedicatedAssistant: input.dedicatedAssistant,
     },
     beforeDeploy: async (projectId) => {
       if (reconnect) {
@@ -757,8 +789,10 @@ export async function resolveWebmailSummary(
     mailServer.serverId,
     mailServer.webmailProjectId,
   );
-  if (!project) return undefined;
+  return project ? summarizeWebmailProject(project, mailServer.domain) : undefined;
+}
 
+export async function summarizeWebmailProject(project: Project, installDomain: string): Promise<WebmailSummary> {
   // `null`, not `[]`, on a failed read: the proxy variant is DERIVED from having no
   // route rows, so an unreadable list would otherwise be indistinguishable from an
   // unrouted project and this would hand back `mail.<domain>` for a self-hosted
@@ -770,6 +804,12 @@ export async function resolveWebmailSummary(
   // still the address they open. `resolveProjectAccess` is deliberately
   // stricter — it feeds the projects UI, where "unverified" is the point.
   const routed = rows ? pickCanonicalDomainRow(rows) ?? rows[0] ?? null : null;
+  const loginRoute = pickCanonicalDomainRow(rows?.filter(row =>
+    !project.deletionInProgress && row.status === "active" && !row.redirectTo && !row.targetPath && !row.lastVerifyError &&
+    (row.sslStatus === "active" || row.sslStatus === "external" ||
+      (row.domainType === "free" && resolveManagedHostname(row.hostname).isManaged && row.sslStatus === "none")) &&
+    (!row.sslExpiresAt || row.sslExpiresAt.getTime() > Date.now()),
+  ));
   // No route of its own + running on the cloud = the mail VPS fronts it (see
   // the proxy variant above). Derived, so nothing has to be stored.
   const proxied = rows !== null && !routed && !!project.workspaceId;
@@ -780,12 +820,15 @@ export async function resolveWebmailSummary(
   // card offers to deploy it again.
   const hostname =
     routed?.hostname ??
-    (proxied ? mailHostname(mailServer.domain) : rows === null ? "" : await routedServiceHostname(project));
+    (proxied ? mailHostname(installDomain) : rows === null ? "" : await routedServiceHostname(project));
 
   return {
     installed: (await findActiveDeployment(project).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/mail/webmail/webmail-install.service"); return null; }))?.status === "ready",
     hostname,
     url: hostname ? `https://${hostname}` : "",
+    ...(loginRoute && project.appTemplateId === WEBMAIL_TEMPLATE_ID && {
+      verifiedUrl: `https://${loginRoute.hostname}`,
+    }),
     // Withholding the hostname is the safe half; saying so is the other half. Without
     // this the caller sees the same shape as a deployed-but-unrouted webmail, and the
     // two want opposite handling — one needs an address chosen, the other must not
@@ -906,15 +949,13 @@ export async function cleanupWebmailInstall(project: Project): Promise<string | 
 /**
  * The mail VPS's own edge — the same OpenResty that fronts IMAP/SMTP for this
  * hostname — as a platform to route against. `resolveTargetPlatform` verifies the
- * server is in the org; the import is dynamic to keep the mail module out of the
- * deployment runtime's import cycle.
+ * server is in the org.
  */
 async function withMailVpsPlatform<T>(
   mailServerId: string,
   organizationId: string,
   work: (platform: Platform) => Promise<T>,
 ): Promise<T> {
-  const { resolveTargetPlatform, disposePlatform } = await import("../../../lib/deployment-runtime");
   const platform = await resolveTargetPlatform("server", "bare", mailServerId, organizationId);
   try {
     return await work(platform);

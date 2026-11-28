@@ -110,8 +110,8 @@ it.each(["monthly", "annual"] as const)("keeps a referral and %s plan through si
   expect(new URL(destination, "https://app.openship.io").searchParams.get("ref")).toBe("AF-PARTNER");
 });
 
-describe("migration post-auth return", () => {
-  it.each(["/library/migrate", "/library/migrate?from=railway", "/library/migrate?from=vercel", "/library/migrate?from=server"])(
+describe("repository library post-auth return", () => {
+  it.each(["/library", "/library/migrate", "/library/migrate?from=railway", "/library/migrate?from=vercel", "/library/migrate?from=server"])(
     "preserves %s through the existing auth continuation", (destination) => {
       let href = authContinuationHref("/login", destination);
       for (const route of ["/register", "/two-factor", "/select-organization"] as const) {

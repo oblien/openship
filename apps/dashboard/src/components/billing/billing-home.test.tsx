@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   cloud: "cloud-a",
   list: vi.fn(),
   management: vi.fn(),
+  mail: vi.fn(),
   checkouts: vi.fn(),
   replace: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.cloud }));
 vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: h.list } }));
+vi.mock("@/lib/api/managed-mail", () => ({ managedMailApi: { summary: h.mail } }));
 vi.mock("@/lib/api/billing", () => ({ billingApi: { listCheckouts: h.checkouts } }));
 vi.mock("@/lib/api/management", () => ({ managementApi: { get: h.management } }));
 
@@ -89,6 +91,7 @@ beforeEach(() => {
   h.cloud = "cloud-a";
   h.list.mockResolvedValue({ servers: [] });
   h.management.mockResolvedValue(freeManagement());
+  h.mail.mockResolvedValue({ plan: null, service: null });
   h.checkouts.mockResolvedValue({ items: [] });
   host = document.createElement("div");
   document.body.append(host);
@@ -303,4 +306,18 @@ it("matches an existing linked plan through its canonical Cloud reference withou
   expect(
     host.querySelector('a[href="/resources?pool=local-production&tab=payment"]')?.textContent,
   ).toContain(baseDictionary.billing.hub.paymentRequired);
+});
+
+it.each([
+  ["pending", { pendingPlan: "team" }, baseDictionary.emails.cloudClient.resumeCheckout],
+  ["active", { plan: "team" }, baseDictionary.billing.hub.active],
+] as const)("lists a %s email-only plan in the billing inventory", async (_state, plan, action) => {
+  h.mail.mockResolvedValue({ service: null, ...plan });
+  await render();
+  const card = host.querySelector<HTMLAnchorElement>('a[href^="/billing/plans?product=email"]');
+  expect(new URL(card!.href).searchParams.get("organizationId")).toBe("org-a");
+  expect(card?.textContent).toContain("OpenShip Mail");
+  expect(card?.textContent).toContain("Team");
+  expect(card?.textContent).toContain(action);
+  expect(h.replace).not.toHaveBeenCalled();
 });

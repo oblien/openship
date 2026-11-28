@@ -1,30 +1,59 @@
 "use client";
 
 import { Icon as UiIcon } from "@repo/ui/icons";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { interpolate, useI18n } from "@/components/i18n-provider";
 import { formatBillingNumber } from "@/lib/billing-usage";
+import { DismissiblePopover } from "@/components/ui/Popover";
 
-export function ResourceLabel({ label, hint }: { label: string; hint?: string }) {
+export function ResourceLabel({
+  label,
+  hint,
+}: {
+  label: string;
+  hint?: ReactNode;
+}) {
+  const [mode, setMode] = useState<"hover" | "pinned" | null>(null);
+  const id = useId();
   if (!hint) return <p className="text-xs font-medium text-muted-foreground">{label}</p>;
   return (
-    <details
-      className="group relative"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") event.currentTarget.open = false;
-      }}
+    <DismissiblePopover
+      open={mode !== null}
+      onOpenChange={() => setMode(null)}
+      className="relative w-fit"
     >
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded text-xs font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-        {label}
-        <UiIcon name="help-circle" className="size-3.5 shrink-0" aria-hidden="true" />
-      </summary>
-      <p className="absolute start-0 top-full z-10 mt-2 w-56 max-w-[calc(100vw-5rem)] rounded-xl bg-popover p-3 text-xs leading-relaxed text-popover-foreground shadow-lg">
-        {hint}
-      </p>
-    </details>
+      <div
+        onPointerEnter={(event) => {
+          if (event.pointerType === "mouse") setMode((current) => current ?? "hover");
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse")
+            setMode((current) => (current === "hover" ? null : current));
+        }}
+      >
+        <button
+          type="button"
+          aria-expanded={mode !== null}
+          aria-describedby={mode ? id : undefined}
+          onClick={() => setMode((current) => (current === "pinned" ? null : "pinned"))}
+          className="-my-1 flex items-center gap-1 rounded py-1 text-start text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {label}
+          <UiIcon name="help-circle" className="size-3.5 shrink-0" aria-hidden="true" />
+        </button>
+        {mode && (
+          <div className="absolute start-0 top-full z-30 w-max max-w-[min(14rem,75vw)] pt-1.5">
+            <div
+              id={id}
+              role="tooltip"
+              className="rounded-xl border border-border/50 bg-popover px-3 py-2 text-start text-xs font-normal leading-relaxed text-popover-foreground shadow-lg"
+            >
+              {hint}
+            </div>
+          </div>
+        )}
+      </div>
+    </DismissiblePopover>
   );
 }
 

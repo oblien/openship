@@ -20,14 +20,18 @@
   "services": [
     {
       "name": "webmail",
-      "image": "ghcr.io/oblien/openship-webmail:latest",
+      "image": "ghcr.io/oblien/openship-webmail:mail-20261128",
+      "secretEnv": [
+        "OPENSHIP_SENDING_KEY"
+      ],
       "exposedPort": 4080,
       "exposed": true,
       "volumes": [
         "webmail_data:/data"
       ],
       "environment": {
-        "TRUSTED_ORIGINS": "{{publicUrl:webmail}}"
+        "TRUSTED_ORIGINS": "{{publicUrl:webmail}}",
+        "TRUST_PROXY": "true"
       },
       "restart": "unless-stopped"
     }
@@ -46,6 +50,14 @@
       "service": "webmail",
       "label": "Branding admin token",
       "help": "Auto-generated. Lets Openship write this webmail's white-label login page (logo, name, colors) over its admin API. Nothing else accepts it.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "OPENSHIP_SENDING_ADMIN_TOKEN",
+      "service": "webmail",
+      "label": "Sending configuration token",
+      "help": "Authenticates managed sending configuration from the mail control plane.",
       "generate": "secret",
       "secret": true
     }
@@ -102,6 +114,25 @@
           "placeholder": "587",
           "advanced": true,
           "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "OPENSHIP_SENDING_KEY",
+          "service": "webmail",
+          "label": "OpenShip sending API key",
+          "help": "Create a send-only key for your domain in Emails → Sending and set the IMAP host above. This app can then send text and HTML email through OpenShip.",
+          "type": "password",
+          "secret": true,
+          "installStep": true,
+          "requiresRedeploy": true
+        },
+        {
+          "key": "OPENSHIP_SENDING_NAMESPACE",
+          "service": "webmail",
+          "label": "Legacy sending namespace",
+          "help": "Only required for installations using a legacy provider key.",
+          "type": "text",
+          "advanced": true,
           "requiresRedeploy": true
         }
       ]

@@ -2902,10 +2902,6 @@
     "mlhqabe": "Postfachspeicher",
     "m1t7t2wk": "Geteilt",
     "my14yjr": "API",
-    "myu51jo": "Für persönliche Projekte.",
-    "m12ifwwp": "Für kleine Teams.",
-    "m15ti3x2": "Für Teams mit mehreren Marken.",
-    "m1waezfd": "Für Plattformen mit eigenen Kunden.",
     "m116lozf": "Funktionen vergleichen",
     "m178xhu3": "Per API aus der App senden",
     "mzxuq4l": "Reine Sendeschlüssel pro Domain",
@@ -2919,7 +2915,14 @@
     "m1r414ct": "API-Schlüssel",
     "mfm9g8": "Pro Domain",
     "m12hv6lv": "Beispielpreise pro Monat in USD.",
-    "mhi9qfg": "Tarife im Dashboard ansehen"
+    "mhi9qfg": "Tarife im Dashboard ansehen",
+    "m1934rwj": "Nutzungsberichte",
+    "mukpq5o": "OpenShip Mail auf deiner VM betreiben",
+    "m1shnxdq": "Installiere Postfächer auf einer vorhandenen Cloud-VM oder wähle einen neuen Compute-Tarif. Ausgehende E-Mails nutzen dein Kontingent der E-Mail-API.",
+    "m1cnf92t": "Vorhandene VM verwenden",
+    "m7xi513": "Neuen Cloud-Tarif wählen",
+    "m1qf703d": "E-Mail-API inklusive",
+    "mzhhs8b": "Cloud-VM verwenden"
   },
   "ReleaseNotes": {
     "m1005a3f": "– Der Assistent erfand einen Hostnamen aus dem Projektnamen, wenn für einen Schritt keine Route ausgewählt wurde, beschriftete Portfelder, zeigte eine Vorschau der Monorepo-Sub-App-Hosts an und verknüpfte sogar die Schaltfläche „Site besuchen“ mit einem Host, der nie existieren würde. Es werden jetzt nur die tatsächlichen Hostnamen Ihrer Konfiguration angezeigt und „Site besuchen“ wird vollständig ausgeblendet, wenn die Bereitstellung keine öffentliche Domäne hat.",

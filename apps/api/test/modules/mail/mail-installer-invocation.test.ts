@@ -35,7 +35,7 @@ vi.mock("@repo/platform/engine/modules/mail/mail-health.service", () => ({
   MAIL_COMPONENTS: [],
 }));
 
-import { stepDeployEngine } from "@repo/platform/engine/modules/mail/mail.service";
+import { publicMailStepResult, stepDeployEngine } from "@repo/platform/engine/modules/mail/mail.service";
 
 /** Every command succeeds; capture anything streamed so we can assert no iRedMail.sh. */
 function engineExecutor() {
@@ -68,8 +68,11 @@ describe("step 5 engine deploy", () => {
     // The generated iRedMail secrets are handed to the container's first-boot env.
     expect(opts.secrets.DOMAIN_ADMIN_PASSWD_PLAIN).toEqual(expect.any(String));
     expect(opts.secrets.PGSQL_ROOT_PASSWD).toEqual(expect.any(String));
-    // And the postmaster password is surfaced back for the dashboard.
-    expect(result.data?.secrets?.DOMAIN_ADMIN_PASSWD_PLAIN).toEqual(expect.any(String));
+    expect(result.setupSecrets).toEqual(opts.secrets);
+    const progress = publicMailStepResult(result);
+    expect(progress.data).toEqual({ engine: result.data!.engine });
+    expect(progress).not.toHaveProperty("setupSecrets");
+    expect(JSON.stringify(progress)).not.toContain(opts.secrets.DOMAIN_ADMIN_PASSWD_PLAIN);
   });
 
   test("never runs the host-native iRedMail.sh installer", async () => {

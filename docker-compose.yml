@@ -4,6 +4,10 @@
 #   cp .env.example .env          # then edit
 #   docker compose up -d --build
 #
+# For a co-located OpenShip Mail engine, see apps/email/MANAGED.md, "Run mail
+# in the OpenShip Compose stack". docker-compose.mail.yml adds the persistent
+# Postfix/Dovecot and mail database services to this project.
+#
 # This is the CONTROL PLANE: it BUILDS api + dashboard + web from source and
 # runs postgres + redis. It's what we deploy for the openship.io SaaS, and what
 # a from-source contributor runs locally. The MODE is decided entirely by .env —

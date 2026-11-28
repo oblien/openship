@@ -52,10 +52,10 @@ export function DnsTab({
   const { t } = useI18n();
   // Heading lives in the page header in mail view — see ../../_lib/mail-section.
   const hoisted = useMailRailOwnsTabs(serverId);
-  const activeDomain = selectedDomain || primaryDomain;
-  const isPrimary = activeDomain === primaryDomain;
 
   const [domains, setDomains] = useState<AdminDomain[]>([]);
+  const activeDomain = selectedDomain || primaryDomain || domains[0]?.domain || "";
+  const isPrimary = !!primaryDomain && activeDomain === primaryDomain;
   const [loadingDomains, setLoadingDomains] = useState(true);
 
   useEffect(() => {

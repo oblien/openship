@@ -39,7 +39,28 @@ The SDK installs its supported native agent through `setup`, reports progress th
 
 ### Deployment setup (once per mail installation)
 
-Automatic provisioning is explicitly enabled by the operator. Use a dedicated Docker engine for mail assistants; do not supply a Cloud control-plane or general production engine socket. Configure the webmail server with:
+Cloud shared mail disables the built-in assistant, including on older Cloud bindings without a dedicated placement. On dedicated mail, the fleet and worker check that webmail runs on the assigned mail VM. The dedicated deployment reserves a read-only, project-scoped volume for its assistant socket. It stays empty until the fleet operator enables the VM.
+
+On the dedicated Linux VM, prepare a separate rootless Docker engine under a Unix user reserved for mail assistants. Keep the mail host's system Docker running. For a packaged Docker installation, the assistant user can run `dockerd-rootless-setuptool.sh install --force` after the rootless prerequisites are installed. Delegate the CPU, memory and process controllers to the service and enable lingering so the engine starts after a reboot. [Docker rootless setup](https://docs.docker.com/engine/security/rootless/)
+
+On a release machine with access to the Mindwire repository, download the Linux daemon and checksum manifest from the release matching webmail's pinned SDK. Use `arm64` or `amd64` for the mail VM's architecture. For SDK 0.1.61 on arm64, run
+
+```sh
+gh release download v0.1.61 --repo oblien/mindwire --dir mindwire-release \
+  --pattern mindwired-v0.1.61-linux-arm64 --pattern checksums.txt
+```
+
+Copy that directory to the VM. Run the activation script with the webmail container name, the assistant user's socket and the copied directory.
+
+```sh
+sudo apps/email/scripts/enable-dedicated-assistant.sh "$webmail_container" /run/user/1001/docker.sock ./mindwire-release
+```
+
+The script verifies the dedicated hosting binding and the release checksum, stages the daemon and installs a systemd socket proxy in the reserved volume. Repeat activation when upgrading the pinned SDK. Webmail reaches each mailbox daemon through the VM's private Docker gateway. The assistant containers reach webmail's public HTTPS origin for mailbox tools. To close the VM connection, disable and stop `openship-mail-assistants.socket` and stop `openship-mail-assistants.service`. The rootless engine owns the runtime data.
+
+After the VM is configured, sign in to a mailbox and open **Settings → AI & agents → Connect AI**. This starts setup for that mailbox. Reading the inbox, signing in and purchasing the plan do not start an AI container. Each mailbox connects its own provider. A provider sees the content submitted during its requests.
+
+For a standalone installation, configure an assistant-only Docker engine and the webmail server's public URL.
 
 ```sh
 MAIL_MINDWIRE_DOCKER_SOCKET=/path/to/dedicated/docker.sock
@@ -55,13 +76,13 @@ MAIL_MINDWIRE_MCP_URL=http://webmail:4080/mcp
 
 These are server settings, not values accepted from users. The API needs permission to manage that dedicated engine. The local sample environment wires this automatically to its selected local Docker engine. Ordinary webmail deployments do not gain Docker access automatically.
 
-The published SDK provisions one container per instance-scoped mailbox identity. A shared image contains OS prerequisites only; keys and conversations stay in each container's writable layer. Containers have no host mounts or Docker socket, no additional capabilities, no new privileges, and limits of 512 MB, one CPU and 128 processes. At most 32 assistant containers are admitted per engine. Daemon ports are bound to host loopback; containerized webmail connects over its private network with a separate daemon token. Page reads do not provision runtimes. Setup begins only when a signed-in user opens Connect AI.
+The SDK provisions one container per mailbox from a common base image. Each container keeps its own keys and runtime state. It runs with all capabilities dropped, no host mounts or Docker socket, and limits of 512 MB, one CPU and 128 processes. Each engine accepts up to 32 mailbox containers. Fleet webmail reaches the daemon on the private Docker gateway with a mailbox-specific daemon token. Standalone deployments use loopback or their configured private network.
 
 Keep runtime containers and their private state across webmail upgrades. An intentional runtime reset removes saved AI connections, so users must reconnect. Restrict worker-network egress to the mail API and approved AI providers; filesystem isolation does not replace network policy. Read-only native settings and mail-only instructions are additional controls, not a substitute for the container boundary.
 
 ### Existing isolated runtimes
 
-Operators can still bind a mailbox to an existing dedicated Mindwire daemon using `MAIL_MINDWIRE_TARGETS`. Obtain its mailbox identifier from the authenticated `assistant.state` API and configure:
+On standalone installations, operators can bind a mailbox to an existing Mindwire daemon using `MAIL_MINDWIRE_TARGETS`. Obtain its mailbox identifier from the authenticated `assistant.state` API.
 
 ```sh
 MAIL_MINDWIRE_TARGETS='{"<mailbox-identifier>":{"url":"https://alice-agent.example.com","token":"<daemon-access-token>","agent":"codex","directory":"/workspace/mail"}}'

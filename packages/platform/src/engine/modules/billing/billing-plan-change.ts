@@ -1,40 +1,33 @@
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { AppError, safeErrorMessage } from "@repo/core";
-import { OperationError, type BillingOperations, type BillingPlanChange, type BillingPlanChangeQuote } from "@repo/contracts";
+import { type BillingOperations, type BillingPlanChange, type BillingPlanChangeQuote } from "@repo/contracts";
 import { repos, type CloudSubscriptionChangeIntent, type CloudWorkspace } from "@repo/db";
 import type { ExecutionContext } from "../../../context";
 import { authorization } from "../../lib/authorization";
 import { getOblienBillingApi } from "../../lib/oblien-client";
-import { oblienPlanChangeInputSchema, type OblienPlanChange, type OblienSubscription } from "../../lib/oblien-billing-api";
+import { oblienPlanChangeInputSchema, type OblienPlanChange } from "../../lib/oblien-billing-api";
 import { cloudBillingOwner, requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
 import { readCloudWorkspaceHost } from "../../lib/cloud-workspace-host";
 import { cloudWorkspaceResourcesFromLimits } from "../../lib/resources";
 import { previewWorkspaceResourceChange, applyApprovedWorkspaceResize, requestPaidWorkspaceProvisioning } from "../cloud-workspaces/cloud-workspace.service";
 import { withCloudBillingLock } from "./billing-oblien-quota";
 import { assertBillingEnabled } from "./billing.service";
+import { assertComputeBillingOwner } from "../managed-mail/dedicated-contract";
 import { resolveSubscriptionSelection, subscriptionMetadata, subscriptionPlan } from "./billing-catalog";
-import { canChangeCloudSubscription, hasPendingSubscriptionChange, presentChangeOffer, presentSubscriptionChange } from "./billing-subscription";
+import { canChangeCloudSubscription, hasPendingSubscriptionChange, presentSubscriptionChange } from "./billing-subscription";
 import { assertWorkspaceCheckoutsSettled } from "./workspace-checkout";
 
-const requestKey = (...parts: string[]) => `openship:${createHash("sha256").update(JSON.stringify(parts)).digest("hex")}`;
-const terminal = (change: OblienPlanChange) => ["applied", "canceled", "expired", "failed"].includes(change.status);
+import { requestKey, terminal, previewChange, acceptChange, readAcceptedChange, matchesAppliedSubscription } from "./subscription-change-lifecycle";
 
 async function requireOwner(organizationId: string, workspaceId?: string): Promise<CloudWorkspace & { namespace: string }> {
   const { workspace } = await cloudBillingOwner(organizationId, workspaceId);
+  assertComputeBillingOwner(workspace?.namespace);
   if (!workspace || workspace.remote || !workspace.namespace)
     throw new AppError("Select a subscribed managed server before changing its plan", 409, "BILLING_SERVER_REQUIRED");
   if (workspace.deletionInProgress)
     throw new AppError("This server is being deleted", 409, "CLOUD_WORKSPACE_DELETING");
   return { ...workspace, namespace: workspace.namespace };
-}
-
-function assertChangeMatchesIntent(change: OblienPlanChange, intent: CloudSubscriptionChangeIntent) {
-  const request = oblienPlanChangeInputSchema.parse(intent.request);
-  if (change.namespace !== intent.namespace || change.quoteId !== intent.quoteId ||
-      !isDeepStrictEqual(change.next, request.offer))
-    throw new AppError("Cloud billing returned a different plan change", 502, "OBLIEN_BILLING_INVALID_RESPONSE");
 }
 
 async function previewResources(ctx: ExecutionContext, owner: CloudWorkspace, request: CloudSubscriptionChangeIntent["request"]) {
@@ -71,20 +64,8 @@ export async function previewSubscriptionChange(ctx: ExecutionContext, input: Pa
     };
     const resize = await previewResources(ctx, current, request);
     await getOblienBillingApi().assertResellerSupport();
-    const { quote } = await getOblienBillingApi().previewPlanChange(owner.namespace, request);
-    if (!isDeepStrictEqual(quote.next, offer) || !isDeepStrictEqual(quote.current, subscription!.offer))
-      throw new AppError("The subscription changed while preparing its price. Review a fresh quote.", 409, "BILLING_QUOTE_CHANGED");
-    const intent: CloudSubscriptionChangeIntent = {
-      namespace: owner.namespace, request, quoteId: quote.id, expiresAt: quote.expiresAt, resize,
-    };
-    await repos.cloudWorkspace.setSubscriptionChange(owner.id, ctx.organizationId, intent);
-    return {
-      id: quote.id, direction: quote.direction, expiresAt: quote.expiresAt, effectiveAt: quote.effectiveAt,
-      current: presentChangeOffer(quote.current), next: presentChangeOffer(quote.next),
-      interval, currency: quote.currency, amountDueNow: quote.amountDueNow,
-      unusedTimeCredit: quote.unusedTimeCredit, remainingTimeCharge: quote.remainingTimeCharge,
-      nextInvoiceAmount: quote.nextInvoiceAmount, resize,
-    };
+    return previewChange(owner.namespace, subscription!.offer!, request, resize, intent =>
+      repos.cloudWorkspace.setSubscriptionChange(owner.id, ctx.organizationId, intent));
   }, owner.id);
 }
 
@@ -95,52 +76,15 @@ export async function confirmSubscriptionChange(ctx: ExecutionContext, input: Pa
   const owner = await requireOwner(ctx.organizationId, input.workspaceId);
   const result = await withCloudBillingLock(ctx.organizationId, async () => {
     const current = await requireOwner(ctx.organizationId, owner.id);
-    let intent = current.subscriptionChange;
-    if (!intent || intent.quoteId !== input.quoteId || intent.namespace !== current.namespace)
-      throw new AppError("This quote does not belong to the selected server. Review a fresh quote.", 409, "BILLING_QUOTE_CHANGED");
-    if (intent.completed && !intent.changeId)
-      throw new AppError("This quote was rejected. Review a fresh quote before confirming.", 409, "BILLING_QUOTE_CHANGED");
-    const firstAttempt = !intent.confirmationKey;
-    if (!intent.confirmationKey) {
-      if (Date.parse(intent.expiresAt) <= Date.now())
-        throw new AppError("This quote expired. Review a fresh quote before confirming.", 409, "BILLING_QUOTE_EXPIRED");
-      const resize = await previewResources(ctx, current, intent.request);
-      if ((resize?.revision ?? null) !== (intent.resize?.revision ?? null))
-        throw new AppError("The server or its projects changed. Review a fresh quote before confirming.", 409, "CLOUD_WORKSPACE_CHANGED");
-      intent = { ...intent, confirmationKey: requestKey("confirm", ctx.organizationId, owner.id, intent.quoteId) };
-      await repos.cloudWorkspace.setSubscriptionChange(owner.id, ctx.organizationId, intent);
-    }
-    return readAcceptedChange(current, intent, firstAttempt);
+    return acceptChange(current.namespace, [ctx.organizationId, owner.id], current.subscriptionChange, input.quoteId,
+      intent => previewResources(ctx, current, intent.request),
+      intent => repos.cloudWorkspace.setSubscriptionChange(owner.id, ctx.organizationId, intent));
   }, owner.id);
   // A payment result is independent from a resize retry. The latter remains a
   // durable server operation and must never cause another payment attempt.
   await reconcileWorkspaceSubscriptionChange(ctx.organizationId, owner.id).catch(error =>
     errorDiagnostics.warn("platform/engine/modules/billing/billing-plan-change", `[cloud-plan-change] ${owner.id}: ${safeErrorMessage(error)}`, error));
   return presentChangeWithServerUpdate(result, await requireOwner(ctx.organizationId, owner.id));
-}
-
-/** Caller holds the billing lock. Unknown outcomes retry the original accepted
- * request; only a definite rejection permits a new preview. */
-async function readAcceptedChange(owner: CloudWorkspace & { namespace: string }, intent: CloudSubscriptionChangeIntent, firstAttempt = false) {
-  if (intent.namespace !== owner.namespace || !intent.confirmationKey)
-    throw new Error("Plan-change acceptance does not belong to this server");
-  const billing = getOblienBillingApi();
-  let change: OblienPlanChange;
-  try {
-    ({ change } = intent.changeId
-      ? await billing.getPlanChange(owner.namespace, intent.changeId)
-      : await billing.changePlan(owner.namespace, { quoteId: intent.quoteId, idempotencyKey: intent.confirmationKey }));
-  } catch (error) {
-    const rejection = error instanceof OperationError ? String(error.details?.providerCode) : null;
-    if (!intent.changeId && rejection && (["billing_quote_expired", "billing_quote_changed"].includes(rejection) ||
-        (firstAttempt && ["billing_plan_change_pending", "reseller_enterprise_required"].includes(rejection)))) {
-      await repos.cloudWorkspace.setSubscriptionChange(owner.id, owner.organizationId, { ...intent, completed: true });
-    }
-    throw error;
-  }
-  assertChangeMatchesIntent(change, intent);
-  await repos.cloudWorkspace.setSubscriptionChange(owner.id, owner.organizationId, { ...intent, changeId: change.id });
-  return change;
 }
 
 function presentChangeWithServerUpdate(change: OblienPlanChange, owner: CloudWorkspace): BillingPlanChange {
@@ -168,13 +112,6 @@ export async function cancelSubscriptionChange(ctx: ExecutionContext, input: Par
   return presentSubscriptionChange(change);
 }
 
-function matchesAppliedSubscription(subscription: OblienSubscription, intent: CloudSubscriptionChangeIntent) {
-  const request = oblienPlanChangeInputSchema.parse(intent.request);
-  return subscription?.status === "active" && subscription.billingInterval === request.billingInterval &&
-    isDeepStrictEqual(subscription.offer, request.offer) &&
-    Object.entries(request.metadata).every(([key, value]) => subscription.metadata?.[key] === value);
-}
-
 /** Signed events and the existing recovery job share this continuation. Never
  * trust an event's financial payload or resize from a merely accepted payment. */
 export async function reconcileWorkspaceSubscriptionChange(organizationId: string, workspaceId: string): Promise<void> {
@@ -184,7 +121,7 @@ export async function reconcileWorkspaceSubscriptionChange(organizationId: strin
     const current = await requireOwner(organizationId, workspaceId);
     const intent = current.subscriptionChange;
     if (!intent?.confirmationKey || intent.completed) return null;
-    const change = await readAcceptedChange(current, intent);
+    const change = await readAcceptedChange(current.namespace, intent, next => repos.cloudWorkspace.setSubscriptionChange(current.id, organizationId, next));
     const saved = { ...intent, changeId: change.id };
     if (!terminal(change)) return null;
     if (change.status !== "applied") {

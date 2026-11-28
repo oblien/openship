@@ -122,7 +122,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarContent>
 
         <SidebarFooter className={`px-0 pb-0 ${state === 'collapsed' ? 'md:px-2' : 'md:px-4'}`}>
-          <SidebarMenu>
+          {assistant.available && <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
                 data-mail-assistant-trigger
@@ -141,7 +141,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <span className="text-[13px]">Assistant</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          </SidebarMenu>
+          </SidebarMenu>}
           <NavMain items={bottomNavItems} />
         </SidebarFooter>
       </Sidebar>

@@ -15,6 +15,26 @@ record("Webhook secret configured", Boolean(process.env.OBLIEN_WEBHOOK_SECRET));
 record("Subscription purchases enabled", process.env.BILLING_ENABLED === "true");
 
 const billing = new OblienBillingApi({ clientId, clientSecret, baseUrl: apiBase.toString() });
+if (process.argv.includes("--dedicated-mail-fleet")) {
+  const { parseDedicatedMailFleet, listDedicatedWorkerServers } =
+    await import("@repo/platform/engine/modules/managed-mail/dedicated-worker");
+  let fleet: ReturnType<typeof parseDedicatedMailFleet> = null;
+  try {
+    fleet = parseDedicatedMailFleet(process.env.OPENSHIP_MAIL_DEDICATED_FLEET);
+    record("Automatic dedicated mail fleet configured", !!fleet, fleet ? undefined : "Set OPENSHIP_MAIL_DEDICATED_FLEET on the SaaS API.");
+  } catch {
+    record("Automatic dedicated mail fleet configured", false, "Check the dedicated fleet settings.");
+  }
+  if (fleet) {
+    const { resolveDnsProvider } = await import("@repo/platform/engine/modules/dns/registry");
+    const [worker, dns] = await Promise.allSettled([
+      listDedicatedWorkerServers(fleet),
+      resolveDnsProvider(fleet.dnsProvider).listRecords({ apiToken: fleet.dnsToken }, fleet.zoneId, { name: fleet.domain, type: "MX" }),
+    ]);
+    record("Dedicated mail worker inventory readable", worker.status === "fulfilled");
+    record("Dedicated mail DNS zone readable", dns.status === "fulfilled");
+  }
+}
 const checks = await Promise.allSettled([
   (async () => {
     await billing.assertResellerSupport();

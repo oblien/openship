@@ -8,6 +8,7 @@ import {
   MailComponentSchemas,
   MailRequestSchemas,
   parseInput,
+  MAIL_SEND_PATH, MailSendInput, type MailSendRequest, type ManagedMailReceipt,
   type MailOperations,
 } from "@repo/contracts";
 import type { HttpClient } from "./http";
@@ -17,8 +18,12 @@ import {
   createRemoteChildResourceOperations,
 } from "./resource-client";
 
+export type RemoteMailOperations = MailOperations & {
+  send(input: MailSendRequest, options?: { signal?: AbortSignal }): Promise<ManagedMailReceipt>;
+};
+
 /** Transport only. Mail ownership, provisioning, DNS and certificate renewal remain in the existing API/engine. */
-export function createRemoteMailOperations(http: HttpClient): MailOperations {
+export function createRemoteMailOperations(http: HttpClient): RemoteMailOperations {
   const server = (id: string) => `/mail/admin/${encodeURIComponent(id)}`;
   const domain = (id: string, name: string) => `${server(id)}/domains/${encodeURIComponent(name)}`;
   const mailbox = (id: string, email: string) =>
@@ -185,9 +190,13 @@ export function createRemoteMailOperations(http: HttpClient): MailOperations {
         inputLocation: "path",
       },
     }),
+    send(input, options) {
+      const body = JSON.stringify(parseInput(MailSendInput, input));
+      return http.request<ManagedMailReceipt>(MAIL_SEND_PATH, { method: "POST", body, signal: options?.signal });
+    },
     setup(input, options) {
       const body = JSON.stringify(parseInput(MailRequestSchemas.setup, input));
       return http.events("/mail/setup", { method: "POST", body, signal: options?.signal });
     },
-  } satisfies MailOperations);
+  } satisfies RemoteMailOperations);
 }

@@ -171,6 +171,28 @@ export async function handleOblienWebhook(
     const owner = await findBillingOwnerByNamespace(namespace);
     if (!owner) return { status: 200, payload: { received: true } };
     const organizationId = orgId = owner.organizationId;
+    if (owner.kind === "mail") {
+      let sendingSynced = false;
+      const { reconcileMailChange } = await import("../managed-mail/plan-change");
+      if (namespace.startsWith("openship-mail-vm-")) {
+        const order = await repos.managedMail.orderByNamespace(namespace);
+        if (order && order.organizationId === organizationId) {
+          const { provisionDedicatedOrder } = await import("../managed-mail/dedicated");
+          if (order.change?.confirmationKey && !order.change.completed)
+            sendingSynced = !!(await reconcileMailChange(organizationId, order.id));
+          await provisionDedicatedOrder(organizationId, order.id);
+        }
+      }
+      const account = await repos.managedMail.account(organizationId);
+      if (account?.namespace === namespace && account.change?.confirmationKey && !account.change.completed)
+        sendingSynced = !!(await reconcileMailChange(organizationId, "account"));
+      if (account?.sendingEnabled && !sendingSynced) {
+        const { reconcileSending } = await import("../managed-mail/sending");
+        await reconcileSending(organizationId);
+      }
+      await upsertWebhookEventProcessed(db, eventId, eventType);
+      return { status: 200, payload: { received: true } };
+    }
     if (owner.kind === "management") {
       const { syncManagementBilling } = await import("./management.service");
       const { subscription } = await syncManagementBilling(organizationId);

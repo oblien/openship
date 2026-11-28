@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **579 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **580 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -334,53 +334,53 @@ The current API has **579 unique tools**. Permission tags below describe the rou
 
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
-| `delete_mail_admin_by_serverId_aliases_by_id`<br />`DELETE /api/mail/admin/:serverId/aliases/:id` | Delete a mail alias or forward. Messages addressed through it will no longer use that mapping. | `mail_server:admin`<br />Self-hosted |
-| `delete_mail_admin_by_serverId_domains_by_domain`<br />`DELETE /api/mail/admin/:serverId/domains/:domain` | Delete a mail domain. Inspect dependents first; query.cascade=true also removes dependent mailboxes and aliases. | `mail_server:admin`<br />Self-hosted |
+| `delete_mail_admin_by_serverId_aliases_by_id`<br />`DELETE /api/mail/admin/:serverId/aliases/:id` | Delete a mail alias or forward. Messages addressed through it will no longer use that mapping. | `mail_server:admin` |
+| `delete_mail_admin_by_serverId_domains_by_domain`<br />`DELETE /api/mail/admin/:serverId/domains/:domain` | Delete a mail domain. Inspect dependents first; query.cascade=true also removes dependent mailboxes and aliases. | `mail_server:admin` |
 | `delete_mail_admin_by_serverId_inbound_rules_by_ruleId`<br />`DELETE /api/mail/admin/:serverId/inbound-rules/:ruleId` | Delete an inbound-mail notification rule and release capture that no remaining rule needs. | `mail_server:write`<br />Self-hosted |
-| `delete_mail_admin_by_serverId_mailboxes_by_email`<br />`DELETE /api/mail/admin/:serverId/mailboxes/:email` | Remove a mailbox account. query.hard=true also deletes its stored mail; read its details before requesting permanent removal. | `mail_server:admin`<br />Self-hosted |
+| `delete_mail_admin_by_serverId_mailboxes_by_email`<br />`DELETE /api/mail/admin/:serverId/mailboxes/:email` | Remove a mailbox account. query.hard=true also deletes its stored mail; read its details before requesting permanent removal. | `mail_server:admin` |
 | `delete_mail_servers_by_serverId`<br />`DELETE /api/mail/servers/:serverId` | Forget Openship’s mail-server registration without uninstalling daemons or deleting mail data. Scan and adopt can restore the registration. | `mail_server:admin`<br />Self-hosted |
-| `get_mail_admin_by_serverId_aliases`<br />`GET /api/mail/admin/:serverId/aliases` | List mail aliases and forwards, optionally filtered by query.domain. | `mail_server:list`<br />Self-hosted |
+| `get_mail_admin_by_serverId_aliases`<br />`GET /api/mail/admin/:serverId/aliases` | List mail aliases and forwards, optionally filtered by query.domain. | `mail_server:list` |
 | `get_mail_admin_by_serverId_backup_policy`<br />`GET /api/mail/admin/:serverId/backup-policy` | Read this mail server’s saved backup policy, or null when no policy exists. | `mail_server:read`<br />Self-hosted |
 | `get_mail_admin_by_serverId_backup_runs`<br />`GET /api/mail/admin/:serverId/backup-runs` | Read this mail server’s recent backup runs. Follow run IDs with the general backup status and restore tools. | `mail_server:read`<br />Self-hosted |
 | `get_mail_admin_by_serverId_certificate`<br />`GET /api/mail/admin/:serverId/certificate` | Read the mail certificate, SMTP/IMAP TLS checks and automatic renewal settings. | `mail_server:read`<br />Self-hosted |
 | `get_mail_admin_by_serverId_components_by_key_logs`<br />`GET /api/mail/admin/:serverId/components/:key/logs` | Read recent logs for one managed mail component, with optional query.lines. Logs can contain recipient addresses; redact before sharing. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_dns_scan`<br />`GET /api/mail/admin/:serverId/dns-scan` | Check current mail DNS records, optionally for query.domain. Does not apply changes. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_domains`<br />`GET /api/mail/admin/:serverId/domains` | List mail domains configured on this mail server. | `mail_server:list`<br />Self-hosted |
-| `get_mail_admin_by_serverId_domains_by_domain`<br />`GET /api/mail/admin/:serverId/domains/:domain` | Read a mail domain’s configuration and status. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_domains_by_domain_dependents`<br />`GET /api/mail/admin/:serverId/domains/:domain/dependents` | Inspect mailboxes and aliases affected by deleting this mail domain. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_domains_by_domain_dns`<br />`GET /api/mail/admin/:serverId/domains/:domain/dns` | Read required DNS records and the current DNS acknowledgment state for this mail domain. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_domains_by_domain_dns_plan`<br />`GET /api/mail/admin/:serverId/domains/:domain/dns/plan` | Preview DNS changes for this mail domain through a connected DNS provider. Does not apply records. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_domains_dns_pending`<br />`GET /api/mail/admin/:serverId/domains-dns/pending` | List mail domains still requiring DNS configuration or acknowledgment. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_dns_scan`<br />`GET /api/mail/admin/:serverId/dns-scan` | Check current mail DNS records, optionally for query.domain. Does not apply changes. | `mail_server:read` |
+| `get_mail_admin_by_serverId_domains`<br />`GET /api/mail/admin/:serverId/domains` | List mail domains configured on this mail server. | `mail_server:list` |
+| `get_mail_admin_by_serverId_domains_by_domain`<br />`GET /api/mail/admin/:serverId/domains/:domain` | Read a mail domain’s configuration and status. | `mail_server:read` |
+| `get_mail_admin_by_serverId_domains_by_domain_dependents`<br />`GET /api/mail/admin/:serverId/domains/:domain/dependents` | Inspect mailboxes and aliases affected by deleting this mail domain. | `mail_server:read` |
+| `get_mail_admin_by_serverId_domains_by_domain_dns`<br />`GET /api/mail/admin/:serverId/domains/:domain/dns` | Read required DNS records and the current DNS acknowledgment state for this mail domain. | `mail_server:read` |
+| `get_mail_admin_by_serverId_domains_by_domain_dns_plan`<br />`GET /api/mail/admin/:serverId/domains/:domain/dns/plan` | Preview DNS changes for this mail domain through a connected DNS provider. Does not apply records. | `mail_server:read` |
+| `get_mail_admin_by_serverId_domains_dns_pending`<br />`GET /api/mail/admin/:serverId/domains-dns/pending` | List mail domains still requiring DNS configuration or acknowledgment. | `mail_server:read` |
 | `get_mail_admin_by_serverId_fail2ban_status`<br />`GET /api/mail/admin/:serverId/fail2ban/status` | Read fail2ban jail status and currently banned IP addresses on this mail server. Optional query.jail selects one jail. A failed read is unavailable, never an empty ban list. | `mail_server:read`<br />Self-hosted |
 | `get_mail_admin_by_serverId_inbound_rules`<br />`GET /api/mail/admin/:serverId/inbound-rules` | List inbound-mail notification rules and their enabled or paused state. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_mailboxes`<br />`GET /api/mail/admin/:serverId/mailboxes` | List mailboxes, optionally filtered by query.domain. Passwords are not returned. | `mail_server:list`<br />Self-hosted |
-| `get_mail_admin_by_serverId_mailboxes_by_email`<br />`GET /api/mail/admin/:serverId/mailboxes/:email` | Read a mailbox’s profile, quota and enabled state without its password. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_mailboxes`<br />`GET /api/mail/admin/:serverId/mailboxes` | List mailboxes, optionally filtered by query.domain. Passwords are not returned. | `mail_server:list` |
+| `get_mail_admin_by_serverId_mailboxes_by_email`<br />`GET /api/mail/admin/:serverId/mailboxes/:email` | Read a mailbox’s profile, quota and enabled state without its password. | `mail_server:read` |
 | `get_mail_admin_by_serverId_relay`<br />`GET /api/mail/admin/:serverId/relay` | Read outbound relay configuration with its password hidden. Relay credentials are managed in the mail server’s settings. | `mail_server:read`<br />Self-hosted |
-| `get_mail_admin_by_serverId_stats`<br />`GET /api/mail/admin/:serverId/stats` | Read mail-server domain, mailbox, alias and storage totals. | `mail_server:read`<br />Self-hosted |
+| `get_mail_admin_by_serverId_stats`<br />`GET /api/mail/admin/:serverId/stats` | Read mail-server domain, mailbox, alias and storage totals. | `mail_server:read` |
 | `get_mail_health_by_serverId`<br />`GET /api/mail/health/:serverId` | Check live mail components, delivery and network reachability. Set query.refreshReachability to bypass the reachability cache. | `mail_server:read`<br />Self-hosted |
 | `get_mail_servers`<br />`GET /api/mail/servers` | List mail servers managed by this workspace, their installation state and linked webmail projects. | `mail_server:list`<br />Self-hosted |
 | `get_mail_status`<br />`GET /api/mail/status` | Read saved setup progress for query.serverId. A missing state after an SSH failure is not proof that mail is uninstalled; check the mail health tool for live reachability. | `mail_server:read`<br />Self-hosted |
 | `get_mail_steps`<br />`GET /api/mail/steps` | Read the ordered mail installation steps. Installing a new mail stack uses the dashboard’s streaming setup wizard. | `mail_server:read`<br />Self-hosted |
 | `get_mail_webmail_targets`<br />`GET /api/mail/webmail/targets` | List permitted deployment targets for the mail server named by query.serverId. | `mail_server:read`<br />Self-hosted |
-| `patch_mail_admin_by_serverId_aliases_by_id`<br />`PATCH /api/mail/admin/:serverId/aliases/:id` | Enable or disable this mail alias using body.active. | `mail_server:write`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_aliases_by_id`<br />`PATCH /api/mail/admin/:serverId/aliases/:id` | Enable or disable this mail alias using body.active. | `mail_server:write` |
 | `patch_mail_admin_by_serverId_certificate`<br />`PATCH /api/mail/admin/:serverId/certificate` | Enable or disable automatic mail certificate renewal. Monitoring continues when renewal is disabled. | `mail_server:admin`<br />Self-hosted |
-| `patch_mail_admin_by_serverId_domains_by_domain`<br />`PATCH /api/mail/admin/:serverId/domains/:domain` | Update a mail domain’s description, capacity limits, default quota or enabled state. | `mail_server:write`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_domains_by_domain`<br />`PATCH /api/mail/admin/:serverId/domains/:domain` | Update a mail domain’s description, capacity limits, default quota or enabled state. | `mail_server:write` |
 | `patch_mail_admin_by_serverId_inbound_rules_by_ruleId`<br />`PATCH /api/mail/admin/:serverId/inbound-rules/:ruleId` | Update an inbound-mail notification rule and reconcile capture on affected domains. pausedReason=null clears the saved pause reason. | `mail_server:write`<br />Self-hosted |
-| `patch_mail_admin_by_serverId_mailboxes_by_email`<br />`PATCH /api/mail/admin/:serverId/mailboxes/:email` | Update a mailbox’s name, quota, password or enabled state. Omit password to preserve it. | `mail_server:write`<br />Self-hosted |
-| `post_mail_admin_by_serverId_aliases`<br />`POST /api/mail/admin/:serverId/aliases` | Create a mail alias, forward or catch-all and its destination. A catch-all applies to unmatched recipients in the domain. | `mail_server:write`<br />Self-hosted |
+| `patch_mail_admin_by_serverId_mailboxes_by_email`<br />`PATCH /api/mail/admin/:serverId/mailboxes/:email` | Update a mailbox’s name, quota, password or enabled state. Omit password to preserve it. | `mail_server:write` |
+| `post_mail_admin_by_serverId_aliases`<br />`POST /api/mail/admin/:serverId/aliases` | Create a mail alias, forward or catch-all and its destination. A catch-all applies to unmatched recipients in the domain. | `mail_server:write` |
 | `post_mail_admin_by_serverId_backup_policy`<br />`POST /api/mail/admin/:serverId/backup-policy` | Create or update the mail-server backup policy. Set messageData=true to include stored messages; keys default to included. Omitted retention preserves an existing policy or uses creation defaults; null removes that retention limit. Use the general backup policy run tool for an immediate backup. | `mail_server:admin`<br />Self-hosted |
 | `post_mail_admin_by_serverId_certificate_check`<br />`POST /api/mail/admin/:serverId/certificate/check` | Recheck the mail certificate on disk and served by SMTP/IMAP. Does not issue a certificate or send email. | `mail_server:write`<br />Self-hosted |
 | `post_mail_admin_by_serverId_certificate_renew`<br />`POST /api/mail/admin/:serverId/certificate/renew` | Renew a due mail certificate through the Openship edge and reload Postfix/Dovecot. A still-valid certificate is reused and its service configuration repaired. | `mail_server:admin`<br />Self-hosted |
 | `post_mail_admin_by_serverId_components_by_key_by_action`<br />`POST /api/mail/admin/:serverId/components/:key/:action` | Run a supported action on a managed mail component. Read health for component keys and supported actions; inspect health again to confirm recovery. | `mail_server:admin`<br />Self-hosted |
 | `post_mail_admin_by_serverId_components_restart_all`<br />`POST /api/mail/admin/:serverId/components/restart-all` | Restart managed mail components on this server. Mail delivery can be briefly interrupted; inspect health afterward. | `mail_server:admin`<br />Self-hosted |
-| `post_mail_admin_by_serverId_domains`<br />`POST /api/mail/admin/:serverId/domains` | Create a mail domain with mailbox, alias and quota limits. Then inspect its DNS plan and apply or configure the required records. | `mail_server:write`<br />Self-hosted |
-| `post_mail_admin_by_serverId_domains_by_domain_dns_acknowledge`<br />`POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge` | Recheck and acknowledge a mail domain’s DNS configuration. Only use after the required records have been configured. | `mail_server:write`<br />Self-hosted |
-| `post_mail_admin_by_serverId_domains_by_domain_dns_apply`<br />`POST /api/mail/admin/:serverId/domains/:domain/dns/apply` | Apply this mail domain’s required DNS records through a connected provider. Inspect the DNS plan first. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_domains`<br />`POST /api/mail/admin/:serverId/domains` | Create a mail domain with mailbox, alias and quota limits. Then inspect its DNS plan and apply or configure the required records. | `mail_server:write` |
+| `post_mail_admin_by_serverId_domains_by_domain_dns_acknowledge`<br />`POST /api/mail/admin/:serverId/domains/:domain/dns/acknowledge` | Recheck and acknowledge a mail domain’s DNS configuration. Only use after the required records have been configured. | `mail_server:write` |
+| `post_mail_admin_by_serverId_domains_by_domain_dns_apply`<br />`POST /api/mail/admin/:serverId/domains/:domain/dns/apply` | Apply this mail domain’s required DNS records through a connected provider. Inspect the DNS plan first. | `mail_server:write` |
 | `post_mail_admin_by_serverId_fail2ban_ban`<br />`POST /api/mail/admin/:serverId/fail2ban/ban` | Ban one IPv4 or IPv6 address in an explicit fail2ban jail on this mail server. Read jail status first; banning an operator's address can prevent mail access. | `mail_server:admin`<br />Self-hosted |
 | `post_mail_admin_by_serverId_fail2ban_unban`<br />`POST /api/mail/admin/:serverId/fail2ban/unban` | Unban a previously banned IP address in fail2ban across all jails or in a specific jail on this mail server. | `mail_server:admin`<br />Self-hosted |
 | `post_mail_admin_by_serverId_inbound_rules`<br />`POST /api/mail/admin/:serverId/inbound-rules` | Create an inbound-mail notification rule for a mailbox, domain or all domains, targeting existing notification channels. Inspect its resulting enabled/paused state if engine capture cannot be armed. | `mail_server:write`<br />Self-hosted |
 | `post_mail_admin_by_serverId_inbound_rules_test`<br />`POST /api/mail/admin/:serverId/inbound-rules/test` | Preview matches for this server’s inbound notification rules without sending notifications or deleting captured messages. | `mail_server:write`<br />Self-hosted |
-| `post_mail_admin_by_serverId_mailboxes`<br />`POST /api/mail/admin/:serverId/mailboxes` | Create a mailbox with a supplied password and optional quota. This changes the mail server’s account database. | `mail_server:write`<br />Self-hosted |
+| `post_mail_admin_by_serverId_mailboxes`<br />`POST /api/mail/admin/:serverId/mailboxes` | Create a mailbox with a supplied password and optional quota. This changes the mail server’s account database. | `mail_server:write` |
 | `post_mail_admin_by_serverId_test_email`<br />`POST /api/mail/admin/:serverId/test-email` | Send a mail-delivery test to body.to, optionally from body.fromDomain. This sends a real email; use the recipient requested by the user. | `mail_server:write`<br />Self-hosted |
 | `post_mail_adopt`<br />`POST /api/mail/adopt` | Register an existing Openship mail installation found by scan. Restores control-plane ownership without reinstalling the stack. | `mail_server:write`<br />Self-hosted |
 | `post_mail_scan`<br />`POST /api/mail/scan` | Inspect an existing mail installation on body.serverId without reinstalling it. Returns adoptable state; use adopt to register an existing stack. | `mail_server:write`<br />Self-hosted |
@@ -548,8 +548,9 @@ The current API has **579 unique tools**. Permission tags below describe the rou
 | `post_projects_by_id_transfer_to_self_hosted`<br />`POST /api/projects/:id/transfer/to-self-hosted` | Transfer this Cloud project’s control-plane records to this self-hosted instance. Inspect returned guidance and deploy separately; this does not move database volumes. k3s workloads use their cluster lifecycle. | `project:admin`<br />Self-hosted |
 | `post_projects_by_id_webhook_domain`<br />`POST /api/projects/:id/webhook-domain` | Choose or clear a verified public webhook domain for the project’s GitHub auto-deploy endpoint. This configures webhook delivery; it does not add a site route. | `project:write` |
 | `post_projects_ensure`<br />`POST /api/projects/ensure` | Folder-upload deploy — STEP 3/4. Create or update the project that carries the build config — deployments/build/access reads config from the PROJECT ROW, not the upload session, so this must run first. Map the folder/scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. For a docker-compose folder, pass the scan's `services` array through too — that persists the project's service set — AND pass `uploadSessionId` with it, since the scan masks env values (`••••••••`) and that is what restores them. Pass projectId to update an existing project. Returns the project id for STEP 4. | `project:write` |
-| `post_projects_folder_scan_by_sessionId`<br />`POST /api/projects/folder/scan/:sessionId` | Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty (&#123;&#125;). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present. | `project:write` |
-| `post_projects_folder_session`<br />`POST /api/projects/folder/session` | Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = &#123; url, absoluteUrl, method, headers, requiresAuth &#125;. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access. | `project:write` |
+| `post_projects_folder_files`<br />`POST /api/projects/folder/files` | Stage source code directly through MCP or HTTP without Git or a separate uploader. Send files as an object mapping relative POSIX paths to UTF-8 contents (4MB maximum JSON body). Returns an already-uploaded sessionId; continue with folder/scan, projects/ensure (gitProvider:'upload', uploadSessionId, explicit projectId), then deployments/build/access. A credential limited to its own projects must create the project first and pass projectId. For larger trees or binary files use folder/session and an authenticated archive upload. No controller filesystem paths are accepted. | `project:write` |
+| `post_projects_folder_scan_by_sessionId`<br />`POST /api/projects/folder/scan/:sessionId` | Folder-upload deploy — STEP 2/4. Run AFTER staging source with folder/files or uploading the tarball. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty (&#123;&#125;). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present. | `project:write` |
+| `post_projects_folder_session`<br />`POST /api/projects/folder/session` | Open a folder-upload session for projectId. Credentials limited to their own projects must create a project first and pass its id; omitting projectId requires wildcard project write access. Returns upload = &#123; url, absoluteUrl, method, headers, requiresAuth &#125;. An authenticated HTTP uploader must POST the gzipped tarball with the returned headers and the same API credential. Binary upload is not an MCP tool and MCP does not expose its OAuth bearer. To send UTF-8 source files directly through MCP, use folder/files instead. For a folder on the desktop controller's machine, use projects/import with localPath instead. After upload: folder/scan → projects/ensure (explicit projectId) → deployments/build/access. | `project:write` |
 | `post_projects_import`<br />`POST /api/projects/import` | Register a project from a source directory accessible to the Openship controller. On desktop, use localPath and an accessible managed serverId to deploy that folder to Cloud without an out-of-band upload. This creates project configuration; deploy the returned projectId separately with buildStrategy:'server' for a managed server. Source location does not choose build location. | `project:write`<br />Self-hosted |
 | `post_projects_scan`<br />`POST /api/projects/scan` | Inspect a source directory accessible to the Openship controller and detect build or Compose configuration. For a folder on the MCP client machine, use the folder-upload workflow. | `project:write`<br />Self-hosted |
 | `put_projects_by_id_edge_pages`<br />`PUT /api/projects/:id/edge-pages` | Update maintenance and custom error HTML for a self-hosted project or its hostnames. Read edge-pages first and supply expectedRevision to avoid overwriting concurrent edits. Inspect the returned apply status before reporting success. | `project:write`<br />Self-hosted |
@@ -950,12 +951,78 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `POST /api/mail/admin/:serverId/platform-mailbox/rotate` | Rotates the platform’s private mail-delivery credential. Use the mail-server settings; this is not a user mailbox. |
 | `DELETE /api/mail/admin/:serverId/relay` | Changes server-wide delivery from relay to direct SMTP. Manage relay identity and removal together in the mail-server settings. |
 | `POST /api/mail/admin/:serverId/relay` | Configures outbound delivery credentials and provider identity in the mail-server settings; MCP can inspect the resulting relay state. |
+| `POST /api/mail/admin/:serverId/tenant-access` | Operator enrollment for shared mail. |
+| `PUT /api/mail/admin/:serverId/webmail/hosting` | Assigns an operator-managed private webmail deployment. |
+| `GET /api/mail/admin/:serverId/webmail/login-route` | Internal dedicated mailbox sign-in discovery. |
+| `GET /api/mail/admin/:serverId/webmail/sending/:domain` | Internal webmail sending configuration. |
+| `PUT /api/mail/admin/:serverId/webmail/sending/:domain` | Installs a private sending credential in the linked webmail. |
 | `POST /api/mail/credentials/postmaster` | Privileged mail administrator credentials are changed in the authenticated mail settings. |
+| `GET /api/mail/discovery` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/managed` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `DELETE /api/mail/managed/:serverId/reservation` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/managed/:serverId/sending/:id` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/:serverId/sending/:id` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `DELETE /api/mail/managed/:serverId/sending/:id/api-relay` | Manages the private mail-server API relay. |
+| `GET /api/mail/managed/:serverId/sending/:id/api-relay` | Manages the private mail-server API relay. |
+| `POST /api/mail/managed/:serverId/sending/:id/api-relay` | Manages the private mail-server API relay. |
+| `POST /api/mail/managed/:serverId/sending/:id/smtp` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/checkout` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/checkout/cancel` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/managed/plans/:id/change` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/plans/:id/change` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/managed/plans/:id/change/:changeId` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/plans/:id/change/cancel` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/plans/:id/change/preview` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/portal` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/managed/services/:serverId` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/services/:serverId/cancel` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/services/:serverId/portal` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/managed/services/:serverId/resume` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/send` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `PUT /api/mail/sending/caps/domains` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `PUT /api/mail/sending/caps/senders` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/domains` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/sending/domains` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `DELETE /api/mail/sending/domains/:id` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/domains/:id` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/sending/domains/:id/key` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/sending/domains/:id/smtp-key` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/sending/domains/:id/test-email` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `POST /api/mail/sending/domains/:id/verify` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/keys` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `DELETE /api/mail/sending/keys/:id` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/messages/:id` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/usage` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/usage/domains` | Manage hosted mail and its credentials in the Emails dashboard. |
+| `GET /api/mail/sending/usage/senders` | Manage hosted mail and its credentials in the Emails dashboard. |
 | `POST /api/mail/setup` | Mail installation is an interactive SSE wizard with DNS/PTR checkpoints. Open Emails → Set up mail; MCP can inspect status and administer or adopt existing installations. |
 | `POST /api/mail/setup/cancel` | Controls the active browser mail-installation SSE session. Finish or cancel that setup in the Emails wizard. |
 | `POST /api/mail/setup/dns-ack` | Acknowledges a checkpoint in the active mail-installation wizard. Use the Emails wizard; existing domain DNS has dedicated MCP tools. |
 | `POST /api/mail/setup/ptr-ack` | Acknowledges provider PTR setup in the active mail-installation wizard. Use the Emails wizard to review the required reverse DNS. |
 | `POST /api/mail/setup/reset` | Resets the mail-installation wizard’s on-host state. Use the Emails recovery flow; forgetting registration is available separately. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/aliases` | Internal tenant-scoped mail worker operation. |
+| `POST /api/mail/tenants/:mailTenant/admin/:serverId/aliases` | Internal tenant-scoped mail worker operation. |
+| `DELETE /api/mail/tenants/:mailTenant/admin/:serverId/aliases/:id` | Internal tenant-scoped mail worker operation. |
+| `PATCH /api/mail/tenants/:mailTenant/admin/:serverId/aliases/:id` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/dns-scan` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/domains` | Internal tenant-scoped mail worker operation. |
+| `POST /api/mail/tenants/:mailTenant/admin/:serverId/domains` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/domains-dns/pending` | Internal tenant-scoped mail worker operation. |
+| `DELETE /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain` | Internal tenant-scoped mail worker operation. |
+| `PATCH /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain/dependents` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain/dns` | Internal tenant-scoped mail worker operation. |
+| `POST /api/mail/tenants/:mailTenant/admin/:serverId/domains/:domain/dns/acknowledge` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes` | Internal tenant-scoped mail worker operation. |
+| `POST /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes` | Internal tenant-scoped mail worker operation. |
+| `DELETE /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes/:email` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes/:email` | Internal tenant-scoped mail worker operation. |
+| `PATCH /api/mail/tenants/:mailTenant/admin/:serverId/mailboxes/:email` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/stats` | Internal tenant-scoped mail worker operation. |
+| `GET /api/mail/tenants/:mailTenant/admin/:serverId/webmail/sending/:domain` | Internal webmail sending configuration. |
+| `PUT /api/mail/tenants/:mailTenant/admin/:serverId/webmail/sending/:domain` | Installs a private sending credential in the linked webmail. |
 | `POST /api/mail/webmail/deploy-external` | External mail-provider setup is a catalog/browser configuration flow. Use the catalog webmail app with its template inputs; managed mail-server webmail has a dedicated deploy tool. |
 | `GET /api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `POST /api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |

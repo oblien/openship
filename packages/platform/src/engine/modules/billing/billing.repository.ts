@@ -1,3 +1,4 @@
+import { isDedicatedMailNamespace } from "../managed-mail/dedicated-contract";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { requireWorkspaceServer } from "../../lib/cloud-workspace-scope";
 /** Live provider billing state plus read access to historical billing records. */
@@ -66,7 +67,7 @@ async function readBillingCreditState(orgId: string, workspaceId?: CloudWorkspac
   const synced = await syncOblienEntitlement(orgId, { syncResourceLimits: false, workspaceId: owner.workspaceId });
   const { entitlement, tier, subscription, grant } = synced;
   const legacySubscriptions = owner.workspaceId ? [] : await listLiveSubscriptions(orgId);
-  const managed = legacySubscriptions.length === 0 && !grant;
+  const managed = legacySubscriptions.length === 0 && !grant && !isDedicatedMailNamespace(owner.namespace);
   const canTopUp = canTopUpCloudSubscription(subscription, entitlement);
   const { quotaLimit, quotaUsed, quotaRemaining } = entitlementQuota(entitlement);
   const compute = entitlement.capacity;
@@ -141,12 +142,13 @@ export async function getBillingState(orgId: string, workspaceId?: CloudWorkspac
   await ensureNamespace(orgId, workspaceId);
   const { owner, entitlement, tier, limits: planLimitsForTier, subscription: providerSubscription, grant, managed, state } = await readBillingCreditState(orgId, workspaceId);
   // Catalog availability must not hide the balance or subscription controls.
-  const plan = grant ? await complimentaryCloudPlan(grant) : tier === "free" ? null
+  const mailBilled = isDedicatedMailNamespace(owner.namespace);
+  const plan = mailBilled ? null : grant ? await complimentaryCloudPlan(grant) : tier === "free" ? null
     : await cloudPlan(tier, providerSubscription).catch(error => {
         errorDiagnostics.warn("platform/engine/modules/billing/billing.repository", `[billing] Plan details are temporarily unavailable: ${safeErrorMessage(error)}`, error);
         return null;
       });
-  const subscription = presentCloudSubscription(providerSubscription);
+  const subscription = mailBilled ? null : presentCloudSubscription(providerSubscription);
   const changingPlan = Boolean(subscription?.pendingChange) || hasPendingSubscriptionChange(owner.workspace?.subscriptionChange);
   const monthlyCreditLimit = tier === "free" ? 0 : plan?.monthlyCredits ?? null;
   const overQuota = !state.compute && state.balance.quotaRemaining !== null && state.balance.quotaRemaining <= 0;

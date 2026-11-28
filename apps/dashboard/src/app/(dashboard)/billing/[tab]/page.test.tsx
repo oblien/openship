@@ -32,6 +32,7 @@ import { I18nProvider } from "@/components/i18n-provider";
 import { BillingUnavailable } from "../_components/BillingUnavailable";
 import { CloudBillingLink } from "@/components/billing/CloudBillingLink";
 import BillingPage from "../page";
+import { EmailPlans } from "@/components/billing/EmailPlans";
 import { BillingHome } from "@/components/billing/BillingHome";
 import { ManagedServerPurchase } from "@/components/servers/managed/ManagedServerPurchase";
 import ResourcesPage from "../../resources/page";
@@ -292,4 +293,20 @@ describe("billing recovery messages", () => {
     expect(html).toContain('href="/login"');
     expect(html).toContain("Sign in to view billing");
   });
+});
+
+it("resolves a selected email tier into billing without mounting compute acquisition", async () => {
+  const page = await load("plans", {
+    product: "email",
+    mailPlan: "team",
+    mailProduct: "sending",
+    startCheckout: "1",
+  });
+  expect(findElement<{ requestedProduct: string }>(page, EmailPlans)?.props.requestedProduct).toBe(
+    "sending",
+  );
+  expect(findElement<{ requestedPlan: string }>(page, EmailPlans)?.props.requestedPlan).toBe(
+    "team",
+  );
+  expect(findElement(page, ManagedServerPurchase)).toBeUndefined();
 });

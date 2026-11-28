@@ -171,7 +171,7 @@ describe("MCP workspace discovery", () => {
 
 describe("MCP destination selection", () => {
   it("advertises organizationId on the actual app, Compose and service tools", () => {
-    for (const name of ["post_apps", "post_projects", "post_projects_ensure", "post_projects_folder_session", "post_projects_by_id_services_sync"]) {
+    for (const name of ["post_apps", "post_projects", "post_projects_ensure", "post_projects_folder_session", "post_projects_folder_files", "post_projects_by_id_services_sync"]) {
       const tool = getMcpTools().find(tool => tool.name === name);
       expect(tool, name).toBeDefined();
       expect((tool!.inputSchema.properties as Record<string, unknown>).organizationId).toMatchObject({ type: "string", minLength: 1 });

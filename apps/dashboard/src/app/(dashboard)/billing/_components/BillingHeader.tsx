@@ -28,8 +28,8 @@ export function BillingHeader({ children }: { children?: React.ReactNode }) {
             className="min-w-0 empty:hidden"
           />
         )}
-        {buyingServer && <div ref={purchase.setDetailsTarget} hidden={purchase.mode === "manage"} className="empty:hidden" />}
-        {purchase?.mode !== "manage" && children}
+        {buyingServer && <div ref={purchase.setDetailsTarget} hidden={purchase.mode !== "monthly"} className="empty:hidden" />}
+        {(!purchase || purchase.mode === "monthly") && children}
         <BillingSupportLink />
       </div>
     </header>

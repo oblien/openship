@@ -116,7 +116,7 @@ const PROMPTS: PromptDef[] = [
         "",
         "Guided flows (fetch these prompts for step-by-step chains):",
         "- `deploy-from-git` — deploy a GitHub/linked repo.",
-        "- `deploy-a-folder` — deploy a controller-local source folder, or upload from another machine using an authenticated HTTP client.",
+        "- `deploy-a-folder` — deploy a controller-local folder, send source files directly through MCP, or upload an archive with an authenticated HTTP client.",
         "- `install-catalog-app` — install a one-click app.",
         "- `cluster-and-scale` — private networking → server cluster → optional shared files → application deployment → scale → recovery/cleanup (self-hosted).",
         "- `cluster-database` — provision, connect, back up and recover a managed database (self-hosted).",
@@ -159,7 +159,7 @@ const PROMPTS: PromptDef[] = [
     name: "deploy-a-folder",
     title: "Deploy a local source folder",
     description:
-      "Use a controller-local path on desktop, or the authenticated upload flow for a folder on another machine. Source location and build location are separate choices.",
+      "Deploy without Git: send source files directly through MCP, use a controller-local path on desktop, or upload a source archive.",
     build: (_args, ref) =>
       [
         ...(env.CLOUD_MODE ? [] : [
@@ -170,11 +170,12 @@ const PROMPTS: PromptDef[] = [
           `4. Poll ${ref("GET", "/api/deployments/:id")} and ${ref("GET", "/api/deployments/:id/logs")}.`,
           "",
         ]),
-        "UPLOAD — for a folder on a different machine, raw binary cannot cross JSON-RPC. Use an authenticated HTTP uploader (SDK, CLI or browser). OAuth bearer tokens stay in the MCP client; do not ask the assistant to extract them. If no authenticated uploader is available, use the desktop connection on the folder's machine or a git source.",
+        "UPLOAD — source files can travel directly through MCP as JSON. For larger trees or binary files use an authenticated HTTP uploader (SDK, CLI or browser). OAuth bearer tokens stay in the MCP client; do not ask the assistant to extract them.",
         "",
         `Before opening a session, choose or create a project with ${ref("POST", "/api/projects")} (name, gitProvider:'upload', serverId). A credential limited to its own projects must create the project first, then pass that projectId through session and ensure; an unbound session requires wildcard project write access.`,
-        `1. Open an upload session: ${ref("POST", "/api/projects/folder/session")} with projectId. It returns \`upload\` = { url, absoluteUrl, method, headers, requiresAuth } and a sessionId.`,
-        "1b. OUT OF BAND — gzip your folder into a tarball and POST the bytes to `upload.absoluteUrl` (the ready-to-use URL; `upload.url` is the same target relative to your API base) with the returned headers and Content-Type: application/gzip, plus your `Authorization: Bearer <token>` when `upload.requiresAuth` is true. Use a plain HTTP client; there is no MCP tool for this.",
+        `1. DIRECT MCP — call ${ref("POST", "/api/projects/folder/files")} with projectId, optional name/serverId, and files mapping relative POSIX paths to UTF-8 contents, e.g. {"index.html":"<h1>Hello</h1>"}. The complete JSON body must fit within 4MB. It returns an already-uploaded sessionId; go straight to step 2. No Git connection, HTTP uploader or token extraction is needed.`,
+        `1a. ARCHIVE ALTERNATIVE — open an upload session: ${ref("POST", "/api/projects/folder/session")} with projectId. It returns \`upload\` = { url, absoluteUrl, method, headers, requiresAuth } and a sessionId.`,
+        "1b. OUT OF BAND — gzip your folder into a tarball and POST the bytes to `upload.absoluteUrl` (the ready-to-use URL; `upload.url` is the same target relative to your API base) with the returned headers and Content-Type: application/gzip, plus your `Authorization: Bearer <token>` when `upload.requiresAuth` is true. Binary archives use a plain HTTP client; for JSON source files use the direct MCP option above.",
         `2. Detect the uploaded source's stack: ${ref("POST", "/api/projects/folder/scan/:sessionId")} (body may be {}). Returns framework, package manager, install/build/start commands, output dir, port — plus a \`services\` array for a docker-compose folder.`,
         `3. Update that project's build config: ${ref("POST", "/api/projects/ensure")} with its explicit projectId and name. Map the scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. If the scan returned \`services\`, pass that array through verbatim AND include \`uploadSessionId\` — env values come back masked ("••••••••"), and the session is what restores the real ones.`,
         `4. Deploy: ${ref("POST", "/api/deployments/build/access")} with projectId and uploadSessionId (step 1); use buildStrategy:'server' for a managed server. Then watch with ${ref("GET", "/api/deployments/:id")} and ${ref("GET", "/api/deployments/:id/logs")}.`,

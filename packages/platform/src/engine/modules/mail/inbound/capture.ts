@@ -176,7 +176,7 @@ export async function ensureCollectorMailbox(
 
   // Never returned to anyone. The collector is not an interactive account: nothing signs
   // in as it, and the control plane reads its maildir over the exec channel instead.
-  const hash = await hashPassword(target, randomPassword(40));
+  const hash = hashPassword(randomPassword(40));
   const layout = generateMaildir(d, COLLECTOR_LOCAL_PART);
 
   await transaction(target, [

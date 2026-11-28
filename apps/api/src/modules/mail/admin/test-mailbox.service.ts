@@ -63,7 +63,7 @@ import {
   createMaildirOnDisk,
   generateMaildir,
 } from "@repo/platform/engine/modules/mail/admin/maildir";
-import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domains.service";
+import { recountDomain } from "@repo/platform/engine/modules/mail/admin/domain-counts";
 
 export interface EnsureOpenshipTestMailboxOptions {
   /** Force a fresh password even if cached creds exist. */
@@ -178,7 +178,7 @@ async function mintAndPersist(args: MintArgs): Promise<PlatformMailboxCreds> {
   const { exec, serverId, state, domain, email, smtpHost } = args;
 
   const plaintext = randomPassword(24);
-  const hash = await hashPassword(exec, plaintext);
+  const hash = hashPassword(plaintext);
   const layout = generateMaildir(domain, PLATFORM_LOCAL_PART);
 
   // 1. UPSERT mailbox + self-forwarding row atomically.

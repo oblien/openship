@@ -1,4 +1,36 @@
 {
+  "mailProducts": {
+    "mailboxes": {
+      "name": "共有メールボックス",
+      "description": "OpenShip がホストするチーム用メールボックス。"
+    },
+    "dedicated": {
+      "name": "専用メールサーバー",
+      "description": "新しい専用 VM でメールボックスを運用。マネージド送信を含みます。"
+    },
+    "sending": {
+      "name": "送信 API",
+      "description": "確認済みドメインからアプリのトランザクションメールを送信。"
+    }
+  },
+  "mailPlans": {
+    "solo": {
+      "name": "個人",
+      "tagline": "個人のプロジェクト向け。"
+    },
+    "team": {
+      "name": "チーム",
+      "tagline": "小規模なチーム向け。"
+    },
+    "business": {
+      "name": "ビジネス",
+      "tagline": "複数のブランドを運営するチーム向け。"
+    },
+    "scale": {
+      "name": "スケール",
+      "tagline": "顧客にサービスを提供するプラットフォーム向け。"
+    }
+  },
   "plans": {
     "free": {
       "name": "Free",

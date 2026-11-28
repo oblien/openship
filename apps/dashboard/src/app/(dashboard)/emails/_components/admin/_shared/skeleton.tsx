@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
-      className={cn("animate-pulse rounded-md bg-muted", className)}
+      className={cn("motion-safe:animate-pulse rounded-md bg-muted", className)}
       aria-hidden="true"
     />
   );

@@ -185,10 +185,17 @@ export const MailWebmailSummarySchema = Type.Object({
   installed: Type.Boolean(),
   hostname: text,
   url: text,
+  verifiedUrl: Type.Optional(text),
   routingUnknown: Type.Optional(Type.Boolean()),
   projectId: Type.Optional(nullableText),
   legacy: Type.Optional(Type.Boolean()),
 });
+export function isWebmailOnMailServer(
+  webmail: { serverId?: string | null; workspaceId?: string | null },
+  serverId: string,
+) {
+  return webmail.serverId === serverId && !webmail.workspaceId;
+}
 export const MailWebmailRecoveryCandidateSchema = Type.Object({
   projectId: text,
   name: text,
@@ -325,7 +332,17 @@ export const MailDnsScanSchema = Type.Object({
     }),
   ),
 });
+const inboxCount = Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]);
+export const MailInboxCountsSchema = Type.Object({
+  total: inboxCount,
+  domains: Type.Array(Type.Object({
+    domain: text,
+    messages: inboxCount,
+    mailboxes: Type.Array(Type.Object({ username: text, messages: inboxCount })),
+  })),
+});
 export const MailStatsSchema = Type.Object({
+  inbox: Type.Optional(MailInboxCountsSchema),
   domains: Type.Object({ total: count, active: count }),
   mailboxes: Type.Object({ total: count, active: count }),
   aliases: Type.Object({ total: count }),
@@ -336,6 +353,7 @@ const { password: _password, ...relayFields } = input.configureRelay.properties;
 export const MailRelaySchema = Type.Object(
   {
     ...relayFields,
+    linkedInstallation: Type.Optional(Type.String()),
     enabled: Type.Boolean(),
     host: text,
     updatedAt: text,

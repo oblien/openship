@@ -2902,10 +2902,6 @@
     "mlhqabe": "Posta kutusu depolama alanı",
     "m1t7t2wk": "Paylaşımlı",
     "my14yjr": "API",
-    "myu51jo": "Kişisel projeler için.",
-    "m12ifwwp": "Küçük ekipler için.",
-    "m15ti3x2": "Birden fazla marka yöneten ekipler için.",
-    "m1waezfd": "Müşterilere hizmet veren platformlar için.",
     "m116lozf": "Özellikleri karşılaştır",
     "m178xhu3": "Uygulamanızdan API ile gönderim",
     "mzxuq4l": "Alan adına özel gönderim anahtarları",
@@ -2919,7 +2915,14 @@
     "m1r414ct": "API anahtarları",
     "mfm9g8": "Alan adı başına",
     "m12hv6lv": "ABD doları cinsinden örnek aylık fiyatlar.",
-    "mhi9qfg": "Paneldeki planları görüntüle"
+    "mhi9qfg": "Paneldeki planları görüntüle",
+    "m1934rwj": "Kullanım raporları",
+    "mukpq5o": "OpenShip Mail’i kendi sanal makinenizde çalıştırın",
+    "m1shnxdq": "Posta kutularını mevcut bir Cloud sanal makinesine kurun veya yeni bir işlem planı seçin. Giden postalar e-posta API kotanızı kullanır.",
+    "m1cnf92t": "Mevcut sanal makineyi kullan",
+    "m7xi513": "Yeni bir Cloud planı seç",
+    "m1qf703d": "E-posta API’si dahil",
+    "mzhhs8b": "Cloud sanal makinesi kullan"
   },
   "ReleaseNotes": {
     "m1005a3f": "- Sihirbaz, bir adımda herhangi bir rota seçilmediğinde proje adından bir ana bilgisayar adı icat etmek, bağlantı noktası alanlarını etiketlemek, monorepo alt uygulama ana bilgisayarlarının ön izlemesini yapmak ve hatta \"Siteyi Ziyaret Et\" düğmesini hiçbir zaman var olmayacak bir ana bilgisayara bağlamak için kullanılır. Artık yalnızca yapılandırmanızın gerçek adlarını gösteren ana bilgisayarları gösterir ve dağıtımın genel bir etki alanı olmadığında \"Siteyi Ziyaret Et\" seçeneğini tamamen gizler.",

@@ -2,6 +2,7 @@
 import ts from "typescript";
 
 const routerMetadata = Symbol("router metadata");
+const routeFactory = Symbol("route factory");
 const methods = new Set(["get", "post", "patch", "put", "delete", "head", "options", "all"]);
 
 /** Only resolve static values. Calls, imports and mutable bindings stay unresolved. */
@@ -12,6 +13,16 @@ function value(node, bindings) {
   if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
   if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
   if (ts.isIdentifier(node)) return bindings.get(node.text);
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === "endsWith" && node.arguments.length === 1) {
+    const receiver = value(node.expression.expression, bindings);
+    const suffix = value(node.arguments[0], bindings);
+    if (typeof receiver === "string" && typeof suffix === "string") return receiver.endsWith(suffix);
+  }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+    const left = value(node.left, bindings);
+    return typeof left === "boolean" ? left || value(node.right, bindings) : undefined;
+  }
   if (ts.isConditionalExpression(node)) {
     const condition = value(node.condition, bindings);
     return typeof condition === "boolean"
@@ -85,8 +96,14 @@ function bind(pattern, resolved, bindings) {
         );
     });
   } else if (ts.isObjectBindingPattern(pattern)) {
-    // Unsupported bindings still shadow outer names; never borrow another scope's router.
-    for (const element of pattern.elements) bind(element.name, undefined, bindings);
+    const remaining = resolved && typeof resolved === "object" ? { ...resolved } : undefined;
+    for (const element of pattern.elements) {
+      const key = element.propertyName ?? element.name;
+      const name = ts.isIdentifier(key) ? key.text : undefined;
+      const item = element.dotDotDotToken ? remaining : name && remaining?.[name];
+      bind(element.name, item, bindings);
+      if (!element.dotDotDotToken && name && remaining) delete remaining[name];
+    }
   }
 }
 
@@ -99,6 +116,34 @@ export function moduleHttpSurface(file, text, mounts = new Map()) {
   };
 
   function visit(node, bindings, unresolvedLoop = false) {
+    // Register a local route factory by its declaration. Inspect its body at each
+    // call site so method, path, and permissions come from the same invocation.
+    if (ts.isFunctionDeclaration(node) && node.name && node.body?.statements.some((statement) =>
+      ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression) &&
+      ts.isElementAccessExpression(statement.expression.expression) &&
+      value(statement.expression.expression.expression, bindings)?.[routerMetadata]
+    )) {
+      bindings.set(node.name.text, { [routeFactory]: node, scope: bindings });
+      return;
+    }
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      const binding = bindings.get(node.expression.text);
+      const factory = binding?.[routeFactory];
+      if (factory) {
+        const args = new Map(binding.scope);
+        factory.parameters.forEach((parameter, index) =>
+          bind(parameter.name, value(node.arguments[index], bindings), args));
+        for (const statement of factory.body.statements) {
+          if (ts.isIfStatement(statement) && ts.isReturnStatement(statement.thenStatement)) {
+            const stop = value(statement.expression, args);
+            if (typeof stop !== "boolean") fail("Unresolved route guard", statement);
+            if (stop) break;
+          } else visit(statement, args, unresolvedLoop);
+        }
+        return;
+      }
+    }
+
     if (ts.isSourceFile(node) || ts.isBlock(node) || ts.isFunctionLike(node))
       bindings = new Map(bindings);
     if (ts.isFunctionLike(node))
@@ -148,10 +193,13 @@ export function moduleHttpSurface(file, text, mounts = new Map()) {
       bind(node.name, resolved, bindings);
     }
 
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+    if (ts.isCallExpression(node) && (ts.isPropertyAccessExpression(node.expression) || ts.isElementAccessExpression(node.expression))) {
       const router = value(node.expression.expression, bindings)?.[routerMetadata];
       if (router) {
-        const operation = node.expression.name.text;
+        const operation = ts.isPropertyAccessExpression(node.expression)
+          ? node.expression.name.text
+          : value(node.expression.argumentExpression, bindings);
+        if (typeof operation !== "string") fail("Unresolved route method", node);
         const explicitMethod = operation === "public" || operation === "on";
         if (explicitMethod || methods.has(operation)) {
           if (unresolvedLoop) fail("Unresolved route loop", node);

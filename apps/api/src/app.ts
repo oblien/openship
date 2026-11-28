@@ -353,6 +353,11 @@ setupWebSocket(app);
 }
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
+const { mailAccountRoutes } = await import("./modules/mail/accounts.routes");
+app.route("/api/mail", mailAccountRoutes);
+const { managedMailRoutes } = await import("./modules/managed-mail/managed-mail.routes");
+app.route("/api/mail", managedMailRoutes);
+
 if (env.CLOUD_MODE) {
   const { connectedServerRoutes } = await import("./modules/system/connected-server.routes");
   app.route("/api/system", connectedServerRoutes);
@@ -533,6 +538,9 @@ async function startControllerBackground(): Promise<void> {
       );
 
       if (env.CLOUD_MODE) {
+        void import("@repo/platform/engine/modules/managed-mail/reconcile")
+          .then(({ startManagedMail }) => startManagedMail())
+          .catch(() => errorDiagnostics.warn("api/app", "Managed mail allowance reconciliation could not start."));
         void import("@repo/platform/engine/modules/customer-email/index")
           .then(({ startCustomerEmails }) => startCustomerEmails())
           .catch(() => errorDiagnostics.warn("api/app", "[customer-email] Delivery could not start; queued emails remain saved."));

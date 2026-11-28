@@ -1,6 +1,7 @@
 "use client";
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
+import { isManagedMailId } from "@repo/contracts/managed-mail";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 /**
@@ -11,7 +12,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  * domain mirrors to the URL (`?domain=…`).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   getApiErrorMessage,
   mailAdminApi,
@@ -32,10 +33,14 @@ import {
   inputClassName,
 } from "./_shared/form-modal-content";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import Link from "next/link";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useMailRailOwnsTabs } from "../../_lib/mail-section";
 
 interface MailboxesTabProps {
+  domainsHref?: string;
   serverId: string;
   primaryDomain: string;
   selectedDomain: string;
@@ -43,6 +48,7 @@ interface MailboxesTabProps {
 }
 
 export function MailboxesTab({
+  domainsHref,
   serverId,
   primaryDomain,
   selectedDomain,
@@ -53,12 +59,14 @@ export function MailboxesTab({
   // Heading lives in the page header in mail view — see ../../_lib/mail-section.
   const hoisted = useMailRailOwnsTabs(serverId);
   const [domains, setDomains] = useState<AdminDomain[]>([]);
-  const [mailboxes, setMailboxes] = useState<AdminMailbox[]>([]);
+  const activeDomain = selectedDomain || primaryDomain || domains[0]?.domain || "";
+  const [inventory, setInventory] = useState<Awaited<ReturnType<typeof mailAdminApi.mailboxes.list>>>();
+  const mailboxes = inventory?.mailboxes ?? [];
+  const readOnly = inventory?.readOnly === true;
   const [loadingDomains, setLoadingDomains] = useState(true);
   const [loadingMailboxes, setLoadingMailboxes] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const activeDomain = selectedDomain || primaryDomain;
   const activeDomainRow = useMemo(
     () => domains.find((d) => d.domain === activeDomain),
     [domains, activeDomain],
@@ -96,23 +104,21 @@ export function MailboxesTab({
     };
   }, [serverId, selectedDomain, primaryDomain, onSelectDomain]);
 
-  const reloadMailboxes = useCallback(async () => {
-    if (!activeDomain) return;
-    setLoadingMailboxes(true);
-    setError(null);
-    try {
-      const res = await mailAdminApi.mailboxes.list(serverId, activeDomain);
-      setMailboxes(res.mailboxes);
-    } catch (err) {
-      setError(getApiErrorMessage(err, t.emailsAdmin.mailboxes.loadFailed));
-    } finally {
-      setLoadingMailboxes(false);
-    }
-  }, [serverId, activeDomain]);
-
+  const [revision, refresh] = useState(0);
   useEffect(() => {
-    void reloadMailboxes();
-  }, [reloadMailboxes]);
+    let current = true;
+    setInventory(undefined);
+    setLoadingMailboxes(!!activeDomain);
+    if (activeDomain) {
+      setError(null);
+      mailAdminApi.mailboxes.list(serverId, activeDomain).then(result => {
+        if (current) setInventory(result);
+      }).catch(err => {
+        if (current) setError(getApiErrorMessage(err, t.emailsAdmin.mailboxes.loadFailed));
+      }).finally(() => { if (current) setLoadingMailboxes(false); });
+    }
+    return () => { current = false; };
+  }, [serverId, activeDomain, revision, t.emailsAdmin.mailboxes.loadFailed]);
 
   const openCreate = () => {
     if (!activeDomain) return;
@@ -127,46 +133,41 @@ export function MailboxesTab({
           onCancel={() => hideModal(id)}
           onCreated={() => {
             hideModal(id);
-            void reloadMailboxes();
+            refresh(n => n + 1);
           }}
         />
       ),
     });
   };
 
-  const openEdit = (row: AdminMailbox) => {
+  const openMailboxAction = (row: AdminMailbox, action: "settings" | "password" | "delete") => {
+    const cancel = () => hideModal(id);
+    const saved = () => {
+      cancel();
+      refresh((n) => n + 1);
+    };
     const id = showModal({
-      maxWidth: "560px",
+      maxWidth: action === "settings" ? "560px" : "520px",
       showCloseButton: false,
-      customContent: (
-        <EditMailboxForm
-          serverId={serverId}
-          row={row}
-          onCancel={() => hideModal(id)}
-          onSaved={() => {
-            hideModal(id);
-            void reloadMailboxes();
-          }}
-        />
-      ),
-    });
-  };
-
-  const openDelete = (row: AdminMailbox) => {
-    const id = showModal({
-      maxWidth: "520px",
-      showCloseButton: false,
-      customContent: (
-        <DeleteMailboxConfirm
-          serverId={serverId}
-          row={row}
-          onCancel={() => hideModal(id)}
-          onDeleted={() => {
-            hideModal(id);
-            void reloadMailboxes();
-          }}
-        />
-      ),
+      customContent:
+        action === "delete" ? (
+          <DeleteMailboxConfirm
+            serverId={serverId}
+            primaryDomain={primaryDomain}
+            row={row}
+            onCancel={cancel}
+            onDeleted={saved}
+          />
+        ) : action === "password" ? (
+          <ChangeMailboxPassword
+            serverId={serverId}
+            username={row.username}
+            onCancel={cancel}
+            onSaved={saved}
+          />
+        ) : (
+          <EditMailboxForm serverId={serverId} row={row} onCancel={cancel} onSaved={saved} />
+        ),
     });
   };
 
@@ -181,7 +182,7 @@ export function MailboxesTab({
           onCancel={() => hideModal(id)}
           onRotated={() => {
             hideModal(id);
-            void reloadMailboxes();
+            refresh(n => n + 1);
           }}
         />
       ),
@@ -195,11 +196,7 @@ export function MailboxesTab({
       width: "minmax(240px, 2fr)",
       cell: (r) => (
         <div className="flex items-center gap-3 min-w-0">
-          <div className="size-9 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
-            <UiIcon name="user"
-              className="size-4 text-muted-foreground"
-            />
-          </div>
+          <UserAvatar name={r.name || r.username} className="bg-info-bg text-info" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">
               {r.name || r.username.split("@")[0]}
@@ -230,7 +227,7 @@ export function MailboxesTab({
     {
       key: "status",
       header: t.emailsAdmin.mailboxes.colStatus,
-      width: "180px",
+      width: "96px",
       cell: (r) => (
         <div className="flex items-center gap-1.5 flex-wrap">
           {r.active ? (
@@ -267,23 +264,14 @@ export function MailboxesTab({
           </div>
         )}
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          {activeDomain.toLowerCase() === primaryDomain.toLowerCase() && (
-            <button
-              onClick={openRotatePlatform}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-muted text-foreground text-sm font-medium rounded-xl hover:bg-muted/80 border border-border transition-colors shrink-0"
-            >
-              <UiIcon name="key" className="size-4" />
-              {t.emailsAdmin.mailboxes.rotateAction}
-            </button>
+          {primaryDomain && activeDomain.toLowerCase() === primaryDomain.toLowerCase() && (
+            <Button size="sm" variant="secondary" onClick={openRotatePlatform}>
+              <UiIcon name="key" />{t.emailsAdmin.mailboxes.rotateAction}
+            </Button>
           )}
-          <button
-            onClick={openCreate}
-            disabled={!activeDomain}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none shrink-0"
-          >
-            <UiIcon name="plus" className="size-4" />
-            {t.emailsAdmin.mailboxes.addMailbox}
-          </button>
+          {activeDomain && <Button size="sm" disabled={!inventory || readOnly} onClick={openCreate}>
+            <UiIcon name="plus" />{t.emailsAdmin.mailboxes.addMailbox}
+          </Button>}
         </div>
       </div>
 
@@ -304,6 +292,7 @@ export function MailboxesTab({
           </span>
         )}
       </DomainPicker>
+      {readOnly && <p className="text-sm text-muted-foreground">{t.emailsAdmin.mailboxes.readOnlyServer}</p>}
 
       {error && (
         <div className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
@@ -315,25 +304,36 @@ export function MailboxesTab({
         columns={columns}
         rows={mailboxes}
         rowKey={(r) => r.username}
-        loading={loadingMailboxes}
+        loading={loadingDomains || loadingMailboxes}
+        rowActionsWidth="7rem"
         rowActions={(row) =>
           row.isPlatform ? null : (
             <RowActionsMenu
               label={interpolate(t.emailsAdmin.shared.rowActions, { name: row.username })}
+              triggerText={t.emailsAdmin.mailboxes.manageAction}
               actions={[
                 {
+                  id: "password",
+                  disabled: readOnly,
+                  label: t.emailsAdmin.mailboxes.changePassword,
+                  icon: <UiIcon name="key" className="size-4" />,
+                  onClick: () => openMailboxAction(row, "password"),
+                },
+                {
                   id: "edit",
+                  disabled: readOnly,
                   label: t.emailsAdmin.mailboxes.editAction,
                   icon: <UiIcon name="edit" className="size-4" />,
-                  onClick: () => openEdit(row),
+                  onClick: () => openMailboxAction(row, "settings"),
                 },
                 { id: "sep", divider: true },
                 {
                   id: "delete",
+                  disabled: readOnly,
                   label: t.emailsAdmin.mailboxes.deleteAction,
                   icon: <UiIcon name="trash" className="size-4" />,
                   variant: "danger",
-                  onClick: () => openDelete(row),
+                  onClick: () => openMailboxAction(row, "delete"),
                 },
               ]}
             />
@@ -341,18 +341,11 @@ export function MailboxesTab({
         }
         empty={{
           icon: "user",
-          title: t.emailsAdmin.mailboxes.emptyTitle,
-          description: interpolate(t.emailsAdmin.mailboxes.emptyDesc, { domain: activeDomain }),
-          action: (
-            <button
-              onClick={openCreate}
-              disabled={!activeDomain}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
-              <UiIcon name="plus" className="size-4" />
-              {t.emailsAdmin.mailboxes.addMailbox}
-            </button>
-          ),
+          title: activeDomain ? t.emailsAdmin.mailboxes.emptyTitle : t.emailsAdmin.domains.emptyTitle,
+          description: activeDomain ? interpolate(t.emailsAdmin.mailboxes.emptyDesc, { domain: activeDomain }) : t.emailsAdmin.domains.emptyDesc,
+          action: !activeDomain && domainsHref ? (
+            <Button asChild size="sm" variant="secondary"><Link href={domainsHref} scroll={false}>{t.emailsAdmin.domains.heading}</Link></Button>
+          ) : undefined,
         }}
       />
     </div>
@@ -424,7 +417,6 @@ function CreateMailboxForm({
   const [quotaGB, setQuotaGB] = useState(
     defaultQuotaMB > 0 ? String(defaultQuotaMB / 1024) : "",
   );
-  const [showPassword, setShowPassword] = useState(false);
 
   const submit = async () => {
     await mailAdminApi.mailboxes.create(serverId, {
@@ -435,19 +427,6 @@ function CreateMailboxForm({
       quotaMB: quotaGB ? Math.round(Number(quotaGB) * 1024) : 0,
     });
     onCreated();
-  };
-
-  const generatePassword = () => {
-    const bytes = new Uint8Array(18);
-    crypto.getRandomValues(bytes);
-    setPassword(
-      btoa(String.fromCharCode(...bytes))
-        .replace(/\+/g, "0")
-        .replace(/\//g, "1")
-        .replace(/=/g, "")
-        .slice(0, 20),
-    );
-    setShowPassword(true);
   };
 
   return (
@@ -484,32 +463,8 @@ function CreateMailboxForm({
           className={inputClassName}
         />
       </Field>
-      <Field label={t.emailsAdmin.mailboxes.create.passwordLabel} hint={t.emailsAdmin.mailboxes.create.passwordHint}>
-        <div className="flex gap-2">
-          <input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={inputClassName}
-          />
-          <button
-            type="button"
-            onClick={generatePassword}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl bg-muted text-foreground hover:bg-muted/80 border border-border transition-colors whitespace-nowrap"
-          >
-            <UiIcon name="key" className="size-3.5" />
-            {t.emailsAdmin.mailboxes.create.generate}
-          </button>
-        </div>
-        {password && (
-          <PasswordPreview
-            value={password}
-            visible={showPassword}
-            onToggle={() => setShowPassword((v) => !v)}
-          />
-        )}
-      </Field>
-      <Field label={t.emailsAdmin.mailboxes.create.quotaLabel} hint={t.emailsAdmin.mailboxes.create.quotaHint}>
+      <MailboxPasswordField value={password} setPassword={setPassword} label={t.emailsAdmin.mailboxes.create.passwordLabel} />
+      <Field label={t.emailsAdmin.mailboxes.create.quotaLabel} hint={isManagedMailId(serverId) ? undefined : t.emailsAdmin.mailboxes.create.quotaHint}>
         <input
           type="number"
           min={0}
@@ -524,16 +479,31 @@ function CreateMailboxForm({
   );
 }
 
-function PasswordPreview({
+function MailboxPasswordField({
   value,
-  visible,
-  onToggle,
+  setPassword,
+  label,
 }: {
   value: string;
-  visible: boolean;
-  onToggle: () => void;
+  setPassword: (value: string) => void;
+  label: string;
 }) {
   const { t } = useI18n();
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+  const generatePassword = () => {
+    const bytes = new Uint8Array(18);
+    crypto.getRandomValues(bytes);
+    setPassword(
+      btoa(String.fromCharCode(...bytes))
+        .replace(/\+/g, "0")
+        .replace(/\//g, "1")
+        .replace(/=/g, "")
+        .slice(0, 20),
+    );
+    setVisible(true);
+  };
+
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -541,36 +511,104 @@ function PasswordPreview({
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch (diagnosticFailure) {
-      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/emails/_components/admin/mailboxes-tab");
+      observeCaughtError(
+        diagnosticFailure,
+        "dashboard/app/(dashboard)/emails/_components/admin/mailboxes-tab",
+      );
       /* HTTP fallback */
     }
   };
   return (
-    <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/40 border border-border/50">
-      <span className="text-[13px] text-foreground flex-1 truncate">
-        {visible ? value : "•".repeat(Math.min(value.length, 24))}
-      </span>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="text-xs text-muted-foreground hover:text-foreground"
-      >
-        {visible ? t.emailsAdmin.mailboxes.create.hide : t.emailsAdmin.mailboxes.create.show}
-      </button>
-      <button
-        type="button"
-        onClick={copy}
-        className="p-1 text-muted-foreground hover:text-foreground"
-        title={t.emailsAdmin.mailboxes.create.copy}
-        aria-label={t.emailsAdmin.mailboxes.create.copyPassword}
-      >
-        {copied ? (
-          <UiIcon name="check" className="size-3.5 text-success" />
-        ) : (
-          <UiIcon name="copy" className="size-3.5" />
+    <div>
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium">
+        {label}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          type={visible ? "text" : "password"}
+          autoComplete="new-password"
+          aria-describedby={id + "-hint"}
+          minLength={8}
+          required
+          value={value}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setCopied(false);
+          }}
+          className={inputClassName}
+        />
+        <Button type="button" variant="secondary" size="sm" onClick={generatePassword}>
+          <UiIcon name="key" />
+          {t.emailsAdmin.mailboxes.create.generate}
+        </Button>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <p id={id + "-hint"} className="me-auto text-xs text-muted-foreground">
+          {t.emailsAdmin.mailboxes.create.passwordHint}
+        </p>
+        {value && (
+          <>
+            <button
+              type="button"
+              onClick={() => setVisible(!visible)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              {visible ? t.emailsAdmin.mailboxes.create.hide : t.emailsAdmin.mailboxes.create.show}
+            </button>
+            <button
+              type="button"
+              onClick={copy}
+              className="p-1 text-muted-foreground hover:text-foreground"
+              title={t.emailsAdmin.mailboxes.create.copy}
+              aria-label={t.emailsAdmin.mailboxes.create.copyPassword}
+            >
+              {copied ? (
+                <UiIcon name="check" className="size-3.5 text-success" />
+              ) : (
+                <UiIcon name="copy" className="size-3.5" />
+              )}
+            </button>
+          </>
         )}
-      </button>
+      </div>
     </div>
+  );
+}
+
+function ChangeMailboxPassword({
+  serverId,
+  username,
+  onCancel,
+  onSaved,
+}: {
+  serverId: string;
+  username: string;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const [password, setPassword] = useState("");
+  const copy = t.emailsAdmin.mailboxes;
+  return (
+    <FormModalContent
+      title={copy.changePassword}
+      description={username}
+      submitLabel={copy.changePassword}
+      submittingLabel={copy.editForm.submitting}
+      disabled={password.length < 8}
+      onCancel={onCancel}
+      onSubmit={async () => {
+        await mailAdminApi.mailboxes.update(serverId, username, { password });
+        onSaved();
+      }}
+    >
+      <MailboxPasswordField
+        value={password}
+        setPassword={setPassword}
+        label={copy.editForm.newPasswordLabel}
+      />
+    </FormModalContent>
   );
 }
 
@@ -589,25 +627,26 @@ function EditMailboxForm({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(row.name);
-  const [password, setPassword] = useState("");
   const [quotaGB, setQuotaGB] = useState(
     row.quotaMB > 0 ? String(row.quotaMB / 1024) : "",
   );
   const [active, setActive] = useState(row.active);
 
+  const quotaMB = quotaGB ? Math.round(Number(quotaGB) * 1024) : 0;
+  const patch = {
+    ...(name !== row.name && { name }),
+    ...(quotaMB !== row.quotaMB && { quotaMB }),
+    ...(active !== row.active && { active }),
+  };
   const submit = async () => {
-    await mailAdminApi.mailboxes.update(serverId, row.username, {
-      name,
-      password: password ? password : undefined,
-      quotaMB: quotaGB ? Math.round(Number(quotaGB) * 1024) : 0,
-      active,
-    });
+    await mailAdminApi.mailboxes.update(serverId, row.username, patch);
     onSaved();
   };
 
   return (
     <FormModalContent
       title={interpolate(t.emailsAdmin.mailboxes.editForm.title, { username: row.username })}
+      disabled={Object.keys(patch).length === 0}
       submitLabel={t.emailsAdmin.mailboxes.editForm.submit}
       submittingLabel={t.emailsAdmin.mailboxes.editForm.submitting}
       onSubmit={submit}
@@ -621,19 +660,7 @@ function EditMailboxForm({
           className={inputClassName}
         />
       </Field>
-      <Field
-        label={t.emailsAdmin.mailboxes.editForm.newPasswordLabel}
-        hint={t.emailsAdmin.mailboxes.editForm.newPasswordHint}
-      >
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          className={inputClassName}
-        />
-      </Field>
-      <Field label={t.emailsAdmin.mailboxes.editForm.quotaLabel} hint={t.emailsAdmin.mailboxes.editForm.quotaHint}>
+      <Field label={t.emailsAdmin.mailboxes.editForm.quotaLabel} hint={isManagedMailId(serverId) ? undefined : t.emailsAdmin.mailboxes.editForm.quotaHint}>
         <input
           type="number"
           min={0}
@@ -662,18 +689,23 @@ function EditMailboxForm({
 
 function DeleteMailboxConfirm({
   serverId,
+  primaryDomain,
   row,
   onCancel,
   onDeleted,
 }: {
   serverId: string;
+  primaryDomain: string;
   row: AdminMailbox;
   onCancel: () => void;
   onDeleted: () => void;
 }) {
   const { t } = useI18n();
   const [hardDelete, setHardDelete] = useState(false);
-  const isPostmaster = row.username.startsWith("postmaster@");
+  // Hosted lists exclude the worker’s install domain. On an instance, only
+  // that domain’s postmaster has the engine’s hard-delete protection.
+  const isPostmaster = !isManagedMailId(serverId) && row.username.startsWith("postmaster@") &&
+    (!primaryDomain || row.domain.toLowerCase() === primaryDomain.toLowerCase());
 
   const submit = async () => {
     if (hardDelete && !isPostmaster) {

@@ -1,0 +1,268 @@
+.mail-login {
+  --page-inset: clamp(0.875rem, 1.6vw, 2rem);
+  display: grid;
+  grid-template-columns: minmax(23rem, 0.9fr) minmax(0, 1.1fr);
+  width: 100%;
+  min-width: 0;
+  min-height: 100svh;
+  max-width: 112rem;
+  margin-inline: auto;
+  padding: var(--page-inset);
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-openship-sans);
+}
+
+.mail-login__entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: clamp(1rem, 3dvh, 2rem) clamp(1.5rem, 3.5vw, 4.5rem);
+}
+
+.mail-login__access {
+  width: min(100%, 25rem);
+  margin-block: auto;
+  padding-block: clamp(1rem, 3dvh, 2.5rem);
+}
+
+.mail-login__identity {
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.mail-login__letters {
+  position: relative;
+  width: 7.25rem;
+  height: 5.25rem;
+  margin: 0 auto 1.25rem;
+}
+
+.mail-login__letters img {
+  position: absolute;
+  height: auto;
+}
+
+.mail-login__letters img:first-child {
+  width: 66%;
+  top: 18%;
+  left: 2%;
+  transform: rotate(-18deg);
+}
+
+.mail-login__letters img:last-child {
+  width: 68%;
+  bottom: 0;
+  right: 3%;
+  transform: rotate(8deg);
+}
+
+.mail-login__identity h1 {
+  font-size: clamp(2.65rem, 3.65vw, 3.85rem);
+  line-height: 1.04;
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.mail-login__intro {
+  margin: 0.7rem auto 0;
+  max-width: 38ch;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.mail-login__form {
+  margin-top: clamp(1.5rem, 4dvh, 2.5rem);
+}
+
+.mail-login__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-top: 1.75rem;
+}
+
+.mail-login__submit {
+  min-height: 3rem;
+  min-width: 9.5rem;
+  justify-content: space-between;
+  padding-inline: 1.25rem;
+  border-radius: 999px;
+  background: #303e69;
+  color: white;
+  font-size: 0.95rem;
+}
+
+.mail-login__submit:hover {
+  background: #243154;
+}
+.dark .mail-login__submit {
+  background: #d5dffd;
+  color: #172344;
+}
+.dark .mail-login__submit:hover {
+  background: #e6ecff;
+}
+
+.mail-login__signup {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-underline-offset: 0.25em;
+}
+
+.mail-login__signup:hover,
+.mail-login__signup:focus-visible {
+  text-decoration: underline;
+}
+
+.mail-login__footer {
+  width: min(100%, 25rem);
+  margin-top: 1.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mail-login__footer nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+}
+.mail-login__footer p + nav {
+  margin-top: 0.6rem;
+}
+.mail-login__footer a:hover {
+  color: var(--foreground);
+}
+
+.mail-login__preview {
+  position: sticky;
+  top: var(--page-inset);
+  align-self: start;
+  height: calc(100dvh - var(--page-inset) - var(--page-inset));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(1rem, 4dvh, 3rem);
+  overflow: hidden;
+  margin: 0;
+  padding: clamp(1.25rem, 5dvh, 4rem) clamp(2rem, 3.25vw, 4rem);
+  border-radius: 1.5rem;
+  color: #fafaff;
+  background:
+    radial-gradient(ellipse at 105% 96%, #b4bbc8 0%, transparent 47%),
+    radial-gradient(ellipse at 75% 88%, #8288a8 0%, transparent 58%),
+    linear-gradient(150deg, #1d2538 4%, #343e59 53%, #666c83);
+}
+
+.mail-login__preview figcaption {
+  max-width: 32rem;
+  padding-inline-end: 1rem;
+}
+
+.mail-login__preview h2 {
+  max-width: 10ch;
+  font-size: clamp(2.75rem, 4.4vw, 4.75rem);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.mail-login__preview figcaption p {
+  max-width: 33ch;
+  margin-top: 0.9rem;
+  font-size: clamp(1rem, 1.15vw, 1.18rem);
+  line-height: 1.45;
+  color: #e1e5f0;
+}
+
+.mail-login__stamp {
+  position: absolute;
+  top: clamp(1.5rem, 3vw, 3rem);
+  right: clamp(1.5rem, 3vw, 3.5rem);
+  display: grid;
+  place-items: center;
+  width: 3.35rem;
+  aspect-ratio: 0.85;
+  transform: rotate(8deg);
+  background: #c9d0dd;
+  mask:
+    linear-gradient(black 0 0) center / calc(100% - 8px) calc(100% - 8px) no-repeat,
+    radial-gradient(circle at 4px 4px, transparent 2px, black 2.5px) -4px -4px / 8px 8px;
+}
+
+.mail-login__stamp::before {
+  content: '';
+  position: absolute;
+  inset: 0.43rem;
+  border: 1px solid #70788c;
+}
+
+.mail-login__stamp img {
+  width: 1.7rem;
+  height: auto;
+  filter: brightness(0.23);
+}
+
+.mail-login__window {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  min-height: 0;
+  aspect-ratio: 2464 / 1360;
+}
+
+.mail-login__screenshot {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+  border: 4px solid #262b36;
+  border-radius: 0.9rem;
+  box-shadow:
+    0 0 0 1px #ffffff40,
+    0 24px 54px -18px #11162499;
+}
+
+@media (max-width: 860px) {
+  .mail-login {
+    display: flex;
+    justify-content: center;
+  }
+  .mail-login__entry {
+    width: min(100%, 28rem);
+    padding-inline: 1rem;
+  }
+  .mail-login__preview {
+    display: none;
+  }
+}
+
+@media (min-width: 861px) and (max-height: 640px) {
+  .mail-login__preview h2 {
+    max-width: 100%;
+    font-size: clamp(2rem, 3.4vw, 3.25rem);
+  }
+  .mail-login__preview figcaption {
+    padding-inline-end: 4rem;
+  }
+  .mail-login__stamp {
+    width: 2.5rem;
+    top: 1.1rem;
+    right: 1.25rem;
+  }
+}

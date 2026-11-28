@@ -34,7 +34,7 @@ export const useThreads = () => {
         // start a timer. It pauses/cancels polling during optimistic actions
         // to keep older server snapshots from overwriting local changes.
         staleTime: Infinity,
-        refetchOnMount: false,
+        refetchOnMount: folder === 'sent',
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
       },

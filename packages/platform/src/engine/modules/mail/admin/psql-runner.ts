@@ -34,7 +34,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
 import { runMailSql, type MailTarget } from "../mail-engine";
 
 /**
@@ -46,7 +46,10 @@ import { runMailSql, type MailTarget } from "../mail-engine";
  *   q("o'malley")        → 'o''malley'
  */
 export function q(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
+  if (value.includes("\0")) throw new AppError("Mail database text cannot contain a null character.", 400);
+  const escaped = value.replace(/'/g, "''");
+  // Explicit escape strings preserve backslashes under either PostgreSQL string setting.
+  return escaped.includes("\\") ? `E'${escaped.replace(/\\/g, "\\\\")}'` : `'${escaped}'`;
 }
 
 /**

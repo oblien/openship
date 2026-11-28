@@ -2,7 +2,6 @@ import { reportCaughtError } from "@repo/core/diagnostics";
 import { cache } from "react";
 import { CLOUD_API_URL, pricingUi, resolveStandard, type AppLocale } from "@repo/core";
 import { BillingPlansSchema, parseInput, type BillingPlans } from "@repo/contracts";
-import { z } from "zod";
 import type { Copy } from "@/i18n/copy";
 
 export const UI = pricingUi("en");
@@ -11,26 +10,7 @@ export const CURRENCY_LD = "USD";
 export type CloudPlan = BillingPlans["plans"][number];
 export type PricedPlan = CloudPlan & { price: { monthly: number; annual: number | null } };
 
-const paidMailPlan = z.enum(["solo", "team", "business"]);
-const count = z.number().int().positive();
-const cents = z.number().int().nonnegative();
-// The public catalog can omit mail pricing until the mail API is deployed.
-const mailPricingSchema = z.object({
-  tiers: z.array(z.object({
-    id: paidMailPlan.or(z.literal("scale")),
-    name: z.string(),
-    description: z.string(),
-    checkoutPlan: paidMailPlan.nullable(),
-    monthlyCents: cents,
-    sendingMonthlyCents: cents,
-    domains: count,
-    mailboxes: count,
-    storageMB: count,
-    recipients: count,
-  })).min(1),
-  dedicatedStorage: z.array(z.object({ gb: count, monthlyCents: cents })).min(1),
-});
-export type MailPricing = z.infer<typeof mailPricingSchema>;
+export type MailPricing = NonNullable<BillingPlans["mail"]>;
 
 export interface CloudPricing {
   available: boolean;
@@ -67,7 +47,7 @@ export const getCloudPricing = cache(async (locale: AppLocale = "en"): Promise<C
       available: tiers.length > 0,
       annual: data.annual,
       management: data.management,
-      mail: mailPricingSchema.safeParse(body.data?.mail).data,
+      mail: data.mail,
       tiers,
       customTiers: data.plans.filter((plan) => plan.price.monthly === null),
     };

@@ -22,6 +22,8 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomBytes } from "node:crypto";
 import { validateMailDomain } from "./mail-domain";
+import { configureMailCertificate } from "./mail-certificate-probe";
+import { createProvisionLock } from "../../lib/provision-lock";
 import type { CommandExecutor, SystemLogCallback, SystemLog } from "@repo/adapters";
 import { checkMailHealth, requiresMailComponent } from "./mail-health.service";
 import {
@@ -214,10 +216,21 @@ export interface StepResult {
   stepId: number;
   success: boolean;
   message: string;
-  /** Extra data the step may return (e.g. DKIM keys, DNS records) */
+  /** Private first-boot values used to resume installation on the same host. */
+  setupSecrets?: Record<string, string>;
+  /** Public engine metadata and DNS or reachability results. */
   data?: Record<string, unknown>;
   /** Warning that doesn't block progress */
   warning?: string;
+}
+
+/** Project both live results and saved results from older workers onto the public API. */
+export function publicMailStepResult({ stepId, success, message, warning, data }: StepResult): Omit<StepResult, "setupSecrets"> {
+  const metadata: Record<string, unknown> = {};
+  for (const key of ["engine", "dnsRecords", "expiresAt", "issuer", "mailDomain", "smtpHost", "imapHost", "reachability"]) {
+    if (data && Object.hasOwn(data, key)) metadata[key] = data[key];
+  }
+  return { stepId, success, message, warning, data: Object.keys(metadata).length ? metadata : undefined };
 }
 
 // ─── Logger callback type ────────────────────────────────────────────────────
@@ -231,6 +244,7 @@ export type StepLogger = (
 // ─── iRedMail config ─────────────────────────────────────────────────────────
 
 export interface IRedMailConfig {
+  compose?: boolean;
   /** Admin password for the postmaster account. Generated if absent. */
   adminPassword?: string;
   /** Storage backend: mariadb | postgresql (default: postgresql) */
@@ -572,9 +586,8 @@ export function genSecret(bytes = 24): string {
  * the domain to `ensureContainerMail` (which pulls, runs host-networked, and lets
  * the image's first-boot entrypoint provision the vmail DB), then health-gates on
  * the container's daemons. Idempotent: a container already on the pinned image is
- * left as-is. Generated secrets come back in `data.secrets` (the only way to admin
- * the mail DB later) and the deployed image ref + container name in `data.engine`,
- * both for the controller to persist onto the mail-state.
+ * left as-is. The controller saves setupSecrets privately for retries. The
+ * deployed image and container name are public setup metadata.
  */
 export async function stepDeployEngine(
   exec: CommandExecutor,
@@ -616,17 +629,6 @@ export async function stepDeployEngine(
     ...generated,
     ...(config?.prefillSecrets ?? {}),
   };
-  // The plaintext we'll show in the dashboard. After prefillSecrets is
-  // overlaid above, `secrets.DOMAIN_ADMIN_PASSWD_PLAIN` is the
-  // authoritative value - use that, not the local `adminPassword` (which
-  // would lose any prior-run reuse).
-  const finalAdminPassword = secrets.DOMAIN_ADMIN_PASSWD_PLAIN;
-
-  // finalAdminPassword is the postmaster password the dashboard surfaces; it's
-  // injected into the engine's first-boot env so the container provisions the
-  // account with it. Referenced via `secrets` below.
-  void finalAdminPassword;
-
   // Deploy the engine as the `openship-mail` container (+ postgres sidecar).
   // Idempotent: a container already running the pinned image is left as-is (the
   // env-file secrets are only consumed on first boot, so a re-run never rotates a
@@ -637,6 +639,7 @@ export async function stepDeployEngine(
   let engine: { image: string; container: string };
   try {
     const result = await ensureContainerMail(exec, {
+      compose: config?.compose,
       domain,
       secrets,
       onLog: bridgeToSystemLog(stepId, log),
@@ -692,7 +695,8 @@ export async function stepDeployEngine(
     stepId,
     success: true,
     message: "Mail engine deployed",
-    data: { secrets: { ...secrets } as Record<string, string>, engine },
+    setupSecrets: secrets,
+    data: { engine },
   };
 }
 
@@ -1052,8 +1056,7 @@ export async function stepRequestSSL(
   }
   log(stepId, "info", `Requesting SSL certificate for ${mailDomain}...`);
 
-  // Dynamic import: deployment-runtime pulls in the platform/runtime graph, and
-  // the mail module is imported from it — a static import would be a cycle.
+  // Only certificate issuance needs the deployment runtime and its SSL provider.
   const { resolveTargetPlatform, disposePlatform } = await import("../../lib/deployment-runtime");
 
   let platform: Awaited<ReturnType<typeof resolveTargetPlatform>> | undefined;
@@ -1064,8 +1067,7 @@ export async function stepRequestSSL(
       target.serverId,
       target.organizationId,
     );
-    const { createProvisionLock } = await import("../../lib/provision-lock");
-    const { sslIssueLockKey, acmeIssueLockKey, certComfortablyValid } = await import("../../lib/domain-ssl");
+    const { sslIssueLockKey, acmeIssueLockKey, certComfortablyValid, recordMailCertDomain } = await import("../../lib/domain-ssl");
     const result = await createProvisionLock(sslIssueLockKey(mailDomain)).run(() =>
       createProvisionLock(acmeIssueLockKey(target.serverId)).run(async () => {
         const existing = await platform!.ssl.verifyCert(mailDomain).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/mail/mail.service"); return null; });
@@ -1087,7 +1089,6 @@ export async function stepRequestSSL(
     // Register the host so the ssl:renew sweep can see it. Without this the cert is
     // real, works, and then expires ~90 days later with nothing renewing it — the
     // renewer reads the `domain` table and a mail server has no project row.
-    const { recordMailCertDomain } = await import("../../lib/domain-ssl");
     await recordMailCertDomain(mailDomain, result);
 
     log(stepId, "info", "SSL certificate obtained (the edge stayed up — apps unaffected)");
@@ -1124,7 +1125,6 @@ export async function stepConfigureSSL(
   const mailDomain = mailHostname(domain);
 
   try {
-    const { configureMailCertificate } = await import("./mail-certificate-probe");
     log(stepId, "info", "Linking the certificate and reloading Postfix and Dovecot...");
     await configureMailCertificate(exec, mailDomain);
   } catch (error) {

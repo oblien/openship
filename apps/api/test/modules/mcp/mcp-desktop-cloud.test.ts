@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FolderSessionResult } from "@repo/contracts";
+import type { FolderSessionResult, SourceScan, StagedSource } from "@repo/contracts";
 
 const h = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -158,6 +158,64 @@ async function agent(withServer = true, access: "workspace" | "instance" = "work
 }
 
 describe("desktop MCP Cloud workflow", () => {
+  it("deploys generated code entirely through MCP with a create-only credential and no Git connection", async () => {
+    const client = await agent();
+    // A project-create grant must not become wildcard source-write access.
+    expect((await client.result("post_projects_folder_files", {
+      body: { files: { "index.html": "unbound" } },
+    })).isError).toBe(true);
+    const project = await client.call<{ data: { id: string } }>("post_projects", {
+      body: { name: "MCP generated site", gitProvider: "upload", serverId, publicEndpoints: [] },
+    });
+    const projectId = project.data.id;
+    const session = await client.call<StagedSource>("post_projects_folder_files", {
+      body: {
+        projectId,
+        name: "MCP generated site",
+        files: {
+          "index.html": "<h1>Deployed through MCP</h1>",
+          "openship.json": JSON.stringify({ env: { MESSAGE: "generated-source-env" } }),
+        },
+      },
+    });
+    sessions.push(session.sessionId);
+    const scan = await client.call<SourceScan>("post_projects_folder_scan_by_sessionId", {
+      sessionId: session.sessionId,
+    });
+    expect(scan.stack).toBe("static");
+    await client.call("post_projects_ensure", {
+      body: {
+        projectId, name: "MCP generated site", gitProvider: "upload",
+        uploadSessionId: session.sessionId, framework: scan.stack,
+        installCommand: scan.installCommand, buildCommand: scan.buildCommand,
+        startCommand: scan.startCommand, outputDirectory: scan.outputDirectory,
+        hasBuild: false, hasServer: false, productionMode: "static",
+      },
+    });
+    const started = await client.call<{ project_id: string; deployment_id: string }>(
+      "post_deployments_build_access",
+      { body: { projectId, uploadSessionId: session.sessionId, buildStrategy: "server", publicEndpoints: [] } },
+    );
+    const saved = await repos.project.findById(projectId);
+    expect(saved).toMatchObject({ organizationId: owner.orgId, gitProvider: "upload", serverId });
+    expect(saved?.gitRepo).toBeFalsy();
+    const deployment = await repos.deployment.findById(started.deployment_id);
+    expect(deployment).toMatchObject({
+      projectId, organizationId: owner.orgId,
+      meta: { uploadSessionId: session.sessionId, serverId, buildStrategy: "server" },
+    });
+    const stagingDir = (deployment!.meta as { localPath: string }).localPath;
+    expect(await readFile(join(stagingDir, "index.html"), "utf8")).toBe("<h1>Deployed through MCP</h1>");
+    const variables = await repos.project.listEnvVars(projectId);
+    expect(decrypt(variables.find(variable => variable.key === "MESSAGE")!.value)).toBe("generated-source-env");
+    const other = await agent();
+    expect((await other.result("post_projects_folder_files", {
+      body: { projectId, files: { "index.html": "unauthorized replacement" } },
+    })).isError).toBe(true);
+    expect(h.kickoff).toHaveBeenCalledTimes(1);
+    expect(h.cloudFetch).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])(
     "deploys a controller-local folder on the connected server (explicit org: %s)",
     async (explicit) => {

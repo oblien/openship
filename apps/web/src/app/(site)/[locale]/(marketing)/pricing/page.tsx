@@ -4,7 +4,8 @@ import { Footer, Navbar } from "@/components/landing";
 import { getCopy } from "@/i18n/copy-server";
 import { Link } from "@/i18n/Link";
 import { useCopy } from "@/i18n/use-copy";
-import { managePlanHref } from "@/lib/cloud-links";
+import { PublicMailPlans } from "./public-mail-plans";
+import { cloudEmailPlanHref, managePlanHref } from "@/lib/cloud-links";
 import { getCloudPricing, money, type CloudPricing } from "@/lib/pricing";
 import { SELF_HOST_CTA_HREF, faq } from "./_data";
 import { CloudPricingSection } from "./cloud-pricing-section";
@@ -88,6 +89,39 @@ function ManagementPlans({ pricing }: { pricing: CloudPricing }) {
   );
 }
 
+function MailPlans({ pricing }: { pricing: CloudPricing }) {
+  const copy = useCopy();
+  return (
+    <section
+      id="email-plans"
+      className="pp-offering-section scroll-mt-24"
+      aria-labelledby="email-plans-title"
+    >
+      <div className="site-container">
+        <header className="pp-section-heading">
+          <div>
+            <h2 id="email-plans-title">{copy("OpenShip Mail plans")}</h2>
+            <p>{copy("Choose where your messages live and how much mail you send.")}</p>
+          </div>
+          <Link className="pp-text-link" href="/mail#mail-pricing">
+            {copy("Compare features")} <ArrowRight className="size-4" />
+          </Link>
+        </header>
+        {pricing.mail ? (
+          <PublicMailPlans catalog={pricing.mail} />
+        ) : (
+          <div className="pp-unavailable" role="status">
+            <p>{copy("Current plans are temporarily unavailable.")}</p>
+            <a href={cloudEmailPlanHref()} className="pp-solid-cta">
+              {copy("View dashboard plans")}
+            </a>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function InfrastructurePlans() {
   const copy = useCopy();
 
@@ -151,6 +185,7 @@ export default async function PricingPage() {
             <ManagementPlans pricing={pricing} />
           </div>
         </section>
+        <MailPlans pricing={pricing} />
         <section className="pp-offering-section" aria-labelledby="infrastructure-title">
           <div className="site-container">
             <header className="pp-section-heading">

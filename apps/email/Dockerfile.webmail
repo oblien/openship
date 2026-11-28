@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 # ─── openship-webmail ────────────────────────────────────────────────────────
 # Zero webmail as a self-contained image: the pre-built client SPA plus the
-# Hono/Bun server that serves it and talks IMAP/SMTP.
+# Hono/Bun server that serves it and connects to its mail transports.
 #
 # This is the WEBMAIL CLIENT, not the mail engine. `apps/email/Dockerfile` (no
 # suffix) builds `openship-mail` — the iRedMail daemon set. The two share this
-# directory and nothing else: webmail speaks only IMAP/SMTP, so it runs against
-# any backend (our engine, Gmail, Fastmail, a corporate Exchange) and is
+# directory. Webmail reads through IMAP and supports SMTP or managed API
+# submission. It runs against our engine and external mailbox providers and is
 # versioned as its own product. It is installed like every other catalog app
 # (packages/core/src/apps/catalog/webmail.json) — openship's TypeScript holds no
 # webmail deployment facts.

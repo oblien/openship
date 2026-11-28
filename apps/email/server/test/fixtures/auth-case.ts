@@ -12,7 +12,7 @@ if (scenario === "blank-hosts") {
 const { authRoutes } = await import("../../src/routes/auth");
 const { env } = await import("../../src/env");
 const { db, schema } = await import("../../src/db");
-const { getSession, saveSession, defaultMailHosts } = await import("../../src/lib/session");
+const { getSession, defaultMailHosts } = await import("../../src/lib/session");
 const app = new Hono().route("/auth", authRoutes);
 
 // Substitute only the remote IMAP connection. The HTTP validation, cookies,
@@ -40,10 +40,9 @@ const signIn = (
     headers: {
       "Content-Type": "application/json",
       cookie,
-      "X-Real-IP": ip ?? `192.0.2.${++requests}`,
     },
     body: JSON.stringify(body),
-  });
+  }, { server: { requestIP: () => ({ address: ip ?? `192.0.2.${++requests}` }) } });
 const credentialError = () =>
   Object.assign(new Error("Command failed"), {
     authenticationFailed: true,
@@ -51,7 +50,58 @@ const credentialError = () =>
     serverResponseCode: "AUTHENTICATIONFAILED",
   });
 
-if (scenario === "credentials") {
+function requestCookies(response: Response) {
+  return response.headers.getSetCookie().filter(header => !header.includes("Max-Age=0"))
+    .map(header => header.split(";")[0]).join("; ");
+}
+
+if (scenario === "mailbox-location") {
+  const lookup = (domain: string) => app.request("/auth/mailbox-location?" + new URLSearchParams({domain}), {
+    headers: { cookie: "private=local", authorization: "Bearer private" },
+  });
+  assert.equal((await lookup("shared.example")).status, 404);
+  env.TRUSTED_ORIGINS = ["https://mail.openship.io"];
+  assert.equal((await lookup("https://elsewhere.example")).status, 400);
+  let target = "https://dedicated.example";
+  let status = 200;
+  globalThis.fetch = (async (url, opts) => {
+    assert.equal(String(url), "https://api.openship.io/api/mail/discovery?domain=shared.example");
+    assert.equal(opts?.headers, undefined);
+    assert.equal(opts?.credentials, "omit");
+    return Response.json({webmailUrl: target}, {status});
+  }) as typeof fetch;
+  assert.deepEqual(await (await lookup("shared.example")).json(), {webmailUrl: target});
+  target = "https://mail.openship.io";
+  assert.deepEqual(await (await lookup("shared.example")).json(), {webmailUrl: target});
+  target = "http://invalid.example";
+  assert.equal((await lookup("shared.example")).status, 503);
+  status = 404;
+  assert.equal((await lookup("shared.example")).status, 404);
+  assert.equal(probes, 0);
+} else if (scenario === "browser-origin") {
+  for (const path of ["sign-in", "sign-out", "switch"]) {
+    const response = await app.request("/auth/" + path, {
+      method: "POST", headers: { origin: "https://unrelated.test" },
+    });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.has("set-cookie"), false);
+  }
+  assert.equal(probes, 0);
+} else if (scenario === "hosted-session") {
+  const { bindHostedSending, sharedHosting } = await import("../../src/mail/sending-settings");
+  assert.equal(bindHostedSending(sharedHosting), true);
+  const login = await signIn();
+  assert.equal(login.status, 200);
+  const cookie = requestCookies(login);
+  const session = () => app.request("/auth/session", { headers: { cookie } });
+  assert.ok(await (await session()).json());
+  failure = Object.assign(new Error("temporary outage"), { code: "ECONNREFUSED" });
+  assert.equal((await session()).status, 503);
+  assert.equal((await db.select().from(schema.session)).length, 1);
+  failure = credentialError();
+  assert.equal(await (await session()).json(), null);
+  assert.equal((await db.select().from(schema.session)).length, 0);
+} else if (scenario === "credentials") {
   failure = credentialError();
   const response = await signIn();
   assert.equal(response.status, 401);
@@ -99,16 +149,14 @@ if (scenario === "credentials") {
   const { sessionId } = await first.json();
   const original = await getSession(sessionId);
   assert.equal(original?.password, "test-only-password");
-  const other = await saveSession({
+  const second = await signIn({
     email: "other@example.test",
     name: "Other",
     password: "other-test-password",
-    imapHost: "other.example.test",
-    imapPort: 993,
-    smtpHost: "other.example.test",
-    smtpPort: 465,
-  });
-  const cookie = `zero_sessions=${sessionId},${other.id}; zero_session=${sessionId}`;
+  }, requestCookies(first));
+  assert.equal(second.status, 200);
+  const { sessionId: otherId } = await second.json();
+  const cookie = requestCookies(second);
   env.DEFAULT_IMAP_HOST = "new-mail.example.test";
   env.DEFAULT_SMTP_HOST = "new-smtp.example.test";
   env.DEFAULT_SMTP_PORT = 587;
@@ -136,7 +184,32 @@ if (scenario === "credentials") {
     assert.equal(refreshed?.smtpPort, 587);
     assert.equal((await db.select().from(schema.session)).length, 2);
   }
-  assert.equal((await getSession(other.id))?.password, "other-test-password");
+  assert.equal((await getSession(otherId))?.password, "other-test-password");
+} else if (scenario === "account-switching") {
+  const first = await signIn();
+  const { sessionId } = await first.json();
+  const signedIn = requestCookies(first);
+  const second = await signIn({ email: "other@example.test", password: "test-only-password" }, signedIn);
+  const { sessionId: otherId } = await second.json();
+  const call = (path: string, cookie: string, body?: object) => app.request("/auth/" + path, {
+    method: body ? "POST" : "GET", headers: { cookie, "content-type": "application/json" },
+    body: body && JSON.stringify(body),
+  });
+  const both = requestCookies(second);
+  assert.equal((await (await call("sessions", both)).json()).sessions.length, 2);
+  // Public connection handles from a previous release require a fresh sign-in.
+  const legacy = `zero_session=${sessionId}; zero_sessions=${sessionId}; zero_session_id=${sessionId}`;
+  assert.equal(await (await call("session", legacy)).json(), null);
+  assert.deepEqual(await (await call("sessions", legacy)).json(), { sessions: [], activeId: null });
+  assert.equal((await call("switch", signedIn, { sessionId: otherId })).status, 404);
+  assert.equal((await call("sign-out", legacy, {})).status, 200);
+  assert.equal((await (await call("session", signedIn)).json()).email, "user@example.test");
+  const switched = await call("switch", both, { sessionId });
+  assert.equal((await switched.json()).email, "user@example.test");
+  const signedOut = await call("sign-out", requestCookies(switched), {});
+  assert.equal((await signedOut.json()).nextSessionId, otherId);
+  assert.equal((await (await call("session", requestCookies(signedOut))).json()).email, "other@example.test");
+  assert.equal(await (await call("session", signedIn)).json(), null);
 } else if (scenario === "blank-hosts") {
   assert.deepEqual(defaultMailHosts("user@example.test"), {
     imapHost: "mail.example.test",
